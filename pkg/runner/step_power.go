@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func (t *PowerStep) run(device harness.Device) StepResult {

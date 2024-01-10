@@ -33,7 +33,7 @@ xavier-nx-00	e6058905	jumpstarter-board	0.04	/dev/ttyACM1	nvidia, xavier-nx, nvi
 visionfive2-00	031da453	jumpstarter-board	0.04	/dev/ttyACM0	rv64gc, rv64, jh7110, visionfive2, 8gb
 ```
 
-if we run [one of the examples](https://github.com/redhat-et/jumpstarter/blob/main/script-examples/orin-agx.yaml)
+if we run [one of the examples](https://github.com/jumpstarter-dev/jumpstarter/blob/main/script-examples/orin-agx.yaml)
 available in the jumpstarter repository we should see:
 
 ```

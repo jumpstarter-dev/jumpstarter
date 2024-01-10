@@ -17,5 +17,5 @@ else
 fi
 
 cd /tmp
-curl -L https://github.com/redhat-et/jumpstarter/releases/download/${VERSION}/jumpstarter-${VERSION}-linux-${ARCH}.tar.gz | tar xvfz - jumpstarter
+curl -L https://github.com/jumpstarter-dev/jumpstarter/releases/download/${VERSION}/jumpstarter-${VERSION}-linux-${ARCH}.tar.gz | tar xvfz - jumpstarter
 mv jumpstarter /usr/local/bin

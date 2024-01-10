@@ -3,7 +3,7 @@ package runner
 import (
 	"strings"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func (t *StorageStep) run(device harness.Device) StepResult {

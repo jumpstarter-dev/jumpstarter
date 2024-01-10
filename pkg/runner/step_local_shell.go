@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func (t *LocalShellStep) run(device harness.Device) StepResult {

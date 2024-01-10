@@ -1,7 +1,7 @@
 package runner
 
 import (
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func (t *SetDiskImageStep) run(device harness.Device) StepResult {

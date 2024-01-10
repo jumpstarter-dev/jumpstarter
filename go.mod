@@ -1,4 +1,4 @@
-module github.com/redhat-et/jumpstarter
+module github.com/jumpstarter-dev/jumpstarter
 
 go 1.19
 

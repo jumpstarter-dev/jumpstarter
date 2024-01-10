@@ -14,9 +14,9 @@ We can integrate with OpenShift pipelines/tekton by using a tekton task co-locat
 
 [Tekton](https://tekton.dev/) is an open-source, cloud-native framework for creating and managing CI/CD workflows, enabling automation of software build, test, and deployment pipelines on Kubernetes. It's designed for flexibility, scalability, and supports various development tools and languages across different cloud environments.
 
-To use Jumpstarter in Tekton, you need to create a custom task (see [jumpstarter-script task](https://github.com/redhat-et/jumpstarter/blob/main/tekton/pipelines/task-jumpstarter-script.yaml) for an example), and then use it in your pipeline.
+To use Jumpstarter in Tekton, you need to create a custom task (see [jumpstarter-script task](https://github.com/jumpstarter-dev/jumpstarter/blob/main/tekton/pipelines/task-jumpstarter-script.yaml) for an example), and then use it in your pipeline.
 
-You can find a complete example in the tekton directory: [Jumpstarter in Tekton](https://github.com/redhat-et/jumpstarter/tree/main/tekton).
+You can find a complete example in the tekton directory: [Jumpstarter in Tekton](https://github.com/jumpstarter-dev/jumpstarter/tree/main/tekton).
 
 The directory provides an example pipeline, and a custom task to use Jumpstarter in Tekton.
 {{% imgproc "pipeline.png" Fit 600x200 %}}

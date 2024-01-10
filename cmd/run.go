@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
-	"github.com/redhat-et/jumpstarter/pkg/tools"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/tools"
 	"github.com/spf13/cobra"
 )
 

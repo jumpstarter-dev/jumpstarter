@@ -3,7 +3,7 @@ package runner
 import (
 	"time"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func (t *PauseStep) run(device harness.Device) StepResult {

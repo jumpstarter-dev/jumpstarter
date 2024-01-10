@@ -16,7 +16,7 @@ is flashed on a usb storage device which then can be attached to the DUT.
 {{< highlight bash  >}}
 
 # install jumpstarter binary
-wget https://github.com/redhat-et/jumpstarter/releases/download/${JUMPSTARTER_VERSION}/jumpstarter-${JUMPSTARTER_VERSION}-linux-amd64.tar.gz
+wget https://github.com/jumpstarter-dev/jumpstarter/releases/download/${JUMPSTARTER_VERSION}/jumpstarter-${JUMPSTARTER_VERSION}-linux-amd64.tar.gz
 tar -xzf jumpstarter-${JUMPSTARTER_VERSION}-linux-amd64.tar.gz
 export PATH=${PATH}:$(pwd)
 

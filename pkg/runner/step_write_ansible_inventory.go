@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/redhat-et/jumpstarter/pkg/harness"
-	"github.com/redhat-et/jumpstarter/pkg/tools"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/tools"
 )
 
 func (t *WriteAnsibleInventoryStep) run(device harness.Device) StepResult {

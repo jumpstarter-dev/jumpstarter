@@ -1,4 +1,4 @@
-module github.com/redhat-et/jumpstarter/website
+module github.com/jumpstarter-dev/jumpstarter/website
 
 go 1.12
 

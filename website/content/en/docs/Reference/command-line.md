@@ -38,7 +38,7 @@ This command lists all the drivers that are currently available.
 {{< highlight "" >}}
 $ jumpstarter list-drivers
 jumpstarter-board
-	OpenSource HIL USB harness (https://github.com/redhat-et/jumpstarter-board)
+	OpenSource HIL USB harness (https://github.com/jumpstarter-dev/jumpstarter-board)
 	enables the control of Edge and Embedded devices via USB.
 	It has the following capabilities: power metering, power cycling, and serial console
 	access, and USB storage switching.

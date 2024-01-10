@@ -4,7 +4,7 @@ Copyright © 2023 Miguel Angel Ajo Pelayo <majopela@redhat.com
 package cmd
 
 import (
-	"github.com/redhat-et/jumpstarter/pkg/runner"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/runner"
 	"github.com/spf13/cobra"
 )
 

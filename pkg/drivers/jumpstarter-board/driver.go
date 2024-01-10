@@ -3,7 +3,7 @@ package jumpstarter_board
 import (
 	"fmt"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 type JumpstarterDriver struct{}
@@ -13,7 +13,7 @@ func (d *JumpstarterDriver) Name() string {
 }
 
 func (d *JumpstarterDriver) Description() string {
-	return `OpenSource HIL USB harness (https://github.com/redhat-et/jumpstarter-board)
+	return `OpenSource HIL USB harness (https://github.com/jumpstarter-dev/jumpstarter-board)
 	enables the control of Edge and Embedded devices via USB.
 	It has the following capabilities: power metering, power cycling, and serial console
 	access, and USB storage switching.

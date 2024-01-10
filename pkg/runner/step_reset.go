@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func (t *ResetStep) run(device harness.Device) StepResult {

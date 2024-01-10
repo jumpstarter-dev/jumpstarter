@@ -5,7 +5,7 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func CreateAnsibleInventory(device harness.Device, output *os.File, user string, ssh_key string) error {

@@ -14,9 +14,9 @@ format, which allows mounting of a DUT on top, and enables the usage of standard
 server cases.
 
 The jumpstarter-board is an Open Hardware project, you can find the design files in the
-[Jumpstarter board repository](https://github.com/redhat-et/jumpstarter-board), a first batch
+[Jumpstarter board repository](https://github.com/jumpstarter-dev/jumpstarter-board), a first batch
 was built by SeeedStudio using their fusion PCB service, and you can find the manufacturing files
-[here](https://github.com/redhat-et/jumpstarter-board/tree/main/hardware/manufacturing/1.0.0).
+[here](https://github.com/jumpstarter-dev/jumpstarter-board/tree/main/hardware/manufacturing/1.0.0).
 
 ## High level overview
 A device under test (left side) is connected to the jumpstarter board, which is connected to a

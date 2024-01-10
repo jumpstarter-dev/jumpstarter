@@ -9,7 +9,7 @@ title: Jumpstarter
 <a class="btn btn-lg btn-primary me-3 mb-4" href="/docs/">
   Learn More <i class="fas fa-arrow-alt-circle-right ms-2"></i>
 </a>
-<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/redhat-et/jumpstarter/releases">
+<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/jumpstarter-dev/jumpstarter/releases">
   Download <i class="fab fa-github ms-2 "></i>
 </a>
 
@@ -43,11 +43,11 @@ power, reset, image flashing, serial console interaction, and more.
 
 
 {{% blocks/feature icon="fab fa-github" title="Contributions welcome!"  %}}
-We do a [Pull Request](https://github.com/redhat-et/jumpstarter/pulls) contributions workflow on **GitHub**. New users are always welcome!
+We do a [Pull Request](https://github.com/jumpstarter-dev/jumpstarter/pulls) contributions workflow on **GitHub**. New users are always welcome!
 {{% /blocks/feature %}}
 
 
-{{% blocks/feature icon="fa fa-microchip" title="Open Hardware included" url="https://github.com/redhat-et/jumpstarter-board" %}}
+{{% blocks/feature icon="fa fa-microchip" title="Open Hardware included" url="https://github.com/jumpstarter-dev/jumpstarter-board" %}}
 The jumpstarter project works with the jumpstarter-board, a small board that can be used to control the power and storage
 of your device under test.
 

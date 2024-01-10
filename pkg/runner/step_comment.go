@@ -5,7 +5,7 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/redhat-et/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
 func (t *CommentStep) run(device harness.Device) StepResult {
