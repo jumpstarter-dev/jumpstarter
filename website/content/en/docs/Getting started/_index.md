@@ -6,9 +6,9 @@ tags: [test, docs]
 weight: 3
 ---
 
-To start using Jumpstarter you need a [test-harness](../testharness/) (i.e., a [jumpstarter-board](../testharness/jumpstarterboard/)) and a device under test (DUT).
+To start using Jumpstarter you need a [test-harness](../testharness/) (i.e., a [dutlink-board](../testharness/dutlinkboard/)) and a device under test (DUT).
 
-You will also need an image to flash into your DUT, it could be an .iso or a raw device image. In the case of the jumpstarter-board, this image
+You will also need an image to flash into your DUT, it could be an .iso or a raw device image. In the case of the dutlink-board, this image
 is flashed on a usb storage device which then can be attached to the DUT.
 
 ## Installation
@@ -24,7 +24,7 @@ export PATH=${PATH}:$(pwd)
 
 ## Setup
 
-If you will be using a test harness that works through USB (like the jumpstarter-board), it is recommended to use a
+If you will be using a test harness that works through USB (like the dutlink-board), it is recommended to use a
 physical host. QEMU is still possible but you will need to pass through the whole USB host controller to the VM, this
 is recommended because the USB devices will come and go as devices are manipulated through the test-harness.
 

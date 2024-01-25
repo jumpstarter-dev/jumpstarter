@@ -27,9 +27,9 @@ This command will list all the devices that are currently available throught the
 {{< highlight "" >}}
 $ jumpstarter list-devices
 Device Name	Serial Number	Driver			Version	Device		Tags
-orin-agx-00	e6058a05	jumpstarter-board	0.05	/dev/ttyACM2	orin-agx, orin, 64gb
-xavier-nx-00	e6058905	jumpstarter-board	0.04	/dev/ttyACM1	nvidia, xavier-nx, nvidia-xavier, arm64, 8gb
-visionfive2-00	031da453	jumpstarter-board	0.04	/dev/ttyACM0	rv64gc, rv64, jh7110, visionfive2, 8gb
+orin-agx-00	e6058a05	dutlink-board	0.05	/dev/ttyACM2	orin-agx, orin, 64gb
+xavier-nx-00	e6058905	dutlink-board	0.04	/dev/ttyACM1	nvidia, xavier-nx, nvidia-xavier, arm64, 8gb
+visionfive2-00	031da453	dutlink-board	0.04	/dev/ttyACM0	rv64gc, rv64, jh7110, visionfive2, 8gb
 {{< / highlight >}}
 
 ### **list-drivers**
@@ -37,8 +37,8 @@ This command lists all the drivers that are currently available.
 
 {{< highlight "" >}}
 $ jumpstarter list-drivers
-jumpstarter-board
-	OpenSource HIL USB harness (https://github.com/jumpstarter-dev/jumpstarter-board)
+dutlink-board
+	OpenSource HIL USB harness (https://github.com/jumpstarter-dev/dutlink-board)
 	enables the control of Edge and Embedded devices via USB.
 	It has the following capabilities: power metering, power cycling, and serial console
 	access, and USB storage switching.
@@ -66,7 +66,7 @@ $ jumpstarter set-control orin-agx-00 A LOW
 {{< / highlight >}}
 
 The signal names and output modes depend on the test-harness being used. See the
-[jumpstarter-board](/docs/reference/jumpstarter-board/) section for more details.
+[dutlink-board](/docs/reference/dutlink-board/) section for more details.
 
 
 

@@ -1,4 +1,4 @@
-package jumpstarter_board
+package dutlink_board
 
 import (
 	"fmt"

@@ -170,9 +170,9 @@ enable = false
 # End user relevant links. These will show up on left side of footer and in the community page if you have one.
 [[params.links.user]]
   name = "Hardware design"
-  url = "https://github.com/jumpstarter-dev/jumpstarter-board/"
+  url = "https://github.com/jumpstarter-dev/dutlink-board/"
   icon = "fa fa-microchip"
-  desc = "The hardware design of the Jumpstarter board"
+  desc = "The hardware design of the DUTlink board"
 # Developer relevant links. These will show up on right side of footer and in the community page if you have one.
 [[params.links.developer]]
   name = "GitHub"

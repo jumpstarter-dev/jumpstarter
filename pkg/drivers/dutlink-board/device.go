@@ -1,4 +1,4 @@
-package jumpstarter_board
+package dutlink_board
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 )
 
 type JumpstarterDevice struct {
-	driver         *JumpstarterDriver
+	driver         *DUTLinkDriver
 	devicePath     string
 	version        string
 	serialNumber   string

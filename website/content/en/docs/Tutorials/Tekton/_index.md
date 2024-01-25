@@ -61,7 +61,7 @@ $ tkn pipeline start jumpstarter-orin-nx \
        	--showlog
 ```
 ## Known limitations
-The current implementation is not aware of the nodes where test harnesses could be attached (i.e. if there is a direct physical connection from host to hardware like in the jumpstarter board).
+The current implementation is not aware of the nodes where test harnesses could be attached (i.e. if there is a direct physical connection from host to hardware like in the dutlink board).
 
 Some future test harneses could be network-driven, that would remove this limitation. Or future jumpstarter arquitectures could be accessed via a broker. A temporary solution
 could be to use a `nodeSelector` to make sure the tasks are scheduled in the node(s) where

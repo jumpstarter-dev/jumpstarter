@@ -47,8 +47,8 @@ We do a [Pull Request](https://github.com/jumpstarter-dev/jumpstarter/pulls) con
 {{% /blocks/feature %}}
 
 
-{{% blocks/feature icon="fa fa-microchip" title="Open Hardware included" url="https://github.com/jumpstarter-dev/jumpstarter-board" %}}
-The jumpstarter project works with the jumpstarter-board, a small board that can be used to control the power and storage
+{{% blocks/feature icon="fa fa-microchip" title="Open Hardware included" url="https://github.com/jumpstarter-dev/dutlink-board" %}}
+The jumpstarter project works with the dutlink-board, a small board that can be used to control the power and storage
 of your device under test.
 
 But it is designed to allow other harware to work with the jumpstarter stack via a driver design.

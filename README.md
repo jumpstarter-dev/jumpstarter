@@ -7,10 +7,10 @@ The documentation is available here [jumpstarter.dev/docs/](https://jumpstarter.
 And you can find details about the command line in [reference section](https://jumpstarter.dev/docs/reference/).
 
 
-## The jumpstarter board
+## The dutlink board
 
-Jumpstarter has a driver for the jumpstarter-board which is a test harness used to control
+Jumpstarter has a driver for the dutlink-board which is a test harness used to control
 edge/embedded devices, more details can be found here:
-[jumpstarter-board](https://jumpstarter.dev/docs/testharness/jumpstarterboard/)
+[dutlink-board](https://jumpstarter.dev/docs/testharness/dutlinkboard/)
 
 

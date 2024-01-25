@@ -11,7 +11,7 @@ type HarnessDriver interface {
 	FindDevices() ([]Device, error)
 }
 
-// The initial implementation has only one type of driver, the jumpstarter-board driver
+// The initial implementation has only one type of driver, the dutlink-board driver
 // but this could be extended to support other types of drivers for HIL devices.
 
 var drivers = []HarnessDriver{}

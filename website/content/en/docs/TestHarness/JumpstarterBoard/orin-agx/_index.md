@@ -2,12 +2,12 @@
 title: Orin AGX + jumpstarter
 weight: 1
 date: 2023-09-25
-description: Manual for connecting the jumpstarter board to the Orin AGX devkit.
+description: Manual for connecting the dutlink board to the Orin AGX devkit.
 ---
 
 {{% pageinfo %}}
 This is a graphical guide describing how to connect an NVIDIA Orin AGX Devkit
-to the jumpstarter-board.
+to the dutlink-board.
 {{% /pageinfo %}}
 
 This setup will use 4 USB connections to your host:
@@ -104,7 +104,7 @@ This setup will use 4 USB connections to your host:
         <td>P1 USB-C</td>
         <td>USB</td>
         <td>Jumpstarter control USB bus, used by the jumpstarter software to talk to the
-            jumpstarter-board</td>
+            dutlink-board</td>
     </tr>
     <tr>
         <th scope="row">HOST-STORAGE</th>
@@ -136,7 +136,7 @@ See the [Console access](#console-access) section and associate the TOPO USB con
 
 ### My DUT doesn't power on
 * Check that the AUTO-POWER jumper is connected.
-* See [Know issues and limitations](/docs/testharness/jumpstarterboard/#known-issues-and-limitations) you may need to flip the USB-C cable going to the AGX board or the power adapter USB-C.
+* See [Know issues and limitations](/docs/testharness/dutlinkboard/#known-issues-and-limitations) you may need to flip the USB-C cable going to the AGX board or the power adapter USB-C.
 
 ### My console shows garbage during boot
 There is a known issue with the TOPO USB console, where it will show garbage after power-on, then it
@@ -151,7 +151,7 @@ Make sure that you are not using a USB3.1 Gen2 device (10Gbps), as this is not s
 
 ## Power sequencing
 The Orin AGX Devkit has an automation header that can be used to control the power
-and reset of the board. The jumpstarter board can be used to control the power
+and reset of the board. The dutlink board can be used to control the power
 and reset of the Orin AGX Devkit in addition to the analog power control.
 
 This is useful to workaround the isue described in [My console shows garbage during boot](#my-console-shows-garbage-during-boot), since the NVIDIA TOPO USB controller has a bug
@@ -178,7 +178,7 @@ Please see [The Orin AGX Devkit layout](https://developer.nvidia.com/embedded/le
 
 To let jumpstarter know that it must look up for a specific usb serial port device
 when trying to interact with the DUT console you will need to associate the
-NVIDIA TOPO USB Console to your jumpstarter board using the
+NVIDIA TOPO USB Console to your dutlink board using the
 [usb-set-console](/docs/reference/#set-usb-console) command.
 
 i.e. when the Orin AGX TOPO console shows up like this on the host:
@@ -192,7 +192,7 @@ i.e. when the Orin AGX TOPO console shows up like this on the host:
 [300810.332801] usb 1-1.3.1: SerialNumber: TOPOD83B461B
 {{< /highlight >}}
 
-You should associate it to the jumpstarter board using the following command:
+You should associate it to the dutlink board using the following command:
 
 {{< highlight "" >}}
 $ jumpstarter set-usb-console orin-agx-00 TOPOD83B461B-if01
@@ -218,7 +218,7 @@ GND(black), /RESET(white), CTL_A(green) and CTL_B(blue)
 {{% imgproc "P9220025.jpg" Fit 1024x1024 %}}
 Pins 1,2,3,4 of the [Orin AGX devkit Automation Header J42](https://developer.nvidia.com/embedded/learn/jetson-agx-orin-devkit-user-guide/developer_kit_layout.html#automation-header-j42)
 
-Must be connected to pins GND, CTL_A, CTL_B and /RESET of the jumpstarter board I/O connector.
+Must be connected to pins GND, CTL_A, CTL_B and /RESET of the dutlink board I/O connector.
 {{% /imgproc %}}
 
 

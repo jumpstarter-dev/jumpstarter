@@ -2,7 +2,7 @@
 title: Connector reference
 weight: 1
 date: 2023-09-26
-description: Connector reference for te jumpstarter-board
+description: Connector reference for te dutlink-board
 
 ---
 
@@ -160,7 +160,7 @@ The V IO pin is provided to enable the use of voltage translation circuits if ne
     </tr>
     <tr>
       <th scope="row">Other/notes</th>
-      <td>While not technically a part of the jumpstarter board, some DUTs need USB host
+      <td>While not technically a part of the dutlink board, some DUTs need USB host
           access to allow flashing from the host, i.e. NVIDIA Jetson boards. In some
           cases multiple USB connections.</a></td>
     </tr>
@@ -182,7 +182,7 @@ The V IO pin is provided to enable the use of voltage translation circuits if ne
           this device will be multiplexed between the host and the DUT. The HOST can flash
           it, and the DUT can boot or install from this device.
           Flashing speed will hugely depend on the storage device used, and while the
-          jumpstarter-board has been designed for 10Gbps USB3.2 Gen2, the speed will
+          dutlink-board has been designed for 10Gbps USB3.2 Gen2, the speed will
             depend on the storage device used as well as the cables connected to J8 and J7.
           <b>To stay on the safe side 5Gbps devices are recommended.</b> One possible device
           you can use for this purpose is: <a href="https://www.amazon.com/SanDisk-128GB-Extreme-Solid-State/dp/B08GYM5F8G">link</a>

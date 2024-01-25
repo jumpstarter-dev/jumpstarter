@@ -1,4 +1,4 @@
-package jumpstarter_board
+package dutlink_board
 
 import (
 	"fmt"
@@ -58,7 +58,7 @@ DEVNAME=ttyACM0
 */
 
 // write a function that scans the BASE_UDEVPATH for devices that match the
-// vendor and product id of the Jumpstarter board using filepath.Walk and
+// vendor and product id of the DUTlink board using filepath.Walk and
 // reading the right files based on the info above
 //
 // return a list of devices that match

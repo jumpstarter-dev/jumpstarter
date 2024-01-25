@@ -5,7 +5,7 @@ package main
 
 import (
 	"github.com/jumpstarter-dev/jumpstarter/cmd"
-	_ "github.com/jumpstarter-dev/jumpstarter/pkg/drivers/jumpstarter-board" // make sure the driver is registered
+	_ "github.com/jumpstarter-dev/jumpstarter/pkg/drivers/dutlink-board" // make sure the driver is registered
 )
 
 func main() {

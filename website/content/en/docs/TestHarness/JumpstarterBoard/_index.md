@@ -1,25 +1,25 @@
 ---
-title: Jumpstarter board
+title: DUTlink board
 description:
 date: 2017-01-04
 weight: 1
 ---
 
 {{% pageinfo %}}
-Information about the jumpstarter board, how to use it and how to connect it to your DUT.
+Information about the DUTlink board, how to use it and how to connect it to your DUT.
 {{% /pageinfo %}}
 
-The jumpstarter-board is a test harness designed for Jumpstarter, it's a board in micro ITX
+The dutlink-board is a test harness designed for Jumpstarter, it's a board in micro ITX
 format, which allows mounting of a DUT on top, and enables the usage of standard rack or desktop
 server cases.
 
-The jumpstarter-board is an Open Hardware project, you can find the design files in the
-[Jumpstarter board repository](https://github.com/jumpstarter-dev/jumpstarter-board), a first batch
+The dutlink-board is an Open Hardware project, you can find the design files in the
+[DUTlink board repository](https://github.com/jumpstarter-dev/dutlink-board), a first batch
 was built by SeeedStudio using their fusion PCB service, and you can find the manufacturing files
-[here](https://github.com/jumpstarter-dev/jumpstarter-board/tree/main/hardware/manufacturing/1.0.0).
+[here](https://github.com/jumpstarter-dev/dutlink-board/tree/main/hardware/manufacturing/1.0.0).
 
 ## High level overview
-A device under test (left side) is connected to the jumpstarter board, which is connected to a
+A device under test (left side) is connected to the dutlink board, which is connected to a
 host (right side) via USB-C. The host runs the jumpstarter software, which allows CI to
 interact with the DUT, controlling the power, connection and management of a storage device
 (see the pendrive in the next pictures), and communication via serial console.
@@ -29,14 +29,14 @@ interact with the DUT, controlling the power, connection and management of a sto
 ### This is how the hardware looks
 
 {{% imgproc "general_jumpstarter.jpg" Fit 1024x1024 %}}
-Top view of the jumpstarter board REL-1.0.0
+Top view of the dutlink board REL-1.0.0
 On the **left** area: you can see connections to the Device Under Test
 On the **right**, you can see the connections to the testing
 host, where the jumpstarter software runs.
 {{% /imgproc %}}
 
 {{% imgproc "general_with_visionfive2.jpg" Fit 1024x1024 %}}
-Top view of the jumpstarter board REL-1.0.0 with a visionfive2 board attached
+Top view of the dutlink board REL-1.0.0 with a visionfive2 board attached
 via USB-PD power pass-through. See more details in the [visionfive2 section](visionfive2/).
 {{% /imgproc %}}
 
@@ -73,7 +73,7 @@ USB-C connections are reversable, but in the 1.0.0 version of the board, the USB
 {{% imgproc "usb_host.png" Fit 256x256 / %}}
 
 i.e.:
- * jumpstarter-board is not being detected by the host: try flipping the USB-C cable.
+ * dutlink-board is not being detected by the host: try flipping the USB-C cable.
  * the device is not powered-up or charging: try flipping the power USB-C cable.
 
 ### Storage DUT Out connector is fragile

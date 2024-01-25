@@ -16,7 +16,7 @@ description: >
   <tbody>
    <tr>
       <th scope="row">Testing Harness</th>
-      <td>This is the physical device used to allow Jumpstarter interfacing into your hardware, one example of this is the <b>jumpstarter-board</b>
+      <td>This is the physical device used to allow Jumpstarter interfacing into your hardware, one example of this is the <b>dutlink-board</b>
           which is an Open Hardware reference design for Jumpstarter. But other Testing Harnesses can exist.</td>
     </tr>
     <tr>

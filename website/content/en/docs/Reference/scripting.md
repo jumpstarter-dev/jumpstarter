@@ -28,9 +28,9 @@ i.e.:
 ```
 $ jumpstarter list-devices
 Device Name	Serial Number	Driver			Version	Device		Tags
-orin-nx-00	e605c805	jumpstarter-board	0.05	/dev/ttyACM2	orin-nx, orin, 16gb
-xavier-nx-00	e6058905	jumpstarter-board	0.04	/dev/ttyACM1	nvidia, xavier-nx, nvidia-xavier, arm64, 8gb
-visionfive2-00	031da453	jumpstarter-board	0.04	/dev/ttyACM0	rv64gc, rv64, jh7110, visionfive2, 8gb
+orin-nx-00	e605c805	dutlink-board	0.05	/dev/ttyACM2	orin-nx, orin, 16gb
+xavier-nx-00	e6058905	dutlink-board	0.04	/dev/ttyACM1	nvidia, xavier-nx, nvidia-xavier, arm64, 8gb
+visionfive2-00	031da453	dutlink-board	0.04	/dev/ttyACM0	rv64gc, rv64, jh7110, visionfive2, 8gb
 ```
 
 if we run [one of the examples](https://github.com/jumpstarter-dev/jumpstarter/blob/main/script-examples/orin-agx.yaml)
@@ -136,7 +136,7 @@ results in:
 
 ### - reset
 
-Toggles the /RESET line of the jumpstarter-board, this will reset the DUT.
+Toggles the /RESET line of the dutlink-board, this will reset the DUT.
 
 ```yaml
 steps:
@@ -152,7 +152,7 @@ Resetting device...
 
 ### - set-disk-image
 
-Writes a disk image into the storage device attached to jumpstarter in [connector J9](/docs/testharness/jumpstarterboard/connector-reference/).
+Writes a disk image into the storage device attached to jumpstarter in [connector J9](/docs/testharness/dutlinkboard/connector-reference/).
 
 It accepts multiple parameters:
 
