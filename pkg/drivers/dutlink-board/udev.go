@@ -121,7 +121,10 @@ func scanUdev() ([]*JumpstarterDevice, error) {
 				panic("expected only one tty device")
 			}
 
-			jp := newJumpstarter(ttynames[0].Name(), version, serial)
+			jp, err := newJumpstarter(ttynames[0].Name(), version, serial)
+			if err != nil {
+				return err
+			}
 			res = append(res, &jp)
 
 		}

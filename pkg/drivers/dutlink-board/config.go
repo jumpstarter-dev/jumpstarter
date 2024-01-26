@@ -2,13 +2,16 @@ package dutlink_board
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 )
 
-func newJumpstarter(ttyname string, version string, serial string) JumpstarterDevice {
+func newJumpstarter(ttyname string, version string, serial string) (JumpstarterDevice, error) {
 	jp := JumpstarterDevice{
 		devicePath:     "/dev/" + ttyname,
 		version:        version,
@@ -22,8 +25,13 @@ func newJumpstarter(ttyname string, version string, serial string) JumpstarterDe
 		tags:           []string{},
 		consoleMode:    true, // let's asume it's in console mode so we will force exit at start
 	}
-	jp.readConfig()
-	return jp
+	err := jp.readConfig()
+
+	if err == nil || errors.Is(err, harness.ErrDeviceInUse) {
+		return jp, nil
+	} else {
+		return JumpstarterDevice{}, err
+	}
 }
 
 func (d *JumpstarterDevice) IsBusy() (bool, error) {
@@ -51,10 +59,15 @@ func (d *JumpstarterDevice) GetConfig() (map[string]string, error) {
 }
 
 func (d *JumpstarterDevice) getConfigLines() (string, error) {
-	if err := d.ensureSerial(); err != nil {
+	err := d.ensureSerial()
+	if errors.Is(err, harness.ErrDeviceInUse) {
 		d.name = "**BUSY**"
 		d.busy = true
 		return "", nil
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("getConfigLines: %w", err)
 	}
 
 	defer d.closeSerial()
@@ -124,7 +137,6 @@ func (d *JumpstarterDevice) readConfig() error {
 	if d.name == "" {
 		d.name = "jp-" + d.serialNumber
 	}
-
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/locking"
 	"go.bug.st/serial"
 )
 
@@ -29,6 +30,7 @@ func (d *JumpstarterDevice) closeSerial() error {
 	defer d.mutex.Unlock()
 	if d.serialPort != nil {
 		err := d.serialPort.Close()
+		d.fileLock.Unlock()
 		d.serialPort = nil
 		return err
 	}
@@ -48,10 +50,14 @@ func (d *JumpstarterDevice) openSerial() error {
 		d.serialPort.Close()
 
 	}
-
+	lock, err := locking.TryLock(d.devicePath)
+	d.fileLock = lock
+	if err != nil {
+		return fmt.Errorf("openSerial: locking %q %w", d.devicePath, err)
+	}
 	port, err := serial.Open(d.devicePath, mode)
 	if err != nil {
-		return fmt.Errorf("openSerial: %w", err)
+		return fmt.Errorf("openSerial: opening %q %w", d.devicePath, err)
 	}
 
 	d.serialPort = port

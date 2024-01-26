@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"errors"
 	"io"
 	"time"
 )
@@ -33,10 +32,3 @@ type Device interface {
 	Lock() error   // open/lock the device so other instances cannot use it
 	Unlock() error // close the locked device so other instances can use it
 }
-
-// basic errors
-var ErrCannotOpenDevice = errors.New("unable to open device tty")
-var ErrNotImplemented = errors.New("not implemented")
-var ErrCannotSetBaudRate = errors.New("unable to set baud rate")
-var ErrCannotSetDiskImage = errors.New("unable to set disk image")
-var ErrDeviceNotResponding = errors.New("device not responding")

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/locking"
 	"go.bug.st/serial"
 )
 
@@ -16,6 +17,7 @@ type JumpstarterDevice struct {
 	version        string
 	serialNumber   string
 	serialPort     serial.Port
+	fileLock       locking.Lock
 	mutex          *sync.Mutex
 	singletonMutex *sync.Mutex
 	name           string
