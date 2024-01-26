@@ -1,6 +1,9 @@
 
+VERSION := $(shell git describe --tags --always)
+LDFLAGS := -ldflags="-X 'github.com/jumpstarter-dev/jumpstarter/cmd.VERSION=${VERSION}'"
+
 jumpstarter: main.go pkg/drivers/dutlink-board/*.go pkg/runner/* pkg/harness/*.go cmd/*.go pkg/tools/*.go
-	go build
+	go build ${LDFLAGS}
 
 containers:
 	podman build ./containers/ -f Containerfile -t quay.io/mangelajo/jumpstarter:latest
