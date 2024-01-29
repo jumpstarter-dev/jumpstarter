@@ -65,6 +65,8 @@ name: "Name of your script"
 selector:
   - tag
 
+timeout: 1800
+
 expect-timeout: 60
 
 steps:
@@ -75,12 +77,13 @@ cleanup:
 
 ```
 
-A script has a name, a selector, and a expect-timeout as main fields:
+A script has a name, a selector, and a timeout and a expect-timeout as main fields:
 
 | Field             | Description |
 | -----------       | ----------- |
 | name              | Just a descriptive name for the script       |
 | selector          | A list of tags to find a compatible board from those available on the host        |
+| timeout           | This is the selection timeout, when waiting for a valid device based on the selector tags to become available |
 | expect-timeout    | This is the default timeout for expect steps        |
 
 ## Script step commands

@@ -27,8 +27,9 @@ func GetDrivers() []HarnessDriver {
 // FindDevices iterates over the available drivers and gets a list of devices.
 // If a driver is specified, only devices for that driver are returned.
 
-func FindDevices(driverName string, tags []string) ([]Device, error) {
+func FindDevices(driverName string, tags []string) ([]Device, int, error) {
 	var devices []Device
+	busyCount := 0
 	for _, driver := range drivers {
 		if driverName != "" && driverName != driver.Name() {
 			continue // skip this driver
@@ -36,9 +37,12 @@ func FindDevices(driverName string, tags []string) ([]Device, error) {
 
 		d, err := driver.FindDevices()
 		if err != nil {
-			return nil, fmt.Errorf("(%q).FindDevices: %w", driver.Name(), err)
+			return nil, 0, fmt.Errorf("(%q).FindDevices: %w", driver.Name(), err)
 		}
 		for _, device := range d {
+			if busy, _ := device.IsBusy(); busy {
+				busyCount++
+			}
 			if len(tags) != 0 {
 				deviceTags := device.Tags()
 				if contains_tags(deviceTags, tags) {
@@ -50,7 +54,7 @@ func FindDevices(driverName string, tags []string) ([]Device, error) {
 		}
 
 	}
-	return devices, nil
+	return devices, busyCount, nil
 }
 
 func contains_tags(slice []string, tags []string) bool {
@@ -75,7 +79,7 @@ func contains_tag(slice []string, str string) bool {
 // FindDevice iterates over the available drivers and return a specific Device.
 // If a driver is specified, only devices for that driver are returned.
 func FindDevice(driverName string, deviceId string) (Device, error) {
-	devices, err := FindDevices(driverName, []string{})
+	devices, _, err := FindDevices(driverName, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("FindDevices: %w", err)
 	}
