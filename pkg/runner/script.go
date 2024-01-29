@@ -12,6 +12,7 @@ import (
 type JumpstarterScript struct {
 	Name          string            `yaml:"name"`
 	Selector      []string          `yaml:"selector"`
+	Timeout       uint              `default:"1800" yaml:"timeout"`
 	Drivers       []string          `yaml:"drivers"`
 	ExpectTimeout uint              `default:"120" yaml:"expect-timeout"`
 	Steps         []JumpstarterStep `yaml:"steps"`

@@ -22,7 +22,7 @@ var listDevicesCmd = &cobra.Command{
 		tags, err := cmd.Flags().GetStringArray("tag")
 		handleErrorAsFatal(err)
 
-		devices, err := harness.FindDevices(driver, tags)
+		devices, _, err := harness.FindDevices(driver, tags)
 		handleErrorAsFatal(err)
 		if cmd.Flag("only-names").Value.String() == "true" {
 			printDeviceNames(devices)

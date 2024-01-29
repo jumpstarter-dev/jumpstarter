@@ -1,9 +1,11 @@
 package runner
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
@@ -23,12 +25,37 @@ func RunScript(device_id, driver, yaml_file string, disableCleanup bool) error {
 
 	var device harness.Device
 
-	// TODO implement retry/wait
-	//      sometimes devices are busy or can happen fail due to a race condition
-	device, err := script.getDevice(device_id, driver)
-	if err != nil {
-		return fmt.Errorf("RunScript: %w", err)
+	// get current time so we can check for timeout later on the loop
+	startTime := time.Now()
+
+	firstAttempt := true
+	for device == nil && time.Since(startTime) < time.Duration(script.Timeout)*time.Second {
+		var err error
+		device, err = script.getDevice(device_id, driver)
+		switch {
+		case errors.Is(err, ErrAllDevicesBusy):
+			if firstAttempt {
+				fmt.Print("⌛ Waiting for available devices: ")
+				firstAttempt = false
+			}
+			fmt.Print("·")
+			time.Sleep(15 * time.Second)
+
+		case err != nil:
+			return fmt.Errorf("RunScript: %w", err)
+		}
 	}
+
+	if device == nil {
+		fmt.Println("❌")
+		return ErrAllDevicesBusyTimeout
+	}
+
+	// if we wrote the line "Waiting for available devices" before, we need to confirm what happened
+	if !firstAttempt {
+		fmt.Println(" a device became available ✅")
+	}
+
 	color.Set(color.FgHiYellow)
 	fmt.Printf("⚙ Using device %q with tags %v\n", device.Name(), device.Tags())
 	color.Unset()
@@ -93,20 +120,24 @@ func (p *JumpstarterScript) getDevice(device_id string, driver string) (harness.
 		return device, nil
 	} else {
 
-		devices, err := harness.FindDevices(driver, p.Selector)
+		devices, busyCount, err := harness.FindDevices(driver, p.Selector)
 		if err != nil {
 			return nil, fmt.Errorf("getDevice: %w", err)
 		}
 
 		nonBusy := filterOutBusy(devices)
 
-		if len(devices) == 0 {
-			return nil, fmt.Errorf("getDevice: no devices found")
+		if len(devices) == 0 && busyCount == 0 {
+			return nil, ErrNoDevices
+		}
+
+		if len(devices) == 0 && busyCount > 0 {
+			// TODO: the dutlink driver cannot really read tags while busy yet
+			return nil, ErrAllDevicesBusy
 		}
 
 		if len(nonBusy) == 0 {
-
-			return nil, fmt.Errorf("getDevice: all devices are busy")
+			return nil, ErrAllDevicesBusy
 		}
 
 		device := nonBusy[rand.Intn(len(nonBusy))]
