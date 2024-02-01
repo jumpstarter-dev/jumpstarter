@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fatih/color"
+	"github.com/jedib0t/go-pretty/table"
+	"github.com/jedib0t/go-pretty/text"
 	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 	"github.com/spf13/cobra"
 )
@@ -41,9 +42,10 @@ func init() {
 }
 
 func printDeviceTable(devices []harness.Device) {
-	color.Set(color.FgGreen)
-	fmt.Println("Device Name\tSerial Number\tDriver\t\t\tVersion\tDevice\t\tTags")
-	color.Unset()
+	t := table.NewWriter()
+
+	t.AppendHeader(table.Row{"Device Name", "Serial Number", "Driver", "Version", "Device", "Tags"})
+
 	for _, device := range devices {
 		deviceName := device.Name()
 		deviceSerial, err := device.Serial()
@@ -55,9 +57,43 @@ func printDeviceTable(devices []harness.Device) {
 		tags := device.Tags()
 		str_tags := strings.Join(tags, ", ")
 
-		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\n",
-			deviceName, deviceSerial, device.Driver().Name(), deviceVersion, dev, str_tags)
+		t.AppendRow([]interface{}{deviceName, deviceSerial, device.Driver().Name(), deviceVersion, dev, str_tags})
 	}
+
+	t.SetStyle(table.Style{
+		Name: "myNewStyle",
+		Box: table.BoxStyle{
+			BottomLeft:       "+",
+			BottomRight:      "+",
+			BottomSeparator:  "+",
+			Left:             "|",
+			LeftSeparator:    "+",
+			MiddleHorizontal: "-",
+			MiddleSeparator:  "+",
+			MiddleVertical:   "|",
+			PaddingLeft:      " ",
+			PaddingRight:     " ",
+			Right:            "|",
+			RightSeparator:   "+",
+			TopLeft:          "+",
+			TopRight:         "+",
+			TopSeparator:     "+",
+			UnfinishedRow:    " ~",
+		},
+		Color: table.ColorOptions{
+			Header:      text.Colors{text.FgGreen},
+			IndexColumn: text.Colors{text.FgGreen},
+		},
+		// Options: table.Options{
+		// 	DrawBorder:      true,
+		// 	SeparateColumns: true,
+		// 	SeparateFooter:  true,
+		// 	SeparateHeader:  true,
+		// 	SeparateRows:    true,
+		// },
+	})
+
+	fmt.Println(t.Render())
 }
 
 func printDeviceNames(devices []harness.Device) {
