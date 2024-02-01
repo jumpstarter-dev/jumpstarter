@@ -2,12 +2,9 @@ package dutlink_board
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
-	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/jumpstarter-dev/jumpstarter/pkg/console"
 	"github.com/jumpstarter-dev/jumpstarter/pkg/harness"
 	"github.com/jumpstarter-dev/jumpstarter/pkg/locking"
 	"go.bug.st/serial"
@@ -200,87 +197,12 @@ func (d *JumpstarterDevice) outOfBandConsole() (harness.ConsoleInterface, error)
 		return d.oobSerialPort, nil
 	}
 
-	start := time.Now()
-	max_wait_time := 15 * time.Second
-
-	fmt.Fprintln(os.Stderr, "Looking up for out-of-band console: ", d.usb_console)
-
-	for {
-		devices, err := scanForSerialDevices(d.usb_console)
-		if err != nil {
-			return nil, fmt.Errorf("outOfBandConsole: %w", err)
-		}
-		if devices.Cardinality() > 1 {
-			return nil, fmt.Errorf("outOfBandConsole: more than one device found: %v", devices)
-		}
-		if devices.Cardinality() == 1 {
-			dev, _ := devices.Pop()
-			mode := &serial.Mode{
-				BaudRate: 115200,
-			}
-			if d.oobSerialPort != nil {
-				d.oobSerialPort.Close()
-			}
-			var port serial.Port
-			var err error
-
-			// sometimes the device shows up and it is not ready yet, so we need to retry
-			retries := 5
-			for retries > 0 {
-				port, err = serial.Open(dev, mode)
-				if err == nil {
-					break
-				}
-				retries -= 1
-				time.Sleep(1 * time.Second)
-			}
-
-			if err != nil {
-				return nil, fmt.Errorf("outOfBandConsole: openSerial: %w", err)
-			}
-			d.oobSerialPort = port
-			return d.oobSerialPort, nil
-		}
-
-		if time.Since(start) > max_wait_time {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
+	if serial_console, err := console.FindUSBSerial(d.usb_console); err != nil {
+		return nil, fmt.Errorf("outOfBandConsole: %w", err)
+	} else {
+		d.oobSerialPort = serial_console
+		return d.oobSerialPort, nil
 	}
-	return nil, fmt.Errorf("outOfBandConsole: timeout waiting for serial device containing %s, "+
-		"please note that out-of-band consoles usually require the device to be powered on", d.usb_console)
-}
-
-const BASE_SERIALSBYID = "/dev/serial/by-id/"
-
-func scanForSerialDevices(substring string) (mapset.Set[string], error) {
-
-	interfaceSet := mapset.NewSet[string]()
-
-	err := filepath.Walk(BASE_SERIALSBYID, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() && info.Name() == "devices" {
-			return nil
-		}
-
-		if info.Mode()&os.ModeSymlink != 0 {
-			baseName := filepath.Base(path)
-
-			if strings.Contains(baseName, substring) {
-				interfaceSet.Add(path)
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("scanForSerialDevices: %w", err)
-	}
-
-	return interfaceSet, nil
 }
 
 type JumpstarterConsoleWrapper struct {
