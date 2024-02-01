@@ -1,0 +1,9 @@
+
+serial: device1 # as configured from sd-mux-ctrl -v 0 --set-serial device1
+tags:
+  - rpi4
+usb_console: FTFWYL4G-if00 # /dev/serial/by-id/usb-FTDI_USB__-__Serial_Cable_FTFWYL4G-if00-port0
+smartplug:
+  generic: # generic commands for a shelly plug
+    on_command: curl --digest -u admin:jumpstarter "http://192.168.1.208/relay/0?turn=on"
+    off_command: curl --digest -u admin:jumpstarter "http://192.168.1.208/relay/0?turn=off"
