@@ -131,7 +131,16 @@ func (d *JumpstarterDevice) detectStorageDevice() (string, error) {
 	}
 	time.Sleep(WAIT_TIME_USB_STORAGE_OFF)
 
-	diskSetOff, err := scanForStorageDevices("usb-")
+	// by default filter only for usb based devices, but once
+        // a storage filter has been configured we can ignore this filter,
+        // i.e. this is necessary for usb devices that enumerate as ata-
+        // or something else.
+        prefixFilter := "usb-"
+
+	if d.storage_filter != "" {
+            prefixFilter = ""
+        }
+	diskSetOff, err := scanForStorageDevices(prefixFilter)
 	if err != nil {
 		return "", fmt.Errorf("detectStorageDevice: %w", err)
 	}
