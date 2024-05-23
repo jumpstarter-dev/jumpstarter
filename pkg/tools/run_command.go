@@ -23,7 +23,7 @@ func RunCommand(console harness.ConsoleInterface, cmd string, wait int) (string,
 		}
 	}
 
-	if _, err := console.Write([]byte(cmd + "\n")); err != nil {
+	if _, err := console.Write([]byte(cmd + "\r\n")); err != nil {
 		return "", fmt.Errorf("runCommand %s, sending command: %w", cmd, err)
 	}
 
