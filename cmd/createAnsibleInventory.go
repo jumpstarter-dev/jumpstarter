@@ -27,7 +27,8 @@ var createAnsibleInventory = &cobra.Command{
 
 		device, err := harness.FindDevice(driver, args[0])
 		handleErrorAsFatal(err)
-		tools.CreateAnsibleInventory(device, os.Stdout, user, sshKey)
+		err = tools.CreateAnsibleInventory(device, os.Stdout, user, sshKey)
+		handleErrorAsFatal(err)
 	},
 }
 
