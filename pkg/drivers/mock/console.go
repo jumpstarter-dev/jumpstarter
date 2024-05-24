@@ -1,9 +1,9 @@
 package mock
 
 import (
-	"context"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"golang.org/x/term"
@@ -11,33 +11,8 @@ import (
 
 type MockConsole struct {
 	timeout time.Duration
-	stdin   io.WriteCloser
+	stdin   net.Conn
 	stdout  io.ReadCloser
-}
-
-type ContextReader struct {
-	ctx context.Context
-	r   io.Reader
-}
-
-func (r *ContextReader) Read(p []byte) (n int, err error) {
-	type result struct {
-		n   int
-		err error
-	}
-	ch := make(chan result, 1)
-
-	go func() {
-		n, err := r.r.Read(p)
-		ch <- result{n, err}
-	}()
-
-	select {
-	case <-r.ctx.Done():
-		return 0, nil
-	case res := <-ch:
-		return res.n, res.err
-	}
 }
 
 type ReadWriter struct {
@@ -46,7 +21,7 @@ type ReadWriter struct {
 }
 
 func newMockConsole() (*MockConsole, error) {
-	ir, iw := io.Pipe()
+	ir, iw := net.Pipe()
 	or, ow := io.Pipe()
 
 	terminal := term.NewTerminal(ReadWriter{Reader: ir, Writer: ow}, "[mock@jumpstarter:~]$ ")
@@ -74,10 +49,8 @@ func newMockConsole() (*MockConsole, error) {
 }
 
 func (c *MockConsole) Read(p []byte) (n int, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
-	reader := ContextReader{ctx: ctx, r: c.stdout}
-	return reader.Read(p)
+	c.stdin.SetReadDeadline(time.Now().Add(c.timeout))
+	return c.stdout.Read(p)
 }
 
 func (c *MockConsole) Write(p []byte) (int, error) {
