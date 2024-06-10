@@ -1,0 +1,47 @@
+# .github/workflows/test.yaml
+
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoketest-matrix:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux]
+        goarch: [amd64, arm64]
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-go@v5
+    - uses: docker/setup-qemu-action@v3
+    - name: Build Test Binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        make TAGS=mock
+    - name: Test Mock Driver
+      run: |
+        set -euxo pipefail
+
+        ./jumpstarter list-drivers
+        ./jumpstarter list-devices
+
+        ./jumpstarter power-off      mock
+        ./jumpstarter power-on       mock
+        ./jumpstarter reset          mock
+        ./jumpstarter attach-storage mock
+        ./jumpstarter detach-storage mock
+
+        ./jumpstarter set-name   mock mock-renamed
+        ./jumpstarter set-tags   mock-renamed tag0 tag1
+        ./jumpstarter set-config mock-renamed cfg0 val0
+        ./jumpstarter get-config mock-renamed
+
+        ./jumpstarter list-devices
+
+        ./jumpstarter create-ansible-inventory mock-renamed
