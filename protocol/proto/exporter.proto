@@ -1,0 +1,137 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+
+package jumpstarter.exporter;
+
+service Exporter {
+    // Exporter registration
+    rpc Register(ExporterReport) returns (google.protobuf.Empty);
+
+    // Server <-> Exporter command streams
+    rpc WaitCommands(stream ClientResponse) returns (stream ServerRequest);
+    // Exporter disconnection
+    rpc Bye(ExporterBye) returns (google.protobuf.Empty);
+
+    // Messages for streaming drivers (audio/video/serial/other)
+    rpc DataStream(stream ClientData) returns (stream ServerData);
+}
+
+// ExporterReport
+message ExporterReport {
+    string uuid=1;
+    string hostname=2;
+    string name=3;
+    map<string, string> labels=4;
+    repeated DriverReport driver_report=5;
+}
+
+message DriverReport {
+    string device_id=1;        // a unique id within the expoter
+    optional string parent_device_id=2; // optional, if device has a parent device
+    string driver_name=3;
+    string driver_interface=4; // The driver interface class
+}
+
+
+// Server to Exporter requests ///////////////////////////////////////////////
+message ServerRequest{
+    oneof request_oneof {
+        Ping ping=1;
+        DriverCall driver_call=2;
+        
+        // Server requests to transfer a file to be transfered to exporter
+        FileTransferStart file_transfer_start=3;
+        FileTransferChunk file_transfer_chunk=4;
+        FileTransferEnd file_transfer_end=5;
+    }
+}
+
+// Server to exporter ping request
+message Ping {
+    string data=1;
+    uint64 seq=2;
+}
+
+// Server to client call into a driver
+message DriverCall {
+    string device_id=1;
+    string driver_method=2;
+    repeated string argument_json=3;
+}
+
+
+message FileTransferStart { //TODO: figure out how to identify/avoid local-local transfers
+    string transfer_id=1;
+    optional device_id=2; // the destination of this transfer is a storage device
+    string filename=3;  
+    uint64 length=4;
+
+}
+
+message FileTransferChunk {
+    string transfer_id=1;
+    uint64 chunk=2;
+    uint64 offset=3;
+    bytes data=4;
+}
+
+message FileTransferEnd {
+    string transfer_id=1;
+    string sha256=2;
+}
+
+
+// Exporter to Server responses or messages ///////////////////////////////////
+message ClientResponse {
+    oneof response_oneof {
+        Pong pong=1;
+        ExporterReport exporter_report=2;
+        DriverResponse driver_response=3;
+        FileTransferAck file_transfer_ack=4;
+        FileTransferNak file_transfer_nak=5;
+    }
+}
+
+message Pong {
+    string data=1;
+    uint64 seq=2;
+}
+
+message DriverResponse {
+    string json_result = 1;
+}
+
+message FileTransferAck {
+    string transfer_id=1;
+    uint64 total_bytes=2;
+    optional string sha256=3;
+}
+
+message FileTransferNak {
+    string transfer_id=1;
+    uint64 continue_from_offset=2;
+}
+
+// Data streaming from/to drivers ////////////////////////////////////////////
+
+// data streaming from Exporter -> Server
+// the seq number must be incremental
+// data is opaque and driver dependent (could be audio/video/characters/...)
+message ClientData {
+    string device_id=1;
+    uint64 seq=2;
+    bytes data=3;
+}
+
+// data streaming from Server -> Exporter
+// the seq number must be incremental
+// data is opaque and driver dependent (could be audio/video/characters/...)
+message ServerData {
+    string device_id=1;
+    uint64 seq=2;
+    bytes data=3;
+}
