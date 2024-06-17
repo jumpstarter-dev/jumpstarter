@@ -4,6 +4,7 @@
 syntax = "proto3";
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
 
 package jumpstarter;
 
@@ -13,7 +14,7 @@ service ForExporter {
     rpc Register(ExporterReport) returns (google.protobuf.Empty);
 
     // Server <-> Exporter command streams
-    rpc CommandStream(stream ClientResponse) returns (stream ServerCommand);
+    rpc ControlStream(stream ClientResponse) returns (stream ServerCommand);
     // Exporter disconnection
     rpc Bye(ExporterBye) returns (google.protobuf.Empty);
 
@@ -32,13 +33,10 @@ service ForClient {
     rpc GetReport(google.protobuf.Empty) returns (ExporterReport);
 
     // Server <-> Exporter command streams
-    rpc CommandStream(stream ServerCommand) returns (stream ClientResponse);
+    rpc ControlStream(stream ServerCommand) returns (stream ClientResponse);
 
     // Messages for streaming drivers (audio/video/serial/other)
     rpc DataStream(stream DataChunk) returns (stream DataChunk);
-
-    // Events from/to drivers
-    rpc EventStream(stream Event) returns (stream Event);
 }
 
 
@@ -48,10 +46,12 @@ message ServerCommand{
     oneof request_oneof {
         Ping ping=1;
         DriverCall driver_call=2;
+        Event event=3;
     }
 }
 
 // Server to exporter ping request
+// NOTE: we can probably remove ping and rely on gRPC session keepalives
 message Ping {
     string data=1;
     uint64 seq=2;
@@ -60,8 +60,9 @@ message Ping {
 // Server to client call into a driver
 message DriverCall {
     string device_id=1;
-    string driver_method=2;
-    repeated string argument_json=3;
+    string call_uuid=2;
+    string driver_method=3;
+    repeated google.protobuf.Value args=4;
 }
 
 // Exporter to Server messages ///////////////////////////////////////////////
@@ -77,13 +78,13 @@ message ExporterReport {
     string hostname=2;
     string name=3;
     map<string, string> labels=4;
-    repeated DriverReport driver_report=5;
+    repeated DeviceReport device_report=5;
 }
 
-message DriverReport {
+message DeviceReport {
     string device_id=1;        // a unique id within the expoter
     optional string parent_device_id=2; // optional, if device has a parent device
-    string driver_name=3;
+    string device_name=3;
     string driver_interface=4; // The driver interface class
 }
 
@@ -93,6 +94,8 @@ message ClientResponse {
         Pong pong=1;
         ExporterReport exporter_report=2;
         DriverResponse driver_response=3;
+        Event event=4;
+        Log log=5;
     }
 }
 
@@ -102,7 +105,8 @@ message Pong {
 }
 
 message DriverResponse {
-    string json_result = 1;
+    string call_uuid = 1;
+    string json_result = 2;
 }
 
 
@@ -113,6 +117,13 @@ message Event {
     optional string handle=2;
     string type=3;
     string data=4;
+}
+
+message Log {
+    string device_id=1;
+    optional string handle=2;
+    string level=3;
+    string message=4;
 }
 
 

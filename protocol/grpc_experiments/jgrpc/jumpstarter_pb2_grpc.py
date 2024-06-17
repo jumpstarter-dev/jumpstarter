@@ -46,8 +46,8 @@ class ForExporterStub(object):
                 request_serializer=jumpstarter__pb2.ExporterReport.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
-        self.CommandStream = channel.stream_stream(
-                '/jumpstarter.ForExporter/CommandStream',
+        self.ControlStream = channel.stream_stream(
+                '/jumpstarter.ForExporter/ControlStream',
                 request_serializer=jumpstarter__pb2.ClientResponse.SerializeToString,
                 response_deserializer=jumpstarter__pb2.ServerCommand.FromString,
                 _registered_method=True)
@@ -79,7 +79,7 @@ class ForExporterServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CommandStream(self, request_iterator, context):
+    def ControlStream(self, request_iterator, context):
         """Server <-> Exporter command streams
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -115,8 +115,8 @@ def add_ForExporterServicer_to_server(servicer, server):
                     request_deserializer=jumpstarter__pb2.ExporterReport.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
-            'CommandStream': grpc.stream_stream_rpc_method_handler(
-                    servicer.CommandStream,
+            'ControlStream': grpc.stream_stream_rpc_method_handler(
+                    servicer.ControlStream,
                     request_deserializer=jumpstarter__pb2.ClientResponse.FromString,
                     response_serializer=jumpstarter__pb2.ServerCommand.SerializeToString,
             ),
@@ -175,7 +175,7 @@ class ForExporter(object):
             _registered_method=True)
 
     @staticmethod
-    def CommandStream(request_iterator,
+    def ControlStream(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -188,7 +188,7 @@ class ForExporter(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/jumpstarter.ForExporter/CommandStream',
+            '/jumpstarter.ForExporter/ControlStream',
             jumpstarter__pb2.ClientResponse.SerializeToString,
             jumpstarter__pb2.ServerCommand.FromString,
             options,
@@ -299,8 +299,8 @@ class ForClientStub(object):
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=jumpstarter__pb2.ExporterReport.FromString,
                 _registered_method=True)
-        self.CommandStream = channel.stream_stream(
-                '/jumpstarter.ForClient/CommandStream',
+        self.ControlStream = channel.stream_stream(
+                '/jumpstarter.ForClient/ControlStream',
                 request_serializer=jumpstarter__pb2.ServerCommand.SerializeToString,
                 response_deserializer=jumpstarter__pb2.ClientResponse.FromString,
                 _registered_method=True)
@@ -308,11 +308,6 @@ class ForClientStub(object):
                 '/jumpstarter.ForClient/DataStream',
                 request_serializer=jumpstarter__pb2.DataChunk.SerializeToString,
                 response_deserializer=jumpstarter__pb2.DataChunk.FromString,
-                _registered_method=True)
-        self.EventStream = channel.stream_stream(
-                '/jumpstarter.ForClient/EventStream',
-                request_serializer=jumpstarter__pb2.Event.SerializeToString,
-                response_deserializer=jumpstarter__pb2.Event.FromString,
                 _registered_method=True)
 
 
@@ -328,7 +323,7 @@ class ForClientServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CommandStream(self, request_iterator, context):
+    def ControlStream(self, request_iterator, context):
         """Server <-> Exporter command streams
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -342,13 +337,6 @@ class ForClientServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def EventStream(self, request_iterator, context):
-        """Events from/to drivers
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
 
 def add_ForClientServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -357,8 +345,8 @@ def add_ForClientServicer_to_server(servicer, server):
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=jumpstarter__pb2.ExporterReport.SerializeToString,
             ),
-            'CommandStream': grpc.stream_stream_rpc_method_handler(
-                    servicer.CommandStream,
+            'ControlStream': grpc.stream_stream_rpc_method_handler(
+                    servicer.ControlStream,
                     request_deserializer=jumpstarter__pb2.ServerCommand.FromString,
                     response_serializer=jumpstarter__pb2.ClientResponse.SerializeToString,
             ),
@@ -366,11 +354,6 @@ def add_ForClientServicer_to_server(servicer, server):
                     servicer.DataStream,
                     request_deserializer=jumpstarter__pb2.DataChunk.FromString,
                     response_serializer=jumpstarter__pb2.DataChunk.SerializeToString,
-            ),
-            'EventStream': grpc.stream_stream_rpc_method_handler(
-                    servicer.EventStream,
-                    request_deserializer=jumpstarter__pb2.Event.FromString,
-                    response_serializer=jumpstarter__pb2.Event.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -413,7 +396,7 @@ class ForClient(object):
             _registered_method=True)
 
     @staticmethod
-    def CommandStream(request_iterator,
+    def ControlStream(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -426,7 +409,7 @@ class ForClient(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/jumpstarter.ForClient/CommandStream',
+            '/jumpstarter.ForClient/ControlStream',
             jumpstarter__pb2.ServerCommand.SerializeToString,
             jumpstarter__pb2.ClientResponse.FromString,
             options,
@@ -456,33 +439,6 @@ class ForClient(object):
             '/jumpstarter.ForClient/DataStream',
             jumpstarter__pb2.DataChunk.SerializeToString,
             jumpstarter__pb2.DataChunk.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def EventStream(request_iterator,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.stream_stream(
-            request_iterator,
-            target,
-            '/jumpstarter.ForClient/EventStream',
-            jumpstarter__pb2.Event.SerializeToString,
-            jumpstarter__pb2.Event.FromString,
             options,
             channel_credentials,
             insecure,
