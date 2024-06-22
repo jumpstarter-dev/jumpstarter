@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "jumpstarter"
+version = "0.1.0"
+description = ""
+authors = ["Miguel Angel Ajo Pelayo <majopela@redhat.com>",
+           "Nick Cao <ncao@redhat.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pytest = "^8.2.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
