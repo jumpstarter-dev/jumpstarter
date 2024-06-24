@@ -6,7 +6,13 @@ from jumpstarter.v1 import rendezvous_pb2 as jumpstarter_dot_v1_dot_rendezvous__
 
 
 class RendezvousServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """RendezvousService
+    Claims:
+    iss: jumpstarter controller
+    aud: jumpstarter router
+    sub: jumpstarter client/exporter
+    allowlist: jumpstarter exporters
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -27,21 +33,26 @@ class RendezvousServiceStub(object):
 
 
 class RendezvousServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """RendezvousService
+    Claims:
+    iss: jumpstarter controller
+    aud: jumpstarter router
+    sub: jumpstarter client/exporter
+    allowlist: jumpstarter exporters
+    """
 
     def Listen(self, request, context):
         """Listen announces the availability of the caller
-        and returns JWTs for accepting incoming streams
-        Authentication: "sub" claim is used as listen address
+        and returns tokens for accepting incoming streams.
+        Listen address is implied from the sub claim.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Dial(self, request, context):
-        """Dial returns a new stream token for connecting
-        to the corresponding caller of Listen
-        Authentication: "aud" claim is used as target address
+        """Dial returns a stream token for connecting to the given address.
+        The allowlist claim is checked for permission.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -69,7 +80,13 @@ def add_RendezvousServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class RendezvousService(object):
-    """Missing associated documentation comment in .proto file."""
+    """RendezvousService
+    Claims:
+    iss: jumpstarter controller
+    aud: jumpstarter router
+    sub: jumpstarter client/exporter
+    allowlist: jumpstarter exporters
+    """
 
     @staticmethod
     def Listen(request,
@@ -127,7 +144,13 @@ class RendezvousService(object):
 
 
 class StreamServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """StreamService
+    Claims:
+    iss: jumpstarter router
+    aud: jumpstarter router
+    sub: jumpstarter client/exporter
+    stream: stream id
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -143,11 +166,16 @@ class StreamServiceStub(object):
 
 
 class StreamServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """StreamService
+    Claims:
+    iss: jumpstarter router
+    aud: jumpstarter router
+    sub: jumpstarter client/exporter
+    stream: stream id
+    """
 
     def Stream(self, request_iterator, context):
         """Stream connects caller to another caller of the same stream
-        Authentication: "aud" claim is used as unique stream id
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -170,7 +198,13 @@ def add_StreamServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class StreamService(object):
-    """Missing associated documentation comment in .proto file."""
+    """StreamService
+    Claims:
+    iss: jumpstarter router
+    aud: jumpstarter router
+    sub: jumpstarter client/exporter
+    stream: stream id
+    """
 
     @staticmethod
     def Stream(request_iterator,

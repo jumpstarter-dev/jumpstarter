@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjumpstarter/v1/rendezvous.proto\x12\x0ejumpstarter.v1\"\x0f\n\rListenRequest\"&\n\x0eListenResponse\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token\"\r\n\x0b\x44ialRequest\"$\n\x0c\x44ialResponse\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token\")\n\rStreamRequest\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\"*\n\x0eStreamResponse\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload2\xa1\x01\n\x11RendezvousService\x12I\n\x06Listen\x12\x1d.jumpstarter.v1.ListenRequest\x1a\x1e.jumpstarter.v1.ListenResponse0\x01\x12\x41\n\x04\x44ial\x12\x1b.jumpstarter.v1.DialRequest\x1a\x1c.jumpstarter.v1.DialResponse2\\\n\rStreamService\x12K\n\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x01\x30\x01\x42\xcc\x01\n\x12\x63om.jumpstarter.v1B\x0fRendezvousProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1fjumpstarter/v1/rendezvous.proto\x12\x0ejumpstarter.v1\"\x0f\n\rListenRequest\"&\n\x0eListenResponse\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token\"\x1f\n\x0b\x44ialRequest\x12\x10\n\x03sub\x18\x01 \x01(\tR\x03sub\"$\n\x0c\x44ialResponse\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token\")\n\rStreamRequest\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\"*\n\x0eStreamResponse\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload2\xa1\x01\n\x11RendezvousService\x12I\n\x06Listen\x12\x1d.jumpstarter.v1.ListenRequest\x1a\x1e.jumpstarter.v1.ListenResponse0\x01\x12\x41\n\x04\x44ial\x12\x1b.jumpstarter.v1.DialRequest\x1a\x1c.jumpstarter.v1.DialResponse2\\\n\rStreamService\x12K\n\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x01\x30\x01\x42\xcc\x01\n\x12\x63om.jumpstarter.v1B\x0fRendezvousProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -37,15 +37,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LISTENRESPONSE']._serialized_start=68
   _globals['_LISTENRESPONSE']._serialized_end=106
   _globals['_DIALREQUEST']._serialized_start=108
-  _globals['_DIALREQUEST']._serialized_end=121
-  _globals['_DIALRESPONSE']._serialized_start=123
-  _globals['_DIALRESPONSE']._serialized_end=159
-  _globals['_STREAMREQUEST']._serialized_start=161
-  _globals['_STREAMREQUEST']._serialized_end=202
-  _globals['_STREAMRESPONSE']._serialized_start=204
-  _globals['_STREAMRESPONSE']._serialized_end=246
-  _globals['_RENDEZVOUSSERVICE']._serialized_start=249
-  _globals['_RENDEZVOUSSERVICE']._serialized_end=410
-  _globals['_STREAMSERVICE']._serialized_start=412
-  _globals['_STREAMSERVICE']._serialized_end=504
+  _globals['_DIALREQUEST']._serialized_end=139
+  _globals['_DIALRESPONSE']._serialized_start=141
+  _globals['_DIALRESPONSE']._serialized_end=177
+  _globals['_STREAMREQUEST']._serialized_start=179
+  _globals['_STREAMREQUEST']._serialized_end=220
+  _globals['_STREAMRESPONSE']._serialized_start=222
+  _globals['_STREAMRESPONSE']._serialized_end=264
+  _globals['_RENDEZVOUSSERVICE']._serialized_start=267
+  _globals['_RENDEZVOUSSERVICE']._serialized_end=428
+  _globals['_STREAMSERVICE']._serialized_start=430
+  _globals['_STREAMSERVICE']._serialized_end=522
 # @@protoc_insertion_point(module_scope)

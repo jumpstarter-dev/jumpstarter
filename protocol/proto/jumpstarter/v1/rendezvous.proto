@@ -4,14 +4,19 @@ syntax = "proto3";
 
 package jumpstarter.v1;
 
+// RendezvousService
+// Claims:
+// iss: jumpstarter controller
+// aud: jumpstarter router
+// sub: jumpstarter client/exporter
+// allowlist: jumpstarter exporters
 service RendezvousService {
   // Listen announces the availability of the caller
-  // and returns JWTs for accepting incoming streams
-  // Authentication: "sub" claim is used as listen address
+  // and returns tokens for accepting incoming streams.
+  // Listen address is implied from the sub claim.
   rpc Listen(ListenRequest) returns (stream ListenResponse);
-  // Dial returns a new stream token for connecting
-  // to the corresponding caller of Listen
-  // Authentication: "aud" claim is used as target address
+  // Dial returns a stream token for connecting to the given address.
+  // The allowlist claim is checked for permission.
   rpc Dial(DialRequest) returns (DialResponse);
 }
 
@@ -21,15 +26,22 @@ message ListenResponse {
   string token = 1;
 }
 
-message DialRequest {}
+message DialRequest {
+  string sub = 1;
+}
 
 message DialResponse {
   string token = 1;
 }
 
+// StreamService
+// Claims:
+// iss: jumpstarter router
+// aud: jumpstarter router
+// sub: jumpstarter client/exporter
+// stream: stream id
 service StreamService {
   // Stream connects caller to another caller of the same stream
-  // Authentication: "aud" claim is used as unique stream id
   rpc Stream(stream StreamRequest) returns (stream StreamResponse);
 }
 

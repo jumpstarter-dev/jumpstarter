@@ -28,14 +28,20 @@ const (
 // RendezvousServiceClient is the client API for RendezvousService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// RendezvousService
+// Claims:
+// iss: jumpstarter controller
+// aud: jumpstarter router
+// sub: jumpstarter client/exporter
+// allowlist: jumpstarter exporters
 type RendezvousServiceClient interface {
 	// Listen announces the availability of the caller
-	// and returns JWTs for accepting incoming streams
-	// Authentication: "sub" claim is used as listen address
+	// and returns tokens for accepting incoming streams.
+	// Listen address is implied from the sub claim.
 	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (RendezvousService_ListenClient, error)
-	// Dial returns a new stream token for connecting
-	// to the corresponding caller of Listen
-	// Authentication: "aud" claim is used as target address
+	// Dial returns a stream token for connecting to the given address.
+	// The allowlist claim is checked for permission.
 	Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error)
 }
 
@@ -93,14 +99,20 @@ func (c *rendezvousServiceClient) Dial(ctx context.Context, in *DialRequest, opt
 // RendezvousServiceServer is the server API for RendezvousService service.
 // All implementations must embed UnimplementedRendezvousServiceServer
 // for forward compatibility
+//
+// RendezvousService
+// Claims:
+// iss: jumpstarter controller
+// aud: jumpstarter router
+// sub: jumpstarter client/exporter
+// allowlist: jumpstarter exporters
 type RendezvousServiceServer interface {
 	// Listen announces the availability of the caller
-	// and returns JWTs for accepting incoming streams
-	// Authentication: "sub" claim is used as listen address
+	// and returns tokens for accepting incoming streams.
+	// Listen address is implied from the sub claim.
 	Listen(*ListenRequest, RendezvousService_ListenServer) error
-	// Dial returns a new stream token for connecting
-	// to the corresponding caller of Listen
-	// Authentication: "aud" claim is used as target address
+	// Dial returns a stream token for connecting to the given address.
+	// The allowlist claim is checked for permission.
 	Dial(context.Context, *DialRequest) (*DialResponse, error)
 	mustEmbedUnimplementedRendezvousServiceServer()
 }
@@ -196,9 +208,15 @@ const (
 // StreamServiceClient is the client API for StreamService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// StreamService
+// Claims:
+// iss: jumpstarter router
+// aud: jumpstarter router
+// sub: jumpstarter client/exporter
+// stream: stream id
 type StreamServiceClient interface {
 	// Stream connects caller to another caller of the same stream
-	// Authentication: "aud" claim is used as unique stream id
 	Stream(ctx context.Context, opts ...grpc.CallOption) (StreamService_StreamClient, error)
 }
 
@@ -245,9 +263,15 @@ func (x *streamServiceStreamClient) Recv() (*StreamResponse, error) {
 // StreamServiceServer is the server API for StreamService service.
 // All implementations must embed UnimplementedStreamServiceServer
 // for forward compatibility
+//
+// StreamService
+// Claims:
+// iss: jumpstarter router
+// aud: jumpstarter router
+// sub: jumpstarter client/exporter
+// stream: stream id
 type StreamServiceServer interface {
 	// Stream connects caller to another caller of the same stream
-	// Authentication: "aud" claim is used as unique stream id
 	Stream(StreamService_StreamServer) error
 	mustEmbedUnimplementedStreamServiceServer()
 }
