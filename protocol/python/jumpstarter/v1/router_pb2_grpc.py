@@ -2,11 +2,11 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-from jumpstarter.v1 import rendezvous_pb2 as jumpstarter_dot_v1_dot_rendezvous__pb2
+from jumpstarter.v1 import router_pb2 as jumpstarter_dot_v1_dot_router__pb2
 
 
-class RendezvousServiceStub(object):
-    """RendezvousService
+class RouterServiceStub(object):
+    """RouterService
     Claims:
     iss: jumpstarter controller
     aud: jumpstarter router
@@ -21,19 +21,19 @@ class RendezvousServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Listen = channel.unary_stream(
-                '/jumpstarter.v1.RendezvousService/Listen',
-                request_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.ListenRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.ListenResponse.FromString,
+                '/jumpstarter.v1.RouterService/Listen',
+                request_serializer=jumpstarter_dot_v1_dot_router__pb2.ListenRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_router__pb2.ListenResponse.FromString,
                 _registered_method=True)
         self.Dial = channel.unary_unary(
-                '/jumpstarter.v1.RendezvousService/Dial',
-                request_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialResponse.FromString,
+                '/jumpstarter.v1.RouterService/Dial',
+                request_serializer=jumpstarter_dot_v1_dot_router__pb2.DialRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_router__pb2.DialResponse.FromString,
                 _registered_method=True)
 
 
-class RendezvousServiceServicer(object):
-    """RendezvousService
+class RouterServiceServicer(object):
+    """RouterService
     Claims:
     iss: jumpstarter controller
     aud: jumpstarter router
@@ -51,7 +51,7 @@ class RendezvousServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def Dial(self, request, context):
-        """Dial returns a stream token for connecting to the given address.
+        """Dial returns a stream id for connecting to the given address.
         The allowlist claim is checked for permission.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -59,28 +59,28 @@ class RendezvousServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_RendezvousServiceServicer_to_server(servicer, server):
+def add_RouterServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Listen': grpc.unary_stream_rpc_method_handler(
                     servicer.Listen,
-                    request_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.ListenRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.ListenResponse.SerializeToString,
+                    request_deserializer=jumpstarter_dot_v1_dot_router__pb2.ListenRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_router__pb2.ListenResponse.SerializeToString,
             ),
             'Dial': grpc.unary_unary_rpc_method_handler(
                     servicer.Dial,
-                    request_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialResponse.SerializeToString,
+                    request_deserializer=jumpstarter_dot_v1_dot_router__pb2.DialRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_router__pb2.DialResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'jumpstarter.v1.RendezvousService', rpc_method_handlers)
+            'jumpstarter.v1.RouterService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('jumpstarter.v1.RendezvousService', rpc_method_handlers)
+    server.add_registered_method_handlers('jumpstarter.v1.RouterService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class RendezvousService(object):
-    """RendezvousService
+class RouterService(object):
+    """RouterService
     Claims:
     iss: jumpstarter controller
     aud: jumpstarter router
@@ -102,9 +102,9 @@ class RendezvousService(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/jumpstarter.v1.RendezvousService/Listen',
-            jumpstarter_dot_v1_dot_rendezvous__pb2.ListenRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_rendezvous__pb2.ListenResponse.FromString,
+            '/jumpstarter.v1.RouterService/Listen',
+            jumpstarter_dot_v1_dot_router__pb2.ListenRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_router__pb2.ListenResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -129,9 +129,9 @@ class RendezvousService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.RendezvousService/Dial',
-            jumpstarter_dot_v1_dot_rendezvous__pb2.DialRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_rendezvous__pb2.DialResponse.FromString,
+            '/jumpstarter.v1.RouterService/Dial',
+            jumpstarter_dot_v1_dot_router__pb2.DialRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_router__pb2.DialResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -160,8 +160,8 @@ class StreamServiceStub(object):
         """
         self.Stream = channel.stream_stream(
                 '/jumpstarter.v1.StreamService/Stream',
-                request_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamResponse.FromString,
+                request_serializer=jumpstarter_dot_v1_dot_router__pb2.StreamRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_router__pb2.StreamResponse.FromString,
                 _registered_method=True)
 
 
@@ -186,8 +186,8 @@ def add_StreamServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Stream': grpc.stream_stream_rpc_method_handler(
                     servicer.Stream,
-                    request_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamResponse.SerializeToString,
+                    request_deserializer=jumpstarter_dot_v1_dot_router__pb2.StreamRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_router__pb2.StreamResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -221,8 +221,8 @@ class StreamService(object):
             request_iterator,
             target,
             '/jumpstarter.v1.StreamService/Stream',
-            jumpstarter_dot_v1_dot_rendezvous__pb2.StreamRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_rendezvous__pb2.StreamResponse.FromString,
+            jumpstarter_dot_v1_dot_router__pb2.StreamRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_router__pb2.StreamResponse.FromString,
             options,
             channel_credentials,
             insecure,

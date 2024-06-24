@@ -4,18 +4,18 @@ syntax = "proto3";
 
 package jumpstarter.v1;
 
-// RendezvousService
+// RouterService
 // Claims:
 // iss: jumpstarter controller
 // aud: jumpstarter router
 // sub: jumpstarter client/exporter
 // allowlist: jumpstarter exporters
-service RendezvousService {
+service RouterService {
   // Listen announces the availability of the caller
   // and returns tokens for accepting incoming streams.
   // Listen address is implied from the sub claim.
   rpc Listen(ListenRequest) returns (stream ListenResponse);
-  // Dial returns a stream token for connecting to the given address.
+  // Dial returns a stream id for connecting to the given address.
   // The allowlist claim is checked for permission.
   rpc Dial(DialRequest) returns (DialResponse);
 }
