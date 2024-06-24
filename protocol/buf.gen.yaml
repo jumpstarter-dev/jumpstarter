@@ -1,0 +1,19 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/jumpstarter-dev/jumpstarter-protocol
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: go
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go
+    out: go
+    opt: paths=source_relative
+  - remote: buf.build/protocolbuffers/python
+    out: python
+  - remote: buf.build/grpc/python
+    out: python
+inputs:
+  - directory: proto
