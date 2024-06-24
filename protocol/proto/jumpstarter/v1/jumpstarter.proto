@@ -1,143 +1,101 @@
 // Copyright 2024 The Jumpstarter Authors
 
-
 syntax = "proto3";
+
+package jumpstarter.v1;
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 
-package jumpstarter;
-
 // A service where a exporter can connect to make itself available
-service ForExporter {
-    // Exporter registration
-    rpc Register(ExporterReport) returns (google.protobuf.Empty);
+service Controller {
+  // Exporter registration
+  rpc Register(RegisterRequest) returns (RegiterResponse);
 
-    // Server <-> Exporter command streams
-    rpc ControlStream(stream ClientResponse) returns (stream ServerCommand);
-    // Exporter disconnection
-    rpc Bye(ExporterBye) returns (google.protobuf.Empty);
+  // Exporter disconnection
+  // Disconnecting with bye will invalidate any existing router tokens
+  // we will eventually have a mechanism to tell the router this token
+  // has been invalidated
+  rpc Bye(ByeRequest) returns (google.protobuf.Empty);
 
-    // Messages for streaming drivers (audio/video/serial/other)
-    rpc DataStream(stream DataChunk) returns (stream DataChunk);
+  // Audit events from the exporters
+  // audit events are used to track the exporter's activity
+  rpc AuditStream(stream AuditEvent) returns (google.protobuf.Empty);
+}
 
-    // Events from/to drivers
-    rpc EventStream(stream Event) returns (stream Event);
+message RegisterRequest {
+    // additional context:
+    // - token/authentication mechanism
+    string uuid = 1;
+    map<string, string> labels = 2;
+    // standard labels:
+    // jumpstarter.dev/hostname=
+    // jumpstarter.dev/name=
+    repeated DeviceReport device_report = 3;
+}
+
+message DeviceReport {
+    string device_uuid = 1;               // a unique id within the expoter
+    optional string parent_device_uuid = 2; // optional, if device has a parent device
+    string driver_interface = 3;          // The driver interface class
+    map<string, string> labels = 4;
+  }
+
+message RegisterResponse {
+    string router_endpoint = 1;
+    string router_token = 2;
+}
+
+message ByeRequest {
+    // additional context:
+    // - token/authentication mechanism
+    string uuid = 1;
+    string reason = 2;
+}
+
+message AuditEvent {
+    // additional context:
+    // - token/authentication mechanism
+    string uuid = 1;
+    string device_uuid = 2;
+    string severity = 3;
+    string message = 4;
+
 }
 
 
 // A service a exporter can share locally to be used without a server
 // Channel/Call credentials are used to authenticate the client, and routing to the right exporter
-service ForClient {
-    // Exporter registration
-    rpc GetReport(google.protobuf.Empty) returns (ExporterReport);
-
-    // Server <-> Exporter command streams
-    rpc ControlStream(stream ServerCommand) returns (stream ClientResponse);
-
-    // Messages for streaming drivers (audio/video/serial/other)
-    rpc DataStream(stream DataChunk) returns (stream DataChunk);
+service Exporter {
+  // Exporter registration
+  rpc GetReport(google.protobuf.Empty) returns (GetReportResponse);
+  rpc DriverCall(DriverCallRequest) returns (DriverCallResponse);
+  rpc StreamingDriverCall(DriverCallRequest) returns (stream DriverCallResponse);
+  rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
 }
 
-
-// Server to Exporter requests ///////////////////////////////////////////////
-
-message ServerCommand{
-    oneof request_oneof {
-        Ping ping=1;
-        DriverCall driver_call=2;
-        Event event=3;
-    }
+message GetReportResponse {
+    string uuid = 1;
+    map<string, string> labels = 2;
+    // standard labels:
+    // jumpstarter.dev/hostname=
+    // jumpstarter.dev/name=
+    repeated DeviceReport device_report = 3;
 }
 
-// Server to exporter ping request
-// NOTE: we can probably remove ping and rely on gRPC session keepalives
-message Ping {
-    string data=1;
-    uint64 seq=2;
+message DriverCallRequest {
+    string device_uuid = 1;
+    string driver_method = 2;
+    repeated google.protobuf.Value args = 3;
 }
 
-// Server to client call into a driver
-message DriverCall {
-    string device_id=1;
-    string call_uuid=2;
-    string driver_method=3;
-    repeated google.protobuf.Value args=4;
-}
-
-// Exporter to Server messages ///////////////////////////////////////////////
-
-message ExporterBye {
-    string uuid=1;
-    string reason=2;
-}
-
-// ExporterReport
-message ExporterReport {
-    string uuid=1;
-    string hostname=2;
-    string name=3;
-    map<string, string> labels=4;
-    repeated DeviceReport device_report=5;
-}
-
-message DeviceReport {
-    string device_id=1;        // a unique id within the expoter
-    optional string parent_device_id=2; // optional, if device has a parent device
-    string device_name=3;
-    string driver_interface=4; // The driver interface class
-}
-
-
-message ClientResponse {
-    oneof response_oneof {
-        Pong pong=1;
-        ExporterReport exporter_report=2;
-        DriverResponse driver_response=3;
-        Event event=4;
-        Log log=5;
-    }
-}
-
-message Pong {
-    string data=1;
-    uint64 seq=2;
-}
-
-message DriverResponse {
+message DriverCallResponse {
     string call_uuid = 1;
     string json_result = 2;
 }
 
-
-// Data events from/to drivers ////////////////////////////////////////////
-
-message Event {
-    string device_id=1;
-    optional string handle=2;
-    string type=3;
-    string data=4;
+message LogStreamResponse {
+    string device_uuid = 1;
+    string severity = 2;
+    string message = 3;
 }
-
-message Log {
-    string device_id=1;
-    optional string handle=2;
-    string level=3;
-    string message=4;
-}
-
-
-// Data streaming from/to drivers ////////////////////////////////////////////
-
-// data streaming from Exporter -> Server
-//                  or Server -> Exporter
-// the seq number must be incremental
-// data is opaque and driver dependent (could be audio/video/characters/...)
-message DataChunk {
-    string device_id=1;  // The device it belongs to
-    optional string handle=2;     // The handle inside the device i.e. when multiple streams/operations are possible
-    uint64 seq=3;
-    optional uint64 offset=4;       // The offset of the data in the stream (i.e. useful for block devices)
-    bytes data=5;
-}
-
