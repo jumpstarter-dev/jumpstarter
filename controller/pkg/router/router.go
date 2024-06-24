@@ -121,6 +121,8 @@ func (s *RouterServer) Listen(_ *pb.ListenRequest, stream pb.RouterService_Liste
 		return status.Errorf(codes.AlreadyExists, "another node is already listening on the sub")
 	}
 
+	defer s.listenMap.Delete(sub)
+
 	select {
 	case <-ctx.Done():
 		return nil
