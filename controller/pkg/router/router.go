@@ -15,13 +15,13 @@ import (
 
 type RouterConfig struct {
 	Principal  string
+	PrivateKey string
 	Controller struct {
 		PublicKey string
 		Principal string
 	}
 	Stream struct {
-		PrivateKey string
-		Principal  string
+		Principal string
 	}
 }
 
@@ -160,7 +160,7 @@ func (s *RouterServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialR
 		ExpiresAt: exp,
 	})
 
-	signed, err := t.SignedString(s.config.Stream.PrivateKey)
+	signed, err := t.SignedString(s.config.PrivateKey)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "unable to get issue stream token")
 	}

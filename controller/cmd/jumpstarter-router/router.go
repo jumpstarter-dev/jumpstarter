@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/controller"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/stream"
 	"google.golang.org/grpc"
@@ -24,25 +25,41 @@ func main() {
 
 	server := grpc.NewServer()
 
-	streamPrincipal := uuid.New().String()
-	streamKey := uuid.New().String()
+	controllerPrincipal := uuid.New().String()
+	controllerKey := uuid.New().String()
 	routerPrincipal := uuid.New().String()
+	routerKey := uuid.New().String()
+	streamPrincipal := uuid.New().String()
+
+	cs, err := controller.NewControllerServer(&controller.ControllerConfig{
+		Principal:  controllerPrincipal,
+		PrivateKey: controllerKey,
+		Router: struct {
+			Principal string
+		}{
+			Principal: routerPrincipal,
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pb.RegisterControllerServiceServer(server, cs)
 
 	rs, err := router.NewRouterServer(&router.RouterConfig{
-		Principal: routerPrincipal,
+		Principal:  routerPrincipal,
+		PrivateKey: routerKey,
 		Controller: struct {
 			PublicKey string
 			Principal string
 		}{
-			PublicKey: "controller",
-			Principal: "controller",
+			PublicKey: controllerKey,
+			Principal: controllerPrincipal,
 		},
 		Stream: struct {
-			PrivateKey string
-			Principal  string
+			Principal string
 		}{
-			PrivateKey: streamKey,
-			Principal:  streamPrincipal,
+			Principal: streamPrincipal,
 		},
 	})
 	if err != nil {
@@ -57,7 +74,7 @@ func main() {
 			PublicKey string
 			Principal string
 		}{
-			PublicKey: streamKey,
+			PublicKey: routerKey,
 			Principal: routerPrincipal,
 		},
 	})
