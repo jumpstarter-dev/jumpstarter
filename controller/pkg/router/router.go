@@ -160,9 +160,9 @@ func (s *RouterServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialR
 		ExpiresAt: exp,
 	})
 
-	signed, err := t.SignedString(s.config.PrivateKey)
+	signed, err := t.SignedString([]byte(s.config.PrivateKey))
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to get issue stream token")
+		return nil, status.Errorf(codes.Internal, "unable to issue stream token")
 	}
 
 	err = value.(listenCtx).stream.Send(&pb.ListenResponse{
