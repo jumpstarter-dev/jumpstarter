@@ -6,7 +6,7 @@ from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 from jumpstarter.v1 import jumpstarter_pb2 as jumpstarter_dot_v1_dot_jumpstarter__pb2
 
 
-class ControllerStub(object):
+class ControllerServiceStub(object):
     """A service where a exporter can connect to make itself available
     """
 
@@ -17,23 +17,23 @@ class ControllerStub(object):
             channel: A grpc.Channel.
         """
         self.Register = channel.unary_unary(
-                '/jumpstarter.v1.Controller/Register',
+                '/jumpstarter.v1.ControllerService/Register',
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterResponse.FromString,
                 _registered_method=True)
         self.Bye = channel.unary_unary(
-                '/jumpstarter.v1.Controller/Bye',
+                '/jumpstarter.v1.ControllerService/Bye',
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
         self.AuditStream = channel.stream_unary(
-                '/jumpstarter.v1.Controller/AuditStream',
-                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditEvent.SerializeToString,
+                '/jumpstarter.v1.ControllerService/AuditStream',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditStreamRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
 
 
-class ControllerServicer(object):
+class ControllerServiceServicer(object):
     """A service where a exporter can connect to make itself available
     """
 
@@ -63,7 +63,7 @@ class ControllerServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_ControllerServicer_to_server(servicer, server):
+def add_ControllerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Register': grpc.unary_unary_rpc_method_handler(
                     servicer.Register,
@@ -77,18 +77,18 @@ def add_ControllerServicer_to_server(servicer, server):
             ),
             'AuditStream': grpc.stream_unary_rpc_method_handler(
                     servicer.AuditStream,
-                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditEvent.FromString,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditStreamRequest.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'jumpstarter.v1.Controller', rpc_method_handlers)
+            'jumpstarter.v1.ControllerService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('jumpstarter.v1.Controller', rpc_method_handlers)
+    server.add_registered_method_handlers('jumpstarter.v1.ControllerService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class Controller(object):
+class ControllerService(object):
     """A service where a exporter can connect to make itself available
     """
 
@@ -106,7 +106,7 @@ class Controller(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.Controller/Register',
+            '/jumpstarter.v1.ControllerService/Register',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterResponse.FromString,
             options,
@@ -133,7 +133,7 @@ class Controller(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.Controller/Bye',
+            '/jumpstarter.v1.ControllerService/Bye',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
@@ -160,8 +160,8 @@ class Controller(object):
         return grpc.experimental.stream_unary(
             request_iterator,
             target,
-            '/jumpstarter.v1.Controller/AuditStream',
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditEvent.SerializeToString,
+            '/jumpstarter.v1.ControllerService/AuditStream',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditStreamRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
@@ -174,7 +174,7 @@ class Controller(object):
             _registered_method=True)
 
 
-class ExporterStub(object):
+class ExporterServiceStub(object):
     """A service a exporter can share locally to be used without a server
     Channel/Call credentials are used to authenticate the client, and routing to the right exporter
     """
@@ -186,28 +186,28 @@ class ExporterStub(object):
             channel: A grpc.Channel.
         """
         self.GetReport = channel.unary_unary(
-                '/jumpstarter.v1.Exporter/GetReport',
+                '/jumpstarter.v1.ExporterService/GetReport',
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetReportResponse.FromString,
                 _registered_method=True)
         self.DriverCall = channel.unary_unary(
-                '/jumpstarter.v1.Exporter/DriverCall',
+                '/jumpstarter.v1.ExporterService/DriverCall',
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallResponse.FromString,
                 _registered_method=True)
         self.StreamingDriverCall = channel.unary_stream(
-                '/jumpstarter.v1.Exporter/StreamingDriverCall',
-                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallResponse.FromString,
+                '/jumpstarter.v1.ExporterService/StreamingDriverCall',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StreamingDriverCallRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StreamingDriverCallResponse.FromString,
                 _registered_method=True)
         self.LogStream = channel.unary_stream(
-                '/jumpstarter.v1.Exporter/LogStream',
+                '/jumpstarter.v1.ExporterService/LogStream',
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LogStreamResponse.FromString,
                 _registered_method=True)
 
 
-class ExporterServicer(object):
+class ExporterServiceServicer(object):
     """A service a exporter can share locally to be used without a server
     Channel/Call credentials are used to authenticate the client, and routing to the right exporter
     """
@@ -238,7 +238,7 @@ class ExporterServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_ExporterServicer_to_server(servicer, server):
+def add_ExporterServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetReport': grpc.unary_unary_rpc_method_handler(
                     servicer.GetReport,
@@ -252,8 +252,8 @@ def add_ExporterServicer_to_server(servicer, server):
             ),
             'StreamingDriverCall': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamingDriverCall,
-                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallResponse.SerializeToString,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StreamingDriverCallRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StreamingDriverCallResponse.SerializeToString,
             ),
             'LogStream': grpc.unary_stream_rpc_method_handler(
                     servicer.LogStream,
@@ -262,13 +262,13 @@ def add_ExporterServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'jumpstarter.v1.Exporter', rpc_method_handlers)
+            'jumpstarter.v1.ExporterService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('jumpstarter.v1.Exporter', rpc_method_handlers)
+    server.add_registered_method_handlers('jumpstarter.v1.ExporterService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class Exporter(object):
+class ExporterService(object):
     """A service a exporter can share locally to be used without a server
     Channel/Call credentials are used to authenticate the client, and routing to the right exporter
     """
@@ -287,7 +287,7 @@ class Exporter(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.Exporter/GetReport',
+            '/jumpstarter.v1.ExporterService/GetReport',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.GetReportResponse.FromString,
             options,
@@ -314,7 +314,7 @@ class Exporter(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.Exporter/DriverCall',
+            '/jumpstarter.v1.ExporterService/DriverCall',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallResponse.FromString,
             options,
@@ -341,9 +341,9 @@ class Exporter(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/jumpstarter.v1.Exporter/StreamingDriverCall',
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.DriverCallResponse.FromString,
+            '/jumpstarter.v1.ExporterService/StreamingDriverCall',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.StreamingDriverCallRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.StreamingDriverCallResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -368,7 +368,7 @@ class Exporter(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/jumpstarter.v1.Exporter/LogStream',
+            '/jumpstarter.v1.ExporterService/LogStream',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.LogStreamResponse.FromString,
             options,

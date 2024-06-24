@@ -24,35 +24,24 @@ class RendezvousServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialResponse.FromString,
                 _registered_method=True)
-        self.Stream = channel.stream_stream(
-                '/jumpstarter.v1.RendezvousService/Stream',
-                request_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.Frame.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.Frame.FromString,
-                _registered_method=True)
 
 
 class RendezvousServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Listen(self, request, context):
-        """Listen announces the availability of address
-        and returns new stream ids for accepting incoming connections
+        """Listen announces the availability of the caller
+        and returns JWTs for accepting incoming streams
+        Authentication: "sub" claim is used as listen address
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Dial(self, request, context):
-        """Dial returns a new stream id for connecting to address
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def Stream(self, request_iterator, context):
-        """Stream connects caller to another caller with the same stream id
-        stream id is returned in ListenResponse and DialResponse
-        and should be provided as RPC Metadata "stream"
+        """Dial returns a new stream token for connecting
+        to the corresponding caller of Listen
+        Authentication: "aud" claim is used as target address
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -70,11 +59,6 @@ def add_RendezvousServiceServicer_to_server(servicer, server):
                     servicer.Dial,
                     request_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.DialResponse.SerializeToString,
-            ),
-            'Stream': grpc.stream_stream_rpc_method_handler(
-                    servicer.Stream,
-                    request_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.Frame.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.Frame.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -141,6 +125,53 @@ class RendezvousService(object):
             metadata,
             _registered_method=True)
 
+
+class StreamServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Stream = channel.stream_stream(
+                '/jumpstarter.v1.StreamService/Stream',
+                request_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamResponse.FromString,
+                _registered_method=True)
+
+
+class StreamServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def Stream(self, request_iterator, context):
+        """Stream connects caller to another caller of the same stream
+        Authentication: "aud" claim is used as unique stream id
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_StreamServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'Stream': grpc.stream_stream_rpc_method_handler(
+                    servicer.Stream,
+                    request_deserializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_rendezvous__pb2.StreamResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'jumpstarter.v1.StreamService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('jumpstarter.v1.StreamService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class StreamService(object):
+    """Missing associated documentation comment in .proto file."""
+
     @staticmethod
     def Stream(request_iterator,
             target,
@@ -155,9 +186,9 @@ class RendezvousService(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/jumpstarter.v1.RendezvousService/Stream',
-            jumpstarter_dot_v1_dot_rendezvous__pb2.Frame.SerializeToString,
-            jumpstarter_dot_v1_dot_rendezvous__pb2.Frame.FromString,
+            '/jumpstarter.v1.StreamService/Stream',
+            jumpstarter_dot_v1_dot_rendezvous__pb2.StreamRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_rendezvous__pb2.StreamResponse.FromString,
             options,
             channel_credentials,
             insecure,

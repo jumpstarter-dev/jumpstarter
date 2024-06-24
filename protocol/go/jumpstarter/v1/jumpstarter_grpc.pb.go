@@ -22,17 +22,17 @@ import (
 const _ = grpc.SupportPackageIsVersion8
 
 const (
-	Controller_Register_FullMethodName    = "/jumpstarter.v1.Controller/Register"
-	Controller_Bye_FullMethodName         = "/jumpstarter.v1.Controller/Bye"
-	Controller_AuditStream_FullMethodName = "/jumpstarter.v1.Controller/AuditStream"
+	ControllerService_Register_FullMethodName    = "/jumpstarter.v1.ControllerService/Register"
+	ControllerService_Bye_FullMethodName         = "/jumpstarter.v1.ControllerService/Bye"
+	ControllerService_AuditStream_FullMethodName = "/jumpstarter.v1.ControllerService/AuditStream"
 )
 
-// ControllerClient is the client API for Controller service.
+// ControllerServiceClient is the client API for ControllerService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // A service where a exporter can connect to make itself available
-type ControllerClient interface {
+type ControllerServiceClient interface {
 	// Exporter registration
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
 	// Exporter disconnection
@@ -42,62 +42,62 @@ type ControllerClient interface {
 	Bye(ctx context.Context, in *ByeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Audit events from the exporters
 	// audit events are used to track the exporter's activity
-	AuditStream(ctx context.Context, opts ...grpc.CallOption) (Controller_AuditStreamClient, error)
+	AuditStream(ctx context.Context, opts ...grpc.CallOption) (ControllerService_AuditStreamClient, error)
 }
 
-type controllerClient struct {
+type controllerServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewControllerClient(cc grpc.ClientConnInterface) ControllerClient {
-	return &controllerClient{cc}
+func NewControllerServiceClient(cc grpc.ClientConnInterface) ControllerServiceClient {
+	return &controllerServiceClient{cc}
 }
 
-func (c *controllerClient) Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error) {
+func (c *controllerServiceClient) Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RegisterResponse)
-	err := c.cc.Invoke(ctx, Controller_Register_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ControllerService_Register_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) Bye(ctx context.Context, in *ByeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *controllerServiceClient) Bye(ctx context.Context, in *ByeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Controller_Bye_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ControllerService_Bye_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) AuditStream(ctx context.Context, opts ...grpc.CallOption) (Controller_AuditStreamClient, error) {
+func (c *controllerServiceClient) AuditStream(ctx context.Context, opts ...grpc.CallOption) (ControllerService_AuditStreamClient, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Controller_ServiceDesc.Streams[0], Controller_AuditStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[0], ControllerService_AuditStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &controllerAuditStreamClient{ClientStream: stream}
+	x := &controllerServiceAuditStreamClient{ClientStream: stream}
 	return x, nil
 }
 
-type Controller_AuditStreamClient interface {
-	Send(*AuditEvent) error
+type ControllerService_AuditStreamClient interface {
+	Send(*AuditStreamRequest) error
 	CloseAndRecv() (*emptypb.Empty, error)
 	grpc.ClientStream
 }
 
-type controllerAuditStreamClient struct {
+type controllerServiceAuditStreamClient struct {
 	grpc.ClientStream
 }
 
-func (x *controllerAuditStreamClient) Send(m *AuditEvent) error {
+func (x *controllerServiceAuditStreamClient) Send(m *AuditStreamRequest) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *controllerAuditStreamClient) CloseAndRecv() (*emptypb.Empty, error) {
+func (x *controllerServiceAuditStreamClient) CloseAndRecv() (*emptypb.Empty, error) {
 	if err := x.ClientStream.CloseSend(); err != nil {
 		return nil, err
 	}
@@ -108,12 +108,12 @@ func (x *controllerAuditStreamClient) CloseAndRecv() (*emptypb.Empty, error) {
 	return m, nil
 }
 
-// ControllerServer is the server API for Controller service.
-// All implementations must embed UnimplementedControllerServer
+// ControllerServiceServer is the server API for ControllerService service.
+// All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility
 //
 // A service where a exporter can connect to make itself available
-type ControllerServer interface {
+type ControllerServiceServer interface {
 	// Exporter registration
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	// Exporter disconnection
@@ -123,118 +123,118 @@ type ControllerServer interface {
 	Bye(context.Context, *ByeRequest) (*emptypb.Empty, error)
 	// Audit events from the exporters
 	// audit events are used to track the exporter's activity
-	AuditStream(Controller_AuditStreamServer) error
-	mustEmbedUnimplementedControllerServer()
+	AuditStream(ControllerService_AuditStreamServer) error
+	mustEmbedUnimplementedControllerServiceServer()
 }
 
-// UnimplementedControllerServer must be embedded to have forward compatible implementations.
-type UnimplementedControllerServer struct {
+// UnimplementedControllerServiceServer must be embedded to have forward compatible implementations.
+type UnimplementedControllerServiceServer struct {
 }
 
-func (UnimplementedControllerServer) Register(context.Context, *RegisterRequest) (*RegisterResponse, error) {
+func (UnimplementedControllerServiceServer) Register(context.Context, *RegisterRequest) (*RegisterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Register not implemented")
 }
-func (UnimplementedControllerServer) Bye(context.Context, *ByeRequest) (*emptypb.Empty, error) {
+func (UnimplementedControllerServiceServer) Bye(context.Context, *ByeRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Bye not implemented")
 }
-func (UnimplementedControllerServer) AuditStream(Controller_AuditStreamServer) error {
+func (UnimplementedControllerServiceServer) AuditStream(ControllerService_AuditStreamServer) error {
 	return status.Errorf(codes.Unimplemented, "method AuditStream not implemented")
 }
-func (UnimplementedControllerServer) mustEmbedUnimplementedControllerServer() {}
+func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 
-// UnsafeControllerServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ControllerServer will
+// UnsafeControllerServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ControllerServiceServer will
 // result in compilation errors.
-type UnsafeControllerServer interface {
-	mustEmbedUnimplementedControllerServer()
+type UnsafeControllerServiceServer interface {
+	mustEmbedUnimplementedControllerServiceServer()
 }
 
-func RegisterControllerServer(s grpc.ServiceRegistrar, srv ControllerServer) {
-	s.RegisterService(&Controller_ServiceDesc, srv)
+func RegisterControllerServiceServer(s grpc.ServiceRegistrar, srv ControllerServiceServer) {
+	s.RegisterService(&ControllerService_ServiceDesc, srv)
 }
 
-func _Controller_Register_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ControllerService_Register_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RegisterRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServer).Register(ctx, in)
+		return srv.(ControllerServiceServer).Register(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Controller_Register_FullMethodName,
+		FullMethod: ControllerService_Register_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Register(ctx, req.(*RegisterRequest))
+		return srv.(ControllerServiceServer).Register(ctx, req.(*RegisterRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Controller_Bye_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ControllerService_Bye_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ByeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServer).Bye(ctx, in)
+		return srv.(ControllerServiceServer).Bye(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Controller_Bye_FullMethodName,
+		FullMethod: ControllerService_Bye_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Bye(ctx, req.(*ByeRequest))
+		return srv.(ControllerServiceServer).Bye(ctx, req.(*ByeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Controller_AuditStream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ControllerServer).AuditStream(&controllerAuditStreamServer{ServerStream: stream})
+func _ControllerService_AuditStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ControllerServiceServer).AuditStream(&controllerServiceAuditStreamServer{ServerStream: stream})
 }
 
-type Controller_AuditStreamServer interface {
+type ControllerService_AuditStreamServer interface {
 	SendAndClose(*emptypb.Empty) error
-	Recv() (*AuditEvent, error)
+	Recv() (*AuditStreamRequest, error)
 	grpc.ServerStream
 }
 
-type controllerAuditStreamServer struct {
+type controllerServiceAuditStreamServer struct {
 	grpc.ServerStream
 }
 
-func (x *controllerAuditStreamServer) SendAndClose(m *emptypb.Empty) error {
+func (x *controllerServiceAuditStreamServer) SendAndClose(m *emptypb.Empty) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *controllerAuditStreamServer) Recv() (*AuditEvent, error) {
-	m := new(AuditEvent)
+func (x *controllerServiceAuditStreamServer) Recv() (*AuditStreamRequest, error) {
+	m := new(AuditStreamRequest)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-// Controller_ServiceDesc is the grpc.ServiceDesc for Controller service.
+// ControllerService_ServiceDesc is the grpc.ServiceDesc for ControllerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var Controller_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "jumpstarter.v1.Controller",
-	HandlerType: (*ControllerServer)(nil),
+var ControllerService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "jumpstarter.v1.ControllerService",
+	HandlerType: (*ControllerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "Register",
-			Handler:    _Controller_Register_Handler,
+			Handler:    _ControllerService_Register_Handler,
 		},
 		{
 			MethodName: "Bye",
-			Handler:    _Controller_Bye_Handler,
+			Handler:    _ControllerService_Bye_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "AuditStream",
-			Handler:       _Controller_AuditStream_Handler,
+			Handler:       _ControllerService_AuditStream_Handler,
 			ClientStreams: true,
 		},
 	},
@@ -242,61 +242,61 @@ var Controller_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	Exporter_GetReport_FullMethodName           = "/jumpstarter.v1.Exporter/GetReport"
-	Exporter_DriverCall_FullMethodName          = "/jumpstarter.v1.Exporter/DriverCall"
-	Exporter_StreamingDriverCall_FullMethodName = "/jumpstarter.v1.Exporter/StreamingDriverCall"
-	Exporter_LogStream_FullMethodName           = "/jumpstarter.v1.Exporter/LogStream"
+	ExporterService_GetReport_FullMethodName           = "/jumpstarter.v1.ExporterService/GetReport"
+	ExporterService_DriverCall_FullMethodName          = "/jumpstarter.v1.ExporterService/DriverCall"
+	ExporterService_StreamingDriverCall_FullMethodName = "/jumpstarter.v1.ExporterService/StreamingDriverCall"
+	ExporterService_LogStream_FullMethodName           = "/jumpstarter.v1.ExporterService/LogStream"
 )
 
-// ExporterClient is the client API for Exporter service.
+// ExporterServiceClient is the client API for ExporterService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // A service a exporter can share locally to be used without a server
 // Channel/Call credentials are used to authenticate the client, and routing to the right exporter
-type ExporterClient interface {
+type ExporterServiceClient interface {
 	// Exporter registration
 	GetReport(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetReportResponse, error)
 	DriverCall(ctx context.Context, in *DriverCallRequest, opts ...grpc.CallOption) (*DriverCallResponse, error)
-	StreamingDriverCall(ctx context.Context, in *DriverCallRequest, opts ...grpc.CallOption) (Exporter_StreamingDriverCallClient, error)
-	LogStream(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (Exporter_LogStreamClient, error)
+	StreamingDriverCall(ctx context.Context, in *StreamingDriverCallRequest, opts ...grpc.CallOption) (ExporterService_StreamingDriverCallClient, error)
+	LogStream(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (ExporterService_LogStreamClient, error)
 }
 
-type exporterClient struct {
+type exporterServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewExporterClient(cc grpc.ClientConnInterface) ExporterClient {
-	return &exporterClient{cc}
+func NewExporterServiceClient(cc grpc.ClientConnInterface) ExporterServiceClient {
+	return &exporterServiceClient{cc}
 }
 
-func (c *exporterClient) GetReport(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetReportResponse, error) {
+func (c *exporterServiceClient) GetReport(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetReportResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetReportResponse)
-	err := c.cc.Invoke(ctx, Exporter_GetReport_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ExporterService_GetReport_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *exporterClient) DriverCall(ctx context.Context, in *DriverCallRequest, opts ...grpc.CallOption) (*DriverCallResponse, error) {
+func (c *exporterServiceClient) DriverCall(ctx context.Context, in *DriverCallRequest, opts ...grpc.CallOption) (*DriverCallResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DriverCallResponse)
-	err := c.cc.Invoke(ctx, Exporter_DriverCall_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ExporterService_DriverCall_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *exporterClient) StreamingDriverCall(ctx context.Context, in *DriverCallRequest, opts ...grpc.CallOption) (Exporter_StreamingDriverCallClient, error) {
+func (c *exporterServiceClient) StreamingDriverCall(ctx context.Context, in *StreamingDriverCallRequest, opts ...grpc.CallOption) (ExporterService_StreamingDriverCallClient, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Exporter_ServiceDesc.Streams[0], Exporter_StreamingDriverCall_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ExporterService_ServiceDesc.Streams[0], ExporterService_StreamingDriverCall_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &exporterStreamingDriverCallClient{ClientStream: stream}
+	x := &exporterServiceStreamingDriverCallClient{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -306,30 +306,30 @@ func (c *exporterClient) StreamingDriverCall(ctx context.Context, in *DriverCall
 	return x, nil
 }
 
-type Exporter_StreamingDriverCallClient interface {
-	Recv() (*DriverCallResponse, error)
+type ExporterService_StreamingDriverCallClient interface {
+	Recv() (*StreamingDriverCallResponse, error)
 	grpc.ClientStream
 }
 
-type exporterStreamingDriverCallClient struct {
+type exporterServiceStreamingDriverCallClient struct {
 	grpc.ClientStream
 }
 
-func (x *exporterStreamingDriverCallClient) Recv() (*DriverCallResponse, error) {
-	m := new(DriverCallResponse)
+func (x *exporterServiceStreamingDriverCallClient) Recv() (*StreamingDriverCallResponse, error) {
+	m := new(StreamingDriverCallResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (c *exporterClient) LogStream(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (Exporter_LogStreamClient, error) {
+func (c *exporterServiceClient) LogStream(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (ExporterService_LogStreamClient, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Exporter_ServiceDesc.Streams[1], Exporter_LogStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ExporterService_ServiceDesc.Streams[1], ExporterService_LogStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &exporterLogStreamClient{ClientStream: stream}
+	x := &exporterServiceLogStreamClient{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -339,16 +339,16 @@ func (c *exporterClient) LogStream(ctx context.Context, in *emptypb.Empty, opts 
 	return x, nil
 }
 
-type Exporter_LogStreamClient interface {
+type ExporterService_LogStreamClient interface {
 	Recv() (*LogStreamResponse, error)
 	grpc.ClientStream
 }
 
-type exporterLogStreamClient struct {
+type exporterServiceLogStreamClient struct {
 	grpc.ClientStream
 }
 
-func (x *exporterLogStreamClient) Recv() (*LogStreamResponse, error) {
+func (x *exporterServiceLogStreamClient) Recv() (*LogStreamResponse, error) {
 	m := new(LogStreamResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -356,153 +356,153 @@ func (x *exporterLogStreamClient) Recv() (*LogStreamResponse, error) {
 	return m, nil
 }
 
-// ExporterServer is the server API for Exporter service.
-// All implementations must embed UnimplementedExporterServer
+// ExporterServiceServer is the server API for ExporterService service.
+// All implementations must embed UnimplementedExporterServiceServer
 // for forward compatibility
 //
 // A service a exporter can share locally to be used without a server
 // Channel/Call credentials are used to authenticate the client, and routing to the right exporter
-type ExporterServer interface {
+type ExporterServiceServer interface {
 	// Exporter registration
 	GetReport(context.Context, *emptypb.Empty) (*GetReportResponse, error)
 	DriverCall(context.Context, *DriverCallRequest) (*DriverCallResponse, error)
-	StreamingDriverCall(*DriverCallRequest, Exporter_StreamingDriverCallServer) error
-	LogStream(*emptypb.Empty, Exporter_LogStreamServer) error
-	mustEmbedUnimplementedExporterServer()
+	StreamingDriverCall(*StreamingDriverCallRequest, ExporterService_StreamingDriverCallServer) error
+	LogStream(*emptypb.Empty, ExporterService_LogStreamServer) error
+	mustEmbedUnimplementedExporterServiceServer()
 }
 
-// UnimplementedExporterServer must be embedded to have forward compatible implementations.
-type UnimplementedExporterServer struct {
+// UnimplementedExporterServiceServer must be embedded to have forward compatible implementations.
+type UnimplementedExporterServiceServer struct {
 }
 
-func (UnimplementedExporterServer) GetReport(context.Context, *emptypb.Empty) (*GetReportResponse, error) {
+func (UnimplementedExporterServiceServer) GetReport(context.Context, *emptypb.Empty) (*GetReportResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetReport not implemented")
 }
-func (UnimplementedExporterServer) DriverCall(context.Context, *DriverCallRequest) (*DriverCallResponse, error) {
+func (UnimplementedExporterServiceServer) DriverCall(context.Context, *DriverCallRequest) (*DriverCallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DriverCall not implemented")
 }
-func (UnimplementedExporterServer) StreamingDriverCall(*DriverCallRequest, Exporter_StreamingDriverCallServer) error {
+func (UnimplementedExporterServiceServer) StreamingDriverCall(*StreamingDriverCallRequest, ExporterService_StreamingDriverCallServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamingDriverCall not implemented")
 }
-func (UnimplementedExporterServer) LogStream(*emptypb.Empty, Exporter_LogStreamServer) error {
+func (UnimplementedExporterServiceServer) LogStream(*emptypb.Empty, ExporterService_LogStreamServer) error {
 	return status.Errorf(codes.Unimplemented, "method LogStream not implemented")
 }
-func (UnimplementedExporterServer) mustEmbedUnimplementedExporterServer() {}
+func (UnimplementedExporterServiceServer) mustEmbedUnimplementedExporterServiceServer() {}
 
-// UnsafeExporterServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ExporterServer will
+// UnsafeExporterServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ExporterServiceServer will
 // result in compilation errors.
-type UnsafeExporterServer interface {
-	mustEmbedUnimplementedExporterServer()
+type UnsafeExporterServiceServer interface {
+	mustEmbedUnimplementedExporterServiceServer()
 }
 
-func RegisterExporterServer(s grpc.ServiceRegistrar, srv ExporterServer) {
-	s.RegisterService(&Exporter_ServiceDesc, srv)
+func RegisterExporterServiceServer(s grpc.ServiceRegistrar, srv ExporterServiceServer) {
+	s.RegisterService(&ExporterService_ServiceDesc, srv)
 }
 
-func _Exporter_GetReport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ExporterService_GetReport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExporterServer).GetReport(ctx, in)
+		return srv.(ExporterServiceServer).GetReport(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Exporter_GetReport_FullMethodName,
+		FullMethod: ExporterService_GetReport_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExporterServer).GetReport(ctx, req.(*emptypb.Empty))
+		return srv.(ExporterServiceServer).GetReport(ctx, req.(*emptypb.Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Exporter_DriverCall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ExporterService_DriverCall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DriverCallRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExporterServer).DriverCall(ctx, in)
+		return srv.(ExporterServiceServer).DriverCall(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Exporter_DriverCall_FullMethodName,
+		FullMethod: ExporterService_DriverCall_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExporterServer).DriverCall(ctx, req.(*DriverCallRequest))
+		return srv.(ExporterServiceServer).DriverCall(ctx, req.(*DriverCallRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Exporter_StreamingDriverCall_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(DriverCallRequest)
+func _ExporterService_StreamingDriverCall_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamingDriverCallRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(ExporterServer).StreamingDriverCall(m, &exporterStreamingDriverCallServer{ServerStream: stream})
+	return srv.(ExporterServiceServer).StreamingDriverCall(m, &exporterServiceStreamingDriverCallServer{ServerStream: stream})
 }
 
-type Exporter_StreamingDriverCallServer interface {
-	Send(*DriverCallResponse) error
+type ExporterService_StreamingDriverCallServer interface {
+	Send(*StreamingDriverCallResponse) error
 	grpc.ServerStream
 }
 
-type exporterStreamingDriverCallServer struct {
+type exporterServiceStreamingDriverCallServer struct {
 	grpc.ServerStream
 }
 
-func (x *exporterStreamingDriverCallServer) Send(m *DriverCallResponse) error {
+func (x *exporterServiceStreamingDriverCallServer) Send(m *StreamingDriverCallResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _Exporter_LogStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _ExporterService_LogStream_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(emptypb.Empty)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(ExporterServer).LogStream(m, &exporterLogStreamServer{ServerStream: stream})
+	return srv.(ExporterServiceServer).LogStream(m, &exporterServiceLogStreamServer{ServerStream: stream})
 }
 
-type Exporter_LogStreamServer interface {
+type ExporterService_LogStreamServer interface {
 	Send(*LogStreamResponse) error
 	grpc.ServerStream
 }
 
-type exporterLogStreamServer struct {
+type exporterServiceLogStreamServer struct {
 	grpc.ServerStream
 }
 
-func (x *exporterLogStreamServer) Send(m *LogStreamResponse) error {
+func (x *exporterServiceLogStreamServer) Send(m *LogStreamResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-// Exporter_ServiceDesc is the grpc.ServiceDesc for Exporter service.
+// ExporterService_ServiceDesc is the grpc.ServiceDesc for ExporterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var Exporter_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "jumpstarter.v1.Exporter",
-	HandlerType: (*ExporterServer)(nil),
+var ExporterService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "jumpstarter.v1.ExporterService",
+	HandlerType: (*ExporterServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "GetReport",
-			Handler:    _Exporter_GetReport_Handler,
+			Handler:    _ExporterService_GetReport_Handler,
 		},
 		{
 			MethodName: "DriverCall",
-			Handler:    _Exporter_DriverCall_Handler,
+			Handler:    _ExporterService_DriverCall_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "StreamingDriverCall",
-			Handler:       _Exporter_StreamingDriverCall_Handler,
+			Handler:       _ExporterService_StreamingDriverCall_Handler,
 			ServerStreams: true,
 		},
 		{
 			StreamName:    "LogStream",
-			Handler:       _Exporter_LogStream_Handler,
+			Handler:       _ExporterService_LogStream_Handler,
 			ServerStreams: true,
 		},
 	},

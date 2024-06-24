@@ -23,22 +23,20 @@ const _ = grpc.SupportPackageIsVersion8
 const (
 	RendezvousService_Listen_FullMethodName = "/jumpstarter.v1.RendezvousService/Listen"
 	RendezvousService_Dial_FullMethodName   = "/jumpstarter.v1.RendezvousService/Dial"
-	RendezvousService_Stream_FullMethodName = "/jumpstarter.v1.RendezvousService/Stream"
 )
 
 // RendezvousServiceClient is the client API for RendezvousService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RendezvousServiceClient interface {
-	// Listen announces the availability of address
-	// and returns new stream ids for accepting incoming connections
+	// Listen announces the availability of the caller
+	// and returns JWTs for accepting incoming streams
+	// Authentication: "sub" claim is used as listen address
 	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (RendezvousService_ListenClient, error)
-	// Dial returns a new stream id for connecting to address
+	// Dial returns a new stream token for connecting
+	// to the corresponding caller of Listen
+	// Authentication: "aud" claim is used as target address
 	Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error)
-	// Stream connects caller to another caller with the same stream id
-	// stream id is returned in ListenResponse and DialResponse
-	// and should be provided as RPC Metadata "stream"
-	Stream(ctx context.Context, opts ...grpc.CallOption) (RendezvousService_StreamClient, error)
 }
 
 type rendezvousServiceClient struct {
@@ -92,51 +90,18 @@ func (c *rendezvousServiceClient) Dial(ctx context.Context, in *DialRequest, opt
 	return out, nil
 }
 
-func (c *rendezvousServiceClient) Stream(ctx context.Context, opts ...grpc.CallOption) (RendezvousService_StreamClient, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &RendezvousService_ServiceDesc.Streams[1], RendezvousService_Stream_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &rendezvousServiceStreamClient{ClientStream: stream}
-	return x, nil
-}
-
-type RendezvousService_StreamClient interface {
-	Send(*Frame) error
-	Recv() (*Frame, error)
-	grpc.ClientStream
-}
-
-type rendezvousServiceStreamClient struct {
-	grpc.ClientStream
-}
-
-func (x *rendezvousServiceStreamClient) Send(m *Frame) error {
-	return x.ClientStream.SendMsg(m)
-}
-
-func (x *rendezvousServiceStreamClient) Recv() (*Frame, error) {
-	m := new(Frame)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
 // RendezvousServiceServer is the server API for RendezvousService service.
 // All implementations must embed UnimplementedRendezvousServiceServer
 // for forward compatibility
 type RendezvousServiceServer interface {
-	// Listen announces the availability of address
-	// and returns new stream ids for accepting incoming connections
+	// Listen announces the availability of the caller
+	// and returns JWTs for accepting incoming streams
+	// Authentication: "sub" claim is used as listen address
 	Listen(*ListenRequest, RendezvousService_ListenServer) error
-	// Dial returns a new stream id for connecting to address
+	// Dial returns a new stream token for connecting
+	// to the corresponding caller of Listen
+	// Authentication: "aud" claim is used as target address
 	Dial(context.Context, *DialRequest) (*DialResponse, error)
-	// Stream connects caller to another caller with the same stream id
-	// stream id is returned in ListenResponse and DialResponse
-	// and should be provided as RPC Metadata "stream"
-	Stream(RendezvousService_StreamServer) error
 	mustEmbedUnimplementedRendezvousServiceServer()
 }
 
@@ -149,9 +114,6 @@ func (UnimplementedRendezvousServiceServer) Listen(*ListenRequest, RendezvousSer
 }
 func (UnimplementedRendezvousServiceServer) Dial(context.Context, *DialRequest) (*DialResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Dial not implemented")
-}
-func (UnimplementedRendezvousServiceServer) Stream(RendezvousService_StreamServer) error {
-	return status.Errorf(codes.Unimplemented, "method Stream not implemented")
 }
 func (UnimplementedRendezvousServiceServer) mustEmbedUnimplementedRendezvousServiceServer() {}
 
@@ -205,32 +167,6 @@ func _RendezvousService_Dial_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _RendezvousService_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(RendezvousServiceServer).Stream(&rendezvousServiceStreamServer{ServerStream: stream})
-}
-
-type RendezvousService_StreamServer interface {
-	Send(*Frame) error
-	Recv() (*Frame, error)
-	grpc.ServerStream
-}
-
-type rendezvousServiceStreamServer struct {
-	grpc.ServerStream
-}
-
-func (x *rendezvousServiceStreamServer) Send(m *Frame) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func (x *rendezvousServiceStreamServer) Recv() (*Frame, error) {
-	m := new(Frame)
-	if err := x.ServerStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
 // RendezvousService_ServiceDesc is the grpc.ServiceDesc for RendezvousService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -249,9 +185,130 @@ var RendezvousService_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _RendezvousService_Listen_Handler,
 			ServerStreams: true,
 		},
+	},
+	Metadata: "jumpstarter/v1/rendezvous.proto",
+}
+
+const (
+	StreamService_Stream_FullMethodName = "/jumpstarter.v1.StreamService/Stream"
+)
+
+// StreamServiceClient is the client API for StreamService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type StreamServiceClient interface {
+	// Stream connects caller to another caller of the same stream
+	// Authentication: "aud" claim is used as unique stream id
+	Stream(ctx context.Context, opts ...grpc.CallOption) (StreamService_StreamClient, error)
+}
+
+type streamServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewStreamServiceClient(cc grpc.ClientConnInterface) StreamServiceClient {
+	return &streamServiceClient{cc}
+}
+
+func (c *streamServiceClient) Stream(ctx context.Context, opts ...grpc.CallOption) (StreamService_StreamClient, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &StreamService_ServiceDesc.Streams[0], StreamService_Stream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &streamServiceStreamClient{ClientStream: stream}
+	return x, nil
+}
+
+type StreamService_StreamClient interface {
+	Send(*StreamRequest) error
+	Recv() (*StreamResponse, error)
+	grpc.ClientStream
+}
+
+type streamServiceStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *streamServiceStreamClient) Send(m *StreamRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *streamServiceStreamClient) Recv() (*StreamResponse, error) {
+	m := new(StreamResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// StreamServiceServer is the server API for StreamService service.
+// All implementations must embed UnimplementedStreamServiceServer
+// for forward compatibility
+type StreamServiceServer interface {
+	// Stream connects caller to another caller of the same stream
+	// Authentication: "aud" claim is used as unique stream id
+	Stream(StreamService_StreamServer) error
+	mustEmbedUnimplementedStreamServiceServer()
+}
+
+// UnimplementedStreamServiceServer must be embedded to have forward compatible implementations.
+type UnimplementedStreamServiceServer struct {
+}
+
+func (UnimplementedStreamServiceServer) Stream(StreamService_StreamServer) error {
+	return status.Errorf(codes.Unimplemented, "method Stream not implemented")
+}
+func (UnimplementedStreamServiceServer) mustEmbedUnimplementedStreamServiceServer() {}
+
+// UnsafeStreamServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to StreamServiceServer will
+// result in compilation errors.
+type UnsafeStreamServiceServer interface {
+	mustEmbedUnimplementedStreamServiceServer()
+}
+
+func RegisterStreamServiceServer(s grpc.ServiceRegistrar, srv StreamServiceServer) {
+	s.RegisterService(&StreamService_ServiceDesc, srv)
+}
+
+func _StreamService_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(StreamServiceServer).Stream(&streamServiceStreamServer{ServerStream: stream})
+}
+
+type StreamService_StreamServer interface {
+	Send(*StreamResponse) error
+	Recv() (*StreamRequest, error)
+	grpc.ServerStream
+}
+
+type streamServiceStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *streamServiceStreamServer) Send(m *StreamResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *streamServiceStreamServer) Recv() (*StreamRequest, error) {
+	m := new(StreamRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// StreamService_ServiceDesc is the grpc.ServiceDesc for StreamService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var StreamService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "jumpstarter.v1.StreamService",
+	HandlerType: (*StreamServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Stream",
-			Handler:       _RendezvousService_Stream_Handler,
+			Handler:       _StreamService_Stream_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},
