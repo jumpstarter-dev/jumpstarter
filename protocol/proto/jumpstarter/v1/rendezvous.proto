@@ -1,0 +1,37 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+service RendezvousService {
+  // Listen announces the availability of address
+  // and returns new stream ids for accepting incoming connections
+  rpc Listen(ListenRequest) returns (stream ListenResponse);
+  // Dial returns a new stream id for connecting to address
+  rpc Dial(DialRequest) returns (DialResponse);
+  // Stream connects caller to another caller with the same stream id
+  // stream id is returned in ListenResponse and DialResponse
+  // and should be provided as RPC Metadata "stream"
+  rpc Stream(stream Frame) returns (stream Frame);
+}
+
+message Frame {
+  bytes payload = 1;
+}
+
+message DialRequest {
+  string address = 1;
+}
+
+message DialResponse {
+  string stream = 1;
+}
+
+message ListenRequest {
+  string address = 1;
+}
+
+message ListenResponse {
+  string stream = 1;
+}
