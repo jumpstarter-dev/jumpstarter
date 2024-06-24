@@ -8,7 +8,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 
 // A service where a exporter can connect to make itself available
-service Controller {
+service ControllerService {
   // Exporter registration
   rpc Register(RegisterRequest) returns (RegisterResponse);
 
@@ -20,7 +20,7 @@ service Controller {
 
   // Audit events from the exporters
   // audit events are used to track the exporter's activity
-  rpc AuditStream(stream AuditEvent) returns (google.protobuf.Empty);
+  rpc AuditStream(stream AuditStreamRequest) returns (google.protobuf.Empty);
 }
 
 message RegisterRequest {
@@ -53,7 +53,7 @@ message ByeRequest {
   string reason = 2;
 }
 
-message AuditEvent {
+message AuditStreamRequest {
   // additional context:
   // - token/authentication mechanism
   string uuid = 1;
@@ -64,11 +64,11 @@ message AuditEvent {
 
 // A service a exporter can share locally to be used without a server
 // Channel/Call credentials are used to authenticate the client, and routing to the right exporter
-service Exporter {
+service ExporterService {
   // Exporter registration
   rpc GetReport(google.protobuf.Empty) returns (GetReportResponse);
   rpc DriverCall(DriverCallRequest) returns (DriverCallResponse);
-  rpc StreamingDriverCall(DriverCallRequest) returns (stream DriverCallResponse);
+  rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
   rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
 }
 
@@ -88,6 +88,17 @@ message DriverCallRequest {
 }
 
 message DriverCallResponse {
+  string call_uuid = 1;
+  string json_result = 2;
+}
+
+message StreamingDriverCallRequest {
+  string device_uuid = 1;
+  string driver_method = 2;
+  repeated google.protobuf.Value args = 3;
+}
+
+message StreamingDriverCallResponse {
   string call_uuid = 1;
   string json_result = 2;
 }

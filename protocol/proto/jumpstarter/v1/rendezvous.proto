@@ -5,33 +5,38 @@ syntax = "proto3";
 package jumpstarter.v1;
 
 service RendezvousService {
-  // Listen announces the availability of address
-  // and returns new stream ids for accepting incoming connections
+  // Listen announces the availability of the caller
+  // and returns JWTs for accepting incoming streams
+  // Authentication: "sub" claim is used as listen address
   rpc Listen(ListenRequest) returns (stream ListenResponse);
-  // Dial returns a new stream id for connecting to address
+  // Dial returns a new stream token for connecting
+  // to the corresponding caller of Listen
+  // Authentication: "aud" claim is used as target address
   rpc Dial(DialRequest) returns (DialResponse);
-  // Stream connects caller to another caller with the same stream id
-  // stream id is returned in ListenResponse and DialResponse
-  // and should be provided as RPC Metadata "stream"
-  rpc Stream(stream Frame) returns (stream Frame);
 }
 
-message Frame {
+message ListenRequest {}
+
+message ListenResponse {
+  string token = 1;
+}
+
+message DialRequest {}
+
+message DialResponse {
+  string token = 1;
+}
+
+service StreamService {
+  // Stream connects caller to another caller of the same stream
+  // Authentication: "aud" claim is used as unique stream id
+  rpc Stream(stream StreamRequest) returns (stream StreamResponse);
+}
+
+message StreamRequest {
   bytes payload = 1;
 }
 
-message DialRequest {
-  string address = 1;
-}
-
-message DialResponse {
-  string stream = 1;
-}
-
-message ListenRequest {
-  string address = 1;
-}
-
-message ListenResponse {
-  string stream = 1;
+message StreamResponse {
+  bytes payload = 1;
 }
