@@ -5,15 +5,11 @@ import (
 	"errors"
 	"io"
 
+	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"golang.org/x/sync/errgroup"
 )
 
-type Stream[T any] interface {
-	Send(T) error
-	Recv() (T, error)
-}
-
-func pipe[T any, A Stream[T], B Stream[T]](a A, b B) error {
+func pipe(a pb.StreamService_StreamServer, b pb.StreamService_StreamServer) error {
 	for {
 		msg, err := a.Recv()
 		if errors.Is(err, io.EOF) {
@@ -22,7 +18,9 @@ func pipe[T any, A Stream[T], B Stream[T]](a A, b B) error {
 		if err != nil {
 			return err
 		}
-		err = b.Send(msg)
+		err = b.Send(&pb.StreamResponse{
+			Payload: msg.GetPayload(),
+		})
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -32,7 +30,7 @@ func pipe[T any, A Stream[T], B Stream[T]](a A, b B) error {
 	}
 }
 
-func Forward[T any, A Stream[T], B Stream[T]](ctx context.Context, a A, b B) error {
+func forward(ctx context.Context, a pb.StreamService_StreamServer, b pb.StreamService_StreamServer) error {
 	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() error { return pipe(a, b) })
 	g.Go(func() error { return pipe(b, a) })

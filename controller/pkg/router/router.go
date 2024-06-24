@@ -1,51 +1,124 @@
-package server
+package router
 
 import (
 	"context"
+	"strings"
 	"sync"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	st "github.com/jumpstarter-dev/jumpstarter-router/pkg/stream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-type RendezvousServer struct {
-	pb.UnimplementedRendezvousServiceServer
+type RouterConfig struct {
+	Principal  string
+	Controller struct {
+		PublicKey string
+		Principal string
+	}
+	Stream struct {
+		PrivateKey string
+		Principal  string
+	}
+}
+
+type RouterServer struct {
+	pb.UnimplementedRouterServiceServer
 	listenMap *sync.Map
-	streamMap *sync.Map
+	config    *RouterConfig
 }
 
 type listenCtx struct {
 	cancel context.CancelFunc
-	stream pb.RendezvousService_ListenServer
+	stream pb.RouterService_ListenServer
 }
 
-type streamCtx struct {
-	cancel context.CancelFunc
-	stream pb.RendezvousService_StreamServer
-}
-
-func NewRendezvousServer() *RendezvousServer {
-	return &RendezvousServer{
+func NewRouterServer(config *RouterConfig) (*RouterServer, error) {
+	return &RouterServer{
 		listenMap: &sync.Map{},
-		streamMap: &sync.Map{},
-	}
+		config:    config,
+	}, nil
 }
 
-func (s *RendezvousServer) Listen(req *pb.ListenRequest, stream pb.RendezvousService_ListenServer) error {
-	ctx, cancel := context.WithCancel(stream.Context())
+func BearerToken(ctx context.Context, keyFunc jwt.Keyfunc, issuer string, audience string) (*jwt.Token, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "missing metadata")
+	}
 
-	cond := listenCtx{
+	authorizations := md.Get("authorization")
+
+	if len(authorizations) < 1 {
+		return nil, status.Errorf(codes.Unauthenticated, "missing authorization header")
+	}
+
+	// https://www.rfc-editor.org/rfc/rfc7230#section-3.2.2
+	// A sender MUST NOT generate multiple header fields with the same field name in a message
+	if len(authorizations) > 1 {
+		return nil, status.Errorf(codes.InvalidArgument, "multiple authorization headers")
+	}
+
+	// Invariant: len(authorizations) == 1
+	authorization := authorizations[0]
+
+	// Reference: https://github.com/golang-jwt/jwt/blob/62e504c2/request/extractor.go#L93
+	if len(authorization) < 7 || !strings.EqualFold(authorization[:7], "Bearer ") {
+		return nil, status.Errorf(codes.InvalidArgument, "malformed authorization header")
+	}
+
+	// Invariant: len(authorization) >= 7
+	token, err := jwt.Parse(authorization[7:],
+		keyFunc,
+		jwt.WithValidMethods([]string{"HS256", "HS384", "HS512"}),
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(audience),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil || !token.Valid {
+		return nil, status.Errorf(codes.PermissionDenied, "unable to validate jwt token")
+	}
+
+	return token, nil
+}
+
+func (s *RouterServer) Listen(_ *pb.ListenRequest, stream pb.RouterService_ListenServer) error {
+	ctx := stream.Context()
+
+	token, err := BearerToken(ctx,
+		func(t *jwt.Token) (interface{}, error) { return []byte(s.config.Controller.PublicKey), nil },
+		s.config.Controller.Principal,
+		s.config.Principal,
+	)
+	if err != nil {
+		return err
+	}
+
+	sub, err := token.Claims.GetSubject()
+	if err != nil {
+		return status.Errorf(codes.PermissionDenied, "unable to get sub claim")
+	}
+
+	exp, err := token.Claims.GetExpirationTime()
+	if err != nil {
+		return status.Errorf(codes.PermissionDenied, "unable to get exp claim")
+	}
+
+	// TODO: call cancel on token revocation
+	ctx, cancel := context.WithDeadline(ctx, exp.Time)
+	defer cancel()
+
+	lis := listenCtx{
 		cancel: cancel,
 		stream: stream,
 	}
 
-	actual, loaded := s.listenMap.Swap(req.Address, cond)
+	_, loaded := s.listenMap.LoadOrStore(sub, lis)
+
 	if loaded {
-		actual.(listenCtx).cancel()
+		return status.Errorf(codes.AlreadyExists, "another node is already listening on the sub")
 	}
 
 	select {
@@ -54,57 +127,52 @@ func (s *RendezvousServer) Listen(req *pb.ListenRequest, stream pb.RendezvousSer
 	}
 }
 
-func (s *RendezvousServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	value, ok := s.listenMap.Load(req.Address)
+func (s *RouterServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
+	token, err := BearerToken(ctx,
+		func(t *jwt.Token) (interface{}, error) { return []byte(s.config.Controller.PublicKey), nil },
+		s.config.Controller.Principal,
+		s.config.Principal,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	exp, err := token.Claims.GetExpirationTime()
+	if err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "unable to get exp claim")
+	}
+
+	// TODO: check allowlist
+
+	value, ok := s.listenMap.Load(req.GetSub())
 	if !ok {
 		return nil, status.Errorf(codes.Unavailable, "no matching listener")
 	}
 
 	stream := uuid.New().String()
 
-	err := value.(listenCtx).stream.Send(&pb.ListenResponse{
-		Stream: stream,
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:   s.config.Principal,
+		Audience: jwt.ClaimStrings{s.config.Stream.Principal}, // a list of stream servers for LB
+		Subject:  stream,
+		// inherit expiration
+		// TODO: cascading revocation
+		ExpiresAt: exp,
+	})
+
+	signed, err := t.SignedString(s.config.Stream.PrivateKey)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "unable to get issue stream token")
+	}
+
+	err = value.(listenCtx).stream.Send(&pb.ListenResponse{
+		Token: signed,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &pb.DialResponse{
-		Stream: stream,
+		Token: signed,
 	}, nil
-}
-
-func (s *RendezvousServer) Stream(stream pb.RendezvousService_StreamServer) error {
-	ctx := stream.Context()
-
-	// extract connection id from context
-	md, loaded := metadata.FromIncomingContext(ctx)
-	if !loaded {
-		return status.Errorf(codes.InvalidArgument, "missing context")
-	}
-
-	id := md.Get("stream")
-	if len(id) != 1 {
-		return status.Errorf(codes.InvalidArgument, "missing stream id in context")
-	}
-
-	// create new context for stream
-	ctx, cancel := context.WithCancel(ctx)
-
-	cond := streamCtx{
-		cancel: cancel,
-		stream: stream,
-	}
-
-	// find stream with matching id
-	actual, loaded := s.streamMap.LoadOrStore(id[0], cond)
-	if loaded {
-		defer actual.(streamCtx).cancel()
-		return st.Forward(ctx, stream, actual.(streamCtx).stream)
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil
-	}
 }
