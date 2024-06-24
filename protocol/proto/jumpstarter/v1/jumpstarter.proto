@@ -10,7 +10,7 @@ import "google/protobuf/struct.proto";
 // A service where a exporter can connect to make itself available
 service Controller {
   // Exporter registration
-  rpc Register(RegisterRequest) returns (RegiterResponse);
+  rpc Register(RegisterRequest) returns (RegisterResponse);
 
   // Exporter disconnection
   // Disconnecting with bye will invalidate any existing router tokens
