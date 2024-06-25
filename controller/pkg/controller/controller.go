@@ -68,18 +68,19 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 		stream: stream,
 	}
 
-	log.Printf("new listener: %s\n", sub)
-
 	_, loaded := s.listenMap.LoadOrStore(sub, lctx)
 
 	if loaded {
 		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
+	log.Printf("subject %s listening\n", sub)
+
 	defer s.listenMap.Delete(sub)
 
 	select {
 	case <-ctx.Done():
+		log.Printf("subject %s left\n", sub)
 		return nil
 	}
 }
@@ -128,7 +129,7 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	// TODO: check (client, exporter) tuple against leases
 
-	log.Printf("new connector: %s\n", req.GetUuid())
+	log.Printf("subject %s connecting to %s\n", sub, req.GetUuid())
 
 	value, ok := s.listenMap.Load(req.GetUuid())
 	if !ok {

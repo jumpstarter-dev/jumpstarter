@@ -71,6 +71,11 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 		return err
 	}
 
+	sub, err := claims.GetSubject()
+	if err != nil {
+		return status.Errorf(codes.PermissionDenied, "unable to get sub claim")
+	}
+
 	exp, err := claims.GetExpirationTime()
 	if err != nil {
 		return status.Errorf(codes.PermissionDenied, "unable to get exp claim")
@@ -88,11 +93,11 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 
 	actual, loaded := s.pending.LoadOrStore(claims.Stream, sctx)
 	if loaded {
-		log.Printf("stream %s established\n", claims.Stream)
+		log.Printf("subject %s connected to stream %s\n", sub, claims.Stream)
 		defer actual.(streamCtx).cancel()
 		return forward(ctx, stream, actual.(streamCtx).stream)
 	} else {
-		log.Printf("stream %s waiting\n", claims.Stream)
+		log.Printf("subject %s waiting on stream %s\n", sub, claims.Stream)
 		select {
 		case <-ctx.Done():
 			return nil
