@@ -1,4 +1,4 @@
-package stream
+package router
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func pipe(a pb.StreamService_StreamServer, b pb.StreamService_StreamServer) error {
+func pipe(a pb.RouterService_StreamServer, b pb.RouterService_StreamServer) error {
 	for {
 		msg, err := a.Recv()
 		if errors.Is(err, io.EOF) {
@@ -30,7 +30,7 @@ func pipe(a pb.StreamService_StreamServer, b pb.StreamService_StreamServer) erro
 	}
 }
 
-func forward(ctx context.Context, a pb.StreamService_StreamServer, b pb.StreamService_StreamServer) error {
+func forward(ctx context.Context, a pb.RouterService_StreamServer, b pb.RouterService_StreamServer) error {
 	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() error { return pipe(a, b) })
 	g.Go(func() error { return pipe(b, a) })

@@ -6,42 +6,11 @@ import (
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
-
-type RouterConfig struct {
-	Principal  string
-	PrivateKey string
-	Controller struct {
-		PublicKey string
-		Principal string
-	}
-	Stream struct {
-		Principal string
-	}
-}
-
-type RouterServer struct {
-	pb.UnimplementedRouterServiceServer
-	listenMap *sync.Map
-	config    *RouterConfig
-}
-
-type listenCtx struct {
-	cancel context.CancelFunc
-	stream pb.RouterService_ListenServer
-}
-
-func NewRouterServer(config *RouterConfig) (*RouterServer, error) {
-	return &RouterServer{
-		listenMap: &sync.Map{},
-		config:    config,
-	}, nil
-}
 
 func BearerToken(ctx context.Context, keyFunc jwt.Keyfunc, issuer string, audience string) (*jwt.Token, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -84,14 +53,36 @@ func BearerToken(ctx context.Context, keyFunc jwt.Keyfunc, issuer string, audien
 	return token, nil
 }
 
-func (s *RouterServer) Listen(_ *pb.ListenRequest, stream pb.RouterService_ListenServer) error {
+type RouterConfig struct {
+	Issuer    string
+	Audience  string
+	PublicKey string
+}
+
+type RouterServer struct {
+	pb.UnimplementedRouterServiceServer
+	Map    *sync.Map
+	config *RouterConfig
+}
+
+type streamCtx struct {
+	cancel context.CancelFunc
+	stream pb.RouterService_StreamServer
+}
+
+func NewRouterServer(config *RouterConfig) (*RouterServer, error) {
+	return &RouterServer{
+		Map:    &sync.Map{},
+		config: config,
+	}, nil
+}
+
+func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 	ctx := stream.Context()
 
-	token, err := BearerToken(ctx,
-		func(t *jwt.Token) (interface{}, error) { return []byte(s.config.Controller.PublicKey), nil },
-		s.config.Controller.Principal,
-		s.config.Principal,
-	)
+	token, err := BearerToken(ctx, func(t *jwt.Token) (interface{}, error) {
+		return []byte(s.config.PublicKey), nil
+	}, s.config.Issuer, s.config.Audience)
 	if err != nil {
 		return err
 	}
@@ -106,75 +97,21 @@ func (s *RouterServer) Listen(_ *pb.ListenRequest, stream pb.RouterService_Liste
 		return status.Errorf(codes.PermissionDenied, "unable to get exp claim")
 	}
 
-	// TODO: call cancel on token revocation
 	ctx, cancel := context.WithDeadline(ctx, exp.Time)
-	defer cancel()
 
-	lis := listenCtx{
+	cond := streamCtx{
 		cancel: cancel,
 		stream: stream,
 	}
 
-	_, loaded := s.listenMap.LoadOrStore(sub, lis)
-
+	actual, loaded := s.Map.LoadOrStore(sub, cond)
 	if loaded {
-		return status.Errorf(codes.AlreadyExists, "another node is already listening on the sub")
+		defer actual.(streamCtx).cancel()
+		return forward(ctx, stream, actual.(streamCtx).stream)
 	}
-
-	defer s.listenMap.Delete(sub)
 
 	select {
 	case <-ctx.Done():
 		return nil
 	}
-}
-
-func (s *RouterServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	token, err := BearerToken(ctx,
-		func(t *jwt.Token) (interface{}, error) { return []byte(s.config.Controller.PublicKey), nil },
-		s.config.Controller.Principal,
-		s.config.Principal,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	exp, err := token.Claims.GetExpirationTime()
-	if err != nil {
-		return nil, status.Errorf(codes.PermissionDenied, "unable to get exp claim")
-	}
-
-	// TODO: check allowlist
-
-	value, ok := s.listenMap.Load(req.GetSub())
-	if !ok {
-		return nil, status.Errorf(codes.Unavailable, "no matching listener")
-	}
-
-	stream := uuid.New().String()
-
-	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:   s.config.Principal,
-		Audience: jwt.ClaimStrings{s.config.Stream.Principal}, // a list of stream servers for LB
-		Subject:  stream,
-		// inherit expiration
-		// TODO: cascading revocation
-		ExpiresAt: exp,
-	})
-
-	signed, err := t.SignedString([]byte(s.config.PrivateKey))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to issue stream token")
-	}
-
-	err = value.(listenCtx).stream.Send(&pb.ListenResponse{
-		Token: signed,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &pb.DialResponse{
-		Token: signed,
-	}, nil
 }
