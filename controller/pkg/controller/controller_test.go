@@ -1,11 +1,59 @@
 package controller
 
 import (
-	"log"
+	"context"
 	"testing"
 
+	authv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	apicorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
+
+func createServiceAccount(
+	t *testing.T,
+	client apicorev1.ServiceAccountInterface,
+	name string,
+) *corev1.ServiceAccount {
+	sa, err := client.Create(
+		context.TODO(),
+		&corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		t.Fatalf("failed to create exporter service account: %s", err)
+	}
+	return sa
+}
+
+func createToken(
+	t *testing.T,
+	client apicorev1.ServiceAccountInterface,
+	sa *corev1.ServiceAccount,
+	audience string,
+	expiration int64) string {
+	token, err := client.CreateToken(
+		context.TODO(),
+		sa.GetName(),
+		&authv1.TokenRequest{
+			Spec: authv1.TokenRequestSpec{
+				Audiences:         []string{audience},
+				ExpirationSeconds: &expiration,
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		t.Fatalf("failed to create service account token: %s", err)
+	}
+	return token.Status.Token
+}
 
 func TestController(t *testing.T) {
 	env := &envtest.Environment{}
@@ -15,7 +63,36 @@ func TestController(t *testing.T) {
 		t.Fatalf("failed to start envtest: %s", err)
 	}
 
-	log.Println(cfg)
+	clientset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatalf("failed to create k8s client: %s", err)
+	}
+
+	saClient := clientset.CoreV1().ServiceAccounts(corev1.NamespaceDefault)
+
+	controllerSA := createServiceAccount(t, saClient, "controller")
+	exporterSA := createServiceAccount(t, saClient, "exporter-01")
+	clientSA := createServiceAccount(t, saClient, "client-01")
+
+	t.Log(controllerSA, exporterSA, clientSA)
+
+	exporterToken := createToken(t, saClient, exporterSA, "controller", 3600)
+
+	review, err := clientset.AuthenticationV1().TokenReviews().Create(
+		context.TODO(),
+		&authv1.TokenReview{
+			Spec: authv1.TokenReviewSpec{
+				Token:     exporterToken,
+				Audiences: []string{"controller"},
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		t.Fatalf("failed to create TokenReview: %s", err)
+	}
+
+	t.Log(review.Status)
 
 	env.Stop()
 }
