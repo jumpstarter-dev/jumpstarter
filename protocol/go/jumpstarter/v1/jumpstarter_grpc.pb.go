@@ -24,6 +24,8 @@ const _ = grpc.SupportPackageIsVersion8
 const (
 	ControllerService_Register_FullMethodName    = "/jumpstarter.v1.ControllerService/Register"
 	ControllerService_Bye_FullMethodName         = "/jumpstarter.v1.ControllerService/Bye"
+	ControllerService_Listen_FullMethodName      = "/jumpstarter.v1.ControllerService/Listen"
+	ControllerService_Dial_FullMethodName        = "/jumpstarter.v1.ControllerService/Dial"
 	ControllerService_AuditStream_FullMethodName = "/jumpstarter.v1.ControllerService/AuditStream"
 )
 
@@ -40,6 +42,13 @@ type ControllerServiceClient interface {
 	// we will eventually have a mechanism to tell the router this token
 	// has been invalidated
 	Bye(ctx context.Context, in *ByeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Exporter listening
+	// Returns stream tokens for accepting incoming client connections
+	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (ControllerService_ListenClient, error)
+	// Client connecting
+	// Returns stream token for connecting to the desired exporter
+	// Leases are checked before token issuance
+	Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error)
 	// Audit events from the exporters
 	// audit events are used to track the exporter's activity
 	AuditStream(ctx context.Context, opts ...grpc.CallOption) (ControllerService_AuditStreamClient, error)
@@ -73,9 +82,52 @@ func (c *controllerServiceClient) Bye(ctx context.Context, in *ByeRequest, opts 
 	return out, nil
 }
 
+func (c *controllerServiceClient) Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (ControllerService_ListenClient, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[0], ControllerService_Listen_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &controllerServiceListenClient{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type ControllerService_ListenClient interface {
+	Recv() (*ListenResponse, error)
+	grpc.ClientStream
+}
+
+type controllerServiceListenClient struct {
+	grpc.ClientStream
+}
+
+func (x *controllerServiceListenClient) Recv() (*ListenResponse, error) {
+	m := new(ListenResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *controllerServiceClient) Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DialResponse)
+	err := c.cc.Invoke(ctx, ControllerService_Dial_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controllerServiceClient) AuditStream(ctx context.Context, opts ...grpc.CallOption) (ControllerService_AuditStreamClient, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[0], ControllerService_AuditStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[1], ControllerService_AuditStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +173,13 @@ type ControllerServiceServer interface {
 	// we will eventually have a mechanism to tell the router this token
 	// has been invalidated
 	Bye(context.Context, *ByeRequest) (*emptypb.Empty, error)
+	// Exporter listening
+	// Returns stream tokens for accepting incoming client connections
+	Listen(*ListenRequest, ControllerService_ListenServer) error
+	// Client connecting
+	// Returns stream token for connecting to the desired exporter
+	// Leases are checked before token issuance
+	Dial(context.Context, *DialRequest) (*DialResponse, error)
 	// Audit events from the exporters
 	// audit events are used to track the exporter's activity
 	AuditStream(ControllerService_AuditStreamServer) error
@@ -136,6 +195,12 @@ func (UnimplementedControllerServiceServer) Register(context.Context, *RegisterR
 }
 func (UnimplementedControllerServiceServer) Bye(context.Context, *ByeRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Bye not implemented")
+}
+func (UnimplementedControllerServiceServer) Listen(*ListenRequest, ControllerService_ListenServer) error {
+	return status.Errorf(codes.Unimplemented, "method Listen not implemented")
+}
+func (UnimplementedControllerServiceServer) Dial(context.Context, *DialRequest) (*DialResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Dial not implemented")
 }
 func (UnimplementedControllerServiceServer) AuditStream(ControllerService_AuditStreamServer) error {
 	return status.Errorf(codes.Unimplemented, "method AuditStream not implemented")
@@ -189,6 +254,45 @@ func _ControllerService_Bye_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_Listen_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ListenRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ControllerServiceServer).Listen(m, &controllerServiceListenServer{ServerStream: stream})
+}
+
+type ControllerService_ListenServer interface {
+	Send(*ListenResponse) error
+	grpc.ServerStream
+}
+
+type controllerServiceListenServer struct {
+	grpc.ServerStream
+}
+
+func (x *controllerServiceListenServer) Send(m *ListenResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _ControllerService_Dial_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).Dial(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_Dial_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).Dial(ctx, req.(*DialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ControllerService_AuditStream_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(ControllerServiceServer).AuditStream(&controllerServiceAuditStreamServer{ServerStream: stream})
 }
@@ -230,8 +334,17 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Bye",
 			Handler:    _ControllerService_Bye_Handler,
 		},
+		{
+			MethodName: "Dial",
+			Handler:    _ControllerService_Dial_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Listen",
+			Handler:       _ControllerService_Listen_Handler,
+			ServerStreams: true,
+		},
 		{
 			StreamName:    "AuditStream",
 			Handler:       _ControllerService_AuditStream_Handler,

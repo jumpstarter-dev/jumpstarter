@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/router.proto\x12\x0ejumpstarter.v1\"\x0f\n\rListenRequest\"&\n\x0eListenResponse\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token\"\x1f\n\x0b\x44ialRequest\x12\x10\n\x03sub\x18\x01 \x01(\tR\x03sub\"$\n\x0c\x44ialResponse\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token\")\n\rStreamRequest\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\"*\n\x0eStreamResponse\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload2\x9d\x01\n\rRouterService\x12I\n\x06Listen\x12\x1d.jumpstarter.v1.ListenRequest\x1a\x1e.jumpstarter.v1.ListenResponse0\x01\x12\x41\n\x04\x44ial\x12\x1b.jumpstarter.v1.DialRequest\x1a\x1c.jumpstarter.v1.DialResponse2\\\n\rStreamService\x12K\n\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x01\x30\x01\x42\xc8\x01\n\x12\x63om.jumpstarter.v1B\x0bRouterProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/router.proto\x12\x0ejumpstarter.v1\")\n\rStreamRequest\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\"*\n\x0eStreamResponse\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload2\\\n\rRouterService\x12K\n\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x01\x30\x01\x42\xc8\x01\n\x12\x63om.jumpstarter.v1B\x0bRouterProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,20 +32,10 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jumpstarter.v1.router_pb2',
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\022com.jumpstarter.v1B\013RouterProtoP\001ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\242\002\003JXX\252\002\016Jumpstarter.V1\312\002\016Jumpstarter\\V1\342\002\032Jumpstarter\\V1\\GPBMetadata\352\002\017Jumpstarter::V1'
-  _globals['_LISTENREQUEST']._serialized_start=47
-  _globals['_LISTENREQUEST']._serialized_end=62
-  _globals['_LISTENRESPONSE']._serialized_start=64
-  _globals['_LISTENRESPONSE']._serialized_end=102
-  _globals['_DIALREQUEST']._serialized_start=104
-  _globals['_DIALREQUEST']._serialized_end=135
-  _globals['_DIALRESPONSE']._serialized_start=137
-  _globals['_DIALRESPONSE']._serialized_end=173
-  _globals['_STREAMREQUEST']._serialized_start=175
-  _globals['_STREAMREQUEST']._serialized_end=216
-  _globals['_STREAMRESPONSE']._serialized_start=218
-  _globals['_STREAMRESPONSE']._serialized_end=260
-  _globals['_ROUTERSERVICE']._serialized_start=263
-  _globals['_ROUTERSERVICE']._serialized_end=420
-  _globals['_STREAMSERVICE']._serialized_start=422
-  _globals['_STREAMSERVICE']._serialized_end=514
+  _globals['_STREAMREQUEST']._serialized_start=47
+  _globals['_STREAMREQUEST']._serialized_end=88
+  _globals['_STREAMRESPONSE']._serialized_start=90
+  _globals['_STREAMRESPONSE']._serialized_end=132
+  _globals['_ROUTERSERVICE']._serialized_start=134
+  _globals['_ROUTERSERVICE']._serialized_end=226
 # @@protoc_insertion_point(module_scope)

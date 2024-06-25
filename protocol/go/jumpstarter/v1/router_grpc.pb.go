@@ -21,28 +21,22 @@ import (
 const _ = grpc.SupportPackageIsVersion8
 
 const (
-	RouterService_Listen_FullMethodName = "/jumpstarter.v1.RouterService/Listen"
-	RouterService_Dial_FullMethodName   = "/jumpstarter.v1.RouterService/Dial"
+	RouterService_Stream_FullMethodName = "/jumpstarter.v1.RouterService/Stream"
 )
 
 // RouterServiceClient is the client API for RouterService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// RouterService
+// StreamService
 // Claims:
 // iss: jumpstarter controller
 // aud: jumpstarter router
 // sub: jumpstarter client/exporter
-// allowlist: jumpstarter exporters
+// stream: stream id
 type RouterServiceClient interface {
-	// Listen announces the availability of the caller
-	// and returns tokens for accepting incoming streams.
-	// Listen address is implied from the sub claim.
-	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (RouterService_ListenClient, error)
-	// Dial returns a stream id for connecting to the given address.
-	// The allowlist claim is checked for permission.
-	Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error)
+	// Stream connects caller to another caller of the same stream
+	Stream(ctx context.Context, opts ...grpc.CallOption) (RouterService_StreamClient, error)
 }
 
 type routerServiceClient struct {
@@ -53,67 +47,51 @@ func NewRouterServiceClient(cc grpc.ClientConnInterface) RouterServiceClient {
 	return &routerServiceClient{cc}
 }
 
-func (c *routerServiceClient) Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (RouterService_ListenClient, error) {
+func (c *routerServiceClient) Stream(ctx context.Context, opts ...grpc.CallOption) (RouterService_StreamClient, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &RouterService_ServiceDesc.Streams[0], RouterService_Listen_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &RouterService_ServiceDesc.Streams[0], RouterService_Stream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &routerServiceListenClient{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
+	x := &routerServiceStreamClient{ClientStream: stream}
 	return x, nil
 }
 
-type RouterService_ListenClient interface {
-	Recv() (*ListenResponse, error)
+type RouterService_StreamClient interface {
+	Send(*StreamRequest) error
+	Recv() (*StreamResponse, error)
 	grpc.ClientStream
 }
 
-type routerServiceListenClient struct {
+type routerServiceStreamClient struct {
 	grpc.ClientStream
 }
 
-func (x *routerServiceListenClient) Recv() (*ListenResponse, error) {
-	m := new(ListenResponse)
+func (x *routerServiceStreamClient) Send(m *StreamRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *routerServiceStreamClient) Recv() (*StreamResponse, error) {
+	m := new(StreamResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (c *routerServiceClient) Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DialResponse)
-	err := c.cc.Invoke(ctx, RouterService_Dial_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // RouterServiceServer is the server API for RouterService service.
 // All implementations must embed UnimplementedRouterServiceServer
 // for forward compatibility
 //
-// RouterService
+// StreamService
 // Claims:
 // iss: jumpstarter controller
 // aud: jumpstarter router
 // sub: jumpstarter client/exporter
-// allowlist: jumpstarter exporters
+// stream: stream id
 type RouterServiceServer interface {
-	// Listen announces the availability of the caller
-	// and returns tokens for accepting incoming streams.
-	// Listen address is implied from the sub claim.
-	Listen(*ListenRequest, RouterService_ListenServer) error
-	// Dial returns a stream id for connecting to the given address.
-	// The allowlist claim is checked for permission.
-	Dial(context.Context, *DialRequest) (*DialResponse, error)
+	// Stream connects caller to another caller of the same stream
+	Stream(RouterService_StreamServer) error
 	mustEmbedUnimplementedRouterServiceServer()
 }
 
@@ -121,11 +99,8 @@ type RouterServiceServer interface {
 type UnimplementedRouterServiceServer struct {
 }
 
-func (UnimplementedRouterServiceServer) Listen(*ListenRequest, RouterService_ListenServer) error {
-	return status.Errorf(codes.Unimplemented, "method Listen not implemented")
-}
-func (UnimplementedRouterServiceServer) Dial(context.Context, *DialRequest) (*DialResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Dial not implemented")
+func (UnimplementedRouterServiceServer) Stream(RouterService_StreamServer) error {
+	return status.Errorf(codes.Unimplemented, "method Stream not implemented")
 }
 func (UnimplementedRouterServiceServer) mustEmbedUnimplementedRouterServiceServer() {}
 
@@ -140,43 +115,30 @@ func RegisterRouterServiceServer(s grpc.ServiceRegistrar, srv RouterServiceServe
 	s.RegisterService(&RouterService_ServiceDesc, srv)
 }
 
-func _RouterService_Listen_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(ListenRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(RouterServiceServer).Listen(m, &routerServiceListenServer{ServerStream: stream})
+func _RouterService_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(RouterServiceServer).Stream(&routerServiceStreamServer{ServerStream: stream})
 }
 
-type RouterService_ListenServer interface {
-	Send(*ListenResponse) error
+type RouterService_StreamServer interface {
+	Send(*StreamResponse) error
+	Recv() (*StreamRequest, error)
 	grpc.ServerStream
 }
 
-type routerServiceListenServer struct {
+type routerServiceStreamServer struct {
 	grpc.ServerStream
 }
 
-func (x *routerServiceListenServer) Send(m *ListenResponse) error {
+func (x *routerServiceStreamServer) Send(m *StreamResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _RouterService_Dial_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DialRequest)
-	if err := dec(in); err != nil {
+func (x *routerServiceStreamServer) Recv() (*StreamRequest, error) {
+	m := new(StreamRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(RouterServiceServer).Dial(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: RouterService_Dial_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RouterServiceServer).Dial(ctx, req.(*DialRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return m, nil
 }
 
 // RouterService_ServiceDesc is the grpc.ServiceDesc for RouterService service.
@@ -185,154 +147,11 @@ func _RouterService_Dial_Handler(srv interface{}, ctx context.Context, dec func(
 var RouterService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jumpstarter.v1.RouterService",
 	HandlerType: (*RouterServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Dial",
-			Handler:    _RouterService_Dial_Handler,
-		},
-	},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "Listen",
-			Handler:       _RouterService_Listen_Handler,
-			ServerStreams: true,
-		},
-	},
-	Metadata: "jumpstarter/v1/router.proto",
-}
-
-const (
-	StreamService_Stream_FullMethodName = "/jumpstarter.v1.StreamService/Stream"
-)
-
-// StreamServiceClient is the client API for StreamService service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// StreamService
-// Claims:
-// iss: jumpstarter router
-// aud: jumpstarter router
-// sub: jumpstarter client/exporter
-// stream: stream id
-type StreamServiceClient interface {
-	// Stream connects caller to another caller of the same stream
-	Stream(ctx context.Context, opts ...grpc.CallOption) (StreamService_StreamClient, error)
-}
-
-type streamServiceClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewStreamServiceClient(cc grpc.ClientConnInterface) StreamServiceClient {
-	return &streamServiceClient{cc}
-}
-
-func (c *streamServiceClient) Stream(ctx context.Context, opts ...grpc.CallOption) (StreamService_StreamClient, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &StreamService_ServiceDesc.Streams[0], StreamService_Stream_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &streamServiceStreamClient{ClientStream: stream}
-	return x, nil
-}
-
-type StreamService_StreamClient interface {
-	Send(*StreamRequest) error
-	Recv() (*StreamResponse, error)
-	grpc.ClientStream
-}
-
-type streamServiceStreamClient struct {
-	grpc.ClientStream
-}
-
-func (x *streamServiceStreamClient) Send(m *StreamRequest) error {
-	return x.ClientStream.SendMsg(m)
-}
-
-func (x *streamServiceStreamClient) Recv() (*StreamResponse, error) {
-	m := new(StreamResponse)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-// StreamServiceServer is the server API for StreamService service.
-// All implementations must embed UnimplementedStreamServiceServer
-// for forward compatibility
-//
-// StreamService
-// Claims:
-// iss: jumpstarter router
-// aud: jumpstarter router
-// sub: jumpstarter client/exporter
-// stream: stream id
-type StreamServiceServer interface {
-	// Stream connects caller to another caller of the same stream
-	Stream(StreamService_StreamServer) error
-	mustEmbedUnimplementedStreamServiceServer()
-}
-
-// UnimplementedStreamServiceServer must be embedded to have forward compatible implementations.
-type UnimplementedStreamServiceServer struct {
-}
-
-func (UnimplementedStreamServiceServer) Stream(StreamService_StreamServer) error {
-	return status.Errorf(codes.Unimplemented, "method Stream not implemented")
-}
-func (UnimplementedStreamServiceServer) mustEmbedUnimplementedStreamServiceServer() {}
-
-// UnsafeStreamServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to StreamServiceServer will
-// result in compilation errors.
-type UnsafeStreamServiceServer interface {
-	mustEmbedUnimplementedStreamServiceServer()
-}
-
-func RegisterStreamServiceServer(s grpc.ServiceRegistrar, srv StreamServiceServer) {
-	s.RegisterService(&StreamService_ServiceDesc, srv)
-}
-
-func _StreamService_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(StreamServiceServer).Stream(&streamServiceStreamServer{ServerStream: stream})
-}
-
-type StreamService_StreamServer interface {
-	Send(*StreamResponse) error
-	Recv() (*StreamRequest, error)
-	grpc.ServerStream
-}
-
-type streamServiceStreamServer struct {
-	grpc.ServerStream
-}
-
-func (x *streamServiceStreamServer) Send(m *StreamResponse) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func (x *streamServiceStreamServer) Recv() (*StreamRequest, error) {
-	m := new(StreamRequest)
-	if err := x.ServerStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-// StreamService_ServiceDesc is the grpc.ServiceDesc for StreamService service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var StreamService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "jumpstarter.v1.StreamService",
-	HandlerType: (*StreamServiceServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Stream",
-			Handler:       _StreamService_Stream_Handler,
+			Handler:       _RouterService_Stream_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

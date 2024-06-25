@@ -26,6 +26,16 @@ class ControllerServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
+        self.Listen = channel.unary_stream(
+                '/jumpstarter.v1.ControllerService/Listen',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenResponse.FromString,
+                _registered_method=True)
+        self.Dial = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/Dial',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialResponse.FromString,
+                _registered_method=True)
         self.AuditStream = channel.stream_unary(
                 '/jumpstarter.v1.ControllerService/AuditStream',
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditStreamRequest.SerializeToString,
@@ -54,6 +64,23 @@ class ControllerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Listen(self, request, context):
+        """Exporter listening
+        Returns stream tokens for accepting incoming client connections
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Dial(self, request, context):
+        """Client connecting
+        Returns stream token for connecting to the desired exporter
+        Leases are checked before token issuance
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def AuditStream(self, request_iterator, context):
         """Audit events from the exporters
         audit events are used to track the exporter's activity
@@ -74,6 +101,16 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.Bye,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'Listen': grpc.unary_stream_rpc_method_handler(
+                    servicer.Listen,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenResponse.SerializeToString,
+            ),
+            'Dial': grpc.unary_unary_rpc_method_handler(
+                    servicer.Dial,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialResponse.SerializeToString,
             ),
             'AuditStream': grpc.stream_unary_rpc_method_handler(
                     servicer.AuditStream,
@@ -136,6 +173,60 @@ class ControllerService(object):
             '/jumpstarter.v1.ControllerService/Bye',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Listen(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/Listen',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Dial(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/Dial',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.DialRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.DialResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -18,6 +18,15 @@ service ControllerService {
   // has been invalidated
   rpc Bye(ByeRequest) returns (google.protobuf.Empty);
 
+  // Exporter listening
+  // Returns stream tokens for accepting incoming client connections
+  rpc Listen(ListenRequest) returns (stream ListenResponse);
+
+  // Client connecting
+  // Returns stream token for connecting to the desired exporter
+  // Leases are checked before token issuance
+  rpc Dial(DialRequest) returns (DialResponse);
+
   // Audit events from the exporters
   // audit events are used to track the exporter's activity
   rpc AuditStream(stream AuditStreamRequest) returns (google.protobuf.Empty);
@@ -41,16 +50,29 @@ message DeviceReport {
   map<string, string> labels = 4;
 }
 
-message RegisterResponse {
-  string router_endpoint = 1;
-  string router_token = 2;
-}
+message RegisterResponse {}
 
 message ByeRequest {
   // additional context:
   // - token/authentication mechanism
   string uuid = 1;
   string reason = 2;
+}
+
+message ListenRequest {}
+
+message ListenResponse {
+  string router_endpoint = 1;
+  string router_token = 2;
+}
+
+message DialRequest {
+  string uuid = 1;
+}
+
+message DialResponse {
+  string router_endpoint = 1;
+  string router_token = 2;
 }
 
 message AuditStreamRequest {

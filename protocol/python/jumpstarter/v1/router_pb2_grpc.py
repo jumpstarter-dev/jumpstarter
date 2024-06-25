@@ -6,147 +6,9 @@ from jumpstarter.v1 import router_pb2 as jumpstarter_dot_v1_dot_router__pb2
 
 
 class RouterServiceStub(object):
-    """RouterService
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    allowlist: jumpstarter exporters
-    """
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.Listen = channel.unary_stream(
-                '/jumpstarter.v1.RouterService/Listen',
-                request_serializer=jumpstarter_dot_v1_dot_router__pb2.ListenRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_router__pb2.ListenResponse.FromString,
-                _registered_method=True)
-        self.Dial = channel.unary_unary(
-                '/jumpstarter.v1.RouterService/Dial',
-                request_serializer=jumpstarter_dot_v1_dot_router__pb2.DialRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_router__pb2.DialResponse.FromString,
-                _registered_method=True)
-
-
-class RouterServiceServicer(object):
-    """RouterService
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    allowlist: jumpstarter exporters
-    """
-
-    def Listen(self, request, context):
-        """Listen announces the availability of the caller
-        and returns tokens for accepting incoming streams.
-        Listen address is implied from the sub claim.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def Dial(self, request, context):
-        """Dial returns a stream id for connecting to the given address.
-        The allowlist claim is checked for permission.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_RouterServiceServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'Listen': grpc.unary_stream_rpc_method_handler(
-                    servicer.Listen,
-                    request_deserializer=jumpstarter_dot_v1_dot_router__pb2.ListenRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_router__pb2.ListenResponse.SerializeToString,
-            ),
-            'Dial': grpc.unary_unary_rpc_method_handler(
-                    servicer.Dial,
-                    request_deserializer=jumpstarter_dot_v1_dot_router__pb2.DialRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_router__pb2.DialResponse.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'jumpstarter.v1.RouterService', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('jumpstarter.v1.RouterService', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
-class RouterService(object):
-    """RouterService
-    Claims:
-    iss: jumpstarter controller
-    aud: jumpstarter router
-    sub: jumpstarter client/exporter
-    allowlist: jumpstarter exporters
-    """
-
-    @staticmethod
-    def Listen(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/jumpstarter.v1.RouterService/Listen',
-            jumpstarter_dot_v1_dot_router__pb2.ListenRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_router__pb2.ListenResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def Dial(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/jumpstarter.v1.RouterService/Dial',
-            jumpstarter_dot_v1_dot_router__pb2.DialRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_router__pb2.DialResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-
-class StreamServiceStub(object):
     """StreamService
     Claims:
-    iss: jumpstarter router
+    iss: jumpstarter controller
     aud: jumpstarter router
     sub: jumpstarter client/exporter
     stream: stream id
@@ -159,16 +21,16 @@ class StreamServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Stream = channel.stream_stream(
-                '/jumpstarter.v1.StreamService/Stream',
+                '/jumpstarter.v1.RouterService/Stream',
                 request_serializer=jumpstarter_dot_v1_dot_router__pb2.StreamRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_router__pb2.StreamResponse.FromString,
                 _registered_method=True)
 
 
-class StreamServiceServicer(object):
+class RouterServiceServicer(object):
     """StreamService
     Claims:
-    iss: jumpstarter router
+    iss: jumpstarter controller
     aud: jumpstarter router
     sub: jumpstarter client/exporter
     stream: stream id
@@ -182,7 +44,7 @@ class StreamServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_StreamServiceServicer_to_server(servicer, server):
+def add_RouterServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Stream': grpc.stream_stream_rpc_method_handler(
                     servicer.Stream,
@@ -191,16 +53,16 @@ def add_StreamServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'jumpstarter.v1.StreamService', rpc_method_handlers)
+            'jumpstarter.v1.RouterService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('jumpstarter.v1.StreamService', rpc_method_handlers)
+    server.add_registered_method_handlers('jumpstarter.v1.RouterService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class StreamService(object):
+class RouterService(object):
     """StreamService
     Claims:
-    iss: jumpstarter router
+    iss: jumpstarter controller
     aud: jumpstarter router
     sub: jumpstarter client/exporter
     stream: stream id
@@ -220,7 +82,7 @@ class StreamService(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/jumpstarter.v1.StreamService/Stream',
+            '/jumpstarter.v1.RouterService/Stream',
             jumpstarter_dot_v1_dot_router__pb2.StreamRequest.SerializeToString,
             jumpstarter_dot_v1_dot_router__pb2.StreamResponse.FromString,
             options,
