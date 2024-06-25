@@ -2,46 +2,29 @@ package router
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-func BearerToken(ctx context.Context, keyFunc jwt.Keyfunc, issuer string, audience string) (*jwt.Token, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Errorf(codes.InvalidArgument, "missing metadata")
+func BearerToken(ctx context.Context, psk string, issuer string, audience string) (*jwt.Token, error) {
+	authorization, err := token.BearerTokenFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	authorizations := md.Get("authorization")
-
-	if len(authorizations) < 1 {
-		return nil, status.Errorf(codes.Unauthenticated, "missing authorization header")
-	}
-
-	// https://www.rfc-editor.org/rfc/rfc7230#section-3.2.2
-	// A sender MUST NOT generate multiple header fields with the same field name in a message
-	if len(authorizations) > 1 {
-		return nil, status.Errorf(codes.InvalidArgument, "multiple authorization headers")
-	}
-
-	// Invariant: len(authorizations) == 1
-	authorization := authorizations[0]
-
-	// Reference: https://github.com/golang-jwt/jwt/blob/62e504c2/request/extractor.go#L93
-	if len(authorization) < 7 || !strings.EqualFold(authorization[:7], "Bearer ") {
-		return nil, status.Errorf(codes.InvalidArgument, "malformed authorization header")
-	}
-
-	// Invariant: len(authorization) >= 7
-	token, err := jwt.Parse(authorization[7:],
-		keyFunc,
-		jwt.WithValidMethods([]string{"HS256", "HS384", "HS512"}),
+	token, err := jwt.Parse(authorization,
+		func(t *jwt.Token) (interface{}, error) {
+			return []byte(psk), nil
+		},
+		jwt.WithValidMethods([]string{
+			jwt.SigningMethodHS256.Alg(),
+			jwt.SigningMethodHS512.Alg(),
+		}),
 		jwt.WithIssuer(issuer),
 		jwt.WithAudience(audience),
 		jwt.WithExpirationRequired(),
@@ -54,15 +37,13 @@ func BearerToken(ctx context.Context, keyFunc jwt.Keyfunc, issuer string, audien
 }
 
 type RouterConfig struct {
-	Issuer    string
-	Audience  string
-	PublicKey string
+	PSK string
 }
 
 type RouterServer struct {
 	pb.UnimplementedRouterServiceServer
-	Map    *sync.Map
-	config *RouterConfig
+	pending *sync.Map
+	config  *RouterConfig
 }
 
 type streamCtx struct {
@@ -72,46 +53,47 @@ type streamCtx struct {
 
 func NewRouterServer(config *RouterConfig) (*RouterServer, error) {
 	return &RouterServer{
-		Map:    &sync.Map{},
-		config: config,
+		pending: &sync.Map{},
+		config:  config,
 	}, nil
 }
 
 func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 	ctx := stream.Context()
 
-	token, err := BearerToken(ctx, func(t *jwt.Token) (interface{}, error) {
-		return []byte(s.config.PublicKey), nil
-	}, s.config.Issuer, s.config.Audience)
+	bearer, err := token.BearerTokenFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	sub, err := token.Claims.GetSubject()
+	claims, err := token.ParseWithClaims[RouterClaims](bearer, s.config.PSK, "controller", "router")
 	if err != nil {
-		return status.Errorf(codes.PermissionDenied, "unable to get sub claim")
+		return err
 	}
 
-	exp, err := token.Claims.GetExpirationTime()
+	exp, err := claims.GetExpirationTime()
 	if err != nil {
 		return status.Errorf(codes.PermissionDenied, "unable to get exp claim")
 	}
 
 	ctx, cancel := context.WithDeadline(ctx, exp.Time)
+	defer cancel()
 
-	cond := streamCtx{
+	// TODO: periodically check for token revocation and call cancel
+
+	sctx := streamCtx{
 		cancel: cancel,
 		stream: stream,
 	}
 
-	actual, loaded := s.Map.LoadOrStore(sub, cond)
+	actual, loaded := s.pending.LoadOrStore(claims.Stream, sctx)
 	if loaded {
 		defer actual.(streamCtx).cancel()
 		return forward(ctx, stream, actual.(streamCtx).stream)
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil
+	} else {
+		select {
+		case <-ctx.Done():
+			return nil
+		}
 	}
 }
