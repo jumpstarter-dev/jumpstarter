@@ -40,10 +40,15 @@ func BearerTokenFromContext(ctx context.Context) (string, error) {
 	return authorization[7:], nil
 }
 
-func ParseWithClaims[T jwt.Claims](token string, psk string, iss string, aud string) (*T, error) {
-	var claims T
+type PtrClaims[T any] interface {
+	jwt.Claims
+	*T
+}
 
-	parsed, err := jwt.ParseWithClaims(token, claims,
+func ParseWithClaims[T jwt.Claims, PT PtrClaims[T]](token string, psk string, iss string, aud string) (*T, error) {
+	var empty T
+
+	parsed, err := jwt.ParseWithClaims(token, PT(&empty),
 		func(t *jwt.Token) (interface{}, error) {
 			return []byte(psk), nil
 		},
@@ -60,10 +65,10 @@ func ParseWithClaims[T jwt.Claims](token string, psk string, iss string, aud str
 		return nil, status.Errorf(codes.PermissionDenied, "unable to validate jwt token")
 	}
 
-	claims, ok := parsed.Claims.(T)
+	claims, ok := parsed.Claims.(PT)
 	if !ok {
 		return nil, status.Errorf(codes.Internal, "unable to parse jwt claims")
 	}
 
-	return &claims, nil
+	return claims, nil
 }

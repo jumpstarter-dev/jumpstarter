@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"log"
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -28,7 +29,8 @@ type listenCtx struct {
 
 func NewControllerServer(config *ControllerConfig) (*ControllerServer, error) {
 	return &ControllerServer{
-		config: config,
+		config:    config,
+		listenMap: &sync.Map{},
 	}, nil
 }
 
@@ -65,6 +67,8 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 		cancel: cancel,
 		stream: stream,
 	}
+
+	log.Printf("new listener: %s\n", sub)
 
 	_, loaded := s.listenMap.LoadOrStore(sub, lctx)
 
@@ -124,6 +128,8 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	// TODO: check (client, exporter) tuple against leases
 
+	log.Printf("new connector: %s\n", req.GetUuid())
+
 	value, ok := s.listenMap.Load(req.GetUuid())
 	if !ok {
 		return nil, status.Errorf(codes.Unavailable, "no matching listener")
@@ -142,7 +148,7 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 	}
 
 	// TODO: find best router from list
-	endpoint := "127.0.0.1:8001"
+	endpoint := "unix:/tmp/jumpstarter-router.sock"
 
 	// TODO: check listener matches subject
 	err = value.(listenCtx).stream.Send(&pb.ListenResponse{

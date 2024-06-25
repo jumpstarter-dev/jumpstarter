@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"log"
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -87,9 +88,11 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 
 	actual, loaded := s.pending.LoadOrStore(claims.Stream, sctx)
 	if loaded {
+		log.Printf("stream %s established\n", claims.Stream)
 		defer actual.(streamCtx).cancel()
 		return forward(ctx, stream, actual.(streamCtx).stream)
 	} else {
+		log.Printf("stream %s waiting\n", claims.Stream)
 		select {
 		case <-ctx.Done():
 			return nil

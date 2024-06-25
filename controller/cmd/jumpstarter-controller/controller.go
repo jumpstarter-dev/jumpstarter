@@ -1,21 +1,21 @@
 package main
 
 import (
-	"flag"
 	"log"
 	"net"
+	"os"
 
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/controller"
 	"google.golang.org/grpc"
 )
 
-var listenAddr = flag.String("listen", "127.0.0.1:8000", "listen address")
-
 func main() {
-	flag.Parse()
+	address := "/tmp/jumpstarter-controller.sock"
 
-	listen, err := net.Listen("tcp", *listenAddr)
+	os.RemoveAll(address)
+
+	listen, err := net.Listen("unix", address)
 	if err != nil {
 		log.Fatal(err)
 	}
