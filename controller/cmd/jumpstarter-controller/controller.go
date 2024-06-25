@@ -6,11 +6,11 @@ import (
 	"net"
 
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/controller"
 	"google.golang.org/grpc"
 )
 
-var listenAddr = flag.String("listen", "127.0.0.1:8001", "listen address")
+var listenAddr = flag.String("listen", "127.0.0.1:8000", "listen address")
 
 func main() {
 	flag.Parse()
@@ -22,12 +22,12 @@ func main() {
 
 	server := grpc.NewServer()
 
-	rs, err := router.NewRouterServer(&router.RouterConfig{})
+	cs, err := controller.NewControllerServer(&controller.ControllerConfig{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	pb.RegisterRouterServiceServer(server, rs)
+	pb.RegisterControllerServiceServer(server, cs)
 
 	err = server.Serve(listen)
 	if err != nil {
