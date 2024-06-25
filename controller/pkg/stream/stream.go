@@ -11,38 +11,36 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type StreamConfig struct {
-	Principal string
-	Router    struct {
-		PublicKey string
-		Principal string
-	}
+type RouterConfig struct {
+	Issuer    string
+	Audience  string
+	PublicKey string
 }
 
-type StreamServer struct {
-	pb.UnimplementedStreamServiceServer
+type RouterServer struct {
+	pb.UnimplementedRouterServiceServer
 	Map    *sync.Map
-	config *StreamConfig
+	config *RouterConfig
 }
 
 type streamCtx struct {
 	cancel context.CancelFunc
-	stream pb.StreamService_StreamServer
+	stream pb.RouterService_StreamServer
 }
 
-func NewStreamServer(config *StreamConfig) (*StreamServer, error) {
-	return &StreamServer{
+func NewRouterServer(config *RouterConfig) (*RouterServer, error) {
+	return &RouterServer{
 		Map:    &sync.Map{},
 		config: config,
 	}, nil
 }
 
-func (s *StreamServer) Stream(stream pb.StreamService_StreamServer) error {
+func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 	ctx := stream.Context()
 
 	token, err := router.BearerToken(ctx, func(t *jwt.Token) (interface{}, error) {
-		return []byte(s.config.Router.PublicKey), nil
-	}, s.config.Router.Principal, s.config.Principal)
+		return []byte(s.config.PublicKey), nil
+	}, s.config.Issuer, s.config.Audience)
 	if err != nil {
 		return err
 	}

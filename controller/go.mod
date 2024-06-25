@@ -5,7 +5,7 @@ go 1.22.3
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
-	github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240624185442-677fa4f5ac91
+	github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240625143106-0fdb88343d4c
 	golang.org/x/sync v0.7.0
 	google.golang.org/grpc v1.64.0
 )

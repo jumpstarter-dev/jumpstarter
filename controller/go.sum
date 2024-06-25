@@ -12,6 +12,8 @@ github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240624181219-dd4a8a2
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240624181219-dd4a8a273909/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240624185442-677fa4f5ac91 h1:H3nmUxlFTUmxZYrsO/TKYmLVh/EFMOfg86ZhDkxav0I=
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240624185442-677fa4f5ac91/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240625143106-0fdb88343d4c h1:ohPZKT+i8M2fgTNCz8wtwcSyzLU2E4ki1X5fwCe1EaM=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240625143106-0fdb88343d4c/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
 golang.org/x/net v0.22.0 h1:9sGLhx7iRIHEiX0oAJ3MRZMUCElJgy7Br1nO+AMN3Tc=
 golang.org/x/net v0.22.0/go.mod h1:JKghWKKOSdJwpW2GEx0Ja7fmaKnMsbu+MWVZTokSYmg=
 golang.org/x/net v0.26.0 h1:soB7SVo0PWrY4vPW/+ay0jKDNScG2X9wFeYlXIvJsOQ=

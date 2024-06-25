@@ -30,24 +30,6 @@ func NewControllerServer(config *ControllerConfig) (*ControllerServer, error) {
 }
 
 func (s *ControllerServer) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
-	// FIXME: check bootstrap token
-	sub := req.GetUuid()
-
-	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:    s.config.Principal,
-		Audience:  jwt.ClaimStrings{s.config.Router.Principal},
-		Subject:   sub,
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-	})
-
-	signed, err := t.SignedString([]byte(s.config.PrivateKey))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to get issue router token")
-	}
-
-	return &pb.RegisterResponse{
-		RouterEndpoint: "", // TODO: ignored for now
-		RouterToken:    signed,
-	}, nil
-
+	// TODO: check token
+	return &pb.RegisterResponse{}, nil
 }
