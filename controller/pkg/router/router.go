@@ -5,37 +5,11 @@ import (
 	"log"
 	"sync"
 
-	"github.com/golang-jwt/jwt/v5"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-func BearerToken(ctx context.Context, psk string, issuer string, audience string) (*jwt.Token, error) {
-	authorization, err := token.BearerTokenFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	token, err := jwt.Parse(authorization,
-		func(t *jwt.Token) (interface{}, error) {
-			return []byte(psk), nil
-		},
-		jwt.WithValidMethods([]string{
-			jwt.SigningMethodHS256.Alg(),
-			jwt.SigningMethodHS512.Alg(),
-		}),
-		jwt.WithIssuer(issuer),
-		jwt.WithAudience(audience),
-		jwt.WithExpirationRequired(),
-	)
-	if err != nil || !token.Valid {
-		return nil, status.Errorf(codes.PermissionDenied, "unable to validate jwt token")
-	}
-
-	return token, nil
-}
 
 type RouterConfig struct{}
 

@@ -85,7 +85,7 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 	}
 }
 
-func (s *ControllerServer) streamToken(sub string, exp *jwt.NumericDate, stream string) (string, error) {
+func (s *ControllerServer) streamToken(sub string, peer string, exp *jwt.NumericDate, stream string) (string, error) {
 	stoken := jwt.NewWithClaims(jwt.SigningMethodHS256, router.RouterClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			// TODO: use proper iss/aud
@@ -95,6 +95,7 @@ func (s *ControllerServer) streamToken(sub string, exp *jwt.NumericDate, stream 
 			ExpiresAt: exp,
 		},
 		Stream: stream,
+		Peer:   peer,
 	})
 
 	signed, err := stoken.SignedString([]byte("stream-key"))
@@ -138,12 +139,12 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	stream := uuid.New().String()
 
-	etoken, err := s.streamToken(req.GetUuid(), exp, stream)
+	etoken, err := s.streamToken(req.GetUuid(), sub, exp, stream)
 	if err != nil {
 		return nil, err
 	}
 
-	ctoken, err := s.streamToken(sub, exp, stream)
+	ctoken, err := s.streamToken(sub, req.GetUuid(), exp, stream)
 	if err != nil {
 		return nil, err
 	}
