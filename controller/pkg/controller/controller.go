@@ -8,16 +8,12 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type ControllerConfig struct {
-	Issuer     string
-	Audience   string
-	PublicKey  string
-	PrivateKey string
-}
+type ControllerConfig struct{}
 
 type ControllerServer struct {
 	pb.UnimplementedControllerServiceServer
@@ -36,46 +32,44 @@ func NewControllerServer(config *ControllerConfig) (*ControllerServer, error) {
 	}, nil
 }
 
-func (s *ControllerServer) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
-	// TODO: check token
-	return &pb.RegisterResponse{}, nil
-}
-
 func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
 	ctx := stream.Context()
 
-	token, err := router.BearerToken(ctx,
-		func(t *jwt.Token) (interface{}, error) { return []byte(s.config.PublicKey), nil },
-		s.config.Issuer,
-		s.config.Audience,
-	)
+	bearer, err := token.BearerTokenFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	sub, err := token.Claims.GetSubject()
+	// TODO: use k8s token introspection endpoint
+	claims, err := token.ParseWithClaims[jwt.RegisteredClaims](bearer, "k8s-key", "k8s", "controller")
+	if err != nil {
+		return err
+	}
+
+	sub, err := claims.GetSubject()
 	if err != nil {
 		return status.Errorf(codes.PermissionDenied, "unable to get sub claim")
 	}
 
-	exp, err := token.Claims.GetExpirationTime()
+	exp, err := claims.GetExpirationTime()
 	if err != nil {
 		return status.Errorf(codes.PermissionDenied, "unable to get exp claim")
 	}
 
-	// TODO: call cancel on token revocation
+	// TODO: periodically check for token revocation and revoke derived stream tokens
+
 	ctx, cancel := context.WithDeadline(ctx, exp.Time)
 	defer cancel()
 
-	lis := listenCtx{
+	lctx := listenCtx{
 		cancel: cancel,
 		stream: stream,
 	}
 
-	_, loaded := s.listenMap.LoadOrStore(sub, lis)
+	_, loaded := s.listenMap.LoadOrStore(sub, lctx)
 
 	if loaded {
-		return status.Errorf(codes.AlreadyExists, "another node is already listening on the sub")
+		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
 	defer s.listenMap.Delete(sub)
@@ -86,22 +80,49 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 	}
 }
 
+func (s *ControllerServer) streamToken(sub string, exp *jwt.NumericDate, stream string) (string, error) {
+	stoken := jwt.NewWithClaims(jwt.SigningMethodHS256, router.RouterClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			// TODO: use proper iss/aud
+			Issuer:    "controller",
+			Audience:  jwt.ClaimStrings{"router"},
+			Subject:   sub,
+			ExpiresAt: exp,
+		},
+		Stream: stream,
+	})
+
+	signed, err := stoken.SignedString([]byte("stream-key"))
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "unable to issue stream token")
+	}
+
+	return signed, nil
+}
+
 func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	token, err := router.BearerToken(ctx,
-		func(t *jwt.Token) (interface{}, error) { return []byte(s.config.PublicKey), nil },
-		s.config.Issuer,
-		s.config.Audience,
-	)
+	bearer, err := token.BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	exp, err := token.Claims.GetExpirationTime()
+	// TODO: use k8s token introspection endpoint
+	claims, err := token.ParseWithClaims[jwt.RegisteredClaims](bearer, "k8s-key", "k8s", "controller")
+	if err != nil {
+		return nil, err
+	}
+
+	sub, err := claims.GetSubject()
+	if err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "unable to get sub claim")
+	}
+
+	exp, err := claims.GetExpirationTime()
 	if err != nil {
 		return nil, status.Errorf(codes.PermissionDenied, "unable to get exp claim")
 	}
 
-	// TODO: check allowlist
+	// TODO: check (client, exporter) tuple against leases
 
 	value, ok := s.listenMap.Load(req.GetUuid())
 	if !ok {
@@ -110,30 +131,30 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	stream := uuid.New().String()
 
-	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:   s.config.Audience,
-		Audience: jwt.ClaimStrings{"stream"}, // a list of stream servers for LB
-		Subject:  stream,
-		// inherit expiration
-		// TODO: cascading revocation
-		ExpiresAt: exp,
-	})
-
-	signed, err := t.SignedString([]byte(s.config.PrivateKey))
+	etoken, err := s.streamToken(req.GetUuid(), exp, stream)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to issue stream token")
+		return nil, err
 	}
 
+	ctoken, err := s.streamToken(sub, exp, stream)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: find best router from list
+	endpoint := "127.0.0.1:8001"
+
+	// TODO: check listener matches subject
 	err = value.(listenCtx).stream.Send(&pb.ListenResponse{
-		RouterEndpoint: "",
-		RouterToken:    signed,
+		RouterEndpoint: endpoint,
+		RouterToken:    etoken,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &pb.DialResponse{
-		RouterEndpoint: "",
-		RouterToken:    signed,
+		RouterEndpoint: endpoint,
+		RouterToken:    ctoken,
 	}, nil
 }

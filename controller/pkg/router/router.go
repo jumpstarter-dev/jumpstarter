@@ -36,9 +36,7 @@ func BearerToken(ctx context.Context, psk string, issuer string, audience string
 	return token, nil
 }
 
-type RouterConfig struct {
-	PSK string
-}
+type RouterConfig struct{}
 
 type RouterServer struct {
 	pb.UnimplementedRouterServiceServer
@@ -66,7 +64,8 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 		return err
 	}
 
-	claims, err := token.ParseWithClaims[RouterClaims](bearer, s.config.PSK, "controller", "router")
+	// TODO: use proper psk/iss/aud
+	claims, err := token.ParseWithClaims[RouterClaims](bearer, "stream-key", "controller", "router")
 	if err != nil {
 		return err
 	}
