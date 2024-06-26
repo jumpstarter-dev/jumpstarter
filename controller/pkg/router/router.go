@@ -7,25 +7,41 @@ import (
 
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/authn"
-	authnv1c "k8s.io/client-go/kubernetes/typed/authentication/v1"
+	"google.golang.org/grpc"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type RouterServer struct {
 	pb.UnimplementedRouterServiceServer
-	pending *sync.Map
-	authn   authnv1c.AuthenticationV1Interface
+	pending   *sync.Map
+	clientset *kubernetes.Clientset
 }
 
-type streamCtx struct {
+type streamContext struct {
 	cancel context.CancelFunc
 	stream pb.RouterService_StreamServer
 }
 
-func NewRouterServer(authn authnv1c.AuthenticationV1Interface) (*RouterServer, error) {
-	return &RouterServer{
-		pending: &sync.Map{},
-		authn:   authn,
-	}, nil
+func RegisterRouterServer(server *grpc.Server) error {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+
+	router := RouterServer{
+		pending:   &sync.Map{},
+		clientset: clientset,
+	}
+
+	pb.RegisterRouterServiceServer(server, &router)
+
+	return nil
 }
 
 func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
@@ -38,7 +54,7 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 
 	aud, exp, err := authn.Authenticate(
 		ctx,
-		s.authn,
+		s.clientset.AuthenticationV1(),
 		token,
 		"https",
 		"jumpstarter-router.example.com",
@@ -57,7 +73,7 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 
 	// TODO: periodically check for token revocation and call cancel
 
-	sctx := streamCtx{
+	sctx := streamContext{
 		cancel: cancel,
 		stream: stream,
 	}
@@ -65,8 +81,8 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 	actual, loaded := s.pending.LoadOrStore(streamId, sctx)
 	if loaded {
 		log.Printf("subject %s connected to peer %s on stream %s\n", subject, peer, streamId)
-		defer actual.(streamCtx).cancel()
-		return forward(ctx, stream, actual.(streamCtx).stream)
+		defer actual.(streamContext).cancel()
+		return forward(ctx, stream, actual.(streamContext).stream)
 	} else {
 		log.Printf("subject %s waiting for peer %s on stream %s\n", subject, peer, streamId)
 		select {
