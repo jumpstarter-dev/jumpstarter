@@ -68,15 +68,13 @@ func TestController(t *testing.T) {
 		t.Fatalf("failed to create k8s client: %s", err)
 	}
 
-	saClient := clientset.CoreV1().ServiceAccounts(corev1.NamespaceDefault)
+	saclient := clientset.CoreV1().ServiceAccounts(corev1.NamespaceDefault)
 
-	controllerSA := createServiceAccount(t, saClient, "controller")
-	exporterSA := createServiceAccount(t, saClient, "exporter-01")
-	clientSA := createServiceAccount(t, saClient, "client-01")
+	exporterServiceAccount := createServiceAccount(t, saclient, "exporter-01")
 
-	t.Log(controllerSA, exporterSA, clientSA)
+	t.Logf("%+v\n", exporterServiceAccount)
 
-	exporterToken := createToken(t, saClient, exporterSA, "controller", 3600)
+	exporterToken := createToken(t, saclient, exporterServiceAccount, "controller", 3600)
 
 	review, err := clientset.AuthenticationV1().TokenReviews().Create(
 		context.TODO(),
@@ -92,7 +90,7 @@ func TestController(t *testing.T) {
 		t.Fatalf("failed to create TokenReview: %s", err)
 	}
 
-	t.Log(review.Status)
+	t.Logf("%+v\n", review.Status)
 
 	env.Stop()
 }
