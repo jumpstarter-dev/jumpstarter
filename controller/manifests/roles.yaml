@@ -7,7 +7,7 @@ rules:
   - apiGroups: [""]
     resources: ["serviceaccounts/token"]
     verbs: ["create"]
-    resourceNames: ["jumpstarter-exporter", "jumpstarter-router"]
+    resourceNames: ["jumpstarter-tokenholder"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
