@@ -1,0 +1,24 @@
+name: "Generate stubs"
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  generate:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Running generate
+        run: make generate
+
+      - name: Verify that stubs are up-to-date
+        run: git diff --exit-code
+
