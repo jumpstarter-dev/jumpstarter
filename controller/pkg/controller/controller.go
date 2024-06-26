@@ -10,6 +10,7 @@ import (
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -32,6 +33,24 @@ func NewControllerServer(config *ControllerConfig) (*ControllerServer, error) {
 		config:    config,
 		listenMap: &sync.Map{},
 	}, nil
+}
+
+func (s *ControllerServer) UnaryServerInterceptor(
+	ctx context.Context,
+	req any,
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (resp any, err error) {
+	return handler(ctx, req)
+}
+
+func (s *ControllerServer) StreamServerInterceptor(
+	srv any,
+	ss grpc.ServerStream,
+	info *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) error {
+	return handler(srv, ss)
 }
 
 func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
