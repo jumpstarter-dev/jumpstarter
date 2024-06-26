@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"log"
-	"net/url"
 	"sync"
 	"time"
 
@@ -36,33 +35,31 @@ func NewControllerServer(clientset *kubernetes.Clientset) (*ControllerServer, er
 	}, nil
 }
 
-func (s *ControllerServer) audience(ctx context.Context, username string) (*url.URL, *time.Time, error) {
+func (s *ControllerServer) authenticate(ctx context.Context) (*authn.TokenParam, error) {
 	token, err := authn.BearerTokenFromContext(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	return authn.Authenticate(
 		ctx,
 		s.clientset.AuthenticationV1(),
 		token,
-		"https",
 		"jumpstarter-controller.example.com",
-		username,
 	)
 }
 
 func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
 	ctx := stream.Context()
 
-	aud, exp, err := s.audience(ctx, "system:serviceaccount:default:jumpstarter-exporter")
+	param, err := s.authenticate(ctx)
 	if err != nil {
 		return err
 	}
 
 	// TODO: periodically check for token revocation and revoke derived stream tokens
 
-	ctx, cancel := context.WithDeadline(ctx, *exp)
+	ctx, cancel := context.WithDeadline(ctx, param.Expiration)
 	defer cancel()
 
 	lctx := listenCtx{
@@ -70,49 +67,48 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 		stream: stream,
 	}
 
-	_, loaded := s.listenMap.LoadOrStore(aud.String(), lctx)
+	_, loaded := s.listenMap.LoadOrStore(param.Subject, lctx)
 
 	if loaded {
 		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
-	log.Printf("subject %s listening\n", aud.String())
+	log.Printf("subject %s listening\n", param.Subject)
 
-	defer s.listenMap.Delete(aud.String())
+	defer s.listenMap.Delete(param.Subject)
 
 	select {
 	case <-ctx.Done():
-		log.Printf("subject %s left\n", aud.String())
+		log.Printf("subject %s left\n", param.Subject)
 		return nil
 	}
 }
 
 func (s *ControllerServer) streamToken(
 	ctx context.Context,
-	sub string,
 	stream string,
-	peer string,
 	exp time.Time,
 ) (string, error) {
 	return authn.Issue(
 		ctx,
 		s.clientset.CoreV1().ServiceAccounts(metav1.NamespaceDefault),
-		"jumpstarter-router",
 		"jumpstarter-router.example.com",
-		map[string]string{"sub": sub, "stream": stream, "peer": peer},
-		exp,
+		authn.TokenParam{
+			Subject:    stream,
+			Expiration: exp,
+		},
 	)
 }
 
 func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	aud, exp, err := s.audience(ctx, "system:serviceaccount:default:jumpstarter-client")
+	param, err := s.authenticate(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: check (client, exporter) tuple against leases
 
-	log.Printf("subject %s connecting to %s\n", aud.String(), req.GetUuid())
+	log.Printf("subject %s connecting to %s\n", param.Subject, req.GetUuid())
 
 	value, ok := s.listenMap.Load(req.GetUuid())
 	if !ok {
@@ -121,23 +117,10 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	stream := uuid.New().String()
 
-	etoken, err := s.streamToken(
+	token, err := s.streamToken(
 		ctx,
-		req.GetUuid(),
 		stream,
-		aud.String(),
-		*exp,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ctoken, err := s.streamToken(
-		ctx,
-		aud.String(),
-		stream,
-		req.GetUuid(),
-		*exp,
+		param.Expiration,
 	)
 	if err != nil {
 		return nil, err
@@ -149,7 +132,7 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 	// TODO: check listener matches subject
 	err = value.(listenCtx).stream.Send(&pb.ListenResponse{
 		RouterEndpoint: endpoint,
-		RouterToken:    etoken,
+		RouterToken:    token,
 	})
 	if err != nil {
 		return nil, err
@@ -157,6 +140,6 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	return &pb.DialResponse{
 		RouterEndpoint: endpoint,
-		RouterToken:    ctoken,
+		RouterToken:    token,
 	}, nil
 }

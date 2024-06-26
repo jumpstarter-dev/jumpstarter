@@ -52,23 +52,17 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 		return err
 	}
 
-	aud, exp, err := authn.Authenticate(
+	param, err := authn.Authenticate(
 		ctx,
 		s.clientset.AuthenticationV1(),
 		token,
-		"https",
 		"jumpstarter-router.example.com",
-		"jumpstarter-router",
 	)
 	if err != nil {
 		return err
 	}
 
-	subject := aud.Query().Get("subject")
-	peer := aud.Query().Get("peer")
-	streamId := aud.Query().Get("stream")
-
-	ctx, cancel := context.WithDeadline(ctx, *exp)
+	ctx, cancel := context.WithDeadline(ctx, param.Expiration)
 	defer cancel()
 
 	// TODO: periodically check for token revocation and call cancel
@@ -78,13 +72,13 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 		stream: stream,
 	}
 
-	actual, loaded := s.pending.LoadOrStore(streamId, sctx)
+	actual, loaded := s.pending.LoadOrStore(param.Subject, sctx)
 	if loaded {
-		log.Printf("subject %s connected to peer %s on stream %s\n", subject, peer, streamId)
+		log.Printf("stream %s connected\n", param.Subject)
 		defer actual.(streamContext).cancel()
 		return forward(ctx, stream, actual.(streamContext).stream)
 	} else {
-		log.Printf("subject %s waiting for peer %s on stream %s\n", subject, peer, streamId)
+		log.Printf("stream %s waiting for peer\n", param.Subject)
 		select {
 		case <-ctx.Done():
 			return nil

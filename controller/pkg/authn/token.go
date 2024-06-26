@@ -17,33 +17,38 @@ import (
 	corev1c "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
+const ServiceAccount = "jumpstarter-tokenholder"
+const ServiceAccountUsername = "system:serviceaccount:default:jumpstarter-tokenholder"
+const Sub = "sub"
+
+type TokenParam struct {
+	Subject    string
+	Expiration time.Time
+}
+
 func Issue(
 	ctx context.Context,
 	client corev1c.ServiceAccountInterface,
-	serviceAccountName string,
 	host string,
-	meta map[string]string,
-	expiration time.Time,
+	param TokenParam,
 ) (string, error) {
-	seconds := int64(expiration.Sub(time.Now()).Seconds())
+	seconds := int64(param.Expiration.Sub(time.Now()).Seconds())
 
 	query := url.Values{}
-	for k, v := range meta {
-		query.Set(k, v)
-	}
+	query.Set(Sub, param.Subject)
 
-	audience := url.URL{
+	audience := (&url.URL{
 		Scheme:   "https",
 		Host:     host,
 		RawQuery: query.Encode(),
-	}
+	}).String()
 
 	token, err := client.CreateToken(
 		ctx,
-		serviceAccountName,
+		ServiceAccount,
 		&authnv1.TokenRequest{
 			Spec: authnv1.TokenRequestSpec{
-				Audiences:         []string{audience.String()},
+				Audiences:         []string{audience},
 				ExpirationSeconds: &seconds,
 			},
 		},
@@ -91,25 +96,23 @@ func Authenticate(
 	ctx context.Context,
 	client authnv1c.AuthenticationV1Interface,
 	token string,
-	scheme string,
 	host string,
-	username string,
-) (*url.URL, *time.Time, error) {
+) (*TokenParam, error) {
 	parser := jwt.NewParser(jwt.WithExpirationRequired())
 
 	parsed, _, err := parser.ParseUnverified(token, &jwt.RegisteredClaims{})
 	if err != nil {
-		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid jwt token")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid jwt token")
 	}
 
 	audiences, err := parsed.Claims.GetAudience()
 	if err != nil {
-		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid jwt audience")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid jwt audience")
 	}
 
 	expiration, err := parsed.Claims.GetExpirationTime()
 	if err != nil {
-		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid jwt expiration")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid jwt expiration")
 	}
 
 	var matched []*url.URL
@@ -121,7 +124,7 @@ func Authenticate(
 			continue
 		}
 		// skip non local audiences
-		if aud.Scheme != scheme || aud.Host != host {
+		if aud.Scheme != "https" || aud.Host != host {
 			continue
 		}
 		// add local audience to matched list
@@ -129,7 +132,7 @@ func Authenticate(
 	}
 
 	if len(matched) != 1 {
-		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid number of local jwt audience")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid number of local jwt audience")
 	}
 
 	// Invariant: len(matched) == 1
@@ -145,12 +148,16 @@ func Authenticate(
 		},
 		metav1.CreateOptions{},
 	)
+
 	if err != nil ||
 		!review.Status.Authenticated ||
-		!slices.Contains(review.Status.Audiences, audience.String()) ||
-		review.Status.User.Username != username {
-		return nil, nil, status.Errorf(codes.Unauthenticated, "unauthenticated jwt token")
+		review.Status.User.Username != ServiceAccountUsername ||
+		!slices.Contains(review.Status.Audiences, audience.String()) {
+		return nil, status.Errorf(codes.Unauthenticated, "unauthenticated jwt token")
 	}
 
-	return audience, &expiration.Time, nil
+	return &TokenParam{
+		Subject:    audience.Query().Get(Sub),
+		Expiration: expiration.Time,
+	}, nil
 }
