@@ -2,16 +2,16 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/url"
 	"slices"
 	"sync"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
-	"github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
+	jtoken "github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -46,7 +46,7 @@ func NewControllerServer(config *ControllerConfig) (*ControllerServer, error) {
 }
 
 func (s *ControllerServer) audience(ctx context.Context) (string, error) {
-	token, err := token.BearerTokenFromContext(ctx)
+	token, err := jtoken.BearerTokenFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -137,25 +137,34 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 	}
 }
 
-func (s *ControllerServer) streamToken(sub string, peer string, exp *jwt.NumericDate, stream string) (string, error) {
-	stoken := jwt.NewWithClaims(jwt.SigningMethodHS256, router.RouterClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			// TODO: use proper iss/aud
-			Issuer:    "controller",
-			Audience:  jwt.ClaimStrings{"router"},
-			Subject:   sub,
-			ExpiresAt: exp,
-		},
-		Stream: stream,
-		Peer:   peer,
-	})
+func (s *ControllerServer) streamToken(sub string, peer string, stream string, exp int64) (string, error) {
+	query := url.Values{}
+	query.Set("subject", sub)
+	query.Set("stream", stream)
+	query.Set("peer", peer)
 
-	signed, err := stoken.SignedString([]byte("stream-key"))
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "unable to issue stream token")
+	audience := url.URL{
+		Scheme:   "https",
+		Host:     "jumpstarter-router.example.com",
+		RawQuery: query.Encode(),
 	}
 
-	return signed, nil
+	token, err := s.clientset.CoreV1().ServiceAccounts(metav1.NamespaceDefault).CreateToken(
+		context.TODO(),
+		"jumpstarter-streams",
+		&authnv1.TokenRequest{
+			Spec: authnv1.TokenRequestSpec{
+				Audiences:         []string{audience.String()},
+				ExpirationSeconds: &exp,
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "failed to issue stream token")
+	}
+
+	return token.Status.Token, nil
 }
 
 func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
@@ -172,14 +181,12 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	stream := uuid.New().String()
 
-	exp := jwt.NewNumericDate(time.Now().Add(time.Hour))
-
-	etoken, err := s.streamToken(req.GetUuid(), audience, exp, stream)
+	etoken, err := s.streamToken(req.GetUuid(), audience, stream, 3600)
 	if err != nil {
 		return nil, err
 	}
 
-	ctoken, err := s.streamToken(audience, req.GetUuid(), exp, stream)
+	ctoken, err := s.streamToken(audience, req.GetUuid(), stream, 3600)
 	if err != nil {
 		return nil, err
 	}
