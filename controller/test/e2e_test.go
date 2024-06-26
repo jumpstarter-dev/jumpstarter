@@ -1,4 +1,4 @@
-package controller
+package test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/authn"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/controller"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
@@ -52,7 +53,7 @@ func prepareControler(clientset *kubernetes.Clientset) (func() error, error) {
 		return nil, err
 	}
 
-	cs, err := NewControllerServer(clientset)
+	cs, err := controller.NewControllerServer(clientset)
 	if err != nil {
 		return nil, err
 	}
