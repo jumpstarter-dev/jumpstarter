@@ -12,9 +12,50 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	authnv1 "k8s.io/api/authentication/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	authnv1c "k8s.io/client-go/kubernetes/typed/authentication/v1"
+	corev1c "k8s.io/client-go/kubernetes/typed/core/v1"
 )
+
+func Issue(
+	ctx context.Context,
+	client corev1c.ServiceAccountInterface,
+	serviceAccountName string,
+	host string,
+	meta map[string]string,
+	expiration time.Time,
+) (string, error) {
+	seconds := int64(expiration.Sub(time.Now()).Seconds())
+
+	query := url.Values{}
+	for k, v := range meta {
+		query.Set(k, v)
+	}
+
+	audience := url.URL{
+		Scheme:   "https",
+		Host:     host,
+		RawQuery: query.Encode(),
+	}
+
+	token, err := client.CreateToken(
+		ctx,
+		serviceAccountName,
+		&authnv1.TokenRequest{
+			Spec: authnv1.TokenRequestSpec{
+				Audiences:         []string{audience.String()},
+				ExpirationSeconds: &seconds,
+			},
+		},
+		metav1.CreateOptions{},
+	)
+
+	if err != nil {
+		return "", err
+	}
+
+	return token.Status.Token, nil
+}
 
 func BearerTokenFromContext(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -102,7 +143,7 @@ func Authenticate(
 				Audiences: []string{audience.String()},
 			},
 		},
-		v1.CreateOptions{},
+		metav1.CreateOptions{},
 	)
 	if err != nil ||
 		!review.Status.Authenticated ||
