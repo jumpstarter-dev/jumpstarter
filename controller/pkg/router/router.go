@@ -6,17 +6,14 @@ import (
 	"sync"
 
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	"github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/authn"
+	authnv1c "k8s.io/client-go/kubernetes/typed/authentication/v1"
 )
-
-type RouterConfig struct{}
 
 type RouterServer struct {
 	pb.UnimplementedRouterServiceServer
 	pending *sync.Map
-	config  *RouterConfig
+	authn   authnv1c.AuthenticationV1Interface
 }
 
 type streamCtx struct {
@@ -24,38 +21,38 @@ type streamCtx struct {
 	stream pb.RouterService_StreamServer
 }
 
-func NewRouterServer(config *RouterConfig) (*RouterServer, error) {
+func NewRouterServer(authn authnv1c.AuthenticationV1Interface) (*RouterServer, error) {
 	return &RouterServer{
 		pending: &sync.Map{},
-		config:  config,
+		authn:   authn,
 	}, nil
 }
 
 func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 	ctx := stream.Context()
 
-	bearer, err := token.BearerTokenFromContext(ctx)
+	token, err := authn.BearerTokenFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	// TODO: use proper psk/iss/aud
-	claims, err := token.ParseWithClaims[RouterClaims](bearer, "stream-key", "controller", "router")
+	aud, exp, err := authn.Authenticate(
+		ctx,
+		s.authn,
+		token,
+		"https",
+		"jumpstarter-router.example.com",
+		"jumpstarter-router",
+	)
 	if err != nil {
 		return err
 	}
 
-	sub, err := claims.GetSubject()
-	if err != nil {
-		return status.Errorf(codes.PermissionDenied, "unable to get sub claim")
-	}
+	subject := aud.Query().Get("subject")
+	peer := aud.Query().Get("peer")
+	streamId := aud.Query().Get("stream")
 
-	exp, err := claims.GetExpirationTime()
-	if err != nil {
-		return status.Errorf(codes.PermissionDenied, "unable to get exp claim")
-	}
-
-	ctx, cancel := context.WithDeadline(ctx, exp.Time)
+	ctx, cancel := context.WithDeadline(ctx, *exp)
 	defer cancel()
 
 	// TODO: periodically check for token revocation and call cancel
@@ -65,13 +62,13 @@ func (s *RouterServer) Stream(stream pb.RouterService_StreamServer) error {
 		stream: stream,
 	}
 
-	actual, loaded := s.pending.LoadOrStore(claims.Stream, sctx)
+	actual, loaded := s.pending.LoadOrStore(streamId, sctx)
 	if loaded {
-		log.Printf("subject %s connected to stream %s\n", sub, claims.Stream)
+		log.Printf("subject %s connected to peer %s on stream %s\n", subject, peer, streamId)
 		defer actual.(streamCtx).cancel()
 		return forward(ctx, stream, actual.(streamCtx).stream)
 	} else {
-		log.Printf("subject %s waiting on stream %s\n", sub, claims.Stream)
+		log.Printf("subject %s waiting for peer %s on stream %s\n", subject, peer, streamId)
 		select {
 		case <-ctx.Done():
 			return nil
