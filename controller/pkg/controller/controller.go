@@ -26,8 +26,7 @@ var expKey key
 
 type ControllerServer struct {
 	pb.UnimplementedControllerServiceServer
-	config    *ControllerConfig
-	clientset kubernetes.Clientset
+	clientset *kubernetes.Clientset
 	listenMap *sync.Map
 }
 
@@ -36,14 +35,14 @@ type listenCtx struct {
 	stream pb.ControllerService_ListenServer
 }
 
-func NewControllerServer(config *ControllerConfig) (*ControllerServer, error) {
+func NewControllerServer(clientset *kubernetes.Clientset) (*ControllerServer, error) {
 	return &ControllerServer{
-		config:    config,
+		clientset: clientset,
 		listenMap: &sync.Map{},
 	}, nil
 }
 
-func (s *ControllerServer) audience(ctx context.Context, group string) (*url.URL, *time.Time, error) {
+func (s *ControllerServer) audience(ctx context.Context, username string) (*url.URL, *time.Time, error) {
 	token, err := authn.BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -55,14 +54,14 @@ func (s *ControllerServer) audience(ctx context.Context, group string) (*url.URL
 		token,
 		"https",
 		"jumpstarter-controller.example.com",
-		group,
+		username,
 	)
 }
 
 func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
 	ctx := stream.Context()
 
-	aud, exp, err := s.audience(ctx, "jumpstarter-exporter")
+	aud, exp, err := s.audience(ctx, "system:serviceaccount:default:jumpstarter-exporter")
 	if err != nil {
 		return err
 	}
@@ -125,7 +124,7 @@ func (s *ControllerServer) streamToken(sub string, peer string, stream string, e
 }
 
 func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	aud, exp, err := s.audience(ctx, "jumpstarter-client")
+	aud, exp, err := s.audience(ctx, "system:serviceaccount:default:jumpstarter-client")
 	if err != nil {
 		return nil, err
 	}

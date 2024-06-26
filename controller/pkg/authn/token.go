@@ -52,7 +52,7 @@ func Authenticate(
 	token string,
 	scheme string,
 	host string,
-	group string,
+	username string,
 ) (*url.URL, *time.Time, error) {
 	parser := jwt.NewParser(jwt.WithExpirationRequired())
 
@@ -107,7 +107,7 @@ func Authenticate(
 	if err != nil ||
 		!review.Status.Authenticated ||
 		!slices.Contains(review.Status.Audiences, audience.String()) ||
-		!slices.Contains(review.Status.User.Groups, group) {
+		review.Status.User.Username != username {
 		return nil, nil, status.Errorf(codes.Unauthenticated, "unauthenticated jwt token")
 	}
 

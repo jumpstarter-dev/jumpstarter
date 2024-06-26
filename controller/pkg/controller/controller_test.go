@@ -2,12 +2,22 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"net"
+	"os"
 	"testing"
 
+	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
+	"golang.org/x/oauth2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/local"
+	"google.golang.org/grpc/credentials/oauth"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	authnv1c "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	apicorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
@@ -36,14 +46,14 @@ func createToken(
 	t *testing.T,
 	client apicorev1.ServiceAccountInterface,
 	sa *corev1.ServiceAccount,
-	audience string,
+	subject string,
 	expiration int64) string {
 	token, err := client.CreateToken(
 		context.TODO(),
 		sa.GetName(),
 		&authv1.TokenRequest{
 			Spec: authv1.TokenRequestSpec{
-				Audiences:         []string{audience},
+				Audiences:         []string{fmt.Sprintf("https://jumpstarter-controller.example.com?subject=%s", subject)},
 				ExpirationSeconds: &expiration,
 			},
 		},
@@ -53,6 +63,54 @@ func createToken(
 		t.Fatalf("failed to create service account token: %s", err)
 	}
 	return token.Status.Token
+}
+
+func prepareControler(clientset *kubernetes.Clientset) (func() error, error) {
+	address := "/tmp/jumpstarter-controller.sock"
+
+	os.RemoveAll(address)
+
+	listen, err := net.Listen("unix", address)
+	if err != nil {
+		return nil, err
+	}
+
+	cs, err := NewControllerServer(clientset)
+	if err != nil {
+		return nil, err
+	}
+
+	server := grpc.NewServer()
+
+	pb.RegisterControllerServiceServer(server, cs)
+
+	return func() error {
+		return server.Serve(listen)
+	}, nil
+}
+
+func prepareRouter(client authnv1c.AuthenticationV1Interface) (func() error, error) {
+	address := "/tmp/jumpstarter-router.sock"
+
+	os.RemoveAll(address)
+
+	listen, err := net.Listen("unix", address)
+	if err != nil {
+		return nil, err
+	}
+
+	rs, err := router.NewRouterServer(client)
+	if err != nil {
+		return nil, err
+	}
+
+	server := grpc.NewServer()
+
+	pb.RegisterRouterServiceServer(server, rs)
+
+	return func() error {
+		return server.Serve(listen)
+	}, nil
 }
 
 func TestController(t *testing.T) {
@@ -70,27 +128,62 @@ func TestController(t *testing.T) {
 
 	saclient := clientset.CoreV1().ServiceAccounts(corev1.NamespaceDefault)
 
-	exporterServiceAccount := createServiceAccount(t, saclient, "exporter-01")
-
-	t.Logf("%+v\n", exporterServiceAccount)
-
-	exporterToken := createToken(t, saclient, exporterServiceAccount, "controller", 3600)
-
-	review, err := clientset.AuthenticationV1().TokenReviews().Create(
-		context.TODO(),
-		&authv1.TokenReview{
-			Spec: authv1.TokenReviewSpec{
-				Token:     exporterToken,
-				Audiences: []string{"controller"},
-			},
-		},
-		metav1.CreateOptions{},
-	)
+	controllerFunc, err := prepareControler(clientset)
 	if err != nil {
-		t.Fatalf("failed to create TokenReview: %s", err)
+		t.Fatalf("failed to create prepare controller: %s", err)
 	}
 
-	t.Logf("%+v\n", review.Status)
+	go controllerFunc()
+
+	routerFunc, err := prepareRouter(clientset.AuthenticationV1())
+	if err != nil {
+		t.Fatalf("failed to create prepare router: %s", err)
+	}
+
+	go routerFunc()
+
+	exporterServiceAccount := createServiceAccount(t, saclient, "jumpstarter-exporter")
+	clientServiceAccount := createServiceAccount(t, saclient, "jumpstarter-client")
+
+	exporterToken := createToken(t, saclient, exporterServiceAccount, "exporter-01", 3600)
+	clientToken := createToken(t, saclient, clientServiceAccount, "client-01", 3600)
+
+	clientGrpc, err := grpc.NewClient(
+		"unix:/tmp/jumpstarter-controller.sock",
+		grpc.WithTransportCredentials(local.NewCredentials()),
+		grpc.WithPerRPCCredentials(oauth.TokenSource{TokenSource: oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: clientToken,
+		})}),
+	)
+
+	client := pb.NewControllerServiceClient(clientGrpc)
+
+	exporterGrpc, err := grpc.NewClient(
+		"unix:/tmp/jumpstarter-controller.sock",
+		grpc.WithTransportCredentials(local.NewCredentials()),
+		grpc.WithPerRPCCredentials(oauth.TokenSource{TokenSource: oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: exporterToken,
+		})}),
+	)
+
+	exporter := pb.NewControllerServiceClient(exporterGrpc)
+
+	{
+		resp, err := client.Dial(context.TODO(), &pb.DialRequest{Uuid: "exporter-01"})
+		t.Log("client dial", resp, err)
+
+		resp, err = exporter.Dial(context.TODO(), &pb.DialRequest{Uuid: "exporter-01"})
+		t.Log("exporter dial", resp, err)
+	}
+
+	{
+		resp, err := client.Listen(context.TODO(), &pb.ListenRequest{})
+		t.Log("client listen", resp, err)
+		t.Log(resp.Recv())
+
+		resp, err = exporter.Listen(context.TODO(), &pb.ListenRequest{})
+		t.Log("exporter listen", resp, err)
+	}
 
 	env.Stop()
 }
