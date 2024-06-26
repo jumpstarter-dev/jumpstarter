@@ -18,8 +18,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	authnv1c "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	apicorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
@@ -67,7 +67,7 @@ func prepareControler(clientset *kubernetes.Clientset) (func() error, error) {
 	}, nil
 }
 
-func prepareRouter(client authnv1c.AuthenticationV1Interface) (func() error, error) {
+func prepareRouter(config *rest.Config) (func() error, error) {
 	address := "/tmp/jumpstarter-router.sock"
 
 	os.RemoveAll(address)
@@ -77,14 +77,12 @@ func prepareRouter(client authnv1c.AuthenticationV1Interface) (func() error, err
 		return nil, err
 	}
 
-	rs, err := router.NewRouterServer(client)
+	server := grpc.NewServer()
+
+	err = router.RegisterRouterServer(server, config)
 	if err != nil {
 		return nil, err
 	}
-
-	server := grpc.NewServer()
-
-	pb.RegisterRouterServiceServer(server, rs)
 
 	return func() error {
 		return server.Serve(listen)
@@ -113,23 +111,23 @@ func TestController(t *testing.T) {
 
 	go controllerFunc()
 
-	routerFunc, err := prepareRouter(clientset.AuthenticationV1())
+	routerFunc, err := prepareRouter(cfg)
 	if err != nil {
 		t.Fatalf("failed to create prepare router: %s", err)
 	}
 
 	go routerFunc()
 
-	exporterServiceAccount := createServiceAccount(t, saclient, "jumpstarter-exporter")
-	clientServiceAccount := createServiceAccount(t, saclient, "jumpstarter-client")
+	_ = createServiceAccount(t, saclient, "jumpstarter-tokenholder")
 
 	exporterToken, err := authn.Issue(
 		context.TODO(),
 		saclient,
-		exporterServiceAccount.GetName(),
 		"jumpstarter-controller.example.com",
-		map[string]string{"sub": "exporter-01"},
-		time.Now().Add(time.Hour),
+		authn.TokenParam{
+			Subject:    "exporter-01",
+			Expiration: time.Now().Add(time.Hour),
+		},
 	)
 	if err != nil {
 		t.Fatalf("failed to issue exporter token: %s", err)
@@ -138,10 +136,11 @@ func TestController(t *testing.T) {
 	clientToken, err := authn.Issue(
 		context.TODO(),
 		saclient,
-		clientServiceAccount.GetName(),
 		"jumpstarter-controller.example.com",
-		map[string]string{"sub": "client-01"},
-		time.Now().Add(time.Hour),
+		authn.TokenParam{
+			Subject:    "client-01",
+			Expiration: time.Now().Add(time.Hour),
+		},
 	)
 	if err != nil {
 		t.Fatalf("failed to issue client token: %s", err)
@@ -178,7 +177,6 @@ func TestController(t *testing.T) {
 	{
 		resp, err := client.Listen(context.TODO(), &pb.ListenRequest{})
 		t.Log("client listen", resp, err)
-		t.Log(resp.Recv())
 
 		resp, err = exporter.Listen(context.TODO(), &pb.ListenRequest{})
 		t.Log("exporter listen", resp, err)

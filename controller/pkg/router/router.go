@@ -23,12 +23,7 @@ type streamContext struct {
 	stream pb.RouterService_StreamServer
 }
 
-func RegisterRouterServer(server *grpc.Server) error {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return err
-	}
-
+func RegisterRouterServer(server *grpc.Server, config *rest.Config) error {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
