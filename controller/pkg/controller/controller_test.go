@@ -2,18 +2,18 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/authn"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/router"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/local"
 	"google.golang.org/grpc/credentials/oauth"
-	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -40,29 +40,6 @@ func createServiceAccount(
 		t.Fatalf("failed to create exporter service account: %s", err)
 	}
 	return sa
-}
-
-func createToken(
-	t *testing.T,
-	client apicorev1.ServiceAccountInterface,
-	sa *corev1.ServiceAccount,
-	subject string,
-	expiration int64) string {
-	token, err := client.CreateToken(
-		context.TODO(),
-		sa.GetName(),
-		&authv1.TokenRequest{
-			Spec: authv1.TokenRequestSpec{
-				Audiences:         []string{fmt.Sprintf("https://jumpstarter-controller.example.com?subject=%s", subject)},
-				ExpirationSeconds: &expiration,
-			},
-		},
-		metav1.CreateOptions{},
-	)
-	if err != nil {
-		t.Fatalf("failed to create service account token: %s", err)
-	}
-	return token.Status.Token
 }
 
 func prepareControler(clientset *kubernetes.Clientset) (func() error, error) {
@@ -145,8 +122,29 @@ func TestController(t *testing.T) {
 	exporterServiceAccount := createServiceAccount(t, saclient, "jumpstarter-exporter")
 	clientServiceAccount := createServiceAccount(t, saclient, "jumpstarter-client")
 
-	exporterToken := createToken(t, saclient, exporterServiceAccount, "exporter-01", 3600)
-	clientToken := createToken(t, saclient, clientServiceAccount, "client-01", 3600)
+	exporterToken, err := authn.Issue(
+		context.TODO(),
+		saclient,
+		exporterServiceAccount.GetName(),
+		"jumpstarter-controller.example.com",
+		map[string]string{"sub": "exporter-01"},
+		time.Now().Add(time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to issue exporter token: %s", err)
+	}
+
+	clientToken, err := authn.Issue(
+		context.TODO(),
+		saclient,
+		clientServiceAccount.GetName(),
+		"jumpstarter-controller.example.com",
+		map[string]string{"sub": "client-01"},
+		time.Now().Add(time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to issue client token: %s", err)
+	}
 
 	clientGrpc, err := grpc.NewClient(
 		"unix:/tmp/jumpstarter-controller.sock",

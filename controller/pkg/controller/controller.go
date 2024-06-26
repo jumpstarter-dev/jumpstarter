@@ -12,17 +12,11 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/authn"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	authnv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
 type ControllerConfig struct{}
-
-type key int
-
-var audKey key
-var expKey key
 
 type ControllerServer struct {
 	pb.UnimplementedControllerServiceServer
@@ -93,34 +87,21 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 	}
 }
 
-func (s *ControllerServer) streamToken(sub string, peer string, stream string, exp int64) (string, error) {
-	query := url.Values{}
-	query.Set("subject", sub)
-	query.Set("stream", stream)
-	query.Set("peer", peer)
-
-	audience := url.URL{
-		Scheme:   "https",
-		Host:     "jumpstarter-router.example.com",
-		RawQuery: query.Encode(),
-	}
-
-	token, err := s.clientset.CoreV1().ServiceAccounts(metav1.NamespaceDefault).CreateToken(
-		context.TODO(),
-		"jumpstarter-streams",
-		&authnv1.TokenRequest{
-			Spec: authnv1.TokenRequestSpec{
-				Audiences:         []string{audience.String()},
-				ExpirationSeconds: &exp,
-			},
-		},
-		metav1.CreateOptions{},
+func (s *ControllerServer) streamToken(
+	ctx context.Context,
+	sub string,
+	stream string,
+	peer string,
+	exp time.Time,
+) (string, error) {
+	return authn.Issue(
+		ctx,
+		s.clientset.CoreV1().ServiceAccounts(metav1.NamespaceDefault),
+		"jumpstarter-router",
+		"jumpstarter-router.example.com",
+		map[string]string{"sub": sub, "stream": stream, "peer": peer},
+		exp,
 	)
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to issue stream token")
-	}
-
-	return token.Status.Token, nil
 }
 
 func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
@@ -140,12 +121,24 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	stream := uuid.New().String()
 
-	etoken, err := s.streamToken(req.GetUuid(), aud.String(), stream, int64(exp.Sub(time.Now()).Seconds()))
+	etoken, err := s.streamToken(
+		ctx,
+		req.GetUuid(),
+		stream,
+		aud.String(),
+		*exp,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	ctoken, err := s.streamToken(aud.String(), req.GetUuid(), stream, int64(exp.Sub(time.Now()).Seconds()))
+	ctoken, err := s.streamToken(
+		ctx,
+		aud.String(),
+		stream,
+		req.GetUuid(),
+		*exp,
+	)
 	if err != nil {
 		return nil, err
 	}
