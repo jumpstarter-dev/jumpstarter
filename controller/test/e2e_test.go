@@ -43,7 +43,7 @@ func createServiceAccount(
 	return sa
 }
 
-func prepareControler(clientset *kubernetes.Clientset) (func() error, error) {
+func prepareControler(config *rest.Config) (func() error, error) {
 	address := "/tmp/jumpstarter-controller.sock"
 
 	os.RemoveAll(address)
@@ -53,14 +53,12 @@ func prepareControler(clientset *kubernetes.Clientset) (func() error, error) {
 		return nil, err
 	}
 
-	cs, err := controller.NewControllerServer(clientset)
+	server := grpc.NewServer()
+
+	err = controller.RegisterControllerServer(server, config)
 	if err != nil {
 		return nil, err
 	}
-
-	server := grpc.NewServer()
-
-	pb.RegisterControllerServiceServer(server, cs)
 
 	return func() error {
 		return server.Serve(listen)
@@ -104,7 +102,7 @@ func TestController(t *testing.T) {
 
 	saclient := clientset.CoreV1().ServiceAccounts(corev1.NamespaceDefault)
 
-	controllerFunc, err := prepareControler(clientset)
+	controllerFunc, err := prepareControler(cfg)
 	if err != nil {
 		t.Fatalf("failed to create prepare controller: %s", err)
 	}

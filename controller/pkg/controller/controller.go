@@ -9,13 +9,13 @@ import (
 	"github.com/google/uuid"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-router/pkg/authn"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
-
-type ControllerConfig struct{}
 
 type ControllerServer struct {
 	pb.UnimplementedControllerServiceServer
@@ -28,11 +28,20 @@ type listenCtx struct {
 	stream pb.ControllerService_ListenServer
 }
 
-func NewControllerServer(clientset *kubernetes.Clientset) (*ControllerServer, error) {
-	return &ControllerServer{
+func RegisterControllerServer(server *grpc.Server, config *rest.Config) error {
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+
+	controller := ControllerServer{
 		clientset: clientset,
 		listenMap: &sync.Map{},
-	}, nil
+	}
+
+	pb.RegisterControllerServiceServer(server, &controller)
+
+	return nil
 }
 
 func (s *ControllerServer) authenticate(ctx context.Context) (*authn.TokenParam, error) {
