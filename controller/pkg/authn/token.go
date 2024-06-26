@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/codes"
@@ -45,23 +46,29 @@ func BearerTokenFromContext(ctx context.Context) (string, error) {
 	return authorization[7:], nil
 }
 
-func AuthenticatedAudience(
+func Authenticate(
 	ctx context.Context,
 	client authnv1c.AuthenticationV1Interface,
 	token string,
 	scheme string,
 	host string,
-) (*url.URL, error) {
-	parser := jwt.NewParser()
+	group string,
+) (*url.URL, *time.Time, error) {
+	parser := jwt.NewParser(jwt.WithExpirationRequired())
 
 	parsed, _, err := parser.ParseUnverified(token, &jwt.RegisteredClaims{})
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid jwt token")
+		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid jwt token")
 	}
 
 	audiences, err := parsed.Claims.GetAudience()
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid jwt audience")
+		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid jwt audience")
+	}
+
+	expiration, err := parsed.Claims.GetExpirationTime()
+	if err != nil {
+		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid jwt expiration")
 	}
 
 	var matched []*url.URL
@@ -81,7 +88,7 @@ func AuthenticatedAudience(
 	}
 
 	if len(matched) != 1 {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid number of local jwt audience")
+		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid number of local jwt audience")
 	}
 
 	// Invariant: len(matched) == 1
@@ -99,9 +106,10 @@ func AuthenticatedAudience(
 	)
 	if err != nil ||
 		!review.Status.Authenticated ||
-		!slices.Contains(review.Status.Audiences, audience.String()) {
-		return nil, status.Errorf(codes.Unauthenticated, "unauthenticated jwt token")
+		!slices.Contains(review.Status.Audiences, audience.String()) ||
+		!slices.Contains(review.Status.User.Groups, group) {
+		return nil, nil, status.Errorf(codes.Unauthenticated, "unauthenticated jwt token")
 	}
 
-	return audience, nil
+	return audience, &expiration.Time, nil
 }

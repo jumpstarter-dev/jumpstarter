@@ -2,17 +2,14 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/url"
-	"slices"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	jtoken "github.com/jumpstarter-dev/jumpstarter-router/pkg/token"
-	"google.golang.org/grpc"
+	"github.com/jumpstarter-dev/jumpstarter-router/pkg/authn"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	authnv1 "k8s.io/api/authentication/v1"
@@ -24,7 +21,8 @@ type ControllerConfig struct{}
 
 type key int
 
-var audienceKey key
+var audKey key
+var expKey key
 
 type ControllerServer struct {
 	pb.UnimplementedControllerServiceServer
@@ -45,74 +43,33 @@ func NewControllerServer(config *ControllerConfig) (*ControllerServer, error) {
 	}, nil
 }
 
-func (s *ControllerServer) audience(ctx context.Context) (string, error) {
-	token, err := jtoken.BearerTokenFromContext(ctx)
+func (s *ControllerServer) audience(ctx context.Context, group string) (*url.URL, *time.Time, error) {
+	token, err := authn.BearerTokenFromContext(ctx)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
-	// TODO: parse  audience from token
-	audience := "https://jumpstarter-controller.example.com/users/testuser"
-	review, err := s.clientset.AuthenticationV1().TokenReviews().Create(
+
+	return authn.Authenticate(
 		ctx,
-		&authnv1.TokenReview{
-			Spec: authnv1.TokenReviewSpec{
-				Token:     token,
-				Audiences: []string{audience},
-			},
-		},
-		metav1.CreateOptions{},
+		s.clientset.AuthenticationV1(),
+		token,
+		"https",
+		"jumpstarter-controller.example.com",
+		group,
 	)
-	if err != nil ||
-		!review.Status.Authenticated ||
-		!slices.Contains(review.Status.Audiences, audience) {
-		return "", status.Errorf(codes.Unauthenticated, codes.Unauthenticated.String())
-	}
-	return audience, nil
-}
-
-func (s *ControllerServer) UnaryServerInterceptor(
-	ctx context.Context,
-	req any,
-	info *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (any, error) {
-	aud, err := s.audience(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return handler(context.WithValue(ctx, audienceKey, aud), req)
-}
-
-type wrappedServerStream struct {
-	grpc.ServerStream
-	audience string
-}
-
-func (ss *wrappedServerStream) Context() context.Context {
-	return context.WithValue(ss.ServerStream.Context(), audienceKey, ss.audience)
-}
-
-func (s *ControllerServer) StreamServerInterceptor(
-	srv any,
-	ss grpc.ServerStream,
-	info *grpc.StreamServerInfo,
-	handler grpc.StreamHandler,
-) error {
-	aud, err := s.audience(ss.Context())
-	if err != nil {
-		return err
-	}
-	return handler(srv, &wrappedServerStream{ss, aud})
 }
 
 func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
 	ctx := stream.Context()
 
-	audience := ctx.Value(audienceKey).(string)
+	aud, exp, err := s.audience(ctx, "jumpstarter-exporter")
+	if err != nil {
+		return err
+	}
 
 	// TODO: periodically check for token revocation and revoke derived stream tokens
 
-	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Hour))
+	ctx, cancel := context.WithDeadline(ctx, *exp)
 	defer cancel()
 
 	lctx := listenCtx{
@@ -120,19 +77,19 @@ func (s *ControllerServer) Listen(_ *pb.ListenRequest, stream pb.ControllerServi
 		stream: stream,
 	}
 
-	_, loaded := s.listenMap.LoadOrStore(audience, lctx)
+	_, loaded := s.listenMap.LoadOrStore(aud.String(), lctx)
 
 	if loaded {
 		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
-	log.Printf("subject %s listening\n", audience)
+	log.Printf("subject %s listening\n", aud.String())
 
-	defer s.listenMap.Delete(audience)
+	defer s.listenMap.Delete(aud.String())
 
 	select {
 	case <-ctx.Done():
-		log.Printf("subject %s left\n", audience)
+		log.Printf("subject %s left\n", aud.String())
 		return nil
 	}
 }
@@ -168,11 +125,14 @@ func (s *ControllerServer) streamToken(sub string, peer string, stream string, e
 }
 
 func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	audience := ctx.Value(audienceKey).(string)
+	aud, exp, err := s.audience(ctx, "jumpstarter-client")
+	if err != nil {
+		return nil, err
+	}
 
 	// TODO: check (client, exporter) tuple against leases
 
-	log.Printf("subject %s connecting to %s\n", audience, req.GetUuid())
+	log.Printf("subject %s connecting to %s\n", aud.String(), req.GetUuid())
 
 	value, ok := s.listenMap.Load(req.GetUuid())
 	if !ok {
@@ -181,12 +141,12 @@ func (s *ControllerServer) Dial(ctx context.Context, req *pb.DialRequest) (*pb.D
 
 	stream := uuid.New().String()
 
-	etoken, err := s.streamToken(req.GetUuid(), audience, stream, 3600)
+	etoken, err := s.streamToken(req.GetUuid(), aud.String(), stream, int64(exp.Sub(time.Now()).Seconds()))
 	if err != nil {
 		return nil, err
 	}
 
-	ctoken, err := s.streamToken(audience, req.GetUuid(), stream, 3600)
+	ctoken, err := s.streamToken(aud.String(), req.GetUuid(), stream, int64(exp.Sub(time.Now()).Seconds()))
 	if err != nil {
 		return nil, err
 	}

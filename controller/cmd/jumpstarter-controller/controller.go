@@ -25,10 +25,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	server := grpc.NewServer(
-		grpc.UnaryInterceptor(cs.UnaryServerInterceptor),
-		grpc.StreamInterceptor(cs.StreamServerInterceptor),
-	)
+	server := grpc.NewServer()
 
 	pb.RegisterControllerServiceServer(server, cs)
 
