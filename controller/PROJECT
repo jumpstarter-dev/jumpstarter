@@ -7,4 +7,13 @@ layout:
 - go.kubebuilder.io/v4
 projectName: jumpstarter-router
 repo: github.com/jumpstarter-dev/jumpstarter
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: jumpstarter.dev
+  kind: Exporter
+  path: github.com/jumpstarter-dev/jumpstarter/api/v1alpha1
+  version: v1alpha1
 version: "3"

@@ -9,3 +9,10 @@ resources:
 - role_binding.yaml
 - leader_election_role.yaml
 - leader_election_role_binding.yaml
+# For each CRD, "Editor" and "Viewer" roles are scaffolded by
+# default, aiding admins in cluster management. Those roles are
+# not used by the Project itself. You can comment the following lines
+# if you do not want those helpers be installed with your Project.
+- exporter_editor_role.yaml
+- exporter_viewer_role.yaml
+

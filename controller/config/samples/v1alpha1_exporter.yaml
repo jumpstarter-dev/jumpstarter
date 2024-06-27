@@ -1,0 +1,9 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/managed-by: kustomize
+  name: exporter-sample
+spec:
+  # TODO(user): Add fields here
