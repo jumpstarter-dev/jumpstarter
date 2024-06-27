@@ -234,7 +234,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	}
 
 	// TODO: find best router from list
-	endpoint := "unix:/tmp/jumpstarter-router.sock"
+	endpoint := "127.0.0.1:8083"
 
 	if err := value.(listenContext).stream.Send(&pb.ListenResponse{
 		RouterEndpoint: endpoint,
