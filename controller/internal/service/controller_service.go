@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,7 +55,7 @@ func getFromMetadata(md metadata.MD, key string) (string, bool) {
 	return values[0], true
 }
 
-func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
 	var exporter jumpstarterdevv1alpha1.Exporter
 
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -101,22 +102,53 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		}
 
 		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token)) {
-			exporter.Status.Conditions = []metav1.Condition{{
-				Type:               "Available",
-				Status:             "True",
-				ObservedGeneration: exporter.GetGeneration(),
-				LastTransitionTime: metav1.Time{Time: time.Now()},
-				Reason:             "Register",
-				Message:            "",
-			}}
-			if err := s.Status().Update(ctx, &exporter); err != nil {
-				return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
-			}
-			return &pb.RegisterResponse{}, nil
+			return &exporter, nil
 		}
 	}
 
 	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
+}
+
+func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	exporter.Status.Conditions = []metav1.Condition{{
+		Type:               "Available",
+		Status:             "True",
+		ObservedGeneration: exporter.GetGeneration(),
+		LastTransitionTime: metav1.Time{Time: time.Now()},
+		Reason:             "Register",
+		Message:            "",
+	}}
+	if err := s.Status().Update(ctx, exporter); err != nil {
+		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
+	}
+
+	return &pb.RegisterResponse{}, nil
+}
+
+func (s *ControllerService) Bye(ctx context.Context, req *pb.ByeRequest) (*emptypb.Empty, error) {
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	exporter.Status.Conditions = []metav1.Condition{{
+		Type:               "Available",
+		Status:             "False",
+		ObservedGeneration: exporter.GetGeneration(),
+		LastTransitionTime: metav1.Time{Time: time.Now()},
+		Reason:             "Bye",
+		Message:            req.GetReason(),
+	}}
+	if err := s.Status().Update(ctx, exporter); err != nil {
+		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
+	}
+
+	return &emptypb.Empty{}, nil
 }
 
 func (s *ControllerService) Start(ctx context.Context) error {
