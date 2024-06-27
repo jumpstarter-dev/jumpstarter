@@ -1,0 +1,67 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.15.0
+  name: identities.jumpstarter.dev
+spec:
+  group: jumpstarter.dev
+  names:
+    kind: Identity
+    listKind: IdentityList
+    plural: identities
+    singular: identity
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Identity is the Schema for the identities API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: IdentitySpec defines the desired state of Identity
+            properties:
+              credentials:
+                items:
+                  description: |-
+                    SecretReference represents a Secret Reference. It has enough information to retrieve secret
+                    in any namespace
+                  properties:
+                    name:
+                      description: name is unique within a namespace to reference
+                        a secret resource.
+                      type: string
+                    namespace:
+                      description: namespace defines the space within which the secret
+                        name must be unique.
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
+            type: object
+          status:
+            description: IdentityStatus defines the observed state of Identity
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,23 @@
+# permissions for end users to view identities.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/managed-by: kustomize
+  name: identity-viewer-role
+rules:
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - identities
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - identities/status
+  verbs:
+  - get

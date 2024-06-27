@@ -13,6 +13,8 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the Project itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- identity_editor_role.yaml
+- identity_viewer_role.yaml
 - exporter_editor_role.yaml
 - exporter_viewer_role.yaml
 

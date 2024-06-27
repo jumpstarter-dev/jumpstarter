@@ -30,3 +30,29 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - identities
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - identities/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - identities/status
+  verbs:
+  - get
+  - patch
+  - update

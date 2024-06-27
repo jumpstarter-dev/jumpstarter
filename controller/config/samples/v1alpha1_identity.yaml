@@ -1,0 +1,9 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Identity
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/managed-by: kustomize
+  name: identity-sample
+spec:
+  # TODO(user): Add fields here
