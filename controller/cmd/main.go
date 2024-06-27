@@ -36,6 +36,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/internal/controller"
+	"github.com/jumpstarter-dev/jumpstarter/internal/service"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -138,6 +139,14 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	if err = (&service.ControllerService{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create service", "service", "Controller")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

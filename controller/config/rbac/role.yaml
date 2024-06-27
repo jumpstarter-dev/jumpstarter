@@ -5,6 +5,12 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+- apiGroups:
   - jumpstarter.dev
   resources:
   - exporters
