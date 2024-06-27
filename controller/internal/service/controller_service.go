@@ -18,8 +18,10 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net"
-	"os"
+	"net/url"
+	"sync"
 	"time"
 
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
@@ -29,10 +31,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -45,6 +49,12 @@ type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
 	client.Client
 	Scheme *runtime.Scheme
+	listen sync.Map
+}
+
+type listenContext struct {
+	cancel context.CancelFunc
+	stream pb.ControllerService_ListenServer
 }
 
 func getFromMetadata(md metadata.MD, key string) (string, bool) {
@@ -151,6 +161,94 @@ func (s *ControllerService) Bye(ctx context.Context, req *pb.ByeRequest) (*empty
 	return &emptypb.Empty{}, nil
 }
 
+func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
+	ctx := stream.Context()
+
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	lctx := listenContext{
+		cancel: cancel,
+		stream: stream,
+	}
+
+	_, loaded := s.listen.LoadOrStore(exporter.GetName(), lctx)
+
+	if loaded {
+		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
+	}
+
+	defer s.listen.Delete(exporter.GetName())
+
+	select {
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
+	// TODO: authenticate/authorize user with Identity/Lease resource
+
+	value, ok := s.listen.Load(req.GetUuid())
+	if !ok {
+		return nil, status.Errorf(codes.Unavailable, "no matching listener")
+	}
+
+	stream := uuid.NewUUID()
+
+	audience := (&url.URL{
+		Scheme: "https",
+		Host:   "router.jumpstarter.dev",
+		Path:   fmt.Sprintf("/stream/%s", stream),
+	}).String()
+
+	expsecs := int64(3600)
+
+	var tokenholder corev1.ServiceAccount
+
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: "default",
+		Name:      "jumpstarter-tokenholder",
+	}, &tokenholder); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get tokenholder service account")
+	}
+
+	tokenRequest := authv1.TokenRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "jumpstarter-tokenholder",
+		},
+		Spec: authv1.TokenRequestSpec{
+			Audiences:         []string{audience},
+			ExpirationSeconds: &expsecs,
+		},
+	}
+
+	if err := s.SubResource("token").Create(ctx, &tokenholder, &tokenRequest); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to issue stream token: %s", err)
+	}
+
+	// TODO: find best router from list
+	endpoint := "unix:/tmp/jumpstarter-router.sock"
+
+	if err := value.(listenContext).stream.Send(&pb.ListenResponse{
+		RouterEndpoint: endpoint,
+		RouterToken:    tokenRequest.Status.Token,
+	}); err != nil {
+		return nil, err
+	}
+
+	return &pb.DialResponse{
+		RouterEndpoint: endpoint,
+		RouterToken:    tokenRequest.Status.Token,
+	}, nil
+}
+
 func (s *ControllerService) Start(ctx context.Context) error {
 	log := log.FromContext(ctx)
 
@@ -160,10 +258,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 
 	pb.RegisterControllerServiceServer(server, s)
 
-	os.Remove("/tmp/jumpstarter-controller.sock")
-
-	// TODO: use TLS
-	listener, err := net.Listen("unix", "/tmp/jumpstarter-controller.sock")
+	listener, err := net.Listen("tcp", ":8082")
 	if err != nil {
 		return err
 	}
