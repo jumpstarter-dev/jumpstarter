@@ -9,6 +9,8 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 pytest = "^8.2.2"
+jumpstarter-protocol = "^0.1.0"
+click = "^8.1.7"
 
 
 [build-system]
