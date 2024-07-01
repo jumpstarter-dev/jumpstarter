@@ -223,6 +223,15 @@ metadata:
   name: jumpstarter-router-controller-manager
   namespace: jumpstarter-router-system
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: jumpstarter-router
+  name: jumpstarter-router-tokenholder
+  namespace: jumpstarter-router-system
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -375,6 +384,22 @@ rules:
   - secrets
   verbs:
   - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
 - apiGroups:
   - jumpstarter.dev
   resources:

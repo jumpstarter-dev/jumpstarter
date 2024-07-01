@@ -44,6 +44,10 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/api/v1alpha1"
 )
 
+// Reference: config/default/kustomization.yaml
+const nameSpace = "jumpstarter-router-system"
+const namePrefix = "jumpstarter-router-"
+
 // ControlerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
@@ -212,8 +216,8 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	var tokenholder corev1.ServiceAccount
 
 	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: "default",
-		Name:      "jumpstarter-tokenholder",
+		Namespace: nameSpace,
+		Name:      namePrefix + "tokenholder",
 	}, &tokenholder); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get tokenholder service account")
 	}
