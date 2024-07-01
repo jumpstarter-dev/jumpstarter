@@ -68,6 +68,7 @@ message ListenResponse {
 
 message DialRequest {
   string uuid = 1;
+  optional string device_uuid = 2;
 }
 
 message DialResponse {
