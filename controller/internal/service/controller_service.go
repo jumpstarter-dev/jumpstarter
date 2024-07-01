@@ -18,6 +18,8 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -28,7 +30,6 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	authv1 "k8s.io/api/authentication/v1"
@@ -61,41 +62,36 @@ type listenContext struct {
 	stream pb.ControllerService_ListenServer
 }
 
-func getFromMetadata(md metadata.MD, key string) (string, bool) {
-	values := md.Get(key)
-	if len(values) < 1 {
-		return "", false
-	}
-	return values[0], true
+type bearerToken struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Token     string `json:"token"`
 }
 
 func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
-	var exporter jumpstarterdevv1alpha1.Exporter
-
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Errorf(codes.InvalidArgument, "missing metadata")
+	encoded, err := BearerTokenFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	namespace, ok := getFromMetadata(md, "namespace")
-	if !ok {
-		return nil, status.Errorf(codes.InvalidArgument, "missing metadata: namespace")
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to decode token")
 	}
 
-	name, ok := getFromMetadata(md, "name")
-	if !ok {
-		return nil, status.Errorf(codes.InvalidArgument, "missing metadata: name")
-	}
+	var token bearerToken
 
-	token, ok := getFromMetadata(md, "token")
-	if !ok {
-		return nil, status.Errorf(codes.InvalidArgument, "missing metadata: token")
+	err = json.Unmarshal(decoded, &token)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to unmarshal token")
 	}
 
 	exporterRef := types.NamespacedName{
-		Namespace: namespace,
-		Name:      name,
+		Namespace: token.Namespace,
+		Name:      token.Name,
 	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
 
 	if err := s.Client.Get(
 		ctx,
@@ -115,7 +111,7 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
 		}
 
-		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token)) {
+		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
 			return &exporter, nil
 		}
 	}
