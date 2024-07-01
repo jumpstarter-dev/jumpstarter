@@ -215,17 +215,19 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	var tokenholder corev1.ServiceAccount
 
-	if err := s.Client.Get(ctx, types.NamespacedName{
+	tokenholderName := types.NamespacedName{
 		Namespace: nameSpace,
 		Name:      namePrefix + "tokenholder",
-	}, &tokenholder); err != nil {
+	}
+
+	if err := s.Client.Get(ctx, tokenholderName, &tokenholder); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get tokenholder service account")
 	}
 
 	tokenRequest := authv1.TokenRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "jumpstarter-tokenholder",
+			Namespace: tokenholderName.Namespace,
+			Name:      tokenholderName.Name,
 		},
 		Spec: authv1.TokenRequestSpec{
 			Audiences:         []string{audience},
