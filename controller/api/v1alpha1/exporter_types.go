@@ -37,6 +37,7 @@ type ExporterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	Devices    []Device           `json:"devices,omitempty"`
 }
 
 // +kubebuilder:object:root=true
