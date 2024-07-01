@@ -256,6 +256,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	if err := value.(listenContext).stream.Send(&pb.ListenResponse{
 		RouterEndpoint: endpoint,
 		RouterToken:    tokenRequest.Status.Token,
+		DeviceUuid:     req.DeviceUuid,
 	}); err != nil {
 		return nil, err
 	}

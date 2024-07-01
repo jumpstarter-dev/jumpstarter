@@ -4,7 +4,7 @@ go 1.22.3
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
-	github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240626111725-dde2e4cc1cde
+	github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162741-72295674f67b
 	github.com/onsi/ginkgo/v2 v2.17.1
 	github.com/onsi/gomega v1.32.0
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e

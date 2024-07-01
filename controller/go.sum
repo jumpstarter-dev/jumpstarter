@@ -62,6 +62,10 @@ github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnr
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240626111725-dde2e4cc1cde h1:PB8CFyQjl3976EWFxVOn1q7DV80/uncOqtZSpVVXUvU=
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240626111725-dde2e4cc1cde/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162514-6916dbec8d81 h1:eJW5CZzbVn24+9U/KJJKnjeLoewI9CZNHf2a6rQ8FDE=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162514-6916dbec8d81/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162741-72295674f67b h1:RUT0RiroAW5FyAMhvPbJpQ3dyz2YxitVmzNDB+/dOj8=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162741-72295674f67b/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
