@@ -137,6 +137,17 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		Reason:             "Register",
 		Message:            "",
 	}}
+
+	devices := []jumpstarterdevv1alpha1.Device{}
+	for _, device := range req.DeviceReport {
+		devices = append(devices, jumpstarterdevv1alpha1.Device{
+			Uuid:            device.GetDeviceUuid(),
+			DriverInterface: device.GetDriverInterface(),
+			Labels:          device.GetLabels(),
+		})
+	}
+	exporter.Status.Devices = devices
+
 	if err := s.Status().Update(ctx, exporter); err != nil {
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
