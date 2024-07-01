@@ -1,3 +1,13 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/managed-by: kustomize
+  name: identity-sample-token
+stringData:
+  token: fc5c6dda1083a69e9886dc160de5b44e
+---
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Identity
 metadata:
@@ -6,4 +16,6 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: identity-sample
 spec:
-  # TODO(user): Add fields here
+  credentials:
+  - namespace: default
+    name: identity-sample-token

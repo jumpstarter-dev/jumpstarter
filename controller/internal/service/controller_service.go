@@ -68,7 +68,7 @@ type bearerToken struct {
 	Token     string `json:"token"`
 }
 
-func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
+func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, error) {
 	encoded, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -84,6 +84,55 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 	err = json.Unmarshal(decoded, &token)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to unmarshal token")
+	}
+
+	return &token, nil
+}
+
+func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstarterdevv1alpha1.Identity, error) {
+	token, err := s.authenticatePre(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	identityRef := types.NamespacedName{
+		Namespace: token.Namespace,
+		Name:      token.Name,
+	}
+
+	var identity jumpstarterdevv1alpha1.Identity
+
+	if err := s.Client.Get(
+		ctx,
+		identityRef,
+		&identity,
+	); err != nil {
+		return nil, status.Errorf(codes.Internal, "unable to get identity resource")
+	}
+
+	for _, ref := range identity.Spec.Credentials {
+		var secret corev1.Secret
+
+		if err := s.Client.Get(ctx, types.NamespacedName{
+			Namespace: ref.Namespace,
+			Name:      ref.Name,
+		}, &secret); err != nil {
+			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
+		}
+
+		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
+			return &identity, nil
+		}
+	}
+
+	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
+}
+
+func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
+	token, err := s.authenticatePre(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	exporterRef := types.NamespacedName{
@@ -203,7 +252,12 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 }
 
 func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	// TODO: authenticate/authorize user with Identity/Lease resource
+	_, err := s.authenticateIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: authorize user with Identity/Lease resource
 
 	value, ok := s.listen.Load(req.GetUuid())
 	if !ok {
