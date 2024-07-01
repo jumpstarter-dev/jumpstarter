@@ -379,6 +379,12 @@ metadata:
   name: jumpstarter-router-manager-role
 rules:
 - apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
   - ""
   resources:
   - secrets

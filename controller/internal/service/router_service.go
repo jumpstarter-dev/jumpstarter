@@ -125,7 +125,7 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 	}
 
 	if !tokenReview.Status.Authenticated ||
-		tokenReview.Status.User.Username != "system:serviceaccount:default:jumpstarter-tokenholder" ||
+		tokenReview.Status.User.Username != "system:serviceaccount:"+nameSpace+":"+namePrefix+"tokenholder" ||
 		!slices.Contains(tokenReview.Status.Audiences, audience.String()) {
 		return "", status.Errorf(codes.Unauthenticated, "unauthenticated jwt token")
 	}
