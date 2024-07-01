@@ -1,3 +1,13 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/managed-by: kustomize
+  name: exporter-sample-token
+stringData:
+  token: 54d8cd395728888be9fcb93c4575d99e
+---
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Exporter
 metadata:
@@ -6,4 +16,6 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: exporter-sample
 spec:
-  # TODO(user): Add fields here
+  credentials:
+  - namespace: default
+    name: exporter-sample-token
