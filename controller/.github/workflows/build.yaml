@@ -16,7 +16,6 @@ jobs:
       attestations: write
       id-token: write
     steps:
-    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Set up Docker Buildx
