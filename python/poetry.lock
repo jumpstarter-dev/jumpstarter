@@ -99,15 +99,20 @@ name = "jumpstarter-protocol"
 version = "0.1.0"
 description = ""
 optional = false
-python-versions = "<4.0,>=3.11"
-files = [
-    {file = "jumpstarter_protocol-0.1.0-py3-none-any.whl", hash = "sha256:3be540dffc4c1ad558c55ebfa08b64a6320aca8a6871db18073a76804d5293cb"},
-    {file = "jumpstarter_protocol-0.1.0.tar.gz", hash = "sha256:bde06504e3f308654eb303f6e6214bb6ead2cacb5e2afb7bcece1d3a2674ef89"},
-]
+python-versions = "^3.11"
+files = []
+develop = false
 
 [package.dependencies]
-grpcio = ">=1.64.1,<2.0.0"
-protobuf = ">=5.27.1,<6.0.0"
+grpcio = "^1.64.1"
+protobuf = "^5.27.1"
+
+[package.source]
+type = "git"
+url = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
+reference = "HEAD"
+resolved_reference = "72295674f67b6b186cad6d3c5d92697bce28c09e"
+subdirectory = "python"
 
 [[package]]
 name = "packaging"
@@ -178,4 +183,4 @@ dev = ["argcomplete", "attrs (>=19.2)", "hypothesis (>=3.56)", "mock", "pygments
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "6040057d79bebe959af2c49b5c8d126a50601d0a15c82cb50223f2ad5786e136"
+content-hash = "605d5b2aec433fb4e5dfef3e8f06dbc309b4c50ac251e4d0cf95a1264d7f5fdb"
