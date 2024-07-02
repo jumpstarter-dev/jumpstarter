@@ -1,7 +1,7 @@
 
 from . import registry
 
-_registry = registry.Registry()
+_registry = registry.DriverRegistry()
 
 def register(cls):
     _registry.register(cls)
