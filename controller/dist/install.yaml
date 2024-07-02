@@ -505,6 +505,24 @@ subjects:
   name: jumpstarter-router-controller-manager
   namespace: jumpstarter-router-system
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: jumpstarter-router
+    control-plane: controller-manager
+  name: jumpstarter-router-controller-manager-metrics-service
+  namespace: jumpstarter-router-system
+spec:
+  ports:
+  - name: grpc
+    port: 8082
+    protocol: TCP
+    targetPort: 8082
+  selector:
+    control-plane: controller-manager
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
