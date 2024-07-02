@@ -19,6 +19,10 @@ class PowerReading:
 
 
 class Power(DriverBase):
+    @property
+    def interface(self):
+        return "power"
+
     @abstractmethod
     def on(self): ...
 

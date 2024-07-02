@@ -3,6 +3,10 @@ import pytest
 
 
 class Driver(DriverBase):
+    @property
+    def interface(self):
+        return "dummy"
+
     def invalid_drivercall(self):
         pass
 
