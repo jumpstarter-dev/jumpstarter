@@ -1,7 +1,8 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from jumpstarter.drivers.base import DriverBase
 from uuid import UUID, uuid4
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from google.protobuf import struct_pb2, json_format
 from typing import List
 import grpc
 
@@ -40,5 +41,6 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
         )
         # TODO: use grpc native json type
         return jumpstarter_pb2.DriverCallResponse(
-            call_uuid=str(uuid4()), json_result=str(result)
+            call_uuid=str(uuid4()),
+            result=json_format.ParseDict(asdict(result), struct_pb2.Value()),
         )
