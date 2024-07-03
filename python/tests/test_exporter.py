@@ -1,8 +1,10 @@
 from jumpstarter.exporter import Exporter
 from jumpstarter.drivers.power.mock import MockPower
+from jumpstarter.drivers.power.base import PowerReading
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from google.protobuf import empty_pb2, struct_pb2, json_format
 from concurrent import futures
+from dataclasses import asdict
 import grpc
 
 
@@ -37,11 +39,7 @@ def test_exporter():
             match device.driver_interface:
                 case "power":
                     assert drivercall(device.device_uuid, "on") == True
-                    assert drivercall(device.device_uuid, "read") == {
-                        "apparent_power": 10.0,
-                        "current": 2.0,
-                        "voltage": 5.0,
-                    }
+                    assert drivercall(device.device_uuid, "read") == asdict(PowerReading(5.0, 2.0))
                 case _:
                     raise NotImplementedError
 
