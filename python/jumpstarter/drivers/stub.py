@@ -18,7 +18,7 @@ def build_stub_method(cls, driver_method):
             ).result
         )
 
-    stub_method.__signature = inspect.signature(getattr(cls, driver_method))
+    # stub_method.__signature = inspect.signature(inspect.getattr_static(cls, driver_method))
 
     return stub_method
 
@@ -30,7 +30,6 @@ def build_stub_property(cls, name):
 
 class DriverStub():
     def __init_subclass__(cls, base, **kwargs):
-        # print(inspect.getmembers_static(cls))
         for name in base.__abstractmethods__:
             attr = inspect.getattr_static(base, name)
             if callable(attr):
@@ -40,7 +39,6 @@ class DriverStub():
                     build_stub_method(base, name),
                 )
             elif isinstance(attr, property):
-                continue
                 setattr(
                     cls,
                     name,

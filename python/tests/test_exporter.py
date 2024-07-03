@@ -1,8 +1,7 @@
 from jumpstarter.exporter import Exporter
 from jumpstarter.client import Client
-from jumpstarter.drivers.power.base import Power, PowerReading
+from jumpstarter.drivers.power.base import PowerReading
 from jumpstarter.drivers.power.mock import MockPower
-from jumpstarter.drivers.serial.base import Serial
 from jumpstarter.drivers.serial.mock import MockSerial
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from google.protobuf import empty_pb2, struct_pb2, json_format
@@ -32,7 +31,8 @@ def test_exporter():
                     assert stub.on() == True
                     assert stub.read() == asdict(PowerReading(5.0, 2.0))
                 case "serial":
-                    pass
+                    stub.baudrate = 115200
+                    assert stub.baudrate == 115200
                 case _:
                     raise NotImplementedError
 
