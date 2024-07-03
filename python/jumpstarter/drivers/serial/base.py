@@ -1,5 +1,6 @@
 from abc import abstractmethod
 from ..base import DriverBase, drivercall
+from ..stub import DriverStub
 
 
 class Serial(DriverBase):
@@ -22,3 +23,6 @@ class Serial(DriverBase):
     @property
     @abstractmethod
     def baudrate(self) -> int: ...
+
+class SerialStub(DriverStub, base=Serial):
+    pass

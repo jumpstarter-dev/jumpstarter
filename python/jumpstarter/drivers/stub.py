@@ -4,12 +4,12 @@ from google.protobuf import empty_pb2, struct_pb2, json_format
 import inspect
 
 
-def build_stub_method(stub, cls, device_uuid, driver_method):
-    def stub_method(*args, **kwargs):
+def build_stub_method(cls, driver_method):
+    def stub_method(self, *args, **kwargs):
         return json_format.MessageToDict(
-            stub.DriverCall(
+            self.stub.DriverCall(
                 jumpstarter_pb2.DriverCallRequest(
-                    device_uuid=device_uuid,
+                    device_uuid=self.device_uuid,
                     driver_method=driver_method,
                     args=[
                         json_format.ParseDict(arg, struct_pb2.Value()) for arg in args
@@ -23,12 +23,32 @@ def build_stub_method(stub, cls, device_uuid, driver_method):
     return stub_method
 
 
-# base class for all driver stubs
-class DriverStub:
-    def __init__(self, stub, cls, device_uuid):
-        for driver_method in cls.__abstractmethods__:
-            setattr(
-                self,
-                driver_method,
-                build_stub_method(stub, cls, device_uuid, driver_method),
-            )
+def build_stub_property(cls, name):
+    getter = build_stub_method(cls, "get_"+name)
+    setter = build_stub_method(cls, "set_"+name)
+    return property(getter, setter)
+
+class DriverStub():
+    def __init_subclass__(cls, base, **kwargs):
+        # print(inspect.getmembers_static(cls))
+        for name in base.__abstractmethods__:
+            attr = inspect.getattr_static(base, name)
+            if callable(attr):
+                setattr(
+                    cls,
+                    name,
+                    build_stub_method(base, name),
+                )
+            elif isinstance(attr, property):
+                continue
+                setattr(
+                    cls,
+                    name,
+                    build_stub_property(base, name),
+                )
+
+    def __init__(self, stub, device_uuid):
+        super().__init__()
+
+        self.stub = stub
+        self.device_uuid = device_uuid

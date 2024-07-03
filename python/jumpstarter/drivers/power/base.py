@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 from ..base import DriverBase
+from ..stub import DriverStub
 
 
 @dataclass
@@ -31,3 +32,6 @@ class Power(DriverBase):
 
     @abstractmethod
     def read(self) -> PowerReading: ...
+
+class PowerStub(DriverStub, base=Power):
+    pass

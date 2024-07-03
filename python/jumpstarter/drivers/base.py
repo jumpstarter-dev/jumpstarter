@@ -16,7 +16,12 @@ def is_drivercall(func):
     return getattr(func, "is_drivercall", False)
 
 
-class DriverMeta():
+# base class for all drivers
+@dataclass
+class DriverBase(ABC):
+    uuid: UUID
+    labels: dict[str, str]
+
     def __init_subclass__(cls, **kwargs):
         def build_getter(prop):
             return drivercall(lambda self: prop.fget(self))
@@ -35,11 +40,6 @@ class DriverMeta():
                 setattr(cls, "set_" + name, build_setter(prop))
 
 
-# base class for all drivers
-@dataclass
-class DriverBase(ABC, DriverMeta):
-    uuid: UUID
-    labels: dict[str, str]
 
     def __init__(self, uuid=None, labels={}):
         super().__init__()
