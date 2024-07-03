@@ -10,6 +10,7 @@ readme = "README.md"
 python = "^3.12"
 pytest = "^8.2.2"
 click = "^8.1.7"
+pyserial = "^3.5"
 
 [tool.poetry.dependencies.jumpstarter-protocol]
 git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
