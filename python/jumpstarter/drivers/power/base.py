@@ -33,5 +33,6 @@ class Power(DriverBase):
     @abstractmethod
     def read(self) -> PowerReading: ...
 
+
 class PowerStub(DriverStub, base=Power):
     pass

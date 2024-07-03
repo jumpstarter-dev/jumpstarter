@@ -4,7 +4,7 @@ class DriverRegistry:
 
     def register(self, cls: type):
         if cls.__name__ in self._drivers:
-            raise ValueError(f'Driver {cls.__name__} already registered')
+            raise ValueError(f"Driver {cls.__name__} already registered")
         self._drivers[cls.__name__] = cls
         return cls
 
@@ -24,5 +24,4 @@ class DriverRegistry:
         return name in self._drivers
 
     def __repr__(self):
-        return f'<DriverRegistry: {list(self._drivers.keys())}>'
-
+        return f"<DriverRegistry: {list(self._drivers.keys())}>"

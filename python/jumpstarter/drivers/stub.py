@@ -24,11 +24,12 @@ def build_stub_method(cls, driver_method):
 
 
 def build_stub_property(cls, name):
-    getter = build_stub_method(cls, "get_"+name)
-    setter = build_stub_method(cls, "set_"+name)
+    getter = build_stub_method(cls, "get_" + name)
+    setter = build_stub_method(cls, "set_" + name)
     return property(getter, setter)
 
-class DriverStub():
+
+class DriverStub:
     def __init_subclass__(cls, base, **kwargs):
         super().__init_subclass__(**kwargs)
 
