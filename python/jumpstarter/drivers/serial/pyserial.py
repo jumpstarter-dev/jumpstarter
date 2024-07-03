@@ -6,31 +6,31 @@ import serial
 
 @dataclass
 class PySerial(Serial):
-    port: serial.Serial
+    device: serial.Serial
 
-    def __init__(self, port: str):
+    def __init__(self, device: serial.Serial):
         super().__init__()
 
-        self.port = serial.Serial(port)
+        self.device = device
 
     @drivercall
     def read(self, size: int) -> bytes:
-        return self.port.read(size)
+        return self.device.read(size)
 
     @drivercall
     def write(self, data: bytes) -> int:
-        return self.port.write(data)
+        return self.device.write(data)
 
     @drivercall
     def flush(self):
-        self.port.flush()
+        self.device.flush()
 
     @property
     @drivercall
     def baudrate(self) -> int:
-        return self.port.baudrate
+        return self.device.baudrate
 
     @baudrate.setter
     @drivercall
     def baudrate(self, baudrate: int):
-        self.port.baudrate = baudrate
+        self.device.baudrate = baudrate
