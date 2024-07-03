@@ -25,6 +25,14 @@ def test_exporter():
                         stub.DriverCall(
                             jumpstarter_pb2.DriverCallRequest(
                                 device_uuid=device.device_uuid,
+                                driver_method="on",
+                            )
+                        ).result
+                    ) == True
+                    assert json_format.MessageToDict(
+                        stub.DriverCall(
+                            jumpstarter_pb2.DriverCallRequest(
+                                device_uuid=device.device_uuid,
                                 driver_method="read",
                             )
                         ).result
