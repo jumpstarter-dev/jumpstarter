@@ -26,9 +26,11 @@ class PySerial(Serial):
         self.port.flush()
 
     @property
+    @drivercall
     def baudrate(self) -> int:
         return self.port.baudrate
 
     @baudrate.setter
+    @drivercall
     def baudrate(self, baudrate: int):
         self.port.baudrate = baudrate

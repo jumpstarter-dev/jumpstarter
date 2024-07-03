@@ -3,12 +3,17 @@ from abc import ABC, abstractmethod
 from typing import List, Any
 from dataclasses import dataclass
 from uuid import UUID, uuid4
+import inspect
 
 
 # decorator to mark a method available for driver calls
 def drivercall(func):
     func.is_drivercall = True
     return func
+
+
+def is_drivercall(func):
+    return getattr(func, "is_drivercall", False)
 
 
 # base class for all drivers
@@ -18,8 +23,26 @@ class DriverBase(ABC):
     labels: dict[str, str]
 
     def __init__(self, uuid=None, labels={}):
+        super().__init__()
+
         self.uuid = uuid or uuid4()
         self.labels = labels
+
+        def build_getter(prop):
+            return drivercall(lambda: prop.fget(self))
+
+        def build_setter(prop):
+            return drivercall(lambda x: prop.fset(self, x))
+
+        properties = inspect.getmembers_static(
+            self,
+            lambda m: isinstance(m, property),
+        )
+        for name, prop in properties:
+            if prop.fget and is_drivercall(prop.fget):
+                setattr(self, "get_" + name, build_getter(prop))
+            if prop.fset and is_drivercall(prop.fset):
+                setattr(self, "set_" + name, build_setter(prop))
 
     @property
     @abstractmethod
@@ -31,7 +54,7 @@ class DriverBase(ABC):
         except AttributeError:
             raise NotImplementedError("no such drivercall")
 
-        if not getattr(function, "is_drivercall", False):
+        if not is_drivercall(function):
             raise NotImplementedError("no such drivercall")
 
         return function(*args)
