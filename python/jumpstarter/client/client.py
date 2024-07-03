@@ -1,4 +1,5 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
+from jumpstarter.drivers.stub import DriverStub
 from google.protobuf import empty_pb2, struct_pb2, json_format
 from dataclasses import dataclass
 
@@ -13,15 +14,5 @@ class Client:
     def GetReport(self):
         return self.stub.GetReport(empty_pb2.Empty())
 
-    def DriverCall(self, device_uuid: str, driver_method: str, *args):
-        return json_format.MessageToDict(
-            self.stub.DriverCall(
-                jumpstarter_pb2.DriverCallRequest(
-                    device_uuid=device_uuid,
-                    driver_method=driver_method,
-                    args=[
-                        json_format.ParseDict(arg, struct_pb2.Value()) for arg in args
-                    ],
-                )
-            ).result
-        )
+    def GetDevice(self, cls, device_uuid):
+        return DriverStub(self.stub, cls, device_uuid)
