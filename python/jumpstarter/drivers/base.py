@@ -16,9 +16,28 @@ def is_drivercall(func):
     return getattr(func, "is_drivercall", False)
 
 
+class DriverMeta():
+    def __init_subclass__(cls, **kwargs):
+        def build_getter(prop):
+            return drivercall(lambda self: prop.fget(self))
+
+        def build_setter(prop):
+            return drivercall(lambda self, x: prop.fset(self, x))
+
+        properties = inspect.getmembers_static(
+            cls,
+            lambda m: isinstance(m, property),
+        )
+        for name, prop in properties:
+            if prop.fget and is_drivercall(prop.fget):
+                setattr(cls, "get_" + name, build_getter(prop))
+            if prop.fset and is_drivercall(prop.fset):
+                setattr(cls, "set_" + name, build_setter(prop))
+
+
 # base class for all drivers
 @dataclass
-class DriverBase(ABC):
+class DriverBase(ABC, DriverMeta):
     uuid: UUID
     labels: dict[str, str]
 
@@ -27,22 +46,6 @@ class DriverBase(ABC):
 
         self.uuid = uuid or uuid4()
         self.labels = labels
-
-        def build_getter(prop):
-            return drivercall(lambda: prop.fget(self))
-
-        def build_setter(prop):
-            return drivercall(lambda x: prop.fset(self, x))
-
-        properties = inspect.getmembers_static(
-            self,
-            lambda m: isinstance(m, property),
-        )
-        for name, prop in properties:
-            if prop.fget and is_drivercall(prop.fget):
-                setattr(self, "get_" + name, build_getter(prop))
-            if prop.fset and is_drivercall(prop.fset):
-                setattr(self, "set_" + name, build_setter(prop))
 
     @property
     @abstractmethod
