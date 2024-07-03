@@ -23,6 +23,8 @@ class DriverBase(ABC):
     labels: dict[str, str]
 
     def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
         def build_getter(prop):
             return drivercall(lambda self: prop.fget(self))
 
@@ -34,11 +36,11 @@ class DriverBase(ABC):
             lambda m: isinstance(m, property),
         )
         for name, prop in properties:
-            if prop.fget and is_drivercall(prop.fget):
+            # TODO: check if the property is supposed to be exported
+            if prop.fget:
                 setattr(cls, "get_" + name, build_getter(prop))
-            if prop.fset and is_drivercall(prop.fset):
+            if prop.fset:
                 setattr(cls, "set_" + name, build_setter(prop))
-
 
 
     def __init__(self, uuid=None, labels={}):
