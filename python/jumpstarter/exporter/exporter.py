@@ -40,7 +40,6 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
         result = self.devices[UUID(request.device_uuid)].call(
             request.driver_method, args
         )
-        # TODO: use grpc native json type
         return jumpstarter_pb2.DriverCallResponse(
             call_uuid=str(uuid4()),
             result=json_format.ParseDict(
