@@ -6,16 +6,6 @@ from uuid import UUID, uuid4
 import inspect
 
 
-# decorator to mark a method available for driver calls
-def drivercall(func):
-    func.is_drivercall = True
-    return func
-
-
-def is_drivercall(func):
-    return getattr(func, "is_drivercall", False)
-
-
 def build_getter(prop):
     return lambda self: prop.fget(self)
 

@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from ..base import DriverBase, drivercall
+from ..base import DriverBase
 from ..stub import DriverStub
 
 
