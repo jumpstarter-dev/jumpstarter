@@ -1,4 +1,5 @@
 from jumpstarter.exporter import Exporter
+from jumpstarter.client import Client
 from jumpstarter.drivers.power.mock import MockPower
 from jumpstarter.drivers.power.base import PowerReading
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
@@ -18,28 +19,15 @@ def test_exporter():
     server.start()
 
     with grpc.insecure_channel("localhost:50051") as channel:
-        stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-        report = stub.GetReport(empty_pb2.Empty())
+        client = Client(channel)
 
-        def drivercall(device_uuid, driver_method, *args):
-            return json_format.MessageToDict(
-                stub.DriverCall(
-                    jumpstarter_pb2.DriverCallRequest(
-                        device_uuid=device_uuid,
-                        driver_method=driver_method,
-                        args=[
-                            json_format.ParseDict(arg, struct_pb2.Value())
-                            for arg in args
-                        ],
-                    )
-                ).result
-            )
+        report = client.GetReport()
 
         for device in report.device_report:
             match device.driver_interface:
                 case "power":
-                    assert drivercall(device.device_uuid, "on") == True
-                    assert drivercall(device.device_uuid, "read") == asdict(PowerReading(5.0, 2.0))
+                    assert client.DriverCall(device.device_uuid, "on") == True
+                    assert client.DriverCall(device.device_uuid, "read") == asdict(PowerReading(5.0, 2.0))
                 case _:
                     raise NotImplementedError
 
