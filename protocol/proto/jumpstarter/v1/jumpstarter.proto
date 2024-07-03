@@ -113,7 +113,7 @@ message DriverCallRequest {
 
 message DriverCallResponse {
   string call_uuid = 1;
-  string json_result = 2;
+  google.protobuf.Value result = 2;
 }
 
 message StreamingDriverCallRequest {
@@ -124,7 +124,7 @@ message StreamingDriverCallRequest {
 
 message StreamingDriverCallResponse {
   string call_uuid = 1;
-  string json_result = 2;
+  google.protobuf.Value result = 2;
 }
 
 message LogStreamResponse {
