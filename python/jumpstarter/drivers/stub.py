@@ -18,7 +18,7 @@ def build_stub_method(cls, driver_method):
             ).result
         )
 
-    stub_method.__signature = inspect.signature(inspect.getattr_static(cls, driver_method))
+    stub_method.__signature = inspect.signature(cls.callables[driver_method])
 
     return stub_method
 
@@ -32,19 +32,22 @@ class DriverStub():
     def __init_subclass__(cls, base, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        for name in base.__abstractmethods__:
-            attr = inspect.getattr_static(base, name)
+        class subclass(base):
+            pass
+
+        for name in subclass.__abstractmethods__:
+            attr = inspect.getattr_static(subclass, name)
             if callable(attr):
                 setattr(
                     cls,
                     name,
-                    build_stub_method(base, name),
+                    build_stub_method(subclass, name),
                 )
             elif isinstance(attr, property):
                 setattr(
                     cls,
                     name,
-                    build_stub_property(base, name),
+                    build_stub_property(subclass, name),
                 )
 
     def __init__(self, stub, device_uuid):

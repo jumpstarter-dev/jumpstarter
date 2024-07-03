@@ -16,6 +16,14 @@ def is_drivercall(func):
     return getattr(func, "is_drivercall", False)
 
 
+def build_getter(prop):
+    return lambda self: prop.fget(self)
+
+
+def build_setter(prop):
+    return lambda self, x: prop.fset(self, x)
+
+
 # base class for all drivers
 @dataclass
 class DriverBase(ABC):
@@ -25,23 +33,15 @@ class DriverBase(ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        def build_getter(prop):
-            return drivercall(lambda self: prop.fget(self))
+        cls.callables = dict()
 
-        def build_setter(prop):
-            return drivercall(lambda self, x: prop.fset(self, x))
-
-        properties = inspect.getmembers_static(
-            cls,
-            lambda m: isinstance(m, property),
-        )
-        for name, prop in properties:
-            # TODO: check if the property is supposed to be exported
-            if prop.fget:
-                setattr(cls, "get_" + name, build_getter(prop))
-            if prop.fset:
-                setattr(cls, "set_" + name, build_setter(prop))
-
+        for name in inspect.getattr_static(cls, "__abstractmethods__"):
+            attr = inspect.getattr_static(cls, name)
+            if callable(attr):
+                cls.callables[name] = attr
+            elif isinstance(attr, property):
+                cls.callables["get_" + name] = build_getter(attr)
+                cls.callables["set_" + name] = build_setter(attr)
 
     def __init__(self, uuid=None, labels={}):
         super().__init__()
@@ -54,12 +54,9 @@ class DriverBase(ABC):
     def interface(self): ...
 
     def call(self, method: str, args: List[Any]) -> Any:
-        try:
-            function = getattr(self, method)
-        except AttributeError:
+        function = self.callables.get(method)
+
+        if not function:
             raise NotImplementedError("no such drivercall")
 
-        if not is_drivercall(function):
-            raise NotImplementedError("no such drivercall")
-
-        return function(*args)
+        return function(self, *args)
