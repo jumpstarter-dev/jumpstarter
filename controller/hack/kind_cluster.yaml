@@ -1,0 +1,19 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+kubeadmConfigPatches:
+- |
+  kind: ClusterConfiguration
+  apiServer:
+    extraArgs:
+      "service-node-port-range": "3000-32767"
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 5443 # flightctl API
+    hostPort: 5443
+    protocol: TCP
+# if we needed to mount a hostPath volume into the kind cluster, we can do it like this
+#  extraMounts:
+#  - hostPath: ./bin/e2e-certs
+#    containerPath: /tmp/e2e-certs
+  

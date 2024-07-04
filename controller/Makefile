@@ -192,7 +192,7 @@ $(KIND): $(LOCALBIN)
 
 .PHONY: cluster
 cluster: $(KIND)
-	$(KIND) create cluster --name jumpstarter
+	$(KIND) create cluster --name jumpstarter --config hack/kind_cluster.yaml
 
 clean: $(KIND)
 	$(KIND) delete cluster --name jumpstarter
