@@ -1,0 +1,9 @@
+
+
+namespace: jumpstarter-lab
+image: quay.io/jumpstarter-dev/jumpstarter-controller:latest
+imagePullPolicy: IfNotPresent
+grpcEndpoint: grpcs://localhost:5443
+grpcNodePort: 5443
+metrics:
+  enabled: false
