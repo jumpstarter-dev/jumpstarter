@@ -30,9 +30,6 @@ class DriverBase(ABC, DeviceMeta):
                 cls.callables["get_" + name] = build_getter(attr)
                 cls.callables["set_" + name] = build_setter(attr)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     @property
     @abstractmethod
     def interface(self): ...

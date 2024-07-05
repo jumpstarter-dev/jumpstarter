@@ -26,3 +26,6 @@ def __getitem__(name):
 
 def __contains__(name):
     return name in _registry
+
+
+__all__ = ["DeviceMeta"]

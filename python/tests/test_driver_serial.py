@@ -11,7 +11,7 @@ def test_pyserial_serial():
 
     assert p.call("write", [b"hello"]) == 5
     assert p.call("read", [5]) == b"hello"
-    assert p.call("set_baudrate", [115200]) == None
+    assert p.call("set_baudrate", [115200]) is None
     assert p.call("get_baudrate", []) == 115200
 
 
@@ -20,5 +20,5 @@ def test_mock_serial():
 
     assert p.call("write", [b"hello"]) == 5
     assert p.call("read", [5]) == b"hello"
-    assert p.call("set_baudrate", [115200]) == None
+    assert p.call("set_baudrate", [115200]) is None
     assert p.call("get_baudrate", []) == 115200

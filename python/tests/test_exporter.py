@@ -26,7 +26,7 @@ def test_exporter():
             stub = client.GetDevice(device)
             match device.driver_interface:
                 case "power":
-                    assert stub.on() == True
+                    assert stub.on() is True
                     assert stub.read() == asdict(PowerReading(5.0, 2.0))
                 case "serial":
                     stub.baudrate = 115200
