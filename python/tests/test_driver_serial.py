@@ -14,6 +14,7 @@ def test_pyserial_serial():
     assert p.call("set_baudrate", [115200]) == None
     assert p.call("get_baudrate", []) == 115200
 
+
 def test_mock_serial():
     p = MockSerial()
 

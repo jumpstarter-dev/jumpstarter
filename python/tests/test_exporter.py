@@ -25,7 +25,7 @@ def test_exporter():
         report = client.GetReport()
 
         for device in report.device_report:
-            stub = client.GetDevice(device.driver_interface, device.device_uuid)
+            stub = client.GetDevice(device)
             match device.driver_interface:
                 case "power":
                     assert stub.on() == True

@@ -1,6 +1,8 @@
 # This file contains the base class for all jumpstarter driver stubs
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from google.protobuf import empty_pb2, struct_pb2, json_format
+from dataclasses import dataclass
+from uuid import UUID
 import inspect
 
 
@@ -9,7 +11,7 @@ def build_stub_method(cls, driver_method):
         return json_format.MessageToDict(
             self.stub.DriverCall(
                 jumpstarter_pb2.DriverCallRequest(
-                    device_uuid=self.device_uuid,
+                    device_uuid=self.uuid,
                     driver_method=driver_method,
                     args=[
                         json_format.ParseDict(arg, struct_pb2.Value()) for arg in args
@@ -29,7 +31,11 @@ def build_stub_property(cls, name):
     return property(getter, setter)
 
 
+@dataclass
 class DriverStub:
+    uuid: UUID
+    lables: dict[str, str]
+
     def __init_subclass__(cls, base, **kwargs):
         super().__init_subclass__(**kwargs)
 
@@ -51,8 +57,9 @@ class DriverStub:
                     build_stub_property(subclass, name),
                 )
 
-    def __init__(self, stub, device_uuid):
+    def __init__(self, stub, uuid, labels):
         super().__init__()
 
         self.stub = stub
-        self.device_uuid = device_uuid
+        self.uuid = uuid
+        self.labels = labels
