@@ -1,7 +1,6 @@
 from abc import abstractmethod
 from dataclasses import dataclass
-from .. import DriverBase
-from ..stub import DriverStub
+from .. import DriverBase, DriverStub
 
 
 @dataclass

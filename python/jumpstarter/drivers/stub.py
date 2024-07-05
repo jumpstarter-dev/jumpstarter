@@ -29,14 +29,20 @@ def build_stub_method(cls, driver_method):
     def stub_method(self, *args, **kwargs):
         return driver_call(self.stub, self.uuid, driver_method, args)
 
-    stub_method.__signature = inspect.signature(cls.callables[driver_method])
+    stub_method.__signature = inspect.signature(
+        inspect.getattr_static(cls, driver_method)
+    )
 
     return stub_method
 
 
-def build_stub_property(cls, name):
-    getter = build_stub_method(cls, "__get__" + name)
-    setter = build_stub_method(cls, "__set__" + name)
+def build_stub_property(name):
+    def getter(self):
+        return driver_call(self.stub, self.uuid, "__get__" + name, [])
+
+    def setter(self, value):
+        return driver_call(self.stub, self.uuid, "__set__" + name, [value])
+
     return property(getter, setter)
 
 
@@ -45,22 +51,21 @@ class DriverStub(DeviceMeta):
     stub: jumpstarter_pb2_grpc.ExporterServiceStub
 
     def __init_subclass__(cls, base, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        class subclass(base):
-            pass
-
-        for name in subclass.__abstractmethods__:
-            attr = inspect.getattr_static(subclass, name)
+        for name in inspect.getattr_static(base, "__abstractmethods__"):
+            attr = inspect.getattr_static(base, name)
             if callable(attr):
                 setattr(
                     cls,
                     name,
-                    build_stub_method(subclass, name),
+                    build_stub_method(base, name),
                 )
             elif isinstance(attr, property):
                 setattr(
                     cls,
                     name,
-                    build_stub_property(subclass, name),
+                    build_stub_property(name),
                 )
+            else:
+                raise NotImplementedError("unrecognized abstract method")
+
+        super().__init_subclass__(**kwargs)
