@@ -1,13 +1,11 @@
 # This file contains the base class for all jumpstarter drivers
 from abc import ABC, abstractmethod
 from typing import List, Any
-from dataclasses import dataclass
 from . import DeviceMeta
 import inspect
 
 
 # base class for all drivers
-@dataclass
 class DriverBase(ABC, DeviceMeta):
     def __init_subclass__(cls, **kwargs):
         cls.callables = dict()
@@ -19,6 +17,8 @@ class DriverBase(ABC, DeviceMeta):
             elif isinstance(attr, property):
                 cls.callables["__get__" + name] = attr.__get__
                 cls.callables["__set__" + name] = attr.__set__
+            else:
+                raise NotImplementedError("unrecognized abstract method")
 
         super().__init_subclass__(**kwargs)
 

@@ -1,5 +1,5 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
-from jumpstarter.drivers.base import DriverBase
+from jumpstarter.drivers import DriverBase
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
 from google.protobuf import struct_pb2, json_format

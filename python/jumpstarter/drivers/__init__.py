@@ -1,4 +1,6 @@
 from .meta import DeviceMeta
+from .base import DriverBase
+
 from . import registry
 
 _registry = registry.DriverRegistry()
@@ -28,4 +30,4 @@ def __contains__(name):
     return name in _registry
 
 
-__all__ = ["DeviceMeta"]
+__all__ = ["DeviceMeta", "DriverBase"]
