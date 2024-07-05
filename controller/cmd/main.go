@@ -34,9 +34,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter/internal/controller"
-	"github.com/jumpstarter-dev/jumpstarter/internal/service"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
 	// +kubebuilder:scaffold:imports
 )
 

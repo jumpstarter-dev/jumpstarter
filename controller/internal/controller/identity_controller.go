@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/api/v1alpha1"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 )
 
 // IdentityReconciler reconciles a Identity object

@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jumpstarter-dev/jumpstarter/test/utils"
+	"github.com/jumpstarter-dev/jumpstarter-controller/test/utils"
 )
 
 const namespace = "jumpstarter-router-system"
