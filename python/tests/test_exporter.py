@@ -33,19 +33,11 @@ def test_exporter():
     with grpc.insecure_channel("localhost:50051") as channel:
         client = Client(channel)
 
-        report = client.GetReport()
+        assert client.power.on()
+        assert client.power.read() == asdict(PowerReading(5.0, 2.0))
 
-        for device in report.device_report:
-            stub = client.GetDevice(device)
-            match device.driver_interface:
-                case "power":
-                    assert stub.on() is True
-                    assert stub.read() == asdict(PowerReading(5.0, 2.0))
-                case "serial":
-                    stub.baudrate = 115200
-                    assert stub.baudrate == 115200
-                case _:
-                    raise NotImplementedError
+        client.serial.baudrate = 115200
+        assert client.serial.baudrate == 115200
 
     server.stop(grace=None)
     server.wait_for_termination()
