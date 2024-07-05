@@ -1,6 +1,6 @@
 # This file contains the base class for all jumpstarter driver stubs
-from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
-from google.protobuf import empty_pb2, struct_pb2, json_format
+from jumpstarter.v1 import jumpstarter_pb2
+from google.protobuf import struct_pb2, json_format
 from dataclasses import dataclass
 from uuid import UUID
 import inspect

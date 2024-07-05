@@ -1,7 +1,7 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from jumpstarter.drivers.power.base import PowerStub
 from jumpstarter.drivers.serial.base import SerialStub
-from google.protobuf import empty_pb2, struct_pb2, json_format
+from google.protobuf import empty_pb2
 from dataclasses import dataclass
 
 

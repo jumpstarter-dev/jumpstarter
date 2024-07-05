@@ -3,8 +3,6 @@ from jumpstarter.drivers.base import DriverBase
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
 from google.protobuf import struct_pb2, json_format
-from typing import List
-import grpc
 
 
 @dataclass

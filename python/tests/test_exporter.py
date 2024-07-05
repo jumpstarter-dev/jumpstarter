@@ -3,8 +3,6 @@ from jumpstarter.client import Client
 from jumpstarter.drivers.power.base import PowerReading
 from jumpstarter.drivers.power.mock import MockPower
 from jumpstarter.drivers.serial.mock import MockSerial
-from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
-from google.protobuf import empty_pb2, struct_pb2, json_format
 from concurrent import futures
 from dataclasses import asdict
 import grpc
