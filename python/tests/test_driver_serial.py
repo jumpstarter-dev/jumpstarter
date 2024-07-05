@@ -14,7 +14,7 @@ def test_pyserial_serial():
 
 
 def test_mock_serial():
-    p = MockSerial()
+    p = MockSerial(labels={"jumpstarter.dev/name": "mock"})
 
     assert p.call("write", [b"hello"]) == 5
     assert p.call("read", [5]) == b"hello"

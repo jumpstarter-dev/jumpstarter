@@ -11,7 +11,20 @@ import grpc
 def test_exporter():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
-    e = Exporter(devices=[MockPower(), MockSerial()])
+    e = Exporter(
+        devices=[
+            MockPower(
+                labels={
+                    "jumpstarter.dev/name": "power",
+                }
+            ),
+            MockSerial(
+                labels={
+                    "jumpstarter.dev/name": "serial",
+                }
+            ),
+        ]
+    )
     e.add_to_server(server)
 
     server.add_insecure_port("localhost:50051")

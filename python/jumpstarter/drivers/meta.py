@@ -8,5 +8,5 @@ class DeviceMeta:
     labels: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        # TODO: validate meta
-        pass
+        if "jumpstarter.dev/name" not in self.labels:
+            raise ValueError("missing required label: jumpstarter.dev/name")

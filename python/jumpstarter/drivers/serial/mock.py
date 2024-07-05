@@ -9,8 +9,8 @@ class MockSerial(Serial):
     w: int
     _baudrate: int
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         (self.r, self.w) = os.pipe()
         self._baudrate = 115200
