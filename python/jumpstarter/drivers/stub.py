@@ -26,8 +26,8 @@ def build_stub_method(cls, driver_method):
 
 
 def build_stub_property(cls, name):
-    getter = build_stub_method(cls, "get_" + name)
-    setter = build_stub_method(cls, "set_" + name)
+    getter = build_stub_method(cls, "__get__" + name)
+    setter = build_stub_method(cls, "__set__" + name)
     return property(getter, setter)
 
 

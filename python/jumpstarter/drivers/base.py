@@ -6,20 +6,10 @@ from . import DeviceMeta
 import inspect
 
 
-def build_getter(prop):
-    return lambda self: prop.fget(self)
-
-
-def build_setter(prop):
-    return lambda self, x: prop.fset(self, x)
-
-
 # base class for all drivers
 @dataclass
 class DriverBase(ABC, DeviceMeta):
     def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
         cls.callables = dict()
 
         for name in inspect.getattr_static(cls, "__abstractmethods__"):
@@ -27,8 +17,10 @@ class DriverBase(ABC, DeviceMeta):
             if callable(attr):
                 cls.callables[name] = attr
             elif isinstance(attr, property):
-                cls.callables["get_" + name] = build_getter(attr)
-                cls.callables["set_" + name] = build_setter(attr)
+                cls.callables["__get__" + name] = attr.__get__
+                cls.callables["__set__" + name] = attr.__set__
+
+        super().__init_subclass__(**kwargs)
 
     @property
     @abstractmethod
