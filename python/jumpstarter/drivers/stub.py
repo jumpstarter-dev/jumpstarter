@@ -2,23 +2,32 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from google.protobuf import struct_pb2, json_format
 from dataclasses import dataclass
+from uuid import UUID
+from typing import List, Any
 from . import DeviceMeta
 import inspect
 
 
+def driver_call(
+    stub: jumpstarter_pb2_grpc.ExporterServiceStub,
+    device_uuid: UUID,
+    driver_method: str,
+    args: List[Any],
+):
+    request = jumpstarter_pb2.DriverCallRequest(
+        device_uuid=str(device_uuid),
+        driver_method=driver_method,
+        args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+    )
+
+    response = stub.DriverCall(request)
+
+    return json_format.MessageToDict(response.result)
+
+
 def build_stub_method(cls, driver_method):
     def stub_method(self, *args, **kwargs):
-        return json_format.MessageToDict(
-            self.stub.DriverCall(
-                jumpstarter_pb2.DriverCallRequest(
-                    device_uuid=self.uuid,
-                    driver_method=driver_method,
-                    args=[
-                        json_format.ParseDict(arg, struct_pb2.Value()) for arg in args
-                    ],
-                )
-            ).result
-        )
+        return driver_call(self.stub, self.uuid, driver_method, args)
 
     stub_method.__signature = inspect.signature(cls.callables[driver_method])
 
