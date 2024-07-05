@@ -1,23 +1,26 @@
-# permissions for end users to view identities.
+# permissions for end users to edit exporters.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
-    app.kubernetes.io/managed-by: kustomize
-  name: identity-viewer-role
+  name: exporter-editor-role
 rules:
 - apiGroups:
   - jumpstarter.dev
   resources:
-  - identities
+  - exporters
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - jumpstarter.dev
   resources:
-  - identities/status
+  - exporters/status
   verbs:
   - get

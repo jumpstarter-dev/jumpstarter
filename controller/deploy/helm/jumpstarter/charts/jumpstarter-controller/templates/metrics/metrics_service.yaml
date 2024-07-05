@@ -3,10 +3,9 @@ kind: Service
 metadata:
   labels:
     control-plane: controller-manager
-    app.kubernetes.io/name: jumpstarter-router
-    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: jumpstarter-controller
   name: controller-manager-metrics-service
-  namespace: system
+  namespace: {{ .Values.namespace }}
 spec:
   ports:
   - name: http

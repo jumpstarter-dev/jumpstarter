@@ -4,8 +4,8 @@ kind: Role
 metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
-    app.kubernetes.io/managed-by: kustomize
   name: leader-election-role
+  namespace: {{ .Values.namespace }}
 rules:
 - apiGroups:
   - ""

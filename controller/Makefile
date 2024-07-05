@@ -1,5 +1,7 @@
+GO_FILES := $(shell find ./ -name ".go" -not -path "./bin" -not -path "./packaging/*")
+
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:main
+IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 
@@ -45,7 +47,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -135,9 +137,8 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+deploy: cluster
+	./hack/deploy_with_helm.sh
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -192,7 +193,8 @@ $(KIND): $(LOCALBIN)
 
 .PHONY: cluster
 cluster: $(KIND)
-	$(KIND) create cluster --name jumpstarter --config hack/kind_cluster.yaml
+	$(KIND) get clusters | grep jumpstarter || $(KIND) create cluster --name jumpstarter --config hack/kind_cluster.yaml
+
 
 clean: $(KIND)
 	$(KIND) delete cluster --name jumpstarter

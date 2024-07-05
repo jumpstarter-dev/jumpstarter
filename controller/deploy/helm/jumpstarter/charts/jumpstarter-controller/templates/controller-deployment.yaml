@@ -1,21 +1,11 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  labels:
-    control-plane: controller-manager
-    app.kubernetes.io/name: jumpstarter-router
-    app.kubernetes.io/managed-by: kustomize
-  name: system
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: controller-manager
-  namespace: system
+  name: jumpstarter-controller
+  namespace: {{ .Values.namespace }}
   labels:
     control-plane: controller-manager
-    app.kubernetes.io/name: jumpstarter-router
-    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: jumpstarter-controller
 spec:
   selector:
     matchLabels:
@@ -63,7 +53,9 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
-        image: controller:latest
+          - -metrics-bind-address=:8080
+        image: {{ .Values.image }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
         name: manager
         securityContext:
           allowPrivilegeEscalation: false
@@ -86,10 +78,10 @@ spec:
         # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
-            cpu: 500m
-            memory: 128Mi
+            cpu: 2000m
+            memory: 2048Mi
           requests:
-            cpu: 10m
-            memory: 64Mi
+            cpu: 1000m
+            memory: 512Mi
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
