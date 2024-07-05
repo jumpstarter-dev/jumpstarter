@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List, Any
 from dataclasses import dataclass
 from uuid import UUID, uuid4
+from .meta import DeviceMeta
 import inspect
 
 
@@ -16,10 +17,7 @@ def build_setter(prop):
 
 # base class for all drivers
 @dataclass
-class DriverBase(ABC):
-    uuid: UUID
-    labels: dict[str, str]
-
+class DriverBase(ABC, DeviceMeta):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
@@ -33,11 +31,8 @@ class DriverBase(ABC):
                 cls.callables["get_" + name] = build_getter(attr)
                 cls.callables["set_" + name] = build_setter(attr)
 
-    def __init__(self, uuid=None, labels={}):
-        super().__init__()
-
-        self.uuid = uuid or uuid4()
-        self.labels = labels
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @property
     @abstractmethod

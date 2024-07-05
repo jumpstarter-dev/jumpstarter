@@ -18,8 +18,12 @@ class Client:
     def GetDevice(self, report: jumpstarter_pb2.DeviceReport):
         match report.driver_interface:
             case "power":
-                return PowerStub(self.stub, report.device_uuid, report.labels)
+                return PowerStub(
+                    stub=self.stub, uuid=report.device_uuid, labels=report.labels
+                )
             case "serial":
-                return SerialStub(self.stub, report.device_uuid, report.labels)
+                return SerialStub(
+                    stub=self.stub, uuid=report.device_uuid, labels=report.labels
+                )
             case _:
                 raise NotImplementedError
