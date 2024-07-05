@@ -2,11 +2,7 @@ from abc import abstractmethod
 from .. import DriverBase, DriverStub
 
 
-class Serial(DriverBase):
-    @property
-    def interface(self):
-        return "serial"
-
+class Serial(DriverBase, interface="serial"):
     @abstractmethod
     def read(self, size: int) -> bytes: ...
 

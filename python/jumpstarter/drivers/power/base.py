@@ -18,11 +18,7 @@ class PowerReading:
         return f"<PowerReading: {self.voltage}V {self.current}A {self.apparent_power}W>"
 
 
-class Power(DriverBase):
-    @property
-    def interface(self):
-        return "power"
-
+class Power(DriverBase, interface="power"):
     @abstractmethod
     def on(self): ...
 
