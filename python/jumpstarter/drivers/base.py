@@ -1,6 +1,7 @@
 # This file contains the base class for all jumpstarter drivers
 from abc import ABC
 from typing import List, Any
+from jumpstarter.v1 import jumpstarter_pb2
 from . import DeviceMeta
 from .registry import _registry
 import inspect
@@ -34,3 +35,10 @@ class DriverBase(ABC, DeviceMeta):
             raise NotImplementedError("no such drivercall")
 
         return function(self, *args)
+
+    def report(self) -> jumpstarter_pb2.DeviceReport:
+        return jumpstarter_pb2.DeviceReport(
+            device_uuid=str(self.uuid),
+            driver_interface=self.interface,
+            labels=self.labels,
+        )

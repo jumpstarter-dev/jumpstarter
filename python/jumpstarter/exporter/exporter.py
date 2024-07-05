@@ -23,14 +23,7 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            device_report=[
-                jumpstarter_pb2.DeviceReport(
-                    device_uuid=str(device.uuid),
-                    driver_interface=device.interface,
-                    labels=device.labels,
-                )
-                for device in self.devices.values()
-            ],
+            device_report=[device.report() for device in self.devices.values()],
         )
 
     def DriverCall(self, request, context):
