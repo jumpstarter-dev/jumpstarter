@@ -2,8 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Any
 from dataclasses import dataclass
-from uuid import UUID, uuid4
-from .meta import DeviceMeta
+from . import DeviceMeta
 import inspect
 
 

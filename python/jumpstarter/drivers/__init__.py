@@ -1,3 +1,4 @@
+from .meta import DeviceMeta
 from . import registry
 
 _registry = registry.DriverRegistry()

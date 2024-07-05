@@ -2,8 +2,7 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from google.protobuf import struct_pb2, json_format
 from dataclasses import dataclass
-from uuid import UUID
-from .meta import DeviceMeta
+from . import DeviceMeta
 import inspect
 
 
