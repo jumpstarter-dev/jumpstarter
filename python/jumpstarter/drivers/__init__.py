@@ -1,10 +1,7 @@
 from .meta import DeviceMeta
 from .base import DriverBase
 from .stub import DriverStub
-
-from . import registry
-
-_registry = registry.DriverRegistry()
+from .registry import _registry
 
 
 def register(cls):

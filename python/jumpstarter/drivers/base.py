@@ -2,6 +2,7 @@
 from abc import ABC
 from typing import List, Any
 from . import DeviceMeta
+from .registry import _registry
 import inspect
 
 
@@ -10,6 +11,7 @@ class DriverBase(ABC, DeviceMeta):
     def __init_subclass__(cls, interface=None, **kwargs):
         if interface:
             cls.interface = interface
+            _registry.register(cls)
 
         cls.callables = dict()
 
