@@ -7,8 +7,8 @@ import serial
 class PySerial(Serial):
     device: serial.Serial
 
-    def __init__(self, device: serial.Serial):
-        super().__init__()
+    def __init__(self, *args, device: serial.Serial, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self.device = device
 
