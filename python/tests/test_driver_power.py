@@ -1,6 +1,4 @@
-from jumpstarter.drivers.power.mock import MockPower
-from jumpstarter.drivers.power.base import PowerReading
-from jumpstarter.drivers.power.dutlink import DutlinkPower
+from jumpstarter.drivers.power import PowerReading, MockPower, DutlinkPower
 from subprocess import run
 from shutil import which
 import pytest

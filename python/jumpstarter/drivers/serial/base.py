@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from .. import DriverBase, DriverStub
+from .. import DriverBase
 
 
 class Serial(DriverBase, interface="serial"):

@@ -1,8 +1,7 @@
 from jumpstarter.exporter import Exporter
 from jumpstarter.client import Client
-from jumpstarter.drivers.power.base import PowerReading
-from jumpstarter.drivers.power.mock import MockPower
-from jumpstarter.drivers.serial.mock import MockSerial
+from jumpstarter.drivers.power import PowerReading, MockPower
+from jumpstarter.drivers.serial import MockSerial
 from concurrent import futures
 from dataclasses import asdict
 import grpc

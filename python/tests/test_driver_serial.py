@@ -1,5 +1,4 @@
-from jumpstarter.drivers.serial.pyserial import PySerial
-from jumpstarter.drivers.serial.mock import MockSerial
+from jumpstarter.drivers.serial import MockSerial, PySerial
 import serial
 import pytest
 import os
