@@ -19,7 +19,3 @@ class Serial(DriverBase, interface="serial"):
     @baudrate.setter
     @abstractmethod
     def baudrate(self, baudrate: int): ...
-
-
-class SerialStub(DriverStub, base=Serial):
-    pass
