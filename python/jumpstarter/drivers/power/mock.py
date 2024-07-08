@@ -1,4 +1,5 @@
-from .base import Power, PowerReading
+from collections.abc import Generator
+from . import Power, PowerReading
 
 
 class MockPower(Power):
@@ -8,5 +9,5 @@ class MockPower(Power):
     def off(self):
         return "ok"
 
-    def read(self) -> PowerReading:
-        return PowerReading(5.0, 2.0)
+    def read(self) -> Generator[PowerReading, None, None]:
+        yield PowerReading(5.0, 2.0)

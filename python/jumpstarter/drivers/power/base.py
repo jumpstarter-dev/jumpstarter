@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from collections.abc import Generator
 from dataclasses import dataclass
 from .. import DriverBase
 
@@ -26,4 +27,5 @@ class Power(DriverBase, interface="power"):
     def off(self) -> str: ...
 
     @abstractmethod
-    def read(self) -> PowerReading: ...
+    def read(self) -> Generator[PowerReading, None, None]:
+        yield None

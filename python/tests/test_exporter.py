@@ -33,7 +33,7 @@ def test_exporter():
         client = Client(channel)
 
         assert client.power.on()
-        assert client.power.read() == asdict(PowerReading(5.0, 2.0))
+        assert next(client.power.read()) == asdict(PowerReading(5.0, 2.0))
 
         client.serial.baudrate = 115200
         assert client.serial.baudrate == 115200

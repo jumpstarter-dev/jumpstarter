@@ -25,6 +25,22 @@ def driver_call(
     return json_format.MessageToDict(response.result)
 
 
+def streaming_driver_call(
+    stub: jumpstarter_pb2_grpc.ExporterServiceStub,
+    device_uuid: UUID,
+    driver_method: str,
+    args: List[Any],
+):
+    request = jumpstarter_pb2.StreamingDriverCallRequest(
+        device_uuid=str(device_uuid),
+        driver_method=driver_method,
+        args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+    )
+
+    for response in stub.StreamingDriverCall(request):
+        yield json_format.MessageToDict(response.result)
+
+
 def build_stub_method(cls, driver_method):
     def stub_method(self, *args, **kwargs):
         return driver_call(self.stub, self.uuid, driver_method, args)
@@ -34,6 +50,17 @@ def build_stub_method(cls, driver_method):
     )
 
     return stub_method
+
+
+def build_streaming_stub_method(cls, driver_method):
+    def streaming_stub_method(self, *args, **kwargs):
+        yield from streaming_driver_call(self.stub, self.uuid, driver_method, args)
+
+    streaming_stub_method.__signature = inspect.signature(
+        inspect.getattr_static(cls, driver_method)
+    )
+
+    return streaming_stub_method
 
 
 def build_stub_property(name):
@@ -54,11 +81,18 @@ class DriverStub(DeviceMeta):
         for name in inspect.getattr_static(base, "__abstractmethods__"):
             attr = inspect.getattr_static(base, name)
             if callable(attr):
-                setattr(
-                    cls,
-                    name,
-                    build_stub_method(base, name),
-                )
+                if inspect.isgeneratorfunction(attr):
+                    setattr(
+                        cls,
+                        name,
+                        build_streaming_stub_method(base, name),
+                    )
+                else:
+                    setattr(
+                        cls,
+                        name,
+                        build_stub_method(base, name),
+                    )
             elif isinstance(attr, property):
                 setattr(
                     cls,

@@ -37,3 +37,16 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
                 asdict(result) if is_dataclass(result) else result, struct_pb2.Value()
             ),
         )
+
+    def StreamingDriverCall(self, request, context):
+        args = [json_format.MessageToDict(arg) for arg in request.args]
+        for result in self.devices[UUID(request.device_uuid)].streaming_call(
+            request.driver_method, args
+        ):
+            yield jumpstarter_pb2.StreamingDriverCallResponse(
+                call_uuid=str(uuid4()),
+                result=json_format.ParseDict(
+                    asdict(result) if is_dataclass(result) else result,
+                    struct_pb2.Value(),
+                ),
+            )
