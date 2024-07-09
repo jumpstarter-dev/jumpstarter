@@ -1,5 +1,6 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from jumpstarter.drivers import DriverBase
+from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
 from google.protobuf import struct_pb2, json_format
@@ -16,6 +17,12 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
         self.uuid = uuid or uuid4()
         self.labels = labels
         self.devices = {device.uuid: device for device in devices}
+
+        for device in devices:
+            if isinstance(device, Composite):
+                self.devices |= {
+                    subdevice.uuid: subdevice for subdevice in device.devices
+                }
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)

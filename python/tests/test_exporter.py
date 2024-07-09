@@ -56,5 +56,8 @@ def test_exporter():
         client.serial.baudrate = 115200
         assert client.serial.baudrate == 115200
 
+        assert client.composite.power.on()
+        assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
+
     server.stop(grace=None)
     server.wait_for_termination()

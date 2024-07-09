@@ -11,10 +11,18 @@ class Client:
 
     def __init__(self, channel):
         self.stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+        devices = dict()
         for device in self.GetReport().device_report:
             stub = self.GetDevice(device)
+            devices[stub.uuid] = stub
             if device.parent_device_uuid == "":
                 setattr(self, stub.labels["jumpstarter.dev/name"], stub)
+            else:
+                setattr(
+                    devices[device.parent_device_uuid],
+                    stub.labels["jumpstarter.dev/name"],
+                    stub,
+                )
 
     def GetReport(self):
         return self.stub.GetReport(empty_pb2.Empty())
