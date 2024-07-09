@@ -2,6 +2,7 @@ from jumpstarter.exporter import Exporter
 from jumpstarter.client import Client
 from jumpstarter.drivers.power import PowerReading, MockPower
 from jumpstarter.drivers.serial import MockSerial
+from jumpstarter.drivers.composite import Composite
 from concurrent import futures
 from dataclasses import asdict
 import grpc
@@ -21,6 +22,23 @@ def test_exporter():
                 labels={
                     "jumpstarter.dev/name": "serial",
                 }
+            ),
+            Composite(
+                labels={
+                    "jumpstarter.dev/name": "composite",
+                },
+                devices=[
+                    MockPower(
+                        labels={
+                            "jumpstarter.dev/name": "power",
+                        }
+                    ),
+                    MockSerial(
+                        labels={
+                            "jumpstarter.dev/name": "serial",
+                        }
+                    ),
+                ],
             ),
         ]
     )
