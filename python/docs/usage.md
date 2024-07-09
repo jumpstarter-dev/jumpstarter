@@ -1,15 +1,16 @@
+# Jumpstarter Usage
 
-
-# Usage
-
-## Administrator tasks
+## Administrator Tasks
 
 ### Creating a client token and configuration
+
 ```bash
 jumpstarter create client my-client -o my-client.yaml
 ```
 
-my-client.yaml:
+This creates a client named `my-client` and outputs the configuration to a YAML
+file called `my-client.yaml`:
+
 ```yaml
 client:
     name: my-client
@@ -19,48 +20,78 @@ client:
 
 ### Creating a exporter
 
-Creating an exporter registers the CR object in the k8s API, the jumpstarter-controller will create
-an authentication token and attach it to the object.
+To connect a device to Jumpstarter, an exporter instance must be registered.
 
-From the admin point of view it's performed running the following command:
+Exporter creation must be done by an administrator user who has access to
+the Kubernetes cluster where the `jumpstarter-controller` service is hosted.
 
 ```bash
+# Specify the location of the kubeconfig to use
 export KUBECONFIG=/path/to/kubeconfig
+# Create the exporter instance
 jumpstarter create exporter my-exporter -o my-exporter.yaml
 ```
 
-This results in a base exporter configuration file
+This creates an exporter named `my-exporter` and outputs the configuration to a
+YAML file called `my-exporter.yaml`:
 
-my-exporter.yaml:
 ```yaml
 exporter:
-    name: my-client
+    name: my-exporter
     endpoint: "grpcs://jumpstarter.my-lab.com:1443"
     token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIzNDEyMzQxMjM0LXF3ZXJxd2VycXdlcnF3ZXJxd2VycXdlcnF3ZXIK
     # environmentConfig: /etc/jumpstarter/environment.py
 ```
 
+Creating an exporter registers the custom resource object in the k8s API, the
+`jumpstarter-controller` will create an authentication token and attach it to
+the object.
 
-### Running a exporter
+### Running an Exporter
+
+The exporter service can be run as a container either within the same cluster
+(using node affinity) or on a remote machine that has access to the cluster over
+the network.
+
+#### Running using Podman
+
+To run the exporter container on a test runner using Podman:
 
 ```bash
+# Must be run as privileged to access hardware
 podman run --cap-add=all --privileged \
-       -v /dev:/dev -v /lib/modules:/lib/modules -v /etc/jumpstarter/:/etc/jumpstarter \
-       quay.io/jumpstarter-dev/exporter -c /etc/jumpstarter/my-exporter.yaml
+        -v /dev:/dev -v /lib/modules:/lib/modules -v /etc/jumpstarter/:/etc/jumpstarter \
+        quay.io/jumpstarter-dev/exporter -c my-exporter.yaml
 
 # additional flags like could be necessary depending on the drivers:
 #  --security-opt label=disable
 #  --security-opt seccomp=unconfined
 ```
 
-<!-- TODO: create instructions to setup as quadlets with podman and systemd https://www.redhat.com/sysadmin/quadlet-podman -->
+#### Running as a Service
 
-## User/Client tasks
+To run the exporter as a service on a test runner with Jumpstarter installed:
 
-### Authentication/configuration
+```bash
+export JUMPSTARTER_EXPORTER_CONFIG=/etc/jumpstarter/my-exporter.yaml
+sudo systemctl start jumpstarter 
+```
 
-By default the libraries and clients will look for the `~/.jumpstarter/client.yaml` file, this file
-is a client file that contains the endpoint and token to authenticate with the Jumpstarter service.
+<!-- TODO: create instructions to setup as quadlets with podman and systemd 
+https://www.redhat.com/sysadmin/quadlet-podman -->
+
+## Developer Tasks
+
+### Running tests through a central server
+
+When client configuration exists, Jumpstarter will use the specified endpoint
+and token to authenticate with that server
+
+#### Configuration
+
+By default the libraries and CLI will look for a `~/.jumpstarter/client.yaml`
+file, which contains the endpoint and token to authenticate with the Jumpstarter
+service.
 
 Alternatively the client can receive the endpoint and token as environment variables:
 
@@ -71,15 +102,24 @@ export JUMPSTARTER_TOKEN=dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXd
 
 This is useful for CI/CD systems that inject the environment variables into the pipeline.
 
+A custom location to the client configuration can also be passed using the following
+environment variable. This is useful in situations where there are multiple client
+configurations or in an environment when the config is mounted as a file.
+
+```bash
+export JUMPSTARTER_CONFIG=/etc/jumpstarter/my-client.yaml
+```
+
 ### Running tests locally (without a server)
 
 When no client configuration or environment variables are set, the client will
-run in local mode and will use the local resources. Known hardware could be
-auto-detected and used by the client, but specific hardware can be configured
-with an environment python file.
+run in local mode and create an exporter instance to interact with the hardware.
 
-### Running tests through a central server
+Communication between the local client and exporter take place over a local
+socket: `/var/run/jumpstarter.sock`.
 
-When client configuration exists
+A local instance of the exporter can also be started using the following command:
 
-
+```bash
+systemctl start jumpstarter
+```
