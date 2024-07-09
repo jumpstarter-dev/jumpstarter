@@ -3,6 +3,7 @@ from jumpstarter.drivers import DriverBase
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
 from google.protobuf import struct_pb2, json_format
+import itertools
 
 
 @dataclass
@@ -23,7 +24,9 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            device_report=[device.report() for device in self.devices.values()],
+            device_report=itertools.chain(
+                *[device.reports() for device in self.devices.values()]
+            ),
         )
 
     def DriverCall(self, request, context):
