@@ -65,5 +65,8 @@ def test_exporter():
         assert client.dutlink.serial.write("version\r\n") == 9
         assert client.dutlink.serial.read(13) == "version\r\n0.07"
 
+        client.dutlink.storage.off()
+        client.dutlink.storage.host()
+
     server.stop(grace=None)
     server.wait_for_termination()

@@ -2,6 +2,7 @@ from . import Composite
 from .. import DriverBase
 from ..power import Power, PowerReading
 from ..serial import PySerial
+from ..storage import StorageMux
 from dataclasses import dataclass, field
 from collections.abc import Generator
 from typing import List, Optional
@@ -33,7 +34,11 @@ class Dutlink(Composite):
                     DutlinkPower(
                         labels={"jumpstarter.dev/name": "power"},
                         parent=self,
-                    )
+                    ),
+                    DutlinkStorageMux(
+                        labels={"jumpstarter.dev/name": "storage"},
+                        parent=self,
+                    ),
                 ]
 
                 udev = pyudev.Context()
@@ -90,3 +95,35 @@ class DutlinkPower(Power):
 
     def read(self) -> Generator[PowerReading, None, None]:
         yield None
+
+
+@dataclass(kw_only=True)
+class DutlinkStorageMux(StorageMux):
+    parent: Dutlink
+
+    def control(self, action):
+        return self.parent.control(
+            usb.ENDPOINT_OUT,
+            0x02,
+            ["off", "host", "dut"],
+            action,
+            None,
+        )
+
+    def host(self) -> str:
+        udev = pyudev.Context()
+
+        monitor = pyudev.Monitor.from_netlink(udev)
+        monitor.filter_by("block", "disk")
+
+        self.control("host")
+
+        disk = monitor.poll(timeout=10)
+
+        return disk.device_node
+
+    def dut(self):
+        return self.control("dut")
+
+    def off(self):
+        return self.control("off")
