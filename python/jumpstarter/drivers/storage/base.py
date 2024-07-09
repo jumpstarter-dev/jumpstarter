@@ -11,3 +11,6 @@ class StorageMux(DriverBase, interface="storage_mux"):
 
     @abstractmethod
     def off(self): ...
+
+    @abstractmethod
+    def write(self, src: str): ...

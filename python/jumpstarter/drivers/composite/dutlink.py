@@ -2,7 +2,7 @@ from . import Composite
 from .. import DriverBase
 from ..power import Power, PowerReading
 from ..serial import PySerial
-from ..storage import StorageMux
+from ..storage import StorageMux, StorageMuxLocalWriterMixin
 from dataclasses import dataclass, field
 from collections.abc import Generator
 from typing import List, Optional
@@ -98,7 +98,7 @@ class DutlinkPower(Power):
 
 
 @dataclass(kw_only=True)
-class DutlinkStorageMux(StorageMux):
+class DutlinkStorageMux(StorageMuxLocalWriterMixin, StorageMux):
     parent: Dutlink
 
     def control(self, action):

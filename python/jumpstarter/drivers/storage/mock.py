@@ -1,7 +1,8 @@
 from . import StorageMux
+from .mixin import StorageMuxLocalWriterMixin
 
 
-class MockStorageMux(StorageMux):
+class MockStorageMux(StorageMuxLocalWriterMixin, StorageMux):
     def host(self) -> str:
         return "/dev/null"
 

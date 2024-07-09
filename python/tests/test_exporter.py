@@ -5,6 +5,7 @@ from jumpstarter.drivers.serial import MockSerial
 from jumpstarter.drivers.composite import Composite, Dutlink
 from concurrent import futures
 from dataclasses import asdict
+import pytest
 import grpc
 
 
@@ -67,6 +68,10 @@ def test_exporter():
 
         client.dutlink.storage.off()
         client.dutlink.storage.host()
+        client.dutlink.storage.dut()
+        with pytest.raises(Exception):
+            # permission denied
+            client.dutlink.storage.write("/dev/null")
 
     server.stop(grace=None)
     server.wait_for_termination()
