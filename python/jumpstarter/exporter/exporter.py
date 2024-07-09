@@ -5,21 +5,24 @@ from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
 from google.protobuf import struct_pb2, json_format
+from typing import List
 import itertools
 
 
 @dataclass(kw_only=True)
 class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
-    devices: dict[UUID, DriverBase]
+    devices: List[DriverBase]
+    mapping: dict[UUID, DriverBase]
 
     def __init__(self, uuid=None, labels={}, devices=[]):
         self.uuid = uuid or uuid4()
         self.labels = labels
-        self.devices = {device.uuid: device for device in devices}
+        self.devices = devices
+        self.mapping = {device.uuid: device for device in devices}
 
         for device in devices:
             if isinstance(device, Composite):
-                self.devices |= {
+                self.mapping |= {
                     subdevice.uuid: subdevice for subdevice in device.devices
                 }
 
@@ -31,13 +34,13 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
             uuid=str(self.uuid),
             labels=self.labels,
             device_report=itertools.chain(
-                *[device.reports() for device in self.devices.values()]
+                *[device.reports() for device in self.devices]
             ),
         )
 
     def DriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = self.devices[UUID(request.device_uuid)].call(
+        result = self.mapping[UUID(request.device_uuid)].call(
             request.driver_method, args
         )
         return jumpstarter_pb2.DriverCallResponse(
@@ -49,7 +52,7 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
 
     def StreamingDriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        for result in self.devices[UUID(request.device_uuid)].streaming_call(
+        for result in self.mapping[UUID(request.device_uuid)].streaming_call(
             request.driver_method, args
         ):
             yield jumpstarter_pb2.StreamingDriverCallResponse(
