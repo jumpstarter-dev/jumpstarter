@@ -1,4 +1,5 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
+from jumpstarter.common import Metadata
 from jumpstarter.drivers import DriverBase
 from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
@@ -7,10 +8,8 @@ from google.protobuf import struct_pb2, json_format
 import itertools
 
 
-@dataclass
-class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer):
-    uuid: UUID
-    labels: dict[str, str]
+@dataclass(kw_only=True)
+class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
     devices: dict[UUID, DriverBase]
 
     def __init__(self, uuid=None, labels={}, devices=[]):

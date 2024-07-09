@@ -1,10 +1,10 @@
 # This file contains the base class for all jumpstarter driver stubs
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
+from jumpstarter.common import Metadata
 from google.protobuf import struct_pb2, json_format
 from dataclasses import dataclass
 from uuid import UUID
 from typing import List, Any
-from . import DeviceMeta
 import inspect
 
 
@@ -74,7 +74,7 @@ def build_stub_property(name):
 
 
 @dataclass(kw_only=True)
-class DriverStub(DeviceMeta):
+class DriverStub(Metadata):
     stub: jumpstarter_pb2_grpc.ExporterServiceStub
 
     def __init_subclass__(cls, base, **kwargs):

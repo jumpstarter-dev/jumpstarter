@@ -3,13 +3,13 @@ from abc import ABC
 from typing import List, Any
 from collections.abc import Generator
 from jumpstarter.v1 import jumpstarter_pb2
-from . import DeviceMeta
+from jumpstarter.common import Metadata
 from .registry import _registry
 import inspect
 
 
 # base class for all drivers
-class DriverBase(ABC, DeviceMeta):
+class DriverBase(ABC, Metadata):
     def __init_subclass__(cls, interface=None, **kwargs):
         if interface:
             cls.interface = interface
