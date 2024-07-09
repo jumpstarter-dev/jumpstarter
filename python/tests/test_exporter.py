@@ -60,5 +60,10 @@ def test_exporter():
         assert client.composite.power.on() == "ok"
         assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
 
+        client.dutlink.power.on()
+        client.dutlink.power.off()
+        assert client.dutlink.serial.write("version\r\n") == 9
+        assert client.dutlink.serial.read(13) == "version\r\n0.07"
+
     server.stop(grace=None)
     server.wait_for_termination()

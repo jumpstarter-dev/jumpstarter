@@ -1,11 +1,14 @@
 from . import Composite
 from .. import DriverBase
 from ..power import Power, PowerReading
+from ..serial import PySerial
 from dataclasses import dataclass, field
 from collections.abc import Generator
 from typing import List, Optional
+from serial import Serial
 import usb.core
 import usb.util
+import pyudev
 
 
 @dataclass(kw_only=True)
@@ -32,6 +35,16 @@ class Dutlink(Composite):
                         parent=self,
                     )
                 ]
+
+                udev = pyudev.Context()
+                for tty in udev.list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
+                    self.devices.append(
+                        PySerial(
+                            labels={"jumpstarter.dev/name": "serial"},
+                            device=Serial(tty.device_node, baudrate=9600),
+                        )
+                    )
+
                 return
             raise FileNotFoundError("failed to find dutlink device")
 

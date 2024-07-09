@@ -13,10 +13,10 @@ class PySerial(Serial):
         self.device = device
 
     def read(self, size: int) -> bytes:
-        return self.device.read(size)
+        return self.device.read(int(size)).decode("utf-8")
 
     def write(self, data: bytes) -> int:
-        return self.device.write(data)
+        return self.device.write(data.encode("utf-8"))
 
     def flush(self):
         self.device.flush()
