@@ -23,3 +23,6 @@ class StorageTempdir(DriverBase, interface="storage_tempdir"):
 
     @abstractmethod
     def download(self, url: str, headers: Dict[str, str], filename: str): ...
+
+    @abstractmethod
+    def open(self, filename: str, mode: str) -> int: ...
