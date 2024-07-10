@@ -9,7 +9,7 @@ import pytest
 @pytest.mark.parametrize(
     "setup_exporter",
     [
-        [
+        lambda: [
             MockPower(
                 labels={
                     "jumpstarter.dev/name": "power",
@@ -57,7 +57,7 @@ def test_exporter_mock(setup_exporter):
 @pytest.mark.parametrize(
     "setup_exporter",
     [
-        [
+        lambda: [
             Dutlink(labels={"jumpstarter.dev/name": "dutlink"}, serial="c415a913"),
         ]
     ],

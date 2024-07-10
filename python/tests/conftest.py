@@ -9,7 +9,12 @@ import grpc
 def setup_exporter(request):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
-    e = Exporter(devices=request.param)
+    try:
+        devices = request.param()
+    except FileNotFoundError:
+        pytest.skip("fail to find required devices")
+
+    e = Exporter(devices=devices)
     e.add_to_server(server)
 
     server.add_insecure_port("localhost:50051")
