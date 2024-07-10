@@ -14,3 +14,8 @@ class StorageMux(DriverBase, interface="storage_mux"):
 
     @abstractmethod
     def write(self, src: str): ...
+
+
+class StorageTempdir(DriverBase, interface="storage_tempdir"):
+    @abstractmethod
+    def cleanup(self): ...

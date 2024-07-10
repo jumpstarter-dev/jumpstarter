@@ -1,6 +1,7 @@
 from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.drivers.serial import MockSerial
+from jumpstarter.drivers.storage import LocalStorageTempdir
 from jumpstarter.drivers.composite import Composite, Dutlink
 from dataclasses import asdict
 import pytest
@@ -18,6 +19,11 @@ import pytest
             MockSerial(
                 labels={
                     "jumpstarter.dev/name": "serial",
+                }
+            ),
+            LocalStorageTempdir(
+                labels={
+                    "jumpstarter.dev/name": "tempdir",
                 }
             ),
             Composite(
@@ -49,6 +55,8 @@ def test_exporter_mock(setup_exporter):
 
     client.serial.baudrate = 115200
     assert client.serial.baudrate == 115200
+
+    client.tempdir.cleanup()
 
     assert client.composite.power.on() == "ok"
     assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
