@@ -10,7 +10,7 @@ import itertools
 
 
 @dataclass(kw_only=True)
-class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
+class Session:
     devices: List[DriverBase]
     mapping: dict[UUID, DriverBase]
 
@@ -26,6 +26,11 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
                     subdevice.uuid: subdevice for subdevice in device.devices
                 }
 
+
+@dataclass(kw_only=True)
+class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
+    session: Session
+
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
 
@@ -34,13 +39,13 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
             uuid=str(self.uuid),
             labels=self.labels,
             device_report=itertools.chain(
-                *[device.reports() for device in self.devices]
+                *[device.reports() for device in self.session.devices]
             ),
         )
 
     def DriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = self.mapping[UUID(request.device_uuid)].call(
+        result = self.session.mapping[UUID(request.device_uuid)].call(
             request.driver_method, args
         )
         return jumpstarter_pb2.DriverCallResponse(
@@ -52,7 +57,7 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
 
     def StreamingDriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        for result in self.mapping[UUID(request.device_uuid)].streaming_call(
+        for result in self.session.mapping[UUID(request.device_uuid)].streaming_call(
             request.driver_method, args
         ):
             yield jumpstarter_pb2.StreamingDriverCallResponse(
