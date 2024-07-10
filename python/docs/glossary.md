@@ -6,11 +6,11 @@
 
 ## Entities
 
-* `exporter`: A linux service that exports the interfaces of the devices to be tested.
+* `exporter`: A linux service that exports the interfaces to the DUTs.
   An exporter connects directy to a Jumpstarter server or directly to a client.
 
 * `client`: A Developer or a CI/CD pipeline that connects to the Jumpstarter server
-  and leases resources from the exporters. The client can run tests on the leased
+  and leases exporters. The client can run tests on the leased
   resources.
 
 * `controller`: The central service that authenticates and connects the exporters
@@ -19,7 +19,7 @@
 
 ## Concepts
 
-* `Resource`: a device that is exposed on a exporter, the exporter enumerates those
+* `Device`: a device that is exposed on a exporter, the exporter enumerates those
   devices and makes them available for use in tests. Examples of resources can be:
   * network interface
   * serial port

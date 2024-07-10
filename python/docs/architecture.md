@@ -23,7 +23,7 @@ unit that can be tested together.
 #### Exporter
 
 The exporter is a service that can run locally or on another Linux device that
-"exports" the interfaces of the Device Under Test (DUT). The exporter
+"exports" the interfaces connected to the Device Under Test (DUT). The exporter
 implements a gRPC service (exposed via a unix socket) that a client can connect
 to directly or through a proxy server to interact with a specific device.
 

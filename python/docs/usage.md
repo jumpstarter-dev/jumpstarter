@@ -89,7 +89,7 @@ and token to authenticate with that server
 
 #### Configuration
 
-By default the libraries and CLI will look for a `~/.jumpstarter/client.yaml`
+By default the libraries and CLI will look for a `~/.config/jumpstarter/client.yaml`
 file, which contains the endpoint and token to authenticate with the Jumpstarter
 service.
 
@@ -121,5 +121,5 @@ socket: `/var/run/jumpstarter.sock`.
 A local instance of the exporter can also be started using the following command:
 
 ```bash
-systemctl start jumpstarter
+systemctl start jumpstarter-exporter
 ```
