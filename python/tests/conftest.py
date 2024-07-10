@@ -1,6 +1,5 @@
 from jumpstarter.exporter import Exporter, ExporterSession
 from jumpstarter.client import Client
-from jumpstarter.drivers import Session
 from concurrent import futures
 import pytest
 import grpc
@@ -11,11 +10,10 @@ def setup_exporter(request):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
     try:
-        devices = request.param(Session())
+        s = ExporterSession(devices_factory=request.param)
     except FileNotFoundError:
         pytest.skip("fail to find required devices")
 
-    s = ExporterSession(devices=devices)
     e = Exporter(labels={"jumpstarter.dev/name": "exporter"}, session=s)
     e.add_to_server(server)
 

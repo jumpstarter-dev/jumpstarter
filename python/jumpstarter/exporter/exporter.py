@@ -1,6 +1,6 @@
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import DriverBase
+from jumpstarter.drivers import DriverBase, Session
 from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
@@ -11,16 +11,19 @@ import itertools
 
 @dataclass(kw_only=True)
 class ExporterSession:
+    session: Session
     devices: List[DriverBase]
     mapping: dict[UUID, DriverBase]
 
-    def __init__(self, uuid=None, labels={}, devices=[]):
+    def __init__(self, devices_factory, uuid=None, labels={}):
         self.uuid = uuid or uuid4()
         self.labels = labels
-        self.devices = devices
-        self.mapping = {device.uuid: device for device in devices}
 
-        for device in devices:
+        self.session = Session()
+        self.devices = devices_factory(self.session)
+        self.mapping = {device.uuid: device for device in self.devices}
+
+        for device in self.devices:
             if isinstance(device, Composite):
                 self.mapping |= {
                     subdevice.uuid: subdevice for subdevice in device.devices
