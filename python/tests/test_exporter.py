@@ -10,36 +10,42 @@ import pytest
 @pytest.mark.parametrize(
     "setup_exporter",
     [
-        lambda: [
+        lambda session: [
             MockPower(
+                session=session,
                 labels={
                     "jumpstarter.dev/name": "power",
-                }
+                },
             ),
             MockSerial(
+                session=session,
                 labels={
                     "jumpstarter.dev/name": "serial",
-                }
+                },
             ),
             LocalStorageTempdir(
+                session=session,
                 labels={
                     "jumpstarter.dev/name": "tempdir",
-                }
+                },
             ),
             Composite(
+                session=session,
                 labels={
                     "jumpstarter.dev/name": "composite",
                 },
                 devices=[
                     MockPower(
+                        session=session,
                         labels={
                             "jumpstarter.dev/name": "power",
-                        }
+                        },
                     ),
                     MockSerial(
+                        session=session,
                         labels={
                             "jumpstarter.dev/name": "serial",
-                        }
+                        },
                     ),
                 ],
             ),
@@ -70,8 +76,10 @@ def test_exporter_mock(setup_exporter):
 @pytest.mark.parametrize(
     "setup_exporter",
     [
-        lambda: [
-            Dutlink(labels={"jumpstarter.dev/name": "dutlink"}, serial=None),
+        lambda session: [
+            Dutlink(
+                session=session, labels={"jumpstarter.dev/name": "dutlink"}, serial=None
+            ),
         ]
     ],
     indirect=True,

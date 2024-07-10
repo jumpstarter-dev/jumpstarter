@@ -1,4 +1,4 @@
-from .exporter import Exporter, Session
+from .exporter import Exporter, ExporterSession
 
 
-__all__ = ["Exporter", "Session"]
+__all__ = ["Exporter", "ExporterSession"]

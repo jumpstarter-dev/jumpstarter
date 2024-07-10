@@ -1,6 +1,7 @@
 # This file contains the base class for all jumpstarter drivers
 from abc import ABC
-from typing import List, Any
+from typing import List, Any, BinaryIO
+from dataclasses import dataclass, field
 from collections.abc import Generator
 from jumpstarter.v1 import jumpstarter_pb2
 from jumpstarter.common import Metadata
@@ -8,8 +9,16 @@ from .registry import _registry
 import inspect
 
 
+@dataclass(kw_only=True)
+class Session:
+    fds: List[BinaryIO] = field(default_factory=list, init=False)
+
+
 # base class for all drivers
+@dataclass(kw_only=True)
 class DriverBase(ABC, Metadata):
+    session: Session
+
     def __init_subclass__(cls, interface=None, **kwargs):
         if interface:
             cls.interface = interface

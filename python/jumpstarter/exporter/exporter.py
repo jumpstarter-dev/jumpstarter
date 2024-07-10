@@ -10,7 +10,7 @@ import itertools
 
 
 @dataclass(kw_only=True)
-class Session:
+class ExporterSession:
     devices: List[DriverBase]
     mapping: dict[UUID, DriverBase]
 
@@ -29,7 +29,7 @@ class Session:
 
 @dataclass(kw_only=True)
 class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
-    session: Session
+    session: ExporterSession
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
