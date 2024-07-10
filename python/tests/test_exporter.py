@@ -1,11 +1,9 @@
-from jumpstarter.client import Client
 from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.drivers.serial import MockSerial
 from jumpstarter.drivers.composite import Composite, Dutlink
 from dataclasses import asdict
 import pytest
-import grpc
 
 
 @pytest.mark.parametrize(
@@ -44,17 +42,16 @@ import grpc
     indirect=True,
 )
 def test_exporter_mock(setup_exporter):
-    with grpc.insecure_channel("localhost:50051") as channel:
-        client = Client(channel)
+    client = setup_exporter
 
-        assert client.power.on() == "ok"
-        assert next(client.power.read()) == asdict(PowerReading(5.0, 2.0))
+    assert client.power.on() == "ok"
+    assert next(client.power.read()) == asdict(PowerReading(5.0, 2.0))
 
-        client.serial.baudrate = 115200
-        assert client.serial.baudrate == 115200
+    client.serial.baudrate = 115200
+    assert client.serial.baudrate == 115200
 
-        assert client.composite.power.on() == "ok"
-        assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
+    assert client.composite.power.on() == "ok"
+    assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
 
 
 @pytest.mark.parametrize(
@@ -67,18 +64,17 @@ def test_exporter_mock(setup_exporter):
     indirect=True,
 )
 def test_exporter_dutlink(setup_exporter):
-    with grpc.insecure_channel("localhost:50051") as channel:
-        client = Client(channel)
+    client = setup_exporter
 
-        client.dutlink.power.on()
-        client.dutlink.power.off()
-        assert client.dutlink.serial.write("version\r\n") == 9
-        assert client.dutlink.serial.read(13) == "version\r\n0.07"
+    client.dutlink.power.on()
+    client.dutlink.power.off()
+    assert client.dutlink.serial.write("version\r\n") == 9
+    assert client.dutlink.serial.read(13) == "version\r\n0.07"
 
-        client.dutlink.storage.off()
-        client.dutlink.storage.host()
-        client.dutlink.storage.dut()
-        with pytest.raises(Exception):
-            # permission denied
-            client.dutlink.storage.write("/dev/null")
-        client.dutlink.storage.off()
+    client.dutlink.storage.off()
+    client.dutlink.storage.host()
+    client.dutlink.storage.dut()
+    with pytest.raises(Exception):
+        # permission denied
+        client.dutlink.storage.write("/dev/null")
+    client.dutlink.storage.off()
