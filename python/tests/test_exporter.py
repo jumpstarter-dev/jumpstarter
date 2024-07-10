@@ -11,35 +11,17 @@ import pytest
     "setup_exporter",
     [
         lambda session: [
-            MockPower(
-                session=session,
-                labels={
-                    "jumpstarter.dev/name": "power",
-                },
-            ),
-            MockSerial(
-                session=session,
-                labels={
-                    "jumpstarter.dev/name": "serial",
-                },
-            ),
+            MockPower(session=session, labels={"jumpstarter.dev/name": "power"}),
+            MockSerial(session=session, labels={"jumpstarter.dev/name": "serial"}),
             Composite(
                 session=session,
-                labels={
-                    "jumpstarter.dev/name": "composite",
-                },
+                labels={"jumpstarter.dev/name": "composite"},
                 devices=[
                     MockPower(
-                        session=session,
-                        labels={
-                            "jumpstarter.dev/name": "power",
-                        },
+                        session=session, labels={"jumpstarter.dev/name": "power"}
                     ),
                     MockSerial(
-                        session=session,
-                        labels={
-                            "jumpstarter.dev/name": "serial",
-                        },
+                        session=session, labels={"jumpstarter.dev/name": "serial"}
                     ),
                 ],
             ),
@@ -65,10 +47,7 @@ def test_exporter_mock(setup_exporter):
     [
         lambda session: [
             LocalStorageTempdir(
-                session=session,
-                labels={
-                    "jumpstarter.dev/name": "tempdir",
-                },
+                session=session, labels={"jumpstarter.dev/name": "tempdir"}
             ),
             Dutlink(
                 session=session, labels={"jumpstarter.dev/name": "dutlink"}, serial=None
