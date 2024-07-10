@@ -51,7 +51,8 @@ class Dutlink(Composite):
                     )
 
                 return
-            raise FileNotFoundError("failed to find dutlink device")
+
+        raise FileNotFoundError("failed to find dutlink device")
 
     def control(self, direction, ty, actions, action, value):
         if direction == usb.ENDPOINT_IN:
