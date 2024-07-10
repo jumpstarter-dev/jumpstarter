@@ -58,7 +58,7 @@ def test_exporter_mock(setup_exporter):
     "setup_exporter",
     [
         lambda: [
-            Dutlink(labels={"jumpstarter.dev/name": "dutlink"}, serial="c415a913"),
+            Dutlink(labels={"jumpstarter.dev/name": "dutlink"}, serial=None),
         ]
     ],
     indirect=True,
