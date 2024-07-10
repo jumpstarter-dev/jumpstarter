@@ -39,12 +39,11 @@ import grpc
                     ),
                 ],
             ),
-            Dutlink(labels={"jumpstarter.dev/name": "dutlink"}, serial="c415a913"),
         ]
     ],
     indirect=True,
 )
-def test_exporter(setup_exporter):
+def test_exporter_mock(setup_exporter):
     with grpc.insecure_channel("localhost:50051") as channel:
         client = Client(channel)
 
@@ -56,6 +55,20 @@ def test_exporter(setup_exporter):
 
         assert client.composite.power.on() == "ok"
         assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
+
+
+@pytest.mark.parametrize(
+    "setup_exporter",
+    [
+        [
+            Dutlink(labels={"jumpstarter.dev/name": "dutlink"}, serial="c415a913"),
+        ]
+    ],
+    indirect=True,
+)
+def test_exporter_dutlink(setup_exporter):
+    with grpc.insecure_channel("localhost:50051") as channel:
+        client = Client(channel)
 
         client.dutlink.power.on()
         client.dutlink.power.off()
