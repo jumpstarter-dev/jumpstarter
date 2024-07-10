@@ -56,6 +56,11 @@ def test_exporter_mock(setup_exporter):
     client.serial.baudrate = 115200
     assert client.serial.baudrate == 115200
 
+    client.tempdir.download(
+        "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-virt-3.20.1-x86_64.iso",
+        {},
+        "alpine.iso",
+    )
     client.tempdir.cleanup()
 
     assert client.composite.power.on() == "ok"
