@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
 from google.protobuf import struct_pb2, json_format
 from typing import List
+from collections import ChainMap
 import itertools
 
 
@@ -18,13 +19,18 @@ class ExporterSession:
     def __init__(self, devices_factory):
         self.session = Session()
         self.devices = devices_factory(self.session)
-        self.mapping = {device.uuid: device for device in self.devices}
+        self.mapping = {}
+
+        def subdevices(device):
+            if isinstance(device, Composite):
+                return dict(
+                    ChainMap(*[subdevices(subdevice) for subdevice in device.devices])
+                )
+            else:
+                return {device.uuid: device}
 
         for device in self.devices:
-            if isinstance(device, Composite):
-                self.mapping |= {
-                    subdevice.uuid: subdevice for subdevice in device.devices
-                }
+            self.mapping |= subdevices(device)
 
 
 @dataclass(kw_only=True)

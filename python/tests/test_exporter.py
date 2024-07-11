@@ -23,6 +23,20 @@ import pytest
                     MockSerial(
                         session=session, labels={"jumpstarter.dev/name": "serial"}
                     ),
+                    Composite(
+                        session=session,
+                        labels={"jumpstarter.dev/name": "composite"},
+                        devices=[
+                            MockPower(
+                                session=session,
+                                labels={"jumpstarter.dev/name": "power"},
+                            ),
+                            MockSerial(
+                                session=session,
+                                labels={"jumpstarter.dev/name": "serial"},
+                            ),
+                        ],
+                    ),
                 ],
             ),
         ]
@@ -40,6 +54,11 @@ def test_exporter_mock(setup_exporter):
 
     assert client.composite.power.on() == "ok"
     assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
+
+    assert client.composite.composite.power.on() == "ok"
+    assert next(client.composite.composite.power.read()) == asdict(
+        PowerReading(5.0, 2.0)
+    )
 
 
 @pytest.mark.parametrize(

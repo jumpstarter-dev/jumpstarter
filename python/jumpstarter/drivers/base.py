@@ -60,10 +60,11 @@ class DriverBase(ABC, Metadata):
 
         yield from function(self, *args)
 
-    def reports(self) -> List[jumpstarter_pb2.DeviceReport]:
+    def reports(self, parent=None) -> List[jumpstarter_pb2.DeviceReport]:
         return [
             jumpstarter_pb2.DeviceReport(
                 device_uuid=str(self.uuid),
+                parent_device_uuid=str(parent.uuid) if parent else None,
                 driver_interface=self.interface,
                 labels=self.labels,
             )
