@@ -15,10 +15,7 @@ class ExporterSession:
     devices: List[DriverBase]
     mapping: dict[UUID, DriverBase]
 
-    def __init__(self, devices_factory, uuid=None, labels={}):
-        self.uuid = uuid or uuid4()
-        self.labels = labels
-
+    def __init__(self, devices_factory):
         self.session = Session()
         self.devices = devices_factory(self.session)
         self.mapping = {device.uuid: device for device in self.devices}
