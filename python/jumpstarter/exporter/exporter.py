@@ -1,4 +1,8 @@
-from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
+from jumpstarter.v1 import (
+    jumpstarter_pb2,
+    jumpstarter_pb2_grpc,
+    router_pb2_grpc,
+)
 from jumpstarter.common import Metadata
 from jumpstarter.drivers import DriverBase, Session
 from jumpstarter.drivers.composite import Composite
@@ -34,11 +38,16 @@ class ExporterSession:
 
 
 @dataclass(kw_only=True)
-class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
+class Exporter(
+    jumpstarter_pb2_grpc.ExporterServiceServicer,
+    router_pb2_grpc.RouterServiceServicer,
+    Metadata,
+):
     session: ExporterSession
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
     def GetReport(self, request, context):
         return jumpstarter_pb2.GetReportResponse(
@@ -73,3 +82,6 @@ class Exporter(jumpstarter_pb2_grpc.ExporterServiceServicer, Metadata):
                     struct_pb2.Value(),
                 ),
             )
+
+    def Stream(self, request_iterator, context):
+        pass
