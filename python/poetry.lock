@@ -293,6 +293,21 @@ pluggy = ">=1.5,<2.0"
 dev = ["argcomplete", "attrs (>=19.2)", "hypothesis (>=3.56)", "mock", "pygments (>=2.7.2)", "requests", "setuptools", "xmlschema"]
 
 [[package]]
+name = "pytest-anyio"
+version = "0.0.0"
+description = "The pytest anyio plugin is built into anyio. You don't need this package."
+optional = false
+python-versions = "*"
+files = [
+    {file = "pytest-anyio-0.0.0.tar.gz", hash = "sha256:b41234e9e9ad7ea1dbfefcc1d6891b23d5ef7c9f07ccf804c13a9cc338571fd3"},
+    {file = "pytest_anyio-0.0.0-py2.py3-none-any.whl", hash = "sha256:dc8b5c4741cb16ff90be37fddd585ca943ed12bbeb563de7ace6cd94441d8746"},
+]
+
+[package.dependencies]
+anyio = "*"
+pytest = "*"
+
+[[package]]
 name = "pyudev"
 version = "0.24.3"
 description = "A libudev binding"
@@ -328,4 +343,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "4e8f9a0d351419f71608f8547a2c5fb3cf8078f8ca538b6e9bc05b9dd8367c06"
+content-hash = "9051f523ba86a4c0ae310a06decdf73c4bf55089bc372515d11a2fc0aac9fc4a"
