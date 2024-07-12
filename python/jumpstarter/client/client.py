@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import jumpstarter.drivers as drivers
 import contextlib
 import anyio
+import grpc
 
 
 @dataclass
@@ -59,10 +60,13 @@ class Client:
                 yield router_pb2.StreamRequest(payload=payload)
 
         async def device_to_client():
-            async for frame in self.router.Stream(
-                client_to_device(), metadata=(("device", device.uuid),)
-            ):
-                await device_to_client_tx.send(frame.payload)
+            try:
+                async for frame in self.router.Stream(
+                    client_to_device(), metadata=(("device", device.uuid),)
+                ):
+                    await device_to_client_tx.send(frame.payload)
+            except grpc.aio.AioRpcError:
+                pass
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(device_to_client)
