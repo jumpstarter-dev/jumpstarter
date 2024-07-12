@@ -1,5 +1,5 @@
 from .base import Network
-from .local import LocalNetwork
+from .local import TcpNetwork, UnixNetwork
 
 
-__all__ = ["Network", "LocalNetwork"]
+__all__ = ["Network", "TcpNetwork", "UnixNetwork"]
