@@ -60,7 +60,7 @@ class Exporter(
 
     async def DriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = self.session.mapping[UUID(request.device_uuid)].call(
+        result = await self.session.mapping[UUID(request.device_uuid)].call(
             request.driver_method, args
         )
         return jumpstarter_pb2.DriverCallResponse(
@@ -72,9 +72,9 @@ class Exporter(
 
     async def StreamingDriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        for result in self.session.mapping[UUID(request.device_uuid)].streaming_call(
-            request.driver_method, args
-        ):
+        async for result in self.session.mapping[
+            UUID(request.device_uuid)
+        ].streaming_call(request.driver_method, args):
             yield jumpstarter_pb2.StreamingDriverCallResponse(
                 call_uuid=str(uuid4()),
                 result=json_format.ParseDict(

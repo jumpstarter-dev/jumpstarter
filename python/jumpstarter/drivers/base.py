@@ -42,7 +42,7 @@ class DriverBase(ABC, Metadata):
 
         super().__init_subclass__(**kwargs)
 
-    def call(self, method: str, args: List[Any]) -> Any:
+    async def call(self, method: str, args: List[Any]) -> Any:
         function = self.callables.get(method)
 
         if not function:
@@ -50,7 +50,7 @@ class DriverBase(ABC, Metadata):
 
         return function(self, *args)
 
-    def streaming_call(
+    async def streaming_call(
         self, method: str, args: List[Any]
     ) -> Generator[Any, None, None]:
         function = self.generator.get(method)
@@ -58,7 +58,8 @@ class DriverBase(ABC, Metadata):
         if not function:
             raise NotImplementedError("no such streaming drivercall")
 
-        yield from function(self, *args)
+        for v in function(self, *args):
+            yield v
 
     def reports(self, parent=None) -> List[jumpstarter_pb2.DeviceReport]:
         return [
