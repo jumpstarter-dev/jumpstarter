@@ -1,6 +1,7 @@
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
+    router_pb2,
     router_pb2_grpc,
 )
 from jumpstarter.common import Metadata
@@ -12,6 +13,7 @@ from google.protobuf import struct_pb2, json_format
 from typing import List
 from collections import ChainMap
 import itertools
+import anyio
 
 
 @dataclass(kw_only=True)
@@ -84,4 +86,16 @@ class Exporter(
             )
 
     async def Stream(self, request_iterator, context):
-        pass
+        for key, value in context.invocation_metadata():
+            if key == "device":
+                stream = await self.session.mapping[UUID(value)].connect()
+                async with anyio.create_task_group() as tg:
+
+                    async def rx():
+                        async for frame in request_iterator:
+                            await stream.send(frame.payload)
+
+                    tg.start_soon(rx)
+
+                    async for payload in stream:
+                        yield router_pb2.StreamResponse(payload=payload)

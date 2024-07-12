@@ -1,4 +1,9 @@
-from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
+from jumpstarter.v1 import (
+    jumpstarter_pb2,
+    jumpstarter_pb2_grpc,
+    router_pb2,
+    router_pb2_grpc,
+)
 from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
@@ -37,3 +42,17 @@ class Client:
             pass
 
         return stub_class(stub=self.stub, uuid=report.device_uuid, labels=report.labels)
+
+    async def Forward(self, listener, device, *args):
+        async def handle(client):
+            async def rx():
+                while True:  # FIXME: exit condition
+                    payload = await client.receive(1024)
+                    yield router_pb2.StreamRequest(payload=payload)
+
+            async for frame in self.router.Stream(
+                rx(), metadata=(("device", device.uuid),)
+            ):
+                await client.send(frame.payload)
+
+        await listener.serve(handle)

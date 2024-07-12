@@ -12,6 +12,7 @@ import inspect
 @dataclass(kw_only=True)
 class Session:
     fds: List[BinaryIO] = field(default_factory=list, init=False)
+    conns: List[Any] = field(default_factory=list, init=False)
 
 
 # base class for all drivers

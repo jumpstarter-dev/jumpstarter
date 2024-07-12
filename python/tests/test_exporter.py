@@ -2,6 +2,7 @@ from jumpstarter.drivers.power import MockPower
 from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.serial import MockSerial
 from jumpstarter.drivers.storage import LocalStorageTempdir
+from jumpstarter.drivers.network import LocalNetwork
 from jumpstarter.drivers.composite import Composite, Dutlink
 from dataclasses import asdict
 import pytest
@@ -16,6 +17,7 @@ pytestmark = pytest.mark.anyio
         lambda session: [
             MockPower(session=session, labels={"jumpstarter.dev/name": "power"}),
             MockSerial(session=session, labels={"jumpstarter.dev/name": "serial"}),
+            LocalNetwork(session=session, labels={"jumpstarter.dev/name": "network"}),
             Composite(
                 session=session,
                 labels={"jumpstarter.dev/name": "composite"},
@@ -65,6 +67,9 @@ async def test_exporter_mock(setup_exporter):
     assert await anext(client.composite.composite.power.read()) == asdict(
         PowerReading(5.0, 2.0)
     )
+
+    # listener = await anyio.create_tcp_listener(local_port=1234)
+    # await client.Forward(listener, client.network, "tcp4", ("iad0.nichi.link", 22))
 
 
 @pytest.mark.parametrize(
