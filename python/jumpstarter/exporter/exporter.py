@@ -49,7 +49,7 @@ class Exporter(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-    def GetReport(self, request, context):
+    async def GetReport(self, request, context):
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
@@ -58,7 +58,7 @@ class Exporter(
             ),
         )
 
-    def DriverCall(self, request, context):
+    async def DriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
         result = self.session.mapping[UUID(request.device_uuid)].call(
             request.driver_method, args
@@ -70,7 +70,7 @@ class Exporter(
             ),
         )
 
-    def StreamingDriverCall(self, request, context):
+    async def StreamingDriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
         for result in self.session.mapping[UUID(request.device_uuid)].streaming_call(
             request.driver_method, args
@@ -83,5 +83,5 @@ class Exporter(
                 ),
             )
 
-    def Stream(self, request_iterator, context):
+    async def Stream(self, request_iterator, context):
         pass

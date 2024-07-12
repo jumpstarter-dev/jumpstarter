@@ -1,6 +1,5 @@
 from jumpstarter.exporter import Exporter, ExporterSession
 from jumpstarter.client import Client
-from concurrent import futures
 import pytest
 import grpc
 
@@ -12,7 +11,7 @@ def anyio_backend():
 
 @pytest.fixture(scope="module")
 async def setup_exporter(request):
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    server = grpc.aio.server()
 
     try:
         s = ExporterSession(devices_factory=request.param)
@@ -23,11 +22,11 @@ async def setup_exporter(request):
     e.add_to_server(server)
 
     server.add_insecure_port("localhost:50051")
-    server.start()
+    await server.start()
 
     client = Client(grpc.aio.insecure_channel("localhost:50051"))
     await client.sync()
     yield client
 
-    server.stop(grace=None)
-    server.wait_for_termination()
+    await server.stop(grace=None)
+    await server.wait_for_termination()
