@@ -60,22 +60,23 @@ class Client:
                 yield router_pb2.StreamRequest(payload=payload)
 
         async def device_to_client():
-            try:
-                async for frame in self.router.Stream(
-                    client_to_device(), metadata=(("device", device.uuid),)
-                ):
-                    await device_to_client_tx.send(frame.payload)
-            except grpc.aio.AioRpcError:
-                pass
+            async for frame in self.router.Stream(
+                client_to_device(), metadata=(("device", device.uuid),)
+            ):
+                await device_to_client_tx.send(frame.payload)
 
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(device_to_client)
-            try:
-                yield anyio.streams.stapled.StapledObjectStream(
-                    client_to_device_tx, device_to_client_rx
-                )
-            finally:
-                tg.cancel_scope.cancel()
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(device_to_client)
+                try:
+                    yield anyio.streams.stapled.StapledObjectStream(
+                        client_to_device_tx, device_to_client_rx
+                    )
+                finally:
+                    tg.cancel_scope.cancel()
+        except* grpc.aio.AioRpcError as excgroup:
+            # TODO: handle connection failures
+            pass
 
     @contextlib.asynccontextmanager
     async def Forward(
@@ -88,10 +89,11 @@ class Client:
                 await rx.send(payload)
 
         async def handle(client):
-            async with self.Stream(device) as stream:
-                async with anyio.create_task_group() as tg:
-                    tg.start_soon(forward, client, stream)
-                    tg.start_soon(forward, stream, client)
+            async with client:
+                async with self.Stream(device) as stream:
+                    async with anyio.create_task_group() as tg:
+                        tg.start_soon(forward, client, stream)
+                        tg.start_soon(forward, stream, client)
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(listener.serve, handle)

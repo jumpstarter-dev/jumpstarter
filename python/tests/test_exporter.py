@@ -5,8 +5,10 @@ from jumpstarter.drivers.storage import LocalStorageTempdir
 from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
 from jumpstarter.drivers.composite import Composite, Dutlink
 from dataclasses import asdict
+import subprocess
 import pytest
 import anyio
+import sys
 
 pytestmark = pytest.mark.anyio
 
@@ -79,8 +81,15 @@ async def test_exporter_mock(setup_exporter):
         assert await stream.receive() == b"test"
 
     listener = await anyio.create_tcp_listener(local_port=8001)
-    async with client.Forward(listener, client.echo):
-        pass
+    async with client.Forward(listener, client.iperf3):
+        try:
+            await anyio.run_process(
+                ["iperf3", "-c", "127.0.0.1", "-p", "8001", "-t", "1"],
+                stdout=sys.stdout,
+                stderr=subprocess.STDOUT,
+            )
+        except:
+            pass
 
 
 @pytest.mark.parametrize(
