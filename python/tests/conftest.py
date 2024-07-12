@@ -6,7 +6,12 @@ import grpc
 
 
 @pytest.fixture(scope="module")
-def setup_exporter(request):
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture(scope="module")
+async def setup_exporter(request):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
     try:
@@ -20,8 +25,9 @@ def setup_exporter(request):
     server.add_insecure_port("localhost:50051")
     server.start()
 
-    with grpc.insecure_channel("localhost:50051") as channel:
-        yield Client(channel)
+    client = Client(grpc.aio.insecure_channel("localhost:50051"))
+    await client.sync()
+    yield client
 
     server.stop(grace=None)
     server.wait_for_termination()

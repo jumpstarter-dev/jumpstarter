@@ -13,8 +13,9 @@ class Client:
         self.stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
         self.router = router_pb2_grpc.RouterServiceStub(channel)
 
+    async def sync(self):
         devices = dict()
-        for device in self.GetReport().device_report:
+        for device in (await self.GetReport()).device_report:
             stub = self.GetDevice(device)
             devices[stub.uuid] = stub
             if device.parent_device_uuid == "":
@@ -26,8 +27,8 @@ class Client:
                     stub,
                 )
 
-    def GetReport(self):
-        return self.stub.GetReport(empty_pb2.Empty())
+    async def GetReport(self):
+        return await self.stub.GetReport(empty_pb2.Empty())
 
     def GetDevice(self, report: jumpstarter_pb2.DeviceReport):
         base = drivers.get(report.driver_interface)

@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from uuid import UUID
 from typing import List, Any
 import inspect
+import anyio
 
 
-def driver_call(
+async def driver_call(
     stub: jumpstarter_pb2_grpc.ExporterServiceStub,
     device_uuid: UUID,
     driver_method: str,
@@ -20,12 +21,12 @@ def driver_call(
         args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
     )
 
-    response = stub.DriverCall(request)
+    response = await stub.DriverCall(request)
 
     return json_format.MessageToDict(response.result)
 
 
-def streaming_driver_call(
+async def streaming_driver_call(
     stub: jumpstarter_pb2_grpc.ExporterServiceStub,
     device_uuid: UUID,
     driver_method: str,
@@ -37,13 +38,13 @@ def streaming_driver_call(
         args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
     )
 
-    for response in stub.StreamingDriverCall(request):
+    async for response in stub.StreamingDriverCall(request):
         yield json_format.MessageToDict(response.result)
 
 
 def build_stub_method(cls, driver_method):
-    def stub_method(self, *args, **kwargs):
-        return driver_call(self.stub, self.uuid, driver_method, args)
+    async def stub_method(self, *args, **kwargs):
+        return await driver_call(self.stub, self.uuid, driver_method, args)
 
     stub_method.__signature = inspect.signature(
         inspect.getattr_static(cls, driver_method)
@@ -53,8 +54,9 @@ def build_stub_method(cls, driver_method):
 
 
 def build_streaming_stub_method(cls, driver_method):
-    def streaming_stub_method(self, *args, **kwargs):
-        yield from streaming_driver_call(self.stub, self.uuid, driver_method, args)
+    async def streaming_stub_method(self, *args, **kwargs):
+        async for v in streaming_driver_call(self.stub, self.uuid, driver_method, args):
+            yield v
 
     streaming_stub_method.__signature = inspect.signature(
         inspect.getattr_static(cls, driver_method)
@@ -65,10 +67,16 @@ def build_streaming_stub_method(cls, driver_method):
 
 def build_stub_property(name):
     def getter(self):
-        return driver_call(self.stub, self.uuid, "__get__" + name, [])
+        async def inner():
+            return await driver_call(self.stub, self.uuid, "__get__" + name, [])
+
+        return anyio.from_thread.run(inner)
 
     def setter(self, value):
-        return driver_call(self.stub, self.uuid, "__set__" + name, [value])
+        async def inner():
+            return await driver_call(self.stub, self.uuid, "__set__" + name, [value])
+
+        return anyio.from_thread.run(inner)
 
     return property(getter, setter)
 

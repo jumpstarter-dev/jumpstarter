@@ -1,10 +1,13 @@
-from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.power import MockPower
+from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.serial import MockSerial
 from jumpstarter.drivers.storage import LocalStorageTempdir
 from jumpstarter.drivers.composite import Composite, Dutlink
 from dataclasses import asdict
 import pytest
+import anyio
+
+pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize(
@@ -43,20 +46,23 @@ import pytest
     ],
     indirect=True,
 )
-def test_exporter_mock(setup_exporter):
+async def test_exporter_mock(setup_exporter):
     client = setup_exporter
 
-    assert client.power.on() == "ok"
-    assert next(client.power.read()) == asdict(PowerReading(5.0, 2.0))
+    assert await client.power.on() == "ok"
+    assert await anext(client.power.read()) == asdict(PowerReading(5.0, 2.0))
 
-    client.serial.baudrate = 115200
-    assert client.serial.baudrate == 115200
+    def baudrate():
+        client.serial.baudrate = 115200
+        assert client.serial.baudrate == 115200
 
-    assert client.composite.power.on() == "ok"
-    assert next(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
+    await anyio.to_thread.run_sync(baudrate)
 
-    assert client.composite.composite.power.on() == "ok"
-    assert next(client.composite.composite.power.read()) == asdict(
+    assert await client.composite.power.on() == "ok"
+    assert await anext(client.composite.power.read()) == asdict(PowerReading(5.0, 2.0))
+
+    assert await client.composite.composite.power.on() == "ok"
+    assert await anext(client.composite.composite.power.read()) == asdict(
         PowerReading(5.0, 2.0)
     )
 
@@ -75,7 +81,7 @@ def test_exporter_mock(setup_exporter):
     ],
     indirect=True,
 )
-def test_exporter_dutlink(setup_exporter):
+async def test_exporter_dutlink(setup_exporter):
     client = setup_exporter
 
     client.dutlink.power.on()
