@@ -73,19 +73,25 @@ class Client:
             finally:
                 tg.cancel_scope.cancel()
 
+    @contextlib.asynccontextmanager
     async def Forward(
         self,
         listener,
         device,
     ):
+        async def forward(rx, tx):
+            async for payload in tx:
+                await rx.send(payload)
+
         async def handle(client):
-            async def rx():
-                async for payload in client:
-                    yield router_pb2.StreamRequest(payload=payload)
+            async with self.Stream(device) as stream:
+                async with anyio.create_task_group() as tg:
+                    tg.start_soon(forward, client, stream)
+                    tg.start_soon(forward, stream, client)
 
-            async for frame in self.router.Stream(
-                rx(), metadata=(("device", device.uuid),)
-            ):
-                await client.send(frame.payload)
-
-        await listener.serve(handle)
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(listener.serve, handle)
+            try:
+                yield
+            finally:
+                tg.cancel_scope.cancel()

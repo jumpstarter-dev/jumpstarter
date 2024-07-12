@@ -78,10 +78,9 @@ async def test_exporter_mock(setup_exporter):
         await stream.send(b"test")
         assert await stream.receive() == b"test"
 
-    async with anyio.create_task_group() as tg:
-        listener = await anyio.create_tcp_listener(local_port=8001)
-        tg.start_soon(client.Forward, listener, client.iperf3)
-        tg.cancel_scope.cancel()
+    listener = await anyio.create_tcp_listener(local_port=8001)
+    async with client.Forward(listener, client.echo):
+        pass
 
 
 @pytest.mark.parametrize(
