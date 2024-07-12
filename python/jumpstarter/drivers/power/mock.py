@@ -3,10 +3,10 @@ from . import Power, PowerReading
 
 
 class MockPower(Power):
-    def on(self):
+    async def on(self):
         return "ok"
 
-    def off(self):
+    async def off(self):
         return "ok"
 
     async def read(self) -> Generator[PowerReading, None, None]:

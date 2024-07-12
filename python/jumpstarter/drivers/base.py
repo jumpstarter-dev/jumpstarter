@@ -49,7 +49,10 @@ class DriverBase(ABC, Metadata):
         if not function:
             raise NotImplementedError("no such drivercall")
 
-        return function(self, *args)
+        if inspect.iscoroutinefunction(function):
+            return await function(self, *args)
+        else:
+            return function(self, *args)
 
     async def streaming_call(
         self, method: str, args: List[Any]
