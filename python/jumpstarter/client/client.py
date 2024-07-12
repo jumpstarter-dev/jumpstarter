@@ -8,6 +8,8 @@ from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
 import jumpstarter.drivers as drivers
+import contextlib
+import anyio
 
 
 @dataclass
@@ -42,6 +44,34 @@ class Client:
             pass
 
         return stub_class(stub=self.stub, uuid=report.device_uuid, labels=report.labels)
+
+    @contextlib.asynccontextmanager
+    async def Stream(self, device):
+        client_to_device_tx, client_to_device_rx = anyio.create_memory_object_stream[
+            bytes
+        ](32)
+        device_to_client_tx, device_to_client_rx = anyio.create_memory_object_stream[
+            bytes
+        ](32)
+
+        async def client_to_device():
+            async for payload in client_to_device_rx:
+                yield router_pb2.StreamRequest(payload=payload)
+
+        async def device_to_client():
+            async for frame in self.router.Stream(
+                client_to_device(), metadata=(("device", device.uuid),)
+            ):
+                await device_to_client_tx.send(frame.payload)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(device_to_client)
+            try:
+                yield anyio.streams.stapled.StapledObjectStream(
+                    client_to_device_tx, device_to_client_rx
+                )
+            finally:
+                tg.cancel_scope.cancel()
 
     async def Forward(
         self,
