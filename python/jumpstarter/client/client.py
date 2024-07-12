@@ -8,7 +8,6 @@ from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
 import jumpstarter.drivers as drivers
-import anyio
 
 
 @dataclass

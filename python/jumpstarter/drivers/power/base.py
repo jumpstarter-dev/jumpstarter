@@ -21,11 +21,11 @@ class PowerReading:
 
 class Power(DriverBase, interface="power"):
     @abstractmethod
-    def on(self) -> str: ...
+    async def on(self) -> str: ...
 
     @abstractmethod
-    def off(self) -> str: ...
+    async def off(self) -> str: ...
 
     @abstractmethod
-    def read(self) -> Generator[PowerReading, None, None]:
+    async def read(self) -> Generator[PowerReading, None, None]:
         yield None

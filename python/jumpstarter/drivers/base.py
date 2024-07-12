@@ -31,7 +31,7 @@ class DriverBase(ABC, Metadata):
         for name in inspect.getattr_static(cls, "__abstractmethods__"):
             attr = inspect.getattr_static(cls, name)
             if callable(attr):
-                if inspect.isgeneratorfunction(attr):
+                if inspect.isasyncgenfunction(attr):
                     cls.generator[name] = attr
                 else:
                     cls.callables[name] = attr
@@ -59,7 +59,7 @@ class DriverBase(ABC, Metadata):
         if not function:
             raise NotImplementedError("no such streaming drivercall")
 
-        for v in function(self, *args):
+        async for v in function(self, *args):
             yield v
 
     def reports(self, parent=None) -> List[jumpstarter_pb2.DeviceReport]:

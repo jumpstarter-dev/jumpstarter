@@ -9,5 +9,5 @@ class MockPower(Power):
     def off(self):
         return "ok"
 
-    def read(self) -> Generator[PowerReading, None, None]:
+    async def read(self) -> Generator[PowerReading, None, None]:
         yield PowerReading(5.0, 2.0)

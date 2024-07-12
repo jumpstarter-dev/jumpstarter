@@ -89,7 +89,7 @@ class DriverStub(Metadata):
         for name in inspect.getattr_static(base, "__abstractmethods__"):
             attr = inspect.getattr_static(base, name)
             if callable(attr):
-                if inspect.isgeneratorfunction(attr):
+                if inspect.isasyncgenfunction(attr):
                     setattr(
                         cls,
                         name,
