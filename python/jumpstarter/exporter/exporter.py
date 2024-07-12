@@ -92,12 +92,18 @@ class Exporter(
                     async with anyio.create_task_group() as tg:
 
                         async def rx():
-                            async for frame in request_iterator:
-                                await stream.send(frame.payload)
+                            try:
+                                async for frame in request_iterator:
+                                    await stream.send(frame.payload)
+                            except anyio.BrokenResourceError:
+                                pass
 
                         tg.start_soon(rx)
 
-                        async for payload in stream:
-                            yield router_pb2.StreamResponse(payload=payload)
+                        try:
+                            async for payload in stream:
+                                yield router_pb2.StreamResponse(payload=payload)
+                        except anyio.BrokenResourceError:
+                            pass
 
                 break
