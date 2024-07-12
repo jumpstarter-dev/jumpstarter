@@ -8,6 +8,7 @@ from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
 import jumpstarter.drivers as drivers
+import anyio
 
 
 @dataclass
@@ -43,11 +44,14 @@ class Client:
 
         return stub_class(stub=self.stub, uuid=report.device_uuid, labels=report.labels)
 
-    async def Forward(self, listener, device, *args):
+    async def Forward(
+        self,
+        listener,
+        device,
+    ):
         async def handle(client):
             async def rx():
-                while True:  # FIXME: exit condition
-                    payload = await client.receive(1024)
+                async for payload in client:
                     yield router_pb2.StreamRequest(payload=payload)
 
             async for frame in self.router.Stream(

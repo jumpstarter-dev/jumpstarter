@@ -19,9 +19,9 @@ pytestmark = pytest.mark.anyio
             MockSerial(session=session, labels={"jumpstarter.dev/name": "serial"}),
             TcpNetwork(
                 session=session,
-                labels={"jumpstarter.dev/name": "network"},
+                labels={"jumpstarter.dev/name": "iperf3"},
                 host="127.0.0.1",
-                port=8000,
+                port=5201,
             ),
             Composite(
                 session=session,
@@ -73,8 +73,10 @@ async def test_exporter_mock(setup_exporter):
         PowerReading(5.0, 2.0)
     )
 
-    # listener = await anyio.create_tcp_listener(local_port=1234)
-    # await client.Forward(listener, client.network, "tcp4", ("iad0.nichi.link", 22))
+    async with anyio.create_task_group() as tg:
+        listener = await anyio.create_tcp_listener(local_port=8001)
+        tg.start_soon(client.Forward, listener, client.iperf3)
+        tg.cancel_scope.cancel()
 
 
 @pytest.mark.parametrize(

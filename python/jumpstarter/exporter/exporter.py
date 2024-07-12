@@ -88,14 +88,16 @@ class Exporter(
     async def Stream(self, request_iterator, context):
         for key, value in context.invocation_metadata():
             if key == "device":
-                stream = await self.session.mapping[UUID(value)].connect()
-                async with anyio.create_task_group() as tg:
+                async with await self.session.mapping[UUID(value)].connect() as stream:
+                    async with anyio.create_task_group() as tg:
 
-                    async def rx():
-                        async for frame in request_iterator:
-                            await stream.send(frame.payload)
+                        async def rx():
+                            async for frame in request_iterator:
+                                await stream.send(frame.payload)
 
-                    tg.start_soon(rx)
+                        tg.start_soon(rx)
 
-                    async for payload in stream:
-                        yield router_pb2.StreamResponse(payload=payload)
+                        async for payload in stream:
+                            yield router_pb2.StreamResponse(payload=payload)
+
+                break
