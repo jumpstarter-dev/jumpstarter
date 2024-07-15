@@ -4,6 +4,7 @@ from jumpstarter.v1 import (
     router_pb2,
     router_pb2_grpc,
 )
+from jumpstarter.common.streams import forward_server_stream
 from jumpstarter.common import Metadata
 from jumpstarter.drivers import DriverBase, Session
 from jumpstarter.drivers.composite import Composite
@@ -86,32 +87,13 @@ class Exporter(
             )
 
     async def Stream(self, request_iterator, context):
-        async def forward(stream):
-            async with anyio.create_task_group() as tg:
-
-                async def rx():
-                    try:
-                        async for frame in request_iterator:
-                            await stream.send(frame.payload)
-                        await stream.send_eof()
-                    except anyio.BrokenResourceError:
-                        pass
-
-                tg.start_soon(rx)
-
-                try:
-                    async for payload in stream:
-                        yield router_pb2.StreamResponse(payload=payload)
-                except anyio.BrokenResourceError:
-                    pass
-
         stream_id = ""
 
         for key, value in context.invocation_metadata():
             # device connection
             if key == "device":
                 async with self.session.mapping[UUID(value)].connect() as stream:
-                    async for v in forward(stream):
+                    async for v in forward_server_stream(request_iterator, stream):
                         yield v
                 return
             if key == "stream_id":
@@ -133,5 +115,5 @@ class Exporter(
 
         self.session.session.conns[UUID(stream_id)] = to_exporter
 
-        async for v in forward(to_client):
+        async for v in forward_server_stream(request_iterator, to_client):
             yield v
