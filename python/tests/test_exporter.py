@@ -77,7 +77,9 @@ async def test_exporter_mock(setup_exporter):
         PowerReading(5.0, 2.0)
     )
 
-    async with client.LocalFile("pyproject.toml") as file:
+    async with client.LocalFile(
+        "/home/nickcao/Downloads/archlinux-2024.07.01-x86_64.iso"
+    ) as file:
         await client.storage.write(file)
 
     async with client.Stream(client.echo) as stream:

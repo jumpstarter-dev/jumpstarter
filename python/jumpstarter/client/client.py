@@ -73,18 +73,15 @@ class Client:
             ):
                 await device_to_client_tx.send(frame.payload)
 
-        try:
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(device_to_client)
-                try:
-                    yield anyio.streams.stapled.StapledObjectStream(
-                        client_to_device_tx, device_to_client_rx
-                    )
-                finally:
-                    tg.cancel_scope.cancel()
-        except* grpc.aio.AioRpcError:
-            # TODO: handle connection failures
-            pass
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(device_to_client)
+            try:
+                stream = anyio.streams.stapled.StapledObjectStream(
+                    client_to_device_tx, device_to_client_rx
+                )
+                yield stream
+            finally:
+                await stream.send_eof()
 
     @contextlib.asynccontextmanager
     async def Forward(
