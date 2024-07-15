@@ -108,14 +108,12 @@ class Client:
     ):
         stream_id = uuid4()
 
-        async def handle():
-            async with self.Stream(stream_id=str(stream_id)) as stream:
-                async with await FileReadStream.from_path(filepath) as f:
-                    async for chunk in f:
-                        await stream.send(chunk)
+        async def handle(filepath):
+            async with await FileReadStream.from_path(filepath) as file:
+                await self.RawStream(file, (("stream_id", str(stream_id)),))
 
         async with anyio.create_task_group() as tg:
-            tg.start_soon(handle)
+            tg.start_soon(handle, filepath)
             try:
                 yield str(stream_id)
             finally:
