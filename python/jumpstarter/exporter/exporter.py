@@ -93,13 +93,17 @@ class Exporter(
                     try:
                         async for frame in request_iterator:
                             await stream.send(frame.payload)
-                    finally:
                         await stream.send_eof()
+                    except anyio.BrokenResourceError:
+                        pass
 
                 tg.start_soon(rx)
 
-                async for payload in stream:
-                    yield router_pb2.StreamResponse(payload=payload)
+                try:
+                    async for payload in stream:
+                        yield router_pb2.StreamResponse(payload=payload)
+                except anyio.BrokenResourceError:
+                    pass
 
         stream_id = ""
 
