@@ -85,22 +85,25 @@ class Exporter(
             )
 
     async def Stream(self, request_iterator, context):
-        stream_id = ""
+        metadata = dict(context.invocation_metadata())
 
-        for key, value in context.invocation_metadata():
-            # device connection
-            if key == "device":
-                async with self.session.mapping[UUID(value)].connect() as stream:
+        uuid = UUID(metadata["uuid"])
+
+        match metadata["kind"]:
+            case "device":
+                device = self.session.mapping[uuid]
+                async with device.connect() as stream:
                     async for v in forward_server_stream(request_iterator, stream):
                         yield v
-                return
-            if key == "stream_id":
-                stream_id = value
+            case "resource":
+                client_stream, device_stream = create_memory_stream()
 
-        # exporter connection
-        to_client, to_exporter = create_memory_stream()
+                self.session.session.conns[uuid] = device_stream
 
-        self.session.session.conns[UUID(stream_id)] = to_exporter
+                async with client_stream:
+                    async for v in forward_server_stream(
+                        request_iterator, client_stream
+                    ):
+                        yield v
 
-        async for v in forward_server_stream(request_iterator, to_client):
-            yield v
+                del self.session.session.conns[uuid]

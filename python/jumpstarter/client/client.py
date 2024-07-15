@@ -68,17 +68,15 @@ class Client:
             await stream.send_eof()
 
     @contextlib.asynccontextmanager
-    async def Stream(self, device=None, stream_id=None):
+    async def Stream(self, device):
         client_stream, device_stream = create_memory_stream()
 
-        metadata = []
-        if device is not None:
-            metadata.append(("device", device.uuid))
-        if stream_id is not None:
-            metadata.append(("stream_id", stream_id))
-
         async with anyio.create_task_group() as tg:
-            tg.start_soon(self.RawStream, device_stream, metadata)
+            tg.start_soon(
+                self.RawStream,
+                device_stream,
+                {"kind": "device", "uuid": str(device.uuid)}.items(),
+            )
             try:
                 yield client_stream
             finally:
@@ -92,7 +90,9 @@ class Client:
     ):
         async def handle(client):
             async with client:
-                await self.RawStream(client, (("device", device.uuid),))
+                await self.RawStream(
+                    client, {"kind": "device", "uuid": str(device.uuid)}.items()
+                )
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(listener.serve, handle)
@@ -110,7 +110,9 @@ class Client:
 
         async def handle(filepath):
             async with await FileReadStream.from_path(filepath) as file:
-                await self.RawStream(file, (("stream_id", str(stream_id)),))
+                await self.RawStream(
+                    file, {"kind": "resource", "uuid": str(stream_id)}.items()
+                )
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(handle, filepath)
