@@ -98,12 +98,12 @@ class Exporter(
             case "resource":
                 client_stream, device_stream = create_memory_stream()
 
-                self.session.session.conns[uuid] = device_stream
-
-                async with client_stream:
-                    async for v in forward_server_stream(
-                        request_iterator, client_stream
-                    ):
-                        yield v
-
-                del self.session.session.conns[uuid]
+                try:
+                    self.session.session.conns[uuid] = device_stream
+                    async with client_stream:
+                        async for v in forward_server_stream(
+                            request_iterator, client_stream
+                        ):
+                            yield v
+                finally:
+                    del self.session.session.conns[uuid]

@@ -102,21 +102,30 @@ class Client:
                 tg.cancel_scope.cancel()
 
     @contextlib.asynccontextmanager
+    async def Resource(
+        self,
+        stream,
+    ):
+        uuid = uuid4()
+
+        async def handle(stream):
+            async with stream:
+                await self.RawStream(
+                    stream, {"kind": "resource", "uuid": str(uuid)}.items()
+                )
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(handle, stream)
+            try:
+                yield str(uuid)
+            finally:
+                tg.cancel_scope.cancel()
+
+    @contextlib.asynccontextmanager
     async def LocalFile(
         self,
         filepath,
     ):
-        stream_id = uuid4()
-
-        async def handle(filepath):
-            async with await FileReadStream.from_path(filepath) as file:
-                await self.RawStream(
-                    file, {"kind": "resource", "uuid": str(stream_id)}.items()
-                )
-
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(handle, filepath)
-            try:
-                yield str(stream_id)
-            finally:
-                tg.cancel_scope.cancel()
+        async with await FileReadStream.from_path(filepath) as file:
+            async with self.Resource(file) as uuid:
+                yield uuid
