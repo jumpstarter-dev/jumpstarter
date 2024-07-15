@@ -1,10 +1,9 @@
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
-    router_pb2,
     router_pb2_grpc,
 )
-from jumpstarter.common.streams import forward_server_stream
+from jumpstarter.common.streams import forward_server_stream, create_memory_stream
 from jumpstarter.common import Metadata
 from jumpstarter.drivers import DriverBase, Session
 from jumpstarter.drivers.composite import Composite
@@ -14,7 +13,6 @@ from google.protobuf import struct_pb2, json_format
 from typing import List
 from collections import ChainMap
 import itertools
-import anyio
 
 
 @dataclass(kw_only=True)
@@ -100,18 +98,7 @@ class Exporter(
                 stream_id = value
 
         # exporter connection
-        client_to_exporter_tx, client_to_exporter_rx = (
-            anyio.create_memory_object_stream[bytes](32)
-        )
-        exporter_to_client_tx, exporter_to_client_rx = (
-            anyio.create_memory_object_stream[bytes](32)
-        )
-        to_client = anyio.streams.stapled.StapledObjectStream(
-            client_to_exporter_tx, exporter_to_client_rx
-        )
-        to_exporter = anyio.streams.stapled.StapledObjectStream(
-            exporter_to_client_tx, client_to_exporter_rx
-        )
+        to_client, to_exporter = create_memory_stream()
 
         self.session.session.conns[UUID(stream_id)] = to_exporter
 

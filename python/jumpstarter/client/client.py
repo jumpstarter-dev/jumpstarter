@@ -4,6 +4,7 @@ from jumpstarter.v1 import (
     router_pb2,
     router_pb2_grpc,
 )
+from jumpstarter.common.streams import create_memory_stream
 from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
@@ -50,15 +51,10 @@ class Client:
 
     @contextlib.asynccontextmanager
     async def Stream(self, device=None, stream_id=None):
-        client_to_device_tx, client_to_device_rx = anyio.create_memory_object_stream[
-            bytes
-        ](32)
-        device_to_client_tx, device_to_client_rx = anyio.create_memory_object_stream[
-            bytes
-        ](32)
+        client_stream, device_stream = create_memory_stream()
 
         async def client_to_device():
-            async for payload in client_to_device_rx:
+            async for payload in device_stream:
                 yield router_pb2.StreamRequest(payload=payload)
 
         async def device_to_client():
@@ -71,18 +67,15 @@ class Client:
                 client_to_device(),
                 metadata=metadata,
             ):
-                await device_to_client_tx.send(frame.payload)
+                await device_stream.send(frame.payload)
 
         try:
             async with anyio.create_task_group() as tg:
                 tg.start_soon(device_to_client)
                 try:
-                    stream = anyio.streams.stapled.StapledObjectStream(
-                        client_to_device_tx, device_to_client_rx
-                    )
-                    yield stream
+                    yield client_stream
                 finally:
-                    await stream.send_eof()
+                    await client_stream.send_eof()
         except* grpc.aio.AioRpcError:
             # TODO: handle connection failure
             pass

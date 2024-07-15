@@ -1,5 +1,6 @@
+from anyio import create_task_group, create_memory_object_stream, BrokenResourceError
+from anyio.streams.stapled import StapledObjectStream
 from jumpstarter.v1 import router_pb2
-from anyio import create_task_group, BrokenResourceError
 
 
 async def forward_server_stream(request_iterator, stream):
@@ -22,3 +23,11 @@ async def forward_server_stream(request_iterator, stream):
                 yield router_pb2.StreamResponse(payload=payload)
         except BrokenResourceError:
             pass
+
+
+def create_memory_stream():
+    a_tx, a_rx = create_memory_object_stream[bytes](32)
+    b_tx, b_rx = create_memory_object_stream[bytes](32)
+    a = StapledObjectStream(a_tx, b_rx)
+    b = StapledObjectStream(b_tx, a_rx)
+    return a, b
