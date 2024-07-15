@@ -86,24 +86,48 @@ class Exporter(
             )
 
     async def Stream(self, request_iterator, context):
+        async def forward(stream):
+            async with anyio.create_task_group() as tg:
+
+                async def rx():
+                    try:
+                        async for frame in request_iterator:
+                            await stream.send(frame.payload)
+                    except anyio.BrokenResourceError:
+                        pass
+
+                tg.start_soon(rx)
+
+                try:
+                    async for payload in stream:
+                        yield router_pb2.StreamResponse(payload=payload)
+                except anyio.BrokenResourceError:
+                    pass
+
         for key, value in context.invocation_metadata():
+            # device connection
             if key == "device":
                 async with self.session.mapping[UUID(value)].connect() as stream:
-                    async with anyio.create_task_group() as tg:
+                    async for v in forward(stream):
+                        yield v
+                return
 
-                        async def rx():
-                            try:
-                                async for frame in request_iterator:
-                                    await stream.send(frame.payload)
-                            except anyio.BrokenResourceError:
-                                pass
+        # exporter connection
+        client_to_exporter_tx, client_to_exporter_rx = (
+            anyio.create_memory_object_stream[bytes](32)
+        )
+        exporter_to_client_tx, exporter_to_client_rx = (
+            anyio.create_memory_object_stream[bytes](32)
+        )
+        to_client = anyio.streams.stapled.StapledObjectStream(
+            client_to_exporter_tx, exporter_to_client_rx
+        )
+        to_exporter = anyio.streams.stapled.StapledObjectStream(
+            exporter_to_client_tx, client_to_exporter_rx
+        )
 
-                        tg.start_soon(rx)
+        fd = len(self.session.conns)
+        self.session.conns.insert(fd, to_exporter)
 
-                        try:
-                            async for payload in stream:
-                                yield router_pb2.StreamResponse(payload=payload)
-                        except anyio.BrokenResourceError:
-                            pass
-
-                break
+        async for v in forward(to_client):
+            yield v
