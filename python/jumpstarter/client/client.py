@@ -49,36 +49,40 @@ class Client:
 
         return stub_class(stub=self.stub, uuid=report.device_uuid, labels=report.labels)
 
-    @contextlib.asynccontextmanager
-    async def Stream(self, device=None, stream_id=None):
-        client_stream, device_stream = create_memory_stream()
-
+    async def RawStream(self, stream, metadata):
         async def client_to_device():
-            async for payload in device_stream:
+            async for payload in stream:
                 yield router_pb2.StreamRequest(payload=payload)
 
-        async def device_to_client():
-            metadata = []
-            if device is not None:
-                metadata.append(("device", device.uuid))
-            if stream_id is not None:
-                metadata.append(("stream_id", stream_id))
+        # device_to_client
+        try:
             async for frame in self.router.Stream(
                 client_to_device(),
                 metadata=metadata,
             ):
-                await device_stream.send(frame.payload)
-
-        try:
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(device_to_client)
-                try:
-                    yield client_stream
-                finally:
-                    await client_stream.send_eof()
-        except* grpc.aio.AioRpcError:
-            # TODO: handle connection failure
+                await stream.send(frame.payload)
+        except grpc.aio.AioRpcError:
+            # TODO: handle connection error
             pass
+        finally:
+            await stream.send_eof()
+
+    @contextlib.asynccontextmanager
+    async def Stream(self, device=None, stream_id=None):
+        client_stream, device_stream = create_memory_stream()
+
+        metadata = []
+        if device is not None:
+            metadata.append(("device", device.uuid))
+        if stream_id is not None:
+            metadata.append(("stream_id", stream_id))
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(self.RawStream, device_stream, metadata)
+            try:
+                yield client_stream
+            finally:
+                await client_stream.aclose()
 
     @contextlib.asynccontextmanager
     async def Forward(
@@ -86,16 +90,9 @@ class Client:
         listener,
         device,
     ):
-        async def forward(rx, tx):
-            async for payload in tx:
-                await rx.send(payload)
-
         async def handle(client):
             async with client:
-                async with self.Stream(device) as stream:
-                    async with anyio.create_task_group() as tg:
-                        tg.start_soon(forward, client, stream)
-                        tg.start_soon(forward, stream, client)
+                await self.RawStream(client, (("device", device.uuid),))
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(listener.serve, handle)
