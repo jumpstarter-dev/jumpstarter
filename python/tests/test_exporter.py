@@ -1,7 +1,7 @@
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.serial import MockSerial
-from jumpstarter.drivers.storage import LocalStorageTempdir
+from jumpstarter.drivers.storage import LocalStorageTempdir, MockStorageMux
 from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
 from jumpstarter.drivers.composite import Composite, Dutlink
 from dataclasses import asdict
@@ -19,6 +19,7 @@ pytestmark = pytest.mark.anyio
         lambda session: [
             MockPower(session=session, labels={"jumpstarter.dev/name": "power"}),
             MockSerial(session=session, labels={"jumpstarter.dev/name": "serial"}),
+            MockStorageMux(session=session, labels={"jumpstarter.dev/name": "storage"}),
             EchoNetwork(session=session, labels={"jumpstarter.dev/name": "echo"}),
             TcpNetwork(
                 session=session,
@@ -75,6 +76,9 @@ async def test_exporter_mock(setup_exporter):
     assert await anext(client.composite.composite.power.read()) == asdict(
         PowerReading(5.0, 2.0)
     )
+
+    async with client.LocalFile("pyproject.toml") as file:
+        await client.storage.write(file)
 
     async with client.Stream(client.echo) as stream:
         await stream.send(b"test")

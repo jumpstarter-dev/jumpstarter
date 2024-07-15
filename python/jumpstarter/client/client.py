@@ -7,6 +7,8 @@ from jumpstarter.v1 import (
 from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
+from uuid import uuid4
+from anyio.streams.file import FileReadStream
 import jumpstarter.drivers as drivers
 import contextlib
 import anyio
@@ -47,7 +49,7 @@ class Client:
         return stub_class(stub=self.stub, uuid=report.device_uuid, labels=report.labels)
 
     @contextlib.asynccontextmanager
-    async def Stream(self, device):
+    async def Stream(self, device=None, stream_id=None):
         client_to_device_tx, client_to_device_rx = anyio.create_memory_object_stream[
             bytes
         ](32)
@@ -60,8 +62,14 @@ class Client:
                 yield router_pb2.StreamRequest(payload=payload)
 
         async def device_to_client():
+            metadata = []
+            if device is not None:
+                metadata.append(("device", device.uuid))
+            if stream_id is not None:
+                metadata.append(("stream_id", stream_id))
             async for frame in self.router.Stream(
-                client_to_device(), metadata=(("device", device.uuid),)
+                client_to_device(),
+                metadata=metadata,
             ):
                 await device_to_client_tx.send(frame.payload)
 
@@ -74,7 +82,7 @@ class Client:
                     )
                 finally:
                     tg.cancel_scope.cancel()
-        except* grpc.aio.AioRpcError as excgroup:
+        except* grpc.aio.AioRpcError:
             # TODO: handle connection failures
             pass
 
@@ -99,5 +107,25 @@ class Client:
             tg.start_soon(listener.serve, handle)
             try:
                 yield
+            finally:
+                tg.cancel_scope.cancel()
+
+    @contextlib.asynccontextmanager
+    async def LocalFile(
+        self,
+        filepath,
+    ):
+        stream_id = uuid4()
+
+        async def handle():
+            async with self.Stream(stream_id=str(stream_id)) as stream:
+                async with await FileReadStream.from_path(filepath) as f:
+                    async for chunk in f:
+                        await stream.send(chunk)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(handle)
+            try:
+                yield str(stream_id)
             finally:
                 tg.cancel_scope.cancel()

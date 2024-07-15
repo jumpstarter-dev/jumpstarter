@@ -1,6 +1,7 @@
 # This file contains the base class for all jumpstarter drivers
 from abc import ABC
-from typing import List, Any, BinaryIO
+from uuid import UUID
+from typing import List, Any, BinaryIO, Dict
 from dataclasses import dataclass, field
 from collections.abc import Generator
 from jumpstarter.v1 import jumpstarter_pb2
@@ -12,7 +13,7 @@ import inspect
 @dataclass(kw_only=True)
 class Session:
     fds: List[BinaryIO] = field(default_factory=list, init=False)
-    conns: List[Any] = field(default_factory=list, init=False)
+    conns: Dict[UUID, Any] = field(default_factory=dict, init=False)
 
 
 # base class for all drivers

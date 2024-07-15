@@ -95,6 +95,8 @@ class Exporter(
                             await stream.send(frame.payload)
                     except anyio.BrokenResourceError:
                         pass
+                    finally:
+                        await stream.send_eof()
 
                 tg.start_soon(rx)
 
@@ -104,6 +106,8 @@ class Exporter(
                 except anyio.BrokenResourceError:
                     pass
 
+        stream_id = ""
+
         for key, value in context.invocation_metadata():
             # device connection
             if key == "device":
@@ -111,6 +115,8 @@ class Exporter(
                     async for v in forward(stream):
                         yield v
                 return
+            if key == "stream_id":
+                stream_id = value
 
         # exporter connection
         client_to_exporter_tx, client_to_exporter_rx = (
@@ -126,8 +132,7 @@ class Exporter(
             exporter_to_client_tx, client_to_exporter_rx
         )
 
-        fd = len(self.session.conns)
-        self.session.conns.insert(fd, to_exporter)
+        self.session.session.conns[UUID(stream_id)] = to_exporter
 
         async for v in forward(to_client):
             yield v

@@ -1,13 +1,11 @@
-from shutil import copyfileobj
-import os
+from anyio.streams.file import FileWriteStream
+from uuid import UUID
 
 
 class StorageMuxLocalWriterMixin:
-    def write(self, src: int):
-        dstpath = self.host()
-        import time
+    async def write(self, src: str):
+        path = self.host()
 
-        time.sleep(3)
-        fd = os.open(dstpath, os.O_WRONLY)
-        with os.fdopen(fd, "wb") as dst:
-            copyfileobj(self.session.fds[int(src)], dst)
+        async with await FileWriteStream.from_path(path) as stream:
+            async for chunk in self.session.conns[UUID(src)]:
+                await stream.send(chunk)
