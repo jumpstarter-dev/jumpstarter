@@ -4,6 +4,7 @@ from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
 )
+from jumpstarter.common.streams import forward_client_stream
 from dataclasses import dataclass
 import itertools
 import anyio
@@ -29,20 +30,7 @@ class Listener:
             router = router_pb2_grpc.RouterServiceStub(channel)
 
             async with await anyio.connect_tcp("localhost", 50051) as stream:
-
-                async def local_to_router():
-                    async for payload in stream:
-                        yield router_pb2.StreamRequest(payload=payload)
-
-                # router_to_local
-                try:
-                    async for frame in router.Stream(local_to_router()):
-                        await stream.send(frame.payload)
-                except grpc.aio.AioRpcError:
-                    # TODO: handle connection error
-                    pass
-                finally:
-                    await stream.send_eof()
+                await forward_client_stream(router, stream, ())
 
     async def serve(self, exporter):
         await self.stub.Register(
