@@ -81,12 +81,10 @@ message ListenRequest {}
 message ListenResponse {
   string router_endpoint = 1;
   string router_token = 2;
-  optional string device_uuid = 3;
 }
 
 message DialRequest {
   string uuid = 1;
-  optional string device_uuid = 2;
 }
 
 message DialResponse {
