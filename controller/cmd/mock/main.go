@@ -242,8 +242,13 @@ func (r *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 func main() {
 	server := grpc.NewServer()
 
-	pb.RegisterControllerServiceServer(server, &ControllerService{})
-	pb.RegisterRouterServiceServer(server, &RouterService{})
+	pb.RegisterControllerServiceServer(server, &ControllerService{
+		exporters: make(map[string]Exporter),
+		listeners: make(map[string]listenContext),
+	})
+	pb.RegisterRouterServiceServer(server, &RouterService{
+		pending: make(map[string]streamContext),
+	})
 
 	listener, err := net.Listen("tcp", ":8083")
 	if err != nil {
