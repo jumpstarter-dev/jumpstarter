@@ -44,6 +44,7 @@ async def test_listener():
             client = Client(inner)
             await client.sync()
             assert await client.power.on() == "ok"
+        tg.cancel_scope.cancel()
 
     await server.stop(grace=None)
     await server.wait_for_termination()
