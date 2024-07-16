@@ -1,0 +1,22 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+	"name": "Python 3",
+	"image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+	// Install poetry and packages
+	"postCreateCommand": "pip3 install -U poetry && poetry install",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"tamasfe.even-better-toml",
+				"ms-python.python",
+				"ms-python.autopep8",
+				"ms-python.vscode-pylance",
+				"ms-python.debugpy"
+			],
+			"settings": {
+				"python.defaultInterpreterPath": "~/.cache/pypoetry/virtualenvs/jumpstarter-64_PDEHR-py3.11/bin/python"
+			}
+		}
+	}
+}
