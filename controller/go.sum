@@ -66,6 +66,12 @@ github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162514-6916dbe
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162514-6916dbec8d81/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162741-72295674f67b h1:RUT0RiroAW5FyAMhvPbJpQ3dyz2YxitVmzNDB+/dOj8=
 github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240701162741-72295674f67b/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240716151307-a0e1017314b1 h1:j2m+Fa6pCSpcUo3LpRVaQrihbb++l33QtxNdLS32Z8k=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240716151307-a0e1017314b1/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240716152030-9c488f9c95a8 h1:YqSPFADIM02r9RXhDiLNSz4RIMT3EK/W2M7lgLw2nd4=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240716152030-9c488f9c95a8/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240716153153-f8af00ef6b4a h1:bEZ7HkyPCr7MaswuvQSD+58mBx+M5i0HsySKRuHq86c=
+github.com/jumpstarter-dev/jumpstarter-protocol/go v0.0.0-20240716153153-f8af00ef6b4a/go.mod h1:IB2R+QC45d+TBF/e6/BQA13i2ZzFUadv2UwUPc7jcSo=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
