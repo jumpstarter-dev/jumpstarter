@@ -7,18 +7,22 @@ authors = ["Miguel Angel Ajo Pelayo <majopela@redhat.com>",
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
-pytest = "^8.2.2"
+python = "^3.11"
 click = "^8.1.7"
 pyserial = "^3.5"
 pyusb = "^1.2.1"
 pyudev = "^0.24.3"
 httpx = "^0.27.0"
-pytest-anyio = "^0.0.0"
+pyyaml = "^6.0.1"
 
 [tool.poetry.dependencies.jumpstarter-protocol]
 git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
 subdirectory = "python"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+pytest-anyio = "^0.0.0"
 
 [build-system]
 requires = ["poetry-core"]
