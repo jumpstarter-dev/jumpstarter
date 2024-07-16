@@ -30,7 +30,7 @@ func pipe(a pb.RouterService_StreamServer, b pb.RouterService_StreamServer) erro
 	}
 }
 
-func forward(ctx context.Context, a pb.RouterService_StreamServer, b pb.RouterService_StreamServer) error {
+func Forward(ctx context.Context, a pb.RouterService_StreamServer, b pb.RouterService_StreamServer) error {
 	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() error { return pipe(a, b) })
 	g.Go(func() error { return pipe(b, a) })

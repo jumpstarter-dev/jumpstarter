@@ -128,7 +128,7 @@ func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 	actual, loaded := s.pending.LoadOrStore(streamName, sctx)
 	if loaded {
 		defer actual.(streamContext).cancel()
-		return forward(ctx, stream, actual.(streamContext).stream)
+		return Forward(ctx, stream, actual.(streamContext).stream)
 	} else {
 		select {
 		case <-ctx.Done():
