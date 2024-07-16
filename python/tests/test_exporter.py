@@ -7,8 +7,10 @@ from jumpstarter.drivers.storage import LocalStorageTempdir, MockStorageMux
 from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
 from jumpstarter.drivers.composite import Composite, Dutlink
 from dataclasses import asdict
+import os
 import subprocess
 import shutil
+import tempfile
 import pytest
 import anyio
 import grpc
@@ -141,10 +143,14 @@ async def test_exporter_mock(setup_client):
         PowerReading(5.0, 2.0)
     )
 
-    async with client.LocalFile(
-        "/home/nickcao/Downloads/archlinux-2024.07.01-x86_64.iso"
-    ) as file:
-        await client.storage.write(file)
+    with tempfile.NamedTemporaryFile(delete=False) as tempf:
+        tempf.write(b"thisisatestfile")
+        tempf.close()
+
+        async with client.LocalFile(tempf.name) as file:
+            await client.storage.write(file)
+
+        os.unlink(tempf.name)
 
     async with client.Stream(client.echo) as stream:
         await stream.send(b"test")
