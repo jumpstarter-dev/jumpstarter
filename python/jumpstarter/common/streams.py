@@ -1,6 +1,6 @@
 from anyio import create_task_group, create_memory_object_stream, BrokenResourceError
 from anyio.streams.stapled import StapledObjectStream
-from jumpstarter.v1 import router_pb2
+from jumpstarter.v1 import router_pb2, router_pb2_grpc
 import grpc
 
 
@@ -45,6 +45,17 @@ async def forward_client_stream(router, stream, metadata):
         pass
     finally:
         await stream.send_eof()
+
+
+async def connect_router_stream(endpoint, token, stream):
+    credentials = grpc.composite_channel_credentials(
+        grpc.local_channel_credentials(),  # TODO: Use TLS
+        grpc.access_token_call_credentials(token),
+    )
+
+    async with grpc.aio.secure_channel(endpoint, credentials) as channel:
+        router = router_pb2_grpc.RouterServiceStub(channel)
+        await forward_client_stream(router, stream, ())
 
 
 def create_memory_stream():
