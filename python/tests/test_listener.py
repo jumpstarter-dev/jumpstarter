@@ -1,7 +1,6 @@
 from jumpstarter.exporter import Exporter, ExporterSession, Listener
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.client import Client, Proxy
-from jumpstarter.v1 import jumpstarter_pb2_grpc
 import pytest
 import anyio
 import grpc
@@ -33,14 +32,10 @@ async def test_listener():
 
     listener = Listener(channel)
 
-    proxy = Proxy(
-        uuid="test-exporter", stub=jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-    )
-
     async with anyio.create_task_group() as tg:
         tg.start_soon(listener.serve, e)
         await anyio.sleep(1)
-        async with proxy.channel() as inner:
+        async with Proxy.connect(channel, "test-exporter") as inner:
             client = Client(inner)
             await client.sync()
             assert await client.power.on() == "ok"
