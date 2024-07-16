@@ -1,14 +1,11 @@
 from jumpstarter.v1 import (
-    router_pb2,
-    router_pb2_grpc,
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
 )
-from jumpstarter.common.streams import forward_client_stream, connect_router_stream
+from jumpstarter.common.streams import connect_router_stream
 from dataclasses import dataclass
 import itertools
 import anyio
-import grpc
 
 
 @dataclass
