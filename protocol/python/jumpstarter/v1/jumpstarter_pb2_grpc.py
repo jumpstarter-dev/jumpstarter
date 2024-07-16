@@ -41,6 +41,26 @@ class ControllerServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditStreamRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
+        self.ListExporters = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/ListExporters',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListExportersRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListExportersResponse.FromString,
+                _registered_method=True)
+        self.GetExporter = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/GetExporter',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterResponse.FromString,
+                _registered_method=True)
+        self.LeaseExporter = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/LeaseExporter',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseExporterRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseExporterResponse.FromString,
+                _registered_method=True)
+        self.ReleaseExporter = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/ReleaseExporter',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseExporterRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseExporterResponse.FromString,
+                _registered_method=True)
 
 
 class ControllerServiceServicer(object):
@@ -89,6 +109,38 @@ class ControllerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListExporters(self, request, context):
+        """List exporters
+        Returns all exporters matching filter
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetExporter(self, request, context):
+        """Get exporter
+        Get information of the exporter of the given uuid
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def LeaseExporter(self, request, context):
+        """Lease exporter
+        Lease the exporter of the given uuid for a given amount of time
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReleaseExporter(self, request, context):
+        """Release exporter
+        Return the exporter of the given uuid early
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ControllerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -116,6 +168,26 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.AuditStream,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditStreamRequest.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'ListExporters': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListExporters,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListExportersRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListExportersResponse.SerializeToString,
+            ),
+            'GetExporter': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetExporter,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterResponse.SerializeToString,
+            ),
+            'LeaseExporter': grpc.unary_unary_rpc_method_handler(
+                    servicer.LeaseExporter,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseExporterRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseExporterResponse.SerializeToString,
+            ),
+            'ReleaseExporter': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReleaseExporter,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseExporterRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseExporterResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -254,6 +326,114 @@ class ControllerService(object):
             '/jumpstarter.v1.ControllerService/AuditStream',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.AuditStreamRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListExporters(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/ListExporters',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ListExportersRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ListExportersResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetExporter(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/GetExporter',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def LeaseExporter(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/LeaseExporter',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseExporterRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.LeaseExporterResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReleaseExporter(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/ReleaseExporter',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseExporterRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseExporterResponse.FromString,
             options,
             channel_credentials,
             insecure,
