@@ -4,7 +4,7 @@ from jumpstarter.v1 import (
     router_pb2,
     router_pb2_grpc,
 )
-from jumpstarter.common.streams import create_memory_stream
+from jumpstarter.common.streams import create_memory_stream, forward_client_stream
 from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
@@ -50,22 +50,7 @@ class Client:
         return stub_class(stub=self.stub, uuid=report.device_uuid, labels=report.labels)
 
     async def RawStream(self, stream, metadata):
-        async def client_to_device():
-            async for payload in stream:
-                yield router_pb2.StreamRequest(payload=payload)
-
-        # device_to_client
-        try:
-            async for frame in self.router.Stream(
-                client_to_device(),
-                metadata=metadata,
-            ):
-                await stream.send(frame.payload)
-        except grpc.aio.AioRpcError:
-            # TODO: handle connection error
-            pass
-        finally:
-            await stream.send_eof()
+        await forward_client_stream(self.router, stream, metadata)
 
     @contextlib.asynccontextmanager
     async def Stream(self, device):

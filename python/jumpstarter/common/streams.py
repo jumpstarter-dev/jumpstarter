@@ -1,6 +1,7 @@
 from anyio import create_task_group, create_memory_object_stream, BrokenResourceError
 from anyio.streams.stapled import StapledObjectStream
 from jumpstarter.v1 import router_pb2
+import grpc
 
 
 async def forward_server_stream(request_iterator, stream):
@@ -23,6 +24,27 @@ async def forward_server_stream(request_iterator, stream):
                 yield router_pb2.StreamResponse(payload=payload)
         except BrokenResourceError:
             pass
+
+
+async def forward_client_stream(router, stream, metadata):
+    async with create_task_group() as tg:
+
+        async def client_to_server():
+            async for payload in stream:
+                yield router_pb2.StreamRequest(payload=payload)
+
+    # server_to_client
+    try:
+        async for frame in router.Stream(
+            client_to_server(),
+            metadata=metadata,
+        ):
+            await stream.send(frame.payload)
+    except grpc.aio.AioRpcError:
+        # TODO: handle connection error
+        pass
+    finally:
+        await stream.send_eof()
 
 
 def create_memory_stream():
