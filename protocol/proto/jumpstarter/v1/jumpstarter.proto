@@ -155,7 +155,7 @@ message ListExportersRequest {
 }
 
 message ListExportersResponse {
-  repeated GetReportResponse device_reports = 1;
+  repeated GetReportResponse exporters = 1;
 }
 
 message GetExporterRequest {
@@ -163,7 +163,7 @@ message GetExporterRequest {
 }
 
 message GetExporterResponse {
-  repeated GetReportResponse device_report = 1;
+  repeated GetReportResponse exporter = 1;
 }
 
 message LeaseExporterRequest {
