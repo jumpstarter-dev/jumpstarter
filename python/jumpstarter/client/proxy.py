@@ -14,7 +14,21 @@ class Proxy:
     uuid: UUID
     stub: jumpstarter_pb2_grpc.ControllerServiceStub
 
-    async def accept(self, listener):
+    @asynccontextmanager
+    async def channel(self):
+        with TemporaryDirectory() as tempdir:
+            socketpath = Path(tempdir) / "socket"
+
+            async with await create_unix_listener(socketpath) as listener:
+                async with create_task_group() as tg:
+                    tg.start_soon(self._accept, listener)
+
+                    async with grpc.aio.insecure_channel(
+                        f"unix://{socketpath}"
+                    ) as channel:
+                        yield channel
+
+    async def _accept(self, listener):
         response = await self.stub.Dial(
             jumpstarter_pb2.DialRequest(uuid=str(self.uuid))
         )
@@ -23,17 +37,3 @@ class Proxy:
             await connect_router_stream(
                 response.router_endpoint, response.router_token, stream
             )
-
-    @asynccontextmanager
-    async def channel(self):
-        with TemporaryDirectory() as tempdir:
-            socketpath = Path(tempdir) / "socket"
-
-            async with await create_unix_listener(socketpath) as listener:
-                async with create_task_group() as tg:
-                    tg.start_soon(self.accept, listener)
-
-                    async with grpc.aio.insecure_channel(
-                        f"unix://{socketpath}"
-                    ) as channel:
-                        yield channel
