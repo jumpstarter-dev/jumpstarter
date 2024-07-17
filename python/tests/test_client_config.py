@@ -8,8 +8,12 @@ from jumpstarter.client.config import Config
 
 
 def setup_function():
-    for key in ["JUMPSTARTER_ENDPOINT", "JUMPSTARTER_TOKEN",
-                "JUMPSTARTER_CONFIG", "JUMPSTARTER_CONTEXT"]:
+    for key in [
+        "JUMPSTARTER_ENDPOINT",
+        "JUMPSTARTER_TOKEN",
+        "JUMPSTARTER_CONFIG",
+        "JUMPSTARTER_CONTEXT",
+    ]:
         if key in os.environ:
             del os.environ[key]
 
@@ -17,30 +21,35 @@ def setup_function():
 def test_config_file_path_from_env():
     os.environ["JUMPSTARTER_CONFIG"] = "/tmp/config.yaml"
     os.environ["JUMPSTARTER_CONTEXT"] = "dummy_context"
-    with patch.object(Config, '_load', return_value=None) as _:
+    with patch.object(Config, "_load", return_value=None) as _:
         config = Config()
         assert config._filename == "/tmp/config.yaml"
+
 
 def test_config_file_path_without_context():
     os.environ["JUMPSTARTER_CONFIG"] = ""
     os.environ["JUMPSTARTER_CONTEXT"] = ""
-    with patch.object(Config, '_load', return_value=None) as _:
+    with patch.object(Config, "_load", return_value=None) as _:
         config = Config()
-        assert config._filename.endswith("/.config/jumpstarter/config.yaml") 
+        assert config._filename.endswith("/.config/jumpstarter/config.yaml")
+
 
 def test_config_file_path_with_context():
     os.environ["JUMPSTARTER_CONFIG"] = ""
     os.environ["JUMPSTARTER_CONTEXT"] = "mycontext"
-    with patch.object(Config, '_load', return_value=None) as _:
+    with patch.object(Config, "_load", return_value=None) as _:
         config = Config()
-        assert config._filename.endswith("/.config/jumpstarter/config_mycontext.yaml") 
+        assert config._filename.endswith("/.config/jumpstarter/config_mycontext.yaml")
+
 
 def test_config_file_path_with_argument_context():
     os.environ["JUMPSTARTER_CONFIG"] = ""
     os.environ["JUMPSTARTER_CONTEXT"] = "mycontext"
-    with patch.object(Config, '_load', return_value=None) as _:
+    with patch.object(Config, "_load", return_value=None) as _:
         config = Config(context="othercontext")
-        assert config._filename.endswith("/.config/jumpstarter/config_othercontext.yaml") 
+        assert config._filename.endswith(
+            "/.config/jumpstarter/config_othercontext.yaml"
+        )
 
 
 def test_config_from_env():
@@ -51,6 +60,7 @@ def test_config_from_env():
     assert config.token == "mytoken"
     assert config.name == "client"
 
+
 def test_config_from_file():
     CONFIG = """
 client:
@@ -59,7 +69,7 @@ client:
     name: yaml-client
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(CONFIG)
         f.close()
         os.environ["JUMPSTARTER_CONFIG"] = f.name
@@ -69,6 +79,7 @@ client:
         assert config.name == "yaml-client"
         os.unlink(f.name)
 
+
 def test_config_from_file_with_missing_token():
     CONFIG = """
 client:
@@ -76,14 +87,15 @@ client:
     name: yaml-client
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(CONFIG)
         f.close()
         os.environ["JUMPSTARTER_CONFIG"] = f.name
         with pytest.raises(ValueError):
             Config()
         os.unlink(f.name)
-    
+
+
 def test_config_from_file_with_missing_endpoint():
     CONFIG = """
 client:
@@ -91,7 +103,7 @@ client:
     name: yaml-client
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(CONFIG)
         f.close()
         os.environ["JUMPSTARTER_CONFIG"] = f.name
@@ -107,7 +119,7 @@ client:
     token: yaml-token
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(CONFIG)
         f.close()
         os.environ["JUMPSTARTER_CONFIG"] = f.name

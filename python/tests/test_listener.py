@@ -39,13 +39,12 @@ async def test_listener():
     channel = grpc.aio.secure_channel("localhost:8083", credentials)
     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
 
-
-
     listener = Listener(channel)
 
     async with anyio.create_task_group() as tg:
         tg.start_soon(listener.serve, e)
         await anyio.sleep(1)
+
         async with Lease(
             controller=controller,
             metadata_filter=MetadataFilter(
@@ -58,6 +57,7 @@ async def test_listener():
                 client = Client(inner)
                 await client.sync()
                 assert await client.power.on() == "ok"
+
         tg.cancel_scope.cancel()
 
     await server.stop(grace=None)

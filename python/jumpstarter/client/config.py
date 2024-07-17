@@ -2,10 +2,11 @@ import os
 
 import yaml
 
-_CONFIG_PATH = os.path.join(os.path.expanduser('~'), ".config", "jumpstarter")
+_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".config", "jumpstarter")
+
 
 class Config:
-    def __init__(self, context: str=None):
+    def __init__(self, context: str = None):
         self.endpoint = os.environ.get("JUMPSTARTER_ENDPOINT") or None
         self.token = os.environ.get("JUMPSTARTER_TOKEN") or None
         self.name = "client"
@@ -28,12 +29,17 @@ class Config:
             client = config.get("client")
             print(client)
             if client is None:
-                raise ValueError("config file {} does not contain a 'client' key".format(path))
-            
+                raise ValueError(
+                    "config file {} does not contain a 'client' key".format(path)
+                )
+
             self.endpoint = client.get("endpoint")
             self.token = client.get("token")
             self.name = client.get("name") or "client"
 
             if self.endpoint is None or self.token is None:
-                raise ValueError("config file {} does not contain 'client.endpoint' or 'client.token' keys".format(path))
-
+                raise ValueError(
+                    "config file {} does not contain 'client.endpoint' or 'client.token' keys".format(
+                        path
+                    )
+                )
