@@ -86,8 +86,7 @@ async def test_exporter_mock(setup_exporter):
         await stream.send(b"test")
         assert await stream.receive() == b"test"
 
-    listener = await anyio.create_tcp_listener(local_port=0)
-    print(listener.listeners[0].local_port)
+    listener = await anyio.create_tcp_listener(local_port=8001)
     async with client.Forward(listener, client.iperf3):
         try:
             await anyio.run_process(

@@ -2,6 +2,7 @@ from jumpstarter.exporter import Exporter, ExporterSession, Listener
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.client import Client, Proxy
 from jumpstarter.v1 import jumpstarter_pb2_grpc
+import socket
 import pytest
 import anyio
 import grpc
@@ -9,6 +10,11 @@ import grpc
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.skipif(
+    socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex(("localhost", 8083))
+    != 0,
+    reason="controller not available",
+)
 async def test_listener():
     server = grpc.aio.server()
 
