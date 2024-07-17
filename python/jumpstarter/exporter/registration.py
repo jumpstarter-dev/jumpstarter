@@ -4,6 +4,7 @@ from jumpstarter.v1 import (
 )
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.common import Metadata
+from jumpstarter.drivers import ContextStore, Store
 from dataclasses import dataclass
 from contextlib import AbstractAsyncContextManager
 from tempfile import TemporaryDirectory
@@ -46,6 +47,8 @@ class Registration(AbstractAsyncContextManager, Metadata):
     async def _handle(self, request, exporter):
         with TemporaryDirectory() as tempdir:
             socketpath = Path(tempdir) / "socket"
+
+            ContextStore.set(Store())
 
             server = grpc.aio.server()
             server.add_insecure_port(f"unix://{socketpath}")

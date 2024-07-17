@@ -5,7 +5,7 @@ from jumpstarter.v1 import (
 )
 from jumpstarter.common.streams import forward_server_stream, create_memory_stream
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import DriverBase, Store, ContextStore
+from jumpstarter.drivers import DriverBase, ContextStore
 from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass

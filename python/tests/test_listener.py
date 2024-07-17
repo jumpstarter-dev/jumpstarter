@@ -54,5 +54,6 @@ async def test_listener():
                     client = Client(inner)
                     await client.sync()
                     assert await client.power.on() == "ok"
+                    assert await client.power.off() == "ok"
 
             tg.cancel_scope.cancel()
