@@ -47,7 +47,7 @@ async def forward_client_stream(router, stream, metadata):
     except BrokenResourceError:
         pass
     finally:
-        await stream.send_eof()
+        await stream.aclose()
 
 
 async def connect_router_stream(endpoint, token, stream):
