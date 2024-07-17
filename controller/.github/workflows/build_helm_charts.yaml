@@ -1,0 +1,37 @@
+name: Push to main
+on:
+  push:
+    branches:
+      - main
+env:
+  QUAY_ORG: quay.io/jumpstarter-dev
+
+jobs:
+  publish-helm-charts-containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.QUAY_ORG }}/flightctl-controller
+
+      - name: Build helm charts
+        run: |
+          echo packaging $(git describe --long --tags)
+          helm package ./deploy/charts/jumpstarter-controller --version $(git describe --long --tags) --app-version ${{ github.sha }}
+
+      - name: Login helm
+        env:
+          PASSWORD: ${{ secrets.QUAY_TOKEN }}
+          USER: jumpstarter-dev+jumpstarter_ci
+        run:
+          helm registry login -u ${USER} -p ${PASSWORD}
+
+      - name: Push helm charts
+        run: |
+          helm registry push flightctl-*.tgz oci://${{ env.QUAY_ORG }}/helm
