@@ -13,6 +13,7 @@ func pipe(a pb.RouterService_StreamServer, b pb.RouterService_StreamServer) erro
 	for {
 		msg, err := a.Recv()
 		if errors.Is(err, io.EOF) {
+			b.Send(&pb.StreamResponse{})
 			return nil
 		}
 		if err != nil {
