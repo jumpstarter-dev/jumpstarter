@@ -1,4 +1,4 @@
 from .client import Client
-from .proxy import Proxy
+from .lease import Lease
 
-__all__ = ["Client", "Proxy"]
+__all__ = ["Client", "Lease"]

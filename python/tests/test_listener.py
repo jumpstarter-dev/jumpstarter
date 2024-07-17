@@ -1,6 +1,7 @@
 from jumpstarter.exporter import Exporter, ExporterSession, Listener
 from jumpstarter.drivers.power import MockPower
-from jumpstarter.client import Client, Proxy
+from jumpstarter.client import Lease, Client
+from jumpstarter.common import MetadataFilter
 from jumpstarter.v1 import jumpstarter_pb2_grpc
 import socket
 import pytest
@@ -32,22 +33,31 @@ async def test_listener():
 
     credentials = grpc.composite_channel_credentials(
         grpc.local_channel_credentials(),
-        grpc.access_token_call_credentials("test-exporter"),
+        grpc.access_token_call_credentials(str(e.uuid)),
     )
 
     channel = grpc.aio.secure_channel("localhost:8083", credentials)
+    controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
+
+
 
     listener = Listener(channel)
 
     async with anyio.create_task_group() as tg:
         tg.start_soon(listener.serve, e)
         await anyio.sleep(1)
-        async with Proxy.connect(
-            jumpstarter_pb2_grpc.ControllerServiceStub(channel), "test-exporter"
-        ) as inner:
-            client = Client(inner)
-            await client.sync()
-            assert await client.power.on() == "ok"
+        async with Lease(
+            controller=controller,
+            metadata_filter=MetadataFilter(
+                labels={
+                    "jumpstarter.dev/name": "exporter",
+                }
+            ),
+        ) as lease:
+            async with lease.connect() as inner:
+                client = Client(inner)
+                await client.sync()
+                assert await client.power.on() == "ok"
         tg.cancel_scope.cancel()
 
     await server.stop(grace=None)
