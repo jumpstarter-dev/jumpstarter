@@ -30,7 +30,7 @@ jobs:
           PASSWORD: ${{ secrets.QUAY_TOKEN }}
           USER: jumpstarter-dev+jumpstarter_ci
         run:
-          helm registry login -u ${USER} -p ${PASSWORD}
+          helm registry login quay.io -u ${USER} -p ${PASSWORD}
 
       - name: Push helm charts
         run: |
