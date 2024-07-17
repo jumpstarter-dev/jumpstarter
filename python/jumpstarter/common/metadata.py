@@ -10,3 +10,8 @@ class Metadata:
     def __post_init__(self):
         if "jumpstarter.dev/name" not in self.labels:
             raise ValueError("missing required label: jumpstarter.dev/name")
+
+
+@dataclass(kw_only=True, slots=True)
+class MetadataFilter:
+    labels: dict[str, str] = field(default_factory=dict)
