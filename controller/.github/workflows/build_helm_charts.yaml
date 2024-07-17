@@ -34,4 +34,4 @@ jobs:
 
       - name: Push helm charts
         run: |
-          helm registry push flightctl-*.tgz oci://${{ env.QUAY_ORG }}/helm
+          helm push flightctl-*.tgz oci://${{ env.QUAY_ORG }}/helm
