@@ -2,9 +2,11 @@ from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
 )
+from jumpstarter.exporter import Session
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import ContextStore, Store
+from jumpstarter.drivers import ContextStore, Store, DriverBase
+from collections.abc import Callable
 from dataclasses import dataclass
 from contextlib import AbstractAsyncContextManager
 from tempfile import TemporaryDirectory
@@ -16,14 +18,16 @@ import grpc
 @dataclass(kw_only=True)
 class Registration(AbstractAsyncContextManager, Metadata):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub
-    device_reports: list[jumpstarter_pb2.DeviceReport]
+    device_factory: Callable[[], DriverBase]
 
     async def __aenter__(self):
+        probe = self.device_factory()
+
         await self.controller.Register(
             jumpstarter_pb2.RegisterRequest(
                 uuid=str(self.uuid),
                 labels=self.labels,
-                device_report=self.device_reports,
+                device_report=probe.reports(),
             )
         )
 
@@ -37,30 +41,35 @@ class Registration(AbstractAsyncContextManager, Metadata):
             )
         )
 
-    async def serve(self, exporter):
+    async def serve(self):
         async with create_task_group() as tg:
             async for request in self.controller.Listen(
                 jumpstarter_pb2.ListenRequest()
             ):
-                tg.start_soon(self._handle, request, exporter)
+                root_device = self.device_factory()
 
-    async def _handle(self, request, exporter):
-        with TemporaryDirectory() as tempdir:
-            socketpath = Path(tempdir) / "socket"
+                session = Session(
+                    uuid=self.uuid,
+                    labels=self.labels,
+                    root_device=root_device,
+                )
 
-            ContextStore.set(Store())
+                with TemporaryDirectory() as tempdir:
+                    socketpath = Path(tempdir) / "socket"
 
-            server = grpc.aio.server()
-            server.add_insecure_port(f"unix://{socketpath}")
+                    ContextStore.set(Store())
 
-            exporter.add_to_server(server)
+                    server = grpc.aio.server()
+                    server.add_insecure_port(f"unix://{socketpath}")
 
-            try:
-                await server.start()
+                    session.add_to_server(server)
 
-                async with await connect_unix(socketpath) as stream:
-                    await connect_router_stream(
-                        request.router_endpoint, request.router_token, stream
-                    )
-            finally:
-                await server.stop(grace=None)
+                    try:
+                        await server.start()
+
+                        async with await connect_unix(socketpath) as stream:
+                            await connect_router_stream(
+                                request.router_endpoint, request.router_token, stream
+                            )
+                    finally:
+                        await server.stop(grace=None)
