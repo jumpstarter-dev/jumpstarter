@@ -6,6 +6,7 @@ from jumpstarter.drivers.serial import MockSerial
 from jumpstarter.drivers.storage import LocalStorageTempdir, MockStorageMux
 from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
 from jumpstarter.drivers.composite import Composite, Dutlink
+from jumpstarter.drivers import ContextStore, Store
 from dataclasses import asdict
 import os
 import subprocess
@@ -21,6 +22,8 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 async def setup_client(request, anyio_backend):
+    ContextStore.set(Store())
+
     server = grpc.aio.server()
 
     try:

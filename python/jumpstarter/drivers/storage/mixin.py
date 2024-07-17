@@ -1,4 +1,5 @@
 from anyio.streams.file import FileWriteStream
+from jumpstarter.drivers import ContextStore
 from uuid import UUID
 
 
@@ -7,5 +8,5 @@ class StorageMuxLocalWriterMixin:
         path = self.host()
 
         async with await FileWriteStream.from_path(path) as stream:
-            async for chunk in self.store.conns[UUID(src)]:
+            async for chunk in ContextStore.get().conns[UUID(src)]:
                 await stream.send(chunk)

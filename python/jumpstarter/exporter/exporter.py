@@ -5,7 +5,7 @@ from jumpstarter.v1 import (
 )
 from jumpstarter.common.streams import forward_server_stream, create_memory_stream
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import DriverBase, Store
+from jumpstarter.drivers import DriverBase, Store, ContextStore
 from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
@@ -96,11 +96,11 @@ class Session(
                 client_stream, device_stream = create_memory_stream()
 
                 try:
-                    self.store.conns[uuid] = device_stream
+                    ContextStore.get().conns[uuid] = device_stream
                     async with client_stream:
                         async for v in forward_server_stream(
                             request_iterator, client_stream
                         ):
                             yield v
                 finally:
-                    del self.store.conns[uuid]
+                    del ContextStore.get().conns[uuid]

@@ -6,8 +6,12 @@ from dataclasses import dataclass, field
 from collections.abc import Generator
 from jumpstarter.v1 import jumpstarter_pb2
 from jumpstarter.common import Metadata
+from contextvars import ContextVar
 from .registry import _registry
 import inspect
+
+
+ContextStore = ContextVar("store")
 
 
 @dataclass(kw_only=True)
