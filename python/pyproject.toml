@@ -20,6 +20,8 @@ anyio = "^4.4.0"
 git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
 subdirectory = "python"
 
+[tool.poetry.scripts]
+jumpstarter = "jumpstarter.cli:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"

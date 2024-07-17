@@ -5,7 +5,7 @@
 ### Creating a client token and configuration
 
 ```bash
-jumpstarter create client my-client -o my-client.yaml
+jumpstarter client create my-client -o my-client.yaml
 ```
 
 This creates a client named `my-client` and outputs the configuration to a YAML
@@ -29,7 +29,7 @@ the Kubernetes cluster where the `jumpstarter-controller` service is hosted.
 # Specify the location of the kubeconfig to use
 export KUBECONFIG=/path/to/kubeconfig
 # Create the exporter instance
-jumpstarter create exporter my-exporter -o my-exporter.yaml
+jumpstarter exporter create my-exporter -o my-exporter.yaml
 ```
 
 This creates an exporter named `my-exporter` and outputs the configuration to a
@@ -73,7 +73,7 @@ podman run --cap-add=all --privileged \
 To run the exporter as a service on a test runner with Jumpstarter installed:
 
 ```bash
-export JUMPSTARTER_EXPORTER_CONFIG=/etc/jumpstarter/my-exporter.yaml
+jumpstarter config set-exporter my-exporter
 sudo systemctl start jumpstarter 
 ```
 
