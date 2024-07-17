@@ -1,4 +1,4 @@
-from jumpstarter.exporter import Exporter, Registration
+from jumpstarter.exporter import Session, Registration
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.client import Lease, Client
 from jumpstarter.common import MetadataFilter
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.anyio
     reason="controller not available",
 )
 async def test_listener():
-    e = Exporter(
+    e = Session(
         labels={"jumpstarter.dev/name": "exporter"},
         devices_factory=lambda store: [
             MockPower(store=store, labels={"jumpstarter.dev/name": "power"}),

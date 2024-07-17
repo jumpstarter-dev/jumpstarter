@@ -16,7 +16,7 @@ import itertools
 
 
 @dataclass(kw_only=True)
-class Exporter(
+class Session(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
     Metadata,

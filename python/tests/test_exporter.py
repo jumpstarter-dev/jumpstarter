@@ -1,5 +1,5 @@
 from jumpstarter.drivers.power import MockPower
-from jumpstarter.exporter import Exporter
+from jumpstarter.exporter import Session
 from jumpstarter.client import Client
 from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.serial import MockSerial
@@ -24,7 +24,7 @@ async def setup_client(request, anyio_backend):
     server = grpc.aio.server()
 
     try:
-        e = Exporter(
+        e = Session(
             labels={"jumpstarter.dev/name": "exporter"}, devices_factory=request.param
         )
     except FileNotFoundError:

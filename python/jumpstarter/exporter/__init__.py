@@ -1,5 +1,5 @@
-from .exporter import Exporter
+from .exporter import Session
 from .registration import Registration
 
 
-__all__ = ["Exporter", "Registration"]
+__all__ = ["Session", "Registration"]
