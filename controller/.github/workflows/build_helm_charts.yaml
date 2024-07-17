@@ -23,7 +23,7 @@ jobs:
       - name: Build helm charts
         run: |
           echo packaging $(git describe --long --tags)
-          helm package ./deploy/charts/jumpstarter-controller --version $(git describe --long --tags) --app-version ${{ github.sha }}
+          helm package ./deploy/helm/jumpstarter --version $(git describe --long --tags) --app-version ${{ github.sha }}
 
       - name: Login helm
         env:
