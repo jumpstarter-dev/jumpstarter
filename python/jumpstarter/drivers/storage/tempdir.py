@@ -33,7 +33,7 @@ class LocalStorageTempdir(StorageTempdir):
         filepath = self.resolve(filename)
 
         file = filepath.open(mode=mode)
-        fd = len(self.session.fds)
-        self.session.fds.insert(fd, file)
+        fd = len(self.store.fds)
+        self.store.fds.insert(fd, file)
 
         return fd

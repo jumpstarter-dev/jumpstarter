@@ -20,8 +20,8 @@ pytestmark = pytest.mark.anyio
 async def test_listener():
     e = Exporter(
         labels={"jumpstarter.dev/name": "exporter"},
-        devices_factory=lambda session: [
-            MockPower(session=session, labels={"jumpstarter.dev/name": "power"}),
+        devices_factory=lambda store: [
+            MockPower(store=store, labels={"jumpstarter.dev/name": "power"}),
         ],
     )
 
@@ -35,7 +35,8 @@ async def test_listener():
 
     async with Registration(
         controller=controller,
-        metadata=e,
+        uuid=e.uuid,
+        labels={"jumpstarter.dev/name": "exporter"},
         device_reports=itertools.chain(*[device.reports() for device in e.devices]),
     ) as r:
         async with anyio.create_task_group() as tg:

@@ -11,7 +11,7 @@ import inspect
 
 
 @dataclass(kw_only=True)
-class Session:
+class Store:
     fds: List[BinaryIO] = field(default_factory=list, init=False)
     conns: Dict[UUID, Any] = field(default_factory=dict, init=False)
 
@@ -19,7 +19,7 @@ class Session:
 # base class for all drivers
 @dataclass(kw_only=True)
 class DriverBase(ABC, Metadata):
-    session: Session
+    store: Store
 
     def __init_subclass__(cls, interface=None, **kwargs):
         if interface:

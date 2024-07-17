@@ -47,9 +47,9 @@ async def setup_client(request, anyio_backend):
 @pytest.mark.parametrize(
     "setup_client",
     [
-        lambda session: [
+        lambda store: [
             TcpNetwork(
-                session=session,
+                store=store,
                 labels={"jumpstarter.dev/name": "iperf3"},
                 host="127.0.0.1",
                 port=5201,
@@ -88,31 +88,27 @@ async def test_tcp_network(setup_client):
 @pytest.mark.parametrize(
     "setup_client",
     [
-        lambda session: [
-            MockPower(session=session, labels={"jumpstarter.dev/name": "power"}),
-            MockSerial(session=session, labels={"jumpstarter.dev/name": "serial"}),
-            MockStorageMux(session=session, labels={"jumpstarter.dev/name": "storage"}),
-            EchoNetwork(session=session, labels={"jumpstarter.dev/name": "echo"}),
+        lambda store: [
+            MockPower(store=store, labels={"jumpstarter.dev/name": "power"}),
+            MockSerial(store=store, labels={"jumpstarter.dev/name": "serial"}),
+            MockStorageMux(store=store, labels={"jumpstarter.dev/name": "storage"}),
+            EchoNetwork(store=store, labels={"jumpstarter.dev/name": "echo"}),
             Composite(
-                session=session,
+                store=store,
                 labels={"jumpstarter.dev/name": "composite"},
                 devices=[
-                    MockPower(
-                        session=session, labels={"jumpstarter.dev/name": "power"}
-                    ),
-                    MockSerial(
-                        session=session, labels={"jumpstarter.dev/name": "serial"}
-                    ),
+                    MockPower(store=store, labels={"jumpstarter.dev/name": "power"}),
+                    MockSerial(store=store, labels={"jumpstarter.dev/name": "serial"}),
                     Composite(
-                        session=session,
+                        store=store,
                         labels={"jumpstarter.dev/name": "composite"},
                         devices=[
                             MockPower(
-                                session=session,
+                                store=store,
                                 labels={"jumpstarter.dev/name": "power"},
                             ),
                             MockSerial(
-                                session=session,
+                                store=store,
                                 labels={"jumpstarter.dev/name": "serial"},
                             ),
                         ],
@@ -160,12 +156,12 @@ async def test_exporter_mock(setup_client):
 @pytest.mark.parametrize(
     "setup_client",
     [
-        lambda session: [
+        lambda store: [
             LocalStorageTempdir(
-                session=session, labels={"jumpstarter.dev/name": "tempdir"}
+                store=store, labels={"jumpstarter.dev/name": "tempdir"}
             ),
             Dutlink(
-                session=session, labels={"jumpstarter.dev/name": "dutlink"}, serial=None
+                store=store, labels={"jumpstarter.dev/name": "dutlink"}, serial=None
             ),
         ]
     ],

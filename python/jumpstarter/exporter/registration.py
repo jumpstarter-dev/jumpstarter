@@ -13,16 +13,15 @@ import grpc
 
 
 @dataclass(kw_only=True)
-class Registration(AbstractAsyncContextManager):
+class Registration(AbstractAsyncContextManager, Metadata):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub
-    metadata: Metadata
     device_reports: list[jumpstarter_pb2.DeviceReport]
 
     async def __aenter__(self):
         await self.controller.Register(
             jumpstarter_pb2.RegisterRequest(
-                uuid=str(self.metadata.uuid),
-                labels=self.metadata.labels,
+                uuid=str(self.uuid),
+                labels=self.labels,
                 device_report=self.device_reports,
             )
         )
@@ -32,7 +31,7 @@ class Registration(AbstractAsyncContextManager):
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self.controller.Bye(
             jumpstarter_pb2.ByeRequest(
-                uuid=str(self.metadata.uuid),
+                uuid=str(self.uuid),
                 reason="TODO",
             )
         )

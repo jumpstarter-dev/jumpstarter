@@ -5,7 +5,7 @@ from jumpstarter.v1 import (
 )
 from jumpstarter.common.streams import forward_server_stream, create_memory_stream
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import DriverBase, Session
+from jumpstarter.drivers import DriverBase, Store
 from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
@@ -21,15 +21,15 @@ class Exporter(
     router_pb2_grpc.RouterServiceServicer,
     Metadata,
 ):
-    session: Session
+    store: Store
     devices: List[DriverBase]
     mapping: dict[UUID, DriverBase]
 
     def __init__(self, *args, devices_factory, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.session = Session()
-        self.devices = devices_factory(self.session)
+        self.store = Store()
+        self.devices = devices_factory(self.store)
         self.mapping = {}
 
         def subdevices(device):
@@ -96,11 +96,11 @@ class Exporter(
                 client_stream, device_stream = create_memory_stream()
 
                 try:
-                    self.session.conns[uuid] = device_stream
+                    self.store.conns[uuid] = device_stream
                     async with client_stream:
                         async for v in forward_server_stream(
                             request_iterator, client_stream
                         ):
                             yield v
                 finally:
-                    del self.session.conns[uuid]
+                    del self.store.conns[uuid]

@@ -1,4 +1,4 @@
-from .base import DriverBase, Session
+from .base import DriverBase, Store
 from .stub import DriverStub
 from .registry import _registry
 
@@ -27,4 +27,4 @@ def __contains__(name):
     return name in _registry
 
 
-__all__ = ["Session", "DriverBase", "DriverStub"]
+__all__ = ["Store", "DriverBase", "DriverStub"]

@@ -7,5 +7,5 @@ class StorageMuxLocalWriterMixin:
         path = self.host()
 
         async with await FileWriteStream.from_path(path) as stream:
-            async for chunk in self.session.conns[UUID(src)]:
+            async for chunk in self.store.conns[UUID(src)]:
                 await stream.send(chunk)

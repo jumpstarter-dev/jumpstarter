@@ -32,12 +32,12 @@ class Dutlink(Composite):
 
                 self.devices = [
                     DutlinkPower(
-                        session=self.session,
+                        store=self.store,
                         labels={"jumpstarter.dev/name": "power"},
                         parent=self,
                     ),
                     DutlinkStorageMux(
-                        session=self.session,
+                        store=self.store,
                         labels={"jumpstarter.dev/name": "storage"},
                         parent=self,
                     ),
@@ -47,7 +47,7 @@ class Dutlink(Composite):
                 for tty in udev.list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
                     self.devices.append(
                         PySerial(
-                            session=self.session,
+                            store=self.store,
                             labels={"jumpstarter.dev/name": "serial"},
                             device=Serial(tty.device_node, baudrate=9600),
                         )
