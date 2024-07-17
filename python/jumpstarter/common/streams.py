@@ -40,6 +40,8 @@ async def forward_client_stream(router, stream, metadata):
             client_to_server(),
             metadata=metadata,
         ):
+            if not frame.payload:
+                break
             await stream.send(frame.payload)
     except grpc.aio.AioRpcError:
         # TODO: handle connection error
