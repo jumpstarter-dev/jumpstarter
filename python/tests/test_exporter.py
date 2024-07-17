@@ -80,6 +80,7 @@ async def test_tcp_network(setup_client):
                 stdout=sys.stdout,
                 stderr=sys.stderr,
             )
+        server.terminate()
 
 
 @pytest.mark.parametrize(
