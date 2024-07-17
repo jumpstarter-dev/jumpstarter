@@ -21,15 +21,13 @@ class Session(
     router_pb2_grpc.RouterServiceServicer,
     Metadata,
 ):
-    store: Store
     devices: List[DriverBase]
     mapping: dict[UUID, DriverBase]
 
     def __init__(self, *args, devices_factory, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.store = Store()
-        self.devices = devices_factory(self.store)
+        self.devices = devices_factory()
         self.mapping = {}
 
         def subdevices(device):

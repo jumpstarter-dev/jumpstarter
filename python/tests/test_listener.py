@@ -20,8 +20,8 @@ pytestmark = pytest.mark.anyio
 async def test_listener():
     e = Session(
         labels={"jumpstarter.dev/name": "exporter"},
-        devices_factory=lambda store: [
-            MockPower(store=store, labels={"jumpstarter.dev/name": "power"}),
+        devices_factory=lambda: [
+            MockPower(labels={"jumpstarter.dev/name": "power"}),
         ],
     )
 

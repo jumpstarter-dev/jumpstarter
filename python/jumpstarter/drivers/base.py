@@ -23,8 +23,6 @@ class Store:
 # base class for all drivers
 @dataclass(kw_only=True)
 class DriverBase(ABC, Metadata):
-    store: Store
-
     def __init_subclass__(cls, interface=None, **kwargs):
         if interface:
             cls.interface = interface

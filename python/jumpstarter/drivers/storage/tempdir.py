@@ -1,4 +1,5 @@
 from . import StorageTempdir
+from jumpstarter.drivers import ContextStore
 from dataclasses import dataclass, field
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -33,7 +34,7 @@ class LocalStorageTempdir(StorageTempdir):
         filepath = self.resolve(filename)
 
         file = filepath.open(mode=mode)
-        fd = len(self.store.fds)
-        self.store.fds.insert(fd, file)
+        fd = len(ContextStore.get().fds)
+        ContextStore.get().fds.insert(fd, file)
 
         return fd
