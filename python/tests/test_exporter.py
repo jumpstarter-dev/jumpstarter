@@ -14,7 +14,6 @@ import tempfile
 import pytest
 import anyio
 import grpc
-import json
 import sys
 
 pytestmark = pytest.mark.anyio
