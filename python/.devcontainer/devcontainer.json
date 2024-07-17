@@ -1,0 +1,24 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+	"name": "Python 3",
+	"dockerFile": "Containerfile",
+	// Install poetry and packages
+	"postCreateCommand": "pip3 install -U poetry && poetry install",
+	// Mount USB devices to devcontainer for tests
+	"mounts": ["type=bind,source=/dev/bus/usb,target=/dev/bus/usb"],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"tamasfe.even-better-toml",
+				"ms-python.python",
+				"ms-python.autopep8",
+				"ms-python.vscode-pylance",
+				"ms-python.debugpy"
+			],
+			"settings": {
+				"python.defaultInterpreterPath": "~/.cache/pypoetry/virtualenvs/jumpstarter-64_PDEHR-py3.11/bin/python"
+			}
+		}
+	}
+}
