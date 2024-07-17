@@ -11,7 +11,7 @@ class Config:
         self.token = os.environ.get("JUMPSTARTER_TOKEN") or None
         self.name = "client"
         self.context = context or os.environ.get("JUMPSTARTER_CONTEXT") or None
-        if self.endpoint == None or self.token == None:
+        if self.endpoint is None or self.token is None:
             self._load(self._filename)
 
     @property

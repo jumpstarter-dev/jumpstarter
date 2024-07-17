@@ -27,14 +27,12 @@ async def forward_server_stream(request_iterator, stream):
 
 
 async def forward_client_stream(router, stream, metadata):
-    async with create_task_group() as tg:
-
-        async def client_to_server():
-            try:
-                async for payload in stream:
-                    yield router_pb2.StreamRequest(payload=payload)
-            except BrokenResourceError:
-                pass
+    async def client_to_server():
+        try:
+            async for payload in stream:
+                yield router_pb2.StreamRequest(payload=payload)
+        except BrokenResourceError:
+            pass
 
     # server_to_client
     try:
