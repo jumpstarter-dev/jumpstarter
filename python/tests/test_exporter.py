@@ -3,9 +3,9 @@ from jumpstarter.exporter import Session
 from jumpstarter.client import Client
 from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.serial import MockSerial
-from jumpstarter.drivers.storage import LocalStorageTempdir, MockStorageMux
+from jumpstarter.drivers.storage import MockStorageMux
 from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
-from jumpstarter.drivers.composite import Composite, Dutlink
+from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers import ContextStore, Store
 from dataclasses import asdict
 import os

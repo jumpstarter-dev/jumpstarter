@@ -10,9 +10,7 @@ from jumpstarter.drivers.composite import Composite
 from uuid import UUID, uuid4
 from dataclasses import dataclass, asdict, is_dataclass
 from google.protobuf import struct_pb2, json_format
-from typing import List
 from collections import ChainMap
-import itertools
 
 
 @dataclass(kw_only=True)

@@ -1,10 +1,9 @@
-from jumpstarter.exporter import Session, Registration
+from jumpstarter.exporter import Registration
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.client import Lease, Client
 from jumpstarter.common import MetadataFilter
 from jumpstarter.v1 import jumpstarter_pb2_grpc
 from uuid import uuid4
-import itertools
 import socket
 import pytest
 import anyio
@@ -50,6 +49,10 @@ async def test_listener():
                     client = Client(inner)
                     await client.sync()
                     assert await client.power.on() == "ok"
-                    assert await client.power.off() == "ok"
+
+                async with lease.connect() as inner:
+                    client = Client(inner)
+                    await client.sync()
+                    assert await client.power.on() == "ok"
 
             tg.cancel_scope.cancel()

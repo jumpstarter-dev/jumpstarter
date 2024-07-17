@@ -42,34 +42,31 @@ class Registration(AbstractAsyncContextManager, Metadata):
         )
 
     async def serve(self):
-        async with create_task_group() as tg:
-            async for request in self.controller.Listen(
-                jumpstarter_pb2.ListenRequest()
-            ):
-                root_device = self.device_factory()
+        async for request in self.controller.Listen(jumpstarter_pb2.ListenRequest()):
+            root_device = self.device_factory()
 
-                session = Session(
-                    uuid=self.uuid,
-                    labels=self.labels,
-                    root_device=root_device,
-                )
+            session = Session(
+                uuid=self.uuid,
+                labels=self.labels,
+                root_device=root_device,
+            )
 
-                with TemporaryDirectory() as tempdir:
-                    socketpath = Path(tempdir) / "socket"
+            with TemporaryDirectory() as tempdir:
+                socketpath = Path(tempdir) / "socket"
 
-                    ContextStore.set(Store())
+                ContextStore.set(Store())
 
-                    server = grpc.aio.server()
-                    server.add_insecure_port(f"unix://{socketpath}")
+                server = grpc.aio.server()
+                server.add_insecure_port(f"unix://{socketpath}")
 
-                    session.add_to_server(server)
+                session.add_to_server(server)
 
-                    try:
-                        await server.start()
+                try:
+                    await server.start()
 
-                        async with await connect_unix(socketpath) as stream:
-                            await connect_router_stream(
-                                request.router_endpoint, request.router_token, stream
-                            )
-                    finally:
-                        await server.stop(grace=None)
+                    async with await connect_unix(socketpath) as stream:
+                        await connect_router_stream(
+                            request.router_endpoint, request.router_token, stream
+                        )
+                finally:
+                    await server.stop(grace=None)
