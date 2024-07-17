@@ -28,7 +28,7 @@ async def setup_client(request, anyio_backend):
 
     try:
         e = Session(
-            labels={"jumpstarter.dev/name": "exporter"}, device_factory=request.param
+            labels={"jumpstarter.dev/name": "exporter"}, root_device=request.param
         )
     except FileNotFoundError:
         pytest.skip("fail to find required devices")
@@ -50,7 +50,7 @@ async def setup_client(request, anyio_backend):
 @pytest.mark.parametrize(
     "setup_client",
     [
-        lambda: TcpNetwork(
+        TcpNetwork(
             labels={"jumpstarter.dev/name": "iperf3"},
             host="127.0.0.1",
             port=5201,
@@ -88,7 +88,7 @@ async def test_tcp_network(setup_client):
 @pytest.mark.parametrize(
     "setup_client",
     [
-        lambda: Composite(
+        Composite(
             labels={"jumpstarter.dev/name": "root"},
             devices=[
                 MockPower(labels={"jumpstarter.dev/name": "power"}),

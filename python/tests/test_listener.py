@@ -20,7 +20,7 @@ pytestmark = pytest.mark.anyio
 async def test_listener():
     e = Session(
         labels={"jumpstarter.dev/name": "exporter"},
-        device_factory=lambda: MockPower(labels={"jumpstarter.dev/name": "power"}),
+        root_device=MockPower(labels={"jumpstarter.dev/name": "power"}),
     )
 
     credentials = grpc.composite_channel_credentials(

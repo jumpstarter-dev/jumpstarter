@@ -24,10 +24,10 @@ class Session(
     root_device: DriverBase
     mapping: dict[UUID, DriverBase]
 
-    def __init__(self, *args, device_factory, **kwargs):
+    def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.root_device = device_factory()
+        self.root_device = root_device
         self.mapping = {}
 
         def subdevices(device):
