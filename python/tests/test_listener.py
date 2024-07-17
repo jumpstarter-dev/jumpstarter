@@ -20,9 +20,7 @@ pytestmark = pytest.mark.anyio
 async def test_listener():
     e = Session(
         labels={"jumpstarter.dev/name": "exporter"},
-        devices_factory=lambda: [
-            MockPower(labels={"jumpstarter.dev/name": "power"}),
-        ],
+        device_factory=lambda: MockPower(labels={"jumpstarter.dev/name": "power"}),
     )
 
     credentials = grpc.composite_channel_credentials(
@@ -37,7 +35,7 @@ async def test_listener():
         controller=controller,
         uuid=e.uuid,
         labels={"jumpstarter.dev/name": "exporter"},
-        device_reports=itertools.chain(*[device.reports() for device in e.devices]),
+        device_reports=e.root_device.reports(),
     ) as r:
         async with anyio.create_task_group() as tg:
             tg.start_soon(r.serve, e)

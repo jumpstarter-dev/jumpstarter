@@ -21,13 +21,13 @@ class Session(
     router_pb2_grpc.RouterServiceServicer,
     Metadata,
 ):
-    devices: List[DriverBase]
+    root_device: DriverBase
     mapping: dict[UUID, DriverBase]
 
-    def __init__(self, *args, devices_factory, **kwargs):
+    def __init__(self, *args, device_factory, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.devices = devices_factory()
+        self.root_device = device_factory()
         self.mapping = {}
 
         def subdevices(device):
@@ -38,8 +38,7 @@ class Session(
             else:
                 return {device.uuid: device}
 
-        for device in self.devices:
-            self.mapping |= subdevices(device)
+        self.mapping |= subdevices(self.root_device)
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
@@ -49,9 +48,7 @@ class Session(
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            device_report=itertools.chain(
-                *[device.reports() for device in self.devices]
-            ),
+            device_report=self.root_device.reports(),
         )
 
     async def DriverCall(self, request, context):
