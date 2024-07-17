@@ -1,5 +1,5 @@
 from jumpstarter.drivers.power import MockPower
-from jumpstarter.exporter import Exporter, ExporterSession
+from jumpstarter.exporter import Exporter
 from jumpstarter.client import Client
 from jumpstarter.drivers.power import PowerReading
 from jumpstarter.drivers.serial import MockSerial
@@ -24,11 +24,12 @@ async def setup_client(request, anyio_backend):
     server = grpc.aio.server()
 
     try:
-        s = ExporterSession(devices_factory=request.param)
+        e = Exporter(
+            labels={"jumpstarter.dev/name": "exporter"}, devices_factory=request.param
+        )
     except FileNotFoundError:
         pytest.skip("fail to find required devices")
 
-    e = Exporter(labels={"jumpstarter.dev/name": "exporter"}, session=s)
     e.add_to_server(server)
 
     server.add_insecure_port("localhost:50051")

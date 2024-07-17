@@ -16,12 +16,18 @@ import itertools
 
 
 @dataclass(kw_only=True)
-class ExporterSession:
+class Exporter(
+    jumpstarter_pb2_grpc.ExporterServiceServicer,
+    router_pb2_grpc.RouterServiceServicer,
+    Metadata,
+):
     session: Session
     devices: List[DriverBase]
     mapping: dict[UUID, DriverBase]
 
-    def __init__(self, devices_factory):
+    def __init__(self, *args, devices_factory, **kwargs):
+        super().__init__(*args, **kwargs)
+
         self.session = Session()
         self.devices = devices_factory(self.session)
         self.mapping = {}
@@ -37,15 +43,6 @@ class ExporterSession:
         for device in self.devices:
             self.mapping |= subdevices(device)
 
-
-@dataclass(kw_only=True)
-class Exporter(
-    jumpstarter_pb2_grpc.ExporterServiceServicer,
-    router_pb2_grpc.RouterServiceServicer,
-    Metadata,
-):
-    session: ExporterSession
-
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
@@ -55,13 +52,13 @@ class Exporter(
             uuid=str(self.uuid),
             labels=self.labels,
             device_report=itertools.chain(
-                *[device.reports() for device in self.session.devices]
+                *[device.reports() for device in self.devices]
             ),
         )
 
     async def DriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = await self.session.mapping[UUID(request.device_uuid)].call(
+        result = await self.mapping[UUID(request.device_uuid)].call(
             request.driver_method, args
         )
         return jumpstarter_pb2.DriverCallResponse(
@@ -73,9 +70,9 @@ class Exporter(
 
     async def StreamingDriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        async for result in self.session.mapping[
-            UUID(request.device_uuid)
-        ].streaming_call(request.driver_method, args):
+        async for result in self.mapping[UUID(request.device_uuid)].streaming_call(
+            request.driver_method, args
+        ):
             yield jumpstarter_pb2.StreamingDriverCallResponse(
                 call_uuid=str(uuid4()),
                 result=json_format.ParseDict(
@@ -91,7 +88,7 @@ class Exporter(
 
         match metadata["kind"]:
             case "device":
-                device = self.session.mapping[uuid]
+                device = self.mapping[uuid]
                 async with device.connect() as stream:
                     async for v in forward_server_stream(request_iterator, stream):
                         yield v
@@ -99,11 +96,11 @@ class Exporter(
                 client_stream, device_stream = create_memory_stream()
 
                 try:
-                    self.session.session.conns[uuid] = device_stream
+                    self.session.conns[uuid] = device_stream
                     async with client_stream:
                         async for v in forward_server_stream(
                             request_iterator, client_stream
                         ):
                             yield v
                 finally:
-                    del self.session.session.conns[uuid]
+                    del self.session.conns[uuid]

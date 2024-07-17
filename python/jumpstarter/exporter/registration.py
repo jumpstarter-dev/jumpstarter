@@ -38,6 +38,13 @@ class Registration(AbstractAsyncContextManager):
         )
 
     async def serve(self, exporter):
+        async with create_task_group() as tg:
+            async for request in self.controller.Listen(
+                jumpstarter_pb2.ListenRequest()
+            ):
+                tg.start_soon(self._handle, request, exporter)
+
+    async def _handle(self, request, exporter):
         with TemporaryDirectory() as tempdir:
             socketpath = Path(tempdir) / "socket"
 
@@ -49,16 +56,9 @@ class Registration(AbstractAsyncContextManager):
             try:
                 await server.start()
 
-                async with create_task_group() as tg:
-                    async for request in self.controller.Listen(
-                        jumpstarter_pb2.ListenRequest()
-                    ):
-                        tg.start_soon(self._handle, request, socketpath)
+                async with await connect_unix(socketpath) as stream:
+                    await connect_router_stream(
+                        request.router_endpoint, request.router_token, stream
+                    )
             finally:
                 await server.stop(grace=None)
-
-    async def _handle(self, request, socketpath):
-        async with await connect_unix(socketpath) as stream:
-            await connect_router_stream(
-                request.router_endpoint, request.router_token, stream
-            )

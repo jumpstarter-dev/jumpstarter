@@ -1,4 +1,4 @@
-from jumpstarter.exporter import Exporter, ExporterSession, Registration
+from jumpstarter.exporter import Exporter, Registration
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.client import Lease, Client
 from jumpstarter.common import MetadataFilter
@@ -18,13 +18,12 @@ pytestmark = pytest.mark.anyio
     reason="controller not available",
 )
 async def test_listener():
-    s = ExporterSession(
+    e = Exporter(
+        labels={"jumpstarter.dev/name": "exporter"},
         devices_factory=lambda session: [
             MockPower(session=session, labels={"jumpstarter.dev/name": "power"}),
-        ]
+        ],
     )
-
-    e = Exporter(labels={"jumpstarter.dev/name": "exporter"}, session=s)
 
     credentials = grpc.composite_channel_credentials(
         grpc.local_channel_credentials(),
@@ -37,9 +36,7 @@ async def test_listener():
     async with Registration(
         controller=controller,
         metadata=e,
-        device_reports=itertools.chain(
-            *[device.reports() for device in e.session.devices]
-        ),
+        device_reports=itertools.chain(*[device.reports() for device in e.devices]),
     ) as r:
         async with anyio.create_task_group() as tg:
             tg.start_soon(r.serve, e)
