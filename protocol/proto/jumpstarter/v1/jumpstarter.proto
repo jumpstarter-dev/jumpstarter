@@ -17,7 +17,7 @@ service ControllerService {
   // Disconnecting with bye will invalidate any existing router tokens
   // we will eventually have a mechanism to tell the router this token
   // has been invalidated
-  rpc Bye(ByeRequest) returns (google.protobuf.Empty);
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
 
   // Exporter listening
   // Returns stream tokens for accepting incoming client connections
@@ -57,24 +57,25 @@ message RegisterRequest {
   // standard labels:
   // jumpstarter.dev/hostname=
   // jumpstarter.dev/name=
-  repeated DeviceReport device_report = 3;
+  repeated DriverInstanceReport reports = 3;
 }
 
-message DeviceReport {
-  string device_uuid = 1; // a unique id within the expoter
-  optional string parent_device_uuid = 2; // optional, if device has a parent device
-  string driver_interface = 3; // The driver interface class
-  map<string, string> labels = 4;
+message DriverInstanceReport {
+  string uuid = 1; // a unique id within the expoter
+  optional string parent_uuid = 2; // optional, if device has a parent device
+  map<string, string> labels = 3;
 }
 
 message RegisterResponse {}
 
-message ByeRequest {
+message UnregisterRequest {
   // additional context:
   // - token/authentication mechanism
   string uuid = 1;
   string reason = 2;
 }
+
+message UnregisterResponse {}
 
 message ListenRequest {}
 
@@ -95,8 +96,8 @@ message DialResponse {
 message AuditStreamRequest {
   // additional context:
   // - token/authentication mechanism
-  string uuid = 1;
-  string device_uuid = 2;
+  string exporter_uuid = 1;
+  string driver_instance_uuid = 2;
   string severity = 3;
   string message = 4;
 }
@@ -117,33 +118,33 @@ message GetReportResponse {
   // standard labels:
   // jumpstarter.dev/hostname=
   // jumpstarter.dev/name=
-  repeated DeviceReport device_report = 3;
+  repeated DriverInstanceReport reports = 3;
 }
 
 message DriverCallRequest {
-  string device_uuid = 1;
-  string driver_method = 2;
+  string uuid = 1;
+  string method = 2;
   repeated google.protobuf.Value args = 3;
 }
 
 message DriverCallResponse {
-  string call_uuid = 1;
+  string uuid = 1;
   google.protobuf.Value result = 2;
 }
 
 message StreamingDriverCallRequest {
-  string device_uuid = 1;
-  string driver_method = 2;
+  string uuid = 1;
+  string method = 2;
   repeated google.protobuf.Value args = 3;
 }
 
 message StreamingDriverCallResponse {
-  string call_uuid = 1;
+  string uuid = 1;
   google.protobuf.Value result = 2;
 }
 
 message LogStreamResponse {
-  string device_uuid = 1;
+  string uuid = 1;
   string severity = 2;
   string message = 3;
 }
