@@ -1,4 +1,4 @@
-from . import Network
+from jumpstarter.drivers.network import Network
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
 from anyio.streams.stapled import StapledObjectStream
