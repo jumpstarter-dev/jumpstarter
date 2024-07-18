@@ -42,6 +42,9 @@ class Session(
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
+    def __getitem__(self, key: UUID):
+        return self.mapping[key]
+
     async def GetReport(self, request, context):
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
@@ -51,7 +54,7 @@ class Session(
 
     async def DriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = await self.mapping[UUID(request.uuid)].call(request.method, args)
+        result = await self[UUID(request.uuid)].call(request.method, args)
         return jumpstarter_pb2.DriverCallResponse(
             uuid=str(uuid4()),
             result=json_format.ParseDict(
@@ -61,7 +64,7 @@ class Session(
 
     async def StreamingDriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        async for result in self.mapping[UUID(request.uuid)].streaming_call(
+        async for result in self[UUID(request.uuid)].streaming_call(
             request.method, args
         ):
             yield jumpstarter_pb2.StreamingDriverCallResponse(
@@ -79,7 +82,7 @@ class Session(
 
         match metadata["kind"]:
             case "device":
-                device = self.mapping[uuid]
+                device = self[uuid]
                 async with device.connect() as stream:
                     async for v in forward_server_stream(request_iterator, stream):
                         yield v
