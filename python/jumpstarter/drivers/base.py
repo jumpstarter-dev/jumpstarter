@@ -68,6 +68,9 @@ class DriverBase(ABC, Metadata):
         async for v in function(self, *args):
             yield v
 
+    def mapping(self) -> dict[UUID, "DriverBase"]:
+        return {self.uuid: self}
+
     def reports(self, parent=None) -> List[jumpstarter_pb2.DriverInstanceReport]:
         return [
             jumpstarter_pb2.DriverInstanceReport(

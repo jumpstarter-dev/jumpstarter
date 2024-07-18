@@ -26,17 +26,7 @@ class Session(
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
-        self.mapping = {}
-
-        def subdevices(device):
-            if isinstance(device, Composite):
-                return dict(
-                    ChainMap(*[subdevices(subdevice) for subdevice in device.devices])
-                )
-            else:
-                return {device.uuid: device}
-
-        self.mapping |= subdevices(self.root_device)
+        self.mapping = self.root_device.mapping()
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
