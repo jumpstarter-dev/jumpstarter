@@ -11,13 +11,13 @@ import anyio
 
 async def driver_call(
     stub: jumpstarter_pb2_grpc.ExporterServiceStub,
-    device_uuid: UUID,
-    driver_method: str,
+    uuid: UUID,
+    method: str,
     args: List[Any],
 ):
     request = jumpstarter_pb2.DriverCallRequest(
-        device_uuid=str(device_uuid),
-        driver_method=driver_method,
+        uuid=str(uuid),
+        method=method,
         args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
     )
 
@@ -28,13 +28,13 @@ async def driver_call(
 
 async def streaming_driver_call(
     stub: jumpstarter_pb2_grpc.ExporterServiceStub,
-    device_uuid: UUID,
-    driver_method: str,
+    uuid: UUID,
+    method: str,
     args: List[Any],
 ):
     request = jumpstarter_pb2.StreamingDriverCallRequest(
-        device_uuid=str(device_uuid),
-        driver_method=driver_method,
+        uuid=str(uuid),
+        method=method,
         args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
     )
 

@@ -68,11 +68,11 @@ class DriverBase(ABC, Metadata):
         async for v in function(self, *args):
             yield v
 
-    def reports(self, parent=None) -> List[jumpstarter_pb2.DeviceReport]:
+    def reports(self, parent=None) -> List[jumpstarter_pb2.DriverInstanceReport]:
         return [
-            jumpstarter_pb2.DeviceReport(
-                device_uuid=str(self.uuid),
-                parent_device_uuid=str(parent.uuid) if parent else None,
+            jumpstarter_pb2.DriverInstanceReport(
+                uuid=str(self.uuid),
+                parent_uuid=str(parent.uuid) if parent else None,
                 labels=self.labels | {"jumpstarter.dev/interface": self.interface},
             )
         ]

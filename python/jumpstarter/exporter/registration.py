@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from contextlib import AbstractAsyncContextManager
 from tempfile import TemporaryDirectory
 from pathlib import Path
-from anyio import create_task_group, connect_unix
+from anyio import connect_unix
 import grpc
 
 
@@ -27,15 +27,15 @@ class Registration(AbstractAsyncContextManager, Metadata):
             jumpstarter_pb2.RegisterRequest(
                 uuid=str(self.uuid),
                 labels=self.labels,
-                device_report=probe.reports(),
+                reports=probe.reports(),
             )
         )
 
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        await self.controller.Bye(
-            jumpstarter_pb2.ByeRequest(
+        await self.controller.Unregister(
+            jumpstarter_pb2.UnregisterRequest(
                 uuid=str(self.uuid),
                 reason="TODO",
             )

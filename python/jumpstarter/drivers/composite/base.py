@@ -9,7 +9,7 @@ import itertools
 class Composite(DriverBase, interface="composite"):
     devices: List[DriverBase]
 
-    def reports(self, parent=None) -> List[jumpstarter_pb2.DeviceReport]:
+    def reports(self, parent=None) -> List[jumpstarter_pb2.DriverInstanceReport]:
         return super().reports(parent) + list(
             itertools.chain(*[device.reports(parent=self) for device in self.devices])
         )

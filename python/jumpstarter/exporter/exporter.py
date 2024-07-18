@@ -46,16 +46,14 @@ class Session(
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            device_report=self.root_device.reports(),
+            reports=self.root_device.reports(),
         )
 
     async def DriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = await self.mapping[UUID(request.device_uuid)].call(
-            request.driver_method, args
-        )
+        result = await self.mapping[UUID(request.uuid)].call(request.method, args)
         return jumpstarter_pb2.DriverCallResponse(
-            call_uuid=str(uuid4()),
+            uuid=str(uuid4()),
             result=json_format.ParseDict(
                 asdict(result) if is_dataclass(result) else result, struct_pb2.Value()
             ),
@@ -63,11 +61,11 @@ class Session(
 
     async def StreamingDriverCall(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
-        async for result in self.mapping[UUID(request.device_uuid)].streaming_call(
-            request.driver_method, args
+        async for result in self.mapping[UUID(request.uuid)].streaming_call(
+            request.method, args
         ):
             yield jumpstarter_pb2.StreamingDriverCallResponse(
-                call_uuid=str(uuid4()),
+                uuid=str(uuid4()),
                 result=json_format.ParseDict(
                     asdict(result) if is_dataclass(result) else result,
                     struct_pb2.Value(),

@@ -24,14 +24,14 @@ class Client:
 
     async def sync(self):
         devices = dict()
-        for device in (await self.GetReport()).device_report:
+        for device in (await self.GetReport()).reports:
             stub = self.GetDevice(device)
             devices[stub.uuid] = stub
-            if device.parent_device_uuid == "":
+            if device.parent_uuid == "":
                 setattr(self, stub.labels["jumpstarter.dev/name"], stub)
             else:
                 setattr(
-                    devices[device.parent_device_uuid],
+                    devices[device.parent_uuid],
                     stub.labels["jumpstarter.dev/name"],
                     stub,
                 )
@@ -39,13 +39,13 @@ class Client:
     async def GetReport(self):
         return await self.stub.GetReport(empty_pb2.Empty())
 
-    def GetDevice(self, report: jumpstarter_pb2.DeviceReport):
+    def GetDevice(self, report: jumpstarter_pb2.DriverInstanceReport):
         base = drivers.get(report.labels["jumpstarter.dev/interface"])
 
         class stub_class(DriverStub, base=base):
             pass
 
-        return stub_class(stub=self.stub, uuid=report.device_uuid, labels=report.labels)
+        return stub_class(stub=self.stub, uuid=report.uuid, labels=report.labels)
 
     async def RawStream(self, stream, metadata):
         await forward_client_stream(self.router, stream, metadata)

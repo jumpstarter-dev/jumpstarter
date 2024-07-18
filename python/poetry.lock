@@ -225,7 +225,7 @@ protobuf = "^5.27.1"
 type = "git"
 url = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
 reference = "HEAD"
-resolved_reference = "e713386b6703962049de42b337b110f0c4c65762"
+resolved_reference = "03eb176a2e894914b9221a4a94655032cd6ffb65"
 subdirectory = "python"
 
 [[package]]
