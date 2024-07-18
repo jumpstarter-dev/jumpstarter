@@ -12,7 +12,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type ControllerService struct {
@@ -40,8 +39,8 @@ type streamContext struct {
 }
 
 type Exporter struct {
-	Labels       map[string]string
-	DeviceReport []*pb.DeviceReport
+	Labels                map[string]string
+	DriverInstanceReports []*pb.DriverInstanceReport
 }
 
 func (c *ControllerService) Register(
@@ -51,20 +50,20 @@ func (c *ControllerService) Register(
 	c.exportersLock.Lock()
 	defer c.exportersLock.Unlock()
 	c.exporters[req.GetUuid()] = Exporter{
-		Labels:       req.GetLabels(),
-		DeviceReport: req.GetDeviceReport(),
+		Labels:                req.GetLabels(),
+		DriverInstanceReports: req.GetReports(),
 	}
 	return &pb.RegisterResponse{}, nil
 }
 
-func (c *ControllerService) Bye(
+func (c *ControllerService) Unregister(
 	ctx context.Context,
-	req *pb.ByeRequest,
-) (*emptypb.Empty, error) {
+	req *pb.UnregisterRequest,
+) (*pb.UnregisterResponse, error) {
 	c.exportersLock.Lock()
 	defer c.exportersLock.Unlock()
 	delete(c.exporters, req.GetUuid())
-	return &emptypb.Empty{}, nil
+	return &pb.UnregisterResponse{}, nil
 }
 
 func (c *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
@@ -119,7 +118,6 @@ func (c *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	if err := listener.stream.Send(&pb.ListenResponse{
 		RouterEndpoint: endpoint,
 		RouterToken:    stream.String(),
-		DeviceUuid:     req.DeviceUuid,
 	}); err != nil {
 		return nil, err
 	}
@@ -148,9 +146,9 @@ func (c *ControllerService) ListExporters(
 		}
 		if !mismatch {
 			exporters = append(exporters, &pb.GetReportResponse{
-				Uuid:         uuid,
-				Labels:       exporter.Labels,
-				DeviceReport: exporter.DeviceReport,
+				Uuid:    uuid,
+				Labels:  exporter.Labels,
+				Reports: exporter.DriverInstanceReports,
 			})
 		}
 	}
@@ -170,9 +168,9 @@ func (c *ControllerService) GetExporter(
 	if exporter, ok := c.exporters[req.GetUuid()]; ok {
 		return &pb.GetExporterResponse{
 			Exporter: &pb.GetReportResponse{
-				Uuid:         req.GetUuid(),
-				Labels:       exporter.Labels,
-				DeviceReport: exporter.DeviceReport,
+				Uuid:    req.GetUuid(),
+				Labels:  exporter.Labels,
+				Reports: exporter.DriverInstanceReports,
 			},
 		}, nil
 	} else {

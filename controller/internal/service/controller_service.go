@@ -31,7 +31,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -184,11 +183,10 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	}}
 
 	devices := []jumpstarterdevv1alpha1.Device{}
-	for _, device := range req.DeviceReport {
+	for _, device := range req.Reports {
 		devices = append(devices, jumpstarterdevv1alpha1.Device{
-			Uuid:            device.GetDeviceUuid(),
-			DriverInterface: device.GetDriverInterface(),
-			Labels:          device.GetLabels(),
+			Uuid:   device.GetUuid(),
+			Labels: device.GetLabels(),
 		})
 	}
 	exporter.Status.Devices = devices
@@ -200,7 +198,13 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	return &pb.RegisterResponse{}, nil
 }
 
-func (s *ControllerService) Bye(ctx context.Context, req *pb.ByeRequest) (*emptypb.Empty, error) {
+func (s *ControllerService) Unregister(
+	ctx context.Context,
+	req *pb.UnregisterRequest,
+) (
+	*pb.UnregisterResponse,
+	error,
+) {
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
 		return nil, err
@@ -218,7 +222,7 @@ func (s *ControllerService) Bye(ctx context.Context, req *pb.ByeRequest) (*empty
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
 
-	return &emptypb.Empty{}, nil
+	return &pb.UnregisterResponse{}, nil
 }
 
 func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
@@ -306,7 +310,6 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	if err := value.(listenContext).stream.Send(&pb.ListenResponse{
 		RouterEndpoint: endpoint,
 		RouterToken:    tokenRequest.Status.Token,
-		DeviceUuid:     req.DeviceUuid,
 	}); err != nil {
 		return nil, err
 	}
