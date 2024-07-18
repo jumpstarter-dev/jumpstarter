@@ -1,7 +1,8 @@
 from . import Network
 from dataclasses import dataclass
-import contextlib
-import anyio
+from contextlib import asynccontextmanager
+from anyio.streams.stapled import StapledObjectStream
+from anyio import connect_tcp, connect_unix, create_memory_object_stream
 
 
 @dataclass(kw_only=True)
@@ -9,34 +10,27 @@ class TcpNetwork(Network):
     host: str
     port: int
 
-    @contextlib.asynccontextmanager
+    @asynccontextmanager
     async def connect(self):
-        stream = await anyio.connect_tcp(remote_host=self.host, remote_port=self.port)
-        try:
+        async with await connect_tcp(
+            remote_host=self.host, remote_port=self.port
+        ) as stream:
             yield stream
-        finally:
-            await stream.aclose()
 
 
 @dataclass(kw_only=True)
 class UnixNetwork(Network):
     path: str
 
-    @contextlib.asynccontextmanager
+    @asynccontextmanager
     async def connect(self):
-        stream = await anyio.connect_unix(path=self.path)
-        try:
+        async with await connect_unix(path=self.path) as stream:
             yield stream
-        finally:
-            await stream.aclose()
 
 
 class EchoNetwork(Network):
-    @contextlib.asynccontextmanager
+    @asynccontextmanager
     async def connect(self):
-        tx, rx = anyio.create_memory_object_stream[bytes](32)
-        stream = anyio.streams.stapled.StapledObjectStream(tx, rx)
-        try:
+        tx, rx = create_memory_object_stream[bytes](32)
+        async with StapledObjectStream(tx, rx) as stream:
             yield stream
-        finally:
-            await stream.aclose()
