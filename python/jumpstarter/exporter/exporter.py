@@ -1,97 +1,72 @@
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
-    router_pb2_grpc,
 )
-from jumpstarter.common.streams import forward_server_stream, create_memory_stream
+from jumpstarter.exporter import Session
+from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import DriverBase, ContextStore
-from jumpstarter.drivers.composite import Composite
-from uuid import UUID, uuid4
-from dataclasses import dataclass, asdict, is_dataclass
-from google.protobuf import struct_pb2, json_format
-from collections import ChainMap
+from jumpstarter.drivers import ContextStore, Store, DriverBase
+from collections.abc import Callable
+from dataclasses import dataclass
+from contextlib import AbstractAsyncContextManager
+from tempfile import TemporaryDirectory
+from pathlib import Path
+from anyio import connect_unix
+import grpc
 
 
 @dataclass(kw_only=True)
-class Session(
-    jumpstarter_pb2_grpc.ExporterServiceServicer,
-    router_pb2_grpc.RouterServiceServicer,
-    Metadata,
-):
-    root_device: DriverBase
-    mapping: dict[UUID, DriverBase]
+class Exporter(AbstractAsyncContextManager, Metadata):
+    controller: jumpstarter_pb2_grpc.ControllerServiceStub
+    device_factory: Callable[[], DriverBase]
 
-    def __init__(self, *args, root_device, **kwargs):
-        super().__init__(*args, **kwargs)
+    async def __aenter__(self):
+        probe = self.device_factory()
 
-        self.root_device = root_device
-        self.mapping = {}
-
-        def subdevices(device):
-            if isinstance(device, Composite):
-                return dict(
-                    ChainMap(*[subdevices(subdevice) for subdevice in device.devices])
-                )
-            else:
-                return {device.uuid: device}
-
-        self.mapping |= subdevices(self.root_device)
-
-    def add_to_server(self, server):
-        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-
-    async def GetReport(self, request, context):
-        return jumpstarter_pb2.GetReportResponse(
-            uuid=str(self.uuid),
-            labels=self.labels,
-            reports=self.root_device.reports(),
+        await self.controller.Register(
+            jumpstarter_pb2.RegisterRequest(
+                uuid=str(self.uuid),
+                labels=self.labels,
+                reports=probe.reports(),
+            )
         )
 
-    async def DriverCall(self, request, context):
-        args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = await self.mapping[UUID(request.uuid)].call(request.method, args)
-        return jumpstarter_pb2.DriverCallResponse(
-            uuid=str(uuid4()),
-            result=json_format.ParseDict(
-                asdict(result) if is_dataclass(result) else result, struct_pb2.Value()
-            ),
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.controller.Unregister(
+            jumpstarter_pb2.UnregisterRequest(
+                uuid=str(self.uuid),
+                reason="TODO",
+            )
         )
 
-    async def StreamingDriverCall(self, request, context):
-        args = [json_format.MessageToDict(arg) for arg in request.args]
-        async for result in self.mapping[UUID(request.uuid)].streaming_call(
-            request.method, args
-        ):
-            yield jumpstarter_pb2.StreamingDriverCallResponse(
-                uuid=str(uuid4()),
-                result=json_format.ParseDict(
-                    asdict(result) if is_dataclass(result) else result,
-                    struct_pb2.Value(),
-                ),
+    async def serve(self):
+        async for request in self.controller.Listen(jumpstarter_pb2.ListenRequest()):
+            root_device = self.device_factory()
+
+            session = Session(
+                uuid=self.uuid,
+                labels=self.labels,
+                root_device=root_device,
             )
 
-    async def Stream(self, request_iterator, context):
-        metadata = dict(context.invocation_metadata())
+            with TemporaryDirectory() as tempdir:
+                socketpath = Path(tempdir) / "socket"
 
-        uuid = UUID(metadata["uuid"])
+                ContextStore.set(Store())
 
-        match metadata["kind"]:
-            case "device":
-                device = self.mapping[uuid]
-                async with device.connect() as stream:
-                    async for v in forward_server_stream(request_iterator, stream):
-                        yield v
-            case "resource":
-                client_stream, device_stream = create_memory_stream()
+                server = grpc.aio.server()
+                server.add_insecure_port(f"unix://{socketpath}")
+
+                session.add_to_server(server)
 
                 try:
-                    ContextStore.get().conns[uuid] = device_stream
-                    async with client_stream:
-                        async for v in forward_server_stream(
-                            request_iterator, client_stream
-                        ):
-                            yield v
+                    await server.start()
+
+                    async with await connect_unix(socketpath) as stream:
+                        await connect_router_stream(
+                            request.router_endpoint, request.router_token, stream
+                        )
                 finally:
-                    del ContextStore.get().conns[uuid]
+                    await server.stop(grace=None)

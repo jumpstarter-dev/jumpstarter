@@ -6,7 +6,7 @@ import os
 
 def get_client_version():
     """Get the version of the Jumpstarter Python client/exporter."""
-    return importlib.metadata.version('jumpstarter')
+    return importlib.metadata.version("jumpstarter")
 
 
 def get_cli_path():
@@ -19,7 +19,9 @@ def version_msg():
     python_version = sys.version
     jumpstarter_version = get_client_version()
     location = get_cli_path()
-    return f"Jumpstarter v{jumpstarter_version} from {location} (Python {python_version})"
+    return (
+        f"Jumpstarter v{jumpstarter_version} from {location} (Python {python_version})"
+    )
 
 
 @click.command()

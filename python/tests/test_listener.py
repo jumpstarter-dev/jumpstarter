@@ -1,4 +1,4 @@
-from jumpstarter.exporter import Registration
+from jumpstarter.exporter import Exporter
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.client import Lease, Client
 from jumpstarter.common import MetadataFilter
@@ -28,7 +28,7 @@ async def test_listener():
     channel = grpc.aio.secure_channel("localhost:8083", credentials)
     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
 
-    async with Registration(
+    async with Exporter(
         controller=controller,
         uuid=uuid,
         labels={"jumpstarter.dev/name": "exporter"},
