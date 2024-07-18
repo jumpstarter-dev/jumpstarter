@@ -40,7 +40,7 @@ class Client:
         return await self.stub.GetReport(empty_pb2.Empty())
 
     def GetDevice(self, report: jumpstarter_pb2.DeviceReport):
-        base = drivers.get(report.driver_interface)
+        base = drivers.get(report.labels["jumpstarter.dev/interface"])
 
         class stub_class(DriverStub, base=base):
             pass

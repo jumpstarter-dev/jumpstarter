@@ -73,7 +73,6 @@ class DriverBase(ABC, Metadata):
             jumpstarter_pb2.DeviceReport(
                 device_uuid=str(self.uuid),
                 parent_device_uuid=str(parent.uuid) if parent else None,
-                driver_interface=self.interface,
-                labels=self.labels,
+                labels=self.labels | {"jumpstarter.dev/interface": self.interface},
             )
         ]
