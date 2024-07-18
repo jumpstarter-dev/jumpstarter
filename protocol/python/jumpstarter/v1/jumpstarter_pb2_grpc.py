@@ -21,10 +21,10 @@ class ControllerServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterResponse.FromString,
                 _registered_method=True)
-        self.Bye = channel.unary_unary(
-                '/jumpstarter.v1.ControllerService/Bye',
-                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.SerializeToString,
-                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+        self.Unregister = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/Unregister',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterResponse.FromString,
                 _registered_method=True)
         self.Listen = channel.unary_stream(
                 '/jumpstarter.v1.ControllerService/Listen',
@@ -74,7 +74,7 @@ class ControllerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def Bye(self, request, context):
+    def Unregister(self, request, context):
         """Exporter disconnection
         Disconnecting with bye will invalidate any existing router tokens
         we will eventually have a mechanism to tell the router this token
@@ -149,10 +149,10 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RegisterResponse.SerializeToString,
             ),
-            'Bye': grpc.unary_unary_rpc_method_handler(
-                    servicer.Bye,
-                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.FromString,
-                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            'Unregister': grpc.unary_unary_rpc_method_handler(
+                    servicer.Unregister,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterResponse.SerializeToString,
             ),
             'Listen': grpc.unary_stream_rpc_method_handler(
                     servicer.Listen,
@@ -229,7 +229,7 @@ class ControllerService(object):
             _registered_method=True)
 
     @staticmethod
-    def Bye(request,
+    def Unregister(request,
             target,
             options=(),
             channel_credentials=None,
@@ -242,9 +242,9 @@ class ControllerService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.ControllerService/Bye',
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.ByeRequest.SerializeToString,
-            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            '/jumpstarter.v1.ControllerService/Unregister',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterResponse.FromString,
             options,
             channel_credentials,
             insecure,

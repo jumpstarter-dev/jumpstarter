@@ -23,7 +23,7 @@ const _ = grpc.SupportPackageIsVersion8
 
 const (
 	ControllerService_Register_FullMethodName        = "/jumpstarter.v1.ControllerService/Register"
-	ControllerService_Bye_FullMethodName             = "/jumpstarter.v1.ControllerService/Bye"
+	ControllerService_Unregister_FullMethodName      = "/jumpstarter.v1.ControllerService/Unregister"
 	ControllerService_Listen_FullMethodName          = "/jumpstarter.v1.ControllerService/Listen"
 	ControllerService_Dial_FullMethodName            = "/jumpstarter.v1.ControllerService/Dial"
 	ControllerService_AuditStream_FullMethodName     = "/jumpstarter.v1.ControllerService/AuditStream"
@@ -45,7 +45,7 @@ type ControllerServiceClient interface {
 	// Disconnecting with bye will invalidate any existing router tokens
 	// we will eventually have a mechanism to tell the router this token
 	// has been invalidated
-	Bye(ctx context.Context, in *ByeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Unregister(ctx context.Context, in *UnregisterRequest, opts ...grpc.CallOption) (*UnregisterResponse, error)
 	// Exporter listening
 	// Returns stream tokens for accepting incoming client connections
 	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (ControllerService_ListenClient, error)
@@ -88,10 +88,10 @@ func (c *controllerServiceClient) Register(ctx context.Context, in *RegisterRequ
 	return out, nil
 }
 
-func (c *controllerServiceClient) Bye(ctx context.Context, in *ByeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *controllerServiceClient) Unregister(ctx context.Context, in *UnregisterRequest, opts ...grpc.CallOption) (*UnregisterResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, ControllerService_Bye_FullMethodName, in, out, cOpts...)
+	out := new(UnregisterResponse)
+	err := c.cc.Invoke(ctx, ControllerService_Unregister_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ type ControllerServiceServer interface {
 	// Disconnecting with bye will invalidate any existing router tokens
 	// we will eventually have a mechanism to tell the router this token
 	// has been invalidated
-	Bye(context.Context, *ByeRequest) (*emptypb.Empty, error)
+	Unregister(context.Context, *UnregisterRequest) (*UnregisterResponse, error)
 	// Exporter listening
 	// Returns stream tokens for accepting incoming client connections
 	Listen(*ListenRequest, ControllerService_ListenServer) error
@@ -261,8 +261,8 @@ type UnimplementedControllerServiceServer struct {
 func (UnimplementedControllerServiceServer) Register(context.Context, *RegisterRequest) (*RegisterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Register not implemented")
 }
-func (UnimplementedControllerServiceServer) Bye(context.Context, *ByeRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Bye not implemented")
+func (UnimplementedControllerServiceServer) Unregister(context.Context, *UnregisterRequest) (*UnregisterResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Unregister not implemented")
 }
 func (UnimplementedControllerServiceServer) Listen(*ListenRequest, ControllerService_ListenServer) error {
 	return status.Errorf(codes.Unimplemented, "method Listen not implemented")
@@ -316,20 +316,20 @@ func _ControllerService_Register_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_Bye_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ByeRequest)
+func _ControllerService_Unregister_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnregisterRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).Bye(ctx, in)
+		return srv.(ControllerServiceServer).Unregister(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ControllerService_Bye_FullMethodName,
+		FullMethod: ControllerService_Unregister_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).Bye(ctx, req.(*ByeRequest))
+		return srv.(ControllerServiceServer).Unregister(ctx, req.(*UnregisterRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -483,8 +483,8 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ControllerService_Register_Handler,
 		},
 		{
-			MethodName: "Bye",
-			Handler:    _ControllerService_Bye_Handler,
+			MethodName: "Unregister",
+			Handler:    _ControllerService_Unregister_Handler,
 		},
 		{
 			MethodName: "Dial",
