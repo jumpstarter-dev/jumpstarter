@@ -18,11 +18,12 @@ class Client:
     stub: jumpstarter_pb2_grpc.ExporterServiceStub
 
     def __init__(self, channel):
+        self.channel = channel
         self.stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
         self.router = router_pb2_grpc.RouterServiceStub(channel)
 
     async def sync(self):
-        self.root = ClientFromReports((await self.GetReport()).reports, self.stub)
+        self.root = ClientFromReports((await self.GetReport()).reports, self.channel)
 
     async def GetReport(self):
         return await self.stub.GetReport(empty_pb2.Empty())

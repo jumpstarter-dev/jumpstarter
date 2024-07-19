@@ -19,7 +19,7 @@ async def test_drivers_power_mock():
         client = PowerClient(
             uuid=mock.uuid,
             labels=mock.labels,
-            stub=jumpstarter_pb2_grpc.ExporterServiceStub(channel),
+            channel=channel,
         )
 
         assert await client.on() == "ok"

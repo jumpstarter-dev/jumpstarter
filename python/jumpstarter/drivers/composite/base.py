@@ -88,11 +88,12 @@ class CompositeClient(CompositeInterface, DriverClient):
 
 
 from jumpstarter.drivers.power import PowerClient
+from jumpstarter.drivers.network import NetworkClient
 
 
 def ClientFromReports(
     reports: list[jumpstarter_pb2.DriverInstanceReport],
-    stub,
+    channel,
 ) -> DriverClient:
     clients = OrderedDict()
 
@@ -101,9 +102,11 @@ def ClientFromReports(
         labels = report.labels
         match report.labels["jumpstarter.dev/interface"]:
             case "power":
-                client = PowerClient(uuid=uuid, labels=labels, stub=stub)
+                client = PowerClient(uuid=uuid, labels=labels, channel=channel)
             case "composite":
-                client = CompositeClient(uuid=uuid, labels=labels, stub=stub)
+                client = CompositeClient(uuid=uuid, labels=labels, channel=channel)
+            case "network":
+                client = NetworkClient(uuid=uuid, labels=labels, channel=channel)
             case _:
                 raise ValueError
         clients[uuid] = client

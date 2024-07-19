@@ -30,8 +30,7 @@ async def test_drivers_composite():
     await server.start()
 
     async with grpc.aio.insecure_channel("localhost:50051") as channel:
-        stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-        client = ClientFromReports(mock.Reports(), stub=stub)
+        client = ClientFromReports(mock.Reports(), channel=channel)
 
         assert await client.power0.on() == "ok"
         assert await client.composite1.power1.on() == "ok"

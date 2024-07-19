@@ -5,9 +5,13 @@ from dataclasses import dataclass, asdict, is_dataclass
 from uuid import UUID, uuid4
 from typing import Any, BinaryIO
 from dataclasses import field
+from jumpstarter.common.streams import create_memory_stream, forward_client_stream
 from jumpstarter.common import Metadata
 from contextvars import ContextVar
+from contextlib import asynccontextmanager
 from abc import ABC, abstractmethod
+import anyio
+import grpc
 
 
 ContextStore = ContextVar("store")
@@ -75,7 +79,13 @@ class Driver(
 
 @dataclass(kw_only=True)
 class DriverClient(Metadata):
-    stub: jumpstarter_pb2_grpc.ExporterServiceStub
+    channel: grpc.aio.Channel
+    stub: jumpstarter_pb2_grpc.ExporterServiceStub = field(init=False)
+    router: router_pb2_grpc.RouterServiceStub = field(init=False)
+
+    def __post_init__(self):
+        self.stub = jumpstarter_pb2_grpc.ExporterServiceStub(self.channel)
+        self.router = router_pb2_grpc.RouterServiceStub(self.channel)
 
     async def drivercall(self, method, *args):
         return json_format.MessageToDict(
@@ -102,6 +112,20 @@ class DriverClient(Metadata):
             )
         ):
             yield json_format.MessageToDict(v.result)
+
+    @asynccontextmanager
+    async def stream(self):
+        client_stream, device_stream = create_memory_stream()
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                forward_client_stream,
+                self.router,
+                device_stream,
+                {"kind": "device", "uuid": str(self.uuid)}.items(),
+            )
+            async with client_stream:
+                yield client_stream
 
 
 def drivercall(func):

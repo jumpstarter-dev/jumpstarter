@@ -4,7 +4,7 @@ from jumpstarter.client import Client
 # from jumpstarter.drivers.power import PowerReading
 # from jumpstarter.drivers.serial import MockSerial
 # from jumpstarter.drivers.storage import MockStorageMux
-# from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
+from jumpstarter.drivers.network import EchoNetwork
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import PowerReading, MockPower
 from jumpstarter.drivers import ContextStore, Store
@@ -84,8 +84,21 @@ async def setup_client(request, anyio_backend):
 #                 stderr=sys.stderr,
 #             )
 #         server.terminate()
-#
-#
+
+
+@pytest.mark.parametrize(
+    "setup_client",
+    [EchoNetwork(labels={"jumpstarter.dev/name": "echo"})],
+    indirect=True,
+)
+async def test_echo_network(setup_client):
+    client = setup_client
+
+    async with client.root.connect() as stream:
+        await stream.send(b"hello")
+        assert await stream.receive() == b"hello"
+
+
 @pytest.mark.parametrize(
     "setup_client",
     [

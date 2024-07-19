@@ -1,5 +1,6 @@
-from jumpstarter.drivers.network.base import Network
-from jumpstarter.drivers.network.local import (
+from jumpstarter.drivers.network.base import (
+    NetworkInterface,
+    NetworkClient,
     TcpNetwork,
     UdpNetwork,
     UnixNetwork,
@@ -7,4 +8,11 @@ from jumpstarter.drivers.network.local import (
 )
 
 
-__all__ = ["Network", "TcpNetwork", "UdpNetwork", "UnixNetwork", "EchoNetwork"]
+__all__ = [
+    "NetworkInterface",
+    "NetworkClient",
+    "TcpNetwork",
+    "UdpNetwork",
+    "UnixNetwork",
+    "EchoNetwork",
+]
