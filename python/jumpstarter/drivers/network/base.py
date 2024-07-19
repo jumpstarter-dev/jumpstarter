@@ -26,8 +26,13 @@ class NetworkInterface(ABC):
 class NetworkClient(NetworkInterface, DriverClient):
     @asynccontextmanager
     async def connect(self):
-        async with self.stream() as stream:
+        async with self._stream() as stream:
             yield stream
+
+    @asynccontextmanager
+    async def portforward(self, listener):
+        async with self._portforward(listener):
+            yield
 
 
 @dataclass(kw_only=True)

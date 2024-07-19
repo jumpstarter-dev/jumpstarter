@@ -114,7 +114,7 @@ class DriverClient(Metadata):
             yield json_format.MessageToDict(v.result)
 
     @asynccontextmanager
-    async def stream(self):
+    async def _stream(self):
         client_stream, device_stream = create_memory_stream()
 
         async with anyio.create_task_group() as tg:
@@ -126,6 +126,23 @@ class DriverClient(Metadata):
             )
             async with client_stream:
                 yield client_stream
+
+    @asynccontextmanager
+    async def _portforward(self, listener):
+        async def handle(client):
+            async with client:
+                await forward_client_stream(
+                    self.router,
+                    client,
+                    {"kind": "device", "uuid": str(self.uuid)}.items(),
+                )
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(listener.serve, handle)
+            try:
+                yield
+            finally:
+                tg.cancel_scope.cancel()
 
 
 def drivercall(func):

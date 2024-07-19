@@ -4,7 +4,7 @@ from jumpstarter.client import Client
 # from jumpstarter.drivers.power import PowerReading
 # from jumpstarter.drivers.serial import MockSerial
 # from jumpstarter.drivers.storage import MockStorageMux
-from jumpstarter.drivers.network import EchoNetwork
+from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import PowerReading, MockPower
 from jumpstarter.drivers import ContextStore, Store
@@ -47,43 +47,43 @@ async def setup_client(request, anyio_backend):
     await server.wait_for_termination()
 
 
-# @pytest.mark.skipif(shutil.which("iperf3") is None, reason="iperf3 not available")
-# @pytest.mark.parametrize(
-#     "setup_client",
-#     [
-#         TcpNetwork(
-#             labels={"jumpstarter.dev/name": "iperf3"},
-#             host="127.0.0.1",
-#             port=5201,
-#         )
-#     ],
-#     indirect=True,
-# )
-# async def test_tcp_network(setup_client):
-#     client = setup_client
-#
-#     listener = await anyio.create_tcp_listener(local_port=8001)
-#
-#     async with await anyio.open_process(
-#         ["iperf3", "-s"],
-#         stdout=subprocess.DEVNULL,
-#         stderr=subprocess.DEVNULL,
-#     ) as server:
-#         async with client.Forward(listener, client.iperf3):
-#             await anyio.run_process(
-#                 [
-#                     "iperf3",
-#                     "-c",
-#                     "127.0.0.1",
-#                     "-p",
-#                     "8001",
-#                     "-t",
-#                     "1",
-#                 ],
-#                 stdout=sys.stdout,
-#                 stderr=sys.stderr,
-#             )
-#         server.terminate()
+@pytest.mark.skipif(shutil.which("iperf3") is None, reason="iperf3 not available")
+@pytest.mark.parametrize(
+    "setup_client",
+    [
+        TcpNetwork(
+            labels={"jumpstarter.dev/name": "iperf3"},
+            host="127.0.0.1",
+            port=5201,
+        )
+    ],
+    indirect=True,
+)
+async def test_tcp_network(setup_client):
+    client = setup_client
+
+    listener = await anyio.create_tcp_listener(local_port=8001)
+
+    async with await anyio.open_process(
+        ["iperf3", "-s"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ) as server:
+        async with client.root.portforward(listener):
+            await anyio.run_process(
+                [
+                    "iperf3",
+                    "-c",
+                    "127.0.0.1",
+                    "-p",
+                    "8001",
+                    "-t",
+                    "1",
+                ],
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+        server.terminate()
 
 
 @pytest.mark.parametrize(
