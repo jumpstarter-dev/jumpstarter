@@ -23,6 +23,11 @@ class Composite(CompositeInterface, Driver):
     def class_labels(cls):
         return {"jumpstarter.dev/interface": "composite"}
 
+    def items(self):
+        return super().items() + list(
+            chain(*[child.items() for child in self.childs.values()])
+        )
+
     def __init__(self, *args, childs: list[Driver], **kwargs):
         super().__init__(*args, **kwargs)
         self.childs = OrderedDict([(v.uuid, v) for v in childs])

@@ -5,7 +5,7 @@ from jumpstarter.v1 import (
 )
 from jumpstarter.common.streams import forward_server_stream, create_memory_stream
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import DriverBase, ContextStore
+from jumpstarter.drivers import Driver, ContextStore
 from uuid import UUID
 from dataclasses import dataclass
 
@@ -16,14 +16,14 @@ class Session(
     router_pb2_grpc.RouterServiceServicer,
     Metadata,
 ):
-    root_device: DriverBase
-    mapping: dict[UUID, DriverBase]
+    root_device: Driver
+    mapping: dict[UUID, Driver]
 
     def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
-        self.mapping = self.root_device.mapping()
+        self.mapping = dict(self.root_device.items())
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
@@ -36,7 +36,7 @@ class Session(
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            reports=self.root_device.reports(),
+            reports=self.root_device.Reports(),
         )
 
     async def DriverCall(self, request, context):

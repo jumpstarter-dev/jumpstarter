@@ -3,13 +3,12 @@ from jumpstarter.v1 import (
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
+from jumpstarter.drivers.composite.base import ClientFromReports
 from jumpstarter.common.streams import create_memory_stream, forward_client_stream
-from jumpstarter.drivers import DriverStub
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
 from uuid import uuid4
 from anyio.streams.file import FileReadStream
-import jumpstarter.drivers as drivers
 import contextlib
 import anyio
 
@@ -23,29 +22,10 @@ class Client:
         self.router = router_pb2_grpc.RouterServiceStub(channel)
 
     async def sync(self):
-        devices = dict()
-        for device in (await self.GetReport()).reports:
-            stub = self.GetDevice(device)
-            devices[stub.uuid] = stub
-            if device.parent_uuid == "":
-                setattr(self, stub.labels["jumpstarter.dev/name"], stub)
-            else:
-                setattr(
-                    devices[device.parent_uuid],
-                    stub.labels["jumpstarter.dev/name"],
-                    stub,
-                )
+        self.root = ClientFromReports((await self.GetReport()).reports, self.stub)
 
     async def GetReport(self):
         return await self.stub.GetReport(empty_pb2.Empty())
-
-    def GetDevice(self, report: jumpstarter_pb2.DriverInstanceReport):
-        base = drivers.get(report.labels["jumpstarter.dev/interface"])
-
-        class stub_class(DriverStub, base=base):
-            pass
-
-        return stub_class(stub=self.stub, uuid=report.uuid, labels=report.labels)
 
     async def RawStream(self, stream, metadata):
         await forward_client_stream(self.router, stream, metadata)

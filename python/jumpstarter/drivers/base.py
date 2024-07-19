@@ -30,6 +30,9 @@ class Driver(
     @abstractmethod
     def class_labels(cls): ...
 
+    def items(self):
+        return [(self.uuid, self)]
+
     async def DriverCall(self, request, context):
         method = getattr(self, request.method)
 

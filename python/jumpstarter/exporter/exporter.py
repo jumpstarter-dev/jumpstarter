@@ -5,7 +5,7 @@ from jumpstarter.v1 import (
 from jumpstarter.exporter import Session
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.common import Metadata
-from jumpstarter.drivers import ContextStore, Store, DriverBase
+from jumpstarter.drivers import ContextStore, Store, Driver
 from collections.abc import Callable
 from dataclasses import dataclass
 from contextlib import AbstractAsyncContextManager
@@ -18,7 +18,7 @@ import grpc
 @dataclass(kw_only=True)
 class Exporter(AbstractAsyncContextManager, Metadata):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub
-    device_factory: Callable[[], DriverBase]
+    device_factory: Callable[[], Driver]
 
     async def __aenter__(self):
         probe = self.device_factory()
