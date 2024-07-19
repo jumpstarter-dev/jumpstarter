@@ -20,8 +20,11 @@ class CompositeInterface(ABC):
 class Composite(CompositeInterface, Driver):
     childs: OrderedDict[UUID, Driver]
 
-    def class_labels(cls):
-        return {"jumpstarter.dev/interface": "composite"}
+    def interface(self) -> str:
+        return "composite"
+
+    def version(self) -> str:
+        return "0.0.1"
 
     def items(self):
         return super().items() + list(

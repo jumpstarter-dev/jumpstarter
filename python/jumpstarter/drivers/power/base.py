@@ -15,9 +15,11 @@ class PowerReading:
 
 
 class PowerInterface(ABC):
-    @classmethod
-    def class_labels(cls):
-        return {"jumpstarter.dev/interface": "power"}
+    def interface(self) -> str:
+        return "power"
+
+    def version(self) -> str:
+        return "0.0.1"
 
     @abstractmethod
     async def on(self) -> str: ...

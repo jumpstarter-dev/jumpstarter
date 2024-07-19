@@ -26,9 +26,11 @@ class Driver(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
 ):
-    @classmethod
     @abstractmethod
-    def class_labels(cls): ...
+    def interface(self) -> str: ...
+
+    @abstractmethod
+    def version(self) -> str: ...
 
     def items(self):
         return [(self.uuid, self)]
@@ -58,7 +60,11 @@ class Driver(
             jumpstarter_pb2.DriverInstanceReport(
                 uuid=str(self.uuid),
                 parent_uuid=str(parent.uuid) if parent else None,
-                labels=self.labels | self.class_labels(),
+                labels=self.labels
+                | {
+                    "jumpstarter.dev/interface": self.interface(),
+                    "jumpstarter.dev/version": self.version(),
+                },
             )
         ]
 
