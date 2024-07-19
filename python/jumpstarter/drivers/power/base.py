@@ -33,13 +33,13 @@ class PowerInterface(ABC):
 
 class PowerClient(PowerInterface, DriverClient):
     async def on(self) -> str:
-        return await self.drivercall("on")
+        return await self._drivercall("on")
 
     async def off(self) -> str:
-        return await self.drivercall("off")
+        return await self._drivercall("off")
 
     async def read(self) -> AsyncGenerator[PowerReading, None]:
-        async for v in self.streamingdrivercall("read"):
+        async for v in self._streamingdrivercall("read"):
             yield PowerReading(voltage=v["voltage"], current=v["current"])
 
 

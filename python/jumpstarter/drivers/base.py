@@ -87,7 +87,7 @@ class DriverClient(Metadata):
         self.stub = jumpstarter_pb2_grpc.ExporterServiceStub(self.channel)
         self.router = router_pb2_grpc.RouterServiceStub(self.channel)
 
-    async def drivercall(self, method, *args):
+    async def _drivercall(self, method, *args):
         return json_format.MessageToDict(
             (
                 await self.stub.DriverCall(
@@ -103,7 +103,7 @@ class DriverClient(Metadata):
             ).result
         )
 
-    async def streamingdrivercall(self, method, *args):
+    async def _streamingdrivercall(self, method, *args):
         async for v in self.stub.StreamingDriverCall(
             jumpstarter_pb2.StreamingDriverCallRequest(
                 uuid=str(self.uuid),
