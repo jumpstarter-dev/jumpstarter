@@ -1,4 +1,4 @@
-from jumpstarter.drivers import Driver, DriverClient
+from jumpstarter.drivers import Driver, DriverClient, drivercall, streamingdrivercall
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -27,23 +27,26 @@ class Power(ABC):
 
 class PowerClient(DriverClient, Power):
     async def on(self) -> str:
-        return self.drivercall("on")
+        return await self.drivercall("on")
 
     async def off(self) -> str:
-        return self.drivercall("off")
+        return await self.drivercall("off")
 
     async def read(self) -> AsyncGenerator[PowerReading, None]:
         async for v in self.streamingdrivercall("read"):
-            yield v
+            yield PowerReading(voltage=v["voltage"], current=v["current"])
 
 
 class MockPower(Driver, Power):
+    @drivercall
     async def on(self) -> str:
         return "ok"
 
+    @drivercall
     async def off(self) -> str:
         return "ok"
 
+    @streamingdrivercall
     async def read(self) -> AsyncGenerator[PowerReading, None]:
-        yield PowerReading(0.0, 0.0)
-        yield PowerReading(5.0, 2.0)
+        yield PowerReading(voltage=0.0, current=0.0)
+        yield PowerReading(voltage=5.0, current=2.0)

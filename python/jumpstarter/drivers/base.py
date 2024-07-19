@@ -1,6 +1,6 @@
 # This file contains the base class for all jumpstarter drivers
 from google.protobuf import struct_pb2, json_format
-from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
+from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from dataclasses import dataclass, asdict, is_dataclass
 from abc import ABC
 from uuid import UUID, uuid4
@@ -23,14 +23,18 @@ class Store:
 
 
 @dataclass(kw_only=True)
-class Driver(Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
+class Driver(
+    Metadata,
+    jumpstarter_pb2_grpc.ExporterServiceServicer,
+    router_pb2_grpc.RouterServiceServicer,
+):
     async def DriverCall(self, request, context):
         method = getattr(self, request.method)
 
         if not getattr(method, "is_drivercall", False):
             raise ValueError
 
-        return await method(self, request, context)
+        return await method(request, context)
 
     async def StreamingDriverCall(self, request, context):
         method = getattr(self, request.method)
@@ -38,11 +42,15 @@ class Driver(Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
         if not getattr(method, "is_streamingdrivercall", False):
             raise ValueError
 
-        async for v in method(self, request, context):
+        async for v in method(request, context):
             yield v
 
     async def Stream(self, request_iterator, context):
         pass
+
+    def add_to_server(self, server):
+        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
 
 @dataclass(kw_only=True)
@@ -50,12 +58,19 @@ class DriverClient(Metadata):
     stub: jumpstarter_pb2_grpc.ExporterServiceStub
 
     async def drivercall(self, method, *args):
-        return await self.stub.DriverCall(
-            jumpstarter_pb2.DriverCallRequest(
-                uuid=str(self.uuid),
-                method=method,
-                args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
-            )
+        return json_format.MessageToDict(
+            (
+                await self.stub.DriverCall(
+                    jumpstarter_pb2.DriverCallRequest(
+                        uuid=str(self.uuid),
+                        method=method,
+                        args=[
+                            json_format.ParseDict(arg, struct_pb2.Value())
+                            for arg in args
+                        ],
+                    )
+                )
+            ).result
         )
 
     async def streamingdrivercall(self, method, *args):
@@ -66,7 +81,7 @@ class DriverClient(Metadata):
                 args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
             )
         ):
-            yield v
+            yield json_format.MessageToDict(v.result)
 
 
 def drivercall(func):
