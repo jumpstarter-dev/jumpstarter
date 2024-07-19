@@ -25,10 +25,21 @@ class Store:
 @dataclass(kw_only=True)
 class Driver(Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
     async def DriverCall(self, request, context):
-        pass
+        method = getattr(self, request.method)
+
+        if not getattr(method, "is_drivercall", False):
+            raise ValueError
+
+        return await method(self, request, context)
 
     async def StreamingDriverCall(self, request, context):
-        pass
+        method = getattr(self, request.method)
+
+        if not getattr(method, "is_streamingdrivercall", False):
+            raise ValueError
+
+        async for v in method(self, request, context):
+            yield v
 
     async def Stream(self, request_iterator, context):
         pass
@@ -36,7 +47,26 @@ class Driver(Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
 
 @dataclass(kw_only=True)
 class DriverClient(Metadata):
-    pass
+    stub: jumpstarter_pb2_grpc.ExporterServiceStub
+
+    async def drivercall(self, method, *args):
+        return await self.stub.DriverCall(
+            jumpstarter_pb2.DriverCallRequest(
+                uuid=str(self.uuid),
+                method=method,
+                args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+            )
+        )
+
+    async def streamingdrivercall(self, method, *args):
+        async for v in self.stub.StreamingDriverCall(
+            jumpstarter_pb2.StreamingDriverCallRequest(
+                uuid=str(self.uuid),
+                method=method,
+                args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+            )
+        ):
+            yield v
 
 
 def drivercall(func):

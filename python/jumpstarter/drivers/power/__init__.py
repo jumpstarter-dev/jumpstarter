@@ -1,5 +1,3 @@
-from .base import Power, PowerReading
-from .mock import MockPower
+from .base import PowerReading, Power, PowerClient, MockPower
 
-
-__all__ = ["Power", "PowerReading", "MockPower"]
+__all__ = ["PowerReading", "Power", "PowerClient", "MockPower"]

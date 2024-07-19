@@ -1,4 +1,12 @@
-from .base import DriverBase, Store, ContextStore
+from .base import (
+    DriverBase,
+    Store,
+    ContextStore,
+    Driver,
+    DriverClient,
+    drivercall,
+    streamingdrivercall,
+)
 from .stub import DriverStub
 from .registry import _registry
 
@@ -27,4 +35,13 @@ def __contains__(name):
     return name in _registry
 
 
-__all__ = ["Store", "ContextStore", "DriverBase", "DriverStub"]
+__all__ = [
+    "Store",
+    "ContextStore",
+    "DriverBase",
+    "DriverStub",
+    "Driver",
+    "DriverClient",
+    "drivercall",
+    "streamingdrivercall",
+]

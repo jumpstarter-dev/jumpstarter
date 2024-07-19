@@ -1,25 +1,20 @@
-from abc import abstractmethod
-from collections.abc import Generator
-from dataclasses import dataclass
-from .. import DriverBase
+from jumpstarter.drivers import Driver, DriverClient
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PowerReading:
     voltage: float
     current: float
-    apparent_power: float
+    apparent_power: float = field(init=False)
 
-    def __init__(self, voltage: float, current: float):
-        self.voltage = voltage
-        self.current = current
-        self.apparent_power = voltage * current
-
-    def __repr__(self):
-        return f"<PowerReading: {self.voltage}V {self.current}A {self.apparent_power}W>"
+    def __post_init__(self):
+        self.apparent_power = self.voltage * self.current
 
 
-class Power(DriverBase, interface="power"):
+class Power(ABC):
     @abstractmethod
     async def on(self) -> str: ...
 
@@ -27,5 +22,28 @@ class Power(DriverBase, interface="power"):
     async def off(self) -> str: ...
 
     @abstractmethod
-    async def read(self) -> Generator[PowerReading, None, None]:
-        yield None
+    async def read(self) -> AsyncGenerator[PowerReading, None]: ...
+
+
+class PowerClient(DriverClient, Power):
+    async def on(self) -> str:
+        return self.drivercall("on")
+
+    async def off(self) -> str:
+        return self.drivercall("off")
+
+    async def read(self) -> AsyncGenerator[PowerReading, None]:
+        async for v in self.streamingdrivercall("read"):
+            yield v
+
+
+class MockPower(Driver, Power):
+    async def on(self) -> str:
+        return "ok"
+
+    async def off(self) -> str:
+        return "ok"
+
+    async def read(self) -> AsyncGenerator[PowerReading, None]:
+        yield PowerReading(0.0, 0.0)
+        yield PowerReading(5.0, 2.0)
