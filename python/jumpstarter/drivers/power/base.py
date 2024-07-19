@@ -14,7 +14,7 @@ class PowerReading:
         self.apparent_power = self.voltage * self.current
 
 
-class Power(ABC):
+class PowerInterface(ABC):
     @abstractmethod
     async def on(self) -> str: ...
 
@@ -25,7 +25,7 @@ class Power(ABC):
     async def read(self) -> AsyncGenerator[PowerReading, None]: ...
 
 
-class PowerClient(DriverClient, Power):
+class PowerClient(DriverClient, PowerInterface):
     async def on(self) -> str:
         return await self.drivercall("on")
 
@@ -37,7 +37,7 @@ class PowerClient(DriverClient, Power):
             yield PowerReading(voltage=v["voltage"], current=v["current"])
 
 
-class MockPower(Driver, Power):
+class MockPower(Driver, PowerInterface):
     @drivercall
     async def on(self) -> str:
         return "ok"

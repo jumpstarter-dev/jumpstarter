@@ -2,15 +2,11 @@
 from google.protobuf import struct_pb2, json_format
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from dataclasses import dataclass, asdict, is_dataclass
-from abc import ABC
 from uuid import UUID, uuid4
 from typing import List, Any, BinaryIO, Dict
 from dataclasses import field
-from collections.abc import Generator
 from jumpstarter.common import Metadata
 from contextvars import ContextVar
-from .registry import _registry
-import inspect
 
 
 ContextStore = ContextVar("store")
@@ -125,7 +121,7 @@ def streamingdrivercall(func):
 # class DriverBase(ABC, Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
 #     def mapping(self) -> dict[UUID, "DriverBase"]:
 #         return {self.uuid: self}
-# 
+#
 #     def reports(self, parent=None) -> List[jumpstarter_pb2.DriverInstanceReport]:
 #         return [
 #             jumpstarter_pb2.DriverInstanceReport(
