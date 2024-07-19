@@ -48,11 +48,11 @@ async def test_listener():
                 async with lease.connect() as inner:
                     client = Client(inner)
                     await client.sync()
-                    assert await client.power.on() == "ok"
+                    assert await client.root.on() == "ok"
 
                 async with lease.connect() as inner:
                     client = Client(inner)
                     await client.sync()
-                    assert await client.power.on() == "ok"
+                    assert await client.root.on() == "ok"
 
             tg.cancel_scope.cancel()

@@ -27,7 +27,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             jumpstarter_pb2.RegisterRequest(
                 uuid=str(self.uuid),
                 labels=self.labels,
-                reports=probe.reports(),
+                reports=probe.Reports(),
             )
         )
 
