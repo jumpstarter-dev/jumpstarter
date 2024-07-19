@@ -89,6 +89,7 @@ class CompositeClient(CompositeInterface, DriverClient):
 
 from jumpstarter.drivers.power import PowerClient
 from jumpstarter.drivers.network import NetworkClient
+from jumpstarter.drivers.storage import StorageMuxClient
 
 
 def ClientFromReports(
@@ -107,6 +108,8 @@ def ClientFromReports(
                 client = CompositeClient(uuid=uuid, labels=labels, channel=channel)
             case "network":
                 client = NetworkClient(uuid=uuid, labels=labels, channel=channel)
+            case "storage_mux":
+                client = StorageMuxClient(uuid=uuid, labels=labels, channel=channel)
             case _:
                 raise ValueError
         clients[uuid] = client

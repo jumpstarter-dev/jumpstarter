@@ -1,5 +1,4 @@
 from jumpstarter.drivers.power import PowerReading, MockPower, PowerClient
-from jumpstarter.v1 import jumpstarter_pb2_grpc
 import pytest
 import grpc
 

@@ -1,14 +1,10 @@
 from jumpstarter.exporter import Session
 from jumpstarter.client import Client
-
-# from jumpstarter.drivers.power import PowerReading
-# from jumpstarter.drivers.serial import MockSerial
-# from jumpstarter.drivers.storage import MockStorageMux
-from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
 from jumpstarter.drivers.composite import Composite
+from jumpstarter.drivers.network import TcpNetwork, EchoNetwork
+from jumpstarter.drivers.storage import MockStorageMux
 from jumpstarter.drivers.power import PowerReading, MockPower
 from jumpstarter.drivers import ContextStore, Store
-from dataclasses import asdict
 import os
 import subprocess
 import shutil
@@ -106,6 +102,7 @@ async def test_echo_network(setup_client):
             labels={"jumpstarter.dev/name": "composite0"},
             childs=[
                 MockPower(labels={"jumpstarter.dev/name": "power0"}),
+                MockStorageMux(labels={"jumpstarter.dev/name": "storage"}),
                 Composite(
                     labels={"jumpstarter.dev/name": "composite1"},
                     childs=[
@@ -126,33 +123,11 @@ async def test_exporter_mock(setup_client):
         PowerReading(voltage=5.0, current=2.0),
     ]
 
+    with tempfile.NamedTemporaryFile(delete=False) as tempf:
+        tempf.write(b"thisisatestfile")
+        tempf.close()
 
-#
-#     def baudrate():
-#         client.root.serial.baudrate = 115200
-#         assert client.root.serial.baudrate == 115200
-#
-#     await anyio.to_thread.run_sync(baudrate)
-#
-#     assert await client.root.composite.power.on() == "ok"
-#     assert await anext(client.root.composite.power.read()) == asdict(
-#         PowerReading(5.0, 2.0)
-#     )
-#
-#     assert await client.root.composite.composite.power.on() == "ok"
-#     assert await anext(client.root.composite.composite.power.read()) == asdict(
-#         PowerReading(5.0, 2.0)
-#     )
-#
-#     with tempfile.NamedTemporaryFile(delete=False) as tempf:
-#         tempf.write(b"thisisatestfile")
-#         tempf.close()
-#
-#         async with client.LocalFile(tempf.name) as file:
-#             await client.root.storage.write(file)
-#
-#         os.unlink(tempf.name)
-#
-#     async with client.Stream(client.root.echo) as stream:
-#         await stream.send(b"test")
-#         assert await stream.receive() == b"test"
+        async with client.LocalFile(tempf.name) as file:
+            await client.root.storage.write(file)
+
+        os.unlink(tempf.name)

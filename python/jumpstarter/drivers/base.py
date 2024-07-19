@@ -43,7 +43,7 @@ class Driver(
         method = getattr(self, request.method)
 
         if not getattr(method, "is_drivercall", False):
-            raise ValueError
+            raise ValueError("no matching driver call")
 
         return await method(request, context)
 
@@ -51,7 +51,7 @@ class Driver(
         method = getattr(self, request.method)
 
         if not getattr(method, "is_streamingdrivercall", False):
-            raise ValueError
+            raise ValueError("no matching streaming driver call")
 
         async for v in method(request, context):
             yield v

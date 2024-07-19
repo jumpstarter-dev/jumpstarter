@@ -1,13 +1,8 @@
-from .base import StorageMux, StorageTempdir
-from .mock import MockStorageMux
-from .tempdir import LocalStorageTempdir
-from .mixin import StorageMuxLocalWriterMixin
+from .base import StorageMuxInterface, StorageMuxClient, MockStorageMux
 
 
 __all__ = [
-    "StorageMux",
-    "StorageTempdir",
-    "LocalStorageTempdir",
+    "StorageMuxInterface",
+    "StorageMuxClient",
     "MockStorageMux",
-    "StorageMuxLocalWriterMixin",
 ]

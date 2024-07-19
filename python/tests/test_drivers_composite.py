@@ -1,8 +1,6 @@
 from jumpstarter.drivers.composite.base import ClientFromReports
-from jumpstarter.drivers.composite import Composite, CompositeClient
-from jumpstarter.drivers.power import MockPower, PowerClient
-from jumpstarter.v1 import jumpstarter_pb2_grpc
-from collections import OrderedDict
+from jumpstarter.drivers.composite import Composite
+from jumpstarter.drivers.power import MockPower
 import pytest
 import grpc
 

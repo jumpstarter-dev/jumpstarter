@@ -1,10 +1,9 @@
 from jumpstarter.v1 import (
-    jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
 from jumpstarter.drivers.composite.base import ClientFromReports
-from jumpstarter.common.streams import create_memory_stream, forward_client_stream
+from jumpstarter.common.streams import forward_client_stream
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
 from uuid import uuid4
@@ -23,13 +22,9 @@ class Client:
         self.router = router_pb2_grpc.RouterServiceStub(channel)
 
     async def sync(self):
-        self.root = ClientFromReports((await self.GetReport()).reports, self.channel)
-
-    async def GetReport(self):
-        return await self.stub.GetReport(empty_pb2.Empty())
-
-    async def RawStream(self, stream, metadata):
-        await forward_client_stream(self.router, stream, metadata)
+        self.root = ClientFromReports(
+            (await self.stub.GetReport(empty_pb2.Empty())).reports, self.channel
+        )
 
     @contextlib.asynccontextmanager
     async def Resource(
@@ -40,8 +35,8 @@ class Client:
 
         async def handle(stream):
             async with stream:
-                await self.RawStream(
-                    stream, {"kind": "resource", "uuid": str(uuid)}.items()
+                await forward_client_stream(
+                    self.router, stream, {"kind": "resource", "uuid": str(uuid)}.items()
                 )
 
         async with anyio.create_task_group() as tg:
