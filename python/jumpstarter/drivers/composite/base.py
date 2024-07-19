@@ -24,6 +24,18 @@ class Composite(Driver, CompositeInterface):
     def __iter__(self) -> Iterator[UUID]:
         return self.childs.__iter__()
 
+    async def DriverCall(self, request, context):
+        # TODO: search for nested
+        return await self[UUID(request.uuid)].DriverCall(request, context)
+
+    async def StreamingDriverCall(self, request, context):
+        # TODO: search for nested
+        async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
+            yield v
+
+    async def Stream(self, request_iterator, context):
+        pass
+
 
 @dataclass(kw_only=True)
 class CompositeClient(DriverClient, CompositeInterface):
@@ -34,3 +46,7 @@ class CompositeClient(DriverClient, CompositeInterface):
 
     def __iter__(self) -> Iterator[UUID]:
         return self.childs.__iter__()
+
+    def __post_init__(self):
+        for child in self.childs.values():
+            setattr(self, child.labels["jumpstarter.dev/name"], child)

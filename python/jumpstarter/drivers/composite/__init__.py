@@ -1,4 +1,3 @@
-from .base import Composite
-from .dutlink import Dutlink
+from .base import CompositeInterface, Composite, CompositeClient
 
-__all__ = ["Composite", "Dutlink"]
+__all__ = ["CompositeInterface", "Composite", "CompositeClient"]
