@@ -1,10 +1,12 @@
 # This file contains the base class for all jumpstarter drivers
+from google.protobuf import struct_pb2, json_format
+from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
+from dataclasses import dataclass, asdict, is_dataclass
 from abc import ABC
-from uuid import UUID
+from uuid import UUID, uuid4
 from typing import List, Any, BinaryIO, Dict
-from dataclasses import dataclass, field
+from dataclasses import field
 from collections.abc import Generator
-from jumpstarter.v1 import jumpstarter_pb2
 from jumpstarter.common import Metadata
 from contextvars import ContextVar
 from .registry import _registry
@@ -22,7 +24,7 @@ class Store:
 
 # base class for all drivers
 @dataclass(kw_only=True)
-class DriverBase(ABC, Metadata):
+class DriverBase(ABC, Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
     def __init_subclass__(cls, interface=None, **kwargs):
         if interface:
             cls.interface = interface
@@ -45,6 +47,29 @@ class DriverBase(ABC, Metadata):
                 raise NotImplementedError("unrecognized abstract method")
 
         super().__init_subclass__(**kwargs)
+
+    async def DriverCall(self, request, context):
+        assert UUID(request.uuid) == self.uuid
+        args = [json_format.MessageToDict(arg) for arg in request.args]
+        result = await self.call(request.method, args)
+        return jumpstarter_pb2.DriverCallResponse(
+            uuid=str(uuid4()),
+            result=json_format.ParseDict(
+                asdict(result) if is_dataclass(result) else result, struct_pb2.Value()
+            ),
+        )
+
+    async def StreamingDriverCall(self, request, context):
+        assert UUID(request.uuid) == self.uuid
+        args = [json_format.MessageToDict(arg) for arg in request.args]
+        async for result in self.streaming_call(request.method, args):
+            yield jumpstarter_pb2.StreamingDriverCallResponse(
+                uuid=str(uuid4()),
+                result=json_format.ParseDict(
+                    asdict(result) if is_dataclass(result) else result,
+                    struct_pb2.Value(),
+                ),
+            )
 
     async def call(self, method: str, args: List[Any]) -> Any:
         function = self.callables.get(method)

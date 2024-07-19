@@ -6,11 +6,8 @@ from jumpstarter.v1 import (
 from jumpstarter.common.streams import forward_server_stream, create_memory_stream
 from jumpstarter.common import Metadata
 from jumpstarter.drivers import DriverBase, ContextStore
-from jumpstarter.drivers.composite import Composite
-from uuid import UUID, uuid4
-from dataclasses import dataclass, asdict, is_dataclass
-from google.protobuf import struct_pb2, json_format
-from collections import ChainMap
+from uuid import UUID
+from dataclasses import dataclass
 
 
 @dataclass(kw_only=True)
@@ -43,27 +40,11 @@ class Session(
         )
 
     async def DriverCall(self, request, context):
-        args = [json_format.MessageToDict(arg) for arg in request.args]
-        result = await self[UUID(request.uuid)].call(request.method, args)
-        return jumpstarter_pb2.DriverCallResponse(
-            uuid=str(uuid4()),
-            result=json_format.ParseDict(
-                asdict(result) if is_dataclass(result) else result, struct_pb2.Value()
-            ),
-        )
+        return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
-        args = [json_format.MessageToDict(arg) for arg in request.args]
-        async for result in self[UUID(request.uuid)].streaming_call(
-            request.method, args
-        ):
-            yield jumpstarter_pb2.StreamingDriverCallResponse(
-                uuid=str(uuid4()),
-                result=json_format.ParseDict(
-                    asdict(result) if is_dataclass(result) else result,
-                    struct_pb2.Value(),
-                ),
-            )
+        async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
+            yield v
 
     async def Stream(self, request_iterator, context):
         metadata = dict(context.invocation_metadata())
