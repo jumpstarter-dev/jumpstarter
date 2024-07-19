@@ -32,40 +32,6 @@ class Client:
         await forward_client_stream(self.router, stream, metadata)
 
     @contextlib.asynccontextmanager
-    async def Stream(self, device):
-        client_stream, device_stream = create_memory_stream()
-
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(
-                self.RawStream,
-                device_stream,
-                {"kind": "device", "uuid": str(device.uuid)}.items(),
-            )
-            try:
-                yield client_stream
-            finally:
-                await client_stream.aclose()
-
-    @contextlib.asynccontextmanager
-    async def Forward(
-        self,
-        listener,
-        device,
-    ):
-        async def handle(client):
-            async with client:
-                await self.RawStream(
-                    client, {"kind": "device", "uuid": str(device.uuid)}.items()
-                )
-
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(listener.serve, handle)
-            try:
-                yield
-            finally:
-                tg.cancel_scope.cancel()
-
-    @contextlib.asynccontextmanager
     async def Resource(
         self,
         stream,
