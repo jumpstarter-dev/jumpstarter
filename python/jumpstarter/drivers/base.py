@@ -3,10 +3,11 @@ from google.protobuf import struct_pb2, json_format
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from dataclasses import dataclass, asdict, is_dataclass
 from uuid import UUID, uuid4
-from typing import List, Any, BinaryIO, Dict
+from typing import Any, BinaryIO
 from dataclasses import field
 from jumpstarter.common import Metadata
 from contextvars import ContextVar
+from abc import ABC, abstractmethod
 
 
 ContextStore = ContextVar("store")
@@ -14,16 +15,21 @@ ContextStore = ContextVar("store")
 
 @dataclass(kw_only=True)
 class Store:
-    fds: List[BinaryIO] = field(default_factory=list, init=False)
-    conns: Dict[UUID, Any] = field(default_factory=dict, init=False)
+    fds: list[BinaryIO] = field(default_factory=list, init=False)
+    conns: dict[UUID, Any] = field(default_factory=dict, init=False)
 
 
 @dataclass(kw_only=True)
 class Driver(
+    ABC,
     Metadata,
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
 ):
+    @classmethod
+    @abstractmethod
+    def class_labels(cls): ...
+
     async def DriverCall(self, request, context):
         method = getattr(self, request.method)
 
@@ -43,6 +49,15 @@ class Driver(
 
     async def Stream(self, request_iterator, context):
         pass
+
+    def Reports(self, parent=None) -> list[jumpstarter_pb2.DriverInstanceReport]:
+        return [
+            jumpstarter_pb2.DriverInstanceReport(
+                uuid=str(self.uuid),
+                parent_uuid=str(parent.uuid) if parent else None,
+                labels=self.labels | self.class_labels(),
+            )
+        ]
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)

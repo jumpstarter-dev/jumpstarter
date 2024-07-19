@@ -15,6 +15,10 @@ class PowerReading:
 
 
 class PowerInterface(ABC):
+    @classmethod
+    def class_labels(cls):
+        return {"jumpstarter.dev/interface": "power"}
+
     @abstractmethod
     async def on(self) -> str: ...
 
@@ -25,7 +29,7 @@ class PowerInterface(ABC):
     async def read(self) -> AsyncGenerator[PowerReading, None]: ...
 
 
-class PowerClient(DriverClient, PowerInterface):
+class PowerClient(PowerInterface, DriverClient):
     async def on(self) -> str:
         return await self.drivercall("on")
 
@@ -37,7 +41,7 @@ class PowerClient(DriverClient, PowerInterface):
             yield PowerReading(voltage=v["voltage"], current=v["current"])
 
 
-class MockPower(Driver, PowerInterface):
+class MockPower(PowerInterface, Driver):
     @drivercall
     async def on(self) -> str:
         return "ok"
