@@ -7,7 +7,6 @@ from .base import (
     drivercall,
     streamingdrivercall,
 )
-from .stub import DriverStub
 from .registry import _registry
 
 
@@ -39,7 +38,6 @@ __all__ = [
     "Store",
     "ContextStore",
     "DriverBase",
-    "DriverStub",
     "Driver",
     "DriverClient",
     "drivercall",
