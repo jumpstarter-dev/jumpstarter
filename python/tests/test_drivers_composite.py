@@ -1,3 +1,4 @@
+from jumpstarter.drivers.composite.base import ClientFromReports
 from jumpstarter.drivers.composite import Composite, CompositeClient
 from jumpstarter.drivers.power import MockPower, PowerClient
 from jumpstarter.v1 import jumpstarter_pb2_grpc
@@ -30,34 +31,7 @@ async def test_drivers_composite():
 
     async with grpc.aio.insecure_channel("localhost:50051") as channel:
         stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-        client = CompositeClient(
-            uuid=mock.uuid,
-            labels=mock.labels,
-            childs=[
-                PowerClient(
-                    uuid=list(mock.childs.values())[0].uuid,
-                    labels=list(mock.childs.values())[0].labels,
-                    stub=stub,
-                ),
-                CompositeClient(
-                    uuid=list(mock.childs.values())[1].uuid,
-                    labels=list(mock.childs.values())[1].labels,
-                    childs=[
-                        PowerClient(
-                            uuid=list(list(mock.childs.values())[1].childs.values())[
-                                0
-                            ].uuid,
-                            labels=list(list(mock.childs.values())[1].childs.values())[
-                                0
-                            ].labels,
-                            stub=stub,
-                        ),
-                    ],
-                    stub=stub,
-                ),
-            ],
-            stub=stub,
-        )
+        client = ClientFromReports(mock.Reports(), stub=stub)
 
         assert await client.power0.on() == "ok"
         assert await client.composite1.power1.on() == "ok"

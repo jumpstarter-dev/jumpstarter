@@ -2,7 +2,7 @@ from jumpstarter.drivers import Driver, DriverClient
 from jumpstarter.v1 import jumpstarter_pb2
 from collections.abc import Iterator
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import chain
 from uuid import UUID
 from abc import ABC, abstractmethod
@@ -63,18 +63,44 @@ class Composite(CompositeInterface, Driver):
 
 @dataclass(kw_only=True)
 class CompositeClient(CompositeInterface, DriverClient):
-    childs: OrderedDict[UUID, DriverClient]
-
-    def __init__(self, *args, childs: list[DriverClient], **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.childs = OrderedDict([(v.uuid, v) for v in childs])
-
-        for child in self.childs.values():
-            setattr(self, child.labels["jumpstarter.dev/name"], child)
+    childs: OrderedDict[UUID, DriverClient] = field(
+        init=False, default_factory=OrderedDict
+    )
 
     def __getitem__(self, key: UUID) -> DriverClient:
         return self.childs.__getitem__(key)
 
+    def __setitem__(self, key: UUID, value: DriverClient):
+        self.childs.__setitem__(key, value)
+
+        setattr(self, value.labels["jumpstarter.dev/name"], value)
+
     def __iter__(self) -> Iterator[UUID]:
         return self.childs.__iter__()
+
+
+from jumpstarter.drivers.power import PowerClient
+
+
+def ClientFromReports(
+    reports: list[jumpstarter_pb2.DriverInstanceReport],
+    stub,
+) -> DriverClient:
+    clients = OrderedDict()
+
+    for report in reports:
+        uuid = UUID(report.uuid)
+        labels = report.labels
+        match report.labels["jumpstarter.dev/interface"]:
+            case "power":
+                client = PowerClient(uuid=uuid, labels=labels, stub=stub)
+            case "composite":
+                client = CompositeClient(uuid=uuid, labels=labels, stub=stub)
+            case _:
+                raise ValueError
+        clients[uuid] = client
+
+        if report.parent_uuid != "":
+            clients[UUID(report.parent_uuid)][uuid] = client
+
+    return clients.popitem(last=False)[1]
