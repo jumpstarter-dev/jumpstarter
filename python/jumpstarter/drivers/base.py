@@ -121,16 +121,16 @@ def streamingdrivercall(func):
 
 
 # base class for all drivers
-@dataclass(kw_only=True)
-class DriverBase(ABC, Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
-    def mapping(self) -> dict[UUID, "DriverBase"]:
-        return {self.uuid: self}
-
-    def reports(self, parent=None) -> List[jumpstarter_pb2.DriverInstanceReport]:
-        return [
-            jumpstarter_pb2.DriverInstanceReport(
-                uuid=str(self.uuid),
-                parent_uuid=str(parent.uuid) if parent else None,
-                labels=self.labels | {"jumpstarter.dev/interface": self.interface},
-            )
-        ]
+# @dataclass(kw_only=True)
+# class DriverBase(ABC, Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
+#     def mapping(self) -> dict[UUID, "DriverBase"]:
+#         return {self.uuid: self}
+# 
+#     def reports(self, parent=None) -> List[jumpstarter_pb2.DriverInstanceReport]:
+#         return [
+#             jumpstarter_pb2.DriverInstanceReport(
+#                 uuid=str(self.uuid),
+#                 parent_uuid=str(parent.uuid) if parent else None,
+#                 labels=self.labels | {"jumpstarter.dev/interface": self.interface},
+#             )
+#         ]

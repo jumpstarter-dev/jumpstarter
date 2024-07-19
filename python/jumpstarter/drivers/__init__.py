@@ -1,5 +1,4 @@
 from .base import (
-    DriverBase,
     Store,
     ContextStore,
     Driver,
@@ -37,7 +36,6 @@ def __contains__(name):
 __all__ = [
     "Store",
     "ContextStore",
-    "DriverBase",
     "Driver",
     "DriverClient",
     "drivercall",
