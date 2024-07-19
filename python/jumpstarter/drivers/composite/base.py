@@ -20,10 +20,12 @@ class CompositeInterface(ABC):
 class Composite(CompositeInterface, Driver):
     childs: OrderedDict[UUID, Driver]
 
-    def interface(self) -> str:
+    @classmethod
+    def interface(cls) -> str:
         return "composite"
 
-    def version(self) -> str:
+    @classmethod
+    def version(cls) -> str:
         return "0.0.1"
 
     def items(self):

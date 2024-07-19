@@ -30,11 +30,13 @@ class Driver(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
 ):
+    @classmethod
     @abstractmethod
-    def interface(self) -> str: ...
+    def interface(cls) -> str: ...
 
+    @classmethod
     @abstractmethod
-    def version(self) -> str: ...
+    def version(cls) -> str: ...
 
     def items(self):
         return [(self.uuid, self)]

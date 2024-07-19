@@ -12,10 +12,12 @@ from anyio import (
 
 
 class NetworkInterface(ABC):
-    def interface(self) -> str:
+    @classmethod
+    def interface(cls) -> str:
         return "network"
 
-    def version(self) -> str:
+    @classmethod
+    def version(cls) -> str:
         return "0.0.1"
 
     @abstractmethod

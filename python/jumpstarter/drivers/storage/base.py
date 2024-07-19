@@ -6,10 +6,12 @@ from abc import ABC, abstractmethod
 
 
 class StorageMuxInterface(ABC):
-    def interface(self) -> str:
+    @classmethod
+    def interface(cls) -> str:
         return "storage_mux"
 
-    def version(self) -> str:
+    @classmethod
+    def version(cls) -> str:
         return "0.0.1"
 
     @abstractmethod
