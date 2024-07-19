@@ -22,6 +22,59 @@ class Store:
     conns: Dict[UUID, Any] = field(default_factory=dict, init=False)
 
 
+@dataclass(kw_only=True)
+class Driver(Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
+    async def DriverCall(self, request, context):
+        pass
+
+    async def StreamingDriverCall(self, request, context):
+        pass
+
+    async def Stream(self, request_iterator, context):
+        pass
+
+
+@dataclass(kw_only=True)
+class DriverClient(Metadata):
+    pass
+
+
+def drivercall(func):
+    async def DriverCall(self, request, context):
+        args = [json_format.MessageToDict(arg) for arg in request.args]
+
+        result = await func(self, *args)
+
+        return jumpstarter_pb2.DriverCallResponse(
+            uuid=str(uuid4()),
+            result=json_format.ParseDict(
+                asdict(result) if is_dataclass(result) else result, struct_pb2.Value()
+            ),
+        )
+
+    DriverCall.is_drivercall = True
+
+    return DriverCall
+
+
+def streamingdrivercall(func):
+    async def StreamingDriverCall(self, request, context):
+        args = [json_format.MessageToDict(arg) for arg in request.args]
+
+        async for result in func(self, *args):
+            yield jumpstarter_pb2.StreamingDriverCallResponse(
+                uuid=str(uuid4()),
+                result=json_format.ParseDict(
+                    asdict(result) if is_dataclass(result) else result,
+                    struct_pb2.Value(),
+                ),
+            )
+
+    StreamingDriverCall.is_streamingdrivercall = True
+
+    return StreamingDriverCall
+
+
 # base class for all drivers
 @dataclass(kw_only=True)
 class DriverBase(ABC, Metadata, jumpstarter_pb2_grpc.ExporterServiceServicer):
