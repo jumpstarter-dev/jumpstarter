@@ -94,7 +94,9 @@ class Driver(
         async for v in method(request_iterator, context):
             yield v
 
-    def Reports(self) -> list[jumpstarter_pb2.DriverInstanceReport]:
+    def reports(self) -> list[jumpstarter_pb2.DriverInstanceReport]:
+        """Get list of driver instance reports"""
+
         return [
             jumpstarter_pb2.DriverInstanceReport(
                 uuid=str(uuid),
@@ -109,6 +111,8 @@ class Driver(
         ]
 
     def items(self, parent=None):
+        """Get list of self and child devices"""
+
         return [(self.uuid, parent.uuid if parent else None, self)]
 
     async def __lookup_drivercall(self, name, context, marker):

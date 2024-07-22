@@ -37,7 +37,7 @@ class Session(
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            reports=self.root_device.Reports(),
+            reports=self.root_device.reports(),
         )
 
     async def DriverCall(self, request, context):
