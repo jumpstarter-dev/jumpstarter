@@ -1,5 +1,7 @@
-# This file contains the base class for all jumpstarter drivers
-from abc import ABC, abstractmethod
+"""
+Base classes for drivers and driver clients
+"""
+
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -11,7 +13,7 @@ import grpc
 from google.protobuf import json_format, struct_pb2
 from grpc import StatusCode
 
-from jumpstarter.common import Metadata
+from jumpstarter.common import Interface, Metadata
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,
@@ -35,8 +37,8 @@ class Store:
 
 @dataclass(kw_only=True)
 class Driver(
-    ABC,
     Metadata,
+    Interface,
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
 ):
@@ -50,24 +52,6 @@ class Driver(
     decorator for unary calls or the `streamingdrivercall`
     decorator for streaming (generator) calls.
     """
-
-    @classmethod
-    @abstractmethod
-    def interface(cls) -> str:
-        """Return interface name of the driver
-
-        Names should be globally unique thus should
-        be namespaced like `example.com/foo`.
-        """
-
-    @classmethod
-    @abstractmethod
-    def version(cls) -> str:
-        """Return interface version of the driver
-
-        Versions are matched exactly and don't have
-        to follow semantic versioning.
-        """
 
     def add_to_server(self, server):
         """Add self to grpc server
@@ -134,7 +118,7 @@ class Driver(
 
 
 @dataclass(kw_only=True)
-class DriverClient(Metadata):
+class DriverClient(Metadata, Interface):
     channel: grpc.aio.Channel
     stub: jumpstarter_pb2_grpc.ExporterServiceStub = field(init=False)
     router: router_pb2_grpc.RouterServiceStub = field(init=False)

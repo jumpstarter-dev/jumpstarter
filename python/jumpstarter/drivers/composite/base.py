@@ -9,6 +9,14 @@ from jumpstarter.drivers import Driver, DriverClient
 
 
 class CompositeInterface(ABC):
+    @classmethod
+    def interface(cls) -> str:
+        return "composite"
+
+    @classmethod
+    def version(cls) -> str:
+        return "0.0.1"
+
     @abstractmethod
     def __getitem__(self, key: UUID) -> Driver: ...
 
@@ -19,14 +27,6 @@ class CompositeInterface(ABC):
 @dataclass(kw_only=True)
 class Composite(CompositeInterface, Driver):
     childs: OrderedDict[UUID, Driver]
-
-    @classmethod
-    def interface(cls) -> str:
-        return "composite"
-
-    @classmethod
-    def version(cls) -> str:
-        return "0.0.1"
 
     def items(self, parent=None):
         return super().items(parent) + list(chain(*[child.items(self) for child in self.childs.values()]))
