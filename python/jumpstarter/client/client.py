@@ -59,36 +59,3 @@ class Client:
 
     async def sync(self):
         self.root = await client_from_channel(self.channel)
-
-    @contextlib.asynccontextmanager
-    async def Resource(
-        self,
-        device,
-        stream,
-    ):
-        uuid = uuid4()
-
-        async def handle(stream):
-            async with stream:
-                await forward_client_stream(
-                    self.router,
-                    stream,
-                    {"kind": "resource", "uuid": str(device.uuid), "resource_uuid": str(uuid)}.items(),
-                )
-
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(handle, stream)
-            try:
-                yield str(uuid)
-            finally:
-                tg.cancel_scope.cancel()
-
-    @contextlib.asynccontextmanager
-    async def LocalFile(
-        self,
-        device,
-        filepath,
-    ):
-        async with await FileReadStream.from_path(filepath) as file:
-            async with self.Resource(device, file) as uuid:
-                yield uuid

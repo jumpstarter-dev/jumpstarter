@@ -5,9 +5,10 @@ Base classes for drivers and driver clients
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from anyio import create_task_group
+from anyio.streams.file import FileReadStream
 from google.protobuf import json_format, struct_pb2
 from grpc import StatusCode
 from grpc.aio import Channel
@@ -207,3 +208,34 @@ class DriverClient(
                 yield
             finally:
                 tg.cancel_scope.cancel()
+
+    @asynccontextmanager
+    async def resource(
+        self,
+        stream,
+    ):
+        uuid = uuid4()
+
+        async def handle(stream):
+            async with stream:
+                await forward_client_stream(
+                    self,
+                    stream,
+                    {"kind": "resource", "uuid": str(self.uuid), "resource_uuid": str(uuid)}.items(),
+                )
+
+        async with create_task_group() as tg:
+            tg.start_soon(handle, stream)
+            try:
+                yield str(uuid)
+            finally:
+                tg.cancel_scope.cancel()
+
+    @asynccontextmanager
+    async def local_file(
+        self,
+        filepath,
+    ):
+        async with await FileReadStream.from_path(filepath) as file:
+            async with self.resource(file) as uuid:
+                yield uuid

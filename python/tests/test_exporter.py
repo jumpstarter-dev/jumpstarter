@@ -124,7 +124,7 @@ async def test_exporter_mock(setup_client):
         tempf.write(b"thisisatestfile")
         tempf.close()
 
-        async with client.LocalFile(client.root.storage, tempf.name) as file:
+        async with client.root.storage.local_file(tempf.name) as file:
             await client.root.storage.write(file)
 
         os.unlink(tempf.name)
