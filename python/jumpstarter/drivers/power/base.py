@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
@@ -16,7 +16,7 @@ class PowerReading:
         self.apparent_power = self.voltage * self.current
 
 
-class PowerInterface(ABC):
+class PowerInterface(metaclass=ABCMeta):
     @classmethod
     def interface(cls) -> str:
         return "power"

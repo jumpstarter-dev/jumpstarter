@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from tempfile import NamedTemporaryFile
 from uuid import UUID
 
@@ -8,7 +8,7 @@ from jumpstarter.drivers import ContextStore, Driver, DriverClient
 from jumpstarter.drivers.decorators import drivercall
 
 
-class StorageMuxInterface(ABC):
+class StorageMuxInterface(metaclass=ABCMeta):
     @classmethod
     def interface(cls) -> str:
         return "storage_mux"

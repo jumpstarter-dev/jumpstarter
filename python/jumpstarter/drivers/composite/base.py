@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from collections import OrderedDict
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -8,7 +8,7 @@ from uuid import UUID
 from jumpstarter.drivers import Driver, DriverClient
 
 
-class CompositeInterface(ABC):
+class CompositeInterface(metaclass=ABCMeta):
     @classmethod
     def interface(cls) -> str:
         return "composite"

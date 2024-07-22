@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -14,7 +14,7 @@ from jumpstarter.drivers import Driver, DriverClient
 from jumpstarter.drivers.decorators import streamcall
 
 
-class NetworkInterface(ABC):
+class NetworkInterface(metaclass=ABCMeta):
     @classmethod
     def interface(cls) -> str:
         return "network"
