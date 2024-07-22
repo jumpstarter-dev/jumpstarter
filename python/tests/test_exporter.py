@@ -8,7 +8,7 @@ import anyio
 import grpc
 import pytest
 
-from jumpstarter.client import Client
+from jumpstarter.client import client_from_channel
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.network import EchoNetwork, TcpNetwork
 from jumpstarter.drivers.power import MockPower, PowerReading
@@ -32,8 +32,7 @@ async def setup_client(request, anyio_backend):
     server.add_insecure_port("localhost:50051")
     await server.start()
 
-    client = Client(grpc.aio.insecure_channel("localhost:50051"))
-    await client.sync()
+    client = await client_from_channel(grpc.aio.insecure_channel("localhost:50051"))
     yield client
 
     await server.stop(grace=None)
@@ -62,7 +61,7 @@ async def test_tcp_network(setup_client):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     ) as server:
-        async with client.root.portforward(listener):
+        async with client.portforward(listener):
             await anyio.run_process(
                 [
                     "iperf3",
@@ -87,7 +86,7 @@ async def test_tcp_network(setup_client):
 async def test_echo_network(setup_client):
     client = setup_client
 
-    async with client.root.connect() as stream:
+    async with client.connect() as stream:
         await stream.send(b"hello")
         assert await stream.receive() == b"hello"
 
@@ -114,8 +113,8 @@ async def test_echo_network(setup_client):
 async def test_exporter_mock(setup_client):
     client = setup_client
 
-    assert await client.root.composite1.power1.on() == "ok"
-    assert [reading async for reading in client.root.composite1.power1.read()] == [
+    assert await client.composite1.power1.on() == "ok"
+    assert [reading async for reading in client.composite1.power1.read()] == [
         PowerReading(voltage=0.0, current=0.0),
         PowerReading(voltage=5.0, current=2.0),
     ]
@@ -124,7 +123,7 @@ async def test_exporter_mock(setup_client):
         tempf.write(b"thisisatestfile")
         tempf.close()
 
-        async with client.root.storage.local_file(tempf.name) as file:
-            await client.root.storage.write(file)
+        async with client.storage.local_file(tempf.name) as file:
+            await client.storage.write(file)
 
         os.unlink(tempf.name)

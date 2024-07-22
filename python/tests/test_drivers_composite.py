@@ -1,7 +1,7 @@
 import grpc
 import pytest
 
-from jumpstarter.client.client import client_from_channel
+from jumpstarter.client import client_from_channel
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import MockPower
 

@@ -5,7 +5,7 @@ import anyio
 import grpc
 import pytest
 
-from jumpstarter.client import Client, Lease
+from jumpstarter.client import Lease, client_from_channel
 from jumpstarter.common import MetadataFilter
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.exporter import Exporter
@@ -47,13 +47,11 @@ async def test_listener():
                 ),
             ) as lease:
                 async with lease.connect() as inner:
-                    client = Client(inner)
-                    await client.sync()
-                    assert await client.root.on() == "ok"
+                    client = await client_from_channel(inner)
+                    assert await client.on() == "ok"
 
                 async with lease.connect() as inner:
-                    client = Client(inner)
-                    await client.sync()
-                    assert await client.root.on() == "ok"
+                    client = await client_from_channel(inner)
+                    assert await client.on() == "ok"
 
             tg.cancel_scope.cancel()

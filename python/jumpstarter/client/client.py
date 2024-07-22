@@ -1,13 +1,8 @@
-import contextlib
 from collections import OrderedDict
-from dataclasses import dataclass
-from uuid import UUID, uuid4
+from uuid import UUID
 
-import anyio
-from anyio.streams.file import FileReadStream
 from google.protobuf import empty_pb2
 
-from jumpstarter.common.streams import forward_client_stream
 from jumpstarter.drivers import DriverClient
 from jumpstarter.drivers.composite import CompositeClient
 from jumpstarter.drivers.network import NetworkClient
@@ -15,7 +10,6 @@ from jumpstarter.drivers.power import PowerClient
 from jumpstarter.drivers.storage import StorageMuxClient
 from jumpstarter.v1 import (
     jumpstarter_pb2_grpc,
-    router_pb2_grpc,
 )
 
 
@@ -46,16 +40,3 @@ async def client_from_channel(
             clients[UUID(report.parent_uuid)][uuid] = client
 
     return clients.popitem(last=False)[1]
-
-
-@dataclass
-class Client:
-    stub: jumpstarter_pb2_grpc.ExporterServiceStub
-
-    def __init__(self, channel):
-        self.channel = channel
-        self.stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
-        self.router = router_pb2_grpc.RouterServiceStub(channel)
-
-    async def sync(self):
-        self.root = await client_from_channel(self.channel)
