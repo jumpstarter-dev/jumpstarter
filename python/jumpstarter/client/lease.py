@@ -58,9 +58,7 @@ class Lease(AbstractAsyncContextManager):
         if self.uuid is None:
             raise ValueError("exporter not leased")
 
-        response = await self.controller.Dial(
-            jumpstarter_pb2.DialRequest(uuid=str(self.uuid))
-        )
+        response = await self.controller.Dial(jumpstarter_pb2.DialRequest(uuid=str(self.uuid)))
 
         with TemporaryDirectory() as tempdir:
             socketpath = Path(tempdir) / "socket"
@@ -69,13 +67,9 @@ class Lease(AbstractAsyncContextManager):
                 async with create_task_group() as tg:
                     tg.start_soon(self._accept, listener, response)
 
-                    async with grpc.aio.insecure_channel(
-                        f"unix://{socketpath}"
-                    ) as inner:
+                    async with grpc.aio.insecure_channel(f"unix://{socketpath}") as inner:
                         yield inner
 
     async def _accept(self, listener, response):
         async with await listener.accept() as stream:
-            await connect_router_stream(
-                response.router_endpoint, response.router_token, stream
-            )
+            await connect_router_stream(response.router_endpoint, response.router_token, stream)

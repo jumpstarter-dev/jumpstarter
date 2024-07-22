@@ -24,9 +24,7 @@ async def setup_client(request, anyio_backend):
     server = grpc.aio.server()
 
     try:
-        e = Session(
-            labels={"jumpstarter.dev/name": "exporter"}, root_device=request.param
-        )
+        e = Session(labels={"jumpstarter.dev/name": "exporter"}, root_device=request.param)
     except FileNotFoundError:
         pytest.skip("fail to find required devices")
 

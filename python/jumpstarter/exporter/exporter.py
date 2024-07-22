@@ -65,8 +65,6 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                     await server.start()
 
                     async with await connect_unix(socketpath) as stream:
-                        await connect_router_stream(
-                            request.router_endpoint, request.router_token, stream
-                        )
+                        await connect_router_stream(request.router_endpoint, request.router_token, stream)
                 finally:
                     await server.stop(grace=None)

@@ -29,9 +29,7 @@ class Config:
             client = config.get("client")
             print(client)
             if client is None:
-                raise ValueError(
-                    "config file {} does not contain a 'client' key".format(path)
-                )
+                raise ValueError("config file {} does not contain a 'client' key".format(path))
 
             self.endpoint = client.get("endpoint")
             self.token = client.get("token")
@@ -39,7 +37,5 @@ class Config:
 
             if self.endpoint is None or self.token is None:
                 raise ValueError(
-                    "config file {} does not contain 'client.endpoint' or 'client.token' keys".format(
-                        path
-                    )
+                    "config file {} does not contain 'client.endpoint' or 'client.token' keys".format(path)
                 )

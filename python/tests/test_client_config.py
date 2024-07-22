@@ -47,9 +47,7 @@ def test_config_file_path_with_argument_context():
     os.environ["JUMPSTARTER_CONTEXT"] = "mycontext"
     with patch.object(Config, "_load", return_value=None) as _:
         config = Config(context="othercontext")
-        assert config._filename.endswith(
-            "/.config/jumpstarter/config_othercontext.yaml"
-        )
+        assert config._filename.endswith("/.config/jumpstarter/config_othercontext.yaml")
 
 
 def test_config_from_env():

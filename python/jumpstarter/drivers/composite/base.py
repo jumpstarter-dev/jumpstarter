@@ -29,9 +29,7 @@ class Composite(CompositeInterface, Driver):
         return "0.0.1"
 
     def items(self):
-        return super().items() + list(
-            chain(*[child.items() for child in self.childs.values()])
-        )
+        return super().items() + list(chain(*[child.items() for child in self.childs.values()]))
 
     def __init__(self, *args, childs: list[Driver], **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,16 +64,12 @@ class Composite(CompositeInterface, Driver):
         pass
 
     def Reports(self, parent=None) -> list[jumpstarter_pb2.DriverInstanceReport]:
-        return super().Reports(parent) + list(
-            chain(*[child.Reports(parent=self) for child in self.childs.values()])
-        )
+        return super().Reports(parent) + list(chain(*[child.Reports(parent=self) for child in self.childs.values()]))
 
 
 @dataclass(kw_only=True)
 class CompositeClient(CompositeInterface, DriverClient):
-    childs: OrderedDict[UUID, DriverClient] = field(
-        init=False, default_factory=OrderedDict
-    )
+    childs: OrderedDict[UUID, DriverClient] = field(init=False, default_factory=OrderedDict)
 
     def __getitem__(self, key: UUID) -> DriverClient:
         return self.childs.__getitem__(key)

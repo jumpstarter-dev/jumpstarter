@@ -27,6 +27,9 @@ jumpstarter = "jumpstarter.cli:main"
 pytest = "^8.2.2"
 pytest-anyio = "^0.0.0"
 
+[tool.ruff]
+line-length = 120
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

@@ -74,9 +74,7 @@ class Driver(
         return await method(request, context)
 
     async def StreamingDriverCall(self, request, context):
-        method = await self.__lookup_drivercall(
-            request, context, MARKER_STREAMING_DRIVERCALL
-        )
+        method = await self.__lookup_drivercall(request, context, MARKER_STREAMING_DRIVERCALL)
 
         async for v in method(request, context):
             yield v
@@ -116,14 +114,10 @@ class Driver(
         method = getattr(self, request.method, None)
 
         if method is None:
-            await context.abort(
-                StatusCode.NOT_FOUND, f"method {request.method} not found on driver"
-            )
+            await context.abort(StatusCode.NOT_FOUND, f"method {request.method} not found on driver")
 
         if getattr(method, marker, None) != MARKER_MAGIC:
-            await context.abort(
-                StatusCode.NOT_FOUND, f"method {request.method} missing marker {marker}"
-            )
+            await context.abort(StatusCode.NOT_FOUND, f"method {request.method} missing marker {marker}")
 
         return method
 
@@ -145,10 +139,7 @@ class DriverClient(Metadata):
                     jumpstarter_pb2.DriverCallRequest(
                         uuid=str(self.uuid),
                         method=method,
-                        args=[
-                            json_format.ParseDict(arg, struct_pb2.Value())
-                            for arg in args
-                        ],
+                        args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
                     )
                 )
             ).result
@@ -204,9 +195,7 @@ def drivercall(func):
 
         return jumpstarter_pb2.DriverCallResponse(
             uuid=str(uuid4()),
-            result=json_format.ParseDict(
-                asdict(result) if is_dataclass(result) else result, struct_pb2.Value()
-            ),
+            result=json_format.ParseDict(asdict(result) if is_dataclass(result) else result, struct_pb2.Value()),
         )
 
     setattr(DriverCall, MARKER_DRIVERCALL, MARKER_MAGIC)

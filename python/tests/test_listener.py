@@ -13,8 +13,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.skipif(
-    socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex(("localhost", 8083))
-    != 0,
+    socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex(("localhost", 8083)) != 0,
     reason="controller not available",
 )
 async def test_listener():

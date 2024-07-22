@@ -44,9 +44,7 @@ class TcpNetwork(NetworkInterface, Driver):
 
     @asynccontextmanager
     async def connect(self):
-        async with await connect_tcp(
-            remote_host=self.host, remote_port=self.port
-        ) as stream:
+        async with await connect_tcp(remote_host=self.host, remote_port=self.port) as stream:
             yield stream
 
 
@@ -57,9 +55,7 @@ class UdpNetwork(NetworkInterface, Driver):
 
     @asynccontextmanager
     async def connect(self):
-        async with await create_connected_udp_socket(
-            remote_host=self.host, remote_port=self.port
-        ) as stream:
+        async with await create_connected_udp_socket(remote_host=self.host, remote_port=self.port) as stream:
             yield stream
 
 

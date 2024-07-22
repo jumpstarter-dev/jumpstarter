@@ -56,9 +56,7 @@ class Client:
         self.router = router_pb2_grpc.RouterServiceStub(channel)
 
     async def sync(self):
-        self.root = ClientFromReports(
-            (await self.stub.GetReport(empty_pb2.Empty())).reports, self.channel
-        )
+        self.root = ClientFromReports((await self.stub.GetReport(empty_pb2.Empty())).reports, self.channel)
 
     @contextlib.asynccontextmanager
     async def Resource(
@@ -69,9 +67,7 @@ class Client:
 
         async def handle(stream):
             async with stream:
-                await forward_client_stream(
-                    self.router, stream, {"kind": "resource", "uuid": str(uuid)}.items()
-                )
+                await forward_client_stream(self.router, stream, {"kind": "resource", "uuid": str(uuid)}.items())
 
         async with anyio.create_task_group() as tg:
             tg.start_soon(handle, stream)

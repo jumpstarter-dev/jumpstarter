@@ -62,9 +62,7 @@ class Session(
                 try:
                     ContextStore.get().conns[uuid] = device_stream
                     async with client_stream:
-                        async for v in forward_server_stream(
-                            request_iterator, client_stream
-                        ):
+                        async for v in forward_server_stream(request_iterator, client_stream):
                             yield v
                 finally:
                     del ContextStore.get().conns[uuid]
