@@ -1,21 +1,23 @@
+import contextlib
+from collections import OrderedDict
+from dataclasses import dataclass
+from uuid import UUID, uuid4
+
+import anyio
+from anyio.streams.file import FileReadStream
+from google.protobuf import empty_pb2
+
+from jumpstarter.common.streams import forward_client_stream
+from jumpstarter.drivers import DriverClient
+from jumpstarter.drivers.composite import CompositeClient
+from jumpstarter.drivers.network import NetworkClient
+from jumpstarter.drivers.power import PowerClient
+from jumpstarter.drivers.storage import StorageMuxClient
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
-from jumpstarter.drivers.composite import CompositeClient
-from jumpstarter.drivers.power import PowerClient
-from jumpstarter.drivers.network import NetworkClient
-from jumpstarter.drivers.storage import StorageMuxClient
-from jumpstarter.drivers import DriverClient
-from jumpstarter.common.streams import forward_client_stream
-from google.protobuf import empty_pb2
-from dataclasses import dataclass
-from uuid import UUID, uuid4
-from anyio.streams.file import FileReadStream
-from collections import OrderedDict
-import contextlib
-import anyio
 
 
 def ClientFromReports(

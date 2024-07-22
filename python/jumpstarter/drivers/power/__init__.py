@@ -1,3 +1,3 @@
-from .base import PowerReading, PowerInterface, PowerClient, MockPower
+from .base import MockPower, PowerClient, PowerInterface, PowerReading
 
 __all__ = ["PowerReading", "PowerInterface", "PowerClient", "MockPower"]

@@ -1,14 +1,16 @@
-from jumpstarter.drivers import Driver, DriverClient, streamcall
-from dataclasses import dataclass
-from contextlib import asynccontextmanager
-from anyio.streams.stapled import StapledObjectStream
 from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+
 from anyio import (
     connect_tcp,
-    create_connected_udp_socket,
     connect_unix,
+    create_connected_udp_socket,
     create_memory_object_stream,
 )
+from anyio.streams.stapled import StapledObjectStream
+
+from jumpstarter.drivers import Driver, DriverClient, streamcall
 
 
 class NetworkInterface(ABC):

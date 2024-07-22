@@ -1,11 +1,11 @@
-from jumpstarter.drivers import Driver, DriverClient
-from jumpstarter.v1 import jumpstarter_pb2
-from collections.abc import Iterator
+from abc import ABC, abstractmethod
 from collections import OrderedDict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from itertools import chain
 from uuid import UUID
-from abc import ABC, abstractmethod
+
+from jumpstarter.drivers import Driver, DriverClient
 
 
 class CompositeInterface(ABC):

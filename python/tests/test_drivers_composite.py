@@ -1,8 +1,9 @@
+import grpc
+import pytest
+
 from jumpstarter.client.client import ClientFromReports
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import MockPower
-import pytest
-import grpc
 
 pytestmark = pytest.mark.anyio
 

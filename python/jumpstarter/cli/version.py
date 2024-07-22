@@ -1,7 +1,8 @@
-import click
 import importlib.metadata
-import sys
 import os
+import sys
+
+import click
 
 
 def get_client_version():

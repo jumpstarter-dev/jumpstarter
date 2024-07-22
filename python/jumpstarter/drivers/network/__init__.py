@@ -1,12 +1,11 @@
 from jumpstarter.drivers.network.base import (
-    NetworkInterface,
+    EchoNetwork,
     NetworkClient,
+    NetworkInterface,
     TcpNetwork,
     UdpNetwork,
     UnixNetwork,
-    EchoNetwork,
 )
-
 
 __all__ = [
     "NetworkInterface",

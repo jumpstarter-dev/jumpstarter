@@ -1,8 +1,10 @@
-from jumpstarter.drivers import Driver, DriverClient, ContextStore, drivercall
-from anyio.streams.file import FileWriteStream
+from abc import ABC, abstractmethod
 from tempfile import NamedTemporaryFile
 from uuid import UUID
-from abc import ABC, abstractmethod
+
+from anyio.streams.file import FileWriteStream
+
+from jumpstarter.drivers import ContextStore, Driver, DriverClient, drivercall
 
 
 class StorageMuxInterface(ABC):

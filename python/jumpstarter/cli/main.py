@@ -2,7 +2,6 @@
 
 import click
 
-
 from .version import version
 
 

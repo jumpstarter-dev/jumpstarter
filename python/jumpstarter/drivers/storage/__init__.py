@@ -1,5 +1,4 @@
-from .base import StorageMuxInterface, StorageMuxClient, MockStorageMux
-
+from .base import MockStorageMux, StorageMuxClient, StorageMuxInterface
 
 __all__ = [
     "StorageMuxInterface",
