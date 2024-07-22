@@ -4,8 +4,7 @@ from uuid import UUID
 
 from anyio.streams.file import FileWriteStream
 
-from jumpstarter.drivers import Driver, DriverClient
-from jumpstarter.drivers.decorators import drivercall
+from jumpstarter.drivers import Driver, DriverClient, drivercall
 
 
 class StorageMuxInterface(metaclass=ABCMeta):

@@ -10,8 +10,7 @@ from anyio import (
 )
 from anyio.streams.stapled import StapledObjectStream
 
-from jumpstarter.drivers import Driver, DriverClient
-from jumpstarter.drivers.decorators import streamcall
+from jumpstarter.drivers import Driver, DriverClient, streamcall
 
 
 class NetworkInterface(metaclass=ABCMeta):
