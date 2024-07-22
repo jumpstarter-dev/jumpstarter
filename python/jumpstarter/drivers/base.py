@@ -88,21 +88,23 @@ class Driver(
 
                 del self.resources[UUID(metadata["resource_uuid"])]
 
-    def reports(self) -> list[jumpstarter_pb2.DriverInstanceReport]:
-        """Get list of driver instance reports"""
-
-        return [
-            jumpstarter_pb2.DriverInstanceReport(
-                uuid=str(uuid),
-                parent_uuid=str(parent_uuid) if parent_uuid else None,
-                labels=instance.labels
-                | {
-                    "jumpstarter.dev/interface": instance.interface(),
-                    "jumpstarter.dev/version": instance.version(),
-                },
-            )
-            for (uuid, parent_uuid, instance) in self.items()
-        ]
+    async def GetReport(self, request, context):
+        return jumpstarter_pb2.GetReportResponse(
+            uuid=str(self.uuid),
+            labels=self.labels,
+            reports=[
+                jumpstarter_pb2.DriverInstanceReport(
+                    uuid=str(uuid),
+                    parent_uuid=str(parent_uuid) if parent_uuid else None,
+                    labels=instance.labels
+                    | {
+                        "jumpstarter.dev/interface": instance.interface(),
+                        "jumpstarter.dev/version": instance.version(),
+                    },
+                )
+                for (uuid, parent_uuid, instance) in self.items()
+            ],
+        )
 
     def items(self, parent=None):
         """Get list of self and child devices"""
