@@ -1,7 +1,7 @@
 import grpc
 import pytest
 
-from jumpstarter.client.client import ClientFromReports
+from jumpstarter.client.client import client_from_channel
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import MockPower
 
@@ -29,7 +29,7 @@ async def test_drivers_composite():
     await server.start()
 
     async with grpc.aio.insecure_channel("localhost:50051") as channel:
-        client = ClientFromReports((await mock.GetReport(None, None)).reports, channel=channel)
+        client = await client_from_channel(channel=channel)
 
         assert await client.power0.on() == "ok"
         assert await client.composite1.power1.on() == "ok"

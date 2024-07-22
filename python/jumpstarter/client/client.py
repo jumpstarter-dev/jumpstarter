@@ -14,19 +14,19 @@ from jumpstarter.drivers.network import NetworkClient
 from jumpstarter.drivers.power import PowerClient
 from jumpstarter.drivers.storage import StorageMuxClient
 from jumpstarter.v1 import (
-    jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
 
 
-def ClientFromReports(
-    reports: list[jumpstarter_pb2.DriverInstanceReport],
+async def client_from_channel(
     channel,
 ) -> DriverClient:
     clients = OrderedDict()
 
-    for report in reports:
+    response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
+
+    for report in response.reports:
         uuid = UUID(report.uuid)
         labels = report.labels
         match report.labels["jumpstarter.dev/interface"]:
@@ -58,7 +58,7 @@ class Client:
         self.router = router_pb2_grpc.RouterServiceStub(channel)
 
     async def sync(self):
-        self.root = ClientFromReports((await self.stub.GetReport(empty_pb2.Empty())).reports, self.channel)
+        self.root = await client_from_channel(self.channel)
 
     @contextlib.asynccontextmanager
     async def Resource(
