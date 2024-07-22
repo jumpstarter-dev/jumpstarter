@@ -23,6 +23,7 @@ ContextStore = ContextVar("store")
 
 MARKER_MAGIC: Final[str] = "07c9b9cc"
 MARKER_DRIVERCALL: Final[str] = "marker_drivercall"
+MARKER_STREAMCALL: Final[str] = "marker_streamcall"
 MARKER_STREAMING_DRIVERCALL: Final[str] = "marker_streamingdrivercall"
 
 
@@ -192,7 +193,7 @@ class DriverClient(Metadata):
 
 
 def drivercall(func):
-    async def DriverCall(self, request, context):
+    async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
 
         result = await func(self, *args)
@@ -202,13 +203,24 @@ def drivercall(func):
             result=json_format.ParseDict(asdict(result) if is_dataclass(result) else result, struct_pb2.Value()),
         )
 
-    setattr(DriverCall, MARKER_DRIVERCALL, MARKER_MAGIC)
+    setattr(wrapper, MARKER_DRIVERCALL, MARKER_MAGIC)
 
-    return DriverCall
+    return wrapper
+
+
+def streamcall(func):
+    async def wrapper(self, request_iterator, context):
+        async with func(self) as stream:
+            async for v in forward_server_stream(request_iterator, stream):
+                yield v
+
+    setattr(wrapper, MARKER_STREAMCALL, MARKER_MAGIC)
+
+    return wrapper
 
 
 def streamingdrivercall(func):
-    async def StreamingDriverCall(self, request, context):
+    async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
 
         async for result in func(self, *args):
@@ -220,6 +232,6 @@ def streamingdrivercall(func):
                 ),
             )
 
-    setattr(StreamingDriverCall, MARKER_STREAMING_DRIVERCALL, MARKER_MAGIC)
+    setattr(wrapper, MARKER_STREAMING_DRIVERCALL, MARKER_MAGIC)
 
-    return StreamingDriverCall
+    return wrapper
