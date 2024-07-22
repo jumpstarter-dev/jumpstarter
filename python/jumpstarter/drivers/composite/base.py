@@ -28,8 +28,8 @@ class Composite(CompositeInterface, Driver):
     def version(cls) -> str:
         return "0.0.1"
 
-    def items(self):
-        return super().items() + list(chain(*[child.items() for child in self.childs.values()]))
+    def items(self, parent=None):
+        return super().items(parent) + list(chain(*[child.items(self) for child in self.childs.values()]))
 
     def __init__(self, *args, childs: list[Driver], **kwargs):
         super().__init__(*args, **kwargs)
@@ -62,9 +62,6 @@ class Composite(CompositeInterface, Driver):
 
     async def Stream(self, request_iterator, context):
         pass
-
-    def Reports(self, parent=None) -> list[jumpstarter_pb2.DriverInstanceReport]:
-        return super().Reports(parent) + list(chain(*[child.Reports(parent=self) for child in self.childs.values()]))
 
 
 @dataclass(kw_only=True)

@@ -94,21 +94,22 @@ class Driver(
         async for v in method(request_iterator, context):
             yield v
 
-    def Reports(self, parent=None) -> list[jumpstarter_pb2.DriverInstanceReport]:
+    def Reports(self) -> list[jumpstarter_pb2.DriverInstanceReport]:
         return [
             jumpstarter_pb2.DriverInstanceReport(
-                uuid=str(self.uuid),
-                parent_uuid=str(parent.uuid) if parent else None,
-                labels=self.labels
+                uuid=str(uuid),
+                parent_uuid=str(parent_uuid) if parent_uuid else None,
+                labels=instance.labels
                 | {
-                    "jumpstarter.dev/interface": self.interface(),
-                    "jumpstarter.dev/version": self.version(),
+                    "jumpstarter.dev/interface": instance.interface(),
+                    "jumpstarter.dev/version": instance.version(),
                 },
             )
+            for (uuid, parent_uuid, instance) in self.items()
         ]
 
-    def items(self):
-        return [(self.uuid, self)]
+    def items(self, parent=None):
+        return [(self.uuid, parent.uuid if parent else None, self)]
 
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name
