@@ -1,15 +1,49 @@
 from jumpstarter.v1 import (
+    jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
-from jumpstarter.drivers.composite.base import ClientFromReports
+from jumpstarter.drivers.composite import CompositeClient
+from jumpstarter.drivers.power import PowerClient
+from jumpstarter.drivers.network import NetworkClient
+from jumpstarter.drivers.storage import StorageMuxClient
+from jumpstarter.drivers import DriverClient
 from jumpstarter.common.streams import forward_client_stream
 from google.protobuf import empty_pb2
 from dataclasses import dataclass
-from uuid import uuid4
+from uuid import UUID, uuid4
 from anyio.streams.file import FileReadStream
+from collections import OrderedDict
 import contextlib
 import anyio
+
+
+def ClientFromReports(
+    reports: list[jumpstarter_pb2.DriverInstanceReport],
+    channel,
+) -> DriverClient:
+    clients = OrderedDict()
+
+    for report in reports:
+        uuid = UUID(report.uuid)
+        labels = report.labels
+        match report.labels["jumpstarter.dev/interface"]:
+            case "power":
+                client = PowerClient(uuid=uuid, labels=labels, channel=channel)
+            case "composite":
+                client = CompositeClient(uuid=uuid, labels=labels, channel=channel)
+            case "network":
+                client = NetworkClient(uuid=uuid, labels=labels, channel=channel)
+            case "storage_mux":
+                client = StorageMuxClient(uuid=uuid, labels=labels, channel=channel)
+            case _:
+                raise ValueError
+        clients[uuid] = client
+
+        if report.parent_uuid != "":
+            clients[UUID(report.parent_uuid)][uuid] = client
+
+    return clients.popitem(last=False)[1]
 
 
 @dataclass

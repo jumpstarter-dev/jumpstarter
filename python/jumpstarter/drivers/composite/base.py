@@ -87,36 +87,3 @@ class CompositeClient(CompositeInterface, DriverClient):
 
     def __iter__(self) -> Iterator[UUID]:
         return self.childs.__iter__()
-
-
-from jumpstarter.drivers.power import PowerClient
-from jumpstarter.drivers.network import NetworkClient
-from jumpstarter.drivers.storage import StorageMuxClient
-
-
-def ClientFromReports(
-    reports: list[jumpstarter_pb2.DriverInstanceReport],
-    channel,
-) -> DriverClient:
-    clients = OrderedDict()
-
-    for report in reports:
-        uuid = UUID(report.uuid)
-        labels = report.labels
-        match report.labels["jumpstarter.dev/interface"]:
-            case "power":
-                client = PowerClient(uuid=uuid, labels=labels, channel=channel)
-            case "composite":
-                client = CompositeClient(uuid=uuid, labels=labels, channel=channel)
-            case "network":
-                client = NetworkClient(uuid=uuid, labels=labels, channel=channel)
-            case "storage_mux":
-                client = StorageMuxClient(uuid=uuid, labels=labels, channel=channel)
-            case _:
-                raise ValueError
-        clients[uuid] = client
-
-        if report.parent_uuid != "":
-            clients[UUID(report.parent_uuid)][uuid] = client
-
-    return clients.popitem(last=False)[1]

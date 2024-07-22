@@ -1,4 +1,4 @@
-from jumpstarter.drivers.composite.base import ClientFromReports
+from jumpstarter.client.client import ClientFromReports
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import MockPower
 import pytest
