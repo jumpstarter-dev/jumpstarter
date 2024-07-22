@@ -8,10 +8,10 @@ from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 from uuid import UUID
 
-import anyio
-import grpc
+from anyio import create_task_group
 from google.protobuf import json_format, struct_pb2
 from grpc import StatusCode
+from grpc.aio import Channel
 
 from jumpstarter.common import Interface, Metadata
 from jumpstarter.common.streams import (
@@ -118,46 +118,61 @@ class Driver(
 
 
 @dataclass(kw_only=True)
-class DriverClient(Metadata, Interface):
-    channel: grpc.aio.Channel
-    stub: jumpstarter_pb2_grpc.ExporterServiceStub = field(init=False)
-    router: router_pb2_grpc.RouterServiceStub = field(init=False)
+class DriverClient(
+    Metadata,
+    Interface,
+    jumpstarter_pb2_grpc.ExporterServiceStub,
+    router_pb2_grpc.RouterServiceStub,
+):
+    """Base class for driver clients
+
+    Driver clients should as the minimum implement the
+    `interface` and `version` methods.
+
+    Additional client methods can be implemented as
+    regular methods and call `drivercall` or
+    `streamingdrivercall` internally.
+    """
+
+    channel: Channel
 
     def __post_init__(self):
-        self.stub = jumpstarter_pb2_grpc.ExporterServiceStub(self.channel)
-        self.router = router_pb2_grpc.RouterServiceStub(self.channel)
+        jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
+        router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
 
-    async def _drivercall(self, method, *args):
-        return json_format.MessageToDict(
-            (
-                await self.stub.DriverCall(
-                    jumpstarter_pb2.DriverCallRequest(
-                        uuid=str(self.uuid),
-                        method=method,
-                        args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
-                    )
-                )
-            ).result
+    async def drivercall(self, method, *args):
+        """Make DriverCall by method name and arguments"""
+
+        request = jumpstarter_pb2.DriverCallRequest(
+            uuid=str(self.uuid),
+            method=method,
+            args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
         )
 
-    async def _streamingdrivercall(self, method, *args):
-        async for v in self.stub.StreamingDriverCall(
-            jumpstarter_pb2.StreamingDriverCallRequest(
-                uuid=str(self.uuid),
-                method=method,
-                args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
-            )
-        ):
-            yield json_format.MessageToDict(v.result)
+        response = await self.DriverCall(request)
+
+        return json_format.MessageToDict(response.result)
+
+    async def streamingdrivercall(self, method, *args):
+        """Make StreamingDriverCall by method name and arguments"""
+
+        request = jumpstarter_pb2.StreamingDriverCallRequest(
+            uuid=str(self.uuid),
+            method=method,
+            args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+        )
+
+        async for response in self.StreamingDriverCall(request):
+            yield json_format.MessageToDict(response.result)
 
     @asynccontextmanager
     async def _stream(self):
         client_stream, device_stream = create_memory_stream()
 
-        async with anyio.create_task_group() as tg:
+        async with create_task_group() as tg:
             tg.start_soon(
                 forward_client_stream,
-                self.router,
+                self,
                 device_stream,
                 {"kind": "device", "uuid": str(self.uuid)}.items(),
             )
@@ -169,12 +184,12 @@ class DriverClient(Metadata, Interface):
         async def handle(client):
             async with client:
                 await forward_client_stream(
-                    self.router,
+                    self,
                     client,
                     {"kind": "device", "uuid": str(self.uuid)}.items(),
                 )
 
-        async with anyio.create_task_group() as tg:
+        async with create_task_group() as tg:
             tg.start_soon(listener.serve, handle)
             try:
                 yield

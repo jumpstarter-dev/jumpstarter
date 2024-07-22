@@ -32,16 +32,16 @@ class StorageMuxInterface(ABC):
 
 class StorageMuxClient(StorageMuxInterface, DriverClient):
     async def host(self):
-        return await self._drivercall("host")
+        return await self.drivercall("host")
 
     async def dut(self):
-        return await self._drivercall("dut")
+        return await self.drivercall("dut")
 
     async def off(self):
-        return await self._drivercall("off")
+        return await self.drivercall("off")
 
     async def write(self, src: str):
-        return await self._drivercall("write", src)
+        return await self.drivercall("write", src)
 
 
 class MockStorageMux(StorageMuxInterface, Driver):
