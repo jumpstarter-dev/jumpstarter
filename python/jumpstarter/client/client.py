@@ -37,6 +37,6 @@ async def client_from_channel(
         clients[uuid] = client
 
         if report.parent_uuid != "":
-            clients[UUID(report.parent_uuid)][uuid] = client
+            clients[UUID(report.parent_uuid)] |= client
 
     return clients.popitem(last=False)[1]

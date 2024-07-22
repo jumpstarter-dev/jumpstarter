@@ -4,6 +4,7 @@ import pytest
 from jumpstarter.client import client_from_channel
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import MockPower
+from jumpstarter.exporter import Session
 
 pytestmark = pytest.mark.anyio
 
@@ -24,7 +25,8 @@ async def test_drivers_composite():
             ),
         ],
     )
-    mock.add_to_server(server)
+    session = Session(labels={"jumpstarter.dev/name": "exporter"}, root_device=mock)
+    session.add_to_server(server)
 
     await server.start()
 
