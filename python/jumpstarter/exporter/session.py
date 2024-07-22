@@ -54,9 +54,8 @@ class Session(
         match metadata["kind"]:
             case "device":
                 device = self[uuid]
-                async with device.connect() as stream:
-                    async for v in forward_server_stream(request_iterator, stream):
-                        yield v
+                async for v in device.Stream(request_iterator, context):
+                    yield v
             case "resource":
                 client_stream, device_stream = create_memory_stream()
 

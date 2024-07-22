@@ -5,7 +5,11 @@ from dataclasses import dataclass, asdict, is_dataclass
 from uuid import UUID, uuid4
 from typing import Any, BinaryIO
 from dataclasses import field
-from jumpstarter.common.streams import create_memory_stream, forward_client_stream
+from jumpstarter.common.streams import (
+    create_memory_stream,
+    forward_client_stream,
+    forward_server_stream,
+)
 from jumpstarter.common import Metadata
 from contextvars import ContextVar
 from contextlib import asynccontextmanager
@@ -59,7 +63,9 @@ class Driver(
             yield v
 
     async def Stream(self, request_iterator, context):
-        pass
+        async with self.connect() as stream:
+            async for v in forward_server_stream(request_iterator, stream):
+                yield v
 
     def Reports(self, parent=None) -> list[jumpstarter_pb2.DriverInstanceReport]:
         return [
