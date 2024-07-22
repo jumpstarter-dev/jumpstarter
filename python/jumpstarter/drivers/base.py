@@ -78,20 +78,21 @@ class Driver(
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
     async def DriverCall(self, request, context):
-        method = await self.__lookup_drivercall(request, context, MARKER_DRIVERCALL)
+        method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
 
         return await method(request, context)
 
     async def StreamingDriverCall(self, request, context):
-        method = await self.__lookup_drivercall(request, context, MARKER_STREAMING_DRIVERCALL)
+        method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
 
         async for v in method(request, context):
             yield v
 
     async def Stream(self, request_iterator, context):
-        async with self.connect() as stream:
-            async for v in forward_server_stream(request_iterator, stream):
-                yield v
+        method = await self.__lookup_drivercall("connect", context, MARKER_STREAMCALL)
+
+        async for v in method(request_iterator, context):
+            yield v
 
     def Reports(self, parent=None) -> list[jumpstarter_pb2.DriverInstanceReport]:
         return [
@@ -109,20 +110,20 @@ class Driver(
     def items(self):
         return [(self.uuid, self)]
 
-    async def __lookup_drivercall(self, request, context, marker):
+    async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name
 
         Methods are checked against magic markers
         to avoid accidentally calling non-exported
         methods
         """
-        method = getattr(self, request.method, None)
+        method = getattr(self, name, None)
 
         if method is None:
-            await context.abort(StatusCode.NOT_FOUND, f"method {request.method} not found on driver")
+            await context.abort(StatusCode.NOT_FOUND, f"method {name} not found on driver")
 
         if getattr(method, marker, None) != MARKER_MAGIC:
-            await context.abort(StatusCode.NOT_FOUND, f"method {request.method} missing marker {marker}")
+            await context.abort(StatusCode.NOT_FOUND, f"method {name} missing marker {marker}")
 
         return method
 

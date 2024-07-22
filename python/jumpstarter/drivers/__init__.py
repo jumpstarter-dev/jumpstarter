@@ -4,6 +4,7 @@ from .base import (
     Driver,
     DriverClient,
     drivercall,
+    streamcall,
     streamingdrivercall,
 )
 from .registry import _registry
@@ -39,5 +40,6 @@ __all__ = [
     "Driver",
     "DriverClient",
     "drivercall",
+    "streamcall",
     "streamingdrivercall",
 ]
