@@ -9,7 +9,6 @@ import grpc
 import pytest
 
 from jumpstarter.client import Client
-from jumpstarter.drivers import ContextStore, Store
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.network import EchoNetwork, TcpNetwork
 from jumpstarter.drivers.power import MockPower, PowerReading
@@ -21,8 +20,6 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 async def setup_client(request, anyio_backend):
-    ContextStore.set(Store())
-
     server = grpc.aio.server()
 
     try:
@@ -127,7 +124,7 @@ async def test_exporter_mock(setup_client):
         tempf.write(b"thisisatestfile")
         tempf.close()
 
-        async with client.LocalFile(tempf.name) as file:
+        async with client.LocalFile(client.root.storage, tempf.name) as file:
             await client.root.storage.write(file)
 
         os.unlink(tempf.name)

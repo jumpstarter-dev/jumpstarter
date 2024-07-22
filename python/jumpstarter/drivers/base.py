@@ -3,9 +3,8 @@ Base classes for drivers and driver clients
 """
 
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, BinaryIO
+from typing import Any
 from uuid import UUID
 
 from anyio import create_task_group
@@ -17,6 +16,7 @@ from jumpstarter.common import Interface, Metadata
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,
+    forward_server_stream,
 )
 from jumpstarter.drivers.decorators import (
     MARKER_DRIVERCALL,
@@ -25,14 +25,6 @@ from jumpstarter.drivers.decorators import (
     MARKER_STREAMING_DRIVERCALL,
 )
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
-
-ContextStore = ContextVar("store")
-
-
-@dataclass(kw_only=True)
-class Store:
-    fds: list[BinaryIO] = field(default_factory=list, init=False)
-    conns: dict[UUID, Any] = field(default_factory=dict, init=False)
 
 
 @dataclass(kw_only=True)
@@ -52,6 +44,8 @@ class Driver(
     decorator for unary calls or the `streamingdrivercall`
     decorator for streaming (generator) calls.
     """
+
+    resources: dict[UUID, Any] = field(default_factory=dict, init=False)
 
     def add_to_server(self, server):
         """Add self to grpc server
@@ -73,10 +67,25 @@ class Driver(
             yield v
 
     async def Stream(self, request_iterator, context):
-        method = await self.__lookup_drivercall("connect", context, MARKER_STREAMCALL)
+        metadata = dict(context.invocation_metadata())
 
-        async for v in method(request_iterator, context):
-            yield v
+        match metadata["kind"]:
+            case "connect":
+                method = await self.__lookup_drivercall("connect", context, MARKER_STREAMCALL)
+
+                async for v in method(request_iterator, context):
+                    yield v
+
+            case "resource":
+                remote, resource = create_memory_stream()
+
+                self.resources[UUID(metadata["resource_uuid"])] = resource
+
+                async with remote:
+                    async for v in forward_server_stream(request_iterator, remote):
+                        yield v
+
+                del self.resources[UUID(metadata["resource_uuid"])]
 
     def reports(self) -> list[jumpstarter_pb2.DriverInstanceReport]:
         """Get list of driver instance reports"""
@@ -174,7 +183,7 @@ class DriverClient(
                 forward_client_stream,
                 self,
                 device_stream,
-                {"kind": "device", "uuid": str(self.uuid)}.items(),
+                {"kind": "connect", "uuid": str(self.uuid)}.items(),
             )
             async with client_stream:
                 yield client_stream
@@ -186,7 +195,7 @@ class DriverClient(
                 await forward_client_stream(
                     self,
                     client,
-                    {"kind": "device", "uuid": str(self.uuid)}.items(),
+                    {"kind": "connect", "uuid": str(self.uuid)}.items(),
                 )
 
         async with create_task_group() as tg:

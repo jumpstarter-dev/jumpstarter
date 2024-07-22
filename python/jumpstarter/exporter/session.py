@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from jumpstarter.common import Metadata
-from jumpstarter.common.streams import create_memory_stream, forward_server_stream
-from jumpstarter.drivers.base import ContextStore, Driver
+from jumpstarter.drivers.base import Driver
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
@@ -50,20 +49,5 @@ class Session(
     async def Stream(self, request_iterator, context):
         metadata = dict(context.invocation_metadata())
 
-        uuid = UUID(metadata["uuid"])
-
-        match metadata["kind"]:
-            case "device":
-                device = self[uuid]
-                async for v in device.Stream(request_iterator, context):
-                    yield v
-            case "resource":
-                client_stream, device_stream = create_memory_stream()
-
-                try:
-                    ContextStore.get().conns[uuid] = device_stream
-                    async with client_stream:
-                        async for v in forward_server_stream(request_iterator, client_stream):
-                            yield v
-                finally:
-                    del ContextStore.get().conns[uuid]
+        async for v in self[UUID(metadata["uuid"])].Stream(request_iterator, context):
+            yield v

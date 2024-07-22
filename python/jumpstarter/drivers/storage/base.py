@@ -4,7 +4,7 @@ from uuid import UUID
 
 from anyio.streams.file import FileWriteStream
 
-from jumpstarter.drivers import ContextStore, Driver, DriverClient
+from jumpstarter.drivers import Driver, DriverClient
 from jumpstarter.drivers.decorators import drivercall
 
 
@@ -62,5 +62,5 @@ class MockStorageMux(StorageMuxInterface, Driver):
         with NamedTemporaryFile(delete=False) as file:
             print(f"MockStorageMux: writing to {file.name}")
             async with FileWriteStream(file) as stream:
-                async for chunk in ContextStore.get().conns[UUID(src)]:
+                async for chunk in self.resources[UUID(src)]:
                     await stream.send(chunk)

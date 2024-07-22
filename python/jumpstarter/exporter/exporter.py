@@ -9,7 +9,7 @@ from anyio import connect_unix
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.streams import connect_router_stream
-from jumpstarter.drivers import ContextStore, Driver, Store
+from jumpstarter.drivers import Driver
 from jumpstarter.exporter.session import Session
 from jumpstarter.v1 import (
     jumpstarter_pb2,
@@ -55,8 +55,6 @@ class Exporter(AbstractAsyncContextManager, Metadata):
 
             with TemporaryDirectory() as tempdir:
                 socketpath = Path(tempdir) / "socket"
-
-                ContextStore.set(Store())
 
                 server = grpc.aio.server()
                 server.add_insecure_port(f"unix://{socketpath}")
