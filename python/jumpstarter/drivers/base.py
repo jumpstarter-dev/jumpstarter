@@ -3,7 +3,7 @@ from google.protobuf import struct_pb2, json_format
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from dataclasses import dataclass, asdict, is_dataclass
 from uuid import UUID, uuid4
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Final
 from dataclasses import field
 from jumpstarter.common.streams import (
     create_memory_stream,
@@ -14,11 +14,16 @@ from jumpstarter.common import Metadata
 from contextvars import ContextVar
 from contextlib import asynccontextmanager
 from abc import ABC, abstractmethod
+from grpc import StatusCode
 import anyio
 import grpc
 
 
 ContextStore = ContextVar("store")
+
+MARKER_MAGIC: Final[str] = "07c9b9cc"
+MARKER_DRIVERCALL: Final[str] = "marker_drivercall"
+MARKER_STREAMING_DRIVERCALL: Final[str] = "marker_streamingdrivercall"
 
 
 @dataclass(kw_only=True)
@@ -63,22 +68,30 @@ class Driver(
         to follow semantic versioning.
         """
 
-    def items(self):
-        return [(self.uuid, self)]
+    async def _check_drivercall(self, request, context, marker):
+        try:
+            method = getattr(self, request.method)
+        except AttributeError:
+            await context.abort(
+                StatusCode.NOT_FOUND, f"method {request.method} not found on driver"
+            )
+
+        if getattr(method, marker, None) != MARKER_MAGIC:
+            await context.abort(
+                StatusCode.NOT_FOUND, f"method {request.method} missing marker {marker}"
+            )
+
+        return method
 
     async def DriverCall(self, request, context):
-        method = getattr(self, request.method)
-
-        if not getattr(method, "is_drivercall", False):
-            raise ValueError("no matching driver call")
+        method = await self._check_drivercall(request, context, MARKER_DRIVERCALL)
 
         return await method(request, context)
 
     async def StreamingDriverCall(self, request, context):
-        method = getattr(self, request.method)
-
-        if not getattr(method, "is_streamingdrivercall", False):
-            raise ValueError("no matching streaming driver call")
+        method = await self._check_drivercall(
+            request, context, MARKER_STREAMING_DRIVERCALL
+        )
 
         async for v in method(request, context):
             yield v
@@ -100,6 +113,9 @@ class Driver(
                 },
             )
         ]
+
+    def items(self):
+        return [(self.uuid, self)]
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
@@ -187,7 +203,7 @@ def drivercall(func):
             ),
         )
 
-    DriverCall.is_drivercall = True
+    setattr(DriverCall, MARKER_DRIVERCALL, MARKER_MAGIC)
 
     return DriverCall
 
@@ -205,6 +221,6 @@ def streamingdrivercall(func):
                 ),
             )
 
-    StreamingDriverCall.is_streamingdrivercall = True
+    setattr(StreamingDriverCall, MARKER_STREAMING_DRIVERCALL, MARKER_MAGIC)
 
     return StreamingDriverCall
