@@ -68,28 +68,13 @@ class Driver(
         to follow semantic versioning.
         """
 
-    async def _check_drivercall(self, request, context, marker):
-        try:
-            method = getattr(self, request.method)
-        except AttributeError:
-            await context.abort(
-                StatusCode.NOT_FOUND, f"method {request.method} not found on driver"
-            )
-
-        if getattr(method, marker, None) != MARKER_MAGIC:
-            await context.abort(
-                StatusCode.NOT_FOUND, f"method {request.method} missing marker {marker}"
-            )
-
-        return method
-
     async def DriverCall(self, request, context):
-        method = await self._check_drivercall(request, context, MARKER_DRIVERCALL)
+        method = await self.__lookup_drivercall(request, context, MARKER_DRIVERCALL)
 
         return await method(request, context)
 
     async def StreamingDriverCall(self, request, context):
-        method = await self._check_drivercall(
+        method = await self.__lookup_drivercall(
             request, context, MARKER_STREAMING_DRIVERCALL
         )
 
@@ -120,6 +105,27 @@ class Driver(
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+
+    async def __lookup_drivercall(self, request, context, marker):
+        """Lookup drivercall by method name
+
+        Methods are checked against magic markers
+        to avoid accidentally calling non-exported
+        methods
+        """
+        method = getattr(self, request.method, None)
+
+        if method is None:
+            await context.abort(
+                StatusCode.NOT_FOUND, f"method {request.method} not found on driver"
+            )
+
+        if getattr(method, marker, None) != MARKER_MAGIC:
+            await context.abort(
+                StatusCode.NOT_FOUND, f"method {request.method} missing marker {marker}"
+            )
+
+        return method
 
 
 @dataclass(kw_only=True)
