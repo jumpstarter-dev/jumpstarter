@@ -53,20 +53,28 @@ class Driver(
     @classmethod
     @abstractmethod
     def interface(cls) -> str:
-        """Return interface name of the driver.
+        """Return interface name of the driver
 
         Names should be globally unique thus should
-        be namespaced like `example.com/foo`
+        be namespaced like `example.com/foo`.
         """
 
     @classmethod
     @abstractmethod
     def version(cls) -> str:
-        """Return interface version of the driver.
+        """Return interface version of the driver
 
         Versions are matched exactly and don't have
         to follow semantic versioning.
         """
+
+    def add_to_server(self, server):
+        """Add self to grpc server
+
+        Useful for unit testing.
+        """
+        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
     async def DriverCall(self, request, context):
         method = await self.__lookup_drivercall(request, context, MARKER_DRIVERCALL)
@@ -99,10 +107,6 @@ class Driver(
 
     def items(self):
         return [(self.uuid, self)]
-
-    def add_to_server(self, server):
-        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
     async def __lookup_drivercall(self, request, context, marker):
         """Lookup drivercall by method name
