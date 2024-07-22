@@ -46,6 +46,7 @@ class Driver(
     """
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
+    """Dict of client side resources"""
 
     def add_to_server(self, server):
         """Add self to grpc server
