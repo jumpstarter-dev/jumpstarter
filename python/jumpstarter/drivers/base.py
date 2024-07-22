@@ -2,9 +2,9 @@
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import Any, BinaryIO, Final
-from uuid import UUID, uuid4
+from dataclasses import dataclass, field
+from typing import Any, BinaryIO
+from uuid import UUID
 
 import anyio
 import grpc
@@ -15,16 +15,16 @@ from jumpstarter.common import Metadata
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,
-    forward_server_stream,
+)
+from jumpstarter.drivers.decorators import (
+    MARKER_DRIVERCALL,
+    MARKER_MAGIC,
+    MARKER_STREAMCALL,
+    MARKER_STREAMING_DRIVERCALL,
 )
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 ContextStore = ContextVar("store")
-
-MARKER_MAGIC: Final[str] = "07c9b9cc"
-MARKER_DRIVERCALL: Final[str] = "marker_drivercall"
-MARKER_STREAMCALL: Final[str] = "marker_streamcall"
-MARKER_STREAMING_DRIVERCALL: Final[str] = "marker_streamingdrivercall"
 
 
 @dataclass(kw_only=True)
@@ -192,48 +192,3 @@ class DriverClient(Metadata):
                 yield
             finally:
                 tg.cancel_scope.cancel()
-
-
-def drivercall(func):
-    async def wrapper(self, request, context):
-        args = [json_format.MessageToDict(arg) for arg in request.args]
-
-        result = await func(self, *args)
-
-        return jumpstarter_pb2.DriverCallResponse(
-            uuid=str(uuid4()),
-            result=json_format.ParseDict(asdict(result) if is_dataclass(result) else result, struct_pb2.Value()),
-        )
-
-    setattr(wrapper, MARKER_DRIVERCALL, MARKER_MAGIC)
-
-    return wrapper
-
-
-def streamcall(func):
-    async def wrapper(self, request_iterator, context):
-        async with func(self) as stream:
-            async for v in forward_server_stream(request_iterator, stream):
-                yield v
-
-    setattr(wrapper, MARKER_STREAMCALL, MARKER_MAGIC)
-
-    return wrapper
-
-
-def streamingdrivercall(func):
-    async def wrapper(self, request, context):
-        args = [json_format.MessageToDict(arg) for arg in request.args]
-
-        async for result in func(self, *args):
-            yield jumpstarter_pb2.StreamingDriverCallResponse(
-                uuid=str(uuid4()),
-                result=json_format.ParseDict(
-                    asdict(result) if is_dataclass(result) else result,
-                    struct_pb2.Value(),
-                ),
-            )
-
-    setattr(wrapper, MARKER_STREAMING_DRIVERCALL, MARKER_MAGIC)
-
-    return wrapper

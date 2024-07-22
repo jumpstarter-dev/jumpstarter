@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from jumpstarter.drivers import Driver, DriverClient, drivercall, streamingdrivercall
+from jumpstarter.drivers import Driver, DriverClient
+from jumpstarter.drivers.decorators import drivercall, streamingdrivercall
 
 
 @dataclass(kw_only=True)
