@@ -34,13 +34,34 @@ class Driver(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
 ):
-    @classmethod
-    @abstractmethod
-    def interface(cls) -> str: ...
+    """Base class for drivers
+
+    Drivers should as the minimum implement the
+    `interface` and `version` methods.
+
+    Additional driver calls can be implemented as regular
+    methods and marked with either the `drivercall`
+    decorator for unary calls or the `streamingdrivercall`
+    decorator for streaming (generator) calls.
+    """
 
     @classmethod
     @abstractmethod
-    def version(cls) -> str: ...
+    def interface(cls) -> str:
+        """Return interface name of the driver.
+
+        Names should be globally unique thus should
+        be namespaced like `example.com/foo`
+        """
+
+    @classmethod
+    @abstractmethod
+    def version(cls) -> str:
+        """Return interface version of the driver.
+
+        Versions are matched exactly and don't have
+        to follow semantic versioning.
+        """
 
     def items(self):
         return [(self.uuid, self)]
