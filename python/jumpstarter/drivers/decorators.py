@@ -1,8 +1,9 @@
 from dataclasses import asdict, is_dataclass
-from inspect import isasyncgenfunction, iscoroutinefunction
+from inspect import isasyncgenfunction, iscoroutinefunction, isfunction, isgeneratorfunction
 from typing import Final
 from uuid import uuid4
 
+from anyio import to_thread
 from google.protobuf import json_format, struct_pb2
 
 from jumpstarter.common.streams import (
@@ -17,12 +18,12 @@ MARKER_STREAMING_DRIVERCALL: Final[str] = "marker_streamingdrivercall"
 
 
 def export(func):
-    if iscoroutinefunction(func):
-        return drivercall(func)
-    elif isasyncgenfunction(func):
+    if isasyncgenfunction(func) or isgeneratorfunction(func):
         return streamingdrivercall(func)
+    elif iscoroutinefunction(func) or isfunction(func):
+        return drivercall(func)
     else:
-        raise ValueError(func)
+        raise ValueError(f"unsupported exported function {func}")
 
 
 def drivercall(func):
@@ -31,7 +32,10 @@ def drivercall(func):
     async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
 
-        result = await func(self, *args)
+        if iscoroutinefunction(func):
+            result = await func(self, *args)
+        else:
+            result = await to_thread.run_sync(func, self, *args)
 
         return jumpstarter_pb2.DriverCallResponse(
             uuid=str(uuid4()),
@@ -62,14 +66,24 @@ def streamingdrivercall(func):
     async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
 
-        async for result in func(self, *args):
-            yield jumpstarter_pb2.StreamingDriverCallResponse(
-                uuid=str(uuid4()),
-                result=json_format.ParseDict(
-                    asdict(result) if is_dataclass(result) else result,
-                    struct_pb2.Value(),
-                ),
-            )
+        if isasyncgenfunction(func):
+            async for result in func(self, *args):
+                yield jumpstarter_pb2.StreamingDriverCallResponse(
+                    uuid=str(uuid4()),
+                    result=json_format.ParseDict(
+                        asdict(result) if is_dataclass(result) else result,
+                        struct_pb2.Value(),
+                    ),
+                )
+        else:
+            for result in await to_thread.run_sync(func, self, *args):
+                yield jumpstarter_pb2.StreamingDriverCallResponse(
+                    uuid=str(uuid4()),
+                    result=json_format.ParseDict(
+                        asdict(result) if is_dataclass(result) else result,
+                        struct_pb2.Value(),
+                    ),
+                )
 
     setattr(wrapper, MARKER_STREAMING_DRIVERCALL, MARKER_MAGIC)
 

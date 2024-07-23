@@ -59,3 +59,18 @@ class MockPower(PowerInterface, Driver):
     async def read(self) -> AsyncGenerator[PowerReading, None]:
         yield PowerReading(voltage=0.0, current=0.0)
         yield PowerReading(voltage=5.0, current=2.0)
+
+
+class SyncMockPower(PowerInterface, Driver):
+    @export
+    def on(self) -> str:
+        return "ok"
+
+    @export
+    def off(self) -> str:
+        return "ok"
+
+    @export
+    def read(self) -> AsyncGenerator[PowerReading, None]:
+        yield PowerReading(voltage=0.0, current=0.0)
+        yield PowerReading(voltage=5.0, current=2.0)
