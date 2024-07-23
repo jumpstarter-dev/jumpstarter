@@ -6,7 +6,7 @@ import anyio
 import pytest
 
 from jumpstarter.common.grpc import serve
-from jumpstarter.drivers.network import EchoNetwork, TcpNetwork
+from jumpstarter.drivers.network import EchoNetwork, TcpNetwork, UdpNetwork
 
 pytestmark = pytest.mark.anyio
 
@@ -20,6 +20,24 @@ async def test_echo_network():
         async with client.connect() as stream:
             await stream.send(b"hello")
             assert await stream.receive() == b"hello"
+
+
+async def test_udp_network():
+    async with await anyio.create_udp_socket(
+        local_host="127.0.0.1",
+        local_port=8001,
+    ) as server:
+        async with serve(
+            UdpNetwork(
+                labels={"jumpstarter.dev/name": "udp"},
+                host="127.0.0.1",
+                port=8001,
+            )
+        ) as client:
+            async with client.connect() as stream:
+                await stream.send(b"hello")
+        # TODO: fix udp stream object type
+        assert (await server.receive())[0] == b"hello"
 
 
 @pytest.mark.skipif(shutil.which("iperf3") is None, reason="iperf3 not available")

@@ -6,7 +6,6 @@ import pytest
 
 from jumpstarter.client import client_from_channel
 from jumpstarter.drivers.composite import Composite
-from jumpstarter.drivers.network import EchoNetwork
 from jumpstarter.drivers.power import MockPower, PowerReading
 from jumpstarter.drivers.storage import MockStorageMux
 from jumpstarter.exporter import Session
