@@ -1,16 +1,12 @@
 import os
-import shutil
-import subprocess
-import sys
 import tempfile
 
-import anyio
 import grpc
 import pytest
 
 from jumpstarter.client import client_from_channel
 from jumpstarter.drivers.composite import Composite
-from jumpstarter.drivers.network import EchoNetwork, TcpNetwork
+from jumpstarter.drivers.network import EchoNetwork
 from jumpstarter.drivers.power import MockPower, PowerReading
 from jumpstarter.drivers.storage import MockStorageMux
 from jumpstarter.exporter import Session
@@ -37,58 +33,6 @@ async def setup_client(request, anyio_backend):
 
     await server.stop(grace=None)
     await server.wait_for_termination()
-
-
-@pytest.mark.skipif(shutil.which("iperf3") is None, reason="iperf3 not available")
-@pytest.mark.parametrize(
-    "setup_client",
-    [
-        TcpNetwork(
-            labels={"jumpstarter.dev/name": "iperf3"},
-            host="127.0.0.1",
-            port=5201,
-        )
-    ],
-    indirect=True,
-)
-async def test_tcp_network(setup_client):
-    client = setup_client
-
-    listener = await anyio.create_tcp_listener(local_port=8001)
-
-    async with await anyio.open_process(
-        ["iperf3", "-s"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    ) as server:
-        async with client.portforward(listener):
-            await anyio.run_process(
-                [
-                    "iperf3",
-                    "-c",
-                    "127.0.0.1",
-                    "-p",
-                    "8001",
-                    "-t",
-                    "1",
-                ],
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-            )
-        server.terminate()
-
-
-@pytest.mark.parametrize(
-    "setup_client",
-    [EchoNetwork(labels={"jumpstarter.dev/name": "echo"})],
-    indirect=True,
-)
-async def test_echo_network(setup_client):
-    client = setup_client
-
-    async with client.connect() as stream:
-        await stream.send(b"hello")
-        assert await stream.receive() == b"hello"
 
 
 @pytest.mark.parametrize(

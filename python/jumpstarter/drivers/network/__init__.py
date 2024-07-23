@@ -8,10 +8,10 @@ from jumpstarter.drivers.network.base import (
 )
 
 __all__ = [
-    "NetworkInterface",
+    "EchoNetwork",
     "NetworkClient",
+    "NetworkInterface",
     "TcpNetwork",
     "UdpNetwork",
     "UnixNetwork",
-    "EchoNetwork",
 ]
