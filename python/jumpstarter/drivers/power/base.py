@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from jumpstarter.drivers import Driver, DriverClient, drivercall, streamingdrivercall
+from jumpstarter.drivers import Driver, DriverClient, export
 
 
 @dataclass(kw_only=True)
@@ -47,15 +47,15 @@ class PowerClient(PowerInterface, DriverClient):
 
 
 class MockPower(PowerInterface, Driver):
-    @drivercall
+    @export
     async def on(self) -> str:
         return "ok"
 
-    @drivercall
+    @export
     async def off(self) -> str:
         return "ok"
 
-    @streamingdrivercall
+    @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
         yield PowerReading(voltage=0.0, current=0.0)
         yield PowerReading(voltage=5.0, current=2.0)

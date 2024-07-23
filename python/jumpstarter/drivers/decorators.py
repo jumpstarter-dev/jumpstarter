@@ -1,4 +1,5 @@
 from dataclasses import asdict, is_dataclass
+from inspect import isasyncgenfunction, iscoroutinefunction
 from typing import Final
 from uuid import uuid4
 
@@ -13,6 +14,15 @@ MARKER_MAGIC: Final[str] = "07c9b9cc"
 MARKER_DRIVERCALL: Final[str] = "marker_drivercall"
 MARKER_STREAMCALL: Final[str] = "marker_streamcall"
 MARKER_STREAMING_DRIVERCALL: Final[str] = "marker_streamingdrivercall"
+
+
+def export(func):
+    if iscoroutinefunction(func):
+        return drivercall(func)
+    elif isasyncgenfunction(func):
+        return streamingdrivercall(func)
+    else:
+        raise ValueError(func)
 
 
 def drivercall(func):

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from anyio.streams.file import FileWriteStream
 
-from jumpstarter.drivers import Driver, DriverClient, drivercall
+from jumpstarter.drivers import Driver, DriverClient, export
 
 
 class StorageMuxInterface(metaclass=ABCMeta):
@@ -44,19 +44,19 @@ class StorageMuxClient(StorageMuxInterface, DriverClient):
 
 
 class MockStorageMux(StorageMuxInterface, Driver):
-    @drivercall
+    @export
     async def host(self):
         pass
 
-    @drivercall
+    @export
     async def dut(self):
         pass
 
-    @drivercall
+    @export
     async def off(self):
         pass
 
-    @drivercall
+    @export
     async def write(self, src: str):
         with NamedTemporaryFile(delete=False) as file:
             print(f"MockStorageMux: writing to {file.name}")

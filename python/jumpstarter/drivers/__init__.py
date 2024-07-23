@@ -4,6 +4,7 @@ from jumpstarter.drivers.base import (
 )
 from jumpstarter.drivers.decorators import (
     drivercall,
+    export,
     streamcall,
     streamingdrivercall,
 )
@@ -14,4 +15,5 @@ __all__ = [
     "drivercall",
     "streamcall",
     "streamingdrivercall",
+    "export",
 ]
