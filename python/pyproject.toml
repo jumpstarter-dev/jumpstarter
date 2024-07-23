@@ -26,6 +26,7 @@ jumpstarter = "jumpstarter.cli:main"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
 pytest-anyio = "^0.0.0"
+pytest-cov = "^5.0.0"
 
 [tool.ruff]
 line-length = 120
