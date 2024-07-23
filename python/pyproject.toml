@@ -37,6 +37,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.coverage.run]
 omit = [
+  "conftest.py",
   "test_*.py",
   "*_test.py",
 ]
