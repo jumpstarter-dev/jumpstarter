@@ -11,11 +11,11 @@ async def test_drivers_composite():
     async with serve(
         Composite(
             labels={"jumpstarter.dev/name": "composite0"},
-            childs=[
+            children=[
                 MockPower(labels={"jumpstarter.dev/name": "power0"}),
                 Composite(
                     labels={"jumpstarter.dev/name": "composite1"},
-                    childs=[
+                    children=[
                         MockPower(labels={"jumpstarter.dev/name": "power1"}),
                     ],
                 ),

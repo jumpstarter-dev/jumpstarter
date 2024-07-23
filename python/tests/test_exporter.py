@@ -39,12 +39,12 @@ async def setup_client(request, anyio_backend):
     [
         Composite(
             labels={"jumpstarter.dev/name": "composite0"},
-            childs=[
+            children=[
                 MockPower(labels={"jumpstarter.dev/name": "power0"}),
                 MockStorageMux(labels={"jumpstarter.dev/name": "storage"}),
                 Composite(
                     labels={"jumpstarter.dev/name": "composite1"},
-                    childs=[
+                    children=[
                         MockPower(labels={"jumpstarter.dev/name": "power1"}),
                     ],
                 ),

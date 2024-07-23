@@ -17,10 +17,10 @@ class CompositeInterface(metaclass=ABCMeta):
 
 @dataclass(kw_only=True)
 class Composite(CompositeInterface, Driver):
-    childs: list[Driver]
+    children: list[Driver]
 
     def items(self, parent=None):
-        return super().items(parent) + list(chain(*[child.items(self) for child in self.childs]))
+        return super().items(parent) + list(chain(*[child.items(self) for child in self.children]))
 
 
 @dataclass(kw_only=True)
