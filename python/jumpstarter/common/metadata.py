@@ -21,18 +21,10 @@ class MetadataFilter:
 class Interface(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
-    def interface(cls) -> str:
-        """Return interface name of the driver/client
-
-        Names should be globally unique thus should
-        be namespaced like `example.com/foo`.
-        """
+    def client_module(cls) -> str:
+        """Return module name of the driver client"""
 
     @classmethod
     @abstractmethod
-    def version(cls) -> str:
-        """Return interface version of the driver/client
-
-        Versions are matched exactly and don't have
-        to follow semantic versioning.
-        """
+    def client_class(cls) -> str:
+        """Return class name of the driver client"""

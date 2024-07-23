@@ -9,12 +9,12 @@ from jumpstarter.drivers import Driver, DriverClient, export
 
 class StorageMuxInterface(metaclass=ABCMeta):
     @classmethod
-    def interface(cls) -> str:
-        return "storage_mux"
+    def client_module(cls) -> str:
+        return "jumpstarter.drivers.storage"
 
     @classmethod
-    def version(cls) -> str:
-        return "0.0.1"
+    def client_class(cls) -> str:
+        return "StorageMuxClient"
 
     @abstractmethod
     async def host(self): ...

@@ -1,13 +1,10 @@
 from collections import OrderedDict
+from importlib import import_module
 from uuid import UUID
 
 from google.protobuf import empty_pb2
 
 from jumpstarter.drivers import DriverClient
-from jumpstarter.drivers.composite import CompositeClient
-from jumpstarter.drivers.network import NetworkClient
-from jumpstarter.drivers.power import PowerClient
-from jumpstarter.drivers.storage import StorageMuxClient
 from jumpstarter.v1 import (
     jumpstarter_pb2_grpc,
 )
@@ -23,17 +20,11 @@ async def client_from_channel(
     for report in response.reports:
         uuid = UUID(report.uuid)
         labels = report.labels
-        match report.labels["jumpstarter.dev/interface"]:
-            case "power":
-                client = PowerClient(uuid=uuid, labels=labels, channel=channel)
-            case "composite":
-                client = CompositeClient(uuid=uuid, labels=labels, channel=channel)
-            case "network":
-                client = NetworkClient(uuid=uuid, labels=labels, channel=channel)
-            case "storage_mux":
-                client = StorageMuxClient(uuid=uuid, labels=labels, channel=channel)
-            case _:
-                raise ValueError
+
+        client_module = import_module(labels["jumpstarter.dev/client_module"])
+        client_class = getattr(client_module, labels["jumpstarter.dev/client_class"])
+        client = client_class(uuid=uuid, labels=labels, channel=channel)
+
         clients[uuid] = client
 
         if report.parent_uuid != "":

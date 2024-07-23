@@ -17,12 +17,12 @@ class PowerReading:
 
 class PowerInterface(metaclass=ABCMeta):
     @classmethod
-    def interface(cls) -> str:
-        return "power"
+    def client_module(cls) -> str:
+        return "jumpstarter.drivers.power"
 
     @classmethod
-    def version(cls) -> str:
-        return "0.0.1"
+    def client_class(cls) -> str:
+        return "PowerClient"
 
     @abstractmethod
     async def on(self) -> str: ...

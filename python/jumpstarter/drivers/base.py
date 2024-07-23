@@ -98,8 +98,8 @@ class Driver(
                     parent_uuid=str(parent_uuid) if parent_uuid else None,
                     labels=instance.labels
                     | {
-                        "jumpstarter.dev/interface": instance.interface(),
-                        "jumpstarter.dev/version": instance.version(),
+                        "jumpstarter.dev/client_module": instance.client_module(),
+                        "jumpstarter.dev/client_class": instance.client_class(),
                     },
                 )
                 for (uuid, parent_uuid, instance) in self.items()
@@ -139,7 +139,8 @@ class DriverClient(
     """Base class for driver clients
 
     Driver clients should as the minimum implement the
-    `interface` and `version` methods.
+    `client_module` and `client_class` methods, which
+    points to the corresponding driver client.
 
     Additional client methods can be implemented as
     regular methods and call `call` or

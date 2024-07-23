@@ -15,12 +15,12 @@ from jumpstarter.drivers import Driver, DriverClient, streamcall
 
 class NetworkInterface(metaclass=ABCMeta):
     @classmethod
-    def interface(cls) -> str:
-        return "network"
+    def client_module(cls) -> str:
+        return "jumpstarter.drivers.network"
 
     @classmethod
-    def version(cls) -> str:
-        return "0.0.1"
+    def client_class(cls) -> str:
+        return "NetworkClient"
 
     @abstractmethod
     @asynccontextmanager
