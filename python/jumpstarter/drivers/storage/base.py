@@ -58,8 +58,7 @@ class MockStorageMux(StorageMuxInterface, Driver):
 
     @export
     async def write(self, src: str):
-        with NamedTemporaryFile(delete=False) as file:
-            print(f"MockStorageMux: writing to {file.name}")
+        with NamedTemporaryFile() as file:
             async with FileWriteStream(file) as stream:
                 async for chunk in self.resources[UUID(src)]:
                     await stream.send(chunk)
