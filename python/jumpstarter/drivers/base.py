@@ -41,9 +41,8 @@ class Driver(
     `interface` and `version` methods.
 
     Additional driver calls can be implemented as regular
-    methods and marked with either the `drivercall`
-    decorator for unary calls or the `streamingdrivercall`
-    decorator for streaming (generator) calls.
+    sync/async regular/generator methods and marked with
+    the `export` decorator.
     """
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
