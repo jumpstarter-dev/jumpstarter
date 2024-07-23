@@ -34,3 +34,9 @@ line-length = 120
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.coverage.run]
+omit = [
+  "test_*.py",
+  "*_test.py",
+]

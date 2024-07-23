@@ -24,6 +24,47 @@ async def test_echo_network():
             assert await stream.receive() == b"hello"
 
 
+async def echo_handler(client):
+    async with client:
+        async for v in client:
+            await client.send(v)
+
+
+async def test_tcp_network():
+    listener = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=9001)
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(listener.serve, echo_handler)
+
+        async with serve(TcpNetwork(labels={"jumpstarter.dev/name": "tcp"}, host="127.0.0.1", port=9001)) as client:
+            async with client.connect() as stream:
+                await stream.send(b"hello")
+                assert await stream.receive() == b"hello"
+
+        tg.cancel_scope.cancel()
+
+    await listener.aclose()
+
+
+async def test_tcp_network_portforward():
+    listener = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=8001, reuse_port=True)
+    forwarder = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=8002, reuse_port=True)
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(listener.serve, echo_handler)
+
+        async with serve(TcpNetwork(labels={"jumpstarter.dev/name": "tcp"}, host="127.0.0.1", port=8001)) as client:
+            async with client.portforward(forwarder):
+                async with await anyio.connect_tcp("127.0.0.1", 8002) as stream:
+                    await stream.send(b"hello")
+                    assert await stream.receive() == b"hello"
+
+        tg.cancel_scope.cancel()
+
+    await listener.aclose()
+    await forwarder.aclose()
+
+
 async def test_udp_network():
     async with await anyio.create_udp_socket(
         local_host="127.0.0.1",
@@ -40,12 +81,6 @@ async def test_udp_network():
                 await stream.send(b"hello")
         # TODO: fix udp stream object type
         assert (await server.receive())[0] == b"hello"
-
-
-async def echo_handler(client):
-    async with client:
-        async for v in client:
-            await client.send(v)
 
 
 async def test_unix_network():
@@ -72,7 +107,7 @@ async def test_unix_network():
 
 @pytest.mark.skipif(which("iperf3") is None, reason="iperf3 not available")
 async def test_tcp_network_performance():
-    listener = await anyio.create_tcp_listener(local_port=8001)
+    listener = await anyio.create_tcp_listener(local_port=8001, reuse_port=True)
 
     async with serve(
         TcpNetwork(
