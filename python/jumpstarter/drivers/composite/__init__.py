@@ -1,3 +1,11 @@
-from .base import Composite, CompositeClient, CompositeInterface
+from .base import (
+    Composite,
+    CompositeClient,
+    CompositeInterface,
+)
 
-__all__ = ["CompositeInterface", "Composite", "CompositeClient"]
+__all__ = [
+    "Composite",
+    "CompositeClient",
+    "CompositeInterface",
+]

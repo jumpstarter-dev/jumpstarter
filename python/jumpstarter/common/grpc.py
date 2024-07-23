@@ -5,12 +5,15 @@ from tempfile import TemporaryDirectory
 import grpc
 
 from jumpstarter.client import client_from_channel
+from jumpstarter.exporter import Session
 
 
 @asynccontextmanager
-async def serve(servicer):
+async def serve(root_device):
     server = grpc.aio.server()
-    servicer.add_to_server(server)
+
+    session = Session(labels={"jumpstarter.dev/name": "session"}, root_device=root_device)
+    session.add_to_server(server)
 
     with TemporaryDirectory() as tempdir:
         socketpath = Path(tempdir) / "socket"
