@@ -2,6 +2,7 @@
 
 import click
 
+from .shell import shell
 from .version import version
 
 
@@ -11,7 +12,4 @@ def main():
 
 
 main.add_command(version)
-
-
-if __name__ == "__main__":
-    main()
+main.add_command(shell)
