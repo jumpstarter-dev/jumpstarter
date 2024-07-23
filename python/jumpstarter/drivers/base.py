@@ -142,8 +142,8 @@ class DriverClient(
     `interface` and `version` methods.
 
     Additional client methods can be implemented as
-    regular methods and call `drivercall` or
-    `streamingdrivercall` internally.
+    regular methods and call `call` or
+    `streamingcall` internally.
     """
 
     channel: Channel
@@ -152,7 +152,7 @@ class DriverClient(
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
 
-    async def drivercall(self, method, *args):
+    async def call(self, method, *args):
         """Make DriverCall by method name and arguments"""
 
         request = jumpstarter_pb2.DriverCallRequest(
@@ -165,7 +165,7 @@ class DriverClient(
 
         return json_format.MessageToDict(response.result)
 
-    async def streamingdrivercall(self, method, *args):
+    async def streamingcall(self, method, *args):
         """Make StreamingDriverCall by method name and arguments"""
 
         request = jumpstarter_pb2.StreamingDriverCallRequest(
