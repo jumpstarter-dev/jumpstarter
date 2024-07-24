@@ -12,6 +12,10 @@ class Metadata:
         if "jumpstarter.dev/name" not in self.labels:
             raise ValueError("missing required label: jumpstarter.dev/name")
 
+    @property
+    def name(self):
+        return self.labels["jumpstarter.dev/name"]
+
 
 @dataclass(kw_only=True, slots=True)
 class MetadataFilter:
