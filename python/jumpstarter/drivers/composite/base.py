@@ -40,6 +40,7 @@ class CompositeClient(CompositeInterface, DriverClient):
     def cli(self):
         @click.group
         def base():
+            """Generic composite device"""
             pass
 
         for child in self.children:

@@ -51,20 +51,18 @@ class PowerClient(PowerInterface, DriverClient):
     def cli(self):
         @click.group
         def base():
+            """Generic power"""
             pass
 
         @base.command()
         def on():
+            """Power on"""
             click.echo(from_thread.run(self.on))
 
         @base.command()
         def off():
+            """Power off"""
             click.echo(from_thread.run(self.off))
-
-        @base.command()
-        def read():
-            for v in from_thread.run(self.read):
-                click.echo(v)
 
         return base
 
