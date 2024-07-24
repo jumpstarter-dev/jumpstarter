@@ -1,6 +1,16 @@
 """Allow running Jumpstarter through `python -m jumpstarter`."""
 
-from jumpstarter.cli import main
+import anyio
+import sys
+
+
+def main():
+    from jumpstarter.cli import main
+
+    main(prog_name="jmp")
+
+    # FIXME: Error in sys.excepthook
+
 
 if __name__ == "__main__":
-    main(prog_name="jumpstarter")
+    anyio.run(anyio.to_thread.run_sync, main)
