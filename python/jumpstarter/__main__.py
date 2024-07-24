@@ -1,7 +1,6 @@
 """Allow running Jumpstarter through `python -m jumpstarter`."""
 
 import anyio
-import sys
 
 
 def main():

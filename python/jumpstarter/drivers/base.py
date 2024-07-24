@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from anyio import create_task_group
 from anyio.streams.file import FileReadStream
+from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import json_format, struct_pb2
 from grpc import StatusCode
 from grpc.aio import Channel
@@ -81,6 +82,8 @@ class Driver(
                 remote, resource = create_memory_stream()
 
                 self.resources[UUID(metadata["resource_uuid"])] = resource
+
+                await resource.send(b"connected")
 
                 async with remote:
                     async for v in forward_server_stream(request_iterator, remote):
@@ -216,6 +219,10 @@ class DriverClient(
     ):
         uuid = uuid4()
 
+        tx, rx = create_memory_stream()
+
+        combined = StapledObjectStream(tx, stream)
+
         async def handle(stream):
             async with stream:
                 await forward_client_stream(
@@ -225,8 +232,9 @@ class DriverClient(
                 )
 
         async with create_task_group() as tg:
-            tg.start_soon(handle, stream)
+            tg.start_soon(handle, combined)
             try:
+                assert await rx.receive() == b"connected"
                 yield str(uuid)
             finally:
                 tg.cancel_scope.cancel()
