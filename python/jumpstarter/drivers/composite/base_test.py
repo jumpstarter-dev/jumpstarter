@@ -10,13 +10,13 @@ pytestmark = pytest.mark.anyio
 async def test_drivers_composite():
     async with serve(
         Composite(
-            labels={"jumpstarter.dev/name": "composite0"},
+            name="composite0",
             children=[
-                MockPower(labels={"jumpstarter.dev/name": "power0"}),
+                MockPower(name="power0"),
                 Composite(
-                    labels={"jumpstarter.dev/name": "composite1"},
+                    name="composite1",
                     children=[
-                        MockPower(labels={"jumpstarter.dev/name": "power1"}),
+                        MockPower(name="power1"),
                     ],
                 ),
             ],

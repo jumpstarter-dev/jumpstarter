@@ -12,7 +12,7 @@ from jumpstarter.exporter import Session
 async def serve(root_device):
     server = grpc.aio.server()
 
-    session = Session(labels={"jumpstarter.dev/name": "session"}, root_device=root_device)
+    session = Session(name="session", root_device=root_device)
     session.add_to_server(server)
 
     with TemporaryDirectory() as tempdir:

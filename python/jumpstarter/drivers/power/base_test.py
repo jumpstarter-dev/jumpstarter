@@ -7,7 +7,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_drivers_power_mock():
-    async with serve(MockPower(labels={"jumpstarter.dev/name": "mock"})) as client:
+    async with serve(MockPower(name="power")) as client:
         assert await client.on() == "ok"
         assert await client.off() == "ok"
 
@@ -18,7 +18,7 @@ async def test_drivers_power_mock():
 
 
 async def test_drivers_sync_power_mock():
-    async with serve(SyncMockPower(labels={"jumpstarter.dev/name": "mock"})) as client:
+    async with serve(SyncMockPower(name="power")) as client:
         assert await client.on() == "ok"
         assert await client.off() == "ok"
 

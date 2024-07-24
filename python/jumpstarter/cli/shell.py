@@ -17,12 +17,12 @@ async def shell_impl():
     server = grpc.aio.server()
 
     session = Session(
-        labels={"jumpstarter.dev/name": "transient"},
+        name="transient",
         root_device=Composite(
-            labels={"jumpstarter.dev/name": "transient"},
+            name="root",
             children=[
-                MockPower(labels={"jumpstarter.dev/name": "power"}),
-                EchoNetwork(labels={"jumpstarter.dev/name": "echo"}),
+                MockPower(name="power"),
+                EchoNetwork(name="echo"),
             ],
         ),
     )

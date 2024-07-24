@@ -14,11 +14,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_echo_network():
-    async with serve(
-        EchoNetwork(
-            labels={"jumpstarter.dev/name": "echo"},
-        )
-    ) as client:
+    async with serve(EchoNetwork(name="echo")) as client:
         async with client.connect() as stream:
             await stream.send(b"hello")
             assert await stream.receive() == b"hello"
@@ -36,7 +32,7 @@ async def test_tcp_network():
     async with anyio.create_task_group() as tg:
         tg.start_soon(listener.serve, echo_handler)
 
-        async with serve(TcpNetwork(labels={"jumpstarter.dev/name": "tcp"}, host="127.0.0.1", port=9001)) as client:
+        async with serve(TcpNetwork(name="tcp", host="127.0.0.1", port=9001)) as client:
             async with client.connect() as stream:
                 await stream.send(b"hello")
                 assert await stream.receive() == b"hello"
@@ -53,7 +49,7 @@ async def test_tcp_network_portforward():
     async with anyio.create_task_group() as tg:
         tg.start_soon(listener.serve, echo_handler)
 
-        async with serve(TcpNetwork(labels={"jumpstarter.dev/name": "tcp"}, host="127.0.0.1", port=8001)) as client:
+        async with serve(TcpNetwork(name="tcp", host="127.0.0.1", port=8001)) as client:
             async with client.portforward(forwarder):
                 async with await anyio.connect_tcp("127.0.0.1", 8002) as stream:
                     await stream.send(b"hello")
@@ -72,7 +68,7 @@ async def test_udp_network():
     ) as server:
         async with serve(
             UdpNetwork(
-                labels={"jumpstarter.dev/name": "udp"},
+                name="udp",
                 host="127.0.0.1",
                 port=8001,
             )
@@ -94,7 +90,7 @@ async def test_unix_network():
 
             async with serve(
                 UnixNetwork(
-                    labels={"jumpstarter.dev/name": "unix"},
+                    name="unix",
                     path=socketpath,
                 )
             ) as client:
@@ -111,7 +107,7 @@ async def test_tcp_network_performance():
 
     async with serve(
         TcpNetwork(
-            labels={"jumpstarter.dev/name": "iperf3"},
+            name="iperf3",
             host="127.0.0.1",
             port=5201,
         )
