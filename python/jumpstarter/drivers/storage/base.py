@@ -2,9 +2,9 @@ from abc import ABCMeta, abstractmethod
 from tempfile import NamedTemporaryFile
 from uuid import UUID
 
-from anyio.streams.file import FileWriteStream
-from anyio import from_thread
 import click
+from anyio import from_thread
+from anyio.streams.file import FileWriteStream
 
 from jumpstarter.drivers import Driver, DriverClient, export
 

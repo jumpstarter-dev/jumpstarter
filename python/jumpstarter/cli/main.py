@@ -3,9 +3,9 @@
 import click
 
 from .client import client
+from .control import control_from_env
 from .shell import shell
 from .version import version
-from .control import control_from_env
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True)

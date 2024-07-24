@@ -2,8 +2,8 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from anyio import from_thread
 import click
+from anyio import from_thread
 
 from jumpstarter.drivers import Driver, DriverClient, export
 

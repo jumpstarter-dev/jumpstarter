@@ -9,8 +9,8 @@ import grpc
 
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.network import EchoNetwork
-from jumpstarter.drivers.storage import MockStorageMux
 from jumpstarter.drivers.power import MockPower
+from jumpstarter.drivers.storage import MockStorageMux
 from jumpstarter.exporter import Session
 
 

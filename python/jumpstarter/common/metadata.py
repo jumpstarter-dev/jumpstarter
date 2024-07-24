@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass, field, InitVar
+from dataclasses import InitVar, dataclass, field
 from uuid import UUID, uuid4
 
 
