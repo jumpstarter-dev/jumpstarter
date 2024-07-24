@@ -11,7 +11,7 @@ class PowerReading:
     current: float
     apparent_power: float = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self, *args):
         self.apparent_power = self.voltage * self.current
 
 

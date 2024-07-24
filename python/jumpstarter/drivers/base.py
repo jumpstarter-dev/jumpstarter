@@ -149,7 +149,7 @@ class DriverClient(
 
     channel: Channel
 
-    def __post_init__(self):
+    def __post_init__(self, *args):
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
 

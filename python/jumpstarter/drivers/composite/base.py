@@ -26,6 +26,6 @@ class Composite(CompositeInterface, Driver):
 @dataclass(kw_only=True)
 class CompositeClient(CompositeInterface, DriverClient):
     def __or__(self, other: DriverClient):
-        setattr(self, other.name, other)
+        setattr(self, other.labels["jumpstarter.dev/name"], other)
 
         return self

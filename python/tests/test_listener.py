@@ -32,8 +32,8 @@ async def test_listener():
     async with Exporter(
         controller=controller,
         uuid=uuid,
-        labels={"jumpstarter.dev/name": "exporter"},
-        device_factory=lambda: MockPower(labels={"jumpstarter.dev/name": "power"}),
+        name="exporter",
+        device_factory=lambda: MockPower(name="power"),
     ) as r:
         async with anyio.create_task_group() as tg:
             tg.start_soon(r.serve)
