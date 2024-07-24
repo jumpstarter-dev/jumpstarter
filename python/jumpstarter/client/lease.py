@@ -1,5 +1,5 @@
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
@@ -14,10 +14,9 @@ from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 
 @dataclass(kw_only=True)
-class Lease(AbstractAsyncContextManager):
+class LeaseRequest(AbstractAsyncContextManager):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub
     metadata_filter: MetadataFilter
-    uuid: UUID | None = field(default=None, init=False)
 
     async def __aenter__(self):
         exporters = (
@@ -46,8 +45,7 @@ class Lease(AbstractAsyncContextManager):
 
         match result.WhichOneof("lease_exporter_response_oneof"):
             case "success":
-                self.uuid = exporter.uuid
-                return self
+                return Lease(controller=self.controller, uuid=exporter.uuid)
             case "failure":
                 raise RuntimeError(result.failure.reason)
 
@@ -55,11 +53,14 @@ class Lease(AbstractAsyncContextManager):
         # TODO: release exporter
         pass
 
+
+@dataclass(kw_only=True)
+class Lease:
+    controller: jumpstarter_pb2_grpc.ControllerServiceStub
+    uuid: UUID
+
     @asynccontextmanager
     async def connect(self):
-        if self.uuid is None:
-            raise ValueError("exporter not leased")
-
         response = await self.controller.Dial(jumpstarter_pb2.DialRequest(uuid=str(self.uuid)))
 
         with TemporaryDirectory() as tempdir:

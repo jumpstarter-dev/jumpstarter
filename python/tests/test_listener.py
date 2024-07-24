@@ -5,7 +5,7 @@ import anyio
 import grpc
 import pytest
 
-from jumpstarter.client import Lease, client_from_channel
+from jumpstarter.client import LeaseRequest, client_from_channel
 from jumpstarter.common import MetadataFilter
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.exporter import Exporter
@@ -38,7 +38,7 @@ async def test_listener():
         async with anyio.create_task_group() as tg:
             tg.start_soon(r.serve)
 
-            async with Lease(
+            async with LeaseRequest(
                 controller=controller,
                 metadata_filter=MetadataFilter(
                     labels={
