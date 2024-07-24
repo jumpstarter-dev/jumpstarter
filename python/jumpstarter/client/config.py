@@ -1,8 +1,9 @@
 import os
 
+import click
 import yaml
 
-_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".config", "jumpstarter")
+_CONFIG_PATH = click.get_app_dir("jumpstarter")
 
 
 class Config:
