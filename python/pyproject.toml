@@ -21,7 +21,7 @@ git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
 subdirectory = "python"
 
 [tool.poetry.scripts]
-jumpstarter = "jumpstarter.cli:main"
+jmp = "jumpstarter.__main__:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"

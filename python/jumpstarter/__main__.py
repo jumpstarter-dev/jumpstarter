@@ -4,6 +4,10 @@ import anyio
 
 
 def main():
+    anyio.run(anyio.to_thread.run_sync, entrypoint)
+
+
+def entrypoint():
     from jumpstarter.cli import main
 
     main(prog_name="jmp")
@@ -12,4 +16,4 @@ def main():
 
 
 if __name__ == "__main__":
-    anyio.run(anyio.to_thread.run_sync, main)
+    main()
