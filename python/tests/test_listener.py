@@ -40,11 +40,7 @@ async def test_listener():
 
             async with LeaseRequest(
                 controller=controller,
-                metadata_filter=MetadataFilter(
-                    labels={
-                        "jumpstarter.dev/name": "exporter",
-                    }
-                ),
+                metadata_filter=MetadataFilter(name="exporter"),
             ) as lease:
                 async with lease.connect() as inner:
                     client = await client_from_channel(inner)

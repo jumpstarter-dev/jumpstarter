@@ -22,6 +22,12 @@ class Metadata:
 class MetadataFilter:
     labels: dict[str, str] = field(default_factory=dict)
 
+    name: InitVar[str | None] = None
+
+    def __post_init__(self, name):
+        if name is not None:
+            self.labels["jumpstarter.dev/name"] = name
+
 
 class Interface(metaclass=ABCMeta):
     @classmethod
