@@ -81,15 +81,17 @@ class Driver(
             case "resource":
                 remote, resource = create_memory_stream()
 
-                self.resources[UUID(metadata["resource_uuid"])] = resource
+                resource_uuid = uuid4()
 
-                await resource.send(b"connected")
+                self.resources[resource_uuid] = resource
+
+                await resource.send(str(resource_uuid).encode("utf-8"))
 
                 async with remote:
                     async for v in forward_server_stream(request_iterator, remote):
                         yield v
 
-                del self.resources[UUID(metadata["resource_uuid"])]
+                del self.resources[resource_uuid]
 
     async def GetReport(self, request, context):
         return jumpstarter_pb2.GetReportResponse(
@@ -217,8 +219,6 @@ class DriverClient(
         self,
         stream,
     ):
-        uuid = uuid4()
-
         tx, rx = create_memory_stream()
 
         combined = StapledObjectStream(tx, stream)
@@ -228,14 +228,13 @@ class DriverClient(
                 await forward_client_stream(
                     self,
                     stream,
-                    {"kind": "resource", "uuid": str(self.uuid), "resource_uuid": str(uuid)}.items(),
+                    {"kind": "resource", "uuid": str(self.uuid)}.items(),
                 )
 
         async with create_task_group() as tg:
             tg.start_soon(handle, combined)
             try:
-                assert await rx.receive() == b"connected"
-                yield str(uuid)
+                yield (await rx.receive()).decode()
             finally:
                 tg.cancel_scope.cancel()
 
