@@ -130,23 +130,19 @@ async def test_tcp_network_performance():
 
             def blocking():
                 with client.portforward(listener):
-
-                    async def asynchro():
-                        await anyio.run_process(
-                            [
-                                "iperf3",
-                                "-c",
-                                "127.0.0.1",
-                                "-p",
-                                "8001",
-                                "-t",
-                                "1",
-                            ],
-                            stdout=sys.stdout,
-                            stderr=sys.stderr,
-                        )
-
-                    run(asynchro)
+                    subprocess.run(
+                        [
+                            "iperf3",
+                            "-c",
+                            "127.0.0.1",
+                            "-p",
+                            "8001",
+                            "-t",
+                            "1",
+                        ],
+                        stdout=sys.stdout,
+                        stderr=sys.stderr,
+                    )
 
             await run_sync(blocking)
             server.terminate()
