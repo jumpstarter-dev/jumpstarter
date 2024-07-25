@@ -7,7 +7,7 @@ def test_drivers_power_mock():
         assert client.on() == "ok"
         assert client.off() == "ok"
 
-        assert [reading for reading in client.read()] == [
+        assert list(client.read()) == [
             PowerReading(voltage=0.0, current=0.0),
             PowerReading(voltage=5.0, current=2.0),
         ]
@@ -18,7 +18,7 @@ def test_drivers_sync_power_mock():
         assert client.on() == "ok"
         assert client.off() == "ok"
 
-        assert [reading for reading in client.read()] == [
+        assert list(client.read()) == [
             PowerReading(voltage=0.0, current=0.0),
             PowerReading(voltage=5.0, current=2.0),
         ]

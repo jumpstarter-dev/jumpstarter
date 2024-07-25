@@ -1,4 +1,3 @@
-from abc import ABCMeta
 from dataclasses import dataclass, field
 from itertools import chain
 
@@ -7,7 +6,7 @@ import click
 from jumpstarter.drivers import Driver, DriverClient
 
 
-class CompositeInterface(metaclass=ABCMeta):
+class CompositeInterface:
     @classmethod
     def client_module(cls) -> str:
         return "jumpstarter.drivers.composite"

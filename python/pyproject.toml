@@ -32,7 +32,7 @@ pytest-cov = "^5.0.0"
 line-length = 120
 
 [tool.ruff.lint]
-extend-select = ["I"]
+extend-select = ["I","C","E","F","W","B"]
 
 [build-system]
 requires = ["poetry-core"]
