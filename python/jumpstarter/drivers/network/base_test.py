@@ -9,6 +9,8 @@ import pytest
 
 from jumpstarter.common.grpc import serve
 from jumpstarter.drivers.network import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
+from anyio.to_thread import run_sync
+from anyio.from_thread import run
 
 pytestmark = pytest.mark.anyio
 
@@ -50,10 +52,18 @@ async def test_tcp_network_portforward():
         tg.start_soon(listener.serve, echo_handler)
 
         async with serve(TcpNetwork(name="tcp", host="127.0.0.1", port=8001)) as client:
-            async with client.portforward(forwarder):
-                async with await anyio.connect_tcp("127.0.0.1", 8002) as stream:
-                    await stream.send(b"hello")
-                    assert await stream.receive() == b"hello"
+
+            def blocking():
+                with client.portforward(forwarder):
+
+                    async def asynchro():
+                        async with await anyio.connect_tcp("127.0.0.1", 8002) as stream:
+                            await stream.send(b"hello")
+                            assert await stream.receive() == b"hello"
+
+                    run(asynchro)
+
+            await run_sync(blocking)
 
         tg.cancel_scope.cancel()
 
@@ -117,18 +127,26 @@ async def test_tcp_network_performance():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ) as server:
-            async with client.portforward(listener):
-                await anyio.run_process(
-                    [
-                        "iperf3",
-                        "-c",
-                        "127.0.0.1",
-                        "-p",
-                        "8001",
-                        "-t",
-                        "1",
-                    ],
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
-                )
+
+            def blocking():
+                with client.portforward(listener):
+
+                    async def asynchro():
+                        await anyio.run_process(
+                            [
+                                "iperf3",
+                                "-c",
+                                "127.0.0.1",
+                                "-p",
+                                "8001",
+                                "-t",
+                                "1",
+                            ],
+                            stdout=sys.stdout,
+                            stderr=sys.stderr,
+                        )
+
+                    run(asynchro)
+
+            await run_sync(blocking)
             server.terminate()

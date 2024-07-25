@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 
 from anyio import (
@@ -33,9 +33,9 @@ class NetworkClient(NetworkInterface, DriverClient):
         async with self._stream() as stream:
             yield stream
 
-    @asynccontextmanager
-    async def portforward(self, listener):
-        async with self._portforward(listener):
+    @contextmanager
+    def portforward(self, listener):
+        with self.portal.wrap_async_context_manager(self._portforward(listener)):
             yield
 
 
