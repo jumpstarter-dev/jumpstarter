@@ -1,10 +1,7 @@
-import pytest
 
 from jumpstarter.common.grpc import serve
 from jumpstarter.drivers.composite import Composite
 from jumpstarter.drivers.power import MockPower
-
-pytestmark = pytest.mark.anyio
 
 
 def test_drivers_composite():

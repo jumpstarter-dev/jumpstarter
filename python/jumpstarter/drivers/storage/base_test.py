@@ -1,12 +1,8 @@
 import os
 from tempfile import NamedTemporaryFile
 
-import pytest
-
 from jumpstarter.common.grpc import serve
 from jumpstarter.drivers.storage import MockStorageMux
-
-pytestmark = pytest.mark.anyio
 
 
 def test_drivers_mock_storage_mux():

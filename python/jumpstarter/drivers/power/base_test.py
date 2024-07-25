@@ -1,9 +1,6 @@
-import pytest
 
 from jumpstarter.common.grpc import serve
 from jumpstarter.drivers.power import MockPower, PowerReading, SyncMockPower
-
-pytestmark = pytest.mark.anyio
 
 
 def test_drivers_power_mock():
