@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import click
 from anyio import from_thread
 
-from jumpstarter.drivers import Driver, DriverClient, export
+from jumpstarter.drivers import Driver, AsyncDriverClient, export
 
 
 @dataclass(kw_only=True)
@@ -37,7 +37,7 @@ class PowerInterface(metaclass=ABCMeta):
     async def read(self) -> AsyncGenerator[PowerReading, None]: ...
 
 
-class PowerClient(PowerInterface, DriverClient):
+class PowerClient(PowerInterface, AsyncDriverClient):
     async def on(self) -> str:
         return await self.call("on")
 

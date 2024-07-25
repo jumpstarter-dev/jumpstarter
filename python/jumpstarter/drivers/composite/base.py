@@ -4,7 +4,7 @@ from itertools import chain
 
 import click
 
-from jumpstarter.drivers import Driver, DriverClient
+from jumpstarter.drivers import Driver, AsyncDriverClient
 
 
 class CompositeInterface(metaclass=ABCMeta):
@@ -26,10 +26,10 @@ class Composite(CompositeInterface, Driver):
 
 
 @dataclass(kw_only=True)
-class CompositeClient(CompositeInterface, DriverClient):
-    children: list[DriverClient] = field(init=False, default_factory=list)
+class CompositeClient(CompositeInterface, AsyncDriverClient):
+    children: list[AsyncDriverClient] = field(init=False, default_factory=list)
 
-    def __or__(self, other: DriverClient):
+    def __or__(self, other: AsyncDriverClient):
         name = other.labels["jumpstarter.dev/name"]
         setattr(self, name, other)
 

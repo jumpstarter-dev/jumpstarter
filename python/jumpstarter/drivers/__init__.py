@@ -1,6 +1,6 @@
 from jumpstarter.drivers.base import (
     Driver,
-    DriverClient,
+    AsyncDriverClient,
 )
 from jumpstarter.drivers.decorators import (
     export,
@@ -9,7 +9,7 @@ from jumpstarter.drivers.decorators import (
 
 __all__ = [
     "Driver",
-    "DriverClient",
+    "AsyncDriverClient",
     "streamcall",
     "export",
 ]
