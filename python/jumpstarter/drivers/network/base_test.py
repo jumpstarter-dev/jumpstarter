@@ -134,32 +134,31 @@ def test_tcp_network_performance():
         )
     ) as client:
 
-        async def asynchro():
-            listener = await anyio.create_tcp_listener(local_port=8001, reuse_port=True)
+        async def create_listener():
+            return await anyio.create_tcp_listener(local_port=8001, reuse_port=True)
 
-            async with await anyio.open_process(
-                ["iperf3", "-s"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            ) as server:
+        listener = client.portal.call(create_listener)
 
-                def blocking():
-                    with client.portforward(listener):
-                        subprocess.run(
-                            [
-                                "iperf3",
-                                "-c",
-                                "127.0.0.1",
-                                "-p",
-                                "8001",
-                                "-t",
-                                "1",
-                            ],
-                            stdout=sys.stdout,
-                            stderr=sys.stderr,
-                        )
+        server = subprocess.Popen(
+            ["iperf3", "-s"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
-                await run_sync(blocking)
-                server.terminate()
+        with client.portforward(listener):
+            subprocess.run(
+                [
+                    "iperf3",
+                    "-c",
+                    "127.0.0.1",
+                    "-p",
+                    "8001",
+                    "-t",
+                    "1",
+                    "--bidir",
+                ],
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
 
-        client.portal.call(asynchro)
+        server.terminate()
