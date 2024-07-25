@@ -31,4 +31,4 @@ async def exporter_impl():
 
 @click.command
 def exporter():
-    anyio.from_thread.run(exporter_impl)
+    anyio.run(exporter_impl)

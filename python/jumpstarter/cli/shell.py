@@ -54,4 +54,4 @@ async def shell_impl():
 @click.command()
 def shell():
     """Spawns a shell with a transient exporter session"""
-    anyio.from_thread.run(shell_impl)
+    anyio.run(shell_impl)

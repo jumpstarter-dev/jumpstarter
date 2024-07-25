@@ -24,4 +24,5 @@ def control_from_env():
     if host is None:
         return control
 
+    # FIXME: run in worker thread or pass portal
     return anyio.from_thread.run(j_impl, host)
