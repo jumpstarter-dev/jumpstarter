@@ -45,7 +45,7 @@ class PowerClient(PowerInterface, DriverClient):
         return self.call("off")
 
     async def read(self) -> AsyncGenerator[PowerReading, None]:
-        async for v in self.streamingcall("read"):
+        async for v in self.async_streamingcall("read"):
             yield PowerReading(voltage=v["voltage"], current=v["current"])
 
     def cli(self):

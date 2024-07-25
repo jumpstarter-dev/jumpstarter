@@ -173,7 +173,7 @@ class DriverClient(
 
         return json_format.MessageToDict(response.result)
 
-    async def streamingcall(self, method, *args):
+    async def async_streamingcall(self, method, *args):
         """Make StreamingDriverCall by method name and arguments"""
 
         request = jumpstarter_pb2.StreamingDriverCallRequest(
