@@ -158,7 +158,7 @@ class DriverClient(
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
 
-    async def call(self, method, *args):
+    async def async_call(self, method, *args):
         """Make DriverCall by method name and arguments"""
 
         request = jumpstarter_pb2.DriverCallRequest(
