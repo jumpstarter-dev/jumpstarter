@@ -136,41 +136,17 @@ class Driver(
 
 
 @dataclass(kw_only=True)
-class DriverClient(
+class AsyncDriverClient(
     Metadata,
     Interface,
     jumpstarter_pb2_grpc.ExporterServiceStub,
     router_pb2_grpc.RouterServiceStub,
 ):
-    """Base class for driver clients
-
-    Driver clients should as the minimum implement the
-    `client_module` and `client_class` methods, which
-    points to the corresponding driver client.
-
-    Additional client methods can be implemented as
-    regular methods and call `call` or
-    `streamingcall` internally.
-    """
-
     channel: Channel
-    portal: BlockingPortal
 
     def __post_init__(self, *args):
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
-
-    def call(self, method, *args):
-        """Make DriverCall by method name and arguments"""
-        return self.portal.call(self.async_call, method, *args)
-
-    def streamingcall(self, method, *args):
-        generator = self.portal.call(self.async_streamingcall, method, *args)
-        while True:
-            try:
-                yield self.portal.call(generator.__anext__)
-            except StopAsyncIteration:
-                break
 
     async def async_call(self, method, *args):
         """Make DriverCall by method name and arguments"""
@@ -251,6 +227,34 @@ class DriverClient(
                 yield (await rx.receive()).decode()
             finally:
                 tg.cancel_scope.cancel()
+
+
+@dataclass(kw_only=True)
+class DriverClient(AsyncDriverClient):
+    """Base class for driver clients
+
+    Driver clients should as the minimum implement the
+    `client_module` and `client_class` methods, which
+    points to the corresponding driver client.
+
+    Additional client methods can be implemented as
+    regular methods and call `call` or
+    `streamingcall` internally.
+    """
+
+    portal: BlockingPortal
+
+    def call(self, method, *args):
+        """Make DriverCall by method name and arguments"""
+        return self.portal.call(self.async_call, method, *args)
+
+    def streamingcall(self, method, *args):
+        generator = self.portal.call(self.async_streamingcall, method, *args)
+        while True:
+            try:
+                yield self.portal.call(generator.__anext__)
+            except StopAsyncIteration:
+                break
 
     @contextmanager
     def local_file(
