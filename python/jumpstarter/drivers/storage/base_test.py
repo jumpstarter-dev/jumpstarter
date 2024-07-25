@@ -1,5 +1,5 @@
-from tempfile import NamedTemporaryFile
 import os
+from tempfile import NamedTemporaryFile
 
 import pytest
 

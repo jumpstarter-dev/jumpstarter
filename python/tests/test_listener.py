@@ -4,6 +4,7 @@ from uuid import uuid4
 import anyio
 import grpc
 import pytest
+from anyio.to_thread import run_sync
 
 from jumpstarter.client import LeaseRequest, client_from_channel
 from jumpstarter.common import MetadataFilter
@@ -42,12 +43,13 @@ async def test_listener():
                 controller=controller,
                 metadata_filter=MetadataFilter(name="exporter"),
             ) as lease:
-                async with lease.connect() as inner:
-                    client = await client_from_channel(inner)
-                    assert await client.on() == "ok"
+                async with anyio.from_thread.BlockingPortal() as portal:
+                    async with lease.connect() as inner:
+                        client = await client_from_channel(inner, portal)
+                        assert await run_sync(client.on) == "ok"
 
-                async with lease.connect() as inner:
-                    client = await client_from_channel(inner)
-                    assert await client.on() == "ok"
+                    async with lease.connect() as inner:
+                        client = await client_from_channel(inner, portal)
+                        assert await run_sync(client.on) == "ok"
 
             tg.cancel_scope.cancel()

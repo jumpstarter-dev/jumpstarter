@@ -160,6 +160,19 @@ class DriverClient(
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
 
+    def call(self, method, *args):
+        """Make DriverCall by method name and arguments"""
+
+        request = jumpstarter_pb2.DriverCallRequest(
+            uuid=str(self.uuid),
+            method=method,
+            args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+        )
+
+        response = self.portal.call(self.DriverCall, request)
+
+        return json_format.MessageToDict(response.result)
+
     async def async_call(self, method, *args):
         """Make DriverCall by method name and arguments"""
 

@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import grpc
+from anyio.from_thread import BlockingPortal
 
 from jumpstarter.client import client_from_channel
 from jumpstarter.exporter import Session
@@ -22,6 +23,7 @@ async def serve(root_device):
         await server.start()
 
         async with grpc.aio.insecure_channel(f"unix://{socketpath}") as channel:
-            yield await client_from_channel(channel)
+            async with BlockingPortal() as portal:
+                yield await client_from_channel(channel, portal)
 
         await server.stop(grace=None)
