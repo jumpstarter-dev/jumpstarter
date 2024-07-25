@@ -173,19 +173,6 @@ class DriverClient(
 
         return json_format.MessageToDict(response.result)
 
-    async def async_call(self, method, *args):
-        """Make DriverCall by method name and arguments"""
-
-        request = jumpstarter_pb2.DriverCallRequest(
-            uuid=str(self.uuid),
-            method=method,
-            args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
-        )
-
-        response = await self.DriverCall(request)
-
-        return json_format.MessageToDict(response.result)
-
     async def streamingcall(self, method, *args):
         """Make StreamingDriverCall by method name and arguments"""
 
