@@ -135,7 +135,7 @@ class Driver(
 
 
 @dataclass(kw_only=True)
-class AsyncDriverClient(
+class DriverClient(
     Metadata,
     Interface,
     jumpstarter_pb2_grpc.ExporterServiceStub,

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from google.protobuf import empty_pb2
 
-from jumpstarter.drivers import AsyncDriverClient
+from jumpstarter.drivers import DriverClient
 from jumpstarter.v1 import (
     jumpstarter_pb2_grpc,
 )
@@ -12,7 +12,7 @@ from jumpstarter.v1 import (
 
 async def client_from_channel(
     channel,
-) -> AsyncDriverClient:
+) -> DriverClient:
     clients = OrderedDict()
 
     response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
