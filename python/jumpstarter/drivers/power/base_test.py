@@ -14,12 +14,12 @@ async def test_drivers_power_mock():
             assert client.on() == "ok"
             assert client.off() == "ok"
 
-        await run_sync(blocking)
+            assert [reading for reading in client.read()] == [
+                PowerReading(voltage=0.0, current=0.0),
+                PowerReading(voltage=5.0, current=2.0),
+            ]
 
-        assert [reading async for reading in client.read()] == [
-            PowerReading(voltage=0.0, current=0.0),
-            PowerReading(voltage=5.0, current=2.0),
-        ]
+        await run_sync(blocking)
 
 
 async def test_drivers_sync_power_mock():
@@ -29,9 +29,9 @@ async def test_drivers_sync_power_mock():
             assert client.on() == "ok"
             assert client.off() == "ok"
 
-        await run_sync(blocking)
+            assert [reading for reading in client.read()] == [
+                PowerReading(voltage=0.0, current=0.0),
+                PowerReading(voltage=5.0, current=2.0),
+            ]
 
-        assert [reading async for reading in client.read()] == [
-            PowerReading(voltage=0.0, current=0.0),
-            PowerReading(voltage=5.0, current=2.0),
-        ]
+        await run_sync(blocking)

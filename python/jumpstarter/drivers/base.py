@@ -164,6 +164,14 @@ class DriverClient(
         """Make DriverCall by method name and arguments"""
         return self.portal.call(self.async_call, method, *args)
 
+    def streamingcall(self, method, *args):
+        generator = self.portal.call(self.async_streamingcall, method, *args)
+        while True:
+            try:
+                yield self.portal.call(generator.__anext__)
+            except StopAsyncIteration:
+                break
+
     async def async_call(self, method, *args):
         """Make DriverCall by method name and arguments"""
 

@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass, field
 
 import click
@@ -44,8 +44,8 @@ class PowerClient(PowerInterface, DriverClient):
     def off(self) -> str:
         return self.call("off")
 
-    async def read(self) -> AsyncGenerator[PowerReading, None]:
-        async for v in self.async_streamingcall("read"):
+    def read(self) -> Generator[PowerReading, None, None]:
+        for v in self.streamingcall("read"):
             yield PowerReading(voltage=v["voltage"], current=v["current"])
 
     def cli(self):
