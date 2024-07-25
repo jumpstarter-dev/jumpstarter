@@ -1,3 +1,4 @@
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -6,11 +7,10 @@ from tempfile import TemporaryDirectory
 
 import anyio
 import pytest
+from anyio.to_thread import run_sync
 
 from jumpstarter.common.grpc import serve
 from jumpstarter.drivers.network import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
-from anyio.to_thread import run_sync
-from anyio.from_thread import run
 
 pytestmark = pytest.mark.anyio
 
@@ -55,13 +55,10 @@ async def test_tcp_network_portforward():
 
             def blocking():
                 with client.portforward(forwarder):
-
-                    async def asynchro():
-                        async with await anyio.connect_tcp("127.0.0.1", 8002) as stream:
-                            await stream.send(b"hello")
-                            assert await stream.receive() == b"hello"
-
-                    run(asynchro)
+                    stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    stream.connect(("127.0.0.1", 8002))
+                    stream.send(b"hello")
+                    assert stream.recv(5) == b"hello"
 
             await run_sync(blocking)
 
