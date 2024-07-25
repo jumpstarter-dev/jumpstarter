@@ -1,13 +1,13 @@
 import socket
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from shutil import which
 from tempfile import TemporaryDirectory
 
 import anyio
 import pytest
-from anyio.to_thread import run_sync
 
 from jumpstarter.common.grpc import serve
 from jumpstarter.drivers.network import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
@@ -15,66 +15,55 @@ from jumpstarter.drivers.network import EchoNetwork, TcpNetwork, UdpNetwork, Uni
 
 def test_echo_network():
     with serve(EchoNetwork(name="echo")) as client:
-
-        async def asynchro():
-            async with client.connect() as stream:
-                await stream.send(b"hello")
-                assert await stream.receive() == b"hello"
-
-        client.portal.call(asynchro)
+        with client.connect() as stream:
+            stream.send(b"hello")
+            assert stream.receive() == b"hello"
 
 
-async def echo_handler(client):
-    async with client:
-        async for v in client:
-            await client.send(v)
+def echo_handler(s):
+    conn, _ = s.accept()
+    while True:
+        data = conn.recv(1024)
+        if not data:
+            break
+        conn.sendall(data)
 
 
 def test_tcp_network():
     with serve(TcpNetwork(name="tcp", host="127.0.0.1", port=9001)) as client:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 9001))
+            s.listen(1)
 
-        async def asynchro():
-            listener = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=9001)
+            with ThreadPoolExecutor() as pool:
+                pool.submit(echo_handler, s)
 
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(listener.serve, echo_handler)
-
-                async with client.connect() as stream:
-                    await stream.send(b"hello")
-                    assert await stream.receive() == b"hello"
-
-                tg.cancel_scope.cancel()
-
-            await listener.aclose()
-
-        client.portal.call(asynchro)
+                with client.connect() as stream:
+                    stream.send(b"hello")
+                    assert stream.receive() == b"hello"
 
 
 def test_tcp_network_portforward():
     with serve(TcpNetwork(name="tcp", host="127.0.0.1", port=8001)) as client:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 8001))
+            s.listen(1)
 
-        async def asynchro():
-            listener = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=8001, reuse_port=True)
-            forwarder = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=8002, reuse_port=True)
+            with ThreadPoolExecutor() as pool:
+                pool.submit(echo_handler, s)
 
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(listener.serve, echo_handler)
+                async def create_forwarder():
+                    return await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=8002, reuse_port=True)
 
-                def blocking():
-                    with client.portforward(forwarder):
-                        stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        stream.connect(("127.0.0.1", 8002))
-                        stream.send(b"hello")
-                        assert stream.recv(5) == b"hello"
+                forwarder = client.portal.call(create_forwarder)
 
-                await run_sync(blocking)
+                with client.portforward(forwarder):
+                    stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    stream.connect(("127.0.0.1", 8002))
+                    stream.send(b"hello")
+                    assert stream.recv(5) == b"hello"
 
-                tg.cancel_scope.cancel()
-
-            await listener.aclose()
-            await forwarder.aclose()
-
-        client.portal.call(asynchro)
+                client.portal.call(forwarder.aclose)
 
 
 def test_udp_network():
@@ -85,18 +74,12 @@ def test_udp_network():
             port=8001,
         )
     ) as client:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.bind(("127.0.0.1", 8001))
 
-        async def asynchro():
-            async with await anyio.create_udp_socket(
-                local_host="127.0.0.1",
-                local_port=8001,
-            ) as server:
-                async with client.connect() as stream:
-                    await stream.send(b"hello")
-                    # TODO: fix udp stream object type
-                    assert (await server.receive())[0] == b"hello"
-
-        client.portal.call(asynchro)
+            with client.connect() as stream:
+                stream.send(b"hello")
+                assert s.recv(5) == b"hello"
 
 
 def test_unix_network():
@@ -108,20 +91,16 @@ def test_unix_network():
                 path=socketpath,
             )
         ) as client:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.bind(str(socketpath))
+                s.listen(1)
 
-            async def asynchro():
-                listener = await anyio.create_unix_listener(socketpath)
+                with ThreadPoolExecutor() as pool:
+                    pool.submit(echo_handler, s)
 
-                async with anyio.create_task_group() as tg:
-                    tg.start_soon(listener.serve, echo_handler)
-
-                    async with client.connect() as stream:
-                        await stream.send(b"hello")
-                        assert await stream.receive() == b"hello"
-
-                    tg.cancel_scope.cancel()
-
-            client.portal.call(asynchro)
+                    with client.connect() as stream:
+                        stream.send(b"hello")
+                        assert stream.receive() == b"hello"
 
 
 @pytest.mark.skipif(which("iperf3") is None, reason="iperf3 not available")
