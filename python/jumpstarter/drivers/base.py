@@ -162,6 +162,10 @@ class DriverClient(
 
     def call(self, method, *args):
         """Make DriverCall by method name and arguments"""
+        return self.portal.call(self.async_call, method, *args)
+
+    async def async_call(self, method, *args):
+        """Make DriverCall by method name and arguments"""
 
         request = jumpstarter_pb2.DriverCallRequest(
             uuid=str(self.uuid),
@@ -169,7 +173,7 @@ class DriverClient(
             args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
         )
 
-        response = self.portal.call(self.DriverCall, request)
+        response = await self.DriverCall(request)
 
         return json_format.MessageToDict(response.result)
 
