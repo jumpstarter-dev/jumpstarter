@@ -2,6 +2,7 @@ import os
 from tempfile import NamedTemporaryFile
 
 import pytest
+from anyio.to_thread import run_sync
 
 from jumpstarter.common.grpc import serve
 from jumpstarter.drivers.storage import MockStorageMux
@@ -16,6 +17,13 @@ async def test_drivers_mock_storage_mux():
             file.close()
 
             async with client.local_file(file.name) as handle:
-                await client.write(handle)
+
+                def blocking():
+                    client.off()
+                    client.dut()
+                    client.host()
+                    client.write(handle)
+
+                await run_sync(blocking)
 
             os.unlink(file.name)

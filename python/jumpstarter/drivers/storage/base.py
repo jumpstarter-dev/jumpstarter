@@ -32,17 +32,17 @@ class StorageMuxInterface(metaclass=ABCMeta):
 
 
 class StorageMuxClient(StorageMuxInterface, DriverClient):
-    async def host(self):
-        return await self.async_call("host")
+    def host(self):
+        return self.call("host")
 
-    async def dut(self):
-        return await self.async_call("dut")
+    def dut(self):
+        return self.call("dut")
 
-    async def off(self):
-        return await self.async_call("off")
+    def off(self):
+        return self.call("off")
 
-    async def write(self, src: str):
-        return await self.async_call("write", src)
+    def write(self, src: str):
+        return self.call("write", src)
 
     def cli(self):
         @click.group
