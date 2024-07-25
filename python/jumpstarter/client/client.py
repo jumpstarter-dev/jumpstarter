@@ -3,6 +3,7 @@ from importlib import import_module
 from uuid import UUID
 
 from google.protobuf import empty_pb2
+from anyio.from_thread import BlockingPortal
 
 from jumpstarter.drivers import DriverClient
 from jumpstarter.v1 import (
@@ -23,7 +24,7 @@ async def client_from_channel(
 
         client_module = import_module(labels["jumpstarter.dev/client_module"])
         client_class = getattr(client_module, labels["jumpstarter.dev/client_class"])
-        client = client_class(uuid=uuid, labels=labels, channel=channel)
+        client = client_class(uuid=uuid, labels=labels, channel=channel, portal=BlockingPortal())
 
         clients[uuid] = client
 

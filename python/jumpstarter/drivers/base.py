@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from anyio import create_task_group
+from anyio.from_thread import BlockingPortal
 from anyio.streams.file import FileReadStream
 from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import json_format, struct_pb2
@@ -153,6 +154,7 @@ class DriverClient(
     """
 
     channel: Channel
+    portal: BlockingPortal
 
     def __post_init__(self, *args):
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
