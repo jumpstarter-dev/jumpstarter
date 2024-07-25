@@ -2,7 +2,7 @@
 Base classes for drivers and driver clients
 """
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
@@ -240,11 +240,11 @@ class DriverClient(
             finally:
                 tg.cancel_scope.cancel()
 
-    @asynccontextmanager
-    async def local_file(
+    @contextmanager
+    def local_file(
         self,
         filepath,
     ):
-        async with await FileReadStream.from_path(filepath) as file:
-            async with self.resource(file) as uuid:
+        with self.portal.wrap_async_context_manager(self.portal.call(FileReadStream.from_path, filepath)) as file:
+            with self.portal.wrap_async_context_manager(self.resource(file)) as uuid:
                 yield uuid

@@ -16,14 +16,13 @@ async def test_drivers_mock_storage_mux():
             file.write(b"testcontent" * 1000)
             file.close()
 
-            async with client.local_file(file.name) as handle:
-
-                def blocking():
+            def blocking():
+                with client.local_file(file.name) as handle:
                     client.off()
                     client.dut()
                     client.host()
                     client.write(handle)
 
-                await run_sync(blocking)
+            await run_sync(blocking)
 
             os.unlink(file.name)
