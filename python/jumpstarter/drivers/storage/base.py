@@ -3,7 +3,6 @@ from tempfile import NamedTemporaryFile
 from uuid import UUID
 
 import click
-from anyio import from_thread
 from anyio.streams.file import FileWriteStream
 
 from jumpstarter.drivers import Driver, DriverClient, export
@@ -53,26 +52,23 @@ class StorageMuxClient(StorageMuxInterface, DriverClient):
         @base.command()
         def host():
             """Connect storage to host"""
-            from_thread.run(self.host)
+            self.host()
 
         @base.command()
         def dut():
             """Connect storage to dut"""
-            from_thread.run(self.dut)
+            self.dut()
 
         @base.command()
         def off():
             """Disconnect storage"""
-            from_thread.run(self.off)
+            self.off()
 
         @base.command()
         @click.argument("file")
         def write(file):
-            async def write_impl():
-                async with self.local_file(file) as handle:
-                    await self.write(handle)
-
-            from_thread.run(write_impl)
+            with self.local_file(file) as handle:
+                self.write(handle)
 
         return base
 

@@ -3,7 +3,6 @@ from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass, field
 
 import click
-from anyio import from_thread
 
 from jumpstarter.drivers import Driver, DriverClient, export
 
@@ -57,12 +56,12 @@ class PowerClient(PowerInterface, DriverClient):
         @base.command()
         def on():
             """Power on"""
-            click.echo(from_thread.run(self.on))
+            click.echo(self.on())
 
         @base.command()
         def off():
             """Power off"""
-            click.echo(from_thread.run(self.off))
+            click.echo(self.off())
 
         return base
 
