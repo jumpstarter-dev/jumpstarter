@@ -21,17 +21,33 @@
 ```
 
 ## Example
+```{testsetup} *
+from types import SimpleNamespace
+import importlib
+
+real_import_module = importlib.import_module
+
+def import_module(name, package=None):
+    if name == "example":
+        return SimpleNamespace(ExampleClient=globals()["ExampleClient"])
+    else:
+        return real_import_module(name, package)
+
+importlib.import_module = import_module
+```
+
 ```{testcode}
 from anyio import connect_tcp, sleep
 from contextlib import asynccontextmanager
 from collections.abc import Generator
 from jumpstarter.drivers import Driver, DriverClient, export, exportstream
 from jumpstarter.drivers.mixins import StreamMixin
+from jumpstarter.common.utils import serve
 
 class ExampleDriver(Driver):
     @classmethod
     def client(cls) -> str:
-        return "example.ExampleClient"
+        return f"example.ExampleClient"
 
     @export
     def echo(self, message) -> str:
@@ -65,4 +81,11 @@ class ExampleClient(DriverClient, StreamMixin):
 
     def echo_generator(self, message) -> Generator[str, None, None]:
         yield from self.streamingcall("echo_generator")
+
+with serve(ExampleDriver(name="example")) as client:
+    print(client.echo("hello"))
+```
+
+```{testoutput}
+hello
 ```

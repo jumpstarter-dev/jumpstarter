@@ -4,15 +4,15 @@ from uuid import uuid4
 import anyio
 import grpc
 import pytest
-from anyio.from_thread import BlockingPortal, start_blocking_portal
+from anyio.from_thread import start_blocking_portal
 from anyio.to_process import run_sync
 
 from jumpstarter.client import LeaseRequest
 from jumpstarter.common import MetadataFilter
+from jumpstarter.common.grpc import secure_channel
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.exporter import Exporter
 from jumpstarter.v1 import jumpstarter_pb2_grpc
-from jumpstarter.common.grpc import secure_channel
 
 pytestmark = pytest.mark.anyio
 
