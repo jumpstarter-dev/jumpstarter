@@ -80,10 +80,11 @@ class ExampleClient(DriverClient, StreamMixin):
         # return self.call("echo_async", message)
 
     def echo_generator(self, message) -> Generator[str, None, None]:
-        yield from self.streamingcall("echo_generator")
+        yield from self.streamingcall("echo_generator", message)
 
 with serve(ExampleDriver(name="example")) as client:
     print(client.echo("hello"))
+    assert list(client.echo_generator("hello")) == ["hello"] * 10
 ```
 
 ```{testoutput}
