@@ -1,7 +1,7 @@
 # API reference
 
 ```{eval-rst}
-.. automodule:: jumpstarter.drivers
+.. autoclass:: jumpstarter.drivers.DriverClient
     :members:
 ```
 
