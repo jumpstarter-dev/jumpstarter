@@ -2,6 +2,7 @@
 Base classes for drivers and driver clients
 """
 
+from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
@@ -9,7 +10,7 @@ from uuid import UUID, uuid4
 from anyio.from_thread import BlockingPortal
 from grpc import StatusCode
 
-from jumpstarter.common import Interface, Metadata
+from jumpstarter.common import Metadata
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_server_stream,
@@ -27,9 +28,9 @@ from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grp
 @dataclass(kw_only=True)
 class Driver(
     Metadata,
-    Interface,
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
+    metaclass=ABCMeta,
 ):
     """Base class for drivers
 
@@ -43,6 +44,16 @@ class Driver(
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
     """Dict of client side resources"""
+
+    @classmethod
+    @abstractmethod
+    def client_module(cls) -> str:
+        """Return module name of the driver client"""
+
+    @classmethod
+    @abstractmethod
+    def client_class(cls) -> str:
+        """Return class name of the driver client"""
 
     def add_to_server(self, server):
         """Add self to grpc server

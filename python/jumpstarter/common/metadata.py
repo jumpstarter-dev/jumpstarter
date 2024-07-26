@@ -1,4 +1,3 @@
-from abc import ABCMeta, abstractmethod
 from dataclasses import InitVar, dataclass, field
 from uuid import UUID, uuid4
 
@@ -27,15 +26,3 @@ class MetadataFilter:
     def __post_init__(self, name):
         if name is not None:
             self.labels["jumpstarter.dev/name"] = name
-
-
-class Interface(metaclass=ABCMeta):
-    @classmethod
-    @abstractmethod
-    def client_module(cls) -> str:
-        """Return module name of the driver client"""
-
-    @classmethod
-    @abstractmethod
-    def client_class(cls) -> str:
-        """Return class name of the driver client"""
