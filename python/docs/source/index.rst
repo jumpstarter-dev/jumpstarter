@@ -15,3 +15,4 @@ jumpstarter documentation
    drivers
    glossary
    usage
+   reference

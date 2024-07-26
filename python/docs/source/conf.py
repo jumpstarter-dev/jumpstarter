@@ -6,6 +6,11 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath('../..'))
+
 project = 'jumpstarter'
 copyright = '2024, Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer'
 author = 'Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer'
@@ -15,16 +20,12 @@ author = 'Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer'
 
 extensions = [
     'sphinxcontrib.mermaid',
-    'myst_parser'
+    'myst_parser',
+    'sphinx.ext.autodoc'
 ]
 
 templates_path = ['_templates']
 exclude_patterns = []
-
-source_suffix = {
-    '.rst': 'restructuredtext',
-    '.md': 'markdown'
-}
 
 mermaid_version = '10.9.1'
 
