@@ -32,6 +32,7 @@ ruff = "^0.5.5"
 [tool.poetry.group.docs.dependencies]
 sphinx = "^7.4.7"
 sphinx-rtd-theme = "^2.0.0"
+myst-parser = "^3.0.1"
 
 [tool.ruff]
 line-length = 120
