@@ -21,14 +21,14 @@
 ```
 
 ## Example
-```python
+```{testcode}
 from anyio import connect_tcp, sleep
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from collections.abc import Generator
 from jumpstarter.drivers import Driver, DriverClient, export, exportstream
 from jumpstarter.drivers.mixins import StreamMixin
 
-class ExampleDriver(Driver)
+class ExampleDriver(Driver):
     @classmethod
     def client(cls) -> str:
         return "example.ExampleClient"
@@ -64,5 +64,5 @@ class ExampleClient(DriverClient, StreamMixin):
         # return self.call("echo_async", message)
 
     def echo_generator(self, message) -> Generator[str, None, None]:
-        yield from self.streamingcall("echo_generator"):
+        yield from self.streamingcall("echo_generator")
 ```
