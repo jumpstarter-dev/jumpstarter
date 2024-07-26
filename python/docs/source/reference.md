@@ -4,6 +4,7 @@
 ```{eval-rst}
 .. autoclass:: jumpstarter.drivers.Driver
     :members:
+.. autodecorator:: jumpstarter.drivers.export
 ```
 
 ## Driver Client

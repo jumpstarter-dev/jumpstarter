@@ -18,6 +18,9 @@ MARKER_STREAMING_DRIVERCALL: Final[str] = "marker_streamingdrivercall"
 
 
 def export(func):
+    """
+    Decorator for exporting method as driver call
+    """
     if isasyncgenfunction(func) or isgeneratorfunction(func):
         return streamingdrivercall(func)
     elif iscoroutinefunction(func) or isfunction(func):
@@ -27,8 +30,6 @@ def export(func):
 
 
 def drivercall(func):
-    """Mark method as unary drivercall"""
-
     async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
 
@@ -48,8 +49,6 @@ def drivercall(func):
 
 
 def streamcall(func):
-    """Mark method as streamcall"""
-
     async def wrapper(self, request_iterator, context):
         async with func(self) as stream:
             async for v in forward_server_stream(request_iterator, stream):
@@ -61,8 +60,6 @@ def streamcall(func):
 
 
 def streamingdrivercall(func):
-    """Mark method as streaming drivercall"""
-
     async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
 

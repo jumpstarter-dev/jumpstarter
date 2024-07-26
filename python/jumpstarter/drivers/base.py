@@ -34,8 +34,7 @@ class Driver(
 ):
     """Base class for drivers
 
-    Drivers should as the minimum implement the
-    `interface` and `version` methods.
+    Drivers should at the minimum implement the `client` method.
 
     Additional driver calls can be implemented as regular
     sync/async regular/generator methods and marked with
