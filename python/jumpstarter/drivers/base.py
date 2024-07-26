@@ -145,10 +145,27 @@ class DriverClient(AsyncDriverClient):
     portal: BlockingPortal
 
     def call(self, method, *args):
-        """Make DriverCall by method name and arguments"""
+        """
+        Invoke driver call
+
+        :param str method: method name of driver call
+        :param list[Any] args: arguments for driver call
+
+        :return: driver call result
+        :rtype: Any
+        """
         return self.portal.call(self.call_async, method, *args)
 
     def streamingcall(self, method, *args):
+        """
+        Invoke streaming driver call
+
+        :param str method: method name of streaming driver call
+        :param list[Any] args: arguments for streaming driver call
+
+        :return: streaming driver call result
+        :rtype: Generator[Any, None, None]
+        """
         generator = self.portal.call(self.streamingcall_async, method, *args)
         while True:
             try:
