@@ -62,7 +62,7 @@ class AsyncDriverClient(
             yield json_format.MessageToDict(response.result)
 
     @asynccontextmanager
-    async def stream_async(self):
+    async def stream_async(self, method):
         client_stream, device_stream = create_memory_stream()
 
         async with create_task_group() as tg:
@@ -70,19 +70,19 @@ class AsyncDriverClient(
                 forward_client_stream,
                 self,
                 device_stream,
-                {"kind": "connect", "uuid": str(self.uuid)}.items(),
+                {"kind": "connect", "uuid": str(self.uuid), "method": method}.items(),
             )
             async with client_stream:
                 yield client_stream
 
     @asynccontextmanager
-    async def portforward_async(self, listener):
+    async def portforward_async(self, method, listener):
         async def handle(client):
             async with client:
                 await forward_client_stream(
                     self,
                     client,
-                    {"kind": "connect", "uuid": str(self.uuid)}.items(),
+                    {"kind": "connect", "uuid": str(self.uuid), "method": method}.items(),
                 )
 
         async with create_task_group() as tg:

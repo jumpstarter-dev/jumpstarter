@@ -48,7 +48,11 @@ def drivercall(func):
     return wrapper
 
 
-def streamcall(func):
+def exportstream(func):
+    """
+    Decorator for exporting method as stream
+    """
+
     async def wrapper(self, request_iterator, context):
         async with func(self) as stream:
             async for v in forward_server_stream(request_iterator, stream):

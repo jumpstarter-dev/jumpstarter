@@ -10,7 +10,7 @@ from anyio import (
 )
 from anyio.streams.stapled import StapledObjectStream
 
-from jumpstarter.drivers import Driver, DriverClient, streamcall
+from jumpstarter.drivers import Driver, DriverClient, exportstream
 from jumpstarter.drivers.mixins import StreamMixin
 
 
@@ -33,7 +33,7 @@ class TcpNetwork(NetworkInterface, Driver):
     host: str
     port: int
 
-    @streamcall
+    @exportstream
     @asynccontextmanager
     async def connect(self):
         async with await connect_tcp(remote_host=self.host, remote_port=self.port) as stream:
@@ -45,7 +45,7 @@ class UdpNetwork(NetworkInterface, Driver):
     host: str
     port: int
 
-    @streamcall
+    @exportstream
     @asynccontextmanager
     async def connect(self):
         async with await create_connected_udp_socket(remote_host=self.host, remote_port=self.port) as stream:
@@ -56,7 +56,7 @@ class UdpNetwork(NetworkInterface, Driver):
 class UnixNetwork(NetworkInterface, Driver):
     path: str
 
-    @streamcall
+    @exportstream
     @asynccontextmanager
     async def connect(self):
         async with await connect_unix(path=self.path) as stream:
@@ -64,7 +64,7 @@ class UnixNetwork(NetworkInterface, Driver):
 
 
 class EchoNetwork(NetworkInterface, Driver):
-    @streamcall
+    @exportstream
     @asynccontextmanager
     async def connect(self):
         tx, rx = create_memory_object_stream[bytes](32)

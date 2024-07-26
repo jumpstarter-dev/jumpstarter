@@ -36,9 +36,8 @@ class Driver(
 
     Drivers should at the minimum implement the `client` method.
 
-    Additional driver calls can be implemented as regular
-    sync/async regular/generator methods and marked with
-    the `export` decorator.
+    Regular or streaming driver calls can be marked with the `export` decorator.
+    Raw stream constructors can be marked with the `exportstream` decorator.
     """
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
@@ -86,7 +85,7 @@ class Driver(
 
         match metadata["kind"]:
             case "connect":
-                method = await self.__lookup_drivercall("connect", context, MARKER_STREAMCALL)
+                method = await self.__lookup_drivercall(metadata["method"], context, MARKER_STREAMCALL)
 
                 async for v in method(request_iterator, context):
                     yield v

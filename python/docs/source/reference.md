@@ -5,6 +5,7 @@
 .. autoclass:: jumpstarter.drivers.Driver
     :members:
 .. autodecorator:: jumpstarter.drivers.export
+.. autodecorator:: jumpstarter.drivers.exportstream
 ```
 
 ## Driver Client
