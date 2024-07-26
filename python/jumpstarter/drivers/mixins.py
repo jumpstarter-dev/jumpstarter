@@ -32,13 +32,13 @@ class StreamMixin:
     """Streaming"""
 
     @contextmanager
-    def connect(self):
-        with self.portal.wrap_async_context_manager(self.stream_async("connect")) as stream:
+    def connect(self, method="connect"):
+        with self.portal.wrap_async_context_manager(self.stream_async(method)) as stream:
             yield BlockingStream(stream=stream, portal=self.portal)
 
     @contextmanager
-    def portforward(self, listener):
-        with self.portal.wrap_async_context_manager(self.portforward_async("connect", listener)):
+    def portforward(self, listener, method="connect"):
+        with self.portal.wrap_async_context_manager(self.portforward_async(method, listener)):
             yield
 
 
