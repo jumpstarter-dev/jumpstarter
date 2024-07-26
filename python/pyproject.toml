@@ -7,7 +7,7 @@ authors = ["Miguel Angel Ajo Pelayo <majopela@redhat.com>",
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.8"
+python = "^3.10"
 click = "^8.1.7"
 pyserial = "^3.5"
 pyusb = "^1.2.1"
@@ -28,6 +28,10 @@ pytest = "^8.2.2"
 pytest-anyio = "^0.0.0"
 pytest-cov = "^5.0.0"
 ruff = "^0.5.5"
+
+[tool.poetry.group.docs.dependencies]
+sphinx = "^7.4.7"
+sphinx-rtd-theme = "^2.0.0"
 
 [tool.ruff]
 line-length = 120
