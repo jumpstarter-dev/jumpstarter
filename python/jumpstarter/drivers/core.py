@@ -10,7 +10,7 @@ from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import json_format, struct_pb2
 from grpc.aio import Channel
 
-from jumpstarter.common import Interface, Metadata
+from jumpstarter.common import Metadata
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,

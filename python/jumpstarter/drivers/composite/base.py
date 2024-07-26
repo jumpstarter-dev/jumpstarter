@@ -25,7 +25,7 @@ class Composite(CompositeInterface, Driver):
 
 
 @dataclass(kw_only=True)
-class CompositeClient(CompositeInterface, DriverClient):
+class CompositeClient(DriverClient):
     children: list[DriverClient] = field(init=False, default_factory=list)
 
     def __or__(self, other: DriverClient):

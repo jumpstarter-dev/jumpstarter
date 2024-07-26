@@ -36,7 +36,7 @@ class PowerInterface(metaclass=ABCMeta):
     async def read(self) -> AsyncGenerator[PowerReading, None]: ...
 
 
-class PowerClient(PowerInterface, DriverClient):
+class PowerClient(DriverClient):
     def on(self) -> str:
         return self.call("on")
 

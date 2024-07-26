@@ -1,7 +1,6 @@
 from abc import ABCMeta, abstractmethod
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
 
 from anyio import (
     connect_tcp,
@@ -9,7 +8,6 @@ from anyio import (
     create_connected_udp_socket,
     create_memory_object_stream,
 )
-from anyio.from_thread import BlockingPortal
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.drivers import Driver, DriverClient, streamcall

@@ -30,7 +30,7 @@ class StorageMuxInterface(metaclass=ABCMeta):
     async def write(self, src: str): ...
 
 
-class StorageMuxClient(StorageMuxInterface, DriverClient):
+class StorageMuxClient(DriverClient):
     def host(self):
         return self.call("host")
 
