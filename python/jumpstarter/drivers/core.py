@@ -31,7 +31,7 @@ class AsyncDriverClient(
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
 
-    async def async_call(self, method, *args):
+    async def call_async(self, method, *args):
         """Make DriverCall by method name and arguments"""
 
         request = jumpstarter_pb2.DriverCallRequest(
@@ -44,7 +44,7 @@ class AsyncDriverClient(
 
         return json_format.MessageToDict(response.result)
 
-    async def async_streamingcall(self, method, *args):
+    async def streamingcall_async(self, method, *args):
         """Make StreamingDriverCall by method name and arguments"""
 
         request = jumpstarter_pb2.StreamingDriverCallRequest(
