@@ -21,7 +21,6 @@ from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grp
 @dataclass(kw_only=True)
 class AsyncDriverClient(
     Metadata,
-    Interface,
     jumpstarter_pb2_grpc.ExporterServiceStub,
     router_pb2_grpc.RouterServiceStub,
 ):

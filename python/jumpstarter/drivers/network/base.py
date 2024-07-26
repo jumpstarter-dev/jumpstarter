@@ -29,28 +29,8 @@ class NetworkInterface(metaclass=ABCMeta):
     async def connect(self): ...
 
 
-@dataclass(kw_only=True)
-class StreamWrapper:
-    stream: Any
-    portal: BlockingPortal
-
-    def send(self, data):
-        return self.portal.call(self.stream.send, data)
-
-    def receive(self):
-        return self.portal.call(self.stream.receive)
-
-
-class NetworkClient(NetworkInterface, DriverClient):
-    @contextmanager
-    def connect(self):
-        with self.portal.wrap_async_context_manager(self.stream_async()) as stream:
-            yield StreamWrapper(stream=stream, portal=self.portal)
-
-    @contextmanager
-    def portforward(self, listener):
-        with self.portal.wrap_async_context_manager(self.portforward_async(listener)):
-            yield
+class NetworkClient(DriverClient):
+    pass
 
 
 @dataclass(kw_only=True)

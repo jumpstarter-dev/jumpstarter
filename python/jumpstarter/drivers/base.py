@@ -132,6 +132,18 @@ class Driver(
 
 
 @dataclass(kw_only=True)
+class StreamWrapper:
+    stream: Any
+    portal: BlockingPortal
+
+    def send(self, data):
+        return self.portal.call(self.stream.send, data)
+
+    def receive(self):
+        return self.portal.call(self.stream.receive)
+
+
+@dataclass(kw_only=True)
 class DriverClient(AsyncDriverClient):
     """Base class for driver clients
 
@@ -157,6 +169,16 @@ class DriverClient(AsyncDriverClient):
                 yield self.portal.call(generator.__anext__)
             except StopAsyncIteration:
                 break
+
+    @contextmanager
+    def connect(self):
+        with self.portal.wrap_async_context_manager(self.stream_async()) as stream:
+            yield StreamWrapper(stream=stream, portal=self.portal)
+
+    @contextmanager
+    def portforward(self, listener):
+        with self.portal.wrap_async_context_manager(self.portforward_async(listener)):
+            yield
 
     @contextmanager
     def local_file(
