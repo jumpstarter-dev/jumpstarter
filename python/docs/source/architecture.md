@@ -101,7 +101,7 @@ a local k8s cluster using a tool such as [Kind](https://kind.sigs.k8s.io/).
 
 ### YAML Tests
 
-```mermaid
+```{mermaid}
 block-beta
 columns 1
   user(("User"))
@@ -139,7 +139,7 @@ style test fill:#999,stroke:#333,stroke-width:4px
 pytest test_a.py
 ```
 
-```mermaid
+```{mermaid}
 block-beta
 columns 1
   user(("User"))
@@ -174,7 +174,7 @@ style jumpstarter fill:#999,stroke:#333,stroke-width:4px
 
 ## Running tests through a central controller
 
-```mermaid
+```{mermaid}
 block-beta
   columns 1
 
