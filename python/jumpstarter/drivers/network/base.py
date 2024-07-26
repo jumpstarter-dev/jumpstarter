@@ -11,6 +11,7 @@ from anyio import (
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.drivers import Driver, DriverClient, streamcall
+from jumpstarter.drivers.mixins import StreamMixin
 
 
 class NetworkInterface(metaclass=ABCMeta):
@@ -27,7 +28,7 @@ class NetworkInterface(metaclass=ABCMeta):
     async def connect(self): ...
 
 
-class NetworkClient(DriverClient):
+class NetworkClient(DriverClient, StreamMixin):
     pass
 
 

@@ -2,13 +2,11 @@
 Base classes for drivers and driver clients
 """
 
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
 
 from anyio.from_thread import BlockingPortal
-from anyio.streams.file import FileReadStream
 from grpc import StatusCode
 
 from jumpstarter.common import Interface, Metadata
@@ -132,18 +130,6 @@ class Driver(
 
 
 @dataclass(kw_only=True)
-class StreamWrapper:
-    stream: Any
-    portal: BlockingPortal
-
-    def send(self, data):
-        return self.portal.call(self.stream.send, data)
-
-    def receive(self):
-        return self.portal.call(self.stream.receive)
-
-
-@dataclass(kw_only=True)
 class DriverClient(AsyncDriverClient):
     """Base class for driver clients
 
@@ -169,22 +155,3 @@ class DriverClient(AsyncDriverClient):
                 yield self.portal.call(generator.__anext__)
             except StopAsyncIteration:
                 break
-
-    @contextmanager
-    def connect(self):
-        with self.portal.wrap_async_context_manager(self.stream_async()) as stream:
-            yield StreamWrapper(stream=stream, portal=self.portal)
-
-    @contextmanager
-    def portforward(self, listener):
-        with self.portal.wrap_async_context_manager(self.portforward_async(listener)):
-            yield
-
-    @contextmanager
-    def local_file(
-        self,
-        filepath,
-    ):
-        with self.portal.wrap_async_context_manager(self.portal.call(FileReadStream.from_path, filepath)) as file:
-            with self.portal.wrap_async_context_manager(self.resource_async(file)) as uuid:
-                yield uuid

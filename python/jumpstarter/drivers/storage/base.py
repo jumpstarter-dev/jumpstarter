@@ -6,6 +6,7 @@ import click
 from anyio.streams.file import FileWriteStream
 
 from jumpstarter.drivers import Driver, DriverClient, export
+from jumpstarter.drivers.mixins import ResourceMixin
 
 
 class StorageMuxInterface(metaclass=ABCMeta):
@@ -30,7 +31,7 @@ class StorageMuxInterface(metaclass=ABCMeta):
     async def write(self, src: str): ...
 
 
-class StorageMuxClient(DriverClient):
+class StorageMuxClient(DriverClient, ResourceMixin):
     def host(self):
         return self.call("host")
 
