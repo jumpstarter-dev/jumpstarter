@@ -44,12 +44,12 @@ class StreamWrapper:
 class NetworkClient(NetworkInterface, DriverClient):
     @contextmanager
     def connect(self):
-        with self.portal.wrap_async_context_manager(self._stream()) as stream:
+        with self.portal.wrap_async_context_manager(self.stream_async()) as stream:
             yield StreamWrapper(stream=stream, portal=self.portal)
 
     @contextmanager
     def portforward(self, listener):
-        with self.portal.wrap_async_context_manager(self._portforward(listener)):
+        with self.portal.wrap_async_context_manager(self.portforward_async(listener)):
             yield
 
 

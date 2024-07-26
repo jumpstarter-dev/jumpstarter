@@ -25,6 +25,12 @@ class AsyncDriverClient(
     jumpstarter_pb2_grpc.ExporterServiceStub,
     router_pb2_grpc.RouterServiceStub,
 ):
+    """
+    Async driver client base class
+
+    Backing implementation of blocking driver client.
+    """
+
     channel: Channel
 
     def __post_init__(self, *args):
@@ -57,7 +63,7 @@ class AsyncDriverClient(
             yield json_format.MessageToDict(response.result)
 
     @asynccontextmanager
-    async def _stream(self):
+    async def stream_async(self):
         client_stream, device_stream = create_memory_stream()
 
         async with create_task_group() as tg:
@@ -71,7 +77,7 @@ class AsyncDriverClient(
                 yield client_stream
 
     @asynccontextmanager
-    async def _portforward(self, listener):
+    async def portforward_async(self, listener):
         async def handle(client):
             async with client:
                 await forward_client_stream(
@@ -88,7 +94,7 @@ class AsyncDriverClient(
                 tg.cancel_scope.cancel()
 
     @asynccontextmanager
-    async def resource(
+    async def resource_async(
         self,
         stream,
     ):

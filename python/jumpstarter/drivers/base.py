@@ -164,5 +164,5 @@ class DriverClient(AsyncDriverClient):
         filepath,
     ):
         with self.portal.wrap_async_context_manager(self.portal.call(FileReadStream.from_path, filepath)) as file:
-            with self.portal.wrap_async_context_manager(self.resource(file)) as uuid:
+            with self.portal.wrap_async_context_manager(self.resource_async(file)) as uuid:
                 yield uuid
