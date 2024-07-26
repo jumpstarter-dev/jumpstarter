@@ -16,12 +16,8 @@ from jumpstarter.drivers.mixins import StreamMixin
 
 class NetworkInterface(metaclass=ABCMeta):
     @classmethod
-    def client_module(cls) -> str:
-        return "jumpstarter.drivers.network"
-
-    @classmethod
-    def client_class(cls) -> str:
-        return "NetworkClient"
+    def client(cls) -> str:
+        return "jumpstarter.drivers.network.NetworkClient"
 
     @abstractmethod
     @asynccontextmanager

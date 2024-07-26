@@ -22,8 +22,9 @@ async def client_from_channel(
         uuid = UUID(report.uuid)
         labels = report.labels
 
-        client_module = import_module(labels["jumpstarter.dev/client_module"])
-        client_class = getattr(client_module, labels["jumpstarter.dev/client_class"])
+        # reference: https://docs.djangoproject.com/en/5.0/_modules/django/utils/module_loading/#import_string
+        module_path, class_name = labels["jumpstarter.dev/client"].rsplit(".", 1)
+        client_class = getattr(import_module(module_path), class_name)
         client = client_class(uuid=uuid, labels=labels, channel=channel, portal=portal)
 
         clients[uuid] = client

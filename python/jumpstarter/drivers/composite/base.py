@@ -8,12 +8,8 @@ from jumpstarter.drivers import Driver, DriverClient
 
 class CompositeInterface:
     @classmethod
-    def client_module(cls) -> str:
-        return "jumpstarter.drivers.composite"
-
-    @classmethod
-    def client_class(cls) -> str:
-        return "CompositeClient"
+    def client(cls) -> str:
+        return "jumpstarter.drivers.composite.CompositeClient"
 
 
 @dataclass(kw_only=True)

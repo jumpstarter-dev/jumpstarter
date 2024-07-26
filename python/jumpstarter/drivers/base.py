@@ -47,13 +47,10 @@ class Driver(
 
     @classmethod
     @abstractmethod
-    def client_module(cls) -> str:
-        """Return module name of the driver client"""
-
-    @classmethod
-    @abstractmethod
-    def client_class(cls) -> str:
-        """Return class name of the driver client"""
+    def client(cls) -> str:
+        """
+        Return full import path of the corresponding driver client class
+        """
 
     def add_to_server(self, server):
         """Add self to grpc server
@@ -121,11 +118,7 @@ class Driver(
                 jumpstarter_pb2.DriverInstanceReport(
                     uuid=str(uuid),
                     parent_uuid=str(parent_uuid) if parent_uuid else None,
-                    labels=instance.labels
-                    | {
-                        "jumpstarter.dev/client_module": instance.client_module(),
-                        "jumpstarter.dev/client_class": instance.client_class(),
-                    },
+                    labels=instance.labels | {"jumpstarter.dev/client": instance.client()},
                 )
                 for (uuid, parent_uuid, instance) in self.items()
             ],

@@ -11,12 +11,8 @@ from jumpstarter.drivers.mixins import ResourceMixin
 
 class StorageMuxInterface(metaclass=ABCMeta):
     @classmethod
-    def client_module(cls) -> str:
-        return "jumpstarter.drivers.storage"
-
-    @classmethod
-    def client_class(cls) -> str:
-        return "StorageMuxClient"
+    def client(cls) -> str:
+        return "jumpstarter.drivers.storage.StorageMuxClient"
 
     @abstractmethod
     async def host(self): ...
