@@ -48,22 +48,33 @@ class Driver(
         """Add self to grpc server
 
         Useful for unit testing.
+
+        :meta private:
         """
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
     async def DriverCall(self, request, context):
+        """
+        :meta private:
+        """
         method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
 
         return await method(request, context)
 
     async def StreamingDriverCall(self, request, context):
+        """
+        :meta private:
+        """
         method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
 
         async for v in method(request, context):
             yield v
 
     async def Stream(self, request_iterator, context):
+        """
+        :meta private:
+        """
         metadata = dict(context.invocation_metadata())
 
         match metadata["kind"]:
@@ -89,6 +100,9 @@ class Driver(
                 del self.resources[resource_uuid]
 
     async def GetReport(self, request, context):
+        """
+        :meta private:
+        """
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
@@ -107,7 +121,11 @@ class Driver(
         )
 
     def items(self, parent=None):
-        """Get list of self and child devices"""
+        """
+        Get list of self and child devices
+
+        :meta private:
+        """
 
         return [(self.uuid, parent.uuid if parent else None, self)]
 
