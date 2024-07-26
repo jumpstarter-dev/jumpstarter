@@ -4,7 +4,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
 
-import grpc
 from anyio import create_task_group, create_unix_listener
 from anyio.from_thread import BlockingPortal
 from google.protobuf import duration_pb2
@@ -12,6 +11,7 @@ from grpc.aio import Channel
 
 from jumpstarter.client import client_from_channel
 from jumpstarter.common import MetadataFilter
+from jumpstarter.common.grpc import insecure_channel
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
@@ -89,10 +89,9 @@ class Lease:
 
                     self.portal.call(start_soon)
 
-                    async def create_channel():
-                        return grpc.aio.insecure_channel(f"unix://{socketpath}")
-
-                    with self.portal.wrap_async_context_manager(self.portal.call(create_channel)) as inner:
+                    with self.portal.wrap_async_context_manager(
+                        self.portal.call(insecure_channel, f"unix://{socketpath}")
+                    ) as inner:
                         yield self.portal.call(client_from_channel, inner, self.portal)
 
     async def __accept(self, listener, response):

@@ -1,4 +1,4 @@
-from jumpstarter.common.grpc import serve
+from jumpstarter.common.utils import serve
 from jumpstarter.drivers.power import MockPower, PowerReading, SyncMockPower
 
 

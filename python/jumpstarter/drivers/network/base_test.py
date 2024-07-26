@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 import anyio
 import pytest
 
-from jumpstarter.common.grpc import serve
+from jumpstarter.common.utils import serve
 from jumpstarter.drivers.network import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
 
 

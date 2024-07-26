@@ -1,7 +1,7 @@
 import os
 from tempfile import NamedTemporaryFile
 
-from jumpstarter.common.grpc import serve
+from jumpstarter.common.utils import serve
 from jumpstarter.drivers.storage import MockStorageMux
 
 
