@@ -133,13 +133,13 @@ class Driver(
 class DriverClient(AsyncDriverClient):
     """Base class for driver clients
 
-    Driver clients should as the minimum implement the
-    `client_module` and `client_class` methods, which
-    points to the corresponding driver client.
+    Client methods can be implemented as regular functions,
+    and call the `call` or `streamingcall` helpers internally
+    to invoke exported methods on the driver.
 
-    Additional client methods can be implemented as
-    regular methods and call `call` or
-    `streamingcall` internally.
+    Additional client functionalities such as raw stream
+    connections or sharing client-side resources can be added
+    by inheriting mixin classes under `jumpstarter.drivers.mixins`
     """
 
     portal: BlockingPortal
