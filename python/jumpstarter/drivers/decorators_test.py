@@ -7,8 +7,6 @@ from jumpstarter.drivers.decorators import (
     MARKER_STREAMING_DRIVERCALL,
 )
 
-pytestmark = pytest.mark.anyio
-
 
 class Functions:
     @export
@@ -28,7 +26,7 @@ class Functions:
         yield
 
 
-async def test_driver_decorators():
+def test_driver_decorators():
     functions = Functions()
 
     assert getattr(functions.function, MARKER_DRIVERCALL) == MARKER_MAGIC
