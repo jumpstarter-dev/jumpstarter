@@ -4,16 +4,36 @@ from uuid import uuid4
 import anyio
 import grpc
 import pytest
-from anyio.from_thread import BlockingPortal
-from anyio.to_thread import run_sync
+from anyio.from_thread import BlockingPortal, start_blocking_portal
+from anyio.to_process import run_sync
 
 from jumpstarter.client import LeaseRequest
 from jumpstarter.common import MetadataFilter
 from jumpstarter.drivers.power import MockPower
 from jumpstarter.exporter import Exporter
 from jumpstarter.v1 import jumpstarter_pb2_grpc
+from jumpstarter.common.grpc import secure_channel
 
 pytestmark = pytest.mark.anyio
+
+
+def blocking(uuid):
+    credentials = grpc.composite_channel_credentials(
+        grpc.local_channel_credentials(),
+        grpc.access_token_call_credentials(str(uuid)),
+    )
+
+    with start_blocking_portal() as portal:
+        with LeaseRequest(
+            channel=portal.call(secure_channel, "localhost:8083", credentials),
+            metadata_filter=MetadataFilter(name="exporter"),
+            portal=portal,
+        ) as lease:
+            with lease.connect() as client:
+                assert client.on() == "ok"
+
+            with lease.connect() as client:
+                assert client.on() == "ok"
 
 
 @pytest.mark.skipif(
@@ -40,19 +60,6 @@ async def test_listener():
         async with anyio.create_task_group() as tg:
             tg.start_soon(r.serve)
 
-            def blocking(portal):
-                with LeaseRequest(
-                    channel=channel,
-                    metadata_filter=MetadataFilter(name="exporter"),
-                    portal=portal,
-                ) as lease:
-                    with lease.connect() as client:
-                        assert client.on() == "ok"
-
-                    with lease.connect() as client:
-                        assert client.on() == "ok"
-
-            async with BlockingPortal() as portal:
-                await run_sync(blocking, portal)
+            await run_sync(blocking, uuid)
 
             tg.cancel_scope.cancel()
