@@ -1136,6 +1136,25 @@ files = [
 ]
 
 [[package]]
+name = "typos"
+version = "1.23.5"
+description = "Source Code Spelling Correction"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "typos-1.23.5-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:f605a44e94b1ddf68b9fc3988e82bbc5f795de51a9928f3d9aa43f02e64cb123"},
+    {file = "typos-1.23.5-py3-none-macosx_11_0_arm64.whl", hash = "sha256:03355aca30babaedfa2ebaf8b79da0b911f015e4449b184777a9d70ee6c754ad"},
+    {file = "typos-1.23.5-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:485ffaa9a910bf01a3a6502e1668f945255f314dd7eb6cd66a26df82e0d66d8b"},
+    {file = "typos-1.23.5-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:70e3abe5af98707a4ea307d98d1b09b20664c00acb5fb78761349700d8581ee8"},
+    {file = "typos-1.23.5-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:064ece60188de95e71a5420cfc2e1fde3ea650186ddf214145befcbe7bfd0086"},
+    {file = "typos-1.23.5-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:0cfcf37df9ecce20277a360e56fe39b1e847298cb6aaafaaed10e842c815e43d"},
+    {file = "typos-1.23.5-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:6aa53d4e5cbc77fb052e806f79d485f0b468d3054754163feb65ad4893d6e2ac"},
+    {file = "typos-1.23.5-py3-none-win32.whl", hash = "sha256:ea7892fb35e9dee45716ca12df68453c1d6dc3b0d42ec1d4a7859b1d2f3a252e"},
+    {file = "typos-1.23.5-py3-none-win_amd64.whl", hash = "sha256:221bd0e1945fc0ade5eaf713e8dcbbd6c2331e79a68074c4b991f054fa5024f4"},
+    {file = "typos-1.23.5.tar.gz", hash = "sha256:afc455cf5d90f4f350af3c73b3ccbcf22f1c4aa10308b89eb3ce263d350e4ad9"},
+]
+
+[[package]]
 name = "urllib3"
 version = "2.2.2"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -1158,4 +1177,4 @@ rpi = ["gpiozero"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "275b8a721066613dcf595232232c3330de33f5461e4df0b014069e85cf502e7f"
+content-hash = "468b85dd96c08530b390a26675105ed3e88e2d5e43f03a891fdfee327b5f5126"

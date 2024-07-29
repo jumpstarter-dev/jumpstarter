@@ -15,7 +15,7 @@ file called `my-client.yaml`:
 client:
     name: my-client
     endpoint: "grpcs://jumpstarter.my-lab.com:1443"
-    token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIzNDEyMzQxMjM0LXF3ZXJxd2VycXdlcnF3ZXJxd2VycXdlcnF3ZXIK
+    token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 ```
 
 ### Creating a exporter
@@ -39,7 +39,7 @@ YAML file called `my-exporter.yaml`:
 exporter:
     name: my-exporter
     endpoint: "grpcs://jumpstarter.my-lab.com:1443"
-    token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIzNDEyMzQxMjM0LXF3ZXJxd2VycXdlcnF3ZXJxd2VycXdlcnF3ZXIK
+    token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
     # environmentConfig: /etc/jumpstarter/environment.py
 ```
 
@@ -97,7 +97,7 @@ Alternatively the client can receive the endpoint and token as environment varia
 
 ```bash
 export JUMPSTARTER_ENDPOINT=grpcs://jumpstarter.my-lab.com:1443
-export JUMPSTARTER_TOKEN=dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIzNDEyMzQxMjM0LXF3ZXJxd2VycXdlcnF3ZXJxd2VycXdlcnF3ZXIK
+export JUMPSTARTER_TOKEN=dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 ```
 
 This is useful for CI/CD systems that inject the environment variables into the pipeline.
