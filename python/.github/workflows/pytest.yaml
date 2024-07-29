@@ -31,7 +31,7 @@ jobs:
         run: poetry lock
         
       - name: Install the project dependencies
-        run: poetry install
+        run: poetry install --all-extras
 
       - name: Run the automated tests (for example)
-        run: poetry run pytest -v
+        run: poetry run pytest
