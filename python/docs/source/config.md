@@ -66,7 +66,7 @@ apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
 client:
   endpoint: "grpcs://jumpstarter.my-lab.com:1443"
-  token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIzNDEyMzQxMjM0LXF3ZXJxd2VycXdlcnF3ZXJxd2VycXdlcnF3ZXIK"
+  token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
   drivers:
     # Wildcards are supported
     allow: ["jumpstarter.drivers.*", "vendorpackage.*"]
@@ -156,7 +156,7 @@ apiVersion: jumpstarter.dev/v1alpha1
 kind: Exporter
 exporter:
   endpoint: "grpcs://jumpstarter.my-lab.com:1443"
-  token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIzNDEyMzQxMjM0LXF3ZXJxd2VycXdlcnF3ZXJxd2VycXdlcnF3ZXIK"
+  token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
   drivers:
     root:
       type: "jumpstarter.drivers.composite.Composite"

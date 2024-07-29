@@ -18,7 +18,7 @@ httpx = "^0.27.0"
 pyyaml = "^6.0.1"
 anyio = "^4.4.0"
 typing-extensions = "^4.12.2"
-gpiozero = {version = "^2.0.1", optional = true}
+gpiozero = { version = "^2.0.1", optional = true }
 
 [tool.poetry.dependencies.jumpstarter-protocol]
 git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
@@ -51,9 +51,6 @@ extend-select = ["I", "C", "E", "F", "W", "B"]
 
 [tool.typos.default]
 locale = "en-us"
-extend-ignore-re = [
-  "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNDEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIzNDEyMzQxMjM0LXF3ZX",
-]
 
 [build-system]
 requires = ["poetry-core"]
