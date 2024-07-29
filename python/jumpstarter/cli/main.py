@@ -9,7 +9,15 @@ from .shell import shell
 from .version import version
 
 
-@click.group(context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True)
+@click.command(short_help="Show this message and exit.")
+def help():
+    """Display the Jumpstarter help information"""
+    ctx = click.get_current_context()
+    # Print out help information for root
+    click.echo(ctx.parent.get_help())
+    ctx.exit()
+
+@click.group(no_args_is_help=True)
 def main():
     pass
 

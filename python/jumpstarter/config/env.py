@@ -1,0 +1,5 @@
+# Common environment variables for client/exporter config
+JMP_CLIENT_CONFIG = "JMP_CLIENT_CONFIG"
+JMP_ENDPOINT = "JMP_ENDPOINT"
+JMP_TOKEN = "JMP_TOKEN"
+JMP_DRIVERS_ALLOW = "JMP_DRIVERS_ALLOW"
