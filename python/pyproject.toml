@@ -60,3 +60,6 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.coverage.run]
 omit = ["conftest.py", "test_*.py", "*_test.py"]
+
+[tool.pytest.ini_options]
+addopts = "--capture=no --verbose --cov --cov-report=html --cov-report=xml"
