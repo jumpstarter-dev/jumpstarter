@@ -10,4 +10,7 @@
         "hbenl.vscode-test-explorer",
         "ryanluker.vscode-coverage-gutters"
     ],
+    "unwantedRecommendations": [
+        "ms-python.autopep8"
+    ]
 }

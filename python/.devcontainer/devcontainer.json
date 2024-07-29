@@ -23,6 +23,7 @@
 				"ryanluker.vscode-coverage-gutters"
 			],
 			"settings": {
+				"extensions.ignoreRecommendations": true,
 				"python.defaultInterpreterPath": "~/.cache/pypoetry/virtualenvs/jumpstarter-64_PDEHR-py3.11/bin/python",
 				"[python]": {
 					"editor.formatOnSave": true
