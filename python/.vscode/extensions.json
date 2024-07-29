@@ -6,6 +6,7 @@
         "ms-python.debugpy",
         "charliermarsh.ruff",
         "tekumara.typos-vscode",
-        "littlefoxteam.vscode-python-test-adapter"
+        "littlefoxteam.vscode-python-test-adapter",
+        "hbenl.vscode-test-explorer"
     ]
 }

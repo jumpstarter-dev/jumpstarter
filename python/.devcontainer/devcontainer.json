@@ -18,7 +18,8 @@
 				"ms-python.debugpy",
 				"charliermarsh.ruff",
 				"tekumara.typos-vscode",
-				"littlefoxteam.vscode-python-test-adapter"
+				"littlefoxteam.vscode-python-test-adapter",
+				"hbenl.vscode-test-explorer"
 			],
 			"settings": {
 				"python.defaultInterpreterPath": "~/.cache/pypoetry/virtualenvs/jumpstarter-64_PDEHR-py3.11/bin/python",
