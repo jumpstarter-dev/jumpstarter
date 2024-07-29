@@ -1,7 +1,7 @@
 def make_table(columns: list[str], values: list[dict]):
     """Make a pretty table from a list of `columns` and a list of `values`, each of which is a valid `dict`."""
 
-    # Initalize the max_lens dict with the length of the column titles
+    # Initialize the max_lens dict with the length of the column titles
     max_lens: dict[str, int] = {}
     for name in columns:
         max_lens[name] = len(name)
@@ -18,7 +18,7 @@ def make_table(columns: list[str], values: list[dict]):
     for k in max_lens:
         format_str += f"{{:<{max_lens[k] + 3}}}"
 
-    # Print the fromatted header
+    # Print the formatted header
     lines: list[str] = [format_str.format(*columns)]
 
     # Print the formatted rows

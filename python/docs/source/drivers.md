@@ -36,7 +36,7 @@ classes are loaded dynamically if they are specified in the list of allowed
 packages.
 
 To keep the client/server library versions in sync, it is recommended to not make
-breaking changes to the `DriverInterface`. Only add new methods when necassary and
+breaking changes to the `DriverInterface`. Only add new methods when necessary and
 avoid changing the method signatures. If breaking changes are required, new
 `MyDriverInterfaceV2`, `MyDriverClientV2`, and `MyDriverV2` classes can be created
 within the same Python module.

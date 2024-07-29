@@ -3,7 +3,7 @@
 Jumpstarter can be configured as either a client, an exporter, or both depending
 on your use case and deployment strategy.
 
-By default, a local client and exporter session are automatically initalized when
+By default, a local client and exporter session are automatically initialized when
 running test scripts through `jmp start` or the `jmp shell` commands. This allows
 for easy testing of new drivers, client libraries, or verifying that tests work
 on your local bench.
@@ -142,7 +142,7 @@ to automatically load. Can be set to `UNSAFE` to allow unsafe loading of drivers
 
 Exporter configurations are by default stored globally in the Jumpstarter config
 directory `/etc/jumpstarter/exporters`. Each exporter config is a YAML file and
-optionally a Python script to initalize the exporter and its associated drivers.
+optionally a Python script to initialize the exporter and its associated drivers.
 
 ### Exporter Config
 
