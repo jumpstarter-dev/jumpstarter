@@ -19,6 +19,7 @@ pyyaml = "^6.0.1"
 anyio = "^4.4.0"
 typing-extensions = "^4.12.2"
 gpiozero = { version = "^2.0.1", optional = true }
+aiohttp = "^3.9.5"
 
 [tool.poetry.dependencies.jumpstarter-protocol]
 git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
