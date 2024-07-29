@@ -1,4 +1,4 @@
-name: "Pytest"
+name: "Run Tests"
 on:
   workflow_dispatch:
   push:
