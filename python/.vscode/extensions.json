@@ -7,6 +7,7 @@
         "charliermarsh.ruff",
         "tekumara.typos-vscode",
         "littlefoxteam.vscode-python-test-adapter",
-        "hbenl.vscode-test-explorer"
-    ]
+        "hbenl.vscode-test-explorer",
+        "ryanluker.vscode-coverage-gutters"
+    ],
 }
