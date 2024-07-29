@@ -2,8 +2,10 @@
 name = "jumpstarter"
 version = "0.1.0"
 description = ""
-authors = ["Miguel Angel Ajo Pelayo <majopela@redhat.com>",
-           "Nick Cao <ncao@redhat.com>"]
+authors = [
+  "Miguel Angel Ajo Pelayo <majopela@redhat.com>",
+  "Nick Cao <ncao@redhat.com>",
+]
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -46,13 +48,13 @@ line-length = 120
 [tool.ruff.lint]
 extend-select = ["I","C","E","F","W","B"]
 
+[tool.typos.default]
+locale = "en-us"
+extend-ignore-re = ["dGhpc2lzYXRva2VuL*"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.coverage.run]
-omit = [
-  "conftest.py",
-  "test_*.py",
-  "*_test.py",
-]
+omit = ["conftest.py", "test_*.py", "*_test.py"]

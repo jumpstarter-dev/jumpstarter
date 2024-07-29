@@ -7,7 +7,7 @@
 ## Entities
 
 * `exporter`: A linux service that exports the interfaces to the DUTs.
-  An exporter connects directy to a Jumpstarter server or directly to a client.
+  An exporter connects directly to a Jumpstarter server or directly to a client.
 
 * `client`: A Developer or a CI/CD pipeline that connects to the Jumpstarter server
   and leases exporters. The client can run tests on the leased

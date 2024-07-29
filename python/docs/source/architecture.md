@@ -67,7 +67,7 @@ gRPC API used by clients to acquire leases on exporters.
 
 #### Router
 
-The router service faciliates routing of messages between the [clients](#client)
+The router service facilitates routing of messages between the [clients](#client)
 and [exporters](#exporter).
 
 The `jumpstarter-router` provides routing via gRPC streams.
