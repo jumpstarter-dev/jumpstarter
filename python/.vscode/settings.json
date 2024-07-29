@@ -6,8 +6,5 @@
         "--cov-report=xml"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true,
-    "[python]": {
-        "editor.defaultFormatter": "charliermarsh.ruff"
-    }
+    "python.testing.pytestEnabled": true
 }

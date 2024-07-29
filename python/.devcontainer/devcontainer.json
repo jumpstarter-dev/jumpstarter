@@ -13,7 +13,6 @@
 		"vscode": {
 			"extensions": [
 				"tamasfe.even-better-toml",
-				"ms-python.python",
 				"ms-python.vscode-pylance",
 				"ms-python.debugpy",
 				"charliermarsh.ruff",
@@ -26,7 +25,9 @@
 				"extensions.ignoreRecommendations": true,
 				"python.defaultInterpreterPath": "~/.cache/pypoetry/virtualenvs/jumpstarter-64_PDEHR-py3.11/bin/python",
 				"[python]": {
-					"editor.formatOnSave": true
+					"editor.formatOnType": true,
+					"editor.formatOnSave": true,
+					"editor.defaultFormatter": "charliermarsh.ruff"
 				}
 			}
 		}
