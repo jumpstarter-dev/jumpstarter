@@ -183,6 +183,24 @@ files = [
 ]
 
 [[package]]
+name = "colorzero"
+version = "2.0"
+description = "Yet another Python color library"
+optional = true
+python-versions = "*"
+files = [
+    {file = "colorzero-2.0-py2.py3-none-any.whl", hash = "sha256:0e60d743a6b8071498a56465f7719c96a5e92928f858bab1be2a0d606c9aa0f8"},
+    {file = "colorzero-2.0.tar.gz", hash = "sha256:e7d5a5c26cd0dc37b164ebefc609f388de24f8593b659191e12d85f8f9d5eb58"},
+]
+
+[package.dependencies]
+setuptools = "*"
+
+[package.extras]
+doc = ["pkginfo", "sphinx", "sphinx-rtd-theme"]
+test = ["pytest", "pytest-cov"]
+
+[[package]]
 name = "coverage"
 version = "7.6.0"
 description = "Code coverage measurement for Python"
@@ -273,6 +291,24 @@ files = [
 
 [package.extras]
 test = ["pytest (>=6)"]
+
+[[package]]
+name = "gpiozero"
+version = "2.0.1"
+description = "A simple interface to GPIO devices with Raspberry Pi"
+optional = true
+python-versions = ">=3.9"
+files = [
+    {file = "gpiozero-2.0.1-py3-none-any.whl", hash = "sha256:8f621de357171d574c0b7ea0e358cb66e560818a47b0eeedf41ce1cdbd20c70b"},
+    {file = "gpiozero-2.0.1.tar.gz", hash = "sha256:d4ea1952689ec7e331f9d4ebc9adb15f1d01c2c9dcfabb72e752c9869ab7e97e"},
+]
+
+[package.dependencies]
+colorzero = "*"
+
+[package.extras]
+doc = ["sphinx (>=4.0)", "sphinx-rtd-theme (>=1.0)"]
+test = ["pytest", "pytest-cov"]
 
 [[package]]
 name = "grpcio"
@@ -867,6 +903,22 @@ files = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "72.1.0"
+description = "Easily download, build, install, upgrade, and uninstall Python packages"
+optional = true
+python-versions = ">=3.8"
+files = [
+    {file = "setuptools-72.1.0-py3-none-any.whl", hash = "sha256:5a03e1860cf56bb6ef48ce186b0e557fdba433237481a9a625176c2831be15d1"},
+    {file = "setuptools-72.1.0.tar.gz", hash = "sha256:8d243eff56d095e5817f796ede6ae32941278f542e0f941867cc05ae52b162ec"},
+]
+
+[package.extras]
+core = ["importlib-metadata (>=6)", "importlib-resources (>=5.10.2)", "jaraco.text (>=3.7)", "more-itertools (>=8.8)", "ordered-set (>=3.1.1)", "packaging (>=24)", "platformdirs (>=2.6.2)", "tomli (>=2.0.1)", "wheel (>=0.43.0)"]
+doc = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "pygments-github-lexers (==0.0.5)", "pyproject-hooks (!=1.1)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-favicon", "sphinx-inline-tabs", "sphinx-lint", "sphinx-notfound-page (>=1,<2)", "sphinx-reredirects", "sphinxcontrib-towncrier"]
+test = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "importlib-metadata", "ini2toml[lite] (>=0.14)", "jaraco.develop (>=7.21)", "jaraco.envs (>=2.2)", "jaraco.path (>=3.2.0)", "jaraco.test", "mypy (==1.11.*)", "packaging (>=23.2)", "pip (>=19.1)", "pyproject-hooks (!=1.1)", "pytest (>=6,!=8.1.*)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-enabler (>=2.2)", "pytest-home (>=0.5)", "pytest-mypy", "pytest-perf", "pytest-ruff (<0.4)", "pytest-ruff (>=0.2.1)", "pytest-ruff (>=0.3.2)", "pytest-subprocess", "pytest-timeout", "pytest-xdist (>=3)", "tomli", "tomli-w (>=1.0.0)", "virtualenv (>=13.0.0)", "wheel"]
+
+[[package]]
 name = "sniffio"
 version = "1.3.1"
 description = "Sniff out which async library your code is running under"
@@ -944,49 +996,49 @@ dev = ["bump2version", "sphinxcontrib-httpdomain", "transifex-client", "wheel"]
 
 [[package]]
 name = "sphinxcontrib-applehelp"
-version = "1.0.8"
+version = "2.0.0"
 description = "sphinxcontrib-applehelp is a Sphinx extension which outputs Apple help books"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_applehelp-1.0.8-py3-none-any.whl", hash = "sha256:cb61eb0ec1b61f349e5cc36b2028e9e7ca765be05e49641c97241274753067b4"},
-    {file = "sphinxcontrib_applehelp-1.0.8.tar.gz", hash = "sha256:c40a4f96f3776c4393d933412053962fac2b84f4c99a7982ba42e09576a70619"},
+    {file = "sphinxcontrib_applehelp-2.0.0-py3-none-any.whl", hash = "sha256:4cd3f0ec4ac5dd9c17ec65e9ab272c9b867ea77425228e68ecf08d6b28ddbdb5"},
+    {file = "sphinxcontrib_applehelp-2.0.0.tar.gz", hash = "sha256:2f29ef331735ce958efa4734873f084941970894c6090408b079c61b2e1c06d1"},
 ]
 
 [package.extras]
-lint = ["docutils-stubs", "flake8", "mypy"]
+lint = ["mypy", "ruff (==0.5.5)", "types-docutils"]
 standalone = ["Sphinx (>=5)"]
 test = ["pytest"]
 
 [[package]]
 name = "sphinxcontrib-devhelp"
-version = "1.0.6"
+version = "2.0.0"
 description = "sphinxcontrib-devhelp is a sphinx extension which outputs Devhelp documents"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_devhelp-1.0.6-py3-none-any.whl", hash = "sha256:6485d09629944511c893fa11355bda18b742b83a2b181f9a009f7e500595c90f"},
-    {file = "sphinxcontrib_devhelp-1.0.6.tar.gz", hash = "sha256:9893fd3f90506bc4b97bdb977ceb8fbd823989f4316b28c3841ec128544372d3"},
+    {file = "sphinxcontrib_devhelp-2.0.0-py3-none-any.whl", hash = "sha256:aefb8b83854e4b0998877524d1029fd3e6879210422ee3780459e28a1f03a8a2"},
+    {file = "sphinxcontrib_devhelp-2.0.0.tar.gz", hash = "sha256:411f5d96d445d1d73bb5d52133377b4248ec79db5c793ce7dbe59e074b4dd1ad"},
 ]
 
 [package.extras]
-lint = ["docutils-stubs", "flake8", "mypy"]
+lint = ["mypy", "ruff (==0.5.5)", "types-docutils"]
 standalone = ["Sphinx (>=5)"]
 test = ["pytest"]
 
 [[package]]
 name = "sphinxcontrib-htmlhelp"
-version = "2.0.6"
+version = "2.1.0"
 description = "sphinxcontrib-htmlhelp is a sphinx extension which renders HTML help files"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_htmlhelp-2.0.6-py3-none-any.whl", hash = "sha256:1b9af5a2671a61410a868fce050cab7ca393c218e6205cbc7f590136f207395c"},
-    {file = "sphinxcontrib_htmlhelp-2.0.6.tar.gz", hash = "sha256:c6597da06185f0e3b4dc952777a04200611ef563882e0c244d27a15ee22afa73"},
+    {file = "sphinxcontrib_htmlhelp-2.1.0-py3-none-any.whl", hash = "sha256:166759820b47002d22914d64a075ce08f4c46818e17cfc9470a9786b759b19f8"},
+    {file = "sphinxcontrib_htmlhelp-2.1.0.tar.gz", hash = "sha256:c9e2916ace8aad64cc13a0d233ee22317f2b9025b9cf3295249fa985cc7082e9"},
 ]
 
 [package.extras]
-lint = ["docutils-stubs", "flake8", "mypy"]
+lint = ["mypy", "ruff (==0.5.5)", "types-docutils"]
 standalone = ["Sphinx (>=5)"]
 test = ["html5lib", "pytest"]
 
@@ -1031,33 +1083,33 @@ files = [
 
 [[package]]
 name = "sphinxcontrib-qthelp"
-version = "1.0.8"
+version = "2.0.0"
 description = "sphinxcontrib-qthelp is a sphinx extension which outputs QtHelp documents"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_qthelp-1.0.8-py3-none-any.whl", hash = "sha256:323d6acc4189af76dfe94edd2a27d458902319b60fcca2aeef3b2180c106a75f"},
-    {file = "sphinxcontrib_qthelp-1.0.8.tar.gz", hash = "sha256:db3f8fa10789c7a8e76d173c23364bdf0ebcd9449969a9e6a3dd31b8b7469f03"},
+    {file = "sphinxcontrib_qthelp-2.0.0-py3-none-any.whl", hash = "sha256:b18a828cdba941ccd6ee8445dbe72ffa3ef8cbe7505d8cd1fa0d42d3f2d5f3eb"},
+    {file = "sphinxcontrib_qthelp-2.0.0.tar.gz", hash = "sha256:4fe7d0ac8fc171045be623aba3e2a8f613f8682731f9153bb2e40ece16b9bbab"},
 ]
 
 [package.extras]
-lint = ["docutils-stubs", "flake8", "mypy"]
+lint = ["mypy", "ruff (==0.5.5)", "types-docutils"]
 standalone = ["Sphinx (>=5)"]
 test = ["defusedxml (>=0.7.1)", "pytest"]
 
 [[package]]
 name = "sphinxcontrib-serializinghtml"
-version = "1.1.10"
+version = "2.0.0"
 description = "sphinxcontrib-serializinghtml is a sphinx extension which outputs \"serialized\" HTML files (json and pickle)"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_serializinghtml-1.1.10-py3-none-any.whl", hash = "sha256:326369b8df80a7d2d8d7f99aa5ac577f51ea51556ed974e7716cfd4fca3f6cb7"},
-    {file = "sphinxcontrib_serializinghtml-1.1.10.tar.gz", hash = "sha256:93f3f5dc458b91b192fe10c397e324f262cf163d79f3282c158e8436a2c4511f"},
+    {file = "sphinxcontrib_serializinghtml-2.0.0-py3-none-any.whl", hash = "sha256:6e2cb0eef194e10c27ec0023bfeb25badbbb5868244cf5bc5bdc04e4464bf331"},
+    {file = "sphinxcontrib_serializinghtml-2.0.0.tar.gz", hash = "sha256:e9d912827f872c029017a53f0ef2180b327c3f7fd23c87229f7a8e8b70031d4d"},
 ]
 
 [package.extras]
-lint = ["docutils-stubs", "flake8", "mypy"]
+lint = ["mypy", "ruff (==0.5.5)", "types-docutils"]
 standalone = ["Sphinx (>=5)"]
 test = ["pytest"]
 
@@ -1100,7 +1152,10 @@ h2 = ["h2 (>=4,<5)"]
 socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["zstandard (>=0.18.0)"]
 
+[extras]
+rpi = ["gpiozero"]
+
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "50bc3a6ff8688c1bedeb886bdd538b28d0ec0850bf3f7bc4d722a91fcaae602b"
+content-hash = "275b8a721066613dcf595232232c3330de33f5461e4df0b014069e85cf502e7f"
