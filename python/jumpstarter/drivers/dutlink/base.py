@@ -11,6 +11,7 @@ from anyio.streams.file import FileWriteStream
 
 from jumpstarter.drivers import Driver, export
 from jumpstarter.drivers.serial.pyserial import PySerial
+from jumpstarter.drivers.storage import StorageMuxInterface
 
 
 @dataclass(kw_only=True)
@@ -40,13 +41,9 @@ class DutlinkPower(Driver):
 
 
 @dataclass(kw_only=True)
-class DutlinkStorageMux(Driver):
+class DutlinkStorageMux(StorageMuxInterface, Driver):
     parent: "Dutlink"
     storage_device: str
-
-    @classmethod
-    def client(cls) -> str:
-        return "jumpstarter.drivers.dutlink.client.DutlinkStorageMuxClient"
 
     def control(self, action):
         return self.parent.control(
