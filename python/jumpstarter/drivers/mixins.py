@@ -2,12 +2,17 @@
 Mixins for extending DriverClient
 """
 
+import socket
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
+from anyio import create_unix_listener
 from anyio.from_thread import BlockingPortal
 from anyio.streams.file import FileReadStream
+from pexpect.fdpexpect import fdspawn
 
 
 @dataclass(kw_only=True)
@@ -40,6 +45,20 @@ class StreamMixin:
     def portforward(self, listener, method="connect"):
         with self.portal.wrap_async_context_manager(self.portforward_async(method, listener)):
             yield
+
+
+class ExpectMixin(StreamMixin):
+    @contextmanager
+    def expect(self):
+        with TemporaryDirectory() as tempdir:
+            socketpath = Path(tempdir) / "socket"
+
+            listener = self.portal.call(create_unix_listener, socketpath)
+
+            with self.portforward(listener):
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                    s.connect(str(socketpath))
+                    yield fdspawn(s)
 
 
 class ResourceMixin:

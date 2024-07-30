@@ -21,27 +21,23 @@ def test_drivers_dutlink():
 
             listener = client.portal.call(anyio.create_unix_listener, socketpath)
 
-            with client.console.portforward(listener):
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                    s.connect(str(socketpath))
+            with client.console.expect() as expect:
+                expect.send("\x02" * 5)
 
-                    expect = fdspawn(s)
-                    expect.send("\x02" * 5)
+                expect.send("about\r\n")
+                expect.expect("Jumpstarter test-harness")
 
-                    expect.send("about\r\n")
-                    expect.expect("Jumpstarter test-harness")
+                expect.send("console\r\n")
+                expect.expect("Entering console mode")
 
-                    expect.send("console\r\n")
-                    expect.expect("Entering console mode")
+                client.power.off()
 
-                    client.power.off()
+                client.storage.write("/dev/null")
+                client.storage.dut()
 
-                    client.storage.write("/dev/null")
-                    client.storage.dut()
+                client.power.on()
 
-                    client.power.on()
+                expect.send("\x02" * 5)
+                expect.expect("Exiting console mode")
 
-                    expect.send("\x02" * 5)
-                    expect.expect("Exiting console mode")
-
-                    client.power.off()
+                client.power.off()
