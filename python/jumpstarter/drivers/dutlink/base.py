@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
+import pyudev
 import usb.core
 import usb.util
 from anyio import fail_after, sleep
@@ -116,6 +117,10 @@ class Dutlink(Driver):
 
                 self.power = DutlinkPower(name="power", parent=self)
                 self.storage = DutlinkStorageMux(name="storage", parent=self, storage_device=self.storage_device)
+
+                udev = pyudev.Context()
+                for tty in udev.list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
+                    pass
 
                 return
 
