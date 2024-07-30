@@ -1140,7 +1140,7 @@ testing = ["fields", "hunter", "process-tests", "pytest-xdist", "virtualenv"]
 name = "pyudev"
 version = "0.24.3"
 description = "A libudev binding"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "pyudev-0.24.3-py3-none-any.whl", hash = "sha256:e8246f0a014fe370119ba2bc781bfbe62c0298d0d6b39c94e83102a8a3f56960"},
@@ -1639,10 +1639,10 @@ idna = ">=2.0"
 multidict = ">=4.0"
 
 [extras]
-dutlink = ["libusb"]
+dutlink = ["libusb", "pyudev"]
 rpi = ["gpiozero"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "6a251b9bee319b33188294d7ae2922fca59c56647c4b3bcb62e6bab7c4366bb8"
+content-hash = "389b8560bccba77e71731153064d8187ea42f213c5483a312bf798c8f3f60ece"
