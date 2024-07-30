@@ -1,7 +1,6 @@
 import socket
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from time import sleep
 
 import anyio
 from pexpect.fdpexpect import fdspawn
@@ -17,18 +16,6 @@ def test_drivers_dutlink():
             storage_device="/dev/null",
         )
     ) as client:
-        client.power.off()
-        sleep(1)
-        client.power.on()
-        sleep(1)
-        client.power.off()
-
-        client.storage.host()
-        client.storage.dut()
-        client.storage.off()
-
-        client.storage.write("/dev/null")
-
         with TemporaryDirectory() as tempdir:
             socketpath = Path(tempdir) / "socket"
 
@@ -39,5 +26,22 @@ def test_drivers_dutlink():
                     s.connect(str(socketpath))
 
                     expect = fdspawn(s)
+                    expect.send("\x02" * 5)
+
                     expect.send("about\r\n")
                     expect.expect("Jumpstarter test-harness")
+
+                    expect.send("console\r\n")
+                    expect.expect("Entering console mode")
+
+                    client.power.off()
+
+                    client.storage.write("/dev/null")
+                    client.storage.dut()
+
+                    client.power.on()
+
+                    expect.send("\x02" * 5)
+                    expect.expect("Exiting console mode")
+
+                    client.power.off()
