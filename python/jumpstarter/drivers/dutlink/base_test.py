@@ -22,3 +22,6 @@ def test_drivers_dutlink():
         client.storage.off()
 
         client.storage.write("/dev/null")
+
+        with client.console.connect() as stream:
+            pass

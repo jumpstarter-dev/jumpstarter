@@ -10,6 +10,7 @@ from anyio import fail_after, sleep
 from anyio.streams.file import FileWriteStream
 
 from jumpstarter.drivers import Driver, export
+from jumpstarter.drivers.serial.pyserial import PySerial
 
 
 @dataclass(kw_only=True)
@@ -99,11 +100,13 @@ class Dutlink(Driver):
 
     power: DutlinkPower = field(init=False)
     storage: DutlinkStorageMux = field(init=False)
+    console: PySerial = field(init=False)
 
     def items(self, parent=None):
-        return super().items(parent) + self.power.items(self) + self.storage.items(self)
+        return super().items(parent) + self.power.items(self) + self.storage.items(self) + self.console.items(self)
 
-    def __post_init__(self, name):
+    def __post_init__(self, *args):
+        super().__post_init__(*args)
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:
@@ -120,7 +123,7 @@ class Dutlink(Driver):
 
                 udev = pyudev.Context()
                 for tty in udev.list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
-                    pass
+                    self.console = PySerial(name="console", url=tty.device_node)
 
                 return
 
