@@ -56,7 +56,9 @@ def client_create(
     if out is None and ClientConfig.exists(name):
         raise click.ClickException(f"A client with the name '{name}' already exists.")
 
-    config = ClientConfig(name, endpoint, token, drivers=ClientConfigDrivers(allow.split(","), unsafe))
+    config = ClientConfig(
+        name=name, endpoint=endpoint, token=token, drivers=ClientConfigDrivers(allow=allow.split(","), unsafe=unsafe)
+    )
     ClientConfig.save(config, out)
 
     # If this is the only client config, set it as default

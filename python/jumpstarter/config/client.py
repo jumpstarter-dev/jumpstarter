@@ -9,7 +9,7 @@ from .common import CONFIG_API_VERSION, CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ClientConfigDrivers:
     """Jumpstarter client drivers configuration."""
 
@@ -25,13 +25,12 @@ class ClientConfigDrivers:
         unsafe = values.get("unsafe", False)
 
         if isinstance(allow, list) is False:
-            raise ValueError(
-                "Key 'client.drivers.allow' should be a list of strings.")
+            raise ValueError("Key 'client.drivers.allow' should be a list of strings.")
 
-        return ClientConfigDrivers(allow, unsafe)
+        return ClientConfigDrivers(allow=allow, unsafe=unsafe)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ClientConfig:
     """A Jumpstarter client configuration."""
 
@@ -88,14 +87,14 @@ class ClientConfig:
         if token is None:
             raise ValueError(f"Environment variable '{JMP_TOKEN}' is not set.")
         if endpoint is None:
-            raise ValueError(
-                f"Environment variable '{JMP_ENDPOINT}' is not set.")
+            raise ValueError(f"Environment variable '{JMP_ENDPOINT}' is not set.")
 
         # Split allowed driver packages as a comma-separated list
-        drivers = ClientConfigDrivers(drivers_val.split(
-            ",") if allow_unsafe is False else [], allow_unsafe)
+        drivers = ClientConfigDrivers(
+            allow=drivers_val.split(",") if allow_unsafe is False else [], unsafe=allow_unsafe
+        )
 
-        return ClientConfig("default", endpoint, token, drivers, None)
+        return ClientConfig(name="default", endpoint=endpoint, token=token, drivers=drivers, path=None)
 
     def from_file(path: str) -> Self:
         """Constructs a client config from a YAML file."""
@@ -109,11 +108,9 @@ class ClientConfig:
             client: Optional[dict] = config.get("client", None)
 
             if api_version != CONFIG_API_VERSION:
-                raise ValueError(
-                    f"Incorrect config API version {api_version}, expected {CONFIG_API_VERSION}.")
+                raise ValueError(f"Incorrect config API version {api_version}, expected {CONFIG_API_VERSION}.")
             if kind != ClientConfig.CONFIG_KIND:
-                raise ValueError(
-                    f"Invalid config type {kind}, expected '{ClientConfig.CONFIG_KIND}'.")
+                raise ValueError(f"Invalid config type {kind}, expected '{ClientConfig.CONFIG_KIND}'.")
             if client is None:
                 raise ValueError("Config does not contain a 'client' key.")
 
@@ -122,18 +119,15 @@ class ClientConfig:
             drivers_val: Optional[dict] = client.get("drivers", None)
 
             if token is None:
-                raise ValueError(
-                    "Config does not contain a 'client.token' key.")
+                raise ValueError("Config does not contain a 'client.token' key.")
             if endpoint is None:
-                raise ValueError(
-                    "Config does not contain a 'client.endpoint' key.")
+                raise ValueError("Config does not contain a 'client.endpoint' key.")
             if drivers_val is None:
-                raise ValueError(
-                    "Config does not contain a 'client.drivers' key.")
+                raise ValueError("Config does not contain a 'client.drivers' key.")
 
             drivers = ClientConfigDrivers.from_dict(drivers_val)
 
-            config = ClientConfig(name, endpoint, token, drivers, path)
+            config = ClientConfig(name=name, endpoint=endpoint, token=token, drivers=drivers, path=path)
             return config
 
     def load(name: str) -> Self:

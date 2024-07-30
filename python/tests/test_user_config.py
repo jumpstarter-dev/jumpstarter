@@ -23,7 +23,11 @@ config:
   current-client: testclient
 """
     with patch.object(
-        ClientConfig, "load", return_value=ClientConfig("testclient", "abc", "123", ClientConfigDrivers([], False))
+        ClientConfig,
+        "load",
+        return_value=ClientConfig(
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write(USER_CONFIG)
@@ -46,7 +50,11 @@ kind: UserConfig
 config: {}
 """
     with patch.object(
-        ClientConfig, "load", return_value=ClientConfig("testclient", "abc", "123", ClientConfigDrivers([], False))
+        ClientConfig,
+        "load",
+        return_value=ClientConfig(
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write(USER_CONFIG)
@@ -65,7 +73,11 @@ config:
     current-client: ""
 """
     with patch.object(
-        ClientConfig, "load", return_value=ClientConfig("testclient", "abc", "123", ClientConfigDrivers([], False))
+        ClientConfig,
+        "load",
+        return_value=ClientConfig(
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write(USER_CONFIG)
@@ -122,7 +134,7 @@ kind: UserConfig
 
 def test_user_config_load_or_create_config_exists():
     with patch.object(UserConfig, "exists", return_value=True) as mock_exists:
-        with patch.object(UserConfig, "load", return_value=UserConfig(None)) as mock_load:
+        with patch.object(UserConfig, "load", return_value=UserConfig(current_client=None)) as mock_load:
             _ = UserConfig.load_or_create()
             mock_exists.assert_called_once()
             mock_load.assert_called_once()
@@ -134,7 +146,7 @@ def test_user_config_load_or_create_dir_exists():
             with patch.object(UserConfig, "save") as mock_save:
                 _ = UserConfig.load_or_create()
                 mock_exists.assert_called_once()
-                mock_save.assert_called_once_with(UserConfig(None))
+                mock_save.assert_called_once_with(UserConfig(current_client=None))
 
 
 def test_user_config_load_or_create_dir_does_not_exist():
@@ -143,7 +155,7 @@ def test_user_config_load_or_create_dir_does_not_exist():
         UserConfig.USER_CONFIG_PATH = f"{d}/jumpstarter/config.yaml"
         with patch.object(UserConfig, "save") as mock_save:
             _ = UserConfig.load_or_create()
-            mock_save.assert_called_once_with(UserConfig(None))
+            mock_save.assert_called_once_with(UserConfig(current_client=None))
 
 
 def test_user_config_save():
@@ -154,7 +166,11 @@ config:
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         UserConfig.USER_CONFIG_PATH = f.name
-        config = UserConfig(ClientConfig("testclient", "abc", "123", ClientConfigDrivers([], False)))
+        config = UserConfig(
+            current_client=ClientConfig(
+                name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+            )
+        )
         UserConfig.save(config)
         with open(f.name) as loaded:
             value = loaded.read()
@@ -170,7 +186,7 @@ config:
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         UserConfig.USER_CONFIG_PATH = f.name
-        config = UserConfig(None)
+        config = UserConfig(current_client=None)
         UserConfig.save(config)
         with open(f.name) as loaded:
             value = loaded.read()
@@ -185,11 +201,19 @@ config:
   current-client: testclient
 """
     with patch.object(
-        ClientConfig, "load", return_value=ClientConfig("testclient", "abc", "123", ClientConfigDrivers([], False))
+        ClientConfig,
+        "load",
+        return_value=ClientConfig(
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             UserConfig.USER_CONFIG_PATH = f.name
-            config = UserConfig(ClientConfig("another", "abc", "123", ClientConfigDrivers([], False)))
+            config = UserConfig(
+                current_client=ClientConfig(
+                    name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+                )
+            )
             config.use_client("testclient")
             with open(f.name) as loaded:
                 value = loaded.read()
@@ -207,7 +231,11 @@ config:
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         UserConfig.USER_CONFIG_PATH = f.name
-        config = UserConfig(ClientConfig("another", "abc", "123", ClientConfigDrivers([], False)))
+        config = UserConfig(
+            current_client=ClientConfig(
+                name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+            )
+        )
         config.use_client(None)
         with open(f.name) as loaded:
             value = loaded.read()

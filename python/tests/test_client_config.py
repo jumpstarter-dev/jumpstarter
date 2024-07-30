@@ -27,18 +27,13 @@ def test_client_ensure_exists_makes_dir():
 
 
 def test_client_config_try_from_env():
-    os.environ[JMP_TOKEN] = (
-        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    )
+    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     os.environ[JMP_ENDPOINT] = "grpcs://jumpstarter.my-lab.com:1443"
     os.environ[JMP_DRIVERS_ALLOW] = "jumpstarter.drivers.*,vendorpackage.*"
 
     config = ClientConfig.try_from_env()
     assert config.name == "default"
-    assert (
-        config.token
-        == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    )
+    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
     assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
     assert config.drivers.unsafe is False
@@ -50,36 +45,26 @@ def test_client_config_try_from_env_not_set():
 
 
 def test_client_config_from_env():
-    os.environ[JMP_TOKEN] = (
-        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    )
+    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     os.environ[JMP_ENDPOINT] = "grpcs://jumpstarter.my-lab.com:1443"
     os.environ[JMP_DRIVERS_ALLOW] = "jumpstarter.drivers.*,vendorpackage.*"
 
     config = ClientConfig.from_env()
     assert config.name == "default"
-    assert (
-        config.token
-        == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    )
+    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
     assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
     assert config.drivers.unsafe is False
 
 
 def test_client_config_from_env_allow_unsafe():
-    os.environ[JMP_TOKEN] = (
-        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    )
+    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     os.environ[JMP_ENDPOINT] = "grpcs://jumpstarter.my-lab.com:1443"
     os.environ[JMP_DRIVERS_ALLOW] = "UNSAFE"
 
     config = ClientConfig.from_env()
     assert config.name == "default"
-    assert (
-        config.token
-        == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    )
+    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
     assert config.drivers.allow == []
     assert config.drivers.unsafe is True
@@ -94,9 +79,7 @@ def test_client_config_from_env_no_token_raises():
 
 
 def test_client_config_from_env_no_endpoint_raises():
-    os.environ[JMP_TOKEN] = (
-        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    )
+    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     os.environ[JMP_DRIVERS_ALLOW] = "jumpstarter.drivers.*,vendorpackage.*"
 
     with pytest.raises(ValueError):
@@ -120,10 +103,7 @@ client:
         config = ClientConfig.from_file(f.name)
         assert config.name == f.name.split("/")[-1]
         assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
-        assert (
-            config.token
-            == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-        )
+        assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
         assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
         assert config.drivers.unsafe is False
         os.unlink(f.name)
@@ -255,7 +235,9 @@ def test_client_config_load():
             with patch.object(
                 ClientConfig,
                 "from_file",
-                return_value=ClientConfig("another", "abc", "123", ClientConfigDrivers([], False)),
+                return_value=ClientConfig(
+                    name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+                ),
             ) as from_file_mock:
                 value = ClientConfig.load("another")
         assert value.name == "another"
@@ -281,10 +263,10 @@ client:
     - vendorpackage.*
 """
     config = ClientConfig(
-        "testclient",
-        "grpcs://jumpstarter.my-lab.com:1443",
-        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        ClientConfigDrivers(["jumpstarter.drivers.*", "vendorpackage.*"], False),
+        name="testclient",
+        endpoint="grpcs://jumpstarter.my-lab.com:1443",
+        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        drivers=ClientConfigDrivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfig, "_get_path", return_value=f.name) as _get_path_mock:
@@ -308,10 +290,10 @@ client:
     - vendorpackage.*
 """
     config = ClientConfig(
-        "testclient",
-        "grpcs://jumpstarter.my-lab.com:1443",
-        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        ClientConfigDrivers(["jumpstarter.drivers.*", "vendorpackage.*"], False),
+        name="testclient",
+        endpoint="grpcs://jumpstarter.my-lab.com:1443",
+        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        drivers=ClientConfigDrivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         ClientConfig.save(config, f.name)
@@ -331,10 +313,10 @@ client:
     unsafe: true
 """
     config = ClientConfig(
-        "testclient",
-        "grpcs://jumpstarter.my-lab.com:1443",
-        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        ClientConfigDrivers([], True),
+        name="testclient",
+        endpoint="grpcs://jumpstarter.my-lab.com:1443",
+        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        drivers=ClientConfigDrivers(allow=[], unsafe=True),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         ClientConfig.save(config, f.name)

@@ -9,7 +9,7 @@ from .client import ClientConfig
 from .common import CONFIG_API_VERSION, CONFIG_PATH
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UserConfig:
     """The user configuration for the Jumpstarter CLI."""
 
@@ -51,14 +51,14 @@ class UserConfig:
             if current_client_name is not None and current_client_name != "":
                 current_client = ClientConfig.load(current_client_name)
 
-            return UserConfig(current_client)
+            return UserConfig(current_client=current_client)
 
     def load_or_create() -> Self:
         """Check if a user config exists, otherwise create an empty one."""
         if UserConfig.exists() is False:
             if os.path.exists(UserConfig.BASE_CONFIG_PATH) is False:
                 os.makedirs(UserConfig.BASE_CONFIG_PATH)
-            config = UserConfig(None)
+            config = UserConfig(current_client=None)
             UserConfig.save(config)
             return config
         # Always return the current user config if it exists
