@@ -1,14 +1,19 @@
+import pytest
+
 from jumpstarter.common.utils import serve
 from jumpstarter.drivers.dutlink.base import Dutlink
 
 
 def test_drivers_dutlink():
-    with serve(
-        Dutlink(
+    try:
+        instance = Dutlink(
             name="dutlink",
             storage_device="/dev/null",
         )
-    ) as client:
+    except FileNotFoundError:
+        pytest.skip("dutlink not available")
+
+    with serve(instance) as client:
         with client.console.expect() as expect:
             expect.send("\x02" * 5)
 
