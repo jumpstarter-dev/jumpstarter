@@ -25,6 +25,7 @@ gpiozero = { version = "^2.0.1", optional = true }
 # dutlink
 libusb = {version = "^1.0.27", optional = true}
 pyudev = {version = "^0.24.3", optional = true}
+pexpect = "^4.9.0"
 
 [tool.poetry.dependencies.jumpstarter-protocol]
 git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git"
