@@ -721,6 +721,25 @@ resolved_reference = "03eb176a2e894914b9221a4a94655032cd6ffb65"
 subdirectory = "python"
 
 [[package]]
+name = "libusb"
+version = "1.0.27"
+description = "Python binding for the libusb C library."
+optional = true
+python-versions = "<4.0.0,>=3.8.1"
+files = [
+    {file = "libusb-1.0.27-py3-none-any.whl", hash = "sha256:cf547ebd01044014f2073ffea58a1b4c0172b958e3aed36c1d42e683eed71114"},
+    {file = "libusb-1.0.27.zip", hash = "sha256:3f8055df52d797d2da70ff3b9983e51ab6299c915afdea26988146ec7f6a4170"},
+]
+
+[package.dependencies]
+pkg-about = ">=1.1.5"
+setuptools = ">=68.2.2"
+
+[package.extras]
+doc = ["Sphinx (>=7.1.2)", "nbsphinx (>=0.8.10)", "restructuredtext-lint (>=1.4.0)", "sphinx-copybutton (>=0.5.1)", "sphinx-lint (>=0.6.7)", "sphinx-tabs (>=3.4.1)", "sphinx-toolbox (>=3.5.0)", "sphinxcontrib-spelling (>=7.7.0)"]
+test = ["deepdiff (>=6.7.1)", "rich (>=13.7.0)"]
+
+[[package]]
 name = "markdown-it-py"
 version = "3.0.0"
 description = "Python port of markdown-it. Markdown parsing, done right!"
@@ -978,6 +997,26 @@ files = [
     {file = "packaging-24.1-py3-none-any.whl", hash = "sha256:5b8f2217dbdbd2f7f384c41c628544e6d52f2d0f53c6d0c3ea61aa5d1d7ff124"},
     {file = "packaging-24.1.tar.gz", hash = "sha256:026ed72c8ed3fcce5bf8950572258698927fd1dbda10a5e981cdf0ac37f4f002"},
 ]
+
+[[package]]
+name = "pkg-about"
+version = "1.1.7"
+description = "Shares Python package metadata at runtime."
+optional = true
+python-versions = "<4.0.0,>=3.8.10"
+files = [
+    {file = "pkg_about-1.1.7-py3-none-any.whl", hash = "sha256:647b1b9f3ef836e9899b2a6bff2b1f3e4a96beed7f4ec2e05f81c1fcf0a91642"},
+    {file = "pkg_about-1.1.7.zip", hash = "sha256:814da12eb887a9d234bf663f72abe56e4baf5af6ac1a020fe00a1807fa0e6572"},
+]
+
+[package.dependencies]
+packaging = ">=24.1.0"
+setuptools = ">=70.3.0"
+tomli = {version = ">=2.0.1", markers = "python_version < \"3.11\""}
+
+[package.extras]
+doc = ["Sphinx (>=7.1.2)", "nbsphinx (>=0.9.4)", "restructuredtext-lint (>=1.4.0)", "sphinx-copybutton (>=0.5.2)", "sphinx-lint (>=0.9.1)", "sphinx-tabs (>=3.4.5)", "sphinx-toolbox (>=3.7.0)", "sphinxcontrib-spelling (>=8.0.0)"]
+test = ["deepdiff (>=7.0.1)", "rich (>=13.7.1)"]
 
 [[package]]
 name = "pluggy"
@@ -1600,9 +1639,10 @@ idna = ">=2.0"
 multidict = ">=4.0"
 
 [extras]
+dutlink = ["libusb"]
 rpi = ["gpiozero"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "672e14ad508d63e9e67a143272d778ef47de5d5f422a51f7364d9250f236105b"
+content-hash = "6a251b9bee319b33188294d7ae2922fca59c56647c4b3bcb62e6bab7c4366bb8"
