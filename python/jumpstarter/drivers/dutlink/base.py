@@ -11,6 +11,7 @@ from anyio import fail_after, sleep
 from anyio.streams.file import FileWriteStream
 
 from jumpstarter.drivers import Driver, export
+from jumpstarter.drivers.composite import CompositeInterface
 from jumpstarter.drivers.power import PowerInterface, PowerReading
 from jumpstarter.drivers.serial.pyserial import PySerial
 from jumpstarter.drivers.storage import StorageMuxInterface
@@ -90,7 +91,7 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
 
 
 @dataclass(kw_only=True)
-class Dutlink(Driver):
+class Dutlink(CompositeInterface, Driver):
     serial: str | None = field(default=None)
     dev: usb.core.Device = field(init=False)
     itf: usb.core.Interface = field(init=False)
@@ -132,10 +133,6 @@ class Dutlink(Driver):
                 return
 
         raise FileNotFoundError("failed to find dutlink device")
-
-    @classmethod
-    def client(cls) -> str:
-        return "jumpstarter.drivers.dutlink.client.DutlinkClient"
 
     def control(self, direction, ty, actions, action, value):
         if direction == usb.ENDPOINT_IN:
