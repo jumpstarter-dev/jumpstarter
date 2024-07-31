@@ -10,7 +10,7 @@ class AliasedGroup(click.Group):
         "create": ["cr"],
         "move": ["mv"],
         "config": ["conf"],
-        "delete": ["del"]
+        "delete": ["del"],
     }
 
     def get_command(self, ctx: click.Context, cmd_name: str):

@@ -33,6 +33,7 @@ subdirectory = "python"
 
 [tool.poetry.scripts]
 jmp = "jumpstarter.__main__:main"
+j = "jumpstarter.cli.j:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
