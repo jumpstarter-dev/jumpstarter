@@ -1,5 +1,5 @@
 import os
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
@@ -39,8 +39,19 @@ class DutlinkPower(PowerInterface, Driver):
         return self.control("off")
 
     @export
-    def read(self) -> Generator[PowerReading, None, None]:
-        yield PowerReading(voltage=0.0, current=0.0)
+    async def read(self) -> AsyncGenerator[PowerReading, None]:
+        while True:
+            [v, a, _] = self.parent.control(
+                usb.ENDPOINT_IN,
+                0x04,
+                ["version", "power", "voltage", "current"],
+                "power",
+                None,
+            ).split()
+
+            yield PowerReading(voltage=float(v[:-1]), current=float(a[:-1]))
+
+            await sleep(5)
 
 
 @dataclass(kw_only=True)
