@@ -50,6 +50,11 @@ class StreamMixin:
 class ExpectMixin(StreamMixin):
     @contextmanager
     def expect(self):
+        """
+        Connect to the driver and returns a pexpect instance
+
+        Useful for interacting with serial consoles.
+        """
         with TemporaryDirectory() as tempdir:
             socketpath = Path(tempdir) / "socket"
 
