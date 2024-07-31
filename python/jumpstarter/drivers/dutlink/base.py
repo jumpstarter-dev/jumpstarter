@@ -1,4 +1,5 @@
 import os
+from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
@@ -10,17 +11,14 @@ from anyio import fail_after, sleep
 from anyio.streams.file import FileWriteStream
 
 from jumpstarter.drivers import Driver, export
+from jumpstarter.drivers.power import PowerInterface, PowerReading
 from jumpstarter.drivers.serial.pyserial import PySerial
 from jumpstarter.drivers.storage import StorageMuxInterface
 
 
 @dataclass(kw_only=True)
-class DutlinkPower(Driver):
+class DutlinkPower(PowerInterface, Driver):
     parent: "Dutlink"
-
-    @classmethod
-    def client(cls) -> str:
-        return "jumpstarter.drivers.dutlink.client.DutlinkPowerClient"
 
     def control(self, action):
         return self.parent.control(
@@ -38,6 +36,10 @@ class DutlinkPower(Driver):
     @export
     def off(self):
         return self.control("off")
+
+    @export
+    def read(self) -> Generator[PowerReading, None, None]:
+        yield PowerReading(voltage=0.0, current=0.0)
 
 
 @dataclass(kw_only=True)
