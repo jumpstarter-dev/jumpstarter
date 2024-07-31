@@ -25,7 +25,7 @@ def test_drivers_dutlink():
 
             client.power.off()
 
-            client.storage.write("/dev/null")
+            client.storage.write_local_file("/dev/null")
             client.storage.dut()
 
             client.power.on()

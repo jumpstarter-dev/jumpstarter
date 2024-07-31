@@ -37,7 +37,10 @@ class StorageMuxClient(DriverClient, ResourceMixin):
     def off(self):
         return self.call("off")
 
-    def write(self, filepath):
+    def write(self, handle):
+        return self.call("write", handle)
+
+    def write_local_file(self, filepath):
         with self.local_file(filepath) as handle:
             return self.call("write", handle)
 
@@ -64,8 +67,8 @@ class StorageMuxClient(DriverClient, ResourceMixin):
 
         @base.command()
         @click.argument("file")
-        def write(file):
-            self.write(file)
+        def write_local_file(file):
+            self.write_local_file(file)
 
         return base
 

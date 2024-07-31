@@ -14,6 +14,6 @@ def test_drivers_mock_storage_mux():
             client.off()
             client.dut()
             client.host()
-            client.write(file.name)
+            client.write_local_file(file.name)
 
             os.unlink(file.name)
