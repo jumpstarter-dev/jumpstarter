@@ -99,7 +99,7 @@ class Dutlink(Driver):
 
     power: DutlinkPower = field(init=False)
     storage: DutlinkStorageMux = field(init=False)
-    console: PySerial = field(init=False)
+    console: PySerial = field(init=False, default=None)
 
     def items(self, parent=None):
         return super().items(parent) + self.power.items(self) + self.storage.items(self) + self.console.items(self)
@@ -120,9 +120,14 @@ class Dutlink(Driver):
                 self.power = DutlinkPower(name="power", parent=self)
                 self.storage = DutlinkStorageMux(name="storage", parent=self, storage_device=self.storage_device)
 
-                udev = pyudev.Context()
-                for tty in udev.list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
-                    self.console = PySerial(name="console", url=tty.device_node)
+                for tty in pyudev.Context().list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
+                    if self.console is None:
+                        self.console = PySerial(name="console", url=tty.device_node)
+                    else:
+                        raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
+
+                if self.console is None:
+                    raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
 
                 return
 
