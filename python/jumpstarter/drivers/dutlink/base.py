@@ -40,6 +40,8 @@ class DutlinkPower(PowerInterface, Driver):
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
+        prev = None
+
         while True:
             [v, a, _] = self.parent.control(
                 usb.ENDPOINT_IN,
@@ -49,9 +51,13 @@ class DutlinkPower(PowerInterface, Driver):
                 None,
             ).split()
 
-            yield PowerReading(voltage=float(v[:-1]), current=float(a[:-1]))
+            curr = PowerReading(voltage=float(v[:-1]), current=float(a[:-1]))
 
-            await sleep(5)
+            if prev != curr:
+                prev = curr
+                yield curr
+
+            await sleep(1)
 
 
 @dataclass(kw_only=True)
