@@ -13,14 +13,16 @@ instance = Dutlink(
 )
 
 def monitor_power(client):
-    for reading in client.power.read():
-        click.secho(f"{reading}", fg="red")
+    try:
+        for reading in client.power.read():
+            click.secho(f"{reading}", fg="red")
+    except Exception:
+        pass
 
 with serve(instance) as client:
     click.secho("Connected to Dutlink", fg="red")
     Thread(target=monitor_power, args=[client]).start()
     with client.console.expect() as expect:
-        print("enter console")
         expect.logfile = sys.stdout.buffer
 
         expect.send("\x02" * 5)
