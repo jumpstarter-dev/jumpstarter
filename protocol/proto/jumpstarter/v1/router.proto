@@ -15,10 +15,18 @@ service RouterService {
   rpc Stream(stream StreamRequest) returns (stream StreamResponse);
 }
 
+enum FrameType {
+  FRAME_TYPE_DATA = 0x00;
+  FRAME_TYPE_PING = 0x06;
+  FRAME_TYPE_GOAWAY = 0x07;
+}
+
 message StreamRequest {
   bytes payload = 1;
+  FrameType frame_type = 2;
 }
 
 message StreamResponse {
   bytes payload = 1;
+  FrameType frame_type = 2;
 }
