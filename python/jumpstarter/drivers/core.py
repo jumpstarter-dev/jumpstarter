@@ -100,18 +100,10 @@ class AsyncDriverClient(
 
         combined = StapledObjectStream(tx, ProgressStream(stream=stream))
 
-        async def handle(stream):
-            async with stream:
-                async with forward_client_stream(
-                    self,
-                    stream,
-                    {"kind": "resource", "uuid": str(self.uuid)}.items(),
-                ):
-                    await sleep_forever()
-
-        async with create_task_group() as tg:
-            tg.start_soon(handle, combined)
-            try:
+        async with combined:
+            async with forward_client_stream(
+                self,
+                combined,
+                {"kind": "resource", "uuid": str(self.uuid)}.items(),
+            ):
                 yield (await rx.receive()).decode()
-            finally:
-                tg.cancel_scope.cancel()
