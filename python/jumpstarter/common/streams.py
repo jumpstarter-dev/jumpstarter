@@ -29,7 +29,7 @@ async def decapsulate_stream(tx, rx, tg):
                         await tx.send_eof()
                 case _:
                     pass
-    # ignore peer disconnet
+    # ignore peer disconnect
     except BrokenResourceError:
         pass
     # ignore rpc cancellation and internal error
