@@ -17,6 +17,7 @@ service RouterService {
 
 enum FrameType {
   FRAME_TYPE_DATA = 0x00;
+  FRAME_TYPE_RST_STREAM = 0x03;
   FRAME_TYPE_PING = 0x06;
   FRAME_TYPE_GOAWAY = 0x07;
 }

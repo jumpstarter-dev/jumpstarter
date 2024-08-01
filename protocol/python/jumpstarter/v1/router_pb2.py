@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/router.proto\x12\x0ejumpstarter.v1\"c\n\rStreamRequest\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\x12\x38\n\nframe_type\x18\x02 \x01(\x0e\x32\x19.jumpstarter.v1.FrameTypeR\tframeType\"d\n\x0eStreamResponse\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\x12\x38\n\nframe_type\x18\x02 \x01(\x0e\x32\x19.jumpstarter.v1.FrameTypeR\tframeType*L\n\tFrameType\x12\x13\n\x0f\x46RAME_TYPE_DATA\x10\x00\x12\x13\n\x0f\x46RAME_TYPE_PING\x10\x06\x12\x15\n\x11\x46RAME_TYPE_GOAWAY\x10\x07\x32\\\n\rRouterService\x12K\n\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x01\x30\x01\x42\xc8\x01\n\x12\x63om.jumpstarter.v1B\x0bRouterProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/router.proto\x12\x0ejumpstarter.v1\"c\n\rStreamRequest\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\x12\x38\n\nframe_type\x18\x02 \x01(\x0e\x32\x19.jumpstarter.v1.FrameTypeR\tframeType\"d\n\x0eStreamResponse\x12\x18\n\x07payload\x18\x01 \x01(\x0cR\x07payload\x12\x38\n\nframe_type\x18\x02 \x01(\x0e\x32\x19.jumpstarter.v1.FrameTypeR\tframeType*g\n\tFrameType\x12\x13\n\x0f\x46RAME_TYPE_DATA\x10\x00\x12\x19\n\x15\x46RAME_TYPE_RST_STREAM\x10\x03\x12\x13\n\x0f\x46RAME_TYPE_PING\x10\x06\x12\x15\n\x11\x46RAME_TYPE_GOAWAY\x10\x07\x32\\\n\rRouterService\x12K\n\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x01\x30\x01\x42\xc8\x01\n\x12\x63om.jumpstarter.v1B\x0bRouterProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,11 +33,11 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\022com.jumpstarter.v1B\013RouterProtoP\001ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\242\002\003JXX\252\002\016Jumpstarter.V1\312\002\016Jumpstarter\\V1\342\002\032Jumpstarter\\V1\\GPBMetadata\352\002\017Jumpstarter::V1'
   _globals['_FRAMETYPE']._serialized_start=250
-  _globals['_FRAMETYPE']._serialized_end=326
+  _globals['_FRAMETYPE']._serialized_end=353
   _globals['_STREAMREQUEST']._serialized_start=47
   _globals['_STREAMREQUEST']._serialized_end=146
   _globals['_STREAMRESPONSE']._serialized_start=148
   _globals['_STREAMRESPONSE']._serialized_end=248
-  _globals['_ROUTERSERVICE']._serialized_start=328
-  _globals['_ROUTERSERVICE']._serialized_end=420
+  _globals['_ROUTERSERVICE']._serialized_start=355
+  _globals['_ROUTERSERVICE']._serialized_end=447
 # @@protoc_insertion_point(module_scope)
