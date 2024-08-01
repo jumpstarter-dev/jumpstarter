@@ -1,11 +1,10 @@
-from asyncio.exceptions import InvalidStateError
 from contextlib import AbstractContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
 
-from anyio import create_task_group, create_unix_listener
+from anyio import create_unix_listener
 from anyio.from_thread import BlockingPortal
 from google.protobuf import duration_pb2
 from grpc.aio import Channel
@@ -78,20 +77,13 @@ class Lease:
         with TemporaryDirectory() as tempdir:
             socketpath = Path(tempdir) / "socket"
             async with await create_unix_listener(socketpath) as listener:
-                async with create_task_group() as tg:
-                    tg.start_soon(self.__accept, listener, response)
-                    async with await insecure_channel(f"unix://{socketpath}") as inner:
-                        yield await client_from_channel(inner, self.portal)
-                    tg.cancel_scope.cancel()
+                async with await insecure_channel(f"unix://{socketpath}") as inner:
+                    inner.get_state(try_to_connect=True)
+                    async with await listener.accept() as stream:
+                        async with connect_router_stream(response.router_endpoint, response.router_token, stream):
+                            yield await client_from_channel(inner, self.portal)
 
     @contextmanager
     def connect(self):
         with self.portal.wrap_async_context_manager(self.connect_async()) as client:
             yield client
-
-    async def __accept(self, listener, response):
-        try:
-            async with await listener.accept() as stream:
-                await connect_router_stream(response.router_endpoint, response.router_token, stream)
-        except InvalidStateError:
-            pass

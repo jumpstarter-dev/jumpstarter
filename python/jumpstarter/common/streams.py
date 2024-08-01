@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 import grpc
 from anyio import BrokenResourceError, ClosedResourceError, create_memory_object_stream, create_task_group
 from anyio.streams.stapled import StapledObjectStream
@@ -15,44 +17,50 @@ async def encapsulate_stream(rx, cls):
         pass
 
 
-async def decapsulate_stream(tx, rx):
+async def decapsulate_stream(tx, rx, tg):
     try:
         async for frame in rx:
             match frame.frame_type:
                 case router_pb2.FRAME_TYPE_DATA:
-                    await tx.send(frame.payload)
+                    try:
+                        await tx.send(frame.payload)
+                    except (BrokenResourceError, ClosedResourceError):
+                        pass
                 case router_pb2.FRAME_TYPE_PING:
                     pass
                 case router_pb2.FRAME_TYPE_GOAWAY:
                     break
                 case _:
                     pass
-    except (BrokenResourceError, ClosedResourceError):
-        pass
+        # workaround for grpc
+        async for _ in rx:
+            pass
+    finally:
+        tg.cancel_scope.cancel()
 
 
 async def forward_server_stream(request_iterator, stream):
     async with create_task_group() as tg:
-        tg.start_soon(decapsulate_stream, stream, request_iterator)
+        tg.start_soon(decapsulate_stream, stream, request_iterator, tg)
 
         async for v in encapsulate_stream(stream, router_pb2.StreamResponse):
             yield v
 
 
+@asynccontextmanager
 async def forward_client_stream(router, stream, metadata):
-    try:
-        response_iterator = router.Stream(
-            encapsulate_stream(stream, router_pb2.StreamRequest),
-            metadata=metadata,
-        )
-        await decapsulate_stream(stream, response_iterator)
-        async for _ in response_iterator:
-            pass
-    except grpc.aio.AioRpcError:
-        # TODO: handle connection error
-        pass
+    response_iterator = router.Stream(
+        encapsulate_stream(stream, router_pb2.StreamRequest),
+        metadata=metadata,
+    )
+
+    async with create_task_group() as tg:
+        tg.start_soon(decapsulate_stream, stream, response_iterator, tg)
+        yield
+        tg.cancel_scope.cancel()
 
 
+@asynccontextmanager
 async def connect_router_stream(endpoint, token, stream):
     credentials = grpc.composite_channel_credentials(
         grpc.local_channel_credentials(),  # TODO: Use TLS
@@ -61,7 +69,9 @@ async def connect_router_stream(endpoint, token, stream):
 
     async with grpc.aio.secure_channel(endpoint, credentials) as channel:
         router = router_pb2_grpc.RouterServiceStub(channel)
-        await forward_client_stream(router, stream, ())
+
+        async with forward_client_stream(router, stream, ()):
+            yield
 
 
 def create_memory_stream():

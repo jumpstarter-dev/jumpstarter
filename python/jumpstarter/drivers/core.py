@@ -5,7 +5,7 @@ Base classes for drivers and driver clients
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from anyio import create_task_group
+from anyio import create_task_group, sleep_forever
 from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import json_format, struct_pb2
 from grpc.aio import Channel
@@ -65,27 +65,24 @@ class AsyncDriverClient(
     @asynccontextmanager
     async def stream_async(self, method):
         client_stream, device_stream = create_memory_stream()
-
-        async with create_task_group() as tg:
-            tg.start_soon(
-                forward_client_stream,
-                self,
-                device_stream,
-                {"kind": "connect", "uuid": str(self.uuid), "method": method}.items(),
-            )
+        async with forward_client_stream(
+            self,
+            device_stream,
+            {"kind": "connect", "uuid": str(self.uuid), "method": method}.items(),
+        ):
             async with client_stream:
                 yield client_stream
-            tg.cancel_scope.cancel()
 
     @asynccontextmanager
     async def portforward_async(self, method, listener):
         async def handle(client):
             async with client:
-                await forward_client_stream(
+                async with forward_client_stream(
                     self,
                     client,
                     {"kind": "connect", "uuid": str(self.uuid), "method": method}.items(),
-                )
+                ):
+                    await sleep_forever()
 
         async with create_task_group() as tg:
             tg.start_soon(listener.serve, handle)
@@ -105,11 +102,12 @@ class AsyncDriverClient(
 
         async def handle(stream):
             async with stream:
-                await forward_client_stream(
+                async with forward_client_stream(
                     self,
                     stream,
                     {"kind": "resource", "uuid": str(self.uuid)}.items(),
-                )
+                ):
+                    await sleep_forever()
 
         async with create_task_group() as tg:
             tg.start_soon(handle, combined)
