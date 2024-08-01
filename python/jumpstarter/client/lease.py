@@ -94,6 +94,8 @@ class Lease:
                     ) as inner:
                         yield self.portal.call(client_from_channel, inner, self.portal)
 
+                    self.portal.call(tg.cancel_scope.cancel)
+
     async def __accept(self, listener, response):
         async with await listener.accept() as stream:
             await connect_router_stream(response.router_endpoint, response.router_token, stream)

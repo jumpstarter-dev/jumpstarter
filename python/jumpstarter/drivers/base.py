@@ -98,12 +98,14 @@ class Driver(
                 self.resources[resource_uuid] = resource
 
                 await resource.send(str(resource_uuid).encode("utf-8"))
+                await resource.send_eof()
 
                 async with remote:
                     async for v in forward_server_stream(request_iterator, remote):
                         yield v
 
-                del self.resources[resource_uuid]
+                # del self.resources[resource_uuid]
+                # small resources might be fully buffered in memory
 
     async def GetReport(self, request, context):
         """

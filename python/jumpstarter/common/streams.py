@@ -1,71 +1,55 @@
 import grpc
-from anyio import BrokenResourceError, create_memory_object_stream, create_task_group
+from anyio import BrokenResourceError, ClosedResourceError, create_memory_object_stream, create_task_group
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
 
 
-async def forward_server_stream(request_iterator, stream):
-    async with create_task_group() as tg:
-
-        async def client_to_server():
-            try:
-                async for frame in request_iterator:
-                    match frame.frame_type:
-                        case router_pb2.FRAME_TYPE_DATA:
-                            await stream.send(frame.payload)
-                        case router_pb2.FRAME_TYPE_PING:
-                            pass
-                        case router_pb2.FRAME_TYPE_GOAWAY:
-                            break
-                        case _:
-                            pass
-            except BrokenResourceError:
-                pass
-            finally:
-                await stream.send_eof()
-
-        tg.start_soon(client_to_server)
-
-        # server_to_client
-        try:
-            yield router_pb2.StreamResponse(frame_type=router_pb2.FRAME_TYPE_PING)
-            async for payload in stream:
-                yield router_pb2.StreamResponse(payload=payload)
-            yield router_pb2.StreamResponse(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
-        except BrokenResourceError:
-            pass
-
-
-async def forward_client_stream(router, stream, metadata):
-    async def client_to_server():
-        try:
-            yield router_pb2.StreamRequest(frame_type=router_pb2.FRAME_TYPE_PING)
-            async for payload in stream:
-                yield router_pb2.StreamRequest(payload=payload)
-            yield router_pb2.StreamRequest(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
-        except BrokenResourceError:
-            pass
-
-    # server_to_client
+async def encapsulate_stream(rx, cls):
     try:
-        async for frame in router.Stream(
-            client_to_server(),
-            metadata=metadata,
-        ):
+        yield cls(frame_type=router_pb2.FRAME_TYPE_PING)
+        async for payload in rx:
+            yield cls(payload=payload)
+        yield cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
+    except (BrokenResourceError, ClosedResourceError):
+        pass
+
+
+async def decapsulate_stream(tx, rx):
+    try:
+        async for frame in rx:
             match frame.frame_type:
                 case router_pb2.FRAME_TYPE_DATA:
-                    await stream.send(frame.payload)
+                    await tx.send(frame.payload)
                 case router_pb2.FRAME_TYPE_PING:
                     pass
                 case router_pb2.FRAME_TYPE_GOAWAY:
                     break
                 case _:
                     pass
+    except (BrokenResourceError, ClosedResourceError):
+        pass
+
+
+async def forward_server_stream(request_iterator, stream):
+    async with create_task_group() as tg:
+        tg.start_soon(decapsulate_stream, stream, request_iterator)
+
+        async for v in encapsulate_stream(stream, router_pb2.StreamResponse):
+            yield v
+
+
+async def forward_client_stream(router, stream, metadata):
+    try:
+        response_iterator = router.Stream(
+            encapsulate_stream(stream, router_pb2.StreamRequest),
+            metadata=metadata,
+        )
+        await decapsulate_stream(stream, response_iterator)
+        async for _ in response_iterator:
+            pass
     except grpc.aio.AioRpcError:
         # TODO: handle connection error
-        pass
-    except BrokenResourceError:
         pass
     finally:
         await stream.aclose()

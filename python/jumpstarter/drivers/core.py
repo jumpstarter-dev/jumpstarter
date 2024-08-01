@@ -75,6 +75,7 @@ class AsyncDriverClient(
             )
             async with client_stream:
                 yield client_stream
+            tg.cancel_scope.cancel()
 
     @asynccontextmanager
     async def portforward_async(self, method, listener):
