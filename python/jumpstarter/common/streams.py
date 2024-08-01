@@ -11,7 +11,15 @@ async def forward_server_stream(request_iterator, stream):
         async def client_to_server():
             try:
                 async for frame in request_iterator:
-                    await stream.send(frame.payload)
+                    match frame.frame_type:
+                        case router_pb2.FRAME_TYPE_DATA:
+                            await stream.send(frame.payload)
+                        case router_pb2.FRAME_TYPE_PING:
+                            pass
+                        case router_pb2.FRAME_TYPE_GOAWAY:
+                            break
+                        case _:
+                            pass
             except BrokenResourceError:
                 pass
             finally:
@@ -21,8 +29,10 @@ async def forward_server_stream(request_iterator, stream):
 
         # server_to_client
         try:
+            yield router_pb2.StreamResponse(frame_type=router_pb2.FRAME_TYPE_PING)
             async for payload in stream:
                 yield router_pb2.StreamResponse(payload=payload)
+            yield router_pb2.StreamResponse(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
         except BrokenResourceError:
             pass
 
@@ -30,8 +40,10 @@ async def forward_server_stream(request_iterator, stream):
 async def forward_client_stream(router, stream, metadata):
     async def client_to_server():
         try:
+            yield router_pb2.StreamRequest(frame_type=router_pb2.FRAME_TYPE_PING)
             async for payload in stream:
                 yield router_pb2.StreamRequest(payload=payload)
+            yield router_pb2.StreamRequest(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
         except BrokenResourceError:
             pass
 
@@ -41,9 +53,15 @@ async def forward_client_stream(router, stream, metadata):
             client_to_server(),
             metadata=metadata,
         ):
-            if not frame.payload:
-                break
-            await stream.send(frame.payload)
+            match frame.frame_type:
+                case router_pb2.FRAME_TYPE_DATA:
+                    await stream.send(frame.payload)
+                case router_pb2.FRAME_TYPE_PING:
+                    pass
+                case router_pb2.FRAME_TYPE_GOAWAY:
+                    break
+                case _:
+                    pass
     except grpc.aio.AioRpcError:
         # TODO: handle connection error
         pass
