@@ -7,7 +7,10 @@ import anyio
 import click
 import grpc
 
-from jumpstarter.drivers.dutlink.base import Dutlink
+from jumpstarter.drivers.composite import Composite
+from jumpstarter.drivers.network import EchoNetwork
+from jumpstarter.drivers.power import MockPower
+from jumpstarter.drivers.storage import MockStorageMux
 from jumpstarter.exporter import Session
 
 
@@ -16,9 +19,13 @@ async def shell_impl():
 
     session = Session(
         name="transient",
-        root_device=Dutlink(
+        root_device=Composite(
             name="root",
-            storage_device="/dev/null",
+            children=[
+                MockPower(name="power"),
+                MockStorageMux(name="storage"),
+                EchoNetwork(name="echo"),
+            ],
         ),
     )
     session.add_to_server(server)
