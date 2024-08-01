@@ -35,6 +35,8 @@ async def decapsulate_stream(tx, rx, tg):
         # workaround for grpc
         async for _ in rx:
             pass
+    except Exception:
+        pass
     finally:
         tg.cancel_scope.cancel()
 
