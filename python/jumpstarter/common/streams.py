@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 import grpc
 from anyio import BrokenResourceError, ClosedResourceError, create_memory_object_stream, create_task_group
+from anyio.abc import ByteStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
@@ -24,7 +25,8 @@ async def decapsulate_stream(tx, rx, tg):
                 case router_pb2.FRAME_TYPE_DATA:
                     await tx.send(frame.payload)
                 case router_pb2.FRAME_TYPE_GOAWAY:
-                    await tx.send_eof()
+                    if isinstance(tx, ObjectStream) or isinstance(tx, ByteStream):
+                        await tx.send_eof()
                 case _:
                     pass
     # ignore peer disconnet
