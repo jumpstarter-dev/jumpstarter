@@ -33,6 +33,7 @@ class UStreamer(Driver):
         return "jumpstarter.drivers.video.client.UStreamerClient"
 
     def __post_init__(self, *args):
+        super().__post_init__(*args)
         cmdline = [self.executable]
 
         for key, value in self.args.items():

@@ -15,6 +15,7 @@ class DigitalOutput(Driver):
         return "jumpstarter.drivers.rpi.gpio.client.DigitalOutputClient"
 
     def __post_init__(self, name, pin):
+        super().__post_init__(name)
         self.device = DigitalOutputDevice(pin=pin)
 
     @export
@@ -36,6 +37,7 @@ class DigitalInput(Driver):
         return "jumpstarter.drivers.rpi.gpio.client.DigitalInputClient"
 
     def __post_init__(self, name, pin):
+        super().__post_init__(name)
         self.device = DigitalInputDevice(pin=pin)
 
     @export

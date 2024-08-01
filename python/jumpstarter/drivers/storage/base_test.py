@@ -11,10 +11,9 @@ def test_drivers_mock_storage_mux():
             file.write(b"testcontent" * 1000)
             file.close()
 
-            with client.local_file(file.name) as handle:
-                client.off()
-                client.dut()
-                client.host()
-                client.write(handle)
+            client.off()
+            client.dut()
+            client.host()
+            client.write_local_file(file.name)
 
             os.unlink(file.name)
