@@ -51,8 +51,6 @@ async def forward_client_stream(router, stream, metadata):
     except grpc.aio.AioRpcError:
         # TODO: handle connection error
         pass
-    finally:
-        await stream.aclose()
 
 
 async def connect_router_stream(endpoint, token, stream):
