@@ -22,23 +22,18 @@ async def decapsulate_stream(tx, rx, tg):
         async for frame in rx:
             match frame.frame_type:
                 case router_pb2.FRAME_TYPE_DATA:
-                    try:
-                        await tx.send(frame.payload)
-                    except (BrokenResourceError, ClosedResourceError):
-                        pass
-                case router_pb2.FRAME_TYPE_PING:
-                    pass
+                    await tx.send(frame.payload)
                 case router_pb2.FRAME_TYPE_GOAWAY:
-                    break
+                    await tx.send_eof()
                 case _:
                     pass
-        # workaround for grpc
-        async for _ in rx:
-            pass
-    # ignore rpc cancellation
+    # ignore peer disconnet
+    except BrokenResourceError:
+        pass
+    # ignore rpc cancellation and internal error
     except grpc.aio.AioRpcError as e:
         match e.code():
-            case grpc.StatusCode.CANCELLED:
+            case grpc.StatusCode.CANCELLED | grpc.StatusCode.INTERNAL:
                 pass
             case _:
                 raise
