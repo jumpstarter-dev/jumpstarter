@@ -1,10 +1,10 @@
 import sys
+from threading import Thread
 
 import click
 
 from jumpstarter.common.utils import serve
 from jumpstarter.drivers.dutlink.base import Dutlink
-from threading import Thread
 
 instance = Dutlink(
     name="dutlink",
@@ -12,12 +12,14 @@ instance = Dutlink(
     storage_device="/dev/disk/by-id/usb-SanDisk_Extreme_Pro_52A456790D93-0:0",
 )
 
+
 def monitor_power(client):
     try:
         for reading in client.power.read():
             click.secho(f"{reading}", fg="red")
     except Exception:
         pass
+
 
 with serve(instance) as client:
     click.secho("Connected to Dutlink", fg="red")
