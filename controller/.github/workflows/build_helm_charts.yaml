@@ -1,13 +1,18 @@
-name: Push to main
+name: Push updated Helm charts
+
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Build and push container image"]
+    branches: [main]
+    types:
+      - completed
+
 env:
   QUAY_ORG: quay.io/jumpstarter-dev
 
 jobs:
   publish-helm-charts-containers:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
