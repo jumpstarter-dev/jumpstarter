@@ -14,16 +14,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.QUAY_ORG }}/flightctl-controller
+      - name: Get version
+        run: |
+          VERSION=$(git describe --long --tags)
+          VERSION=${VERSION#v} # remove the leading v prefix for version
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}"
 
       - name: Build helm charts
         run: |
-          echo packaging $(git describe --long --tags)
-          helm package ./deploy/helm/jumpstarter --version $(git describe --long --tags) --app-version ${{ github.sha }}
+          echo packaging ${VERSION}
+          helm package ./deploy/helm/jumpstarter --version "${VERSION}" --app-version "${VERSION}"
 
       - name: Login helm
         env:
