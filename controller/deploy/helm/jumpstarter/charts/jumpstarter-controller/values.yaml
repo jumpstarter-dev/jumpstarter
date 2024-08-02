@@ -1,9 +1,19 @@
 
+namespace: ""
 
-namespace: jumpstarter-lab
-image: quay.io/jumpstarter-dev/jumpstarter-controller:latest
+grpc:
+  hostname: ""
+  ingress:
+    enabled: true
+    tls:
+      enabled: false
+      tlsSecret: ""
+  
+  route:
+    enabled: false
+    tls: true
+  
+image: quay.io/jumpstarter-dev/jumpstarter-controller
+tag: ""
 imagePullPolicy: IfNotPresent
-grpcEndpoint: grpcs://localhost:5443
-grpcNodePort: 5443
-metrics:
-  enabled: false
+

@@ -17,5 +17,5 @@ metadata:
   name: exporter-sample
 spec:
   credentials:
-  - namespace: default
+  - namespace: jumpstarter-lab
     name: exporter-sample-token

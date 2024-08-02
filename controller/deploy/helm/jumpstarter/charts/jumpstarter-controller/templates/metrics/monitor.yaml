@@ -1,5 +1,5 @@
 # enable monitoring only if monitoring is enabled
-{{- if .Values.metrics.enabled }}
+{{- if .Values.global.metrics.enabled }}
 # Prometheus Monitor Service (Metrics)
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -8,7 +8,7 @@ metadata:
     control-plane: controller-manager
     app.kubernetes.io/name: jumpstarter-controller
   name: controller-manager-metrics-monitor
-  namespace: {{ .Values.namespace }}
+  namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
   endpoints:
     - path: /metrics

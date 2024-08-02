@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+  name: jumpstarter-controller-ingress
+  namespace: {{ default .Release.Namespace .Values.namespace }}
+spec:
+  ingressClassName: nginx
+  rules:
+  {{ if .Values.grpc.hostname }}
+  - host: {{ .Values.grpc.hostname }}
+  {{ else }}
+  - host: grpc.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.hostname must be provided"}}
+  {{ end }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jumpstarter-grpc
+            port:
+              number: 8082
+{{ if .Values.grpc.ingress.tls.enabled }}
+  tls:
+  - secretName: {{ .Values.grpc.ingress.tls.secret }}
+    hosts:
+      {{ if .Values.grpc.hostname }}
+      - {{ .Values.grpc.hostname }}
+      {{ else }}
+      - grpc.{{ .Values.global.baseDomain | required }}
+      {{ end }}
+{{ end }}

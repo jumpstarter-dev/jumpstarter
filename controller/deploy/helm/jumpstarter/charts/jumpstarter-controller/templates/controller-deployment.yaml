@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jumpstarter-controller
-  namespace: {{ .Values.namespace }}
+  namespace: {{ default .Release.Namespace .Values.namespace }}
   labels:
     control-plane: controller-manager
     app.kubernetes.io/name: jumpstarter-controller
@@ -40,13 +40,8 @@ spec:
       #               - linux
       securityContext:
         runAsNonRoot: true
-        # TODO(user): For common cases that do not require escalating privileges
-        # it is recommended to ensure that all your Pods/Containers are restrictive.
-        # More info: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
-        # Please uncomment the following code if your project does NOT have to work on old Kubernetes
-        # versions < 1.19 or on vendors versions which do NOT support this field by default (i.e. Openshift < 4.11 ).
-        # seccompProfile:
-        #   type: RuntimeDefault
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - command:
         - /manager
@@ -54,7 +49,15 @@ spec:
           - --leader-elect
           - --health-probe-bind-address=:8081
           - -metrics-bind-address=:8080
-        image: {{ .Values.image }}
+        env:
+        - name: GRPC_ENDPOINT
+          {{ if .Values.hostname }}
+          value: gprcs://{{ .Values.hostname }}
+          {{ else }}
+          value: gprcs://grpc.{{ .Values.global.baseDomain }}
+          {{ end }}
+
+        image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
         name: manager
         securityContext:
@@ -74,14 +77,12 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        # TODO(user): Configure the resources accordingly based on the project requirements.
-        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
             cpu: 2000m
-            memory: 2048Mi
+            memory: 1024Mi
           requests:
             cpu: 1000m
-            memory: 512Mi
+            memory: 256Mi
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

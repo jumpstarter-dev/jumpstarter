@@ -17,5 +17,5 @@ metadata:
   name: identity-sample
 spec:
   credentials:
-  - namespace: default
+  - namespace: jumpstarter-lab
     name: identity-sample-token

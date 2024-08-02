@@ -1,16 +1,32 @@
-jumpstarter-controller:
-    enabled: true
-    namespace: jumpstarter-lab
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:latest
-    imagePullPolicy: IfNotPresent
-    grpcEndpoint: grpcs://localhost:5443
-    grpcNodePort: 5443
-    metrics:
+global:
+  baseDomain: jumpstarter.my.domain.com
+  namespace: jumpstarter-lab
+  storageClassName: standard
+  storageClassNameRWM: standard
+  metrics:
       enabled: false
 
+jumpstarter-controller:
+    enabled: true
+    namespace: ""
+    hostname: ""
 
-storageClassName: standard
-storageClassNameRWM: standard
+    grpc:
+      ingress:
+        enabled: true
+        tls:
+          enabled: false
+          tlsSecret: ""
 
-# Related to RH PAAS deployments
-appCode: MYAPP
+      route:
+        enabled: false
+        tls: true
+
+    image: quay.io/jumpstarter-dev/jumpstarter-controller
+    tag: ""
+    imagePullPolicy: IfNotPresent
+
+
+
+
+

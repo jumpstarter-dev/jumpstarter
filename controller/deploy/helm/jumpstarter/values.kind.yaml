@@ -1,17 +1,8 @@
-
-jumpstarter-controller:
-    enabled: true
-    namespace: jumpstarter-lab
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:latest
-    imagePullPolicy: IfNotPresent
-    grpcEndpoint: grpcs://localhost:5443
-    grpcNodePort: 5443
-    metrics:
+global:
+  baseDomain: jumpstarter.127.0.0.1.nip.io
+  metrics:
       enabled: false
 
-
-storageClassName: standard
-storageClassNameRWM: standard
-
-# Related to RH PAAS deployments
-appCode: MYAPP
+jumpstarter-controller:
+  image: quay.io/jumpstarter-dev/jumpstarter-controller
+  tag: latest
