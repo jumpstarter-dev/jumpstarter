@@ -3,7 +3,6 @@ name: Push updated Helm charts
 on:
   workflow_run:
     workflows: ["Build and push container image"]
-    branches: [main]
     types:
       - completed
 
