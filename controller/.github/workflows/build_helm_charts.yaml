@@ -24,6 +24,8 @@ jobs:
       - name: Build helm charts
         run: |
           echo packaging ${VERSION}
+          # patch the sub-chart app-version, because helm package won't do it
+          sed -i "s/^appVersion:/appVersion: $VERSION/" deploy/helm/jumpstarter/charts/jumpstarter-controller/Chart.yaml
           helm package ./deploy/helm/jumpstarter --version "${VERSION}" --app-version "${VERSION}"
 
       - name: Login helm
