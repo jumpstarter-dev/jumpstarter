@@ -11,6 +11,7 @@ from google.protobuf import json_format, struct_pb2
 from grpc.aio import Channel
 
 from jumpstarter.common import Metadata
+from jumpstarter.common.progress import ProgressStream
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,
@@ -99,7 +100,7 @@ class AsyncDriverClient(
     ):
         tx, rx = create_memory_stream()
 
-        combined = StapledObjectStream(tx, stream)
+        combined = StapledObjectStream(tx, ProgressStream(stream=stream))
 
         async def handle(stream):
             async with stream:
