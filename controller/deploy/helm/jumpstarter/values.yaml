@@ -13,14 +13,15 @@ jumpstarter-controller:
 
     grpc:
       ingress:
-        enabled: true
+        enabled: false
         tls:
           enabled: false
           tlsSecret: ""
 
       route:
         enabled: false
-        tls: true
+        tls:
+          enabled: true
 
     image: quay.io/jumpstarter-dev/jumpstarter-controller
     tag: ""

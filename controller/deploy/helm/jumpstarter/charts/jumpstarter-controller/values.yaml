@@ -11,7 +11,8 @@ grpc:
   
   route:
     enabled: false
-    tls: true
+    tls:
+      enabled: true
   
 image: quay.io/jumpstarter-dev/jumpstarter-controller
 tag: ""
