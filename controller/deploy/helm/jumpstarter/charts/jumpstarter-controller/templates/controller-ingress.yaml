@@ -7,7 +7,6 @@ metadata:
   name: jumpstarter-controller-ingress
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
-  ingressClassName: nginx
   rules:
   {{ if .Values.grpc.hostname }}
   - host: {{ .Values.grpc.hostname }}
