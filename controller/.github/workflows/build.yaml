@@ -2,11 +2,16 @@ name: Build and push container image
 on:
   workflow_dispatch:
   push:
+    tags:
+      - '*'
     branches:
       - main
+
 env:
   REGISTRY: quay.io
   IMAGE_NAME: jumpstarter-dev/jumpstarter-controller
+  QUAY_ORG: quay.io/jumpstarter-dev
+
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
@@ -59,3 +64,36 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+  publish-helm-charts-containers:
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        run: |
+          VERSION=$(git describe --long --tags)
+          VERSION=${VERSION#v} # remove the leading v prefix for version
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}"
+
+      - name: Build helm charts
+        run: |
+          echo packaging ${VERSION}
+          # patch the sub-chart app-version, because helm package won't do it
+          sed -i "s/^appVersion:.*/appVersion: $VERSION/" deploy/helm/jumpstarter/charts/jumpstarter-controller/Chart.yaml
+          helm package ./deploy/helm/jumpstarter --version "${VERSION}" --app-version "${VERSION}"
+
+      - name: Login helm
+        env:
+          PASSWORD: ${{ secrets.QUAY_TOKEN }}
+          USER: jumpstarter-dev+jumpstarter_ci
+        run:
+          helm registry login quay.io -u ${USER} -p ${PASSWORD}
+
+      - name: Push helm charts
+        run: |
+          helm push jumpstarter-*.tgz oci://${{ env.QUAY_ORG }}/helm

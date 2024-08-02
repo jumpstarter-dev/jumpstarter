@@ -1,0 +1,30 @@
+{{ if .Values.grpc.route.enabled }}
+{{ if .Values.grpc.ingress.enabled }}
+  {{ required "grpc.ingress.enabled and grpc.route.enabled cannot be enabled at the same time" nil }}
+{{ end }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    external-exposed: "true"
+    shard: external
+  name: jumpstarter-controller-route
+  namespace: {{ default .Release.Namespace .Values.namespace }}
+spec:
+  {{ if .Values.grpc.hostname }}
+  host: {{ .Values.grpc.hostname }}
+  {{ else }}
+  host: grpc.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.hostname must be provided"}}
+  {{ end }}
+  port:
+    targetPort: 8082
+  {{ if .Values.grpc.route.tls.enabled }}
+  tls:
+    termination: edge
+  {{ end }}
+  to:
+    kind: Service
+    name: jumpstarter-grpc
+    weight: 100
+  wildcardPolicy: None
+{{ end }}
