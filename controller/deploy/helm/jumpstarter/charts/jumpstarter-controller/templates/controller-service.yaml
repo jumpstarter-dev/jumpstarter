@@ -16,6 +16,7 @@ spec:
     port: 8082
     protocol: TCP
     targetPort: 8082
+    appProtocol: h2c # HTTP/2 over cleartext for gRPC (fixes edge termination in ingress/router)
     {{ if .Values.grpc.nodeport.enabled }}
     nodePort: {{ .Values.grpc.nodeport.port }}
     {{ end }}
