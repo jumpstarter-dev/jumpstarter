@@ -6,10 +6,21 @@ kubeadmConfigPatches:
   apiServer:
     extraArgs:
       "service-node-port-range": "3000-32767"
+- |
+  kind: InitConfiguration
+  nodeRegistration:
+    kubeletExtraArgs:
+      node-labels: "ingress-ready=true"
 nodes:
 - role: control-plane
   extraPortMappings:
-  - containerPort: 5443 # flightctl API
+  - containerPort: 80 # ingress controller
+    hostPort: 5080
+    protocol: TCP
+  - containerPort: 30010 # grpc nodeport
+    hostPort: 5088
+    protocol: TCP
+  - containerPort: 443
     hostPort: 5443
     protocol: TCP
 # if we needed to mount a hostPath volume into the kind cluster, we can do it like this

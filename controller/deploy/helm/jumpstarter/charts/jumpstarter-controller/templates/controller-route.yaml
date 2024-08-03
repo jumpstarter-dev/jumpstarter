@@ -1,7 +1,7 @@
 {{ if .Values.grpc.route.enabled }}
-{{ if .Values.grpc.ingress.enabled }}
-  {{ required "grpc.ingress.enabled and grpc.route.enabled cannot be enabled at the same time" nil }}
-{{ end }}
+  {{ if .Values.grpc.ingress.enabled }}
+    {{ required "grpc.ingress.enabled and grpc.route.enabled cannot be enabled at the same time" nil }}
+  {{ end }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:

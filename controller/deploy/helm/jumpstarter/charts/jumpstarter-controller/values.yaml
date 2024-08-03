@@ -4,7 +4,7 @@ namespace: ""
 grpc:
   hostname: ""
   ingress:
-    enabled: true
+    enabled: false
     tls:
       enabled: false
       tlsSecret: ""
@@ -14,6 +14,11 @@ grpc:
     tls:
       enabled: true
   
+  # NodePort service for grpc, useful for local development
+  nodeport:
+    enabled: false
+    port: 30010
+
 image: quay.io/jumpstarter-dev/jumpstarter-controller
 tag: ""
 imagePullPolicy: IfNotPresent

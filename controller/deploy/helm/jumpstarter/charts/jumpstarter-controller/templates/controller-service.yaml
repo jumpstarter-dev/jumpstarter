@@ -7,10 +7,17 @@ metadata:
   name: jumpstarter-grpc
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
+  {{ if .Values.grpc.nodeport.enabled }}
+  type: NodePort
+  {{ end }}
+
   ports:
   - name: grpc
     port: 8082
     protocol: TCP
     targetPort: 8082
+    {{ if .Values.grpc.nodeport.enabled }}
+    nodePort: {{ .Values.grpc.nodeport.port }}
+    {{ end }}
   selector:
     control-plane: controller-manager
