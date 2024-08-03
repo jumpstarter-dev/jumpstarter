@@ -24,7 +24,7 @@ spec:
   {{ end }}
   to:
     kind: Service
-    name: jumpstarter-grpc-router
+    name: jumpstarter-router-grpc
     weight: 100
   wildcardPolicy: None
 {{ end }}

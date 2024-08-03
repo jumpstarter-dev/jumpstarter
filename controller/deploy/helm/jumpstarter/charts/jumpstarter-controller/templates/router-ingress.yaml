@@ -20,7 +20,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: jumpstarter-grpc-router
+            name: jumpstarter-router-grpc
             port:
               number: 8083
   {{ if .Values.grpc.tls.enabled }}
