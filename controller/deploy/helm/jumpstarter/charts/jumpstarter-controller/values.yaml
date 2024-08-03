@@ -3,21 +3,30 @@ namespace: ""
 
 grpc:
   hostname: ""
+  routerHostname: ""
+
+  # the endpoints are passed down to the service to know where
+  # to announce the endpoints to the clients
+  endpoint: ""
+  routerEndpoint: ""
+
+  tls:
+    enabled: false
+    secret: ""
+
+  # enabling ingress route
   ingress:
     enabled: false
-    tls:
-      enabled: false
-      tlsSecret: ""
   
+  # enabling openshift route
   route:
     enabled: false
-    tls:
-      enabled: true
   
   # NodePort service for grpc, useful for local development
   nodeport:
     enabled: false
     port: 30010
+    routerPort: 30011
 
 image: quay.io/jumpstarter-dev/jumpstarter-controller
 tag: ""

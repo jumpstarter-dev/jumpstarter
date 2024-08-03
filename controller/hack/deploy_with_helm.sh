@@ -40,14 +40,18 @@ if [ "${INGRESS_ENABLED}" == "true" ]; then
     HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.ingress.enabled=true"
     BASEDOMAIN="jumpstarter.${IP}.nip.io"
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5080"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5080"
 else
     echo -e "${GREEN}Deploying with nodeport ...${NC}"
     HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.nodeport.enabled=true"
-    BASEDOMAIN="jumpstarter.127.0.0.1.nip.io"
-    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5088"
+    BASEDOMAIN="jumpstarter.${IP}.nip.io"
+    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 fi
 
 HELM_SETS="${HELM_SETS} --set global.baseDomain=${BASEDOMAIN}"
+HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT}"
+HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT}"
 
 echo -e "${GREEN}Loading the ${IMG} in kind ...${NC}"
 # load the docker image into the kind cluster
@@ -70,6 +74,22 @@ helm ${METHOD} --namespace jumpstarter-lab \
 
 kubectl config set-context --current --namespace=jumpstarter-lab
 
+echo -e "${GREEN}Waiting for grpc endpoints to be ready:${NC}"
+for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
+    RETRIES=30
+    echo -e "${GREEN} * Checking ${ep} ... ${NC}"
+    while ! podman run docker.io/fullstorydev/grpcurl -plaintext ${ep} list; do
+        sleep 2
+        RETRIES=$((RETRIES-1))
+        if [ ${RETRIES} -eq 0 ]; then
+            echo -e "${GREEN} * ${ep} not ready after 60s, exiting ... ${NC}"
+            exit 1
+        fi
+    done
+done
+
+
 
 echo -e "${GREEN}Jumpstarter controller deployed successfully!${NC}"
-echo -e " GRPC endpoint: ${GRPC_ENDPOINT}"
+echo -e " gRPC        endpoint: ${GRPC_ENDPOINT}"
+echo -e " gRPC router endpoint: ${GRPC_ROUTER_ENDPOINT}"

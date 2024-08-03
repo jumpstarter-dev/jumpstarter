@@ -18,8 +18,12 @@ nodes:
     hostPort: 5080
     protocol: TCP
   - containerPort: 30010 # grpc nodeport
-    hostPort: 5088
+    hostPort: 8082
     protocol: TCP
+  - containerPort: 30011 # grpc router nodeport
+    hostPort: 8083
+    protocol: TCP
+
   - containerPort: 443
     hostPort: 5443
     protocol: TCP

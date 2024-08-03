@@ -28,6 +28,7 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	authv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -146,6 +147,7 @@ func (s *RouterService) Start(ctx context.Context) error {
 
 	pb.RegisterRouterServiceServer(server, s)
 
+	reflection.Register(server)
 	listener, err := net.Listen("tcp", ":8083")
 	if err != nil {
 		return err

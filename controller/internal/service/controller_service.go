@@ -30,6 +30,7 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -328,6 +329,9 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	// TODO: propagate base context
 
 	pb.RegisterControllerServiceServer(server, s)
+
+	// Register reflection service on gRPC server.
+	reflection.Register(server)
 
 	listener, err := net.Listen("tcp", ":8082")
 	if err != nil {
