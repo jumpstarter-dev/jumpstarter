@@ -8,23 +8,23 @@ metadata:
   labels:
     external-exposed: "true"
     shard: external
-  name: jumpstarter-controller-route
+  name: jumpstarter-router-route
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
-  {{ if .Values.grpc.hostname }}
-  host: {{ .Values.grpc.hostname }}
+  {{ if .Values.grpc.routerHostname }}
+  host: {{ .Values.grpc.routerHostname }}
   {{ else }}
-  host: grpc.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.hostname must be provided"}}
+  host: router.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
   {{ end }}
   port:
-    targetPort: 8082
+    targetPort: 8083
   {{ if .Values.grpc.tls.enabled }}
   tls:
     termination: edge
   {{ end }}
   to:
     kind: Service
-    name: jumpstarter-grpc
+    name: jumpstarter-grpc-router
     weight: 100
   wildcardPolicy: None
 {{ end }}

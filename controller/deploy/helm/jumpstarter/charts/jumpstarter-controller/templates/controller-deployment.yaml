@@ -51,10 +51,20 @@ spec:
           - -metrics-bind-address=:8080
         env:
         - name: GRPC_ENDPOINT
-          {{ if .Values.hostname }}
-          value: gprcs://{{ .Values.hostname }}
+          {{ if .Values.grpc.endpoint }}
+          value : {{ .Values.grpc.endpoint }}
+          {{ else if .Values.hostname }}
+          value: {{ .Values.hostname }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
           {{ else }}
-          value: gprcs://grpc.{{ .Values.global.baseDomain }}
+          value: grpc.{{ .Values.global.baseDomain }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
+          {{ end }}
+        - name: GRPC_ROUTER_ENDPOINT
+          {{ if .Values.grpc.routerEndpoint }}
+          value: {{ .Values.grpc.routerEndpoint }}
+          {{ else if .Values.routerHostname }}
+          value: {{ .Values.routerHostname }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
+          {{ else }}
+          value: router.{{ .Values.global.baseDomain }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
           {{ end }}
 
         image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}

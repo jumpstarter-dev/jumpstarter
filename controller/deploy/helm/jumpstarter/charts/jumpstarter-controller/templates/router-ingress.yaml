@@ -5,14 +5,14 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
-  name: jumpstarter-controller-ingress
+  name: jumpstarter-router-ingress
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
   rules:
-  {{ if .Values.grpc.hostname }}
-  - host: {{ .Values.grpc.hostname }}
+  {{ if .Values.grpc.routerHostname }}
+  - host: {{ .Values.grpc.routerHostname }}
   {{ else }}
-  - host: grpc.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.hostname must be provided"}}
+  - host: router.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
   {{ end }}
     http:
       paths:
@@ -20,17 +20,17 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: jumpstarter-grpc
+            name: jumpstarter-grpc-router
             port:
-              number: 8082
+              number: 8083
   {{ if .Values.grpc.tls.enabled }}
   tls:
   - secretName: {{ .Values.grpc.tls.secret }}
     hosts:
-      {{ if .Values.grpc.hostname }}
-      - {{ .Values.grpc.hostname }}
+      {{ if .Values.grpc.routerHostname }}
+      - {{ .Values.grpc.routerHostname }}
       {{ else }}
-      - grpc.{{ .Values.global.baseDomain | required }}
+      - router.{{ .Values.global.baseDomain | required }}
       {{ end }}
   {{ end }}
 {{ end }}
