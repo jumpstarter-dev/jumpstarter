@@ -62,6 +62,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	exporter := &jumpstarterdevv1alpha1.Exporter{}
 	err := r.Get(ctx, req.NamespacedName, exporter)
 	if apierrors.IsNotFound(err) {
+		logger.Info("reconcile: Exporter deleted", "exporter", req.NamespacedName)
 		// Request object not found, could have been deleted after reconcile request.
 		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 		return reconcile.Result{}, nil
@@ -73,7 +74,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if exporter.Spec.Credentials == nil {
-		logger.Info("reconcile: Exporter has no credentials, creating credentials", "exporter", exporter.GetName())
+		logger.Info("reconcile: Exporter has no credentials, creating credentials", "exporter", req.NamespacedName)
 		secret, err := r.secretForExporter(exporter)
 		if err != nil {
 			logger.Error(err, "reconcile: unable to create secret for Exporter")
@@ -81,7 +82,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		err = r.Create(ctx, secret)
 		if err != nil {
-			logger.Error(err, "reconcile: unable to create secret for Exporter", "exporter", exporter.GetName(), "secret", secret.GetName())
+			logger.Error(err, "reconcile: unable to create secret for Exporter", "exporter", req.NamespacedName, "secret", secret.GetName())
 			return ctrl.Result{}, err
 		}
 		exporter.Spec.Credentials = []corev1.SecretReference{
@@ -89,7 +90,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		err = r.Update(ctx, exporter)
 		if err != nil {
-			logger.Error(err, "reconcile: unable to update Exporter with secret reference", "exporter", exporter.GetName(), "secret", secret.GetName())
+			logger.Error(err, "reconcile: unable to update Exporter with secret reference", "exporter", req.NamespacedName, "secret", secret.GetName())
 			return ctrl.Result{}, err
 		}
 	}
