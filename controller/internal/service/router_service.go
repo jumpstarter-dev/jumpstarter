@@ -77,7 +77,7 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 			continue
 		}
 		// skip non local audiences
-		if aud.Scheme != "https" || aud.Host != "router.jumpstarter.dev" || !strings.HasPrefix(aud.Path, "/stream/") {
+		if aud.Scheme != "https" || aud.Host != routerEndpoint() || !strings.HasPrefix(aud.Path, "/stream/") {
 			continue
 		}
 		// add local audience to matched list
@@ -112,11 +112,15 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 
 func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 	ctx := stream.Context()
+	logger := log.FromContext(ctx)
 
 	streamName, err := s.authenticate(ctx)
 	if err != nil {
+		logger.Error(err, "failed to authenticate")
 		return err
 	}
+
+	logger.Info("streaming", "stream", streamName)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -129,12 +133,12 @@ func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 	actual, loaded := s.pending.LoadOrStore(streamName, sctx)
 	if loaded {
 		defer actual.(streamContext).cancel()
+		logger.Info("forwarding", "stream", streamName)
 		return Forward(ctx, stream, actual.(streamContext).stream)
 	} else {
-		select {
-		case <-ctx.Done():
-			return nil
-		}
+		logger.Info("waiting for the other side", "stream", streamName)
+		<-ctx.Done()
+		return nil
 	}
 }
 
@@ -142,8 +146,6 @@ func (s *RouterService) Start(ctx context.Context) error {
 	log := log.FromContext(ctx)
 
 	server := grpc.NewServer()
-
-	// TODO: propagate base context
 
 	pb.RegisterRouterServiceServer(server, s)
 
@@ -153,7 +155,12 @@ func (s *RouterService) Start(ctx context.Context) error {
 		return err
 	}
 
-	log.Info("Starting Router Service")
+	log.Info("Starting grpc router service")
+	go func() {
+		<-ctx.Done()
+		log.Info("Stopping grpc router service")
+		server.Stop()
+	}()
 
 	return server.Serve(listener)
 }

@@ -69,6 +69,7 @@ type bearerToken struct {
 }
 
 func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, error) {
+	logger := log.FromContext(ctx)
 	encoded, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -76,6 +77,7 @@ func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, 
 
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
+		logger.Error(err, "failed to decode token", "encoded", encoded)
 		return nil, status.Errorf(codes.InvalidArgument, "failed to decode token")
 	}
 
@@ -83,6 +85,7 @@ func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, 
 
 	err = json.Unmarshal(decoded, &token)
 	if err != nil {
+		logger.Error(err, "failed to unmarshal token", "decoded", decoded)
 		return nil, status.Errorf(codes.InvalidArgument, "failed to unmarshal token")
 	}
 
@@ -90,6 +93,7 @@ func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, 
 }
 
 func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstarterdevv1alpha1.Identity, error) {
+	logger := log.FromContext(ctx)
 	token, err := s.authenticatePre(ctx)
 
 	if err != nil {
@@ -103,11 +107,13 @@ func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstar
 
 	var identity jumpstarterdevv1alpha1.Identity
 
+	logger.Info("authenticating identity", "identity", identityRef)
 	if err := s.Client.Get(
 		ctx,
 		identityRef,
 		&identity,
 	); err != nil {
+		logger.Error(err, "unable to get identity resource", "identity", identityRef)
 		return nil, status.Errorf(codes.Internal, "unable to get identity resource")
 	}
 
@@ -118,6 +124,7 @@ func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstar
 			Namespace: ref.Namespace,
 			Name:      ref.Name,
 		}, &secret); err != nil {
+			logger.Error(err, "unable to get secret resource", "identity", identityRef, "name", ref.Name)
 			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
 		}
 
@@ -126,6 +133,7 @@ func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstar
 		}
 	}
 
+	logger.Error(nil, "no matching credential", "identity", identityRef)
 	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
 }
 
@@ -169,8 +177,14 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+
+	logger := log.FromContext(ctx)
+
+	logger.Info("Registering exporter", "request", req)
+
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
+		logger.Error(err, "unable to authenticate exporter")
 		return nil, err
 	}
 
@@ -193,6 +207,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	exporter.Status.Devices = devices
 
 	if err := s.Status().Update(ctx, exporter); err != nil {
+		logger.Error(err, "unable to update exporter status", "exporter", exporter)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
 
@@ -206,8 +221,10 @@ func (s *ControllerService) Unregister(
 	*pb.UnregisterResponse,
 	error,
 ) {
+	logger := log.FromContext(ctx)
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
+		logger.Error(err, "unable to authenticate exporter")
 		return nil, err
 	}
 
@@ -219,15 +236,20 @@ func (s *ControllerService) Unregister(
 		Reason:             "Bye",
 		Message:            req.GetReason(),
 	}}
+
 	if err := s.Status().Update(ctx, exporter); err != nil {
+		logger.Error(err, "unable to update exporter status", "exporter", exporter.Name)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
+
+	logger.Info("exporter unregistered, updated as unavailable", "exporter", exporter.Name)
 
 	return &pb.UnregisterResponse{}, nil
 }
 
 func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
 	ctx := stream.Context()
+	logger := log.FromContext(ctx)
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
@@ -245,20 +267,23 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	_, loaded := s.listen.LoadOrStore(exporter.GetName(), lctx)
 
 	if loaded {
+		// TODO: in this case we should probably end the previous listener
+		//       and start the new one?
+		logger.Error(nil, "exporter is already listening", "exporter", exporter.GetName())
 		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
 	defer s.listen.Delete(exporter.GetName())
 
-	select {
-	case <-ctx.Done():
-		return nil
-	}
+	<-ctx.Done()
+	return nil
 }
 
 func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
-	_, err := s.authenticateIdentity(ctx)
+	logger := log.FromContext(ctx)
+	identity, err := s.authenticateIdentity(ctx)
 	if err != nil {
+		logger.Error(err, "unable to authenticate identity")
 		return nil, err
 	}
 
@@ -266,17 +291,23 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	value, ok := s.listen.Load(req.GetUuid())
 	if !ok {
+		logger.Error(nil, "no matching listener", "client", identity.GetName(), "uuid", req.GetUuid())
 		return nil, status.Errorf(codes.Unavailable, "no matching listener")
 	}
+
+	// TODO: put the name of the listener in the listen context, so we can
+	//       log it here
 
 	stream := uuid.NewUUID()
 
 	audience := (&url.URL{
+		// TODO should we use grpc scheme?
 		Scheme: "https",
-		Host:   "router.jumpstarter.dev",
+		Host:   routerEndpoint(),
 		Path:   fmt.Sprintf("/stream/%s", stream),
 	}).String()
 
+	// TODO: make this configurable and requestable (with limits)
 	expsecs := int64(3600)
 
 	var tokenholder corev1.ServiceAccount
@@ -287,6 +318,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	}
 
 	if err := s.Client.Get(ctx, tokenholderName, &tokenholder); err != nil {
+		logger.Error(err, "failed to get tokenholder service account", "name", tokenholderName)
 		return nil, status.Errorf(codes.Internal, "failed to get tokenholder service account")
 	}
 
@@ -302,19 +334,23 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	}
 
 	if err := s.SubResource("token").Create(ctx, &tokenholder, &tokenRequest); err != nil {
+		logger.Error(err, "failed to issue stream token")
 		return nil, status.Errorf(codes.Internal, "failed to issue stream token: %s", err)
 	}
 
 	// TODO: find best router from list
-	endpoint := "127.0.0.1:8083"
-
-	if err := value.(listenContext).stream.Send(&pb.ListenResponse{
+	endpoint := routerEndpoint()
+	response := &pb.ListenResponse{
 		RouterEndpoint: endpoint,
 		RouterToken:    tokenRequest.Status.Token,
-	}); err != nil {
+	}
+
+	if err := value.(listenContext).stream.Send(response); err != nil {
+		logger.Error(err, "failed to send listen response", "response", response)
 		return nil, err
 	}
 
+	logger.Info("Client dial assigned stream ", "client", identity.GetName(), "stream", audience)
 	return &pb.DialResponse{
 		RouterEndpoint: endpoint,
 		RouterToken:    tokenRequest.Status.Token,
@@ -322,11 +358,9 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 }
 
 func (s *ControllerService) Start(ctx context.Context) error {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	server := grpc.NewServer()
-
-	// TODO: propagate base context
 
 	pb.RegisterControllerServiceServer(server, s)
 
@@ -338,7 +372,13 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return err
 	}
 
-	log.Info("Starting Controller Service")
+	logger.Info("Starting Controller grpc service")
+
+	go func() {
+		<-ctx.Done()
+		logger.Info("Stopping Controller gRPC service")
+		server.Stop()
+	}()
 
 	return server.Serve(listener)
 }
