@@ -31,4 +31,3 @@ grpc:
 image: quay.io/jumpstarter-dev/jumpstarter-controller
 tag: ""
 imagePullPolicy: IfNotPresent
-

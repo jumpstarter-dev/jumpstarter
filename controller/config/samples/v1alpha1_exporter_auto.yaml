@@ -1,0 +1,4 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  name: exporter-auto-credentials 

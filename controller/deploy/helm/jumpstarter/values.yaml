@@ -5,7 +5,7 @@ global:
   storageClassNameRWM: standard
   metrics:
       enabled: false
-
+  timestamp: "" # can be used to timestamp deployments and make them reload
 jumpstarter-controller:
     enabled: true
     namespace: ""

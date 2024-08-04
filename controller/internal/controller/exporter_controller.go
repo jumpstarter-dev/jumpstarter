@@ -19,10 +19,16 @@ package controller
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 )
@@ -51,11 +57,61 @@ type ExporterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
 func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	exporter := &jumpstarterdevv1alpha1.Exporter{}
+	err := r.Get(ctx, req.NamespacedName, exporter)
+	if apierrors.IsNotFound(err) {
+		// Request object not found, could have been deleted after reconcile request.
+		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+		return reconcile.Result{}, nil
+	}
+
+	if err != nil {
+		logger.Error(err, "reconcile: unable to fetch Exporter")
+		return ctrl.Result{}, err
+	}
+
+	if exporter.Spec.Credentials == nil {
+		logger.Info("reconcile: Exporter has no credentials, creating credentials", "exporter", exporter.GetName())
+		secret, err := r.secretForExporter(exporter)
+		if err != nil {
+			logger.Error(err, "reconcile: unable to create secret for Exporter")
+			return ctrl.Result{}, err
+		}
+		err = r.Create(ctx, secret)
+		if err != nil {
+			logger.Error(err, "reconcile: unable to create secret for Exporter", "exporter", exporter.GetName(), "secret", secret.GetName())
+			return ctrl.Result{}, err
+		}
+		exporter.Spec.Credentials = []corev1.SecretReference{
+			{Name: secret.Name, Namespace: secret.Namespace},
+		}
+		err = r.Update(ctx, exporter)
+		if err != nil {
+			logger.Error(err, "reconcile: unable to update Exporter with secret reference", "exporter", exporter.GetName(), "secret", secret.GetName())
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.Exporter) (*corev1.Secret, error) {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      exporter.Name + "-token",
+			Namespace: exporter.Namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"token": string(uuid.NewUUID()),
+		},
+	}
+	// enable garbage collection on the created resource
+	controllerutil.SetControllerReference(exporter, secret, r.Scheme)
+
+	return secret, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
