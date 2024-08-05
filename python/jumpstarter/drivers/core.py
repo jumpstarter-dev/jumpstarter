@@ -121,7 +121,9 @@ class AsyncDriverClient(
     ):
         if operator.capability().presign:
             presigned = await operator.presign_read(path, expire_second=60)
-            yield PresignedRequestResource(headers=presigned.headers, url=presigned.url, method=presigned.method)
+            yield PresignedRequestResource(
+                headers=presigned.headers, url=presigned.url, method=presigned.method
+            ).model_dump(mode="json")
         else:
             file = await operator.open(path, "rb")
             async with self.resource_async(AsyncFileStream(file=file)) as handle:
