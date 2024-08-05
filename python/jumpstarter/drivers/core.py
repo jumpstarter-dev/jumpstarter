@@ -18,6 +18,7 @@ from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,
 )
+from jumpstarter.drivers.streams import DriverStreamRequest, ResourceStreamRequest
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
@@ -70,7 +71,7 @@ class AsyncDriverClient(
         async with forward_client_stream(
             self,
             device_stream,
-            {"kind": "connect", "uuid": str(self.uuid), "method": method}.items(),
+            {"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items(),
         ):
             async with client_stream:
                 yield client_stream
@@ -82,7 +83,7 @@ class AsyncDriverClient(
                 async with forward_client_stream(
                     self,
                     client,
-                    {"kind": "connect", "uuid": str(self.uuid), "method": method}.items(),
+                    {"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items(),
                 ):
                     await sleep_forever()
 
@@ -106,7 +107,7 @@ class AsyncDriverClient(
             async with forward_client_stream(
                 self,
                 combined,
-                {"kind": "resource", "uuid": str(self.uuid)}.items(),
+                {"request": ResourceStreamRequest(uuid=self.uuid).model_dump_json()}.items(),
             ):
                 yield (await rx.receive()).decode()
 

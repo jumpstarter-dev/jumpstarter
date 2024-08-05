@@ -22,6 +22,7 @@ from jumpstarter.drivers.decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
+from jumpstarter.drivers.streams import DriverStreamRequest, ResourceStreamRequest, StreamRequest
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
@@ -83,14 +84,16 @@ class Driver(
         """
         metadata = dict(context.invocation_metadata())
 
-        match metadata["kind"]:
-            case "connect":
-                method = await self.__lookup_drivercall(metadata["method"], context, MARKER_STREAMCALL)
+        request = StreamRequest.validate_json(metadata["request"], strict=True)
+
+        match request:
+            case DriverStreamRequest(method=driver_method):
+                method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
 
                 async for v in method(request_iterator, context):
                     yield v
 
-            case "resource":
+            case ResourceStreamRequest():
                 remote, resource = create_memory_stream()
 
                 resource_uuid = uuid4()
