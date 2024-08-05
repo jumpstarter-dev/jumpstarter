@@ -3,14 +3,17 @@ Base classes for drivers and driver clients
 """
 
 from abc import ABCMeta, abstractmethod
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
 
+import aiohttp
 from anyio.from_thread import BlockingPortal
 from grpc import StatusCode
 
 from jumpstarter.common import Metadata
+from jumpstarter.common.aiohttp import AiohttpStream
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_server_stream,
@@ -137,13 +140,15 @@ class Driver(
 
         return [(self.uuid, parent.uuid if parent else None, self)]
 
-    def resource(self, handle: str):
+    @asynccontextmanager
+    async def resource(self, handle: str):
         handle = Resource.validate_python(handle)
         match handle:
             case ClientStreamResource(uuid=uuid):
-                return self.resources[uuid]
-            case PresignedRequestResource():
-                pass
+                yield self.resources[uuid]
+            case PresignedRequestResource(headers=headers, url=url, method=method):
+                async with aiohttp.request(method, url, headers=headers, raise_for_status=True) as resp:
+                    yield AiohttpStream(stream=resp.content)
 
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name

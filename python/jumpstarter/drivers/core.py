@@ -19,7 +19,7 @@ from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,
 )
-from jumpstarter.drivers.resources import ClientStreamResource
+from jumpstarter.drivers.resources import ClientStreamResource, PresignedRequestResource
 from jumpstarter.drivers.streams import DriverStreamRequest, ResourceStreamRequest
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
@@ -119,6 +119,10 @@ class AsyncDriverClient(
         operator: AsyncOperator,
         path: str,
     ):
-        file = await operator.open(path, "rb")
-        async with self.resource_async(AsyncFileStream(file=file)) as uuid:
-            yield uuid
+        if operator.capability().presign:
+            presigned = await operator.presign_read(path, expire_second=60)
+            yield PresignedRequestResource(headers=presigned.headers, url=presigned.url, method=presigned.method)
+        else:
+            file = await operator.open(path, "rb")
+            async with self.resource_async(AsyncFileStream(file=file)) as handle:
+                yield handle

@@ -102,8 +102,9 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
                 await sleep(1)
 
         async with await FileWriteStream.from_path(self.storage_device) as stream:
-            async for chunk in self.resource(src):
-                await stream.send(chunk)
+            async with self.resource(src) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
 
 
 @dataclass(kw_only=True)
