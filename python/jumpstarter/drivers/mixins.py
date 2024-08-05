@@ -12,6 +12,7 @@ from typing import Any
 from anyio import create_unix_listener
 from anyio.from_thread import BlockingPortal
 from anyio.streams.file import FileReadStream
+from opendal import Operator
 from pexpect.fdpexpect import fdspawn
 
 
@@ -82,3 +83,8 @@ class ResourceMixin:
         with self.portal.wrap_async_context_manager(self.portal.call(FileReadStream.from_path, filepath)) as file:
             with self.portal.wrap_async_context_manager(self.resource_async(file)) as uuid:
                 yield uuid
+
+    @contextmanager
+    def file(self, operator: Operator, path: str):
+        with self.portal.wrap_async_context_manager(self.file_async(operator.to_async_operator(), path)) as uuid:
+            yield uuid

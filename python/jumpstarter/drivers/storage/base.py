@@ -4,6 +4,7 @@ from uuid import UUID
 
 import click
 from anyio.streams.file import FileWriteStream
+from opendal import Operator
 
 from jumpstarter.drivers import Driver, DriverClient, export
 from jumpstarter.drivers.mixins import ResourceMixin
@@ -39,6 +40,10 @@ class StorageMuxClient(DriverClient, ResourceMixin):
 
     def write(self, handle):
         return self.call("write", handle)
+
+    def write_file(self, operator: Operator, path: str):
+        with self.file(operator, path) as handle:
+            return self.call("write", handle)
 
     def write_local_file(self, filepath):
         with self.local_file(filepath) as handle:
