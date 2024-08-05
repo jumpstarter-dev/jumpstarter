@@ -1,6 +1,5 @@
 from abc import ABCMeta, abstractmethod
 from tempfile import NamedTemporaryFile
-from uuid import UUID
 
 import click
 from anyio.streams.file import FileWriteStream
@@ -95,5 +94,5 @@ class MockStorageMux(StorageMuxInterface, Driver):
     async def write(self, src: str):
         with NamedTemporaryFile() as file:
             async with FileWriteStream(file) as stream:
-                async for chunk in self.resources[UUID(src)]:
+                async for chunk in self.resource(src):
                     await stream.send(chunk)

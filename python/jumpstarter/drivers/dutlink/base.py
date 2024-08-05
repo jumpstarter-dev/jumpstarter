@@ -2,7 +2,6 @@ import os
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
-from uuid import UUID
 
 import pyudev
 import usb.core
@@ -103,7 +102,7 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
                 await sleep(1)
 
         async with await FileWriteStream.from_path(self.storage_device) as stream:
-            async for chunk in self.resources[UUID(src)]:
+            async for chunk in self.resource(src):
                 await stream.send(chunk)
 
 

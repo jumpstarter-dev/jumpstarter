@@ -133,6 +133,9 @@ class Driver(
 
         return [(self.uuid, parent.uuid if parent else None, self)]
 
+    def resource(self, uuid: str):
+        return self.resources[UUID(uuid)]
+
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name
 
