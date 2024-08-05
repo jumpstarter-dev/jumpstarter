@@ -9,7 +9,7 @@ authors = [
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.11,<3.13"
 click = "^8.1.7"
 pyserial = "^3.5"
 pyusb = "^1.2.1"
@@ -19,6 +19,7 @@ anyio = "^4.4.0"
 aiohttp = "^3.9.5"
 pexpect = "^4.9.0"
 tqdm = "^4.66.4"
+opendal = "^0.45.7"
 
 # rpi
 gpiozero = { version = "^2.0.1", optional = true }

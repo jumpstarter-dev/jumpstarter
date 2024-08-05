@@ -1027,6 +1027,27 @@ testing = ["beautifulsoup4", "coverage[toml]", "defusedxml", "pytest (>=8,<9)", 
 testing-docutils = ["pygments", "pytest (>=8,<9)", "pytest-param-files (>=0.6.0,<0.7.0)"]
 
 [[package]]
+name = "opendal"
+version = "0.45.7"
+description = "Apache OpenDAL™ Python Binding"
+optional = false
+python-versions = "<3.13,>=3.11"
+files = [
+    {file = "opendal-0.45.7-cp311-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:29749f52f80404ff3e3ef40d55fec484138081a4f8d8775a186d3a418292810c"},
+    {file = "opendal-0.45.7-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:90fc9138e14c6864fd9fa15d77a3e0f16a7f29262b03a0edea6677ba071ac64a"},
+    {file = "opendal-0.45.7-cp311-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:06b032a67cb1654de033bcf1d25ef7a54aa55aef1d5c053482c1a152e064bba0"},
+    {file = "opendal-0.45.7-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2700223ac91607556e1bad998b178ed912622931823de968a14514a07147e863"},
+    {file = "opendal-0.45.7-cp311-abi3-win_amd64.whl", hash = "sha256:6833450d693e3b1d1dbcfc8478d461a46f4756f4bf423477ecd9484d03aa57fe"},
+    {file = "opendal-0.45.7.tar.gz", hash = "sha256:67ec8c1889cfd2026db4c00f282ad33e0f136af88706599cf6a8c7105864ca8d"},
+]
+
+[package.extras]
+benchmark = ["boto3", "boto3-stubs[essential]", "gevent", "greenify", "greenlet", "pydantic"]
+docs = ["pdoc"]
+lint = ["ruff"]
+test = ["pytest", "pytest-asyncio", "python-dotenv"]
+
+[[package]]
 name = "packaging"
 version = "24.1"
 description = "Core utilities for Python packages"
@@ -1699,5 +1720,5 @@ rpi = ["gpiozero"]
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.11"
-content-hash = "3c88a266dbcda7a3a8a1f8e48f0babc88adba069b89f95e476fa3f08e2bf14e2"
+python-versions = "^3.11,<3.13"
+content-hash = "c26d02dc4b957e4653dba3865247590e108fd0d965451bbb6bf66829fdc8b3f6"
