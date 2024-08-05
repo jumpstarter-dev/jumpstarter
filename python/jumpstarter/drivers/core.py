@@ -4,6 +4,7 @@ Base classes for drivers and driver clients
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from uuid import UUID
 
 from anyio import create_task_group, sleep_forever
 from anyio.streams.stapled import StapledObjectStream
@@ -18,6 +19,7 @@ from jumpstarter.common.streams import (
     create_memory_stream,
     forward_client_stream,
 )
+from jumpstarter.drivers.resources import ClientStreamResource
 from jumpstarter.drivers.streams import DriverStreamRequest, ResourceStreamRequest
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
@@ -109,7 +111,7 @@ class AsyncDriverClient(
                 combined,
                 {"request": ResourceStreamRequest(uuid=self.uuid).model_dump_json()}.items(),
             ):
-                yield (await rx.receive()).decode()
+                yield ClientStreamResource(uuid=UUID((await rx.receive()).decode())).model_dump(mode="json")
 
     @asynccontextmanager
     async def file_async(

@@ -22,6 +22,7 @@ from jumpstarter.drivers.decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
+from jumpstarter.drivers.resources import ClientStreamResource, PresignedRequestResource, Resource
 from jumpstarter.drivers.streams import DriverStreamRequest, ResourceStreamRequest, StreamRequest
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
@@ -136,8 +137,13 @@ class Driver(
 
         return [(self.uuid, parent.uuid if parent else None, self)]
 
-    def resource(self, uuid: str):
-        return self.resources[UUID(uuid)]
+    def resource(self, handle: str):
+        handle = Resource.validate_python(handle)
+        match handle:
+            case ClientStreamResource(uuid=uuid):
+                return self.resources[uuid]
+            case PresignedRequestResource():
+                pass
 
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name
