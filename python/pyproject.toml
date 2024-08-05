@@ -20,6 +20,7 @@ aiohttp = "^3.9.5"
 pexpect = "^4.9.0"
 tqdm = "^4.66.4"
 opendal = "^0.45.7"
+pydantic = "^2.8.2"
 
 # rpi
 gpiozero = { version = "^2.0.1", optional = true }
