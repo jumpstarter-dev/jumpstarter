@@ -19,6 +19,7 @@ anyio = "^4.4.0"
 typing-extensions = "^4.12.2"
 aiohttp = "^3.9.5"
 pexpect = "^4.9.0"
+tqdm = "^4.66.4"
 
 # rpi
 gpiozero = { version = "^2.0.1", optional = true }
