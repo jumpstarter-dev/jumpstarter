@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 import grpc
@@ -7,6 +8,8 @@ from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
 
+logger = logging.getLogger(__name__)
+
 
 async def encapsulate_stream(rx, cls):
     try:
@@ -15,7 +18,7 @@ async def encapsulate_stream(rx, cls):
             yield cls(payload=payload)
         yield cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
     except (BrokenResourceError, ClosedResourceError):
-        pass
+        logger.debug("stream encapsulation error ignored")
 
 
 async def decapsulate_stream(tx, rx, tg):
@@ -28,15 +31,15 @@ async def decapsulate_stream(tx, rx, tg):
                     if isinstance(tx, ObjectStream) or isinstance(tx, ByteStream):
                         await tx.send_eof()
                 case _:
-                    pass
+                    logger.debug(f"unrecognized frame ignored: {frame}")
     # ignore peer disconnect
     except BrokenResourceError:
-        pass
+        logger.debug("stream decapsulation peer disconnect ignored")
     # ignore rpc cancellation and internal error
     except grpc.aio.AioRpcError as e:
         match e.code():
             case grpc.StatusCode.CANCELLED | grpc.StatusCode.INTERNAL:
-                pass
+                logger.debug("stream decapsulation grpc error ignored")
             case _:
                 raise
     finally:
