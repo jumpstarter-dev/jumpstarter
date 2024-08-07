@@ -1,4 +1,4 @@
-# Jumpstarter Configuration
+# Configuration
 
 Jumpstarter can be configured as either a client, an exporter, or both depending
 on your use case and deployment strategy.

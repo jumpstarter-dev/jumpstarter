@@ -1,4 +1,4 @@
-# API reference
+# API Reference
 
 ## Driver
 ```{eval-rst}

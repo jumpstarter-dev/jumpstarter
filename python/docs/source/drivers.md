@@ -1,4 +1,4 @@
-# Jumpstarter Drivers
+# Drivers
 
 Jumpstarter uses Python modules called drivers to interact with the hardware
 interfaces connected to the Device Under Test (DUT).

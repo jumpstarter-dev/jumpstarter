@@ -7,7 +7,10 @@
         "tekumara.typos-vscode",
         "littlefoxteam.vscode-python-test-adapter",
         "hbenl.vscode-test-explorer",
-        "ryanluker.vscode-coverage-gutters"
+        "ryanluker.vscode-coverage-gutters",
+        "trond-snekvik.simple-rst",
+        "lextudio.restructuredtext",
+        "swyddfa.esbonio"
     ],
     "unwantedRecommendations": [
         "ms-python.autopep8"

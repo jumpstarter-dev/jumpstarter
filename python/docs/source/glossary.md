@@ -1,4 +1,4 @@
-# Jumpstarter glossary
+# Glossary
 
 ## Acronyms
 

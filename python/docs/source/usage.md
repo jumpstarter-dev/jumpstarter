@@ -1,4 +1,4 @@
-# Jumpstarter Usage
+# CLI Usage
 
 ## Administrator Tasks
 

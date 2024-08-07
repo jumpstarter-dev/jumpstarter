@@ -49,6 +49,8 @@ sphinx = "^7.4.7"
 myst-parser = "^3.0.1"
 sphinxcontrib-mermaid = "^0.9.2"
 furo = "^2024.8.6"
+esbonio = "^0.16.4"
+sphinx-autobuild = "^2024.4.16"
 
 [tool.poetry.extras]
 rpi = ["gpiozero"]

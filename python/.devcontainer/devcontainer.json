@@ -19,7 +19,10 @@
 				"tekumara.typos-vscode",
 				"littlefoxteam.vscode-python-test-adapter",
 				"hbenl.vscode-test-explorer",
-				"ryanluker.vscode-coverage-gutters"
+				"ryanluker.vscode-coverage-gutters",
+				"lextudio.restructuredtext",
+				"trond-snekvik.simple-rst",
+				"swyddfa.esbonio"
 			],
 			"settings": {
 				"extensions.ignoreRecommendations": true,
