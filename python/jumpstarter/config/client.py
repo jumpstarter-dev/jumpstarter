@@ -1,9 +1,8 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Self
 
 import yaml
-from typing_extensions import Self
 
 from .common import CONFIG_API_VERSION, CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN

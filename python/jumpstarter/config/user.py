@@ -1,9 +1,8 @@
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Self
 
 import yaml
-from typing_extensions import Self
 
 from .client import ClientConfig
 from .common import CONFIG_API_VERSION, CONFIG_PATH
