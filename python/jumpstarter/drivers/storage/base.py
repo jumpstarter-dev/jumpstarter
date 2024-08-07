@@ -45,7 +45,7 @@ class StorageMuxClient(DriverClient, ResourceMixin):
             return self.call("write", handle)
 
     def write_local_file(self, filepath):
-        with self.local_file(filepath) as handle:
+        with self.file(Operator("fs", root="/"), filepath) as handle:
             return self.call("write", handle)
 
     def cli(self):

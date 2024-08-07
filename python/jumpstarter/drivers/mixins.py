@@ -11,7 +11,6 @@ from typing import Any
 
 from anyio import create_unix_listener
 from anyio.from_thread import BlockingPortal
-from anyio.streams.file import FileReadStream
 from opendal import Operator
 from pexpect.fdpexpect import fdspawn
 
@@ -69,20 +68,6 @@ class ExpectMixin(StreamMixin):
 
 class ResourceMixin:
     """Resource"""
-
-    @contextmanager
-    def local_file(
-        self,
-        filepath,
-    ):
-        """
-        Share local file with driver
-
-        :param str filepath: path to file
-        """
-        with self.portal.wrap_async_context_manager(self.portal.call(FileReadStream.from_path, filepath)) as file:
-            with self.portal.wrap_async_context_manager(self.resource_async(file)) as uuid:
-                yield uuid
 
     @contextmanager
     def file(self, operator: Operator, path: str):

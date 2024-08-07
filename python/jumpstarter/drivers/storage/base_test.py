@@ -1,3 +1,4 @@
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -15,6 +16,7 @@ def test_drivers_mock_storage_mux_fs():
             fs.write("test", b"testcontent" * 1000)
 
             client.write_file(fs, "test")
+            client.write_local_file(str(Path(tempdir) / "test"))
 
 
 @pytest.mark.skip(reason="require minio")
