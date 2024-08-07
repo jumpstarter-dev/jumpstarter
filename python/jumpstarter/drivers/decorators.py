@@ -1,10 +1,10 @@
-from dataclasses import asdict, is_dataclass
 from inspect import isasyncgenfunction, iscoroutinefunction, isfunction, isgeneratorfunction
 from typing import Final
 from uuid import uuid4
 
 from anyio import to_thread
 from google.protobuf import json_format, struct_pb2
+from pydantic import BaseModel
 
 from jumpstarter.common.streams import (
     forward_server_stream,
@@ -40,7 +40,9 @@ def drivercall(func):
 
         return jumpstarter_pb2.DriverCallResponse(
             uuid=str(uuid4()),
-            result=json_format.ParseDict(asdict(result) if is_dataclass(result) else result, struct_pb2.Value()),
+            result=json_format.ParseDict(
+                result.model_dump(mode="json") if isinstance(result, BaseModel) else result, struct_pb2.Value()
+            ),
         )
 
     setattr(wrapper, MARKER_DRIVERCALL, MARKER_MAGIC)
@@ -72,7 +74,7 @@ def streamingdrivercall(func):
                 yield jumpstarter_pb2.StreamingDriverCallResponse(
                     uuid=str(uuid4()),
                     result=json_format.ParseDict(
-                        asdict(result) if is_dataclass(result) else result,
+                        result.model_dump(mode="json") if isinstance(result, BaseModel) else result,
                         struct_pb2.Value(),
                     ),
                 )
@@ -81,7 +83,7 @@ def streamingdrivercall(func):
                 yield jumpstarter_pb2.StreamingDriverCallResponse(
                     uuid=str(uuid4()),
                     result=json_format.ParseDict(
-                        asdict(result) if is_dataclass(result) else result,
+                        result.model_dump(mode="json") if isinstance(result, BaseModel) else result,
                         struct_pb2.Value(),
                     ),
                 )
