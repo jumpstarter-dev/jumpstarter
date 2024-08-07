@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import grpc
-from anyio import connect_unix
+from anyio import connect_unix, sleep_forever
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.streams import connect_router_stream
@@ -65,6 +65,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                     await server.start()
 
                     async with await connect_unix(socketpath) as stream:
-                        await connect_router_stream(request.router_endpoint, request.router_token, stream)
+                        async with connect_router_stream(request.router_endpoint, request.router_token, stream):
+                            await sleep_forever()
                 finally:
                     await server.stop(grace=None)
