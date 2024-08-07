@@ -29,6 +29,13 @@ def export(func):
         raise ValueError(f"unsupported exported function {func}")
 
 
+def encode_value(v):
+    return json_format.ParseDict(
+        v.model_dump(mode="json") if isinstance(v, BaseModel) else v,
+        struct_pb2.Value(),
+    )
+
+
 def drivercall(func):
     async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
@@ -40,9 +47,7 @@ def drivercall(func):
 
         return jumpstarter_pb2.DriverCallResponse(
             uuid=str(uuid4()),
-            result=json_format.ParseDict(
-                result.model_dump(mode="json") if isinstance(result, BaseModel) else result, struct_pb2.Value()
-            ),
+            result=encode_value(result),
         )
 
     setattr(wrapper, MARKER_DRIVERCALL, MARKER_MAGIC)
@@ -73,19 +78,13 @@ def streamingdrivercall(func):
             async for result in func(self, *args):
                 yield jumpstarter_pb2.StreamingDriverCallResponse(
                     uuid=str(uuid4()),
-                    result=json_format.ParseDict(
-                        result.model_dump(mode="json") if isinstance(result, BaseModel) else result,
-                        struct_pb2.Value(),
-                    ),
+                    result=encode_value(result),
                 )
         else:
             for result in await to_thread.run_sync(func, self, *args):
                 yield jumpstarter_pb2.StreamingDriverCallResponse(
                     uuid=str(uuid4()),
-                    result=json_format.ParseDict(
-                        result.model_dump(mode="json") if isinstance(result, BaseModel) else result,
-                        struct_pb2.Value(),
-                    ),
+                    result=encode_value(result),
                 )
 
     setattr(wrapper, MARKER_STREAMING_DRIVERCALL, MARKER_MAGIC)
