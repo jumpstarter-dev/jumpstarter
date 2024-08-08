@@ -60,17 +60,13 @@ def test_client_config_from_env_allow_unsafe(monkeypatch):
     assert config.drivers.unsafe is True
 
 
-def test_client_config_from_env_no_token_raises(monkeypatch):
+@pytest.mark.parametrize("missing_field", [JMP_TOKEN, JMP_ENDPOINT])
+def test_client_config_from_env_missing_field_raises(monkeypatch, missing_field):
+    monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
     monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
-    with pytest.raises(ValueError):
-        _ = ClientConfig.from_env()
-
-
-def test_client_config_from_env_no_endpoint_raises(monkeypatch):
-    monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
-    monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
+    monkeypatch.delenv(missing_field)
 
     with pytest.raises(ValueError):
         _ = ClientConfig.from_env()
