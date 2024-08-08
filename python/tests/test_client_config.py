@@ -134,72 +134,42 @@ def test_client_config_from_file_missing_field_raises(missing_field):
             _ = ClientConfig.from_file(f.name)
 
 
-def test_client_config_from_file_no_token_raises():
-    CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
-client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
-  drivers:
-    allow:
-      - jumpstarter.drivers.*
-      - vendorpackage.*
-"""
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
+@pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
+def test_client_config_from_file_missing_client_field_raises(missing_field):
+    CLIENT_CONFIG = {
+        "apiVersion": "jumpstarter.dev/v1alpha1",
+        "kind": "Client",
+        "client": {
+            "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
+            "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+            "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
+        },
+    }
+
+    del CLIENT_CONFIG["client"][missing_field]
+    with tempfile.NamedTemporaryFile(mode="w") as f:
+        yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValueError):
             _ = ClientConfig.from_file(f.name)
-        os.unlink(f.name)
 
 
-def test_client_config_from_file_no_endpoint_raises():
-    CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
-client:
-  token: asbfasdf
-  drivers:
-    allow:
-      - jumpstarter.drivers.*
-      - vendorpackage.*
-"""
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
+@pytest.mark.parametrize("invalid_field", ["allow"])
+def test_client_config_from_file_invalid_client_drivers_field_raises(invalid_field):
+    CLIENT_CONFIG = {
+        "apiVersion": "jumpstarter.dev/v1alpha1",
+        "kind": "Client",
+        "client": {
+            "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
+            "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+            "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
+        },
+    }
+
+    CLIENT_CONFIG["client"]["drivers"][invalid_field] = "foo"
+    with tempfile.NamedTemporaryFile(mode="w") as f:
+        yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValueError):
             _ = ClientConfig.from_file(f.name)
-        os.unlink(f.name)
-
-
-def test_client_config_from_file_no_drivers_raises():
-    CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
-client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
-  token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-"""
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
-        with pytest.raises(ValueError):
-            _ = ClientConfig.from_file(f.name)
-        os.unlink(f.name)
-
-
-def test_client_config_from_file_drivers_allow_not_list_raises():
-    CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
-client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
-  token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-  drivers:
-    allow: abc
-"""
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
-        with pytest.raises(ValueError):
-            _ = ClientConfig.from_file(f.name)
-        os.unlink(f.name)
 
 
 def test_client_config_load():
