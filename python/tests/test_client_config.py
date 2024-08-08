@@ -9,16 +9,6 @@ from jumpstarter.config.client import ClientConfigDrivers
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
 
 
-def setup_function():
-    for key in [
-        JMP_TOKEN,
-        JMP_ENDPOINT,
-        JMP_DRIVERS_ALLOW,
-    ]:
-        if key in os.environ:
-            del os.environ[key]
-
-
 def test_client_ensure_exists_makes_dir():
     with tempfile.TemporaryDirectory() as d:
         ClientConfig.CLIENT_CONFIGS_PATH = f"{d}/clients"
@@ -26,10 +16,10 @@ def test_client_ensure_exists_makes_dir():
         assert os.path.exists(ClientConfig.CLIENT_CONFIGS_PATH)
 
 
-def test_client_config_try_from_env():
-    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    os.environ[JMP_ENDPOINT] = "grpcs://jumpstarter.my-lab.com:1443"
-    os.environ[JMP_DRIVERS_ALLOW] = "jumpstarter.drivers.*,vendorpackage.*"
+def test_client_config_try_from_env(monkeypatch):
+    monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
+    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfig.try_from_env()
     assert config.name == "default"
@@ -44,10 +34,10 @@ def test_client_config_try_from_env_not_set():
     assert config is None
 
 
-def test_client_config_from_env():
-    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    os.environ[JMP_ENDPOINT] = "grpcs://jumpstarter.my-lab.com:1443"
-    os.environ[JMP_DRIVERS_ALLOW] = "jumpstarter.drivers.*,vendorpackage.*"
+def test_client_config_from_env(monkeypatch):
+    monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
+    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfig.from_env()
     assert config.name == "default"
@@ -57,10 +47,10 @@ def test_client_config_from_env():
     assert config.drivers.unsafe is False
 
 
-def test_client_config_from_env_allow_unsafe():
-    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    os.environ[JMP_ENDPOINT] = "grpcs://jumpstarter.my-lab.com:1443"
-    os.environ[JMP_DRIVERS_ALLOW] = "UNSAFE"
+def test_client_config_from_env_allow_unsafe(monkeypatch):
+    monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
+    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_DRIVERS_ALLOW, "UNSAFE")
 
     config = ClientConfig.from_env()
     assert config.name == "default"
@@ -70,17 +60,17 @@ def test_client_config_from_env_allow_unsafe():
     assert config.drivers.unsafe is True
 
 
-def test_client_config_from_env_no_token_raises():
-    os.environ[JMP_ENDPOINT] = "grpcs://jumpstarter.my-lab.com:1443"
-    os.environ[JMP_DRIVERS_ALLOW] = "jumpstarter.drivers.*,vendorpackage.*"
+def test_client_config_from_env_no_token_raises(monkeypatch):
+    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     with pytest.raises(ValueError):
         _ = ClientConfig.from_env()
 
 
-def test_client_config_from_env_no_endpoint_raises():
-    os.environ[JMP_TOKEN] = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    os.environ[JMP_DRIVERS_ALLOW] = "jumpstarter.drivers.*,vendorpackage.*"
+def test_client_config_from_env_no_endpoint_raises(monkeypatch):
+    monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
+    monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     with pytest.raises(ValueError):
         _ = ClientConfig.from_env()
