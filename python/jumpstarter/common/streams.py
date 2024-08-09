@@ -2,8 +2,8 @@ import logging
 from contextlib import asynccontextmanager
 
 import grpc
-from anyio import BrokenResourceError, ClosedResourceError, create_memory_object_stream, create_task_group
-from anyio.abc import ByteStream, ObjectStream
+from anyio import BrokenResourceError, EndOfStream, create_memory_object_stream, create_task_group
+from anyio.abc import AnyByteStream, ByteStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
@@ -11,58 +11,83 @@ from jumpstarter.v1 import router_pb2, router_pb2_grpc
 logger = logging.getLogger(__name__)
 
 
-async def encapsulate_stream(rx, cls):
+async def encapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.ServicerContext, rx: AnyByteStream):
+    match context:
+        case grpc.aio.StreamStreamCall():
+            cls = router_pb2.StreamRequest
+        case grpc.aio.ServicerContext() | grpc._cython.cygrpc._ServicerContext():
+            cls = router_pb2.StreamResponse
+        case _:
+            raise ValueError(f"stream encapsulation invalid context type: {type(context)}")
     try:
-        yield cls(frame_type=router_pb2.FRAME_TYPE_PING)
+        await context.write(cls(frame_type=router_pb2.FRAME_TYPE_PING))
         async for payload in rx:
-            yield cls(payload=payload)
-        yield cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
-    except (BrokenResourceError, ClosedResourceError):
-        logger.debug("stream encapsulation error ignored")
+            await context.write(cls(payload=payload))
+        await context.write(cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY))
+        if isinstance(context, grpc.aio.StreamStreamCall):
+            await context.done_writing()
+    # Ignore Exception: peer disconnect
+    # Reference: https://anyio.readthedocs.io/en/stable/api.html#anyio.BrokenResourceError
+    except BrokenResourceError:
+        logger.debug("stream encapsulation peer error ignored")
+    # Ignore Exception: rpc cancellation and internal error
+    # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.StreamStreamCall.write
+    # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.ServicerContext.write
+    except grpc.aio.AioRpcError as e:
+        match e.code():
+            case grpc.StatusCode.CANCELLED | grpc.StatusCode.INTERNAL:
+                logger.debug("stream encapsulation grpc error ignored")
+            case _:
+                raise
 
 
-async def decapsulate_stream(tx, rx, tg):
+async def decapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.ServicerContext, tx: AnyByteStream):
     try:
-        async for frame in rx:
+        while True:
+            frame = await context.read()
+            # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.StreamStreamCall.read
+            if frame == grpc.aio.EOF:
+                break
             match frame.frame_type:
                 case router_pb2.FRAME_TYPE_DATA:
                     await tx.send(frame.payload)
                 case router_pb2.FRAME_TYPE_GOAWAY:
+                    # Streams like UDPSocket do not support send_eof
                     if isinstance(tx, ObjectStream) or isinstance(tx, ByteStream):
                         await tx.send_eof()
                 case _:
-                    logger.debug(f"unrecognized frame ignored: {frame}")
-    # ignore peer disconnect
-    except BrokenResourceError:
-        logger.debug("stream decapsulation peer disconnect ignored")
-    # ignore rpc cancellation and internal error
+                    logger.debug(f"stream decapsulation unrecognized frame ignored: {frame}")
+    # Ignore Exception: peer disconnect and EOF
+    # Reference: https://anyio.readthedocs.io/en/stable/api.html#anyio.BrokenResourceError
+    # https://anyio.readthedocs.io/en/stable/api.html#anyio.EndOfStream
+    except (BrokenResourceError, EndOfStream):
+        logger.debug("stream decapsulation peer disconnect/EOF ignored")
+    # Ignore Exception: rpc cancellation and internal error
+    # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.ServicerContext.read
     except grpc.aio.AioRpcError as e:
         match e.code():
             case grpc.StatusCode.CANCELLED | grpc.StatusCode.INTERNAL:
                 logger.debug("stream decapsulation grpc error ignored")
             case _:
                 raise
-    finally:
-        tg.cancel_scope.cancel()
 
 
-async def forward_server_stream(request_iterator, stream):
+@asynccontextmanager
+async def forward_server_stream(context, stream):
     async with create_task_group() as tg:
-        tg.start_soon(decapsulate_stream, stream, request_iterator, tg)
-
-        async for v in encapsulate_stream(stream, router_pb2.StreamResponse):
-            yield v
+        tg.start_soon(decapsulate_stream, context, stream)
+        tg.start_soon(encapsulate_stream, context, stream)
+        yield
+        tg.cancel_scope.cancel()
 
 
 @asynccontextmanager
 async def forward_client_stream(router, stream, metadata):
-    response_iterator = router.Stream(
-        encapsulate_stream(stream, router_pb2.StreamRequest),
-        metadata=metadata,
-    )
+    context = router.Stream(metadata=metadata)
 
     async with create_task_group() as tg:
-        tg.start_soon(decapsulate_stream, stream, response_iterator, tg)
+        tg.start_soon(decapsulate_stream, context, stream)
+        tg.start_soon(encapsulate_stream, context, stream)
         yield
         tg.cancel_scope.cancel()
 
