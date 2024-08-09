@@ -8,6 +8,7 @@ from anyio import (
     EndOfStream,
     create_memory_object_stream,
     create_task_group,
+    fail_after,
     get_cancelled_exc_class,
     move_on_after,
 )
@@ -17,7 +18,7 @@ from anyio.streams.stapled import StapledObjectStream
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
 
 KEEPALIVE_INTERVAL = 1
-KEEPALIVE_TOLERANCE = 1
+KEEPALIVE_TOLERANCE = 5
 
 logger = logging.getLogger(__name__)
 
@@ -58,16 +59,12 @@ async def encapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.Servi
 
 async def decapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.ServicerContext, tx: AnyByteStream):
     while True:
-        with move_on_after(KEEPALIVE_INTERVAL + KEEPALIVE_TOLERANCE) as scope:
+        with fail_after(KEEPALIVE_INTERVAL + KEEPALIVE_TOLERANCE):
             try:
                 frame = await context.read()
             except (grpc.aio.AioRpcError, InvalidStateError) as e:
                 logger.debug("stream decapsulation grpc error cancelling task")
                 raise get_cancelled_exc_class() from e
-
-        # keepalive missed
-        if scope.cancelled_caught:
-            raise get_cancelled_exc_class()
 
         # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.StreamStreamCall.read
         if frame == grpc.aio.EOF:
@@ -81,6 +78,7 @@ async def decapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.Servi
                     # Streams like UDPSocket do not support send_eof
                     if isinstance(tx, ObjectStream) or isinstance(tx, ByteStream):
                         await tx.send_eof()
+                    break
                 case _:
                     logger.debug(f"stream decapsulation unrecognized frame ignored: {frame}")
         # Ignore Exception: peer disconnect and EOF
