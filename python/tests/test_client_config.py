@@ -10,9 +10,9 @@ from jumpstarter.config.client import ClientConfigDrivers
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
 
 
-def test_client_ensure_exists_makes_dir():
+def test_client_ensure_exists_makes_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as d:
-        ClientConfig.CLIENT_CONFIGS_PATH = f"{d}/clients"
+        monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", f"{d}/clients")
         ClientConfig.ensure_exists()
         assert os.path.exists(ClientConfig.CLIENT_CONFIGS_PATH)
 
@@ -279,7 +279,7 @@ def test_client_config_exists():
         _get_path_mock.assert_called_once_with("abc")
 
 
-def test_client_config_list():
+def test_client_config_list(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
 client:
@@ -294,22 +294,23 @@ client:
     with open(f"{d.name}/testclient.yaml", "w") as f:
         f.write(CLIENT_CONFIG)
         f.close()
-    ClientConfig.CLIENT_CONFIGS_PATH = d.name
+
+    monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", d.name)
     configs = ClientConfig.list()
     assert len(configs) == 1
     assert configs[0].name == "testclient"
     d.cleanup()
 
 
-def test_client_config_list_none():
+def test_client_config_list_none(monkeypatch):
     with tempfile.TemporaryDirectory() as d:
-        ClientConfig.CLIENT_CONFIGS_PATH = d
+        monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", d)
         configs = ClientConfig.list()
         assert len(configs) == 0
 
 
-def test_client_config_list_not_found_returns_empty():
-    ClientConfig.CLIENT_CONFIGS_PATH = "/asdf/2134/cv/clients"
+def test_client_config_list_not_found_returns_empty(monkeypatch):
+    monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", "/homeless-shelter")
     configs = ClientConfig.list()
     assert len(configs) == 0
 
