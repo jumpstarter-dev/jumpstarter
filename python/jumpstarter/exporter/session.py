@@ -3,6 +3,7 @@ from uuid import UUID
 
 from jumpstarter.common import Metadata
 from jumpstarter.drivers.base import Driver
+from jumpstarter.drivers.streams import StreamRequest
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
@@ -51,5 +52,7 @@ class Session(
     async def Stream(self, request_iterator, context):
         metadata = dict(context.invocation_metadata())
 
-        async for v in self[UUID(metadata["uuid"])].Stream(request_iterator, context):
+        request = StreamRequest.validate_json(metadata["request"], strict=True)
+
+        async for v in self[request.uuid].Stream(request_iterator, context):
             yield v
