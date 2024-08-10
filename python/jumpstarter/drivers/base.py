@@ -3,14 +3,17 @@ Base classes for drivers and driver clients
 """
 
 from abc import ABCMeta, abstractmethod
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
 
+import aiohttp
 from anyio.from_thread import BlockingPortal
 from grpc import StatusCode
 
 from jumpstarter.common import Metadata
+from jumpstarter.common.aiohttp import AiohttpStream
 from jumpstarter.common.streams import (
     create_memory_stream,
     forward_server_stream,
@@ -22,6 +25,8 @@ from jumpstarter.drivers.decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
+from jumpstarter.drivers.resources import ClientStreamResource, PresignedRequestResource, Resource
+from jumpstarter.drivers.streams import DriverStreamRequest, ResourceStreamRequest, StreamRequest
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
@@ -83,14 +88,16 @@ class Driver(
         """
         metadata = dict(context.invocation_metadata())
 
-        match metadata["kind"]:
-            case "connect":
-                method = await self.__lookup_drivercall(metadata["method"], context, MARKER_STREAMCALL)
+        request = StreamRequest.validate_json(metadata["request"], strict=True)
+
+        match request:
+            case DriverStreamRequest(method=driver_method):
+                method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
 
                 async for v in method(request_iterator, context):
                     yield v
 
-            case "resource":
+            case ResourceStreamRequest():
                 remote, resource = create_memory_stream()
 
                 resource_uuid = uuid4()
@@ -132,6 +139,16 @@ class Driver(
         """
 
         return [(self.uuid, parent.uuid if parent else None, self)]
+
+    @asynccontextmanager
+    async def resource(self, handle: str):
+        handle = Resource.validate_python(handle)
+        match handle:
+            case ClientStreamResource(uuid=uuid):
+                yield self.resources[uuid]
+            case PresignedRequestResource(headers=headers, url=url, method=method):
+                async with aiohttp.request(method, url, headers=headers, raise_for_status=True) as resp:
+                    yield AiohttpStream(stream=resp.content)
 
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name

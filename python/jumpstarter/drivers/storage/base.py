@@ -1,9 +1,9 @@
 from abc import ABCMeta, abstractmethod
 from tempfile import NamedTemporaryFile
-from uuid import UUID
 
 import click
 from anyio.streams.file import FileWriteStream
+from opendal import Operator
 
 from jumpstarter.drivers import Driver, DriverClient, export
 from jumpstarter.drivers.mixins import ResourceMixin
@@ -40,8 +40,12 @@ class StorageMuxClient(DriverClient, ResourceMixin):
     def write(self, handle):
         return self.call("write", handle)
 
+    def write_file(self, operator: Operator, path: str):
+        with self.file(operator, path) as handle:
+            return self.call("write", handle)
+
     def write_local_file(self, filepath):
-        with self.local_file(filepath) as handle:
+        with self.file(Operator("fs", root="/"), filepath) as handle:
             return self.call("write", handle)
 
     def cli(self):
@@ -90,5 +94,6 @@ class MockStorageMux(StorageMuxInterface, Driver):
     async def write(self, src: str):
         with NamedTemporaryFile() as file:
             async with FileWriteStream(file) as stream:
-                async for chunk in self.resources[UUID(src)]:
-                    await stream.send(chunk)
+                async with self.resource(src) as res:
+                    async for chunk in res:
+                        await stream.send(chunk)
