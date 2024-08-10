@@ -196,7 +196,7 @@ def test_client_config_load_not_found_raises():
         _ = ClientConfig.load("1235jklhbafsvd90u1234fsad")
 
 
-def test_client_config_save():
+def test_client_config_save(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
 client:
@@ -215,10 +215,11 @@ client:
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfig, "_get_path", return_value=f.name) as _get_path_mock:
-            ClientConfig.save(config)
-            with open(f.name) as loaded:
-                value = loaded.read()
-                assert value == CLIENT_CONFIG
+            with patch.object(ClientConfig, "ensure_exists"):
+                ClientConfig.save(config)
+                with open(f.name) as loaded:
+                    value = loaded.read()
+                    assert value == CLIENT_CONFIG
         _get_path_mock.assert_called_once_with("testclient")
         os.unlink(f.name)
 
@@ -241,10 +242,11 @@ client:
         drivers=ClientConfigDrivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        ClientConfig.save(config, f.name)
-        with open(f.name) as loaded:
-            value = loaded.read()
-            assert value == CLIENT_CONFIG
+        with patch.object(ClientConfig, "ensure_exists"):
+            ClientConfig.save(config, f.name)
+            with open(f.name) as loaded:
+                value = loaded.read()
+                assert value == CLIENT_CONFIG
         os.unlink(f.name)
 
 
@@ -264,10 +266,11 @@ client:
         drivers=ClientConfigDrivers(allow=[], unsafe=True),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        ClientConfig.save(config, f.name)
-        with open(f.name) as loaded:
-            value = loaded.read()
-            assert value == CLIENT_CONFIG
+        with patch.object(ClientConfig, "ensure_exists"):
+            ClientConfig.save(config, f.name)
+            with open(f.name) as loaded:
+                value = loaded.read()
+                assert value == CLIENT_CONFIG
         os.unlink(f.name)
 
 

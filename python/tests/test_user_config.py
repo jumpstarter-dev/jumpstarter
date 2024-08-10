@@ -7,16 +7,16 @@ import pytest
 from jumpstarter.config import ClientConfig, ClientConfigDrivers, UserConfig
 
 
-def test_user_config_exists():
+def test_user_config_exists(monkeypatch):
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("")
         f.close()
-        UserConfig.USER_CONFIG_PATH = f.name
+        monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         assert UserConfig.exists() is True
         os.unlink(f.name)
 
 
-def test_user_config_load():
+def test_user_config_load(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -32,19 +32,20 @@ config:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write(USER_CONFIG)
             f.close()
-            UserConfig.USER_CONFIG_PATH = f.name
+            monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
             config = UserConfig.load()
             mock_load.assert_called_once_with("testclient")
             assert config.current_client.name == "testclient"
             os.unlink(f.name)
 
 
-def test_user_config_load_does_not_exist():
+def test_user_config_load_does_not_exist(monkeypatch):
+    monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", "/nowhere/config.yaml`")
     with pytest.raises(FileNotFoundError):
         _ = UserConfig.load()
 
 
-def test_user_config_load_no_current_client():
+def test_user_config_load_no_current_client(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config: {}
@@ -59,14 +60,14 @@ config: {}
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write(USER_CONFIG)
             f.close()
-            UserConfig.USER_CONFIG_PATH = f.name
+            monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
             config = UserConfig.load()
             mock_load.assert_not_called()
             assert config.current_client is None
             os.unlink(f.name)
 
 
-def test_user_config_load_current_client_empty():
+def test_user_config_load_current_client_empty(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -82,14 +83,14 @@ config:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write(USER_CONFIG)
             f.close()
-            UserConfig.USER_CONFIG_PATH = f.name
+            monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
             config = UserConfig.load()
             mock_load.assert_not_called()
             assert config.current_client is None
             os.unlink(f.name)
 
 
-def test_user_config_load_invalid_api_version_raises():
+def test_user_config_load_invalid_api_version_raises(monkeypatch):
     USER_CONFIG = """apiVersion: abc
 kind: UserConfig
 config:
@@ -98,13 +99,13 @@ config:
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(USER_CONFIG)
         f.close()
-        UserConfig.USER_CONFIG_PATH = f.name
+        monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         with pytest.raises(ValueError):
             _ = UserConfig.load()
         os.unlink(f.name)
 
 
-def test_user_config_load_invalid_kind_raises():
+def test_user_config_load_invalid_kind_raises(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 config:
@@ -113,20 +114,20 @@ config:
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(USER_CONFIG)
         f.close()
-        UserConfig.USER_CONFIG_PATH = f.name
+        monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         with pytest.raises(ValueError):
             _ = UserConfig.load()
         os.unlink(f.name)
 
 
-def test_user_config_load_no_config_raises():
+def test_user_config_load_no_config_raises(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(USER_CONFIG)
         f.close()
-        UserConfig.USER_CONFIG_PATH = f.name
+        monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         with pytest.raises(ValueError):
             _ = UserConfig.load()
         os.unlink(f.name)
@@ -158,14 +159,14 @@ def test_user_config_load_or_create_dir_does_not_exist():
             mock_save.assert_called_once_with(UserConfig(current_client=None))
 
 
-def test_user_config_save():
+def test_user_config_save(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
   current-client: testclient
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        UserConfig.USER_CONFIG_PATH = f.name
+        monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         config = UserConfig(
             current_client=ClientConfig(
                 name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
@@ -178,14 +179,14 @@ config:
         os.unlink(f.name)
 
 
-def test_user_config_save_no_current_client():
+def test_user_config_save_no_current_client(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
   current-client: ''
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        UserConfig.USER_CONFIG_PATH = f.name
+        monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         config = UserConfig(current_client=None)
         UserConfig.save(config)
         with open(f.name) as loaded:
@@ -194,7 +195,7 @@ config:
         os.unlink(f.name)
 
 
-def test_user_config_use_client():
+def test_user_config_use_client(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -208,7 +209,7 @@ config:
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            UserConfig.USER_CONFIG_PATH = f.name
+            monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
             config = UserConfig(
                 current_client=ClientConfig(
                     name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
@@ -223,14 +224,14 @@ config:
             os.unlink(f.name)
 
 
-def test_user_config_use_client_none():
+def test_user_config_use_client_none(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
   current-client: ''
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        UserConfig.USER_CONFIG_PATH = f.name
+        monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         config = UserConfig(
             current_client=ClientConfig(
                 name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
