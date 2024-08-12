@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import ClassVar, Literal, Optional, Self
 
 import yaml
@@ -31,7 +32,7 @@ class ClientConfigV1Alpha1Client(BaseModel):
 
 
 class ClientConfigV1Alpha1(BaseModel):
-    CLIENT_CONFIGS_PATH: ClassVar[str] = CONFIG_PATH / "clients"
+    CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
 
     name: str = Field(default="default", exclude=True)
     path: str | None = Field(default=None, exclude=True)
@@ -74,10 +75,10 @@ class ClientConfigV1Alpha1(BaseModel):
         )
 
     @classmethod
-    def _get_path(cls, name: str) -> str:
+    def _get_path(cls, name: str) -> Path:
         """Get the regular path of a client config given a name."""
 
-        return f"{cls.CLIENT_CONFIGS_PATH}/{name}.yaml"
+        return cls.CLIENT_CONFIGS_PATH / f"{name}.yaml"
 
     @classmethod
     def load(cls, name: str) -> Self:
@@ -115,7 +116,7 @@ class ClientConfigV1Alpha1(BaseModel):
         files = filter(lambda x: x.endswith(".yaml"), results)
 
         def make_config(file: str):
-            path = f"{cls.CLIENT_CONFIGS_PATH}/{file}"
+            path = cls.CLIENT_CONFIGS_PATH / file
             return cls.from_file(path)
 
         return list(map(make_config, files))

@@ -1,5 +1,6 @@
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -16,7 +17,7 @@ from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
 
 def test_client_ensure_exists_makes_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as d:
-        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", f"{d}/clients")
+        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path(d) / "clients")
         ClientConfigV1Alpha1.ensure_exists()
         assert os.path.exists(ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH)
 
@@ -313,27 +314,26 @@ client:
     - jumpstarter.drivers.*
     - vendorpackage.*
 """
-    d = tempfile.TemporaryDirectory()
-    with open(f"{d.name}/testclient.yaml", "w") as f:
-        f.write(CLIENT_CONFIG)
-        f.close()
+    with tempfile.TemporaryDirectory() as d:
+        with open(Path(d) / "testclient.yaml", "w") as f:
+            f.write(CLIENT_CONFIG)
+            f.close()
 
-    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", d.name)
-    configs = ClientConfigV1Alpha1.list()
-    assert len(configs) == 1
-    assert configs[0].name == "testclient"
-    d.cleanup()
+        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path(d))
+        configs = ClientConfigV1Alpha1.list()
+        assert len(configs) == 1
+        assert configs[0].name == "testclient"
 
 
 def test_client_config_list_none(monkeypatch):
     with tempfile.TemporaryDirectory() as d:
-        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", d)
+        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path(d))
         configs = ClientConfigV1Alpha1.list()
         assert len(configs) == 0
 
 
 def test_client_config_list_not_found_returns_empty(monkeypatch):
-    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", "/homeless-shelter")
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path("/homeless-shelter"))
     configs = ClientConfigV1Alpha1.list()
     assert len(configs) == 0
 
