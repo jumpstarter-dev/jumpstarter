@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from jumpstarter.config import ClientConfig, ClientConfigDrivers, UserConfig
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Client, ClientConfigV1Alpha1Drivers, UserConfig
 
 
 def test_user_config_exists(monkeypatch):
@@ -23,10 +23,13 @@ config:
   current-client: testclient
 """
     with patch.object(
-        ClientConfig,
+        ClientConfigV1Alpha1,
         "load",
-        return_value=ClientConfig(
-            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        return_value=ClientConfigV1Alpha1(
+            name="testclient",
+            client=ClientConfigV1Alpha1Client(
+                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
+            ),
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
@@ -51,10 +54,13 @@ kind: UserConfig
 config: {}
 """
     with patch.object(
-        ClientConfig,
+        ClientConfigV1Alpha1,
         "load",
-        return_value=ClientConfig(
-            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        return_value=ClientConfigV1Alpha1(
+            name="testclient",
+            client=ClientConfigV1Alpha1Client(
+                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
+            ),
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
@@ -74,10 +80,13 @@ config:
     current-client: ""
 """
     with patch.object(
-        ClientConfig,
+        ClientConfigV1Alpha1,
         "load",
-        return_value=ClientConfig(
-            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        return_value=ClientConfigV1Alpha1(
+            name="testclient",
+            client=ClientConfigV1Alpha1Client(
+                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
+            ),
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
@@ -168,8 +177,11 @@ config:
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         config = UserConfig(
-            current_client=ClientConfig(
-                name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+            current_client=ClientConfigV1Alpha1(
+                name="testclient",
+                client=ClientConfigV1Alpha1Client(
+                    endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
+                ),
             )
         )
         UserConfig.save(config)
@@ -202,17 +214,23 @@ config:
   current-client: testclient
 """
     with patch.object(
-        ClientConfig,
+        ClientConfigV1Alpha1,
         "load",
-        return_value=ClientConfig(
-            name="testclient", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+        return_value=ClientConfigV1Alpha1(
+            name="testclient",
+            client=ClientConfigV1Alpha1Client(
+                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
+            ),
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
             config = UserConfig(
-                current_client=ClientConfig(
-                    name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+                current_client=ClientConfigV1Alpha1(
+                    name="another",
+                    client=ClientConfigV1Alpha1Client(
+                        endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
+                    ),
                 )
             )
             config.use_client("testclient")
@@ -233,8 +251,11 @@ config:
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         monkeypatch.setattr(UserConfig, "USER_CONFIG_PATH", f.name)
         config = UserConfig(
-            current_client=ClientConfig(
-                name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+            current_client=ClientConfigV1Alpha1(
+                name="another",
+                client=ClientConfigV1Alpha1Client(
+                    endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
+                ),
             )
         )
         config.use_client(None)
