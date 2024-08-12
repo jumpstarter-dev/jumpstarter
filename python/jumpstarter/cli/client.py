@@ -2,7 +2,12 @@ from typing import Optional
 
 import click
 
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Client, ClientConfigV1Alpha1Drivers, UserConfig
+from jumpstarter.config import (
+    ClientConfigV1Alpha1,
+    ClientConfigV1Alpha1Client,
+    ClientConfigV1Alpha1Drivers,
+    UserConfigV1Alpha1,
+)
 
 from .util import AliasedGroup, make_table
 
@@ -66,14 +71,18 @@ def client_create(
 
     # If this is the only client config, set it as default
     if out is None and len(ClientConfigV1Alpha1.list()) == 1:
-        user_config = UserConfig.load_or_create()
-        user_config.current_client = config
-        UserConfig.save(user_config)
+        user_config = UserConfigV1Alpha1.load_or_create()
+        user_config.config.current_client = config
+        UserConfigV1Alpha1.save(user_config)
 
 
 def set_next_client(name: str):
-    user_config = UserConfig.load() if UserConfig.exists() else None
-    if user_config is not None and user_config.current_client is not None and user_config.current_client.name == name:
+    user_config = UserConfigV1Alpha1.load() if UserConfigV1Alpha1.exists() else None
+    if (
+        user_config is not None
+        and user_config.config.current_client is not None
+        and user_config.config.current_client.name == name
+    ):
         for c in ClientConfigV1Alpha1.list():
             if c.name != name:
                 # Use the next available client config
@@ -95,8 +104,8 @@ def client_delete(name: str):
 def client_list():
     # Allow listing if there is no user config defined
     current_name = None
-    if UserConfig.exists():
-        current_client = UserConfig.load().current_client
+    if UserConfigV1Alpha1.exists():
+        current_client = UserConfigV1Alpha1.load().config.current_client
         current_name = current_client.name if current_client is not None else None
 
     configs = ClientConfigV1Alpha1.list()
@@ -108,7 +117,7 @@ def client_list():
             "CURRENT": "*" if current_name == c.name else "",
             "NAME": c.name,
             "ENDPOINT": c.client.endpoint,
-            "PATH": c.path,
+            "PATH": str(c.path),
         }
 
     rows = list(map(make_row, configs))
@@ -119,7 +128,7 @@ def client_list():
 @click.argument("name", type=str)
 def client_use(name: str):
     """Select the current Jumpstarter client configuration to use."""
-    user_config = UserConfig.load_or_create()
+    user_config = UserConfigV1Alpha1.load_or_create()
     user_config.use_client(name)
 
 
