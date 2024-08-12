@@ -1,20 +1,19 @@
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Generator
-from dataclasses import dataclass, field
 
 import click
+from pydantic import BaseModel
 
 from jumpstarter.drivers import Driver, DriverClient, export
 
 
-@dataclass(kw_only=True)
-class PowerReading:
+class PowerReading(BaseModel):
     voltage: float
     current: float
-    apparent_power: float = field(init=False)
 
-    def __post_init__(self):
-        self.apparent_power = self.voltage * self.current
+    @property
+    def apparent_power(self):
+        return self.voltage * self.current
 
 
 class PowerInterface(metaclass=ABCMeta):
@@ -41,7 +40,7 @@ class PowerClient(DriverClient):
 
     def read(self) -> Generator[PowerReading, None, None]:
         for v in self.streamingcall("read"):
-            yield PowerReading(voltage=v["voltage"], current=v["current"])
+            yield PowerReading.model_validate(v, strict=True)
 
     def cli(self):
         @click.group
