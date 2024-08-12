@@ -1,4 +1,5 @@
 import logging
+import os
 from asyncio import InvalidStateError
 from contextlib import asynccontextmanager
 
@@ -17,8 +18,8 @@ from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
 
-KEEPALIVE_INTERVAL = 1
-KEEPALIVE_TOLERANCE = 5
+KEEPALIVE_INTERVAL = int(os.environ.get("JMP_KEEPALIVE_INTERVAL", "300"))
+KEEPALIVE_TOLERANCE = int(os.environ.get("JMP_KEEPALIVE_TOLERANCE", "600"))
 
 logger = logging.getLogger(__name__)
 
