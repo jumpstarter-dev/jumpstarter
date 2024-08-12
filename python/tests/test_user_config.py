@@ -109,7 +109,7 @@ def test_user_config_load_invalid_api_version_raises(monkeypatch):
     USER_CONFIG = """apiVersion: abc
 kind: UserConfig
 config:
-  current-client: testclient
+  current-client: null
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(USER_CONFIG)
@@ -124,7 +124,7 @@ def test_user_config_load_invalid_kind_raises(monkeypatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 config:
-  current-client: testclient
+  current-client: null
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(USER_CONFIG)
