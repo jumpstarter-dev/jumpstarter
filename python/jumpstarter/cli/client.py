@@ -2,7 +2,7 @@ from typing import Optional
 
 import click
 
-from jumpstarter.config import ClientConfig, ClientConfigDrivers, UserConfig
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Client, ClientConfigV1Alpha1Drivers, UserConfig
 
 from .util import AliasedGroup, make_table
 
@@ -53,16 +53,19 @@ def client_create(
     out: Optional[str],
 ):
     """Create a Jumpstarter client configuration."""
-    if out is None and ClientConfig.exists(name):
+    if out is None and ClientConfigV1Alpha1.exists(name):
         raise click.ClickException(f"A client with the name '{name}' already exists.")
 
-    config = ClientConfig(
-        name=name, endpoint=endpoint, token=token, drivers=ClientConfigDrivers(allow=allow.split(","), unsafe=unsafe)
+    config = ClientConfigV1Alpha1(
+        name=name,
+        client=ClientConfigV1Alpha1Client(
+            endpoint=endpoint, token=token, drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe)
+        ),
     )
-    ClientConfig.save(config, out)
+    ClientConfigV1Alpha1.save(config, out)
 
     # If this is the only client config, set it as default
-    if out is None and len(ClientConfig.list()) == 1:
+    if out is None and len(ClientConfigV1Alpha1.list()) == 1:
         user_config = UserConfig.load_or_create()
         user_config.current_client = config
         UserConfig.save(user_config)
@@ -71,7 +74,7 @@ def client_create(
 def set_next_client(name: str):
     user_config = UserConfig.load() if UserConfig.exists() else None
     if user_config is not None and user_config.current_client is not None and user_config.current_client.name == name:
-        for c in ClientConfig.list():
+        for c in ClientConfigV1Alpha1.list():
             if c.name != name:
                 # Use the next available client config
                 user_config.use_client(c.name)
@@ -85,7 +88,7 @@ def set_next_client(name: str):
 def client_delete(name: str):
     """Delete a Jumpstarter client configuration."""
     set_next_client(name)
-    ClientConfig.delete(name)
+    ClientConfigV1Alpha1.delete(name)
 
 
 @click.command("list", short_help="List available client configurations.")
@@ -96,15 +99,15 @@ def client_list():
         current_client = UserConfig.load().current_client
         current_name = current_client.name if current_client is not None else None
 
-    configs = ClientConfig.list()
+    configs = ClientConfigV1Alpha1.list()
 
     columns = ["CURRENT", "NAME", "ENDPOINT", "PATH"]
 
-    def make_row(c: ClientConfig):
+    def make_row(c: ClientConfigV1Alpha1):
         return {
             "CURRENT": "*" if current_name == c.name else "",
             "NAME": c.name,
-            "ENDPOINT": c.endpoint,
+            "ENDPOINT": c.client.endpoint,
             "PATH": c.path,
         }
 

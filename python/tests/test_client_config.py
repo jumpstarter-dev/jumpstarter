@@ -4,17 +4,21 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
-from jumpstarter.config import ClientConfig
-from jumpstarter.config.client import ClientConfigDrivers
+from jumpstarter.config import (
+    ClientConfigV1Alpha1,
+    ClientConfigV1Alpha1Client,
+    ClientConfigV1Alpha1Drivers,
+)
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
 
 
 def test_client_ensure_exists_makes_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as d:
-        monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", f"{d}/clients")
-        ClientConfig.ensure_exists()
-        assert os.path.exists(ClientConfig.CLIENT_CONFIGS_PATH)
+        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", f"{d}/clients")
+        ClientConfigV1Alpha1.ensure_exists()
+        assert os.path.exists(ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH)
 
 
 def test_client_config_try_from_env(monkeypatch):
@@ -22,16 +26,16 @@ def test_client_config_try_from_env(monkeypatch):
     monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
-    config = ClientConfig.try_from_env()
+    config = ClientConfigV1Alpha1.try_from_env()
     assert config.name == "default"
-    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
-    assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
-    assert config.drivers.unsafe is False
+    assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+    assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+    assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
+    assert config.client.drivers.unsafe is False
 
 
 def test_client_config_try_from_env_not_set():
-    config = ClientConfig.try_from_env()
+    config = ClientConfigV1Alpha1.try_from_env()
     assert config is None
 
 
@@ -40,12 +44,12 @@ def test_client_config_from_env(monkeypatch):
     monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
-    config = ClientConfig.from_env()
+    config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
-    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
-    assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
-    assert config.drivers.unsafe is False
+    assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+    assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+    assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
+    assert config.client.drivers.unsafe is False
 
 
 def test_client_config_from_env_allow_unsafe(monkeypatch):
@@ -53,12 +57,12 @@ def test_client_config_from_env_allow_unsafe(monkeypatch):
     monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "UNSAFE")
 
-    config = ClientConfig.from_env()
+    config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
-    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
-    assert config.drivers.allow == []
-    assert config.drivers.unsafe is True
+    assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+    assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+    assert config.client.drivers.allow == []
+    assert config.client.drivers.unsafe is True
 
 
 @pytest.mark.parametrize("missing_field", [JMP_TOKEN, JMP_ENDPOINT])
@@ -69,8 +73,8 @@ def test_client_config_from_env_missing_field_raises(monkeypatch, missing_field)
 
     monkeypatch.delenv(missing_field)
 
-    with pytest.raises(ValueError):
-        _ = ClientConfig.from_env()
+    with pytest.raises(ValidationError):
+        _ = ClientConfigV1Alpha1.from_env()
 
 
 def test_client_config_from_file():
@@ -87,12 +91,14 @@ client:
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(CLIENT_CONFIG)
         f.close()
-        config = ClientConfig.from_file(f.name)
+        config = ClientConfigV1Alpha1.from_file(f.name)
         assert config.name == f.name.split("/")[-1]
-        assert config.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
-        assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-        assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
-        assert config.drivers.unsafe is False
+        assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+        assert (
+            config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+        )
+        assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
+        assert config.client.drivers.unsafe is False
         os.unlink(f.name)
 
 
@@ -112,10 +118,10 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValueError):
-            _ = ClientConfig.from_file(f.name)
+            _ = ClientConfigV1Alpha1.from_file(f.name)
 
 
-@pytest.mark.parametrize("missing_field", ["apiVersion", "kind", "client"])
+@pytest.mark.parametrize("missing_field", ["client"])
 def test_client_config_from_file_missing_field_raises(missing_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
@@ -130,8 +136,8 @@ def test_client_config_from_file_missing_field_raises(missing_field):
     del CLIENT_CONFIG[missing_field]
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
-        with pytest.raises(ValueError):
-            _ = ClientConfig.from_file(f.name)
+        with pytest.raises(ValidationError):
+            _ = ClientConfigV1Alpha1.from_file(f.name)
 
 
 @pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
@@ -149,8 +155,8 @@ def test_client_config_from_file_missing_client_field_raises(missing_field):
     del CLIENT_CONFIG["client"][missing_field]
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
-        with pytest.raises(ValueError):
-            _ = ClientConfig.from_file(f.name)
+        with pytest.raises(ValidationError):
+            _ = ClientConfigV1Alpha1.from_file(f.name)
 
 
 @pytest.mark.parametrize("invalid_field", ["allow"])
@@ -168,32 +174,37 @@ def test_client_config_from_file_invalid_client_drivers_field_raises(invalid_fie
     CLIENT_CONFIG["client"]["drivers"][invalid_field] = "foo"
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
-        with pytest.raises(ValueError):
-            _ = ClientConfig.from_file(f.name)
+        with pytest.raises(ValidationError):
+            _ = ClientConfigV1Alpha1.from_file(f.name)
 
 
 def test_client_config_load():
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("")
         f.close()
-        with patch.object(ClientConfig, "_get_path", return_value=f.name) as _get_path_mock:
+        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=f.name) as get_path_mock:
             with patch.object(
-                ClientConfig,
+                ClientConfigV1Alpha1,
                 "from_file",
-                return_value=ClientConfig(
-                    name="another", endpoint="abc", token="123", drivers=ClientConfigDrivers(allow=[], unsafe=False)
+                return_value=ClientConfigV1Alpha1(
+                    name="another",
+                    client=ClientConfigV1Alpha1Client(
+                        endpoint="abc",
+                        token="123",
+                        drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
+                    ),
                 ),
             ) as from_file_mock:
-                value = ClientConfig.load("another")
+                value = ClientConfigV1Alpha1.load("another")
         assert value.name == "another"
-        _get_path_mock.assert_called_once_with("another")
+        get_path_mock.assert_called_once_with("another")
         from_file_mock.assert_called_once_with(f.name)
         os.unlink(f.name)
 
 
 def test_client_config_load_not_found_raises():
     with pytest.raises(FileNotFoundError):
-        _ = ClientConfig.load("1235jklhbafsvd90u1234fsad")
+        _ = ClientConfigV1Alpha1.load("1235jklhbafsvd90u1234fsad")
 
 
 def test_client_config_save(monkeypatch):
@@ -206,17 +217,20 @@ client:
     allow:
     - jumpstarter.drivers.*
     - vendorpackage.*
+    unsafe: false
 """
-    config = ClientConfig(
+    config = ClientConfigV1Alpha1(
         name="testclient",
-        endpoint="grpcs://jumpstarter.my-lab.com:1443",
-        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        drivers=ClientConfigDrivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
+        client=ClientConfigV1Alpha1Client(
+            endpoint="grpcs://jumpstarter.my-lab.com:1443",
+            token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+            drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
+        ),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfig, "_get_path", return_value=f.name) as _get_path_mock:
-            with patch.object(ClientConfig, "ensure_exists"):
-                ClientConfig.save(config)
+        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=f.name) as _get_path_mock:
+            with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
+                ClientConfigV1Alpha1.save(config)
                 with open(f.name) as loaded:
                     value = loaded.read()
                     assert value == CLIENT_CONFIG
@@ -234,16 +248,19 @@ client:
     allow:
     - jumpstarter.drivers.*
     - vendorpackage.*
+    unsafe: false
 """
-    config = ClientConfig(
+    config = ClientConfigV1Alpha1(
         name="testclient",
-        endpoint="grpcs://jumpstarter.my-lab.com:1443",
-        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        drivers=ClientConfigDrivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
+        client=ClientConfigV1Alpha1Client(
+            endpoint="grpcs://jumpstarter.my-lab.com:1443",
+            token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+            drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
+        ),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfig, "ensure_exists"):
-            ClientConfig.save(config, f.name)
+        with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
+            ClientConfigV1Alpha1.save(config, f.name)
             with open(f.name) as loaded:
                 value = loaded.read()
                 assert value == CLIENT_CONFIG
@@ -257,17 +274,20 @@ client:
   endpoint: grpcs://jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
   drivers:
+    allow: []
     unsafe: true
 """
-    config = ClientConfig(
+    config = ClientConfigV1Alpha1(
         name="testclient",
-        endpoint="grpcs://jumpstarter.my-lab.com:1443",
-        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        drivers=ClientConfigDrivers(allow=[], unsafe=True),
+        client=ClientConfigV1Alpha1Client(
+            endpoint="grpcs://jumpstarter.my-lab.com:1443",
+            token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+            drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
+        ),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfig, "ensure_exists"):
-            ClientConfig.save(config, f.name)
+        with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
+            ClientConfigV1Alpha1.save(config, f.name)
             with open(f.name) as loaded:
                 value = loaded.read()
                 assert value == CLIENT_CONFIG
@@ -276,9 +296,9 @@ client:
 
 def test_client_config_exists():
     with patch.object(
-        ClientConfig, "_get_path", return_value="/users/adsf/.config/jumpstarter/clients/abc.yaml"
+        ClientConfigV1Alpha1, "_get_path", return_value="/users/adsf/.config/jumpstarter/clients/abc.yaml"
     ) as _get_path_mock:
-        assert ClientConfig.exists("abc") is False
+        assert ClientConfigV1Alpha1.exists("abc") is False
         _get_path_mock.assert_called_once_with("abc")
 
 
@@ -298,8 +318,8 @@ client:
         f.write(CLIENT_CONFIG)
         f.close()
 
-    monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", d.name)
-    configs = ClientConfig.list()
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", d.name)
+    configs = ClientConfigV1Alpha1.list()
     assert len(configs) == 1
     assert configs[0].name == "testclient"
     d.cleanup()
@@ -307,29 +327,31 @@ client:
 
 def test_client_config_list_none(monkeypatch):
     with tempfile.TemporaryDirectory() as d:
-        monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", d)
-        configs = ClientConfig.list()
+        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", d)
+        configs = ClientConfigV1Alpha1.list()
         assert len(configs) == 0
 
 
 def test_client_config_list_not_found_returns_empty(monkeypatch):
-    monkeypatch.setattr(ClientConfig, "CLIENT_CONFIGS_PATH", "/homeless-shelter")
-    configs = ClientConfig.list()
+    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", "/homeless-shelter")
+    configs = ClientConfigV1Alpha1.list()
     assert len(configs) == 0
 
 
 def test_client_config_delete():
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        with patch.object(ClientConfig, "_get_path", return_value=f.name) as _get_path_mock:
+        with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=f.name) as _get_path_mock:
             f.write("")
             f.close()
-            ClientConfig.delete("testclient")
+            ClientConfigV1Alpha1.delete("testclient")
             _get_path_mock.assert_called_once_with("testclient")
             assert os.path.exists(f.name) is False
 
 
 def test_client_config_delete_does_not_exist_raises():
-    with patch.object(ClientConfig, "_get_path", return_value="/asdf/2134/cv/clients/xyz.yaml") as _get_path_mock:
+    with patch.object(
+        ClientConfigV1Alpha1, "_get_path", return_value="/asdf/2134/cv/clients/xyz.yaml"
+    ) as _get_path_mock:
         with pytest.raises(FileNotFoundError):
-            ClientConfig.delete("xyz")
+            ClientConfigV1Alpha1.delete("xyz")
         _get_path_mock.assert_called_once_with("xyz")

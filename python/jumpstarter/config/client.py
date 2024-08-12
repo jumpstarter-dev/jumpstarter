@@ -1,190 +1,129 @@
 import os
-from dataclasses import dataclass
-from typing import Optional, Self
+from typing import ClassVar, Literal, Optional, Self
 
 import yaml
+from pydantic import BaseModel, Field, ValidationError
 
-from .common import CONFIG_API_VERSION, CONFIG_PATH
+from .common import CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
 
 
-@dataclass(kw_only=True)
-class ClientConfigDrivers:
-    """Jumpstarter client drivers configuration."""
-
-    allow: Optional[list[str]]
-    """A list of allowed driver client packages to load from."""
-
-    unsafe: bool
-    """Allow any required driver client packages to load without restriction."""
-
-    def from_dict(values: dict) -> Self:
-        """Load the client config driver options from a YAML dict."""
-        allow = values.get("allow")
-        unsafe = values.get("unsafe", False)
-
-        if isinstance(allow, list) is False:
-            raise ValueError("Key 'client.drivers.allow' should be a list of strings.")
-
-        return ClientConfigDrivers(allow=allow, unsafe=unsafe)
+def _allow_from_env():
+    allow = os.environ.get(JMP_DRIVERS_ALLOW)
+    match allow:
+        case None:
+            return None
+        case "UNSAFE":
+            return []
+        case _:
+            return allow.split(",")
 
 
-@dataclass(kw_only=True)
-class ClientConfig:
-    """A Jumpstarter client configuration."""
+class ClientConfigV1Alpha1Drivers(BaseModel):
+    allow: list[str] = Field(default_factory=[])
+    unsafe: bool = Field(default=False)
 
-    # The directory path for client configs
-    CLIENT_CONFIGS_PATH = os.path.expanduser(f"{CONFIG_PATH}/clients")
 
-    CONFIG_KIND = "Client"
-
-    name: str
-    """The name of the client config."""
-
+class ClientConfigV1Alpha1Client(BaseModel):
     endpoint: str
-    """A Jumpstarter service gRPC endpoint."""
-
     token: str
-    """A valid Jumpstarter access token."""
+    drivers: ClientConfigV1Alpha1Drivers
 
-    drivers: ClientConfigDrivers
-    """A client drivers configuration."""
 
-    path: Optional[str] = None
-    """The path the config was loaded from."""
+class ClientConfigV1Alpha1(BaseModel):
+    CLIENT_CONFIGS_PATH: ClassVar[str] = CONFIG_PATH / "clients"
 
-    def _get_path(name: str) -> str:
-        """Get the regular path of a client config given a name."""
+    name: str = Field(default="default", exclude=True)
+    path: str | None = Field(default=None, exclude=True)
 
-        return f"{ClientConfig.CLIENT_CONFIGS_PATH}/{name}.yaml"
+    apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
+    kind: Literal["Client"] = Field(default="Client")
+    client: ClientConfigV1Alpha1Client = Field(default_factory=ClientConfigV1Alpha1Client)
 
-    def ensure_exists():
+    @classmethod
+    def from_file(cls, filepath):
+        with open(filepath) as f:
+            v = cls.model_validate(yaml.safe_load(f))
+            v.name = os.path.basename(filepath).split(".")[0]
+            v.path = filepath
+            return v
+
+    @classmethod
+    def ensure_exists(cls):
         """Check if the clients config dir exists, otherwise create it."""
-        if os.path.exists(ClientConfig.CLIENT_CONFIGS_PATH) is False:
-            os.makedirs(ClientConfig.CLIENT_CONFIGS_PATH)
+        os.makedirs(cls.CLIENT_CONFIGS_PATH, exist_ok=True)
 
-    def try_from_env() -> Optional[Self]:
-        """Attempt to load the config from the environment variables, returns `None` if all are not set."""
-
-        if (
-            os.environ.get(JMP_TOKEN) is not None
-            and os.environ.get(JMP_ENDPOINT) is not None
-            and os.environ.get(JMP_DRIVERS_ALLOW) is not None
-        ):
-            return ClientConfig.from_env()
-        else:
+    @classmethod
+    def try_from_env(cls):
+        try:
+            return cls.from_env()
+        except ValidationError:
             return None
 
-    def from_env() -> Self:
-        """Constructs a client config from environment variables."""
-
-        token = os.environ.get(JMP_TOKEN)
-        endpoint = os.environ.get(JMP_ENDPOINT)
-        drivers_val = os.environ.get(JMP_DRIVERS_ALLOW)
-        allow_unsafe = drivers_val == "UNSAFE"
-
-        if token is None:
-            raise ValueError(f"Environment variable '{JMP_TOKEN}' is not set.")
-        if endpoint is None:
-            raise ValueError(f"Environment variable '{JMP_ENDPOINT}' is not set.")
-
-        # Split allowed driver packages as a comma-separated list
-        drivers = ClientConfigDrivers(
-            allow=drivers_val.split(",") if allow_unsafe is False else [], unsafe=allow_unsafe
+    @classmethod
+    def from_env(cls):
+        return cls(
+            client=ClientConfigV1Alpha1Client(
+                endpoint=os.environ.get(JMP_ENDPOINT),
+                token=os.environ.get(JMP_TOKEN),
+                drivers=ClientConfigV1Alpha1Drivers(
+                    allow=_allow_from_env(),
+                    unsafe=os.environ.get(JMP_DRIVERS_ALLOW) == "UNSAFE",
+                ),
+            )
         )
 
-        return ClientConfig(name="default", endpoint=endpoint, token=token, drivers=drivers, path=None)
+    @classmethod
+    def _get_path(cls, name: str) -> str:
+        """Get the regular path of a client config given a name."""
 
-    def from_file(path: str) -> Self:
-        """Constructs a client config from a YAML file."""
-        name = os.path.basename(path).split(".")[0]
+        return f"{cls.CLIENT_CONFIGS_PATH}/{name}.yaml"
 
-        with open(path) as f:
-            config: dict = yaml.safe_load(f)
-
-            api_version = config.get("apiVersion")
-            kind = config.get("kind")
-            client: Optional[dict] = config.get("client", None)
-
-            if api_version != CONFIG_API_VERSION:
-                raise ValueError(f"Incorrect config API version {api_version}, expected {CONFIG_API_VERSION}.")
-            if kind != ClientConfig.CONFIG_KIND:
-                raise ValueError(f"Invalid config type {kind}, expected '{ClientConfig.CONFIG_KIND}'.")
-            if client is None:
-                raise ValueError("Config does not contain a 'client' key.")
-
-            token = client.get("token")
-            endpoint = client.get("endpoint")
-            drivers_val: Optional[dict] = client.get("drivers", None)
-
-            if token is None:
-                raise ValueError("Config does not contain a 'client.token' key.")
-            if endpoint is None:
-                raise ValueError("Config does not contain a 'client.endpoint' key.")
-            if drivers_val is None:
-                raise ValueError("Config does not contain a 'client.drivers' key.")
-
-            drivers = ClientConfigDrivers.from_dict(drivers_val)
-
-            config = ClientConfig(name=name, endpoint=endpoint, token=token, drivers=drivers, path=path)
-            return config
-
-    def load(name: str) -> Self:
+    @classmethod
+    def load(cls, name: str) -> Self:
         """Load a client config by name."""
-        path = ClientConfig._get_path(name)
+        path = cls._get_path(name)
         if os.path.exists(path) is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
 
-        return ClientConfig.from_file(path)
+        return cls.from_file(path)
 
-    def save(config: Self, path: Optional[str] = None):
+    @classmethod
+    def save(cls, config: Self, path: Optional[str] = None):
         """Saves a client config as YAML."""
-        value = {
-            "apiVersion": CONFIG_API_VERSION,
-            "kind": ClientConfig.CONFIG_KIND,
-            "client": {
-                "endpoint": config.endpoint,
-                "token": config.token,
-                "drivers": {},
-            },
-        }
-
-        # Only add the unsafe key if unsafe is true, ignore allow
-        if config.drivers.unsafe is True:
-            value["client"]["drivers"]["unsafe"] = True
-        else:
-            value["client"]["drivers"]["allow"] = config.drivers.allow
-
         # Ensure the clients dir exists
         if path is None:
-            ClientConfig.ensure_exists()
+            cls.ensure_exists()
 
-        with open(path or ClientConfig._get_path(config.name), "w") as f:
-            yaml.safe_dump(value, f, sort_keys=False)
+        with open(path or cls._get_path(config.name), "w") as f:
+            yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
 
-    def exists(name: str) -> bool:
+    @classmethod
+    def exists(cls, name: str) -> bool:
         """Check if a client config exists by name."""
-        return os.path.exists(ClientConfig._get_path(name))
+        return os.path.exists(cls._get_path(name))
 
-    def list() -> list[Self]:
+    @classmethod
+    def list(cls) -> list[Self]:
         """List the available client configs."""
-        if os.path.exists(ClientConfig.CLIENT_CONFIGS_PATH) is False:
+        if os.path.exists(cls.CLIENT_CONFIGS_PATH) is False:
             # Return an empty list if the dir does not exist
             return []
 
-        results = os.listdir(ClientConfig.CLIENT_CONFIGS_PATH)
+        results = os.listdir(cls.CLIENT_CONFIGS_PATH)
         # Only accept YAML files in the list
         files = filter(lambda x: x.endswith(".yaml"), results)
 
         def make_config(file: str):
-            path = f"{ClientConfig.CLIENT_CONFIGS_PATH}/{file}"
-            return ClientConfig.from_file(path)
+            path = f"{cls.CLIENT_CONFIGS_PATH}/{file}"
+            return cls.from_file(path)
 
         return list(map(make_config, files))
 
-    def delete(name: str):
+    @classmethod
+    def delete(cls, name: str):
         """Delete a client config by name."""
-        path = ClientConfig._get_path(name)
+        path = cls._get_path(name)
         if os.path.exists(path) is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
         os.unlink(path)

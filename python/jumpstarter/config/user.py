@@ -4,7 +4,7 @@ from typing import Optional, Self
 
 import yaml
 
-from .client import ClientConfig
+from .client import ClientConfigV1Alpha1
 from .common import CONFIG_API_VERSION, CONFIG_PATH
 
 
@@ -14,11 +14,11 @@ class UserConfig:
 
     # The user config path e.g. ~/.config/jumpstarter
     BASE_CONFIG_PATH = CONFIG_PATH
-    USER_CONFIG_PATH = os.path.expanduser(f"{BASE_CONFIG_PATH}/config.yaml")
+    USER_CONFIG_PATH = CONFIG_PATH / "config.yaml"
 
     CONFIG_KIND = "UserConfig"
 
-    current_client: Optional[ClientConfig]
+    current_client: Optional[ClientConfigV1Alpha1]
     """The currently loaded client configuration."""
 
     def exists() -> bool:
@@ -48,7 +48,7 @@ class UserConfig:
             current_client = None
 
             if current_client_name is not None and current_client_name != "":
-                current_client = ClientConfig.load(current_client_name)
+                current_client = ClientConfigV1Alpha1.load(current_client_name)
 
             return UserConfig(current_client=current_client)
 
@@ -77,7 +77,7 @@ class UserConfig:
     def use_client(self, name: Optional[str]):
         """Updates the current client and saves the user config."""
         if name is not None:
-            self.current_client = ClientConfig.load(name)
+            self.current_client = ClientConfigV1Alpha1.load(name)
         else:
             self.current_client = None
         UserConfig.save(self)
