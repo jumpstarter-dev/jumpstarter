@@ -1,10 +1,10 @@
-from dataclasses import asdict, is_dataclass
 from inspect import isasyncgenfunction, iscoroutinefunction, isfunction, isgeneratorfunction
 from typing import Final
 from uuid import uuid4
 
 from anyio import to_thread
 from google.protobuf import json_format, struct_pb2
+from pydantic import BaseModel
 
 from jumpstarter.common.streams import (
     forward_server_stream,
@@ -29,6 +29,13 @@ def export(func):
         raise ValueError(f"unsupported exported function {func}")
 
 
+def encode_value(v):
+    return json_format.ParseDict(
+        v.model_dump(mode="json") if isinstance(v, BaseModel) else v,
+        struct_pb2.Value(),
+    )
+
+
 def drivercall(func):
     async def wrapper(self, request, context):
         args = [json_format.MessageToDict(arg) for arg in request.args]
@@ -40,7 +47,7 @@ def drivercall(func):
 
         return jumpstarter_pb2.DriverCallResponse(
             uuid=str(uuid4()),
-            result=json_format.ParseDict(asdict(result) if is_dataclass(result) else result, struct_pb2.Value()),
+            result=encode_value(result),
         )
 
     setattr(wrapper, MARKER_DRIVERCALL, MARKER_MAGIC)
@@ -71,19 +78,13 @@ def streamingdrivercall(func):
             async for result in func(self, *args):
                 yield jumpstarter_pb2.StreamingDriverCallResponse(
                     uuid=str(uuid4()),
-                    result=json_format.ParseDict(
-                        asdict(result) if is_dataclass(result) else result,
-                        struct_pb2.Value(),
-                    ),
+                    result=encode_value(result),
                 )
         else:
             for result in await to_thread.run_sync(func, self, *args):
                 yield jumpstarter_pb2.StreamingDriverCallResponse(
                     uuid=str(uuid4()),
-                    result=json_format.ParseDict(
-                        asdict(result) if is_dataclass(result) else result,
-                        struct_pb2.Value(),
-                    ),
+                    result=encode_value(result),
                 )
 
     setattr(wrapper, MARKER_STREAMING_DRIVERCALL, MARKER_MAGIC)
