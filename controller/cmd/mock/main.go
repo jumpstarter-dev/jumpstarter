@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net"
+	"os"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
@@ -23,6 +24,8 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(jumpstarterdevv1alpha1.AddToScheme(scheme))
+
+	os.Setenv("NAMESPACE", "default")
 }
 
 func main() {
@@ -71,6 +74,15 @@ func main() {
 			},
 			Data: map[string][]byte{
 				"token": []byte("fc5c6dda1083a69e9886dc160de5b44e"),
+			},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "jumpstarter-router-secret",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"key": []byte("a70643ffe8f924351fc343439399bbf4"),
 			},
 		},
 	).WithStatusSubresource(&exporter).Build()

@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -384,7 +385,23 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	stream := uuid.NewUUID()
 
-	token, err := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.RegisteredClaims{
+	var secret corev1.Secret
+
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: os.Getenv("NAMESPACE"),
+		Name:      "jumpstarter-router-secret",
+	}, &secret); err != nil {
+		logger.Error(err, "unable to get secret resource of jumpstarter-router-secret")
+		return nil, status.Errorf(codes.Internal, "unable to get secret resource of jumpstarter-router-secret")
+	}
+
+	key, ok := secret.Data["key"]
+	if !ok {
+		logger.Error(err, "unable to get key from jumpstarter-router-secret")
+		return nil, status.Errorf(codes.Internal, "unable to get key from jumpstarter-router-secret")
+	}
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "https://jumpstarter.dev/stream",
 		Subject:   string(stream),
 		Audience:  []string{"https://jumpstarter.dev/router"},
@@ -392,7 +409,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		NotBefore: jwt.NewNumericDate(time.Now()),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ID:        string(uuid.NewUUID()),
-	}).SignedString(jwt.UnsafeAllowNoneSignatureType)
+	}).SignedString(key)
 
 	// TODO: find best router from list
 	endpoint := routerEndpoint()
