@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -315,6 +316,20 @@ func (s *ControllerService) ListExporters(
 
 	return &pb.ListExportersResponse{
 		Exporters: results,
+	}, nil
+}
+
+func (s *ControllerService) LeaseExporter(
+	ctx context.Context,
+	req *pb.LeaseExporterRequest,
+) (*pb.LeaseExporterResponse, error) {
+	// TODO: implement permission checking and book keeping
+	return &pb.LeaseExporterResponse{
+		LeaseExporterResponseOneof: &pb.LeaseExporterResponse_Success{
+			Success: &pb.LeaseExporterResponseSuccess{
+				Duration: durationpb.New(req.Duration.AsDuration()),
+			},
+		},
 	}, nil
 }
 
