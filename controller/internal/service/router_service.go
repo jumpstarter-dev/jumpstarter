@@ -19,18 +19,14 @@ package service
 import (
 	"context"
 	"net"
-	"net/url"
-	"strings"
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
-	authv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -56,58 +52,21 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	parser := jwt.NewParser()
+	parsed, err := jwt.ParseWithClaims(
+		token,
+		&jwt.RegisteredClaims{},
+		func(t *jwt.Token) (interface{}, error) { return jwt.UnsafeAllowNoneSignatureType, nil },
+		jwt.WithIssuer("https://jumpstarter.dev/stream"),
+		jwt.WithAudience("https://jumpstarter.dev/router"),
+		jwt.WithIssuedAt(),
+		jwt.WithExpirationRequired(),
+	)
 
-	parsed, _, err := parser.ParseUnverified(token, &jwt.RegisteredClaims{})
-	if err != nil {
+	if err != nil || !parsed.Valid {
 		return "", status.Errorf(codes.InvalidArgument, "invalid jwt token")
 	}
 
-	audiences, err := parsed.Claims.GetAudience()
-	if err != nil {
-		return "", status.Errorf(codes.InvalidArgument, "invalid jwt audience")
-	}
-
-	var matched []*url.URL
-
-	for _, audience := range audiences {
-		aud, err := url.Parse(audience)
-		// skip unrecognized audiences
-		if err != nil {
-			continue
-		}
-		// skip non local audiences
-		if aud.Scheme != "https" || aud.Host != routerEndpoint() || !strings.HasPrefix(aud.Path, "/stream/") {
-			continue
-		}
-		// add local audience to matched list
-		matched = append(matched, aud)
-	}
-
-	if len(matched) != 1 {
-		return "", status.Errorf(codes.InvalidArgument, "invalid number of local jwt audience")
-	}
-
-	// Invariant: len(matched) == 1
-	audience := matched[0]
-
-	tokenReview := authv1.TokenReview{
-		Spec: authv1.TokenReviewSpec{
-			Token:     token,
-			Audiences: []string{audience.String()},
-		},
-	}
-	if err := s.Client.Create(ctx, &tokenReview); err != nil {
-		return "", status.Errorf(codes.Unauthenticated, "failed to create token review")
-	}
-
-	if !tokenReview.Status.Authenticated ||
-		tokenReview.Status.User.Username != "system:serviceaccount:"+nameSpace+":"+namePrefix+"tokenholder" ||
-		!slices.Contains(tokenReview.Status.Audiences, audience.String()) {
-		return "", status.Errorf(codes.Unauthenticated, "unauthenticated jwt token")
-	}
-
-	return strings.TrimPrefix(audience.Path, "/stream/"), nil
+	return parsed.Claims.GetSubject()
 }
 
 func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {

@@ -20,13 +20,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
@@ -34,7 +33,6 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
-	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -48,10 +46,6 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 )
-
-// Reference: config/default/kustomization.yaml
-const nameSpace = "jumpstarter-router-system"
-const namePrefix = "jumpstarter-router-"
 
 // ControlerService exposes a gRPC service
 type ControllerService struct {
@@ -386,49 +380,22 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	stream := uuid.NewUUID()
 
-	audience := (&url.URL{
-		// TODO should we use grpc scheme?
-		Scheme: "https",
-		Host:   routerEndpoint(),
-		Path:   fmt.Sprintf("/stream/%s", stream),
-	}).String()
-
-	// TODO: make this configurable and requestable (with limits)
-	expsecs := int64(3600)
-
-	var tokenholder corev1.ServiceAccount
-
-	tokenholderName := types.NamespacedName{
-		Namespace: nameSpace,
-		Name:      namePrefix + "tokenholder",
-	}
-
-	if err := s.Client.Get(ctx, tokenholderName, &tokenholder); err != nil {
-		logger.Error(err, "failed to get tokenholder service account", "name", tokenholderName)
-		return nil, status.Errorf(codes.Internal, "failed to get tokenholder service account")
-	}
-
-	tokenRequest := authv1.TokenRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: tokenholderName.Namespace,
-			Name:      tokenholderName.Name,
-		},
-		Spec: authv1.TokenRequestSpec{
-			Audiences:         []string{audience},
-			ExpirationSeconds: &expsecs,
-		},
-	}
-
-	if err := s.SubResource("token").Create(ctx, &tokenholder, &tokenRequest); err != nil {
-		logger.Error(err, "failed to issue stream token")
-		return nil, status.Errorf(codes.Internal, "failed to issue stream token: %s", err)
-	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.RegisteredClaims{
+		Issuer:    "https://jumpstarter.dev/stream",
+		Subject:   string(stream),
+		Audience:  []string{"https://jumpstarter.dev/router"},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 30)),
+		NotBefore: jwt.NewNumericDate(time.Now()),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ID:        string(uuid.NewUUID()),
+	}).SignedString(jwt.UnsafeAllowNoneSignatureType)
 
 	// TODO: find best router from list
 	endpoint := routerEndpoint()
+
 	response := &pb.ListenResponse{
 		RouterEndpoint: endpoint,
-		RouterToken:    tokenRequest.Status.Token,
+		RouterToken:    token,
 	}
 
 	if err := value.(listenContext).stream.Send(response); err != nil {
@@ -436,10 +403,10 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	logger.Info("Client dial assigned stream ", "client", identity.GetName(), "stream", audience)
+	logger.Info("Client dial assigned stream ", "client", identity.GetName(), "stream", stream)
 	return &pb.DialResponse{
 		RouterEndpoint: endpoint,
-		RouterToken:    tokenRequest.Status.Token,
+		RouterToken:    token,
 	}, nil
 }
 
