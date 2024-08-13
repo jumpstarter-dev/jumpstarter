@@ -8,6 +8,8 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"google.golang.org/grpc"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -16,7 +18,6 @@ import (
 
 var (
 	scheme = runtime.NewScheme()
-	client = fake.NewFakeClient()
 )
 
 func init() {
@@ -26,6 +27,53 @@ func init() {
 
 func main() {
 	server := grpc.NewServer()
+
+	exporter := jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "exporter-sample",
+			Namespace: "default",
+		},
+		Spec: jumpstarterdevv1alpha1.ExporterSpec{
+			Credentials: []corev1.SecretReference{{
+				Name:      "exporter-sample-token",
+				Namespace: "default",
+			}},
+		},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		&exporter,
+		&jumpstarterdevv1alpha1.Identity{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "identity-sample",
+				Namespace: "default",
+			},
+			Spec: jumpstarterdevv1alpha1.IdentitySpec{
+				Credentials: []corev1.SecretReference{{
+					Name:      "identity-sample-token",
+					Namespace: "default",
+				}},
+			},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "exporter-sample-token",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"token": []byte("54d8cd395728888be9fcb93c4575d99e"),
+			},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "identity-sample-token",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"token": []byte("fc5c6dda1083a69e9886dc160de5b44e"),
+			},
+		},
+	).WithStatusSubresource(&exporter).Build()
 
 	pb.RegisterControllerServiceServer(server, &service.ControllerService{
 		Client: client,

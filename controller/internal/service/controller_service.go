@@ -186,6 +186,10 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, err
 	}
 
+	if exporter.Labels == nil {
+		exporter.Labels = make(map[string]string)
+	}
+
 	for k := range exporter.Labels {
 		if strings.HasPrefix(k, "jumpstarter.dev/") {
 			delete(exporter.Labels, k)
