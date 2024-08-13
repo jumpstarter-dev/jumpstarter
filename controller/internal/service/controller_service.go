@@ -204,6 +204,11 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		}
 	}
 
+	if err := s.Update(ctx, exporter); err != nil {
+		logger.Error(err, "unable to update exporter", "exporter", exporter)
+		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
+	}
+
 	exporter.Status.Conditions = []metav1.Condition{{
 		Type:               "Available",
 		Status:             "True",
@@ -223,11 +228,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	}
 	exporter.Status.Uuid = req.Uuid
 	exporter.Status.Devices = devices
-
-	if err := s.Update(ctx, exporter); err != nil {
-		logger.Error(err, "unable to update exporter", "exporter", exporter)
-		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
-	}
 
 	if err := s.Status().Update(ctx, exporter); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter)
