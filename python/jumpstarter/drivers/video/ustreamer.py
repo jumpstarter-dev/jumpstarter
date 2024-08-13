@@ -12,6 +12,8 @@ from anyio import connect_unix
 
 from jumpstarter.drivers import Driver, export, exportstream
 
+from .common import UStreamerState
+
 
 def find_ustreamer():
     executable = which("ustreamer")
@@ -54,7 +56,7 @@ class UStreamer(Driver):
     async def state(self):
         sess = ClientSession(connector=UnixConnector(path=self.socketp))
         async with sess.get("http://localhost/state") as r:
-            return await r.json()
+            return UStreamerState.model_validate(await r.json())
 
     @export
     async def snapshot(self):

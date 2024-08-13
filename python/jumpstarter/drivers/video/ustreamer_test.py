@@ -11,5 +11,5 @@ def test_drivers_video_ustreamer():
         pytest.skip("ustreamer not available")
 
     with serve(instance) as client:
-        assert not client.state().online  # no active client
+        assert client.state().ok
         _ = client.snapshot()
