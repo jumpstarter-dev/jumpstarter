@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import aiohttp
+from anyio import Event
 from anyio.from_thread import BlockingPortal
 from grpc import StatusCode
 
@@ -82,7 +83,7 @@ class Driver(
         async for v in method(request, context):
             yield v
 
-    async def Stream(self, request_iterator, context):
+    async def Stream(self, _request_iterator, context):
         """
         :meta private:
         """
@@ -94,8 +95,10 @@ class Driver(
             case DriverStreamRequest(method=driver_method):
                 method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
 
-                async for v in method(request_iterator, context):
-                    yield v
+                async with method(context):
+                    event = Event()
+                    context.add_done_callback(lambda _: event.set())
+                    await event.wait()
 
             case ResourceStreamRequest():
                 remote, resource = create_memory_stream()
@@ -108,8 +111,10 @@ class Driver(
                 await resource.send_eof()
 
                 async with remote:
-                    async for v in forward_server_stream(request_iterator, remote):
-                        yield v
+                    async with forward_server_stream(context, remote):
+                        event = Event()
+                        context.add_done_callback(lambda _: event.set())
+                        await event.wait()
 
                 # del self.resources[resource_uuid]
                 # small resources might be fully buffered in memory

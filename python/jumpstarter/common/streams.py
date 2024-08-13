@@ -1,68 +1,110 @@
 import logging
+import os
+from asyncio import InvalidStateError
 from contextlib import asynccontextmanager
 
 import grpc
-from anyio import BrokenResourceError, ClosedResourceError, create_memory_object_stream, create_task_group
-from anyio.abc import ByteStream, ObjectStream
+from anyio import (
+    BrokenResourceError,
+    EndOfStream,
+    create_memory_object_stream,
+    create_task_group,
+    fail_after,
+    get_cancelled_exc_class,
+    move_on_after,
+)
+from anyio.abc import AnyByteStream, ByteStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
 
+KEEPALIVE_INTERVAL = int(os.environ.get("JMP_KEEPALIVE_INTERVAL", "300"))
+KEEPALIVE_TOLERANCE = int(os.environ.get("JMP_KEEPALIVE_TOLERANCE", "600"))
+
 logger = logging.getLogger(__name__)
 
 
-async def encapsulate_stream(rx, cls):
+async def encapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.ServicerContext, rx: AnyByteStream):
+    match context:
+        case grpc.aio.StreamStreamCall():
+            cls = router_pb2.StreamRequest
+        case grpc.aio.ServicerContext() | grpc._cython.cygrpc._ServicerContext():
+            cls = router_pb2.StreamResponse
+        case _:
+            raise ValueError(f"stream encapsulation invalid context type: {type(context)}")
+
     try:
-        yield cls(frame_type=router_pb2.FRAME_TYPE_PING)
-        async for payload in rx:
-            yield cls(payload=payload)
-        yield cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY)
-    except (BrokenResourceError, ClosedResourceError):
-        logger.debug("stream encapsulation error ignored")
+        while True:
+            with move_on_after(KEEPALIVE_INTERVAL) as scope:
+                try:
+                    payload = await rx.receive()
+                # Ignore Exception: peer disconnect and EOF
+                # Reference: https://anyio.readthedocs.io/en/stable/api.html#anyio.BrokenResourceError
+                # https://anyio.readthedocs.io/en/stable/api.html#anyio.EndOfStream
+                except (BrokenResourceError, EndOfStream):
+                    logger.debug("stream encapsulation peer disconnect/EOF ignored")
+                    break
+
+            if scope.cancelled_caught:
+                await context.write(cls(frame_type=router_pb2.FRAME_TYPE_PING))
+            else:
+                await context.write(cls(payload=payload))
+
+        await context.write(cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY))
+        if isinstance(context, grpc.aio.StreamStreamCall):
+            await context.done_writing()
+    except (grpc.aio.AioRpcError, InvalidStateError) as e:
+        logger.debug("stream encapsulation grpc error cancelling task")
+        raise get_cancelled_exc_class() from e
 
 
-async def decapsulate_stream(tx, rx, tg):
-    try:
-        async for frame in rx:
+async def decapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.ServicerContext, tx: AnyByteStream):
+    while True:
+        with fail_after(KEEPALIVE_INTERVAL + KEEPALIVE_TOLERANCE):
+            try:
+                frame = await context.read()
+            except (grpc.aio.AioRpcError, InvalidStateError) as e:
+                logger.debug("stream decapsulation grpc error cancelling task")
+                raise get_cancelled_exc_class() from e
+
+        # Reference: https://grpc.github.io/grpc/python/grpc_asyncio.html#grpc.aio.StreamStreamCall.read
+        if frame == grpc.aio.EOF:
+            break
+
+        try:
             match frame.frame_type:
                 case router_pb2.FRAME_TYPE_DATA:
                     await tx.send(frame.payload)
                 case router_pb2.FRAME_TYPE_GOAWAY:
+                    # Streams like UDPSocket do not support send_eof
                     if isinstance(tx, ObjectStream) or isinstance(tx, ByteStream):
                         await tx.send_eof()
+                    break
                 case _:
-                    logger.debug(f"unrecognized frame ignored: {frame}")
-    # ignore peer disconnect
-    except BrokenResourceError:
-        logger.debug("stream decapsulation peer disconnect ignored")
-    # ignore rpc cancellation and internal error
-    except grpc.aio.AioRpcError as e:
-        match e.code():
-            case grpc.StatusCode.CANCELLED | grpc.StatusCode.INTERNAL:
-                logger.debug("stream decapsulation grpc error ignored")
-            case _:
-                raise
-    finally:
-        tg.cancel_scope.cancel()
+                    logger.debug(f"stream decapsulation unrecognized frame ignored: {frame}")
+        # Ignore Exception: peer disconnect and EOF
+        # Reference: https://anyio.readthedocs.io/en/stable/api.html#anyio.BrokenResourceError
+        # https://anyio.readthedocs.io/en/stable/api.html#anyio.EndOfStream
+        except (BrokenResourceError, EndOfStream):
+            logger.debug("stream decapsulation peer disconnect/EOF ignored")
 
 
-async def forward_server_stream(request_iterator, stream):
+@asynccontextmanager
+async def forward_server_stream(context, stream):
     async with create_task_group() as tg:
-        tg.start_soon(decapsulate_stream, stream, request_iterator, tg)
-
-        async for v in encapsulate_stream(stream, router_pb2.StreamResponse):
-            yield v
+        tg.start_soon(decapsulate_stream, context, stream)
+        tg.start_soon(encapsulate_stream, context, stream)
+        yield
+        tg.cancel_scope.cancel()
 
 
 @asynccontextmanager
 async def forward_client_stream(router, stream, metadata):
-    response_iterator = router.Stream(
-        encapsulate_stream(stream, router_pb2.StreamRequest),
-        metadata=metadata,
-    )
+    context = router.Stream(metadata=metadata)
 
     async with create_task_group() as tg:
-        tg.start_soon(decapsulate_stream, stream, response_iterator, tg)
+        tg.start_soon(decapsulate_stream, context, stream)
+        tg.start_soon(encapsulate_stream, context, stream)
         yield
         tg.cancel_scope.cancel()
 
