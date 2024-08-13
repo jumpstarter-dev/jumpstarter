@@ -135,16 +135,18 @@ spec:
               devices:
                 items:
                   properties:
-                    driver_interface:
-                      type: string
                     labels:
                       additionalProperties:
                         type: string
                       type: object
+                    parent_uuid:
+                      type: string
                     uuid:
                       type: string
                   type: object
                 type: array
+              uuid:
+                type: string
             type: object
         type: object
     served: true

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,7 +36,9 @@ import (
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -188,6 +191,18 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, err
 	}
 
+	for k := range exporter.Labels {
+		if strings.HasPrefix(k, "jumpstarter.dev/") {
+			delete(exporter.Labels, k)
+		}
+	}
+
+	for k, v := range req.Labels {
+		if strings.HasPrefix(k, "jumpstarter.dev/") {
+			exporter.Labels[k] = v
+		}
+	}
+
 	exporter.Status.Conditions = []metav1.Condition{{
 		Type:               "Available",
 		Status:             "True",
@@ -200,11 +215,18 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	devices := []jumpstarterdevv1alpha1.Device{}
 	for _, device := range req.Reports {
 		devices = append(devices, jumpstarterdevv1alpha1.Device{
-			Uuid:   device.GetUuid(),
-			Labels: device.GetLabels(),
+			Uuid:       device.Uuid,
+			ParentUuid: device.ParentUuid,
+			Labels:     device.Labels,
 		})
 	}
+	exporter.Status.Uuid = req.Uuid
 	exporter.Status.Devices = devices
+
+	if err := s.Update(ctx, exporter); err != nil {
+		logger.Error(err, "unable to update exporter", "exporter", exporter)
+		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
+	}
 
 	if err := s.Status().Update(ctx, exporter); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter)
@@ -245,6 +267,55 @@ func (s *ControllerService) Unregister(
 	logger.Info("exporter unregistered, updated as unavailable", "exporter", exporter.Name)
 
 	return &pb.UnregisterResponse{}, nil
+}
+
+func (s *ControllerService) ListExporters(
+	ctx context.Context,
+	req *pb.ListExportersRequest,
+) (*pb.ListExportersResponse, error) {
+	logger := log.FromContext(ctx)
+
+	var exporters jumpstarterdevv1alpha1.ExporterList
+
+	selector := labels.Everything()
+
+	for k, v := range req.GetLabels() {
+		requirement, err := labels.NewRequirement(k, selection.Equals, []string{v})
+		if err != nil {
+			logger.Error(err, "unable to create label requirement")
+			return nil, status.Errorf(codes.Internal, "unable to create label requirement")
+		}
+		selector = selector.Add(*requirement)
+	}
+
+	if err := s.List(ctx, &exporters, &client.ListOptions{
+		LabelSelector: selector,
+	}); err != nil {
+		logger.Error(err, "unable to list exporters")
+		return nil, status.Errorf(codes.Internal, "unable to list exporters")
+	}
+
+	var results []*pb.GetReportResponse
+
+	for _, exporter := range exporters.Items {
+		reports := []*pb.DriverInstanceReport{}
+		for _, device := range exporter.Status.Devices {
+			reports = append(reports, &pb.DriverInstanceReport{
+				Uuid:       device.Uuid,
+				ParentUuid: device.ParentUuid,
+				Labels:     device.Labels,
+			})
+		}
+		results = append(results, &pb.GetReportResponse{
+			Uuid:    exporter.Status.Uuid,
+			Labels:  exporter.GetLabels(),
+			Reports: reports,
+		})
+	}
+
+	return &pb.ListExportersResponse{
+		Exporters: results,
+	}, nil
 }
 
 func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
