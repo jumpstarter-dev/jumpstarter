@@ -350,7 +350,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		stream: stream,
 	}
 
-	_, loaded := s.listen.LoadOrStore(exporter.GetName(), lctx)
+	_, loaded := s.listen.LoadOrStore(exporter.Status.Uuid, lctx)
 
 	if loaded {
 		// TODO: in this case we should probably end the previous listener
