@@ -1,7 +1,7 @@
 # Architecture
 
 ```{warning}
-Let's give readers a helpful hint!
+This project is still evolving, so these docs may be incomplete or out-of-date.
 ```
 
 The Jumpstarter architecture is based on a client/server model. This enables a

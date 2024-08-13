@@ -1,5 +1,9 @@
 # CLI Usage
 
+```{warning}
+This project is still evolving, so these docs may be incomplete or out-of-date.
+```
+
 ## Administrator Tasks
 
 ### Creating a client token and configuration

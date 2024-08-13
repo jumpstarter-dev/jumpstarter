@@ -10,6 +10,7 @@ Jumpstarter Docs
    :maxdepth: 2
    :caption: Contents:
 
+   introduction
    architecture
    config
    drivers
