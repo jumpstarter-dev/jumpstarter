@@ -1,9 +1,4 @@
-# Introduction
-
-```{warning}
-This documentation may be incomplete, out of date, or incorrect as this project 
-is still evolving.
-```
+## Introduction
 
 Jumpstarter is a free and open-source hardware testing tool that enables you to
 test your software stack on real hardware using CI/CD principles. While traditional
