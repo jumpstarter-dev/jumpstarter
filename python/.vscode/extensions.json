@@ -8,9 +8,10 @@
         "littlefoxteam.vscode-python-test-adapter",
         "hbenl.vscode-test-explorer",
         "ryanluker.vscode-coverage-gutters",
-        "trond-snekvik.simple-rst",
         "lextudio.restructuredtext",
-        "swyddfa.esbonio"
+        "trond-snekvik.simple-rst",
+        "swyddfa.esbonio",
+        "executablebookproject.myst-highlight"
     ],
     "unwantedRecommendations": [
         "ms-python.autopep8"

@@ -11,6 +11,7 @@ Jumpstarter Docs
    :caption: Contents:
 
    introduction
+   installation
    architecture
    config
    drivers

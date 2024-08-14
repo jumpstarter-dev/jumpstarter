@@ -22,7 +22,8 @@
 				"ryanluker.vscode-coverage-gutters",
 				"lextudio.restructuredtext",
 				"trond-snekvik.simple-rst",
-				"swyddfa.esbonio"
+				"swyddfa.esbonio",
+				"ExecutableBookProject.myst-highlight"
 			],
 			"settings": {
 				"extensions.ignoreRecommendations": true,
@@ -31,6 +32,16 @@
 					"editor.formatOnType": true,
 					"editor.formatOnSave": true,
 					"editor.defaultFormatter": "charliermarsh.ruff"
+				},
+				"[markdown]": {
+					"editor.rulers": [
+						80
+					]
+				},
+				"[restructuredtext]": {
+					"editor.rulers": [
+						80
+					]
 				}
 			}
 		}
