@@ -30,7 +30,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(jumpstarterdevv1alpha1.AddToScheme(scheme))
 
-	os.Setenv("NAMESPACE", namespace)
+	_ = os.Setenv("NAMESPACE", namespace)
 }
 
 func main() {

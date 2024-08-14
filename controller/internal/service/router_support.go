@@ -37,7 +37,9 @@ func Forward(ctx context.Context, a pb.RouterService_StreamServer, b pb.RouterSe
 	// The derived Context is canceled the first time a function
 	// passed to Go returns a non-nil error or the first time
 	// Wait returns, whichever occurs first.
-	go g.Wait()
+	go func() {
+		_ = g.Wait()
+	}()
 	// Return on first error
 	<-ctx.Done()
 	return g.Wait()

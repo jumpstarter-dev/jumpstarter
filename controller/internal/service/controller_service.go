@@ -295,9 +295,9 @@ func (s *ControllerService) ListExporters(
 		return nil, status.Errorf(codes.Internal, "unable to list exporters")
 	}
 
-	var results []*pb.GetReportResponse
+	results := make([]*pb.GetReportResponse, len(exporters.Items))
 
-	for _, exporter := range exporters.Items {
+	for i, exporter := range exporters.Items {
 		reports := []*pb.DriverInstanceReport{}
 		for _, device := range exporter.Status.Devices {
 			reports = append(reports, &pb.DriverInstanceReport{
@@ -306,11 +306,11 @@ func (s *ControllerService) ListExporters(
 				Labels:     device.Labels,
 			})
 		}
-		results = append(results, &pb.GetReportResponse{
+		results[i] = &pb.GetReportResponse{
 			Uuid:    exporter.Status.Uuid,
 			Labels:  exporter.GetLabels(),
 			Reports: reports,
-		})
+		}
 	}
 
 	return &pb.ListExportersResponse{
@@ -410,6 +410,11 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ID:        string(uuid.NewUUID()),
 	}).SignedString(key)
+
+	if err != nil {
+		logger.Error(err, "unable to sign token")
+		return nil, status.Errorf(codes.Internal, "unable to sign token")
+	}
 
 	// TODO: find best router from list
 	endpoint := routerEndpoint()

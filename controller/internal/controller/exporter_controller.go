@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -110,8 +111,9 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		},
 	}
 	// enable garbage collection on the created resource
-	controllerutil.SetControllerReference(exporter, secret, r.Scheme)
-
+	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
+		return nil, fmt.Errorf("secretForExporter, error setting controller reference: %w", err)
+	}
 	return secret, nil
 }
 
