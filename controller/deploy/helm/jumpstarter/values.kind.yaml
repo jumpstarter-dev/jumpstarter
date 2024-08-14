@@ -1,7 +1,7 @@
 global:
   baseDomain: jumpstarter.127.0.0.1.nip.io
   metrics:
-      enabled: false
+    enabled: false
 
 jumpstarter-controller:
   image: quay.io/jumpstarter-dev/jumpstarter-controller

@@ -140,6 +140,11 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: docker-build cluster
 	./hack/deploy_with_helm.sh
 
+.PHONY: lint-helm
+lint-helm:
+	helm lint deploy/helm/jumpstarter --set jumpstarter-controller.routerSecret=abcd
+
+
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
