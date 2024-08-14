@@ -1,6 +1,8 @@
 
 namespace: ""
 
+routerSecret: ""
+
 grpc:
   hostname: ""
   routerHostname: ""
@@ -9,6 +11,7 @@ grpc:
   # to announce the endpoints to the clients
   endpoint: ""
   routerEndpoint: ""
+
 
   tls:
     enabled: false
