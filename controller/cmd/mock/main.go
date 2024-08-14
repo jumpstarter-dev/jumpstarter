@@ -21,11 +21,16 @@ var (
 	scheme = runtime.NewScheme()
 )
 
+const (
+	// to make sure we are not hardcoding namespaces in code
+	namespace = "81c6ed4dc0bf88203081454aefa806ca"
+)
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(jumpstarterdevv1alpha1.AddToScheme(scheme))
 
-	os.Setenv("NAMESPACE", "default")
+	os.Setenv("NAMESPACE", namespace)
 }
 
 func main() {
@@ -34,12 +39,12 @@ func main() {
 	exporter := jumpstarterdevv1alpha1.Exporter{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "exporter-sample",
-			Namespace: "default",
+			Namespace: namespace,
 		},
 		Spec: jumpstarterdevv1alpha1.ExporterSpec{
 			Credentials: []corev1.SecretReference{{
 				Name:      "exporter-sample-token",
-				Namespace: "default",
+				Namespace: namespace,
 			}},
 		},
 	}
@@ -49,19 +54,19 @@ func main() {
 		&jumpstarterdevv1alpha1.Identity{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "identity-sample",
-				Namespace: "default",
+				Namespace: namespace,
 			},
 			Spec: jumpstarterdevv1alpha1.IdentitySpec{
 				Credentials: []corev1.SecretReference{{
 					Name:      "identity-sample-token",
-					Namespace: "default",
+					Namespace: namespace,
 				}},
 			},
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "exporter-sample-token",
-				Namespace: "default",
+				Namespace: namespace,
 			},
 			Data: map[string][]byte{
 				"token": []byte("54d8cd395728888be9fcb93c4575d99e"),
@@ -70,7 +75,7 @@ func main() {
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "identity-sample-token",
-				Namespace: "default",
+				Namespace: namespace,
 			},
 			Data: map[string][]byte{
 				"token": []byte("fc5c6dda1083a69e9886dc160de5b44e"),
@@ -79,7 +84,7 @@ func main() {
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "jumpstarter-router-secret",
-				Namespace: "default",
+				Namespace: namespace,
 			},
 			Data: map[string][]byte{
 				"key": []byte("a70643ffe8f924351fc343439399bbf4"),
