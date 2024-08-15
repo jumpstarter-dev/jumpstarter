@@ -6,6 +6,6 @@ documentation.
 
 ```{toctree}
 python-package.md
-controller.md
+service.md
 local-cluster.md
 ```

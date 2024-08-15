@@ -5,6 +5,6 @@ docs-watch:
 	sphinx-autobuild docs/source docs/build/html
 
 clean:
-	rm -rf ./docs/build/html
+	rm -rf ./docs/build
 
 .PHONY: docs

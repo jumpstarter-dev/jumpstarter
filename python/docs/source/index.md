@@ -10,12 +10,12 @@ Welcome to the Jumpstarter documentation!
 ## Table of Contents
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 
-introduction.md
+introduction/index.md
 installation/index.md
+getting-started/index.md
 cli/index.md
-architecture.md
 config.md
 drivers.md
 glossary.md

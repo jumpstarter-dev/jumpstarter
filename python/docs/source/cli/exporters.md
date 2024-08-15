@@ -1,6 +1,6 @@
 # Manage Exporters
 
-The Jumpstarter CLIs can be used to manage your exporter configurations.
+The Jumpstarter CLI can be used to manage your exporter configurations.
 
 ## Creating a exporter
 
