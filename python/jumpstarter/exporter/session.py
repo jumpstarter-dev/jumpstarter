@@ -49,10 +49,9 @@ class Session(
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
-    async def Stream(self, request_iterator, context):
+    async def Stream(self, _request_iterator, context):
         metadata = dict(context.invocation_metadata())
 
         request = StreamRequest.validate_json(metadata["request"], strict=True)
 
-        async for v in self[request.uuid].Stream(request_iterator, context):
-            yield v
+        await self[request.uuid].Stream(_request_iterator, context)

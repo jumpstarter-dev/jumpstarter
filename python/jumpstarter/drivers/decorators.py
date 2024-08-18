@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from inspect import isasyncgenfunction, iscoroutinefunction, isfunction, isgeneratorfunction
 from typing import Final
 from uuid import uuid4
@@ -60,10 +61,11 @@ def exportstream(func):
     Decorator for exporting method as stream
     """
 
-    async def wrapper(self, request_iterator, context):
+    @asynccontextmanager
+    async def wrapper(self, context):
         async with func(self) as stream:
-            async for v in forward_server_stream(request_iterator, stream):
-                yield v
+            async with forward_server_stream(context, stream):
+                yield
 
     setattr(wrapper, MARKER_STREAMCALL, MARKER_MAGIC)
 
