@@ -40,42 +40,65 @@ spec:
             description: LeaseSpec defines the desired state of Lease
             properties:
               beginTime:
-                description: |-
-                  INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
                 format: date-time
                 type: string
               clientName:
-                type: string
-              clientUID:
-                description: |-
-                  UID is a type that holds unique ID values, including UUIDs.  Because we
-                  don't ONLY use UUIDs, this is an alias to string.  Being a type captures
-                  intent and helps make sure that UIDs and names do not get conflated.
+                description: The client that is requesting the lease
                 type: string
               endTime:
                 format: date-time
                 type: string
-              exporterName:
-                type: string
-              exporterUID:
-                description: |-
-                  Adding the UID of the exporter and client can be redundant but
-                  it is useful if devices change name, while the string name
-                  is useful for humans inspecting the lease
-                type: string
-              minutes:
-                description: Minutes is redundant when we have begin/end time but
-                  it's useful for listing
-                type: integer
+              selector:
+                description: The selector for the exporter to be used
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
             required:
             - beginTime
             - clientName
-            - clientUID
             - endTime
-            - exporterName
-            - exporterUID
-            - minutes
+            - selector
             type: object
           status:
             description: LeaseStatus defines the observed state of Lease
@@ -151,8 +174,17 @@ spec:
                 type: array
               ended:
                 type: boolean
+              exporterName:
+                description: |-
+                  If the lease has been acquired an exporter name is assigned
+                  and then and then it can be used, it will be empty while still pending
+                type: string
+              minutes:
+                description: The minutes that the lease is going to last
+                type: integer
             required:
             - ended
+            - minutes
             type: object
         type: object
     served: true

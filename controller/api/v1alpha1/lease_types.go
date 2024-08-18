@@ -18,33 +18,29 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
-
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // LeaseSpec defines the desired state of Lease
 type LeaseSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 	BeginTime metav1.Time `json:"beginTime"`
 	EndTime   metav1.Time `json:"endTime"`
-	// Minutes is redundant when we have begin/end time but it's useful for listing
-	Minutes      int    `json:"minutes"`
-	ExporterName string `json:"exporterName"`
-	ClientName   string `json:"clientName"`
-	// Adding the UID of the exporter and client can be redundant but
-	// it is useful if devices change name, while the string name
-	// is useful for humans inspecting the lease
-	ExporterUID types.UID `json:"exporterUID"`
-	ClientUID   types.UID `json:"clientUID"`
+
+	// The client that is requesting the lease
+	ClientName string `json:"clientName"`
+
+	// The selector for the exporter to be used
+	Selector metav1.LabelSelector `json:"selector"`
 }
 
 // LeaseStatus defines the observed state of Lease
 type LeaseStatus struct {
-	Ended      bool               `json:"ended"`
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	// The minutes that the lease is going to last
+	Minutes int `json:"minutes"`
+	// If the lease has been acquired an exporter name is assigned
+	// and then and then it can be used, it will be empty while still pending
+	ExporterName string             `json:"exporterName,omitempty"`
+	Ended        bool               `json:"ended"`
+	Conditions   []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +kubebuilder:object:root=true
