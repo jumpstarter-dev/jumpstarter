@@ -91,7 +91,7 @@ func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, 
 	return &token, nil
 }
 
-func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
+func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
 	logger := log.FromContext(ctx)
 	token, err := s.authenticatePre(ctx)
 
@@ -99,40 +99,40 @@ func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstar
 		return nil, err
 	}
 
-	identityRef := types.NamespacedName{
+	clientRef := types.NamespacedName{
 		Namespace: token.Namespace,
 		Name:      token.Name,
 	}
 
-	var identity jumpstarterdevv1alpha1.Client
+	var client jumpstarterdevv1alpha1.Client
 
-	logger.Info("authenticating identity", "identity", identityRef)
+	logger.Info("authenticating client", "client", clientRef)
 	if err := s.Client.Get(
 		ctx,
-		identityRef,
-		&identity,
+		clientRef,
+		&client,
 	); err != nil {
-		logger.Error(err, "unable to get identity resource", "identity", identityRef)
-		return nil, status.Errorf(codes.Internal, "unable to get identity resource")
+		logger.Error(err, "unable to get client resource", "client", clientRef)
+		return nil, status.Errorf(codes.Internal, "unable to get client resource")
 	}
 
-	for _, ref := range identity.Spec.Credentials {
+	for _, ref := range client.Spec.Credentials {
 		var secret corev1.Secret
 
 		if err := s.Client.Get(ctx, types.NamespacedName{
 			Namespace: ref.Namespace,
 			Name:      ref.Name,
 		}, &secret); err != nil {
-			logger.Error(err, "unable to get secret resource", "identity", identityRef, "name", ref.Name)
+			logger.Error(err, "unable to get secret resource", "client", clientRef, "name", ref.Name)
 			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
 		}
 
 		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
-			return &identity, nil
+			return &client, nil
 		}
 	}
 
-	logger.Error(nil, "no matching credential", "identity", identityRef)
+	logger.Error(nil, "no matching credential", "client", clientRef)
 	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
 }
 
@@ -366,17 +366,17 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 
 func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
 	logger := log.FromContext(ctx)
-	identity, err := s.authenticateIdentity(ctx)
+	client, err := s.authenticateClient(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate identity")
+		logger.Error(err, "unable to authenticate client")
 		return nil, err
 	}
 
-	// TODO: authorize user with Identity/Lease resource
+	// TODO: authorize user with Client/Lease resource
 
 	value, ok := s.listen.Load(req.GetUuid())
 	if !ok {
-		logger.Error(nil, "no matching listener", "client", identity.GetName(), "uuid", req.GetUuid())
+		logger.Error(nil, "no matching listener", "client", client.GetName(), "uuid", req.GetUuid())
 		return nil, status.Errorf(codes.Unavailable, "no matching listener")
 	}
 
@@ -429,7 +429,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	logger.Info("Client dial assigned stream ", "client", identity.GetName(), "stream", stream)
+	logger.Info("Client dial assigned stream ", "client", client.GetName(), "stream", stream)
 	return &pb.DialResponse{
 		RouterEndpoint: endpoint,
 		RouterToken:    token,
