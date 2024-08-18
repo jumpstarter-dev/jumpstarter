@@ -51,12 +51,12 @@ func main() {
 
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		&exporter,
-		&jumpstarterdevv1alpha1.Identity{
+		&jumpstarterdevv1alpha1.Client{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "identity-sample",
 				Namespace: namespace,
 			},
-			Spec: jumpstarterdevv1alpha1.IdentitySpec{
+			Spec: jumpstarterdevv1alpha1.ClientSpec{
 				Credentials: []corev1.SecretReference{{
 					Name:      "identity-sample-token",
 					Namespace: namespace,

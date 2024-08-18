@@ -9,12 +9,12 @@ stringData:
   token: fc5c6dda1083a69e9886dc160de5b44e
 ---
 apiVersion: jumpstarter.dev/v1alpha1
-kind: Identity
+kind: Client
 metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
     app.kubernetes.io/managed-by: kustomize
-  name: identity-sample
+  name: client-sample
 spec:
   credentials:
   - namespace: jumpstarter-lab

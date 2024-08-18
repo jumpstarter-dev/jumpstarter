@@ -40,13 +40,13 @@ var _ = Describe("Identity Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		identity := &jumpstarterdevv1alpha1.Identity{}
+		identity := &jumpstarterdevv1alpha1.Client{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind Identity")
 			err := k8sClient.Get(ctx, typeNamespacedName, identity)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &jumpstarterdevv1alpha1.Identity{
+				resource := &jumpstarterdevv1alpha1.Client{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
@@ -59,7 +59,7 @@ var _ = Describe("Identity Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &jumpstarterdevv1alpha1.Identity{}
+			resource := &jumpstarterdevv1alpha1.Client{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 

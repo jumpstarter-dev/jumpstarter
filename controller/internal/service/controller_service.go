@@ -91,7 +91,7 @@ func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, 
 	return &token, nil
 }
 
-func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstarterdevv1alpha1.Identity, error) {
+func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
 	logger := log.FromContext(ctx)
 	token, err := s.authenticatePre(ctx)
 
@@ -104,7 +104,7 @@ func (s *ControllerService) authenticateIdentity(ctx context.Context) (*jumpstar
 		Name:      token.Name,
 	}
 
-	var identity jumpstarterdevv1alpha1.Identity
+	var identity jumpstarterdevv1alpha1.Client
 
 	logger.Info("authenticating identity", "identity", identityRef)
 	if err := s.Client.Get(

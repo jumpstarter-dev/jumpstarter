@@ -4,12 +4,12 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
-  name: identity-editor-role
+  name: client-editor-role
 rules:
 - apiGroups:
   - jumpstarter.dev
   resources:
-  - identities
+  - clients 
   verbs:
   - create
   - delete

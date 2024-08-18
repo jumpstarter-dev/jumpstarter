@@ -57,6 +57,6 @@ func (r *IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // SetupWithManager sets up the controller with the Manager.
 func (r *IdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&jumpstarterdevv1alpha1.Identity{}).
+		For(&jumpstarterdevv1alpha1.Client{}).
 		Complete(r)
 }

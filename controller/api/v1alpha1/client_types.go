@@ -24,16 +24,16 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// IdentitySpec defines the desired state of Identity
-type IdentitySpec struct {
+// ClientSpec defines the desired state of Identity
+type ClientSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	Credentials []corev1.SecretReference `json:"credentials,omitempty"`
 }
 
-// IdentityStatus defines the observed state of Identity
-type IdentityStatus struct {
+// ClientStatus defines the observed state of Identity
+type ClientStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
@@ -41,24 +41,24 @@ type IdentityStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// Identity is the Schema for the identities API
-type Identity struct {
+// Client is the Schema for the identities API
+type Client struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   IdentitySpec   `json:"spec,omitempty"`
-	Status IdentityStatus `json:"status,omitempty"`
+	Spec   ClientSpec   `json:"spec,omitempty"`
+	Status ClientStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// IdentityList contains a list of Identity
-type IdentityList struct {
+// ClientList contains a list of Identity
+type ClientList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Identity `json:"items"`
+	Items           []Client `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Identity{}, &IdentityList{})
+	SchemeBuilder.Register(&Client{}, &ClientList{})
 }
