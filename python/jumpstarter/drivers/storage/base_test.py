@@ -1,7 +1,8 @@
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Thread
 
-import pytest
 from opendal import Operator
 
 from jumpstarter.common.utils import serve
@@ -19,18 +20,26 @@ def test_drivers_mock_storage_mux_fs():
             client.write_local_file(str(Path(tempdir) / "test"))
 
 
-@pytest.mark.skip(reason="require minio")
-def test_drivers_mock_storage_mux_s3():
+def test_drivers_mock_storage_mux_http():
+    class StaticHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", 11 * 1000)
+            self.end_headers()
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("content-length", 11 * 1000)
+            self.end_headers()
+            self.wfile.write(b"testcontent" * 1000)
+
     with serve(MockStorageMux(name="storage")) as client:
-        s3 = Operator(
-            "s3",
-            bucket="test",
-            endpoint="http://127.0.0.1:9000",
-            region="us-east-1",
-            access_key_id="minioadmin",
-            secret_access_key="minioadmin",
-        )
+        server = HTTPServer(("127.0.0.1", 8080), StaticHandler)
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
 
-        s3.write("test", b"testcontent" * 1000)
+        fs = Operator("http", endpoint="http://127.0.0.1:8080")
+        client.write_file(fs, "test")
 
-        client.write_file(s3, "test")
+        server.shutdown()
