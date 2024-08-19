@@ -18,8 +18,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"net"
 	"os"
 	"strings"
@@ -28,7 +26,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
@@ -46,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
 )
 
 // ControlerService exposes a gRPC service
@@ -67,41 +65,21 @@ type bearerToken struct {
 	Token     string `json:"token"`
 }
 
-func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, error) {
-	logger := log.FromContext(ctx)
-	encoded, err := BearerTokenFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		logger.Error(err, "failed to decode token", "encoded", encoded)
-		return nil, status.Errorf(codes.InvalidArgument, "failed to decode token")
-	}
-
-	var token bearerToken
-
-	err = json.Unmarshal(decoded, &token)
-	if err != nil {
-		logger.Error(err, "failed to unmarshal token", "decoded", decoded)
-		return nil, status.Errorf(codes.InvalidArgument, "failed to unmarshal token")
-	}
-
-	return &token, nil
-}
-
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
 	logger := log.FromContext(ctx)
-	token, err := s.authenticatePre(ctx)
 
+	token, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	clientRef := types.NamespacedName{
-		Namespace: token.Namespace,
-		Name:      token.Name,
+	clientRef, err := controller.VerifyObjectToken(
+		token,
+		"https://jumpstarter.dev/controller",
+		"https://jumpstarter.dev/controller",
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	var client jumpstarterdevv1alpha1.Client
@@ -109,74 +87,56 @@ func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarte
 	logger.Info("authenticating client", "client", clientRef)
 	if err := s.Client.Get(
 		ctx,
-		clientRef,
+		types.NamespacedName{
+			Namespace: clientRef.Namespace,
+			Name:      clientRef.Name,
+		},
 		&client,
 	); err != nil {
 		logger.Error(err, "unable to get client resource", "client", clientRef)
 		return nil, status.Errorf(codes.Internal, "unable to get client resource")
 	}
 
-	if client.Status.Credential == nil {
-		return nil, status.Errorf(codes.Internal, "client has no credential")
+	if client.UID != clientRef.UID {
+		return nil, status.Errorf(codes.Internal, "client UID mismatch")
 	}
 
-	var secret corev1.Secret
-
-	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: clientRef.Namespace,
-		Name:      client.Status.Credential.Name,
-	}, &secret); err != nil {
-		logger.Error(err, "unable to get secret resource", "client", clientRef, "name", client.Status.Credential.Name)
-		return nil, status.Errorf(codes.Internal, "unable to get secret resource")
-	}
-
-	if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
-		return &client, nil
-	}
-
-	logger.Error(nil, "no matching credential", "client", clientRef)
-	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
+	return &client, nil
 }
 
 func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
-	token, err := s.authenticatePre(ctx)
+	token, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	exporterRef := types.NamespacedName{
-		Namespace: token.Namespace,
-		Name:      token.Name,
+	exporterRef, err := controller.VerifyObjectToken(
+		token,
+		"https://jumpstarter.dev/controller",
+		"https://jumpstarter.dev/controller",
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	var exporter jumpstarterdevv1alpha1.Exporter
 
 	if err := s.Client.Get(
 		ctx,
-		exporterRef,
+		types.NamespacedName{
+			Namespace: exporterRef.Namespace,
+			Name:      exporterRef.Name,
+		},
 		&exporter,
 	); err != nil {
 		return nil, status.Errorf(codes.Internal, "unable to get exporter resource")
 	}
 
-	if exporter.Status.Credential == nil {
-		return nil, status.Errorf(codes.Internal, "exporter has no credential")
+	if exporter.UID != exporterRef.UID {
+		return nil, status.Errorf(codes.Internal, "client UID mismatch")
 	}
 
-	var secret corev1.Secret
-
-	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: exporterRef.Namespace,
-		Name:      exporter.Status.Credential.Name,
-	}, &secret); err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to get secret resource")
-	}
-
-	if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
-		return &exporter, nil
-	}
-
-	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
+	return &exporter, nil
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {

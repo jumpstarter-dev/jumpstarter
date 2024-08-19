@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -17,11 +18,17 @@ type JumpstarterClaims struct {
 	corev1.ObjectReference
 }
 
+func KeyFunc(_ *jwt.Token) (interface{}, error) {
+	key, ok := os.LookupEnv("CONTROLLER_KEY")
+	if !ok {
+		return nil, fmt.Errorf("Failed to lookup controller key from env")
+	}
+	return []byte(key), nil
+}
+
 func SignObjectToken(
 	issuer string,
 	audience []string,
-	method jwt.SigningMethod,
-	key interface{},
 	object metav1.Object,
 	scheme *runtime.Scheme,
 ) (string, error) {
@@ -35,7 +42,12 @@ func SignObjectToken(
 		return "", err
 	}
 
-	return jwt.NewWithClaims(method, JumpstarterClaims{
+	key, err := KeyFunc(nil)
+	if err != nil {
+		return "", err
+	}
+
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, JumpstarterClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:   issuer,
 			Subject:  string(object.GetUID()),
@@ -59,12 +71,11 @@ func VerifyObjectToken(
 	token string,
 	issuer string,
 	audience string,
-	keyFunc jwt.Keyfunc,
 ) (*corev1.ObjectReference, error) {
 	parsed, err := jwt.ParseWithClaims(
 		token,
 		&JumpstarterClaims{},
-		keyFunc,
+		KeyFunc,
 		jwt.WithIssuer(issuer),
 		jwt.WithAudience(audience),
 		jwt.WithIssuedAt(),

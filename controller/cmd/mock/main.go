@@ -31,6 +31,8 @@ func init() {
 	utilruntime.Must(jumpstarterdevv1alpha1.AddToScheme(scheme))
 
 	_ = os.Setenv("NAMESPACE", namespace)
+	_ = os.Setenv("CONTROLLER_KEY", "dummy")
+	_ = os.Setenv("ROUTER_KEY", "dummy")
 }
 
 func main() {
