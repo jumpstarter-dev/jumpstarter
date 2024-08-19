@@ -43,10 +43,10 @@ service ControllerService {
 
   // Get Lease
   rpc GetLease(GetLeaseRequest) returns (GetLeaseResponse);
-  // Create Lease
-  rpc CreateLease(CreateLeaseRequest) returns (CreateLeaseResponse);
-  // Delete Lease
-  rpc DeleteLease(DeleteLeaseRequest) returns (DeleteLeaseResponse);
+  // Request Lease
+  rpc RequestLease(RequestLeaseRequest) returns (RequestLeaseResponse);
+  // Release Lease
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
 }
 
 message RegisterRequest {
@@ -176,18 +176,18 @@ message GetLeaseResponse {
   optional string exporter_uuid = 4;
 }
 
-message CreateLeaseRequest {
+message RequestLeaseRequest {
   google.protobuf.Timestamp begin_time = 1;
   google.protobuf.Timestamp end_time = 2;
   LabelSelector selector = 3;
 }
 
-message CreateLeaseResponse {
+message RequestLeaseResponse {
   string name = 1;
 }
 
-message DeleteLeaseRequest {
+message ReleaseLeaseRequest {
   string name = 1;
 }
 
-message DeleteLeaseResponse {}
+message ReleaseLeaseResponse {}

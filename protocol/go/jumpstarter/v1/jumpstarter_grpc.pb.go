@@ -30,8 +30,8 @@ const (
 	ControllerService_ListExporters_FullMethodName = "/jumpstarter.v1.ControllerService/ListExporters"
 	ControllerService_GetExporter_FullMethodName   = "/jumpstarter.v1.ControllerService/GetExporter"
 	ControllerService_GetLease_FullMethodName      = "/jumpstarter.v1.ControllerService/GetLease"
-	ControllerService_CreateLease_FullMethodName   = "/jumpstarter.v1.ControllerService/CreateLease"
-	ControllerService_DeleteLease_FullMethodName   = "/jumpstarter.v1.ControllerService/DeleteLease"
+	ControllerService_RequestLease_FullMethodName  = "/jumpstarter.v1.ControllerService/RequestLease"
+	ControllerService_ReleaseLease_FullMethodName  = "/jumpstarter.v1.ControllerService/ReleaseLease"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -65,10 +65,10 @@ type ControllerServiceClient interface {
 	GetExporter(ctx context.Context, in *GetExporterRequest, opts ...grpc.CallOption) (*GetExporterResponse, error)
 	// Get Lease
 	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error)
-	// Create Lease
-	CreateLease(ctx context.Context, in *CreateLeaseRequest, opts ...grpc.CallOption) (*CreateLeaseResponse, error)
-	// Delete Lease
-	DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*DeleteLeaseResponse, error)
+	// Request Lease
+	RequestLease(ctx context.Context, in *RequestLeaseRequest, opts ...grpc.CallOption) (*RequestLeaseResponse, error)
+	// Release Lease
+	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -171,20 +171,20 @@ func (c *controllerServiceClient) GetLease(ctx context.Context, in *GetLeaseRequ
 	return out, nil
 }
 
-func (c *controllerServiceClient) CreateLease(ctx context.Context, in *CreateLeaseRequest, opts ...grpc.CallOption) (*CreateLeaseResponse, error) {
+func (c *controllerServiceClient) RequestLease(ctx context.Context, in *RequestLeaseRequest, opts ...grpc.CallOption) (*RequestLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateLeaseResponse)
-	err := c.cc.Invoke(ctx, ControllerService_CreateLease_FullMethodName, in, out, cOpts...)
+	out := new(RequestLeaseResponse)
+	err := c.cc.Invoke(ctx, ControllerService_RequestLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerServiceClient) DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*DeleteLeaseResponse, error) {
+func (c *controllerServiceClient) ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteLeaseResponse)
-	err := c.cc.Invoke(ctx, ControllerService_DeleteLease_FullMethodName, in, out, cOpts...)
+	out := new(ReleaseLeaseResponse)
+	err := c.cc.Invoke(ctx, ControllerService_ReleaseLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -222,10 +222,10 @@ type ControllerServiceServer interface {
 	GetExporter(context.Context, *GetExporterRequest) (*GetExporterResponse, error)
 	// Get Lease
 	GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error)
-	// Create Lease
-	CreateLease(context.Context, *CreateLeaseRequest) (*CreateLeaseResponse, error)
-	// Delete Lease
-	DeleteLease(context.Context, *DeleteLeaseRequest) (*DeleteLeaseResponse, error)
+	// Request Lease
+	RequestLease(context.Context, *RequestLeaseRequest) (*RequestLeaseResponse, error)
+	// Release Lease
+	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -260,11 +260,11 @@ func (UnimplementedControllerServiceServer) GetExporter(context.Context, *GetExp
 func (UnimplementedControllerServiceServer) GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLease not implemented")
 }
-func (UnimplementedControllerServiceServer) CreateLease(context.Context, *CreateLeaseRequest) (*CreateLeaseResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateLease not implemented")
+func (UnimplementedControllerServiceServer) RequestLease(context.Context, *RequestLeaseRequest) (*RequestLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestLease not implemented")
 }
-func (UnimplementedControllerServiceServer) DeleteLease(context.Context, *DeleteLeaseRequest) (*DeleteLeaseResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DeleteLease not implemented")
+func (UnimplementedControllerServiceServer) ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseLease not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 func (UnimplementedControllerServiceServer) testEmbeddedByValue()                           {}
@@ -413,38 +413,38 @@ func _ControllerService_GetLease_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_CreateLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateLeaseRequest)
+func _ControllerService_RequestLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestLeaseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).CreateLease(ctx, in)
+		return srv.(ControllerServiceServer).RequestLease(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ControllerService_CreateLease_FullMethodName,
+		FullMethod: ControllerService_RequestLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).CreateLease(ctx, req.(*CreateLeaseRequest))
+		return srv.(ControllerServiceServer).RequestLease(ctx, req.(*RequestLeaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_DeleteLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteLeaseRequest)
+func _ControllerService_ReleaseLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseLeaseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).DeleteLease(ctx, in)
+		return srv.(ControllerServiceServer).ReleaseLease(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ControllerService_DeleteLease_FullMethodName,
+		FullMethod: ControllerService_ReleaseLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).DeleteLease(ctx, req.(*DeleteLeaseRequest))
+		return srv.(ControllerServiceServer).ReleaseLease(ctx, req.(*ReleaseLeaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -481,12 +481,12 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ControllerService_GetLease_Handler,
 		},
 		{
-			MethodName: "CreateLease",
-			Handler:    _ControllerService_CreateLease_Handler,
+			MethodName: "RequestLease",
+			Handler:    _ControllerService_RequestLease_Handler,
 		},
 		{
-			MethodName: "DeleteLease",
-			Handler:    _ControllerService_DeleteLease_Handler,
+			MethodName: "ReleaseLease",
+			Handler:    _ControllerService_ReleaseLease_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

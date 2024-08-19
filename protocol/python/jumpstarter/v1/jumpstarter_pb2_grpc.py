@@ -56,15 +56,15 @@ class ControllerServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetLeaseRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetLeaseResponse.FromString,
                 _registered_method=True)
-        self.CreateLease = channel.unary_unary(
-                '/jumpstarter.v1.ControllerService/CreateLease',
-                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.CreateLeaseRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.CreateLeaseResponse.FromString,
+        self.RequestLease = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/RequestLease',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RequestLeaseRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RequestLeaseResponse.FromString,
                 _registered_method=True)
-        self.DeleteLease = channel.unary_unary(
-                '/jumpstarter.v1.ControllerService/DeleteLease',
-                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DeleteLeaseRequest.SerializeToString,
-                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DeleteLeaseResponse.FromString,
+        self.ReleaseLease = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/ReleaseLease',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseResponse.FromString,
                 _registered_method=True)
 
 
@@ -137,15 +137,15 @@ class ControllerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateLease(self, request, context):
-        """Create Lease
+    def RequestLease(self, request, context):
+        """Request Lease
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def DeleteLease(self, request, context):
-        """Delete Lease
+    def ReleaseLease(self, request, context):
+        """Release Lease
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -194,15 +194,15 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetLeaseRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetLeaseResponse.SerializeToString,
             ),
-            'CreateLease': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateLease,
-                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.CreateLeaseRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.CreateLeaseResponse.SerializeToString,
+            'RequestLease': grpc.unary_unary_rpc_method_handler(
+                    servicer.RequestLease,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RequestLeaseRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RequestLeaseResponse.SerializeToString,
             ),
-            'DeleteLease': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteLease,
-                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DeleteLeaseRequest.FromString,
-                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DeleteLeaseResponse.SerializeToString,
+            'ReleaseLease': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReleaseLease,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -433,7 +433,7 @@ class ControllerService(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateLease(request,
+    def RequestLease(request,
             target,
             options=(),
             channel_credentials=None,
@@ -446,9 +446,9 @@ class ControllerService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.ControllerService/CreateLease',
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.CreateLeaseRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.CreateLeaseResponse.FromString,
+            '/jumpstarter.v1.ControllerService/RequestLease',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.RequestLeaseRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.RequestLeaseResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -460,7 +460,7 @@ class ControllerService(object):
             _registered_method=True)
 
     @staticmethod
-    def DeleteLease(request,
+    def ReleaseLease(request,
             target,
             options=(),
             channel_credentials=None,
@@ -473,9 +473,9 @@ class ControllerService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/jumpstarter.v1.ControllerService/DeleteLease',
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.DeleteLeaseRequest.SerializeToString,
-            jumpstarter_dot_v1_dot_jumpstarter__pb2.DeleteLeaseResponse.FromString,
+            '/jumpstarter.v1.ControllerService/ReleaseLease',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseResponse.FromString,
             options,
             channel_credentials,
             insecure,
