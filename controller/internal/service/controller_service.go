@@ -58,12 +58,6 @@ type listenContext struct {
 	stream pb.ControllerService_ListenServer
 }
 
-type bearerToken struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	Token     string `json:"token"`
-}
-
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
 	logger := log.FromContext(ctx)
 
