@@ -22,15 +22,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ControllerService_Register_FullMethodName        = "/jumpstarter.v1.ControllerService/Register"
-	ControllerService_Unregister_FullMethodName      = "/jumpstarter.v1.ControllerService/Unregister"
-	ControllerService_Listen_FullMethodName          = "/jumpstarter.v1.ControllerService/Listen"
-	ControllerService_Dial_FullMethodName            = "/jumpstarter.v1.ControllerService/Dial"
-	ControllerService_AuditStream_FullMethodName     = "/jumpstarter.v1.ControllerService/AuditStream"
-	ControllerService_ListExporters_FullMethodName   = "/jumpstarter.v1.ControllerService/ListExporters"
-	ControllerService_GetExporter_FullMethodName     = "/jumpstarter.v1.ControllerService/GetExporter"
-	ControllerService_LeaseExporter_FullMethodName   = "/jumpstarter.v1.ControllerService/LeaseExporter"
-	ControllerService_ReleaseExporter_FullMethodName = "/jumpstarter.v1.ControllerService/ReleaseExporter"
+	ControllerService_Register_FullMethodName      = "/jumpstarter.v1.ControllerService/Register"
+	ControllerService_Unregister_FullMethodName    = "/jumpstarter.v1.ControllerService/Unregister"
+	ControllerService_Listen_FullMethodName        = "/jumpstarter.v1.ControllerService/Listen"
+	ControllerService_Dial_FullMethodName          = "/jumpstarter.v1.ControllerService/Dial"
+	ControllerService_AuditStream_FullMethodName   = "/jumpstarter.v1.ControllerService/AuditStream"
+	ControllerService_ListExporters_FullMethodName = "/jumpstarter.v1.ControllerService/ListExporters"
+	ControllerService_GetExporter_FullMethodName   = "/jumpstarter.v1.ControllerService/GetExporter"
+	ControllerService_GetLease_FullMethodName      = "/jumpstarter.v1.ControllerService/GetLease"
+	ControllerService_CreateLease_FullMethodName   = "/jumpstarter.v1.ControllerService/CreateLease"
+	ControllerService_DeleteLease_FullMethodName   = "/jumpstarter.v1.ControllerService/DeleteLease"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -62,12 +63,12 @@ type ControllerServiceClient interface {
 	// Get exporter
 	// Get information of the exporter of the given uuid
 	GetExporter(ctx context.Context, in *GetExporterRequest, opts ...grpc.CallOption) (*GetExporterResponse, error)
-	// Lease exporter
-	// Lease the exporter of the given uuid for a given amount of time
-	LeaseExporter(ctx context.Context, in *LeaseExporterRequest, opts ...grpc.CallOption) (*LeaseExporterResponse, error)
-	// Release exporter
-	// Return the exporter of the given uuid early
-	ReleaseExporter(ctx context.Context, in *ReleaseExporterRequest, opts ...grpc.CallOption) (*ReleaseExporterResponse, error)
+	// Get Lease
+	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error)
+	// Create Lease
+	CreateLease(ctx context.Context, in *CreateLeaseRequest, opts ...grpc.CallOption) (*CreateLeaseResponse, error)
+	// Delete Lease
+	DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*DeleteLeaseResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -160,20 +161,30 @@ func (c *controllerServiceClient) GetExporter(ctx context.Context, in *GetExport
 	return out, nil
 }
 
-func (c *controllerServiceClient) LeaseExporter(ctx context.Context, in *LeaseExporterRequest, opts ...grpc.CallOption) (*LeaseExporterResponse, error) {
+func (c *controllerServiceClient) GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(LeaseExporterResponse)
-	err := c.cc.Invoke(ctx, ControllerService_LeaseExporter_FullMethodName, in, out, cOpts...)
+	out := new(GetLeaseResponse)
+	err := c.cc.Invoke(ctx, ControllerService_GetLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerServiceClient) ReleaseExporter(ctx context.Context, in *ReleaseExporterRequest, opts ...grpc.CallOption) (*ReleaseExporterResponse, error) {
+func (c *controllerServiceClient) CreateLease(ctx context.Context, in *CreateLeaseRequest, opts ...grpc.CallOption) (*CreateLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ReleaseExporterResponse)
-	err := c.cc.Invoke(ctx, ControllerService_ReleaseExporter_FullMethodName, in, out, cOpts...)
+	out := new(CreateLeaseResponse)
+	err := c.cc.Invoke(ctx, ControllerService_CreateLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*DeleteLeaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteLeaseResponse)
+	err := c.cc.Invoke(ctx, ControllerService_DeleteLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -209,12 +220,12 @@ type ControllerServiceServer interface {
 	// Get exporter
 	// Get information of the exporter of the given uuid
 	GetExporter(context.Context, *GetExporterRequest) (*GetExporterResponse, error)
-	// Lease exporter
-	// Lease the exporter of the given uuid for a given amount of time
-	LeaseExporter(context.Context, *LeaseExporterRequest) (*LeaseExporterResponse, error)
-	// Release exporter
-	// Return the exporter of the given uuid early
-	ReleaseExporter(context.Context, *ReleaseExporterRequest) (*ReleaseExporterResponse, error)
+	// Get Lease
+	GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error)
+	// Create Lease
+	CreateLease(context.Context, *CreateLeaseRequest) (*CreateLeaseResponse, error)
+	// Delete Lease
+	DeleteLease(context.Context, *DeleteLeaseRequest) (*DeleteLeaseResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -246,11 +257,14 @@ func (UnimplementedControllerServiceServer) ListExporters(context.Context, *List
 func (UnimplementedControllerServiceServer) GetExporter(context.Context, *GetExporterRequest) (*GetExporterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetExporter not implemented")
 }
-func (UnimplementedControllerServiceServer) LeaseExporter(context.Context, *LeaseExporterRequest) (*LeaseExporterResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method LeaseExporter not implemented")
+func (UnimplementedControllerServiceServer) GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetLease not implemented")
 }
-func (UnimplementedControllerServiceServer) ReleaseExporter(context.Context, *ReleaseExporterRequest) (*ReleaseExporterResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ReleaseExporter not implemented")
+func (UnimplementedControllerServiceServer) CreateLease(context.Context, *CreateLeaseRequest) (*CreateLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateLease not implemented")
+}
+func (UnimplementedControllerServiceServer) DeleteLease(context.Context, *DeleteLeaseRequest) (*DeleteLeaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteLease not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 func (UnimplementedControllerServiceServer) testEmbeddedByValue()                           {}
@@ -381,38 +395,56 @@ func _ControllerService_GetExporter_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_LeaseExporter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LeaseExporterRequest)
+func _ControllerService_GetLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLeaseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).LeaseExporter(ctx, in)
+		return srv.(ControllerServiceServer).GetLease(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ControllerService_LeaseExporter_FullMethodName,
+		FullMethod: ControllerService_GetLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).LeaseExporter(ctx, req.(*LeaseExporterRequest))
+		return srv.(ControllerServiceServer).GetLease(ctx, req.(*GetLeaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_ReleaseExporter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReleaseExporterRequest)
+func _ControllerService_CreateLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateLeaseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServiceServer).ReleaseExporter(ctx, in)
+		return srv.(ControllerServiceServer).CreateLease(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ControllerService_ReleaseExporter_FullMethodName,
+		FullMethod: ControllerService_CreateLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).ReleaseExporter(ctx, req.(*ReleaseExporterRequest))
+		return srv.(ControllerServiceServer).CreateLease(ctx, req.(*CreateLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_DeleteLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).DeleteLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_DeleteLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).DeleteLease(ctx, req.(*DeleteLeaseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -445,12 +477,16 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ControllerService_GetExporter_Handler,
 		},
 		{
-			MethodName: "LeaseExporter",
-			Handler:    _ControllerService_LeaseExporter_Handler,
+			MethodName: "GetLease",
+			Handler:    _ControllerService_GetLease_Handler,
 		},
 		{
-			MethodName: "ReleaseExporter",
-			Handler:    _ControllerService_ReleaseExporter_Handler,
+			MethodName: "CreateLease",
+			Handler:    _ControllerService_CreateLease_Handler,
+		},
+		{
+			MethodName: "DeleteLease",
+			Handler:    _ControllerService_DeleteLease_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
