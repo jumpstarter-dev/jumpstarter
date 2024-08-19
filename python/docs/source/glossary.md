@@ -1,4 +1,8 @@
-# Jumpstarter glossary
+# Glossary
+
+```{warning}
+This project is still evolving, so these docs may be incomplete or out-of-date.
+```
 
 ## Acronyms
 
