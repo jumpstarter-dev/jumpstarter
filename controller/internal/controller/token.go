@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -9,7 +10,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
@@ -67,11 +70,18 @@ func SignObjectToken(
 	}).SignedString(key)
 }
 
-func VerifyObjectToken(
+type Object[T any] interface {
+	client.Object
+	*T
+}
+
+func VerifyObjectToken[T any, PT Object[T]](
+	ctx context.Context,
 	token string,
 	issuer string,
 	audience string,
-) (*corev1.ObjectReference, error) {
+	client client.Client,
+) (*T, error) {
 	parsed, err := jwt.ParseWithClaims(
 		token,
 		&JumpstarterClaims{},
@@ -88,7 +98,24 @@ func VerifyObjectToken(
 	if err != nil {
 		return nil, err
 	} else if claims, ok := parsed.Claims.(*JumpstarterClaims); ok {
-		return &claims.ObjectReference, nil
+		var object T
+		err = client.Get(
+			ctx,
+			types.NamespacedName{
+				Namespace: claims.Namespace,
+				Name:      claims.Name,
+			},
+			PT(&object),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if PT(&object).GetUID() != claims.UID {
+			return nil, fmt.Errorf("VerifyObjectToken: UID mismatch")
+		}
+
+		return &object, nil
 	} else {
 		return nil, fmt.Errorf("%T is not a JumpstarterClaims", parsed.Claims)
 	}

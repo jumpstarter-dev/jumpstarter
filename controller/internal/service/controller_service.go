@@ -35,7 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -59,42 +58,18 @@ type listenContext struct {
 }
 
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
-	logger := log.FromContext(ctx)
-
 	token, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	clientRef, err := controller.VerifyObjectToken(
+	return controller.VerifyObjectToken[jumpstarterdevv1alpha1.Client](
+		ctx,
 		token,
 		"https://jumpstarter.dev/controller",
 		"https://jumpstarter.dev/controller",
+		s.Client,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	var client jumpstarterdevv1alpha1.Client
-
-	logger.Info("authenticating client", "client", clientRef)
-	if err := s.Client.Get(
-		ctx,
-		types.NamespacedName{
-			Namespace: clientRef.Namespace,
-			Name:      clientRef.Name,
-		},
-		&client,
-	); err != nil {
-		logger.Error(err, "unable to get client resource", "client", clientRef)
-		return nil, status.Errorf(codes.Internal, "unable to get client resource")
-	}
-
-	if client.UID != clientRef.UID {
-		return nil, status.Errorf(codes.Internal, "client UID mismatch")
-	}
-
-	return &client, nil
 }
 
 func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
@@ -103,33 +78,13 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 		return nil, err
 	}
 
-	exporterRef, err := controller.VerifyObjectToken(
+	return controller.VerifyObjectToken[jumpstarterdevv1alpha1.Exporter](
+		ctx,
 		token,
 		"https://jumpstarter.dev/controller",
 		"https://jumpstarter.dev/controller",
+		s.Client,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	var exporter jumpstarterdevv1alpha1.Exporter
-
-	if err := s.Client.Get(
-		ctx,
-		types.NamespacedName{
-			Namespace: exporterRef.Namespace,
-			Name:      exporterRef.Name,
-		},
-		&exporter,
-	); err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to get exporter resource")
-	}
-
-	if exporter.UID != exporterRef.UID {
-		return nil, status.Errorf(codes.Internal, "client UID mismatch")
-	}
-
-	return &exporter, nil
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
