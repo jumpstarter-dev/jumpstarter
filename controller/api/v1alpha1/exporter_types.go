@@ -28,17 +28,16 @@ import (
 type ExporterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
-	Credentials []corev1.SecretReference `json:"credentials,omitempty"`
 }
 
 // ExporterStatus defines the observed state of Exporter
 type ExporterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
-	Uuid       string             `json:"uuid,omitempty"`
-	Devices    []Device           `json:"devices,omitempty"`
+	Conditions []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
+	Uuid       string                       `json:"uuid,omitempty"`
+	Devices    []Device                     `json:"devices,omitempty"`
 }
 
 // +kubebuilder:object:root=true

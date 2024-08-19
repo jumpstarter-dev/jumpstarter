@@ -116,20 +116,22 @@ func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarte
 		return nil, status.Errorf(codes.Internal, "unable to get client resource")
 	}
 
-	for _, ref := range client.Spec.Credentials {
-		var secret corev1.Secret
+	if client.Status.Credential == nil {
+		return nil, status.Errorf(codes.Internal, "client has no credential")
+	}
 
-		if err := s.Client.Get(ctx, types.NamespacedName{
-			Namespace: ref.Namespace,
-			Name:      ref.Name,
-		}, &secret); err != nil {
-			logger.Error(err, "unable to get secret resource", "client", clientRef, "name", ref.Name)
-			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
-		}
+	var secret corev1.Secret
 
-		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
-			return &client, nil
-		}
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: clientRef.Namespace,
+		Name:      client.Status.Credential.Name,
+	}, &secret); err != nil {
+		logger.Error(err, "unable to get secret resource", "client", clientRef, "name", client.Status.Credential.Name)
+		return nil, status.Errorf(codes.Internal, "unable to get secret resource")
+	}
+
+	if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
+		return &client, nil
 	}
 
 	logger.Error(nil, "no matching credential", "client", clientRef)
@@ -157,19 +159,21 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 		return nil, status.Errorf(codes.Internal, "unable to get exporter resource")
 	}
 
-	for _, ref := range exporter.Spec.Credentials {
-		var secret corev1.Secret
+	if exporter.Status.Credential == nil {
+		return nil, status.Errorf(codes.Internal, "exporter has no credential")
+	}
 
-		if err := s.Client.Get(ctx, types.NamespacedName{
-			Namespace: ref.Namespace,
-			Name:      ref.Name,
-		}, &secret); err != nil {
-			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
-		}
+	var secret corev1.Secret
 
-		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
-			return &exporter, nil
-		}
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: exporterRef.Namespace,
+		Name:      exporter.Status.Credential.Name,
+	}, &secret); err != nil {
+		return nil, status.Errorf(codes.Internal, "unable to get secret resource")
+	}
+
+	if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
+		return &exporter, nil
 	}
 
 	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")

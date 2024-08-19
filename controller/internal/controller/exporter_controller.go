@@ -74,7 +74,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	if exporter.Spec.Credentials == nil {
+	if exporter.Status.Credential == nil {
 		logger.Info("reconcile: Exporter has no credentials, creating credentials", "exporter", req.NamespacedName)
 		secret, err := r.secretForExporter(exporter)
 		if err != nil {
@@ -86,10 +86,10 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			logger.Error(err, "reconcile: unable to create secret for Exporter", "exporter", req.NamespacedName, "secret", secret.GetName())
 			return ctrl.Result{}, err
 		}
-		exporter.Spec.Credentials = []corev1.SecretReference{
-			{Name: secret.Name, Namespace: secret.Namespace},
+		exporter.Status.Credential = &corev1.LocalObjectReference{
+			Name: secret.Name,
 		}
-		err = r.Update(ctx, exporter)
+		err = r.Status().Update(ctx, exporter)
 		if err != nil {
 			logger.Error(err, "reconcile: unable to update Exporter with secret reference", "exporter", req.NamespacedName, "secret", secret.GetName())
 			return ctrl.Result{}, err
@@ -104,6 +104,12 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      exporter.Name + "-token",
 			Namespace: exporter.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: exporter.APIVersion,
+				Kind:       exporter.Kind,
+				Name:       exporter.Name,
+				UID:        exporter.UID,
+			}},
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{

@@ -41,11 +41,10 @@ func main() {
 			Name:      "exporter-sample",
 			Namespace: namespace,
 		},
-		Spec: jumpstarterdevv1alpha1.ExporterSpec{
-			Credentials: []corev1.SecretReference{{
-				Name:      "exporter-sample-token",
-				Namespace: namespace,
-			}},
+		Status: jumpstarterdevv1alpha1.ExporterStatus{
+			Credential: &corev1.LocalObjectReference{
+				Name: "exporter-sample-token",
+			},
 		},
 	}
 
@@ -56,11 +55,10 @@ func main() {
 				Name:      "identity-sample",
 				Namespace: namespace,
 			},
-			Spec: jumpstarterdevv1alpha1.ClientSpec{
-				Credentials: []corev1.SecretReference{{
-					Name:      "identity-sample-token",
-					Namespace: namespace,
-				}},
+			Status: jumpstarterdevv1alpha1.ClientStatus{
+				Credential: &corev1.LocalObjectReference{
+					Name: "identity-sample-token",
+				},
 			},
 		},
 		&corev1.Secret{

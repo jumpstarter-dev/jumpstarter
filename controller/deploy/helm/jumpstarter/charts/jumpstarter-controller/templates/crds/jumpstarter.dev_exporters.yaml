@@ -38,24 +38,6 @@ spec:
             type: object
           spec:
             description: ExporterSpec defines the desired state of Exporter
-            properties:
-              credentials:
-                items:
-                  description: |-
-                    SecretReference represents a Secret Reference. It has enough information to retrieve secret
-                    in any namespace
-                  properties:
-                    name:
-                      description: name is unique within a namespace to reference
-                        a secret resource.
-                      type: string
-                    namespace:
-                      description: namespace defines the space within which the secret
-                        name must be unique.
-                      type: string
-                  type: object
-                  x-kubernetes-map-type: atomic
-                type: array
             type: object
           status:
             description: ExporterStatus defines the observed state of Exporter
@@ -132,6 +114,19 @@ spec:
                   - type
                   type: object
                 type: array
+              credential:
+                description: |-
+                  LocalObjectReference contains enough information to let you locate the
+                  referenced object inside the same namespace.
+                properties:
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               devices:
                 items:
                   properties:
