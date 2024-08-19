@@ -1,0 +1,17 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+message LabelSelectorRequirement {
+  string key = 1;
+  string operator = 2;
+  repeated string values = 3;
+}
+
+// Reference: https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/label-selector/
+message LabelSelector {
+  repeated LabelSelectorRequirement match_expressions = 1;
+  map<string, string> match_labels = 2;
+}
