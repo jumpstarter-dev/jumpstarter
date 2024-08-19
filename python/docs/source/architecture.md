@@ -1,4 +1,8 @@
-# Jumpstarter Architecture
+# Architecture
+
+```{warning}
+This project is still evolving, so these docs may be incomplete or out-of-date.
+```
 
 The Jumpstarter architecture is based on a client/server model. This enables a
 single client to communicate with one or many devices under test.
@@ -67,8 +71,7 @@ gRPC API used by clients to acquire leases on exporters.
 
 #### Router
 
-The router service facilitates routing of messages between the [clients](#client)
-and [exporters](#exporter).
+The router service facilitates routing of messages between the clients and exporters.
 
 The `jumpstarter-router` provides routing via gRPC streams.
 

@@ -1,4 +1,8 @@
-# Jumpstarter Configuration
+# Configuration
+
+```{warning}
+This project is still evolving, so these docs may be incomplete or out-of-date.
+```
 
 Jumpstarter can be configured as either a client, an exporter, or both depending
 on your use case and deployment strategy.
