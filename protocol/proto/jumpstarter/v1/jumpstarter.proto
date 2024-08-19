@@ -4,9 +4,10 @@ syntax = "proto3";
 
 package jumpstarter.v1;
 
-import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "jumpstarter/v1/kubernetes.proto";
 
 // A service where a exporter can connect to make itself available
 service ControllerService {
@@ -40,13 +41,12 @@ service ControllerService {
   // Get information of the exporter of the given uuid
   rpc GetExporter(GetExporterRequest) returns (GetExporterResponse);
 
-  // Lease exporter
-  // Lease the exporter of the given uuid for a given amount of time
-  rpc LeaseExporter(LeaseExporterRequest) returns (LeaseExporterResponse);
-
-  // Release exporter
-  // Return the exporter of the given uuid early
-  rpc ReleaseExporter(ReleaseExporterRequest) returns (ReleaseExporterResponse);
+  // Get Lease
+  rpc GetLease(GetLeaseRequest) returns (GetLeaseResponse);
+  // Request Lease
+  rpc RequestLease(RequestLeaseRequest) returns (RequestLeaseResponse);
+  // Release Lease
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
 }
 
 message RegisterRequest {
@@ -165,39 +165,29 @@ message GetExporterResponse {
   GetReportResponse exporter = 1;
 }
 
-message LeaseExporterRequest {
-  string uuid = 1;
-  google.protobuf.Duration duration = 2;
+message GetLeaseRequest {
+  string name = 1;
 }
 
-message LeaseExporterResponseSuccess {
-  google.protobuf.Duration duration = 1;
+message GetLeaseResponse {
+  google.protobuf.Timestamp begin_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  LabelSelector selector = 3;
+  optional string exporter_uuid = 4;
 }
 
-message LeaseExporterResponseFailure {
-  string reason = 1;
+message RequestLeaseRequest {
+  google.protobuf.Timestamp begin_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  LabelSelector selector = 3;
 }
 
-message LeaseExporterResponse {
-  oneof lease_exporter_response_oneof {
-    LeaseExporterResponseSuccess success = 1;
-    LeaseExporterResponseFailure failure = 2;
-  }
+message RequestLeaseResponse {
+  string name = 1;
 }
 
-message ReleaseExporterRequest {
-  string uuid = 1;
+message ReleaseLeaseRequest {
+  string name = 1;
 }
 
-message ReleaseExporterResponseSuccess {}
-
-message ReleaseExporterResponseFailure {
-  string reason = 1;
-}
-
-message ReleaseExporterResponse {
-  oneof release_exporter_response_oneof {
-    ReleaseExporterResponseSuccess success = 1;
-    ReleaseExporterResponseFailure failure = 2;
-  }
-}
+message ReleaseLeaseResponse {}
