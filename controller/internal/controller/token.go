@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -18,7 +17,12 @@ import (
 
 type JumpstarterClaims struct {
 	jwt.RegisteredClaims
-	corev1.ObjectReference
+	// corev1.ObjectReference
+	Kind       string    `json:"kubernetes.io/kind,omitempty"`
+	Namespace  string    `json:"kubernetes.io/namespace,omitempty"`
+	Name       string    `json:"kubernetes.io/name,omitempty"`
+	UID        types.UID `json:"kubernetes.io/uid,omitempty"`
+	APIVersion string    `json:"kubernetes.io/api_version,omitempty"`
 }
 
 func KeyFunc(_ *jwt.Token) (interface{}, error) {
@@ -60,13 +64,11 @@ func SignObjectToken(
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        string(uuid.NewUUID()),
 		},
-		ObjectReference: corev1.ObjectReference{
-			Kind:       gvk.Kind,
-			Namespace:  object.GetNamespace(),
-			Name:       object.GetName(),
-			UID:        object.GetUID(),
-			APIVersion: gvk.GroupVersion().String(),
-		},
+		Kind:       gvk.Kind,
+		Namespace:  object.GetNamespace(),
+		Name:       object.GetName(),
+		UID:        object.GetUID(),
+		APIVersion: gvk.GroupVersion().String(),
 	}).SignedString(key)
 }
 
