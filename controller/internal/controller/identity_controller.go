@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/golang-jwt/jwt/v5"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 )
 
@@ -95,6 +96,18 @@ func (r *IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *IdentityReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client) (*corev1.Secret, error) {
+	token, err := SignObjectToken(
+		"https://jumpstarter.dev/controller",
+		[]string{"https://jumpstarter.dev/controller"},
+		jwt.SigningMethodHS256,
+		[]byte(""),
+		client,
+		r.Scheme,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      client.Name + "-token",
@@ -102,7 +115,7 @@ func (r *IdentityReconciler) secretForClient(client *jumpstarterdevv1alpha1.Clie
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
-			"token": string(uuid.NewUUID()),
+			"token": token,
 		},
 	}
 	// enable garbage collection on the created resource

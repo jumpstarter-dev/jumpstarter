@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/golang-jwt/jwt/v5"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 )
 
@@ -100,6 +102,18 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.Exporter) (*corev1.Secret, error) {
+	token, err := SignObjectToken(
+		"https://jumpstarter.dev/controller",
+		[]string{"https://jumpstarter.dev/controller"},
+		jwt.SigningMethodHS256,
+		[]byte(""),
+		exporter,
+		r.Scheme,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      exporter.Name + "-token",
@@ -107,7 +121,7 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
-			"token": string(uuid.NewUUID()),
+			"token": token,
 		},
 	}
 	// enable garbage collection on the created resource
