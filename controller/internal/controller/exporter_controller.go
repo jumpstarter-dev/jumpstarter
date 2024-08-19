@@ -104,12 +104,6 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      exporter.Name + "-token",
 			Namespace: exporter.Namespace,
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: exporter.APIVersion,
-				Kind:       exporter.Kind,
-				Name:       exporter.Name,
-				UID:        exporter.UID,
-			}},
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
@@ -117,8 +111,8 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		},
 	}
 	// enable garbage collection on the created resource
-	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
-		return nil, fmt.Errorf("secretForExporter, error setting controller reference: %w", err)
+	if err := controllerutil.SetOwnerReference(exporter, secret, r.Scheme); err != nil {
+		return nil, fmt.Errorf("secretForExporter, error setting owner reference: %w", err)
 	}
 	return secret, nil
 }
