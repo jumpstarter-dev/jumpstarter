@@ -6,6 +6,7 @@ import (
 	"os"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"google.golang.org/grpc"
@@ -50,55 +51,50 @@ func main() {
 		},
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	exporterToken, err := controller.SignObjectToken(
+		"https://jumpstarter.dev/controller",
+		[]string{"https://jumpstarter.dev/controller"},
 		&exporter,
-		&jumpstarterdevv1alpha1.Client{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "identity-sample",
-				Namespace: namespace,
-			},
-			Status: jumpstarterdevv1alpha1.ClientStatus{
-				Credential: &corev1.LocalObjectReference{
-					Name: "identity-sample-token",
-				},
+		scheme,
+	)
+	utilruntime.Must(err)
+
+  log.Println("exporter token:", exporterToken)
+
+	client := jumpstarterdevv1alpha1.Client{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "identity-sample",
+			Namespace: namespace,
+		},
+		Status: jumpstarterdevv1alpha1.ClientStatus{
+			Credential: &corev1.LocalObjectReference{
+				Name: "identity-sample-token",
 			},
 		},
-		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "exporter-sample-token",
-				Namespace: namespace,
-			},
-			Data: map[string][]byte{
-				"token": []byte("54d8cd395728888be9fcb93c4575d99e"),
-			},
-		},
-		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "identity-sample-token",
-				Namespace: namespace,
-			},
-			Data: map[string][]byte{
-				"token": []byte("fc5c6dda1083a69e9886dc160de5b44e"),
-			},
-		},
-		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "jumpstarter-router-secret",
-				Namespace: namespace,
-			},
-			Data: map[string][]byte{
-				"key": []byte("a70643ffe8f924351fc343439399bbf4"),
-			},
-		},
+	}
+
+	clientToken, err := controller.SignObjectToken(
+		"https://jumpstarter.dev/controller",
+		[]string{"https://jumpstarter.dev/controller"},
+		&client,
+		scheme,
+	)
+	utilruntime.Must(err)
+
+	log.Println("client token:", clientToken)
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		&exporter,
+		&client,
 	).WithStatusSubresource(&exporter).Build()
 
 	pb.RegisterControllerServiceServer(server, &service.ControllerService{
-		Client: client,
+		Client: c,
 		Scheme: scheme,
 	})
 
 	pb.RegisterRouterServiceServer(server, &service.RouterService{
-		Client: client,
+		Client: c,
 		Scheme: scheme,
 	})
 

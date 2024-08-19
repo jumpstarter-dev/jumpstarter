@@ -56,7 +56,7 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 	parsed, err := jwt.ParseWithClaims(
 		token,
 		&jwt.RegisteredClaims{},
-		func(t *jwt.Token) (interface{}, error) { return os.Getenv("ROUTER_KEY"), nil },
+		func(t *jwt.Token) (interface{}, error) { return []byte(os.Getenv("ROUTER_KEY")), nil },
 		jwt.WithIssuer("https://jumpstarter.dev/stream"),
 		jwt.WithAudience("https://jumpstarter.dev/router"),
 		jwt.WithIssuedAt(),

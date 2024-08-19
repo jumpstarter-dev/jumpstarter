@@ -356,7 +356,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		NotBefore: jwt.NewNumericDate(time.Now()),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ID:        string(uuid.NewUUID()),
-	}).SignedString(os.Getenv("ROUTER_KEY"))
+	}).SignedString([]byte(os.Getenv("ROUTER_KEY")))
 
 	if err != nil {
 		logger.Error(err, "unable to sign token")
