@@ -119,7 +119,7 @@ class AsyncDriverClient(
         operator: AsyncOperator,
         path: str,
     ):
-        if operator.capability().presign:
+        if operator.capability().presign_read:
             presigned = await operator.presign_read(path, expire_second=60)
             yield PresignedRequestResource(
                 headers=presigned.headers, url=presigned.url, method=presigned.method
