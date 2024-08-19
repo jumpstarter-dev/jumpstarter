@@ -28,9 +28,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -50,33 +48,15 @@ type streamContext struct {
 }
 
 func (s *RouterService) authenticate(ctx context.Context) (string, error) {
-	logger := log.FromContext(ctx)
-
 	token, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	var secret corev1.Secret
-
-	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: os.Getenv("NAMESPACE"),
-		Name:      "jumpstarter-router-secret",
-	}, &secret); err != nil {
-		logger.Error(err, "unable to get secret resource of jumpstarter-router-secret")
-		return "", status.Errorf(codes.Internal, "unable to get secret resource of jumpstarter-router-secret")
-	}
-
-	key, ok := secret.Data["key"]
-	if !ok {
-		logger.Error(err, "unable to get key from jumpstarter-router-secret")
-		return "", status.Errorf(codes.Internal, "unable to get key from jumpstarter-router-secret")
-	}
-
 	parsed, err := jwt.ParseWithClaims(
 		token,
 		&jwt.RegisteredClaims{},
-		func(t *jwt.Token) (interface{}, error) { return key, nil },
+		func(t *jwt.Token) (interface{}, error) { return os.Getenv("ROUTER_KEY"), nil },
 		jwt.WithIssuer("https://jumpstarter.dev/stream"),
 		jwt.WithAudience("https://jumpstarter.dev/router"),
 		jwt.WithIssuedAt(),

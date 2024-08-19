@@ -31,7 +31,6 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -349,22 +348,6 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	stream := uuid.NewUUID()
 
-	var secret corev1.Secret
-
-	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: os.Getenv("NAMESPACE"),
-		Name:      "jumpstarter-router-secret",
-	}, &secret); err != nil {
-		logger.Error(err, "unable to get secret resource of jumpstarter-router-secret")
-		return nil, status.Errorf(codes.Internal, "unable to get secret resource of jumpstarter-router-secret")
-	}
-
-	key, ok := secret.Data["key"]
-	if !ok {
-		logger.Error(err, "unable to get key from jumpstarter-router-secret")
-		return nil, status.Errorf(codes.Internal, "unable to get key from jumpstarter-router-secret")
-	}
-
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "https://jumpstarter.dev/stream",
 		Subject:   string(stream),
@@ -373,7 +356,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		NotBefore: jwt.NewNumericDate(time.Now()),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ID:        string(uuid.NewUUID()),
-	}).SignedString(key)
+	}).SignedString(os.Getenv("ROUTER_KEY"))
 
 	if err != nil {
 		logger.Error(err, "unable to sign token")
