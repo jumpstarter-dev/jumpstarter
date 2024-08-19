@@ -59,7 +59,7 @@ func main() {
 	)
 	utilruntime.Must(err)
 
-  log.Println("exporter token:", exporterToken)
+	log.Println("exporter token:", exporterToken)
 
 	client := jumpstarterdevv1alpha1.Client{
 		ObjectMeta: metav1.ObjectMeta{
