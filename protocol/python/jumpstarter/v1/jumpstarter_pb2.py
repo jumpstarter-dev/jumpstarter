@@ -22,13 +22,14 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from google.protobuf import duration_pb2 as google_dot_protobuf_dot_duration__pb2
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 from jumpstarter.v1 import kubernetes_pb2 as jumpstarter_dot_v1_dot_kubernetes__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n jumpstarter/v1/jumpstarter.proto\x12\x0ejumpstarter.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1fjumpstarter/v1/kubernetes.proto\"\xe5\x01\n\x0fRegisterRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x43\n\x06labels\x18\x02 \x03(\x0b\x32+.jumpstarter.v1.RegisterRequest.LabelsEntryR\x06labels\x12>\n\x07reports\x18\x03 \x03(\x0b\x32$.jumpstarter.v1.DriverInstanceReportR\x07reports\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"\xe5\x01\n\x14\x44riverInstanceReport\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12$\n\x0bparent_uuid\x18\x02 \x01(\tH\x00R\nparentUuid\x88\x01\x01\x12H\n\x06labels\x18\x03 \x03(\x0b\x32\x30.jumpstarter.v1.DriverInstanceReport.LabelsEntryR\x06labels\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\x42\x0e\n\x0c_parent_uuid\"\x12\n\x10RegisterResponse\"?\n\x11UnregisterRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x16\n\x06reason\x18\x02 \x01(\tR\x06reason\"\x14\n\x12UnregisterResponse\"\x0f\n\rListenRequest\"\\\n\x0eListenResponse\x12\'\n\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n\x0crouter_token\x18\x02 \x01(\tR\x0brouterToken\"!\n\x0b\x44ialRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\"Z\n\x0c\x44ialResponse\x12\'\n\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n\x0crouter_token\x18\x02 \x01(\tR\x0brouterToken\"\xa1\x01\n\x12\x41uditStreamRequest\x12#\n\rexporter_uuid\x18\x01 \x01(\tR\x0c\x65xporterUuid\x12\x30\n\x14\x64river_instance_uuid\x18\x02 \x01(\tR\x12\x64riverInstanceUuid\x12\x1a\n\x08severity\x18\x03 \x01(\tR\x08severity\x12\x18\n\x07message\x18\x04 \x01(\tR\x07message\"\xe9\x01\n\x11GetReportResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x45\n\x06labels\x18\x02 \x03(\x0b\x32-.jumpstarter.v1.GetReportResponse.LabelsEntryR\x06labels\x12>\n\x07reports\x18\x03 \x03(\x0b\x32$.jumpstarter.v1.DriverInstanceReportR\x07reports\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"k\n\x11\x44riverCallRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x16\n\x06method\x18\x02 \x01(\tR\x06method\x12*\n\x04\x61rgs\x18\x03 \x03(\x0b\x32\x16.google.protobuf.ValueR\x04\x61rgs\"X\n\x12\x44riverCallResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12.\n\x06result\x18\x02 \x01(\x0b\x32\x16.google.protobuf.ValueR\x06result\"t\n\x1aStreamingDriverCallRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x16\n\x06method\x18\x02 \x01(\tR\x06method\x12*\n\x04\x61rgs\x18\x03 \x03(\x0b\x32\x16.google.protobuf.ValueR\x04\x61rgs\"a\n\x1bStreamingDriverCallResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12.\n\x06result\x18\x02 \x01(\x0b\x32\x16.google.protobuf.ValueR\x06result\"]\n\x11LogStreamResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x1a\n\x08severity\x18\x02 \x01(\tR\x08severity\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\"\x9b\x01\n\x14ListExportersRequest\x12H\n\x06labels\x18\x01 \x03(\x0b\x32\x30.jumpstarter.v1.ListExportersRequest.LabelsEntryR\x06labels\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"X\n\x15ListExportersResponse\x12?\n\texporters\x18\x01 \x03(\x0b\x32!.jumpstarter.v1.GetReportResponseR\texporters\"(\n\x12GetExporterRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\"T\n\x13GetExporterResponse\x12=\n\x08\x65xporter\x18\x01 \x01(\x0b\x32!.jumpstarter.v1.GetReportResponseR\x08\x65xporter\"%\n\x0fGetLeaseRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\"\xfb\x01\n\x10GetLeaseResponse\x12\x39\n\nbegin_time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\tbeginTime\x12\x35\n\x08\x65nd_time\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\x07\x65ndTime\x12\x39\n\x08selector\x18\x03 \x01(\x0b\x32\x1d.jumpstarter.v1.LabelSelectorR\x08selector\x12(\n\rexporter_uuid\x18\x04 \x01(\tH\x00R\x0c\x65xporterUuid\x88\x01\x01\x42\x10\n\x0e_exporter_uuid\"\xc2\x01\n\x13RequestLeaseRequest\x12\x39\n\nbegin_time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\tbeginTime\x12\x35\n\x08\x65nd_time\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\x07\x65ndTime\x12\x39\n\x08selector\x18\x03 \x01(\x0b\x32\x1d.jumpstarter.v1.LabelSelectorR\x08selector\"*\n\x14RequestLeaseResponse\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\")\n\x13ReleaseLeaseRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\"\x16\n\x14ReleaseLeaseResponse2\xcd\x06\n\x11\x43ontrollerService\x12M\n\x08Register\x12\x1f.jumpstarter.v1.RegisterRequest\x1a .jumpstarter.v1.RegisterResponse\x12S\n\nUnregister\x12!.jumpstarter.v1.UnregisterRequest\x1a\".jumpstarter.v1.UnregisterResponse\x12I\n\x06Listen\x12\x1d.jumpstarter.v1.ListenRequest\x1a\x1e.jumpstarter.v1.ListenResponse0\x01\x12\x41\n\x04\x44ial\x12\x1b.jumpstarter.v1.DialRequest\x1a\x1c.jumpstarter.v1.DialResponse\x12K\n\x0b\x41uditStream\x12\".jumpstarter.v1.AuditStreamRequest\x1a\x16.google.protobuf.Empty(\x01\x12\\\n\rListExporters\x12$.jumpstarter.v1.ListExportersRequest\x1a%.jumpstarter.v1.ListExportersResponse\x12V\n\x0bGetExporter\x12\".jumpstarter.v1.GetExporterRequest\x1a#.jumpstarter.v1.GetExporterResponse\x12M\n\x08GetLease\x12\x1f.jumpstarter.v1.GetLeaseRequest\x1a .jumpstarter.v1.GetLeaseResponse\x12Y\n\x0cRequestLease\x12#.jumpstarter.v1.RequestLeaseRequest\x1a$.jumpstarter.v1.RequestLeaseResponse\x12Y\n\x0cReleaseLease\x12#.jumpstarter.v1.ReleaseLeaseRequest\x1a$.jumpstarter.v1.ReleaseLeaseResponse2\xea\x02\n\x0f\x45xporterService\x12\x46\n\tGetReport\x12\x16.google.protobuf.Empty\x1a!.jumpstarter.v1.GetReportResponse\x12S\n\nDriverCall\x12!.jumpstarter.v1.DriverCallRequest\x1a\".jumpstarter.v1.DriverCallResponse\x12p\n\x13StreamingDriverCall\x12*.jumpstarter.v1.StreamingDriverCallRequest\x1a+.jumpstarter.v1.StreamingDriverCallResponse0\x01\x12H\n\tLogStream\x12\x16.google.protobuf.Empty\x1a!.jumpstarter.v1.LogStreamResponse0\x01\x42\xcd\x01\n\x12\x63om.jumpstarter.v1B\x10JumpstarterProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n jumpstarter/v1/jumpstarter.proto\x12\x0ejumpstarter.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1fjumpstarter/v1/kubernetes.proto\"\xe5\x01\n\x0fRegisterRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x43\n\x06labels\x18\x02 \x03(\x0b\x32+.jumpstarter.v1.RegisterRequest.LabelsEntryR\x06labels\x12>\n\x07reports\x18\x03 \x03(\x0b\x32$.jumpstarter.v1.DriverInstanceReportR\x07reports\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"\xe5\x01\n\x14\x44riverInstanceReport\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12$\n\x0bparent_uuid\x18\x02 \x01(\tH\x00R\nparentUuid\x88\x01\x01\x12H\n\x06labels\x18\x03 \x03(\x0b\x32\x30.jumpstarter.v1.DriverInstanceReport.LabelsEntryR\x06labels\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\x42\x0e\n\x0c_parent_uuid\"\x12\n\x10RegisterResponse\"?\n\x11UnregisterRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x16\n\x06reason\x18\x02 \x01(\tR\x06reason\"\x14\n\x12UnregisterResponse\"\x0f\n\rListenRequest\"\\\n\x0eListenResponse\x12\'\n\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n\x0crouter_token\x18\x02 \x01(\tR\x0brouterToken\"!\n\x0b\x44ialRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\"Z\n\x0c\x44ialResponse\x12\'\n\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n\x0crouter_token\x18\x02 \x01(\tR\x0brouterToken\"\xa1\x01\n\x12\x41uditStreamRequest\x12#\n\rexporter_uuid\x18\x01 \x01(\tR\x0c\x65xporterUuid\x12\x30\n\x14\x64river_instance_uuid\x18\x02 \x01(\tR\x12\x64riverInstanceUuid\x12\x1a\n\x08severity\x18\x03 \x01(\tR\x08severity\x12\x18\n\x07message\x18\x04 \x01(\tR\x07message\"\xe9\x01\n\x11GetReportResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x45\n\x06labels\x18\x02 \x03(\x0b\x32-.jumpstarter.v1.GetReportResponse.LabelsEntryR\x06labels\x12>\n\x07reports\x18\x03 \x03(\x0b\x32$.jumpstarter.v1.DriverInstanceReportR\x07reports\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"k\n\x11\x44riverCallRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x16\n\x06method\x18\x02 \x01(\tR\x06method\x12*\n\x04\x61rgs\x18\x03 \x03(\x0b\x32\x16.google.protobuf.ValueR\x04\x61rgs\"X\n\x12\x44riverCallResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12.\n\x06result\x18\x02 \x01(\x0b\x32\x16.google.protobuf.ValueR\x06result\"t\n\x1aStreamingDriverCallRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x16\n\x06method\x18\x02 \x01(\tR\x06method\x12*\n\x04\x61rgs\x18\x03 \x03(\x0b\x32\x16.google.protobuf.ValueR\x04\x61rgs\"a\n\x1bStreamingDriverCallResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12.\n\x06result\x18\x02 \x01(\x0b\x32\x16.google.protobuf.ValueR\x06result\"]\n\x11LogStreamResponse\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x1a\n\x08severity\x18\x02 \x01(\tR\x08severity\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\"\x9b\x01\n\x14ListExportersRequest\x12H\n\x06labels\x18\x01 \x03(\x0b\x32\x30.jumpstarter.v1.ListExportersRequest.LabelsEntryR\x06labels\x1a\x39\n\x0bLabelsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"X\n\x15ListExportersResponse\x12?\n\texporters\x18\x01 \x03(\x0b\x32!.jumpstarter.v1.GetReportResponseR\texporters\"(\n\x12GetExporterRequest\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\"T\n\x13GetExporterResponse\x12=\n\x08\x65xporter\x18\x01 \x01(\x0b\x32!.jumpstarter.v1.GetReportResponseR\x08\x65xporter\"%\n\x0fGetLeaseRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\"\xd8\x02\n\x10GetLeaseResponse\x12\x35\n\x08\x64uration\x18\x01 \x01(\x0b\x32\x19.google.protobuf.DurationR\x08\x64uration\x12\x39\n\x08selector\x18\x02 \x01(\x0b\x32\x1d.jumpstarter.v1.LabelSelectorR\x08selector\x12>\n\nbegin_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00R\tbeginTime\x88\x01\x01\x12:\n\x08\x65nd_time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01R\x07\x65ndTime\x88\x01\x01\x12(\n\rexporter_uuid\x18\x05 \x01(\tH\x02R\x0c\x65xporterUuid\x88\x01\x01\x42\r\n\x0b_begin_timeB\x0b\n\t_end_timeB\x10\n\x0e_exporter_uuid\"\x87\x01\n\x13RequestLeaseRequest\x12\x35\n\x08\x64uration\x18\x01 \x01(\x0b\x32\x19.google.protobuf.DurationR\x08\x64uration\x12\x39\n\x08selector\x18\x02 \x01(\x0b\x32\x1d.jumpstarter.v1.LabelSelectorR\x08selector\"*\n\x14RequestLeaseResponse\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\")\n\x13ReleaseLeaseRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\"\x16\n\x14ReleaseLeaseResponse2\xcd\x06\n\x11\x43ontrollerService\x12M\n\x08Register\x12\x1f.jumpstarter.v1.RegisterRequest\x1a .jumpstarter.v1.RegisterResponse\x12S\n\nUnregister\x12!.jumpstarter.v1.UnregisterRequest\x1a\".jumpstarter.v1.UnregisterResponse\x12I\n\x06Listen\x12\x1d.jumpstarter.v1.ListenRequest\x1a\x1e.jumpstarter.v1.ListenResponse0\x01\x12\x41\n\x04\x44ial\x12\x1b.jumpstarter.v1.DialRequest\x1a\x1c.jumpstarter.v1.DialResponse\x12K\n\x0b\x41uditStream\x12\".jumpstarter.v1.AuditStreamRequest\x1a\x16.google.protobuf.Empty(\x01\x12\\\n\rListExporters\x12$.jumpstarter.v1.ListExportersRequest\x1a%.jumpstarter.v1.ListExportersResponse\x12V\n\x0bGetExporter\x12\".jumpstarter.v1.GetExporterRequest\x1a#.jumpstarter.v1.GetExporterResponse\x12M\n\x08GetLease\x12\x1f.jumpstarter.v1.GetLeaseRequest\x1a .jumpstarter.v1.GetLeaseResponse\x12Y\n\x0cRequestLease\x12#.jumpstarter.v1.RequestLeaseRequest\x1a$.jumpstarter.v1.RequestLeaseResponse\x12Y\n\x0cReleaseLease\x12#.jumpstarter.v1.ReleaseLeaseRequest\x1a$.jumpstarter.v1.ReleaseLeaseResponse2\xea\x02\n\x0f\x45xporterService\x12\x46\n\tGetReport\x12\x16.google.protobuf.Empty\x1a!.jumpstarter.v1.GetReportResponse\x12S\n\nDriverCall\x12!.jumpstarter.v1.DriverCallRequest\x1a\".jumpstarter.v1.DriverCallResponse\x12p\n\x13StreamingDriverCall\x12*.jumpstarter.v1.StreamingDriverCallRequest\x1a+.jumpstarter.v1.StreamingDriverCallResponse0\x01\x12H\n\tLogStream\x12\x16.google.protobuf.Empty\x1a!.jumpstarter.v1.LogStreamResponse0\x01\x42\xcd\x01\n\x12\x63om.jumpstarter.v1B\x10JumpstarterProtoP\x01ZLgithub.com/jumpstarter-dev/jumpstarter-protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -44,68 +45,68 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GETREPORTRESPONSE_LABELSENTRY']._serialized_options = b'8\001'
   _globals['_LISTEXPORTERSREQUEST_LABELSENTRY']._loaded_options = None
   _globals['_LISTEXPORTERSREQUEST_LABELSENTRY']._serialized_options = b'8\001'
-  _globals['_REGISTERREQUEST']._serialized_start=178
-  _globals['_REGISTERREQUEST']._serialized_end=407
-  _globals['_REGISTERREQUEST_LABELSENTRY']._serialized_start=350
-  _globals['_REGISTERREQUEST_LABELSENTRY']._serialized_end=407
-  _globals['_DRIVERINSTANCEREPORT']._serialized_start=410
-  _globals['_DRIVERINSTANCEREPORT']._serialized_end=639
-  _globals['_DRIVERINSTANCEREPORT_LABELSENTRY']._serialized_start=350
-  _globals['_DRIVERINSTANCEREPORT_LABELSENTRY']._serialized_end=407
-  _globals['_REGISTERRESPONSE']._serialized_start=641
-  _globals['_REGISTERRESPONSE']._serialized_end=659
-  _globals['_UNREGISTERREQUEST']._serialized_start=661
-  _globals['_UNREGISTERREQUEST']._serialized_end=724
-  _globals['_UNREGISTERRESPONSE']._serialized_start=726
-  _globals['_UNREGISTERRESPONSE']._serialized_end=746
-  _globals['_LISTENREQUEST']._serialized_start=748
-  _globals['_LISTENREQUEST']._serialized_end=763
-  _globals['_LISTENRESPONSE']._serialized_start=765
-  _globals['_LISTENRESPONSE']._serialized_end=857
-  _globals['_DIALREQUEST']._serialized_start=859
-  _globals['_DIALREQUEST']._serialized_end=892
-  _globals['_DIALRESPONSE']._serialized_start=894
-  _globals['_DIALRESPONSE']._serialized_end=984
-  _globals['_AUDITSTREAMREQUEST']._serialized_start=987
-  _globals['_AUDITSTREAMREQUEST']._serialized_end=1148
-  _globals['_GETREPORTRESPONSE']._serialized_start=1151
-  _globals['_GETREPORTRESPONSE']._serialized_end=1384
-  _globals['_GETREPORTRESPONSE_LABELSENTRY']._serialized_start=350
-  _globals['_GETREPORTRESPONSE_LABELSENTRY']._serialized_end=407
-  _globals['_DRIVERCALLREQUEST']._serialized_start=1386
-  _globals['_DRIVERCALLREQUEST']._serialized_end=1493
-  _globals['_DRIVERCALLRESPONSE']._serialized_start=1495
-  _globals['_DRIVERCALLRESPONSE']._serialized_end=1583
-  _globals['_STREAMINGDRIVERCALLREQUEST']._serialized_start=1585
-  _globals['_STREAMINGDRIVERCALLREQUEST']._serialized_end=1701
-  _globals['_STREAMINGDRIVERCALLRESPONSE']._serialized_start=1703
-  _globals['_STREAMINGDRIVERCALLRESPONSE']._serialized_end=1800
-  _globals['_LOGSTREAMRESPONSE']._serialized_start=1802
-  _globals['_LOGSTREAMRESPONSE']._serialized_end=1895
-  _globals['_LISTEXPORTERSREQUEST']._serialized_start=1898
-  _globals['_LISTEXPORTERSREQUEST']._serialized_end=2053
-  _globals['_LISTEXPORTERSREQUEST_LABELSENTRY']._serialized_start=350
-  _globals['_LISTEXPORTERSREQUEST_LABELSENTRY']._serialized_end=407
-  _globals['_LISTEXPORTERSRESPONSE']._serialized_start=2055
-  _globals['_LISTEXPORTERSRESPONSE']._serialized_end=2143
-  _globals['_GETEXPORTERREQUEST']._serialized_start=2145
-  _globals['_GETEXPORTERREQUEST']._serialized_end=2185
-  _globals['_GETEXPORTERRESPONSE']._serialized_start=2187
-  _globals['_GETEXPORTERRESPONSE']._serialized_end=2271
-  _globals['_GETLEASEREQUEST']._serialized_start=2273
-  _globals['_GETLEASEREQUEST']._serialized_end=2310
-  _globals['_GETLEASERESPONSE']._serialized_start=2313
-  _globals['_GETLEASERESPONSE']._serialized_end=2564
-  _globals['_REQUESTLEASEREQUEST']._serialized_start=2567
-  _globals['_REQUESTLEASEREQUEST']._serialized_end=2761
-  _globals['_REQUESTLEASERESPONSE']._serialized_start=2763
-  _globals['_REQUESTLEASERESPONSE']._serialized_end=2805
-  _globals['_RELEASELEASEREQUEST']._serialized_start=2807
-  _globals['_RELEASELEASEREQUEST']._serialized_end=2848
-  _globals['_RELEASELEASERESPONSE']._serialized_start=2850
-  _globals['_RELEASELEASERESPONSE']._serialized_end=2872
-  _globals['_CONTROLLERSERVICE']._serialized_start=2875
-  _globals['_CONTROLLERSERVICE']._serialized_end=3720
-  _globals['_EXPORTERSERVICE']._serialized_start=3723
-  _globals['_EXPORTERSERVICE']._serialized_end=4085
+  _globals['_REGISTERREQUEST']._serialized_start=210
+  _globals['_REGISTERREQUEST']._serialized_end=439
+  _globals['_REGISTERREQUEST_LABELSENTRY']._serialized_start=382
+  _globals['_REGISTERREQUEST_LABELSENTRY']._serialized_end=439
+  _globals['_DRIVERINSTANCEREPORT']._serialized_start=442
+  _globals['_DRIVERINSTANCEREPORT']._serialized_end=671
+  _globals['_DRIVERINSTANCEREPORT_LABELSENTRY']._serialized_start=382
+  _globals['_DRIVERINSTANCEREPORT_LABELSENTRY']._serialized_end=439
+  _globals['_REGISTERRESPONSE']._serialized_start=673
+  _globals['_REGISTERRESPONSE']._serialized_end=691
+  _globals['_UNREGISTERREQUEST']._serialized_start=693
+  _globals['_UNREGISTERREQUEST']._serialized_end=756
+  _globals['_UNREGISTERRESPONSE']._serialized_start=758
+  _globals['_UNREGISTERRESPONSE']._serialized_end=778
+  _globals['_LISTENREQUEST']._serialized_start=780
+  _globals['_LISTENREQUEST']._serialized_end=795
+  _globals['_LISTENRESPONSE']._serialized_start=797
+  _globals['_LISTENRESPONSE']._serialized_end=889
+  _globals['_DIALREQUEST']._serialized_start=891
+  _globals['_DIALREQUEST']._serialized_end=924
+  _globals['_DIALRESPONSE']._serialized_start=926
+  _globals['_DIALRESPONSE']._serialized_end=1016
+  _globals['_AUDITSTREAMREQUEST']._serialized_start=1019
+  _globals['_AUDITSTREAMREQUEST']._serialized_end=1180
+  _globals['_GETREPORTRESPONSE']._serialized_start=1183
+  _globals['_GETREPORTRESPONSE']._serialized_end=1416
+  _globals['_GETREPORTRESPONSE_LABELSENTRY']._serialized_start=382
+  _globals['_GETREPORTRESPONSE_LABELSENTRY']._serialized_end=439
+  _globals['_DRIVERCALLREQUEST']._serialized_start=1418
+  _globals['_DRIVERCALLREQUEST']._serialized_end=1525
+  _globals['_DRIVERCALLRESPONSE']._serialized_start=1527
+  _globals['_DRIVERCALLRESPONSE']._serialized_end=1615
+  _globals['_STREAMINGDRIVERCALLREQUEST']._serialized_start=1617
+  _globals['_STREAMINGDRIVERCALLREQUEST']._serialized_end=1733
+  _globals['_STREAMINGDRIVERCALLRESPONSE']._serialized_start=1735
+  _globals['_STREAMINGDRIVERCALLRESPONSE']._serialized_end=1832
+  _globals['_LOGSTREAMRESPONSE']._serialized_start=1834
+  _globals['_LOGSTREAMRESPONSE']._serialized_end=1927
+  _globals['_LISTEXPORTERSREQUEST']._serialized_start=1930
+  _globals['_LISTEXPORTERSREQUEST']._serialized_end=2085
+  _globals['_LISTEXPORTERSREQUEST_LABELSENTRY']._serialized_start=382
+  _globals['_LISTEXPORTERSREQUEST_LABELSENTRY']._serialized_end=439
+  _globals['_LISTEXPORTERSRESPONSE']._serialized_start=2087
+  _globals['_LISTEXPORTERSRESPONSE']._serialized_end=2175
+  _globals['_GETEXPORTERREQUEST']._serialized_start=2177
+  _globals['_GETEXPORTERREQUEST']._serialized_end=2217
+  _globals['_GETEXPORTERRESPONSE']._serialized_start=2219
+  _globals['_GETEXPORTERRESPONSE']._serialized_end=2303
+  _globals['_GETLEASEREQUEST']._serialized_start=2305
+  _globals['_GETLEASEREQUEST']._serialized_end=2342
+  _globals['_GETLEASERESPONSE']._serialized_start=2345
+  _globals['_GETLEASERESPONSE']._serialized_end=2689
+  _globals['_REQUESTLEASEREQUEST']._serialized_start=2692
+  _globals['_REQUESTLEASEREQUEST']._serialized_end=2827
+  _globals['_REQUESTLEASERESPONSE']._serialized_start=2829
+  _globals['_REQUESTLEASERESPONSE']._serialized_end=2871
+  _globals['_RELEASELEASEREQUEST']._serialized_start=2873
+  _globals['_RELEASELEASEREQUEST']._serialized_end=2914
+  _globals['_RELEASELEASERESPONSE']._serialized_start=2916
+  _globals['_RELEASELEASERESPONSE']._serialized_end=2938
+  _globals['_CONTROLLERSERVICE']._serialized_start=2941
+  _globals['_CONTROLLERSERVICE']._serialized_end=3786
+  _globals['_EXPORTERSERVICE']._serialized_start=3789
+  _globals['_EXPORTERSERVICE']._serialized_end=4151
 # @@protoc_insertion_point(module_scope)
