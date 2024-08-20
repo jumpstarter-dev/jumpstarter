@@ -130,8 +130,10 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			UID:        exporter.UID,
 			APIVersion: exporter.APIVersion,
 		}
-		lease.Status.BeginTime = &metav1.Time{Time: time.Now()}
-		lease.Status.EndTime = &metav1.Time{Time: time.Now().Add(lease.Spec.Duration.Duration)}
+
+		beginTime := time.Now()
+		lease.Status.BeginTime = &metav1.Time{Time: beginTime}
+		lease.Status.EndTime = &metav1.Time{Time: beginTime.Add(lease.Spec.Duration.Duration)}
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
 			log.Error(err, "unable to update Lease status")
