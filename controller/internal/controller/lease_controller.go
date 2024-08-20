@@ -18,13 +18,13 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -58,99 +58,105 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Mark expired lease as ended
-	if lease.Status.EndTime != nil && time.Now().After(lease.Status.EndTime.Time) {
-		lease.Status.Ended = true
-
-		if err := r.Status().Update(ctx, &lease); err != nil {
-			log.Error(err, "unable to update Lease status")
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	// Requeue aquire lease on EndTime
-	if lease.Status.Exporter != nil {
-		if lease.Status.EndTime == nil {
-			err := fmt.Errorf("Lease Status missing EndTime")
-			log.Error(err, "unable to requeue reconcile")
+	// 1. newly created lease
+	if lease.Status.BeginTime == nil || lease.Status.EndTime == nil || lease.Status.Exporter == nil {
+		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
+		if err != nil {
+			log.Error(err, "Error creating selector for label selector")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{
-			RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
-		}, nil
-	}
 
-	selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
-	if err != nil {
-		log.Error(err, "Error creating selector for label selector")
-		return ctrl.Result{}, err
-	}
+		// List all exporters matching selector
+		var exporters jumpstarterdevv1alpha1.ExporterList
+		err = r.List(ctx, &exporters, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
+		if err != nil {
+			log.Error(err, "Error listing exporters")
+			return ctrl.Result{}, err
+		}
 
-	// List all exporters matching selector
-	var exporters jumpstarterdevv1alpha1.ExporterList
-	err = r.List(ctx, &exporters, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
-	if err != nil {
-		log.Error(err, "Error listing exporters")
-		return ctrl.Result{}, err
-	}
-
-	// List all leases
-	var leases jumpstarterdevv1alpha1.LeaseList
-	if err = r.List(ctx, &leases, client.InNamespace(req.Namespace)); err != nil {
-		log.Error(err, "Error listing leases")
-		return ctrl.Result{}, err
-	}
-
-	for _, exporter := range exporters.Items {
-		taken := false
-
-		for _, lease := range leases.Items {
-			// Ignore ended lease
-			if lease.Status.Ended {
+		// Find available exporter
+		for _, exporter := range exporters.Items {
+			// Exporter taken by lease
+			if exporter.Status.Lease != nil {
 				continue
 			}
-			// Exporter already taken by lease
-			if lease.Status.Exporter != nil && lease.Status.Exporter.UID == exporter.UID {
-				taken = true
-				break
+
+			lease.Status.Exporter = &corev1.ObjectReference{
+				Kind:       exporter.Kind,
+				Namespace:  exporter.Namespace,
+				Name:       exporter.Name,
+				UID:        exporter.UID,
+				APIVersion: exporter.APIVersion,
 			}
+
+			beginTime := time.Now()
+			lease.Status.BeginTime = &metav1.Time{Time: beginTime}
+			lease.Status.EndTime = &metav1.Time{Time: beginTime.Add(lease.Spec.Duration.Duration)}
+
+			exporter.Status.Lease = &corev1.ObjectReference{
+				Kind:       lease.Kind,
+				Namespace:  lease.Namespace,
+				Name:       lease.Name,
+				UID:        lease.UID,
+				APIVersion: lease.APIVersion,
+			}
+
+			if err := r.Status().Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease status")
+				return ctrl.Result{}, client.IgnoreNotFound(err)
+			}
+
+			if err := r.Status().Update(ctx, &exporter); err != nil {
+				log.Error(err, "unable to update Exporter status")
+				return ctrl.Result{}, client.IgnoreNotFound(err)
+			}
+
+			// Requeue at EndTime
+			return ctrl.Result{
+				RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
+			}, nil
 		}
 
-		if taken {
-			break
-		}
-
-		lease.Status.Ended = false
-		lease.Status.Exporter = &corev1.ObjectReference{
-			Kind:       exporter.Kind,
-			Namespace:  exporter.Namespace,
-			Name:       exporter.Name,
-			UID:        exporter.UID,
-			APIVersion: exporter.APIVersion,
-		}
-
-		beginTime := time.Now()
-		lease.Status.BeginTime = &metav1.Time{Time: beginTime}
-		lease.Status.EndTime = &metav1.Time{Time: beginTime.Add(lease.Spec.Duration.Duration)}
-
-		if err := r.Status().Update(ctx, &lease); err != nil {
-			log.Error(err, "unable to update Lease status")
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
-
-		// Requeue at EndTime
+		// No exporter available
+		// Try again later
 		return ctrl.Result{
-			RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
+			RequeueAfter: time.Second,
 		}, nil
-	}
+	} else {
+		// 2. expired lease
+		if time.Now().After(lease.Status.EndTime.Time) {
+			lease.Status.Ended = true
 
-	// No exporter available
-	// Try again later
-	return ctrl.Result{
-		RequeueAfter: time.Second,
-	}, nil
+			if err := r.Status().Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease status")
+				return ctrl.Result{}, err
+			}
+
+			var exporter jumpstarterdevv1alpha1.Exporter
+			if err := r.Get(ctx, types.NamespacedName{
+				Namespace: lease.Status.Exporter.Namespace,
+				Name:      lease.Status.Exporter.Name,
+			}, &exporter); err != nil {
+				log.Error(err, "unable to get Exporter")
+				return ctrl.Result{}, err
+			}
+
+			exporter.Status.Lease = nil
+
+			if err := r.Status().Update(ctx, &exporter); err != nil {
+				log.Error(err, "unable to update Exporter status")
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{}, nil
+		} else {
+			// 3. aquired lease
+			// Requeue aquire lease on EndTime
+			return ctrl.Result{
+				RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
+			}, nil
+		}
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
