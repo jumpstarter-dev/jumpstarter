@@ -32,10 +32,12 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -336,7 +338,7 @@ func (s *ControllerService) GetLease(
 		return nil, err
 	}
 
-	if lease.Spec.ClientName != client.Name {
+	if lease.Spec.Client.UID != client.UID {
 		return nil, fmt.Errorf("GetLease permission denied")
 	}
 
@@ -384,9 +386,15 @@ func (s *ControllerService) RequestLease(
 			Name:      string(uuid.NewUUID()), // TODO: human readable name
 		},
 		Spec: jumpstarterdevv1alpha1.LeaseSpec{
-			BeginTime:  metav1.Time{Time: req.BeginTime.AsTime()},
-			EndTime:    metav1.Time{Time: req.EndTime.AsTime()},
-			ClientName: client.Name,
+			BeginTime: metav1.Time{Time: req.BeginTime.AsTime()},
+			EndTime:   metav1.Time{Time: req.EndTime.AsTime()},
+			Client: &corev1.ObjectReference{
+				Kind:       client.Kind,
+				Namespace:  client.Namespace,
+				Name:       client.Name,
+				UID:        client.UID,
+				APIVersion: client.APIVersion,
+			},
 			Selector: metav1.LabelSelector{
 				MatchLabels:      req.Selector.MatchLabels,
 				MatchExpressions: matchExpressions,
@@ -419,7 +427,7 @@ func (s *ControllerService) ReleaseLease(
 		return nil, err
 	}
 
-	if lease.Spec.ClientName != client.Name {
+	if lease.Spec.Client.UID != client.UID {
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 

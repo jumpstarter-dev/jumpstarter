@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,7 +27,7 @@ type LeaseSpec struct {
 	EndTime   metav1.Time `json:"endTime"`
 
 	// The client that is requesting the lease
-	ClientName string `json:"clientName"`
+	Client *corev1.ObjectReference `json:"client"`
 
 	// The selector for the exporter to be used
 	Selector metav1.LabelSelector `json:"selector"`
@@ -38,9 +39,9 @@ type LeaseStatus struct {
 	Minutes int `json:"minutes"`
 	// If the lease has been acquired an exporter name is assigned
 	// and then and then it can be used, it will be empty while still pending
-	ExporterName string             `json:"exporterName,omitempty"`
-	Ended        bool               `json:"ended"`
-	Conditions   []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	Exporter   *corev1.ObjectReference `json:"exporter,omitempty"`
+	Ended      bool                    `json:"ended"`
+	Conditions []metav1.Condition      `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +kubebuilder:object:root=true

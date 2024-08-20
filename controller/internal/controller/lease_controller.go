@@ -22,6 +22,7 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -75,7 +76,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		// Update status for expired leases
 		lease.Status.Ended = true
 		// TODO: release exporter
-		lease.Status.ExporterName = ""
+		lease.Status.Exporter = nil
 	} else {
 		// Update status for active leases
 		// TODO: filter exporter
@@ -100,7 +101,15 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			}, nil
 		}
 
-		lease.Status.ExporterName = exporters.Items[0].Name
+		exporter := exporters.Items[0]
+
+		lease.Status.Exporter = &corev1.ObjectReference{
+			Kind:       exporter.Kind,
+			Namespace:  exporter.Namespace,
+			Name:       exporter.Name,
+			UID:        exporter.UID,
+			APIVersion: exporter.APIVersion,
+		}
 	}
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
