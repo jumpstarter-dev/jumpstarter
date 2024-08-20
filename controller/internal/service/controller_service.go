@@ -18,8 +18,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"net"
 	"os"
 	"strings"
@@ -28,24 +26,22 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
 )
 
 // ControlerService exposes a gRPC service
@@ -61,118 +57,34 @@ type listenContext struct {
 	stream pb.ControllerService_ListenServer
 }
 
-type bearerToken struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	Token     string `json:"token"`
-}
-
-func (s *ControllerService) authenticatePre(ctx context.Context) (*bearerToken, error) {
-	logger := log.FromContext(ctx)
-	encoded, err := BearerTokenFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		logger.Error(err, "failed to decode token", "encoded", encoded)
-		return nil, status.Errorf(codes.InvalidArgument, "failed to decode token")
-	}
-
-	var token bearerToken
-
-	err = json.Unmarshal(decoded, &token)
-	if err != nil {
-		logger.Error(err, "failed to unmarshal token", "decoded", decoded)
-		return nil, status.Errorf(codes.InvalidArgument, "failed to unmarshal token")
-	}
-
-	return &token, nil
-}
-
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
-	logger := log.FromContext(ctx)
-	token, err := s.authenticatePre(ctx)
-
+	token, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	clientRef := types.NamespacedName{
-		Namespace: token.Namespace,
-		Name:      token.Name,
-	}
-
-	var client jumpstarterdevv1alpha1.Client
-
-	logger.Info("authenticating client", "client", clientRef)
-	if err := s.Client.Get(
+	return controller.VerifyObjectToken[jumpstarterdevv1alpha1.Client](
 		ctx,
-		clientRef,
-		&client,
-	); err != nil {
-		logger.Error(err, "unable to get client resource", "client", clientRef)
-		return nil, status.Errorf(codes.Internal, "unable to get client resource")
-	}
-
-	for _, ref := range client.Spec.Credentials {
-		var secret corev1.Secret
-
-		if err := s.Client.Get(ctx, types.NamespacedName{
-			Namespace: ref.Namespace,
-			Name:      ref.Name,
-		}, &secret); err != nil {
-			logger.Error(err, "unable to get secret resource", "client", clientRef, "name", ref.Name)
-			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
-		}
-
-		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
-			return &client, nil
-		}
-	}
-
-	logger.Error(nil, "no matching credential", "client", clientRef)
-	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
+		token,
+		"https://jumpstarter.dev/controller",
+		"https://jumpstarter.dev/controller",
+		s.Client,
+	)
 }
 
 func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
-	token, err := s.authenticatePre(ctx)
+	token, err := BearerTokenFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	exporterRef := types.NamespacedName{
-		Namespace: token.Namespace,
-		Name:      token.Name,
-	}
-
-	var exporter jumpstarterdevv1alpha1.Exporter
-
-	if err := s.Client.Get(
+	return controller.VerifyObjectToken[jumpstarterdevv1alpha1.Exporter](
 		ctx,
-		exporterRef,
-		&exporter,
-	); err != nil {
-		return nil, status.Errorf(codes.Internal, "unable to get exporter resource")
-	}
-
-	for _, ref := range exporter.Spec.Credentials {
-		var secret corev1.Secret
-
-		if err := s.Client.Get(ctx, types.NamespacedName{
-			Namespace: ref.Namespace,
-			Name:      ref.Name,
-		}, &secret); err != nil {
-			return nil, status.Errorf(codes.Internal, "unable to get secret resource")
-		}
-
-		if reference, ok := secret.Data["token"]; ok && slices.Equal(reference, []byte(token.Token)) {
-			return &exporter, nil
-		}
-	}
-
-	return nil, status.Errorf(codes.Unauthenticated, "no matching credential")
+		token,
+		"https://jumpstarter.dev/controller",
+		"https://jumpstarter.dev/controller",
+		s.Client,
+	)
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
@@ -385,22 +297,6 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	stream := uuid.NewUUID()
 
-	var secret corev1.Secret
-
-	if err := s.Client.Get(ctx, types.NamespacedName{
-		Namespace: os.Getenv("NAMESPACE"),
-		Name:      "jumpstarter-router-secret",
-	}, &secret); err != nil {
-		logger.Error(err, "unable to get secret resource of jumpstarter-router-secret")
-		return nil, status.Errorf(codes.Internal, "unable to get secret resource of jumpstarter-router-secret")
-	}
-
-	key, ok := secret.Data["key"]
-	if !ok {
-		logger.Error(err, "unable to get key from jumpstarter-router-secret")
-		return nil, status.Errorf(codes.Internal, "unable to get key from jumpstarter-router-secret")
-	}
-
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "https://jumpstarter.dev/stream",
 		Subject:   string(stream),
@@ -409,7 +305,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		NotBefore: jwt.NewNumericDate(time.Now()),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ID:        string(uuid.NewUUID()),
-	}).SignedString(key)
+	}).SignedString([]byte(os.Getenv("ROUTER_KEY")))
 
 	if err != nil {
 		logger.Error(err, "unable to sign token")

@@ -72,6 +72,16 @@ spec:
           {{ else }}
           value: router.{{ .Values.global.baseDomain }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
           {{ end }}
+        - name: CONTROLLER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jumpstarter-controller-secret
+              key: key
+        - name: ROUTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jumpstarter-router-secret
+              key: key
         - name: NAMESPACE
           valueFrom:
             fieldRef:

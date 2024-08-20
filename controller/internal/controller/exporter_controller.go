@@ -24,7 +24,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -74,7 +73,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	if exporter.Spec.Credentials == nil {
+	if exporter.Status.Credential == nil {
 		logger.Info("reconcile: Exporter has no credentials, creating credentials", "exporter", req.NamespacedName)
 		secret, err := r.secretForExporter(exporter)
 		if err != nil {
@@ -86,10 +85,10 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			logger.Error(err, "reconcile: unable to create secret for Exporter", "exporter", req.NamespacedName, "secret", secret.GetName())
 			return ctrl.Result{}, err
 		}
-		exporter.Spec.Credentials = []corev1.SecretReference{
-			{Name: secret.Name, Namespace: secret.Namespace},
+		exporter.Status.Credential = &corev1.LocalObjectReference{
+			Name: secret.Name,
 		}
-		err = r.Update(ctx, exporter)
+		err = r.Status().Update(ctx, exporter)
 		if err != nil {
 			logger.Error(err, "reconcile: unable to update Exporter with secret reference", "exporter", req.NamespacedName, "secret", secret.GetName())
 			return ctrl.Result{}, err
@@ -100,6 +99,16 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.Exporter) (*corev1.Secret, error) {
+	token, err := SignObjectToken(
+		"https://jumpstarter.dev/controller",
+		[]string{"https://jumpstarter.dev/controller"},
+		exporter,
+		r.Scheme,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      exporter.Name + "-token",
@@ -107,12 +116,12 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
-			"token": string(uuid.NewUUID()),
+			"token": token,
 		},
 	}
 	// enable garbage collection on the created resource
-	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
-		return nil, fmt.Errorf("secretForExporter, error setting controller reference: %w", err)
+	if err := controllerutil.SetOwnerReference(exporter, secret, r.Scheme); err != nil {
+		return nil, fmt.Errorf("secretForExporter, error setting owner reference: %w", err)
 	}
 	return secret, nil
 }

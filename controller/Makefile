@@ -142,7 +142,7 @@ deploy: docker-build cluster
 
 .PHONY: lint-helm
 lint-helm:
-	helm lint deploy/helm/jumpstarter --set jumpstarter-controller.routerSecret=abcd
+	helm lint deploy/helm/jumpstarter --set jumpstarter-controller.controllerSecret=abcd --set jumpstarter-controller.routerSecret=abcd
 
 
 .PHONY: undeploy

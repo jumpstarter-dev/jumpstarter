@@ -28,14 +28,13 @@ import (
 type ClientSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
-	Credentials []corev1.SecretReference `json:"credentials,omitempty"`
 }
 
 // ClientStatus defines the observed state of Identity
 type ClientStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
 }
 
 // +kubebuilder:object:root=true
