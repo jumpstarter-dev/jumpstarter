@@ -14,7 +14,17 @@ spec:
     singular: lease
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.ended
+      name: Ended
+      type: boolean
+    - jsonPath: .spec.client.name
+      name: Client
+      type: string
+    - jsonPath: .status.exporter.name
+      name: Exporter
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: Lease is the Schema for the exporters API
