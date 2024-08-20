@@ -53,12 +53,11 @@ service ControllerService {
 message RegisterRequest {
   // additional context:
   // - token/authentication mechanism
-  string uuid = 1;
-  map<string, string> labels = 2;
+  map<string, string> labels = 1;
   // standard labels:
   // jumpstarter.dev/hostname=
   // jumpstarter.dev/name=
-  repeated DriverInstanceReport reports = 3;
+  repeated DriverInstanceReport reports = 2;
 }
 
 message DriverInstanceReport {
@@ -67,12 +66,11 @@ message DriverInstanceReport {
   map<string, string> labels = 3;
 }
 
-message RegisterResponse {}
+message RegisterResponse {
+  string uuid = 1;
+}
 
 message UnregisterRequest {
-  // additional context:
-  // - token/authentication mechanism
-  string uuid = 1;
   string reason = 2;
 }
 
