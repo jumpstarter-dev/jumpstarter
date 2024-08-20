@@ -141,7 +141,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 			Labels:     device.Labels,
 		})
 	}
-	exporter.Status.Uuid = req.Uuid
 	exporter.Status.Devices = devices
 
 	if err := s.Status().Update(ctx, exporter); err != nil {
@@ -149,7 +148,9 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
 
-	return &pb.RegisterResponse{}, nil
+	return &pb.RegisterResponse{
+		Uuid: string(exporter.UID),
+	}, nil
 }
 
 func (s *ControllerService) Unregister(
@@ -223,7 +224,6 @@ func (s *ControllerService) ListExporters(
 			})
 		}
 		results[i] = &pb.GetReportResponse{
-			Uuid:    exporter.Status.Uuid,
 			Labels:  exporter.GetLabels(),
 			Reports: reports,
 		}
@@ -251,7 +251,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		stream: stream,
 	}
 
-	_, loaded := s.listen.LoadOrStore(exporter.Status.Uuid, lctx)
+	_, loaded := s.listen.LoadOrStore(exporter.UID, lctx)
 
 	if loaded {
 		// TODO: in this case we should probably end the previous listener
@@ -260,7 +260,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
-	defer s.listen.Delete(exporter.GetName())
+	defer s.listen.Delete(exporter.UID)
 
 	<-ctx.Done()
 	return nil
@@ -276,7 +276,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	// TODO: authorize user with Client/Lease resource
 
-	value, ok := s.listen.Load(req.GetUuid())
+	value, ok := s.listen.Load(types.UID(req.GetUuid()))
 	if !ok {
 		logger.Error(nil, "no matching listener", "client", client.GetName(), "uuid", req.GetUuid())
 		return nil, status.Errorf(codes.Unavailable, "no matching listener")
@@ -352,12 +352,25 @@ func (s *ControllerService) GetLease(
 		})
 	}
 
+	var beginTime *timestamppb.Timestamp
+	if lease.Status.BeginTime != nil {
+		beginTime = timestamppb.New(lease.Status.BeginTime.Time)
+	}
+	var endTime *timestamppb.Timestamp
+	if lease.Status.EndTime != nil {
+		beginTime = timestamppb.New(lease.Status.EndTime.Time)
+	}
+	var exporterUuid *string
+	if lease.Status.Exporter != nil {
+		exporterUuid = (*string)(&lease.Status.Exporter.UID)
+	}
+
 	return &pb.GetLeaseResponse{
 		Duration:     durationpb.New(lease.Spec.Duration.Duration),
 		Selector:     &pb.LabelSelector{MatchExpressions: matchExpressions, MatchLabels: lease.Spec.Selector.MatchLabels},
-		BeginTime:    timestamppb.New(lease.Status.BeginTime.Time),
-		EndTime:      timestamppb.New(lease.Status.EndTime.Time),
-		ExporterUuid: new(string),
+		BeginTime:    beginTime,
+		EndTime:      endTime,
+		ExporterUuid: exporterUuid,
 	}, nil
 }
 
