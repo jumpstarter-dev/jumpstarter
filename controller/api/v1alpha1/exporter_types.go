@@ -38,6 +38,7 @@ type ExporterStatus struct {
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
 	Uuid       string                       `json:"uuid,omitempty"`
 	Devices    []Device                     `json:"devices,omitempty"`
+	Lease      *corev1.ObjectReference      `json:"lease,omitempty"`
 }
 
 // +kubebuilder:object:root=true
