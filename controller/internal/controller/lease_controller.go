@@ -24,7 +24,6 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -59,24 +58,9 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Ignore invalid lease
-	if !lease.Spec.BeginTime.Before(&lease.Spec.EndTime) {
-		log.Error(fmt.Errorf("BeginTime not before EndTime"), "invalid lease")
-		return ctrl.Result{}, nil
-	}
-
-	// Ignore leases that are yet to begin
-	// Requeue at BeginTime
-	if lease.Spec.BeginTime.After(time.Now()) {
-		return ctrl.Result{
-			RequeueAfter: lease.Spec.BeginTime.Sub(time.Now()),
-		}, nil
-	}
-
-	if !lease.Spec.EndTime.After(time.Now()) {
-		// Update status for expired leases
+	// Mark expired lease as ended
+	if lease.Status.EndTime != nil && time.Now().After(lease.Status.EndTime.Time) {
 		lease.Status.Ended = true
-		lease.Status.Exporter = nil
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
 			log.Error(err, "unable to update Lease status")
@@ -84,60 +68,87 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 
 		return ctrl.Result{}, nil
-	} else {
-		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
-		if err != nil {
-			log.Error(err, "Error creating selector for label selector")
+	}
+
+	// Requeue aquire lease on EndTime
+	if lease.Status.Exporter != nil {
+		if lease.Status.EndTime == nil {
+			err := fmt.Errorf("Lease Status missing EndTime")
+			log.Error(err, "unable to requeue reconcile")
 			return ctrl.Result{}, err
 		}
+		return ctrl.Result{
+			RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
+		}, nil
+	}
 
-		// List all exporters matching selector
-		var exporters jumpstarterdevv1alpha1.ExporterList
-		err = r.List(ctx, &exporters, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
-		if err != nil {
-			log.Error(err, "Error listing exporters")
-			return ctrl.Result{}, err
-		}
+	selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
+	if err != nil {
+		log.Error(err, "Error creating selector for label selector")
+		return ctrl.Result{}, err
+	}
 
-		for _, exporter := range exporters.Items {
-			// Filter for Leases already using this exporter
-			leaseSelector := fields.OneTermEqualSelector("status.exporter.uid", string(exporter.UID))
+	// List all exporters matching selector
+	var exporters jumpstarterdevv1alpha1.ExporterList
+	err = r.List(ctx, &exporters, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
+	if err != nil {
+		log.Error(err, "Error listing exporters")
+		return ctrl.Result{}, err
+	}
 
-			// List all leases matching selector
-			var leases jumpstarterdevv1alpha1.LeaseList
-			err = r.List(ctx, &leases, client.InNamespace(req.Namespace), client.MatchingFieldsSelector{
-				Selector: leaseSelector,
-			})
+	// List all leases
+	var leases jumpstarterdevv1alpha1.LeaseList
+	if err = r.List(ctx, &leases, client.InNamespace(req.Namespace)); err != nil {
+		log.Error(err, "Error listing leases")
+		return ctrl.Result{}, err
+	}
 
-			// Exporter available
-			if len(leases.Items) == 0 {
-				lease.Status.Ended = false
-				lease.Status.Exporter = &corev1.ObjectReference{
-					Kind:       exporter.Kind,
-					Namespace:  exporter.Namespace,
-					Name:       exporter.Name,
-					UID:        exporter.UID,
-					APIVersion: exporter.APIVersion,
-				}
+	for _, exporter := range exporters.Items {
+		taken := false
 
-				if err := r.Status().Update(ctx, &lease); err != nil {
-					log.Error(err, "unable to update Lease status")
-					return ctrl.Result{}, client.IgnoreNotFound(err)
-				}
-
-				// Requeue at EndTime
-				return ctrl.Result{
-					RequeueAfter: lease.Spec.EndTime.Sub(time.Now()),
-				}, nil
+		for _, lease := range leases.Items {
+			// Ignore ended lease
+			if lease.Status.Ended {
+				continue
+			}
+			// Exporter already taken by lease
+			if lease.Status.Exporter != nil && lease.Status.Exporter.UID == exporter.UID {
+				taken = true
+				break
 			}
 		}
 
-		// No exporter available
-		// Try again later
+		if taken {
+			break
+		}
+
+		lease.Status.Ended = false
+		lease.Status.Exporter = &corev1.ObjectReference{
+			Kind:       exporter.Kind,
+			Namespace:  exporter.Namespace,
+			Name:       exporter.Name,
+			UID:        exporter.UID,
+			APIVersion: exporter.APIVersion,
+		}
+		lease.Status.BeginTime = &metav1.Time{Time: time.Now()}
+		lease.Status.EndTime = &metav1.Time{Time: time.Now().Add(lease.Spec.Duration.Duration)}
+
+		if err := r.Status().Update(ctx, &lease); err != nil {
+			log.Error(err, "unable to update Lease status")
+			return ctrl.Result{}, client.IgnoreNotFound(err)
+		}
+
+		// Requeue at EndTime
 		return ctrl.Result{
-			RequeueAfter: time.Second,
+			RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
 		}, nil
 	}
+
+	// No exporter available
+	// Try again later
+	return ctrl.Result{
+		RequeueAfter: time.Second,
+	}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

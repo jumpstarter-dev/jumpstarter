@@ -39,9 +39,6 @@ spec:
           spec:
             description: LeaseSpec defines the desired state of Lease
             properties:
-              beginTime:
-                format: date-time
-                type: string
               client:
                 description: The client that is requesting the lease
                 properties:
@@ -86,8 +83,8 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              endTime:
-                format: date-time
+              duration:
+                description: The desired duration of the lease
                 type: string
               selector:
                 description: The selector for the exporter to be used
@@ -136,14 +133,19 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
             required:
-            - beginTime
             - client
-            - endTime
+            - duration
             - selector
             type: object
           status:
             description: LeaseStatus defines the observed state of Lease
             properties:
+              beginTime:
+                description: |-
+                  If the lease has been acquired an exporter name is assigned
+                  and then and then it can be used, it will be empty while still pending
+                format: date-time
+                type: string
               conditions:
                 items:
                   description: "Condition contains details for one aspect of the current
@@ -213,12 +215,30 @@ spec:
                   - type
                   type: object
                 type: array
+              endTime:
+                format: date-time
+                type: string
               ended:
                 type: boolean
               exporter:
                 description: |-
-                  If the lease has been acquired an exporter name is assigned
-                  and then and then it can be used, it will be empty while still pending
+                  ObjectReference contains enough information to let you inspect or modify the referred object.
+                  ---
+                  New uses of this type are discouraged because of difficulty describing its usage when embedded in APIs.
+                   1. Ignored fields.  It includes many fields which are not generally honored.  For instance, ResourceVersion and FieldPath are both very rarely valid in actual usage.
+                   2. Invalid usage help.  It is impossible to add specific help for individual usage.  In most embedded usages, there are particular
+                      restrictions like, "must refer only to types A and B" or "UID not honored" or "name must be restricted".
+                      Those cannot be well described when embedded.
+                   3. Inconsistent validation.  Because the usages are different, the validation rules are different by usage, which makes it hard for users to predict what will happen.
+                   4. The fields are both imprecise and overly precise.  Kind is not a precise mapping to a URL. This can produce ambiguity
+                      during interpretation and require a REST mapping.  In most cases, the dependency is on the group,resource tuple
+                      and the version of the actual struct is irrelevant.
+                   5. We cannot easily change it.  Because this type is embedded in many locations, updates to this type
+                      will affect numerous schemas.  Don't make new APIs embed an underspecified API type they do not control.
+
+
+                  Instead of using this type, create a locally provided and used type that is well-focused on your reference.
+                  For example, ServiceReferences for admission registration: https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533 .
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -261,12 +281,8 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              minutes:
-                description: The minutes that the lease is going to last
-                type: integer
             required:
             - ended
-            - minutes
             type: object
         type: object
     served: true

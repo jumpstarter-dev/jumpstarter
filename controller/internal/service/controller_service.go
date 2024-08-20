@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -352,12 +353,10 @@ func (s *ControllerService) GetLease(
 	}
 
 	return &pb.GetLeaseResponse{
-		BeginTime: timestamppb.New(lease.Spec.BeginTime.Time),
-		EndTime:   timestamppb.New(lease.Spec.EndTime.Time),
-		Selector: &pb.LabelSelector{
-			MatchExpressions: matchExpressions,
-			MatchLabels:      lease.Spec.Selector.MatchLabels,
-		},
+		Duration:     durationpb.New(lease.Spec.Duration.Duration),
+		Selector:     &pb.LabelSelector{MatchExpressions: matchExpressions, MatchLabels: lease.Spec.Selector.MatchLabels},
+		BeginTime:    timestamppb.New(lease.Status.BeginTime.Time),
+		EndTime:      timestamppb.New(lease.Status.EndTime.Time),
 		ExporterUuid: new(string),
 	}, nil
 }
@@ -386,8 +385,6 @@ func (s *ControllerService) RequestLease(
 			Name:      string(uuid.NewUUID()), // TODO: human readable name
 		},
 		Spec: jumpstarterdevv1alpha1.LeaseSpec{
-			BeginTime: metav1.Time{Time: req.BeginTime.AsTime()},
-			EndTime:   metav1.Time{Time: req.EndTime.AsTime()},
 			Client: &corev1.ObjectReference{
 				Kind:       client.Kind,
 				Namespace:  client.Namespace,
@@ -395,6 +392,7 @@ func (s *ControllerService) RequestLease(
 				UID:        client.UID,
 				APIVersion: client.APIVersion,
 			},
+			Duration: metav1.Duration{Duration: req.Duration.AsDuration()},
 			Selector: metav1.LabelSelector{
 				MatchLabels:      req.Selector.MatchLabels,
 				MatchExpressions: matchExpressions,
@@ -431,9 +429,9 @@ func (s *ControllerService) ReleaseLease(
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 
-	lease.Spec.EndTime = metav1.Time{Time: time.Now()}
+	lease.Status.EndTime = &metav1.Time{Time: time.Now()}
 
-	if err := s.Update(ctx, &lease); err != nil {
+	if err := s.Status().Update(ctx, &lease); err != nil {
 		return nil, err
 	}
 
