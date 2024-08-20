@@ -370,13 +370,17 @@ func (s *ControllerService) RequestLease(
 		return nil, err
 	}
 
+	var matchLabels map[string]string
 	var matchExpressions []metav1.LabelSelectorRequirement
-	for _, exp := range req.Selector.MatchExpressions {
-		matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
-			Key:      exp.Key,
-			Operator: metav1.LabelSelectorOperator(exp.Operator),
-			Values:   exp.Values,
-		})
+	if req.Selector != nil {
+		matchLabels = req.Selector.MatchLabels
+		for _, exp := range req.Selector.MatchExpressions {
+			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+				Key:      exp.Key,
+				Operator: metav1.LabelSelectorOperator(exp.Operator),
+				Values:   exp.Values,
+			})
+		}
 	}
 
 	var lease jumpstarterdevv1alpha1.Lease = jumpstarterdevv1alpha1.Lease{
@@ -394,7 +398,7 @@ func (s *ControllerService) RequestLease(
 			},
 			Duration: metav1.Duration{Duration: req.Duration.AsDuration()},
 			Selector: metav1.LabelSelector{
-				MatchLabels:      req.Selector.MatchLabels,
+				MatchLabels:      matchLabels,
 				MatchExpressions: matchExpressions,
 			},
 		},
