@@ -4,6 +4,7 @@ syntax = "proto3";
 
 package jumpstarter.v1;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -52,12 +53,11 @@ service ControllerService {
 message RegisterRequest {
   // additional context:
   // - token/authentication mechanism
-  string uuid = 1;
-  map<string, string> labels = 2;
+  map<string, string> labels = 1;
   // standard labels:
   // jumpstarter.dev/hostname=
   // jumpstarter.dev/name=
-  repeated DriverInstanceReport reports = 3;
+  repeated DriverInstanceReport reports = 2;
 }
 
 message DriverInstanceReport {
@@ -66,12 +66,11 @@ message DriverInstanceReport {
   map<string, string> labels = 3;
 }
 
-message RegisterResponse {}
+message RegisterResponse {
+  string uuid = 1;
+}
 
 message UnregisterRequest {
-  // additional context:
-  // - token/authentication mechanism
-  string uuid = 1;
   string reason = 2;
 }
 
@@ -170,16 +169,16 @@ message GetLeaseRequest {
 }
 
 message GetLeaseResponse {
-  google.protobuf.Timestamp begin_time = 1;
-  google.protobuf.Timestamp end_time = 2;
-  LabelSelector selector = 3;
-  optional string exporter_uuid = 4;
+  google.protobuf.Duration duration = 1;
+  LabelSelector selector = 2;
+  optional google.protobuf.Timestamp begin_time = 3;
+  optional google.protobuf.Timestamp end_time = 4;
+  optional string exporter_uuid = 5;
 }
 
 message RequestLeaseRequest {
-  google.protobuf.Timestamp begin_time = 1;
-  google.protobuf.Timestamp end_time = 2;
-  LabelSelector selector = 3;
+  google.protobuf.Duration duration = 1;
+  LabelSelector selector = 2;
 }
 
 message RequestLeaseResponse {
