@@ -7,9 +7,8 @@ from jumpstarter.client import DriverClient
 
 @dataclass(kw_only=True)
 class CompositeClient(DriverClient):
-    def __post_init__(self):
-        for k, v in self.children.items():
-            setattr(self, k, v)
+    def __getattr__(self, name):
+        return self.children[name]
 
     def cli(self):
         @click.group
