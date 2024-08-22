@@ -7,13 +7,16 @@ from __future__ import annotations
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import field
+from inspect import isasyncgenfunction, iscoroutinefunction
 from itertools import chain
 from typing import Any
 from uuid import UUID, uuid4
 
 import aiohttp
-from anyio import Event
+from anyio import Event, to_thread
+from google.protobuf import json_format, struct_pb2
 from grpc import StatusCode
+from pydantic import BaseModel
 from pydantic.dataclasses import dataclass
 
 from jumpstarter.common import Metadata
@@ -34,6 +37,13 @@ from .decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
+
+
+def encode_value(v):
+    return json_format.ParseDict(
+        v.model_dump(mode="json") if isinstance(v, BaseModel) else v,
+        struct_pb2.Value(),
+    )
 
 
 @dataclass(kw_only=True)
@@ -69,7 +79,17 @@ class Driver(
         """
         method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
 
-        return await method(request, context)
+        args = [json_format.MessageToDict(arg) for arg in request.args]
+
+        if iscoroutinefunction(method):
+            result = await method(*args)
+        else:
+            result = await to_thread.run_sync(method, *args)
+
+        return jumpstarter_pb2.DriverCallResponse(
+            uuid=str(uuid4()),
+            result=encode_value(result),
+        )
 
     async def StreamingDriverCall(self, request, context):
         """
@@ -77,8 +97,20 @@ class Driver(
         """
         method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
 
-        async for v in method(request, context):
-            yield v
+        args = [json_format.MessageToDict(arg) for arg in request.args]
+
+        if isasyncgenfunction(method):
+            async for result in method(*args):
+                yield jumpstarter_pb2.StreamingDriverCallResponse(
+                    uuid=str(uuid4()),
+                    result=encode_value(result),
+                )
+        else:
+            for result in await to_thread.run_sync(method, *args):
+                yield jumpstarter_pb2.StreamingDriverCallResponse(
+                    uuid=str(uuid4()),
+                    result=encode_value(result),
+                )
 
     async def Stream(self, _request_iterator, context):
         """
@@ -92,10 +124,11 @@ class Driver(
             case DriverStreamRequest(method=driver_method):
                 method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
 
-                async with method(context):
-                    event = Event()
-                    context.add_done_callback(lambda _: event.set())
-                    await event.wait()
+                async with method() as stream:
+                    async with forward_server_stream(context, stream):
+                        event = Event()
+                        context.add_done_callback(lambda _: event.set())
+                        await event.wait()
 
             case ResourceStreamRequest():
                 remote, resource = create_memory_stream()
