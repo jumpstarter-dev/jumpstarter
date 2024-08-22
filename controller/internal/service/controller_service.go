@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -31,10 +32,13 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -137,7 +141,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 			Labels:     device.Labels,
 		})
 	}
-	exporter.Status.Uuid = req.Uuid
 	exporter.Status.Devices = devices
 
 	if err := s.Status().Update(ctx, exporter); err != nil {
@@ -145,7 +148,9 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
 
-	return &pb.RegisterResponse{}, nil
+	return &pb.RegisterResponse{
+		Uuid: string(exporter.UID),
+	}, nil
 }
 
 func (s *ControllerService) Unregister(
@@ -219,7 +224,6 @@ func (s *ControllerService) ListExporters(
 			})
 		}
 		results[i] = &pb.GetReportResponse{
-			Uuid:    exporter.Status.Uuid,
 			Labels:  exporter.GetLabels(),
 			Reports: reports,
 		}
@@ -227,20 +231,6 @@ func (s *ControllerService) ListExporters(
 
 	return &pb.ListExportersResponse{
 		Exporters: results,
-	}, nil
-}
-
-func (s *ControllerService) LeaseExporter(
-	ctx context.Context,
-	req *pb.LeaseExporterRequest,
-) (*pb.LeaseExporterResponse, error) {
-	// TODO: implement permission checking and book keeping
-	return &pb.LeaseExporterResponse{
-		LeaseExporterResponseOneof: &pb.LeaseExporterResponse_Success{
-			Success: &pb.LeaseExporterResponseSuccess{
-				Duration: durationpb.New(req.Duration.AsDuration()),
-			},
-		},
 	}, nil
 }
 
@@ -261,7 +251,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		stream: stream,
 	}
 
-	_, loaded := s.listen.LoadOrStore(exporter.Status.Uuid, lctx)
+	_, loaded := s.listen.LoadOrStore(exporter.UID, lctx)
 
 	if loaded {
 		// TODO: in this case we should probably end the previous listener
@@ -270,7 +260,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
-	defer s.listen.Delete(exporter.GetName())
+	defer s.listen.Delete(exporter.UID)
 
 	<-ctx.Done()
 	return nil
@@ -286,7 +276,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	// TODO: authorize user with Client/Lease resource
 
-	value, ok := s.listen.Load(req.GetUuid())
+	value, ok := s.listen.Load(types.UID(req.GetUuid()))
 	if !ok {
 		logger.Error(nil, "no matching listener", "client", client.GetName(), "uuid", req.GetUuid())
 		return nil, status.Errorf(codes.Unavailable, "no matching listener")
@@ -330,6 +320,139 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterEndpoint: endpoint,
 		RouterToken:    token,
 	}, nil
+}
+
+func (s *ControllerService) GetLease(
+	ctx context.Context,
+	req *pb.GetLeaseRequest,
+) (*pb.GetLeaseResponse, error) {
+	client, err := s.authenticateClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Get(ctx, types.NamespacedName{
+		Namespace: client.Namespace,
+		Name:      req.Name,
+	}, &lease); err != nil {
+		return nil, err
+	}
+
+	if lease.Spec.Client.UID != client.UID {
+		return nil, fmt.Errorf("GetLease permission denied")
+	}
+
+	var matchExpressions []*pb.LabelSelectorRequirement
+	for _, exp := range lease.Spec.Selector.MatchExpressions {
+		matchExpressions = append(matchExpressions, &pb.LabelSelectorRequirement{
+			Key:      exp.Key,
+			Operator: string(exp.Operator),
+			Values:   exp.Values,
+		})
+	}
+
+	var beginTime *timestamppb.Timestamp
+	if lease.Status.BeginTime != nil {
+		beginTime = timestamppb.New(lease.Status.BeginTime.Time)
+	}
+	var endTime *timestamppb.Timestamp
+	if lease.Status.EndTime != nil {
+		beginTime = timestamppb.New(lease.Status.EndTime.Time)
+	}
+	var exporterUuid *string
+	if lease.Status.Exporter != nil {
+		exporterUuid = (*string)(&lease.Status.Exporter.UID)
+	}
+
+	return &pb.GetLeaseResponse{
+		Duration:     durationpb.New(lease.Spec.Duration.Duration),
+		Selector:     &pb.LabelSelector{MatchExpressions: matchExpressions, MatchLabels: lease.Spec.Selector.MatchLabels},
+		BeginTime:    beginTime,
+		EndTime:      endTime,
+		ExporterUuid: exporterUuid,
+	}, nil
+}
+
+func (s *ControllerService) RequestLease(
+	ctx context.Context,
+	req *pb.RequestLeaseRequest,
+) (*pb.RequestLeaseResponse, error) {
+	client, err := s.authenticateClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var matchLabels map[string]string
+	var matchExpressions []metav1.LabelSelectorRequirement
+	if req.Selector != nil {
+		matchLabels = req.Selector.MatchLabels
+		for _, exp := range req.Selector.MatchExpressions {
+			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+				Key:      exp.Key,
+				Operator: metav1.LabelSelectorOperator(exp.Operator),
+				Values:   exp.Values,
+			})
+		}
+	}
+
+	var lease jumpstarterdevv1alpha1.Lease = jumpstarterdevv1alpha1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: client.Namespace,
+			Name:      string(uuid.NewUUID()), // TODO: human readable name
+		},
+		Spec: jumpstarterdevv1alpha1.LeaseSpec{
+			Client: &corev1.ObjectReference{
+				Kind:       client.Kind,
+				Namespace:  client.Namespace,
+				Name:       client.Name,
+				UID:        client.UID,
+				APIVersion: client.APIVersion,
+			},
+			Duration: metav1.Duration{Duration: req.Duration.AsDuration()},
+			Selector: metav1.LabelSelector{
+				MatchLabels:      matchLabels,
+				MatchExpressions: matchExpressions,
+			},
+		},
+	}
+	if err := s.Create(ctx, &lease); err != nil {
+		return nil, err
+	}
+
+	return &pb.RequestLeaseResponse{
+		Name: lease.Name,
+	}, nil
+}
+
+func (s *ControllerService) ReleaseLease(
+	ctx context.Context,
+	req *pb.ReleaseLeaseRequest,
+) (*pb.ReleaseLeaseResponse, error) {
+	client, err := s.authenticateClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Get(ctx, types.NamespacedName{
+		Namespace: client.Namespace,
+		Name:      req.Name,
+	}, &lease); err != nil {
+		return nil, err
+	}
+
+	if lease.Spec.Client.UID != client.UID {
+		return nil, fmt.Errorf("ReleaseLease permission denied")
+	}
+
+	lease.Status.EndTime = &metav1.Time{Time: time.Now()}
+
+	if err := s.Status().Update(ctx, &lease); err != nil {
+		return nil, err
+	}
+
+	return &pb.ReleaseLeaseResponse{}, nil
 }
 
 func (s *ControllerService) Start(ctx context.Context) error {

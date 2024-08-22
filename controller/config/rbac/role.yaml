@@ -84,3 +84,29 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - leases/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - leases/status
+  verbs:
+  - get
+  - patch
+  - update

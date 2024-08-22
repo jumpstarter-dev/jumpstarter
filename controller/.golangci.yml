@@ -33,7 +33,6 @@ linters:
     - lll
     - misspell
     - nakedret
-    - prealloc
     - staticcheck
     - typecheck
     - unconvert

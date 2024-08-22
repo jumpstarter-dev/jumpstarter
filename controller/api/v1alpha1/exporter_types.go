@@ -36,8 +36,8 @@ type ExporterStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 	Conditions []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
-	Uuid       string                       `json:"uuid,omitempty"`
 	Devices    []Device                     `json:"devices,omitempty"`
+	Lease      *corev1.ObjectReference      `json:"lease,omitempty"`
 }
 
 // +kubebuilder:object:root=true
