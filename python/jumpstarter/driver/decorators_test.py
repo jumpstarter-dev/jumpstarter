@@ -1,7 +1,7 @@
 import pytest
 
-from jumpstarter.drivers import export
-from jumpstarter.drivers.decorators import (
+from . import export
+from .decorators import (
     MARKER_DRIVERCALL,
     MARKER_MAGIC,
     MARKER_STREAMING_DRIVERCALL,

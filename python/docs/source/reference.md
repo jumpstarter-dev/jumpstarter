@@ -6,21 +6,21 @@ This project is still evolving, so these docs may be incomplete or out-of-date.
 
 ## Driver
 ```{eval-rst}
-.. autoclass:: jumpstarter.drivers.Driver
+.. autoclass:: jumpstarter.driver.Driver
     :members:
-.. autodecorator:: jumpstarter.drivers.export
-.. autodecorator:: jumpstarter.drivers.exportstream
+.. autodecorator:: jumpstarter.driver.export
+.. autodecorator:: jumpstarter.driver.exportstream
 ```
 
 ## Driver Client
 ```{eval-rst}
-.. autoclass:: jumpstarter.drivers.DriverClient
+.. autoclass:: jumpstarter.client.DriverClient
     :members:
 ```
 
 ### Mixins
 ```{eval-rst}
-.. automodule:: jumpstarter.drivers.mixins
+.. automodule:: jumpstarter.client.mixins
     :members:
 ```
 
@@ -44,8 +44,9 @@ importlib.import_module = import_module
 from anyio import connect_tcp, sleep
 from contextlib import asynccontextmanager
 from collections.abc import Generator
-from jumpstarter.drivers import Driver, DriverClient, export, exportstream
-from jumpstarter.drivers.mixins import StreamMixin
+from jumpstarter.driver import Driver, export, exportstream
+from jumpstarter.client import DriverClient
+from jumpstarter.client.mixins import StreamMixin
 from jumpstarter.common.utils import serve
 
 class ExampleDriver(Driver):

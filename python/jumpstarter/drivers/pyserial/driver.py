@@ -5,7 +5,7 @@ from anyio.abc import ObjectStream
 from anyio.to_thread import run_sync
 from serial import Serial, serial_for_url
 
-from jumpstarter.drivers import Driver, exportstream
+from jumpstarter.driver import Driver, exportstream
 
 
 @dataclass(kw_only=True)
@@ -38,7 +38,7 @@ class PySerial(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter.drivers.serial.client.PySerialClient"
+        return "jumpstarter.drivers.pyserial.client.PySerialClient"
 
     @exportstream
     @asynccontextmanager

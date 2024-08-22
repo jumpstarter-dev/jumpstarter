@@ -1,5 +1,5 @@
 from jumpstarter.common.utils import serve
-from jumpstarter.drivers.serial.pyserial import PySerial
+from jumpstarter.drivers.pyserial.driver import PySerial
 
 
 def test_drivers_pyserial():

@@ -9,7 +9,7 @@ from anyio import connect_unix, sleep_forever
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.streams import connect_router_stream
-from jumpstarter.drivers import Driver
+from jumpstarter.driver import Driver
 from jumpstarter.exporter.session import Session
 from jumpstarter.v1 import (
     jumpstarter_pb2,

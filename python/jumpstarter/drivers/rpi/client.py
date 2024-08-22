@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from jumpstarter.drivers import DriverClient
+from jumpstarter.client import DriverClient
 
 
 @dataclass(kw_only=True)

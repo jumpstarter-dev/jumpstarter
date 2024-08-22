@@ -2,6 +2,8 @@ import logging
 import os
 from asyncio import InvalidStateError
 from contextlib import asynccontextmanager
+from typing import Annotated, Literal, Union
+from uuid import UUID
 
 import grpc
 from anyio import (
@@ -15,6 +17,7 @@ from anyio import (
 )
 from anyio.abc import AnyByteStream, ByteStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
+from pydantic import BaseModel, Field, TypeAdapter
 
 from jumpstarter.v1 import router_pb2, router_pb2_grpc
 
@@ -22,6 +25,25 @@ KEEPALIVE_INTERVAL = int(os.environ.get("JMP_KEEPALIVE_INTERVAL", "300"))
 KEEPALIVE_TOLERANCE = int(os.environ.get("JMP_KEEPALIVE_TOLERANCE", "600"))
 
 logger = logging.getLogger(__name__)
+
+
+class ResourceStreamRequest(BaseModel):
+    kind: Literal["resource"] = "resource"
+    uuid: UUID
+
+
+class DriverStreamRequest(BaseModel):
+    kind: Literal["driver"] = "driver"
+    uuid: UUID
+    method: str
+
+
+StreamRequest = TypeAdapter(
+    Annotated[
+        Union[ResourceStreamRequest, DriverStreamRequest],
+        Field(discriminator="kind"),
+    ]
+)
 
 
 async def encapsulate_stream(context: grpc.aio.StreamStreamCall | grpc.aio.ServicerContext, rx: AnyByteStream):

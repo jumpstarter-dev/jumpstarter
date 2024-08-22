@@ -15,12 +15,13 @@ from opendal import AsyncOperator
 from jumpstarter.common import Metadata
 from jumpstarter.common.opendal import AsyncFileStream
 from jumpstarter.common.progress import ProgressStream
+from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource
 from jumpstarter.common.streams import (
+    DriverStreamRequest,
+    ResourceStreamRequest,
     create_memory_stream,
     forward_client_stream,
 )
-from jumpstarter.drivers.resources import ClientStreamResource, PresignedRequestResource
-from jumpstarter.drivers.streams import DriverStreamRequest, ResourceStreamRequest
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 

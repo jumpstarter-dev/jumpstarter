@@ -2,7 +2,7 @@ from dataclasses import InitVar, dataclass, field
 
 from gpiozero import DigitalInputDevice, DigitalOutputDevice
 
-from jumpstarter.drivers import Driver, export
+from jumpstarter.driver import Driver, export
 
 
 @dataclass(kw_only=True)
@@ -12,7 +12,7 @@ class DigitalOutput(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter.drivers.rpi.gpio.client.DigitalOutputClient"
+        return "jumpstarter.drivers.rpi.client.DigitalOutputClient"
 
     def __post_init__(self, name, pin):
         super().__post_init__(name)
@@ -34,7 +34,7 @@ class DigitalInput(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter.drivers.rpi.gpio.client.DigitalInputClient"
+        return "jumpstarter.drivers.rpi.client.DigitalInputClient"
 
     def __post_init__(self, name, pin):
         super().__post_init__(name)

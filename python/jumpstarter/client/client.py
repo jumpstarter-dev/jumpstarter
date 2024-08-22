@@ -4,7 +4,7 @@ from uuid import UUID
 
 from google.protobuf import empty_pb2
 
-from jumpstarter.drivers import DriverClient
+from jumpstarter.client import DriverClient
 from jumpstarter.v1 import (
     jumpstarter_pb2_grpc,
 )

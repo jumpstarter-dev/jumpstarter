@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from jumpstarter.common import Metadata
-from jumpstarter.drivers.base import Driver
-from jumpstarter.drivers.streams import StreamRequest
+from jumpstarter.common.streams import StreamRequest
+from jumpstarter.driver import Driver
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,

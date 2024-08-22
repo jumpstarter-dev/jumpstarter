@@ -1,5 +1,6 @@
 from jumpstarter.common.utils import serve
-from jumpstarter.drivers.power import MockPower, PowerReading, SyncMockPower
+from jumpstarter.drivers.power.common import PowerReading
+from jumpstarter.drivers.power.driver import MockPower, SyncMockPower
 
 
 def test_drivers_power_mock():

@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from aiohttp import ClientSession, UnixConnector
 from anyio import connect_unix
 
-from jumpstarter.drivers import Driver, export, exportstream
+from jumpstarter.driver import Driver, export, exportstream
 
 from .common import UStreamerState
 

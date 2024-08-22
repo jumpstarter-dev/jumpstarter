@@ -10,22 +10,17 @@ from anyio import (
 )
 from anyio.streams.stapled import StapledObjectStream
 
-from jumpstarter.drivers import Driver, DriverClient, exportstream
-from jumpstarter.drivers.mixins import StreamMixin
+from jumpstarter.driver import Driver, exportstream
 
 
 class NetworkInterface(metaclass=ABCMeta):
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter.drivers.network.NetworkClient"
+        return "jumpstarter.drivers.network.client.NetworkClient"
 
     @abstractmethod
     @asynccontextmanager
     async def connect(self): ...
-
-
-class NetworkClient(DriverClient, StreamMixin):
-    pass
 
 
 @dataclass(kw_only=True)

@@ -1,7 +1,7 @@
 import pytest
 
 from jumpstarter.common.utils import serve
-from jumpstarter.drivers.dutlink.base import Dutlink
+from jumpstarter.drivers.dutlink.driver import Dutlink
 
 
 def test_drivers_dutlink():

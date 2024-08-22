@@ -6,7 +6,7 @@ from threading import Thread
 from opendal import Operator
 
 from jumpstarter.common.utils import serve
-from jumpstarter.drivers.storage import MockStorageMux
+from jumpstarter.drivers.storage.driver import MockStorageMux
 
 
 def test_drivers_mock_storage_mux_fs():

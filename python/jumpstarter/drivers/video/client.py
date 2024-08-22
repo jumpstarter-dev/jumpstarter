@@ -1,7 +1,7 @@
 from base64 import b64decode
 
-from jumpstarter.drivers import DriverClient
-from jumpstarter.drivers.mixins import StreamMixin
+from jumpstarter.client import DriverClient
+from jumpstarter.client.mixins import StreamMixin
 
 from .common import UStreamerState
 
