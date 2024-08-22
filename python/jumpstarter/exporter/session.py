@@ -34,12 +34,13 @@ class Session(
         return self.mapping[key]
 
     async def GetReport(self, request, context):
-        response = await self.root_device.GetReport(request, context)
-
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            reports=response.reports,
+            reports=[
+                instance.report(parent=parent, name=name)
+                for (_, parent, name, instance) in self.root_device.enumerate()
+            ],
         )
 
     async def DriverCall(self, request, context):

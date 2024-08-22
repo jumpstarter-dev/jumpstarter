@@ -140,16 +140,6 @@ class Driver(
             | ({"jumpstarter.dev/name": name} if name else {}),
         )
 
-    async def GetReport(self, request, context):
-        """
-        :meta private:
-        """
-        return jumpstarter_pb2.GetReportResponse(
-            uuid=str(self.uuid),
-            labels=self.labels,
-            reports=[instance.report(parent=parent, name=name) for (_, parent, name, instance) in self.enumerate()],
-        )
-
     def enumerate(self, *, parent=None, name=None):
         """
         Get list of self and child devices
