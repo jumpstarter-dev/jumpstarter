@@ -51,7 +51,6 @@ class Driver(
     Raw stream constructors can be marked with the `exportstream` decorator.
     """
 
-    parent: Driver | None = field(default=None)
     children: dict[str, Driver] = field(default_factory=dict)
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
@@ -127,7 +126,7 @@ class Driver(
                 # del self.resources[resource_uuid]
                 # small resources might be fully buffered in memory
 
-    def report(self, name=None):
+    def report(self, *, parent=None, name=None):
         """
         Create DriverInstanceReport
 
@@ -135,7 +134,7 @@ class Driver(
         """
         return jumpstarter_pb2.DriverInstanceReport(
             uuid=str(self.uuid),
-            parent_uuid=str(self.parent.uuid) if self.parent else None,
+            parent_uuid=str(parent.uuid) if parent else None,
             labels=self.labels
             | ({"jumpstarter.dev/client": self.client()})
             | ({"jumpstarter.dev/name": name} if name else {}),
@@ -148,18 +147,18 @@ class Driver(
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            reports=[instance.report(name) for (_, name, instance) in self.items()],
+            reports=[instance.report(parent=parent, name=name) for (_, parent, name, instance) in self.enumerate()],
         )
 
-    def items(self, name=None):
+    def enumerate(self, *, parent=None, name=None):
         """
         Get list of self and child devices
 
         :meta private:
         """
 
-        return [(self.uuid, name, self)] + list(
-            chain(*[child.items(cname) for (cname, child) in self.children.items()])
+        return [(self.uuid, parent, name, self)] + list(
+            chain(*[child.enumerate(parent=self, name=cname) for (cname, child) in self.children.items()])
         )
 
     @asynccontextmanager

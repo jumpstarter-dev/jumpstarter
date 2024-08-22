@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -18,6 +20,8 @@ from jumpstarter.drivers.storage.driver import StorageMuxInterface
 
 @dataclass(kw_only=True)
 class DutlinkPower(PowerInterface, Driver):
+    parent: Dutlink
+
     def control(self, action):
         return self.parent.control(
             usb.ENDPOINT_OUT,
@@ -59,6 +63,7 @@ class DutlinkPower(PowerInterface, Driver):
 
 @dataclass(kw_only=True)
 class DutlinkStorageMux(StorageMuxInterface, Driver):
+    parent: Dutlink
     storage_device: str
 
     def control(self, action):
@@ -129,7 +134,7 @@ class Dutlink(CompositeInterface, Driver):
 
                 for tty in pyudev.Context().list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
                     if "console" not in self.children:
-                        self.children["console"] = PySerial(parent=self, url=tty.device_node)
+                        self.children["console"] = PySerial(url=tty.device_node)
                     else:
                         raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
 

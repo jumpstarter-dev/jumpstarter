@@ -11,6 +11,4 @@ class CompositeInterface:
 
 @dataclass(kw_only=True)
 class Composite(CompositeInterface, Driver):
-    def __post_init__(self):
-        for child in self.children.values():
-            child.parent = self
+    pass

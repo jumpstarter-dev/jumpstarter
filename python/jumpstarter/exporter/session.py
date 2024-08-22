@@ -24,7 +24,7 @@ class Session(
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
-        self.mapping = {u: i for (u, _, i) in self.root_device.items()}
+        self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
