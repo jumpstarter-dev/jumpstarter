@@ -42,7 +42,7 @@ type ExporterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts/token,verbs=create
 // +kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create

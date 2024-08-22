@@ -15,11 +15,11 @@ rules:
   resources:
   - secrets
   verbs:
+  - create
+  - delete
   - get
   - list
   - watch
-  - create
-  - delete
 - apiGroups:
   - ""
   resources:
@@ -34,6 +34,32 @@ rules:
   - serviceaccounts/token
   verbs:
   - create
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - clients
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - clients/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - clients/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - jumpstarter.dev
   resources:
@@ -63,7 +89,7 @@ rules:
 - apiGroups:
   - jumpstarter.dev
   resources:
-  - identities
+  - leases
   verbs:
   - create
   - delete
@@ -75,13 +101,13 @@ rules:
 - apiGroups:
   - jumpstarter.dev
   resources:
-  - identities/finalizers
+  - leases/finalizers
   verbs:
   - update
 - apiGroups:
   - jumpstarter.dev
   resources:
-  - identities/status
+  - leases/status
   verbs:
   - get
   - patch
