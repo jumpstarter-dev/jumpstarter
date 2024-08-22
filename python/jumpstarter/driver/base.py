@@ -127,7 +127,7 @@ class Driver(
                 # del self.resources[resource_uuid]
                 # small resources might be fully buffered in memory
 
-    def report(self):
+    def report(self, name=None):
         """
         Create DriverInstanceReport
 
@@ -136,7 +136,9 @@ class Driver(
         return jumpstarter_pb2.DriverInstanceReport(
             uuid=str(self.uuid),
             parent_uuid=str(self.parent.uuid) if self.parent else None,
-            labels=self.labels | {"jumpstarter.dev/client": self.client()},  # TODO: inject name label
+            labels=self.labels
+            | ({"jumpstarter.dev/client": self.client()})
+            | ({"jumpstarter.dev/name": name} if name else {}),
         )
 
     async def GetReport(self, request, context):
@@ -146,17 +148,19 @@ class Driver(
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            reports=[instance.report() for (_, instance) in self.items()],
+            reports=[instance.report(name) for (_, name, instance) in self.items()],
         )
 
-    def items(self):
+    def items(self, name=None):
         """
         Get list of self and child devices
 
         :meta private:
         """
 
-        return [(self.uuid, self)] + list(chain(*[child.items() for child in self.children.values()]))
+        return [(self.uuid, name, self)] + list(
+            chain(*[child.items(cname) for (cname, child) in self.children.items()])
+        )
 
     @asynccontextmanager
     async def resource(self, handle: str):
