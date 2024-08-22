@@ -32,26 +32,19 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 )
 
-// IdentityReconciler reconciles a Identity object
-type IdentityReconciler struct {
+// ClientReconciler reconciles a Client object
+type ClientReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=jumpstarter.dev,resources=identities,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=jumpstarter.dev,resources=identities/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=jumpstarter.dev,resources=identities/finalizers,verbs=update
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Identity object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
-func (r *IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	client := &jumpstarterdevv1alpha1.Client{}
@@ -93,7 +86,7 @@ func (r *IdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *IdentityReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client) (*corev1.Secret, error) {
+func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client) (*corev1.Secret, error) {
 	token, err := SignObjectToken(
 		"https://jumpstarter.dev/controller",
 		[]string{"https://jumpstarter.dev/controller"},
@@ -122,7 +115,7 @@ func (r *IdentityReconciler) secretForClient(client *jumpstarterdevv1alpha1.Clie
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *IdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Client{}).
 		Complete(r)
