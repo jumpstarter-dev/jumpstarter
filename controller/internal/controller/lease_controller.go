@@ -113,7 +113,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 			// Requeue at EndTime
 			return ctrl.Result{
-				RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
+				RequeueAfter: time.Until(lease.Status.EndTime.Time),
 			}, nil
 		}
 
@@ -150,10 +150,10 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 			return ctrl.Result{}, nil
 		} else {
-			// 3. aquired lease
-			// Requeue aquire lease on EndTime
+			// 3. acquired lease
+			// Requeue acquire lease on EndTime
 			return ctrl.Result{
-				RequeueAfter: lease.Status.EndTime.Sub(time.Now()),
+				RequeueAfter: time.Until(lease.Status.EndTime.Time),
 			}, nil
 		}
 	}
