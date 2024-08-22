@@ -5,7 +5,7 @@ Base classes for drivers and driver clients
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self
 from uuid import UUID, uuid4
 
 import aiohttp
@@ -46,6 +46,8 @@ class Driver(
     Regular or streaming driver calls can be marked with the `export` decorator.
     Raw stream constructors can be marked with the `exportstream` decorator.
     """
+
+    parent: Self | None = field(default=None)
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
     """Dict of client side resources"""
@@ -130,21 +132,21 @@ class Driver(
             reports=[
                 jumpstarter_pb2.DriverInstanceReport(
                     uuid=str(uuid),
-                    parent_uuid=str(parent_uuid) if parent_uuid else None,
+                    parent_uuid=str(instance.parent.uuid) if instance.parent else None,
                     labels=instance.labels | {"jumpstarter.dev/client": instance.client()},
                 )
-                for (uuid, parent_uuid, instance) in self.items()
+                for (uuid, instance) in self.items()
             ],
         )
 
-    def items(self, parent=None):
+    def items(self):
         """
         Get list of self and child devices
 
         :meta private:
         """
 
-        return [(self.uuid, parent.uuid if parent else None, self)]
+        return [(self.uuid, self)]
 
     @asynccontextmanager
     async def resource(self, handle: str):

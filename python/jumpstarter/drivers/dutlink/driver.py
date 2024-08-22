@@ -18,8 +18,6 @@ from jumpstarter.drivers.storage.driver import StorageMuxInterface
 
 @dataclass(kw_only=True)
 class DutlinkPower(PowerInterface, Driver):
-    parent: "Dutlink"
-
     def control(self, action):
         return self.parent.control(
             usb.ENDPOINT_OUT,
@@ -61,7 +59,6 @@ class DutlinkPower(PowerInterface, Driver):
 
 @dataclass(kw_only=True)
 class DutlinkStorageMux(StorageMuxInterface, Driver):
-    parent: "Dutlink"
     storage_device: str
 
     def control(self, action):
@@ -119,8 +116,8 @@ class Dutlink(CompositeInterface, Driver):
     storage: DutlinkStorageMux = field(init=False)
     console: PySerial = field(init=False, default=None)
 
-    def items(self, parent=None):
-        return super().items(parent) + self.power.items(self) + self.storage.items(self) + self.console.items(self)
+    def items(self):
+        return super().items() + self.power.items() + self.storage.items() + self.console.items()
 
     def __post_init__(self, *args):
         super().__post_init__(*args)
@@ -135,12 +132,12 @@ class Dutlink(CompositeInterface, Driver):
                     bInterfaceProtocol=0x1,
                 )
 
-                self.power = DutlinkPower(name="power", parent=self)
-                self.storage = DutlinkStorageMux(name="storage", parent=self, storage_device=self.storage_device)
+                self.power = DutlinkPower(parent=self)
+                self.storage = DutlinkStorageMux(parent=self, storage_device=self.storage_device)
 
                 for tty in pyudev.Context().list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
                     if self.console is None:
-                        self.console = PySerial(name="console", url=tty.device_node)
+                        self.console = PySerial(parent=self, url=tty.device_node)
                     else:
                         raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
 

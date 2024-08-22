@@ -14,5 +14,11 @@ class CompositeInterface:
 class Composite(CompositeInterface, Driver):
     children: list[Driver]
 
-    def items(self, parent=None):
-        return super().items(parent) + list(chain(*[child.items(self) for child in self.children]))
+    def __post_init__(self, *args):
+        super().__post_init__(*args)
+
+        for child in self.children:
+            child.parent = self
+
+    def items(self):
+        return super().items() + list(chain(*[child.items() for child in self.children]))
