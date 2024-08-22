@@ -112,13 +112,6 @@ class Dutlink(CompositeInterface, Driver):
 
     storage_device: str
 
-    power: DutlinkPower = field(init=False)
-    storage: DutlinkStorageMux = field(init=False)
-    console: PySerial = field(init=False, default=None)
-
-    def items(self):
-        return super().items() + self.power.items() + self.storage.items() + self.console.items()
-
     def __post_init__(self, *args):
         super().__post_init__(*args)
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
@@ -132,16 +125,16 @@ class Dutlink(CompositeInterface, Driver):
                     bInterfaceProtocol=0x1,
                 )
 
-                self.power = DutlinkPower(parent=self)
-                self.storage = DutlinkStorageMux(parent=self, storage_device=self.storage_device)
+                self.children["power"] = DutlinkPower(parent=self)
+                self.children["storage"] = DutlinkStorageMux(parent=self, storage_device=self.storage_device)
 
                 for tty in pyudev.Context().list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
-                    if self.console is None:
-                        self.console = PySerial(parent=self, url=tty.device_node)
+                    if "console" not in self.children:
+                        self.children["console"] = PySerial(parent=self, url=tty.device_node)
                     else:
                         raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
 
-                if self.console is None:
+                if "console" not in self.children:
                     raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
 
                 return
