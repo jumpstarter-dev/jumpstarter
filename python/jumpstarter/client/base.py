@@ -2,14 +2,18 @@
 Base classes for drivers and driver clients
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import field
 
 from anyio.from_thread import BlockingPortal
+from pydantic import ConfigDict
+from pydantic.dataclasses import dataclass
 
 from .core import AsyncDriverClient
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
 class DriverClient(AsyncDriverClient):
     """Base class for driver clients
 
@@ -21,6 +25,8 @@ class DriverClient(AsyncDriverClient):
     connections or sharing client-side resources can be added
     by inheriting mixin classes under `jumpstarter.drivers.mixins`
     """
+
+    children: dict[str, DriverClient] = field(default_factory=dict)
 
     portal: BlockingPortal
 

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import click
 
@@ -7,15 +7,9 @@ from jumpstarter.client import DriverClient
 
 @dataclass(kw_only=True)
 class CompositeClient(DriverClient):
-    children: list[DriverClient] = field(init=False, default_factory=list)
-
-    def __or__(self, other: DriverClient):
-        name = other.labels["jumpstarter.dev/name"]
-        setattr(self, name, other)
-
-        self.children.append(other)
-
-        return self
+    def __post_init__(self):
+        for k, v in self.children.items():
+            setattr(self, k, v)
 
     def cli(self):
         @click.group
@@ -23,8 +17,8 @@ class CompositeClient(DriverClient):
             """Generic composite device"""
             pass
 
-        for child in self.children:
-            if hasattr(child, "cli"):
-                base.add_command(child.cli(), child.labels["jumpstarter.dev/name"])
+        for k, v in self.children.items():
+            if hasattr(v, "cli"):
+                base.add_command(v.cli(), k)
 
         return base
