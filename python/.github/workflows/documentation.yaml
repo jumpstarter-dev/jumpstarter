@@ -32,37 +32,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        # Install latest uv version using the installer
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
       - name: Install Python
-        uses: actions/setup-python@v5
+        run: uv python install
+
+      - name: Restore uv cache
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
-
-      - name: Install poetry
-        uses: abatilo/actions-poetry@v2
-
-      - uses: actions/cache@v3
-        name: Define a cache for the virtual environment based on the dependencies lock file
-        with:
-          path: ./.venv
-          key: venv-${{ hashFiles('poetry.lock') }}
-
-      - name: Fix lock?
-        run: poetry lock
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+            uv-${{ runner.os }}
 
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
 
-      - name: Install the project dependencies
-        run: poetry install --all-extras
-
       - name: Build the documentation
-        run: poetry run make docs
+        run: uv run --all-extras make docs
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs/build/html
+
+      - name: Minimize uv cache
+        run: uv cache prune --ci
 
   # Deployment job
   deploy:
