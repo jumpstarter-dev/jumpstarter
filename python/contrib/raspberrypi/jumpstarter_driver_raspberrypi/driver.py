@@ -12,7 +12,7 @@ class DigitalOutput(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter.drivers.rpi.client.DigitalOutputClient"
+        return "jumpstarter_driver_raspberrypi.client.DigitalOutputClient"
 
     def __post_init__(self, pin):
         self.device = DigitalOutputDevice(pin=pin)
@@ -33,7 +33,7 @@ class DigitalInput(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter.drivers.rpi.client.DigitalInputClient"
+        return "jumpstarter_driver_raspberrypi.client.DigitalInputClient"
 
     def __post_init__(self, pin):
         self.device = DigitalInputDevice(pin=pin)
