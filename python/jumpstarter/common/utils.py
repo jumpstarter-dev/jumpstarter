@@ -19,7 +19,7 @@ def serve(root_device):
     with start_blocking_portal() as portal:
         server = portal.call(_create_grpc_server)
 
-        session = Session(name="session", root_device=root_device)
+        session = Session(root_device=root_device)
         session.add_to_server(server)
 
         with TemporaryDirectory() as tempdir:

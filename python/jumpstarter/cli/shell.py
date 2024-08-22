@@ -18,14 +18,12 @@ async def shell_impl():
     server = grpc.aio.server()
 
     session = Session(
-        name="transient",
         root_device=Composite(
-            name="root",
-            children=[
-                MockPower(name="power"),
-                MockStorageMux(name="storage"),
-                EchoNetwork(name="echo"),
-            ],
+            children={
+                "power": MockPower(),
+                "storage": MockStorageMux(),
+                "echo": EchoNetwork(),
+            },
         ),
     )
     session.add_to_server(server)

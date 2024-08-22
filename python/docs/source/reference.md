@@ -87,7 +87,7 @@ class ExampleClient(DriverClient, StreamMixin):
     def echo_generator(self, message) -> Generator[str, None, None]:
         yield from self.streamingcall("echo_generator", message)
 
-with serve(ExampleDriver(name="example")) as client:
+with serve(ExampleDriver()) as client:
     print(client.echo("hello"))
     assert list(client.echo_generator("hello")) == ["hello"] * 10
 ```

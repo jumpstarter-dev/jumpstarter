@@ -10,7 +10,7 @@ from jumpstarter.drivers.storage.driver import MockStorageMux
 
 
 def test_drivers_mock_storage_mux_fs():
-    with serve(MockStorageMux(name="storage")) as client:
+    with serve(MockStorageMux()) as client:
         with TemporaryDirectory() as tempdir:
             fs = Operator("fs", root=tempdir)
 
@@ -33,7 +33,7 @@ def test_drivers_mock_storage_mux_http():
             self.end_headers()
             self.wfile.write(b"testcontent" * 1000)
 
-    with serve(MockStorageMux(name="storage")) as client:
+    with serve(MockStorageMux()) as client:
         server = HTTPServer(("127.0.0.1", 8080), StaticHandler)
         server_thread = Thread(target=server.serve_forever)
         server_thread.daemon = True

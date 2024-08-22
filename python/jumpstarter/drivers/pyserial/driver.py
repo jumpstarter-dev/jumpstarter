@@ -31,9 +31,7 @@ class PySerial(Driver):
     url: str
     device: Serial = field(init=False)
 
-    def __post_init__(self, *args):
-        super().__post_init__(*args)
-
+    def __post_init__(self):
         self.device = serial_for_url(self.url)
 
     @classmethod

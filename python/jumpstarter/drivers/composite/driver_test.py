@@ -6,13 +6,11 @@ from jumpstarter.drivers.power.driver import MockPower
 def test_drivers_composite():
     with serve(
         Composite(
-            name="composite0",
             children={
-                "power0": MockPower(name="power0"),
+                "power0": MockPower(),
                 "composite1": Composite(
-                    name="composite1",
                     children={
-                        "power1": MockPower(name="power1"),
+                        "power1": MockPower(),
                     },
                 ),
             },

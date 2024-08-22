@@ -7,7 +7,6 @@ from jumpstarter.drivers.dutlink.driver import Dutlink
 def test_drivers_dutlink():
     try:
         instance = Dutlink(
-            name="dutlink",
             storage_device="/dev/null",
         )
     except FileNotFoundError:

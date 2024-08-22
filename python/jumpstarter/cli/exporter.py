@@ -22,8 +22,7 @@ async def exporter_impl():
         async with Exporter(
             controller=controller,
             uuid=uuid,
-            name="exporter",
-            device_factory=lambda: MockPower(name="power"),
+            device_factory=lambda: MockPower(),
         ) as e:
             click.echo(f"Exporter {uuid} started")
             await e.serve()
