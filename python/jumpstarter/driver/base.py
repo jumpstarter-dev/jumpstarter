@@ -63,16 +63,6 @@ class Driver(
         Return full import path of the corresponding driver client class
         """
 
-    def add_to_server(self, server):
-        """Add self to grpc server
-
-        Useful for unit testing.
-
-        :meta private:
-        """
-        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-
     async def DriverCall(self, request, context):
         """
         :meta private:
