@@ -33,6 +33,10 @@ docs = [
     "sphinx-autobuild>=2024.4.16",
 ]
 
+[project.scripts]
+jmp = "jumpstarter.__main__:main"
+j = "jumpstarter.cli.j:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter"]
 
