@@ -1,0 +1,23 @@
+[project]
+name = "jumpstarter-driver-dutlink"
+version = "0.1.0"
+description = ""
+authors = [
+  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+  { name = "Nick Cao", email = "ncao@redhat.com" },
+  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter",
+    "pyudev>=0.24.3",
+    "pyusb>=1.2.1",
+]
+
+[tool.uv.sources]
+jumpstarter = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

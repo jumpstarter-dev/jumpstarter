@@ -32,7 +32,7 @@ class UStreamer(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter.drivers.video.client.UStreamerClient"
+        return "jumpstarter_driver_ustreamer.client.UStreamerClient"
 
     def __post_init__(self):
         cmdline = [self.executable]

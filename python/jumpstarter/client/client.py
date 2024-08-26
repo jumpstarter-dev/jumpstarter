@@ -1,9 +1,9 @@
 from collections import OrderedDict, defaultdict
+from graphlib import TopologicalSorter
 from importlib import import_module
 from uuid import UUID
 
 from google.protobuf import empty_pb2
-from graphlib import TopologicalSorter
 
 from jumpstarter.client import DriverClient
 from jumpstarter.v1 import (

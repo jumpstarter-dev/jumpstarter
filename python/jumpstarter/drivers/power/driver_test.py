@@ -1,25 +1,30 @@
-from jumpstarter.common.utils import serve
+import pytest
+
 from jumpstarter.drivers.power.common import PowerReading
 from jumpstarter.drivers.power.driver import MockPower, SyncMockPower
 
-
-def test_drivers_power_mock():
-    with serve(MockPower()) as client:
-        assert client.on() == "ok"
-        assert client.off() == "ok"
-
-        assert list(client.read()) == [
-            PowerReading(voltage=0.0, current=0.0),
-            PowerReading(voltage=5.0, current=2.0),
-        ]
+pytestmark = pytest.mark.anyio
 
 
-def test_drivers_sync_power_mock():
-    with serve(SyncMockPower()) as client:
-        assert client.on() == "ok"
-        assert client.off() == "ok"
+async def test_driver_mock_power():
+    driver = MockPower()
 
-        assert list(client.read()) == [
-            PowerReading(voltage=0.0, current=0.0),
-            PowerReading(voltage=5.0, current=2.0),
-        ]
+    assert await driver.on() == "ok"
+    assert await driver.off() == "ok"
+
+    assert [v async for v in driver.read()] == [
+        PowerReading(voltage=0.0, current=0.0),
+        PowerReading(voltage=5.0, current=2.0),
+    ]
+
+
+def test_driver_sync_mock_power():
+    driver = SyncMockPower()
+
+    assert driver.on() == "ok"
+    assert driver.off() == "ok"
+
+    assert list(driver.read()) == [
+        PowerReading(voltage=0.0, current=0.0),
+        PowerReading(voltage=5.0, current=2.0),
+    ]
