@@ -10,7 +10,7 @@ Device.pin_factory = MockFactory()
 
 
 def test_drivers_gpio_digital_output():
-    instance = DigitalOutput(name="digital_output", pin=1)
+    instance = DigitalOutput(pin=1)
 
     with serve(instance) as client:
         client.off()
@@ -21,7 +21,7 @@ def test_drivers_gpio_digital_output():
 
 
 def test_drivers_gpio_digital_input():
-    instance = DigitalInput(name="digital_input", pin=4)
+    instance = DigitalInput(pin=4)
 
     with serve(instance) as client:
         with ThreadPoolExecutor() as pool:

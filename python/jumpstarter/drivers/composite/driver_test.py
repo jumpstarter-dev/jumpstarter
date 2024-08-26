@@ -6,16 +6,14 @@ from jumpstarter.drivers.power.driver import MockPower
 def test_drivers_composite():
     with serve(
         Composite(
-            name="composite0",
-            children=[
-                MockPower(name="power0"),
-                Composite(
-                    name="composite1",
-                    children=[
-                        MockPower(name="power1"),
-                    ],
+            children={
+                "power0": MockPower(),
+                "composite1": Composite(
+                    children={
+                        "power1": MockPower(),
+                    },
                 ),
-            ],
+            },
         )
     ) as client:
         assert client.power0.on() == "ok"

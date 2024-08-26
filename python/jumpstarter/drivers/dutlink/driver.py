@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -18,7 +20,7 @@ from jumpstarter.drivers.storage.driver import StorageMuxInterface
 
 @dataclass(kw_only=True)
 class DutlinkPower(PowerInterface, Driver):
-    parent: "Dutlink"
+    parent: Dutlink
 
     def control(self, action):
         return self.parent.control(
@@ -61,7 +63,7 @@ class DutlinkPower(PowerInterface, Driver):
 
 @dataclass(kw_only=True)
 class DutlinkStorageMux(StorageMuxInterface, Driver):
-    parent: "Dutlink"
+    parent: Dutlink
     storage_device: str
 
     def control(self, action):
@@ -115,15 +117,7 @@ class Dutlink(CompositeInterface, Driver):
 
     storage_device: str
 
-    power: DutlinkPower = field(init=False)
-    storage: DutlinkStorageMux = field(init=False)
-    console: PySerial = field(init=False, default=None)
-
-    def items(self, parent=None):
-        return super().items(parent) + self.power.items(self) + self.storage.items(self) + self.console.items(self)
-
-    def __post_init__(self, *args):
-        super().__post_init__(*args)
+    def __post_init__(self):
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:
@@ -135,16 +129,16 @@ class Dutlink(CompositeInterface, Driver):
                     bInterfaceProtocol=0x1,
                 )
 
-                self.power = DutlinkPower(name="power", parent=self)
-                self.storage = DutlinkStorageMux(name="storage", parent=self, storage_device=self.storage_device)
+                self.children["power"] = DutlinkPower(parent=self)
+                self.children["storage"] = DutlinkStorageMux(parent=self, storage_device=self.storage_device)
 
                 for tty in pyudev.Context().list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
-                    if self.console is None:
-                        self.console = PySerial(name="console", url=tty.device_node)
+                    if "console" not in self.children:
+                        self.children["console"] = PySerial(url=tty.device_node)
                     else:
                         raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
 
-                if self.console is None:
+                if "console" not in self.children:
                     raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
 
                 return

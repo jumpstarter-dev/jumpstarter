@@ -26,7 +26,7 @@ def blocking(uuid):
     with start_blocking_portal() as portal:
         with LeaseRequest(
             channel=portal.call(secure_channel, "localhost:8083", credentials),
-            metadata_filter=MetadataFilter(name="exporter"),
+            metadata_filter=MetadataFilter(labels={"example.com/purpose": "test"}),
             portal=portal,
         ) as lease:
             with lease.connect() as client:
@@ -54,8 +54,8 @@ async def test_listener():
     async with Exporter(
         controller=controller,
         uuid=uuid,
-        name="exporter",
-        device_factory=lambda: MockPower(name="power"),
+        labels={"example.com/purpose": "test"},
+        device_factory=lambda: MockPower(),
     ) as r:
         async with anyio.create_task_group() as tg:
             tg.start_soon(r.serve)

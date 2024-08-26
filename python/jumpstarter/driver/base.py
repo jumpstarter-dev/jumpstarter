@@ -2,15 +2,19 @@
 Base classes for drivers and driver clients
 """
 
+from __future__ import annotations
+
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import field
+from itertools import chain
 from typing import Any
 from uuid import UUID, uuid4
 
 import aiohttp
 from anyio import Event
 from grpc import StatusCode
+from pydantic.dataclasses import dataclass
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.aiohttp import AiohttpStream
@@ -47,6 +51,8 @@ class Driver(
     Raw stream constructors can be marked with the `exportstream` decorator.
     """
 
+    children: dict[str, Driver] = field(default_factory=dict)
+
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
     """Dict of client side resources"""
 
@@ -56,16 +62,6 @@ class Driver(
         """
         Return full import path of the corresponding driver client class
         """
-
-    def add_to_server(self, server):
-        """Add self to grpc server
-
-        Useful for unit testing.
-
-        :meta private:
-        """
-        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
     async def DriverCall(self, request, context):
         """
@@ -120,31 +116,30 @@ class Driver(
                 # del self.resources[resource_uuid]
                 # small resources might be fully buffered in memory
 
-    async def GetReport(self, request, context):
+    def report(self, *, parent=None, name=None):
         """
+        Create DriverInstanceReport
+
         :meta private:
         """
-        return jumpstarter_pb2.GetReportResponse(
+        return jumpstarter_pb2.DriverInstanceReport(
             uuid=str(self.uuid),
-            labels=self.labels,
-            reports=[
-                jumpstarter_pb2.DriverInstanceReport(
-                    uuid=str(uuid),
-                    parent_uuid=str(parent_uuid) if parent_uuid else None,
-                    labels=instance.labels | {"jumpstarter.dev/client": instance.client()},
-                )
-                for (uuid, parent_uuid, instance) in self.items()
-            ],
+            parent_uuid=str(parent.uuid) if parent else None,
+            labels=self.labels
+            | ({"jumpstarter.dev/client": self.client()})
+            | ({"jumpstarter.dev/name": name} if name else {}),
         )
 
-    def items(self, parent=None):
+    def enumerate(self, *, parent=None, name=None):
         """
         Get list of self and child devices
 
         :meta private:
         """
 
-        return [(self.uuid, parent.uuid if parent else None, self)]
+        return [(self.uuid, parent, name, self)] + list(
+            chain(*[child.enumerate(parent=self, name=cname) for (cname, child) in self.children.items()])
+        )
 
     @asynccontextmanager
     async def resource(self, handle: str):

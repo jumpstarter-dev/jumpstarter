@@ -7,7 +7,6 @@ from jumpstarter.common.utils import serve
 from jumpstarter.drivers.dutlink.base import Dutlink
 
 instance = Dutlink(
-    name="dutlink",
     serial="c415a913",
     storage_device="/dev/disk/by-id/usb-SanDisk_Extreme_Pro_52A456790D93-0:0",
 )

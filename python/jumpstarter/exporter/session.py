@@ -24,7 +24,7 @@ class Session(
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
-        self.mapping = {u: i for (u, p, i) in self.root_device.items()}
+        self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
     def add_to_server(self, server):
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
@@ -34,12 +34,13 @@ class Session(
         return self.mapping[key]
 
     async def GetReport(self, request, context):
-        response = await self.root_device.GetReport(request, context)
-
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
-            reports=response.reports,
+            reports=[
+                instance.report(parent=parent, name=name)
+                for (_, parent, name, instance) in self.root_device.enumerate()
+            ],
         )
 
     async def DriverCall(self, request, context):

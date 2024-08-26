@@ -4,7 +4,7 @@ from jumpstarter.drivers.power.driver import MockPower, SyncMockPower
 
 
 def test_drivers_power_mock():
-    with serve(MockPower(name="power")) as client:
+    with serve(MockPower()) as client:
         assert client.on() == "ok"
         assert client.off() == "ok"
 
@@ -15,7 +15,7 @@ def test_drivers_power_mock():
 
 
 def test_drivers_sync_power_mock():
-    with serve(SyncMockPower(name="power")) as client:
+    with serve(SyncMockPower()) as client:
         assert client.on() == "ok"
         assert client.off() == "ok"
 

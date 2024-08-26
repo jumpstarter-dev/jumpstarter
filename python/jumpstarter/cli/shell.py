@@ -7,10 +7,10 @@ import anyio
 import click
 import grpc
 
-from jumpstarter.drivers.composite import Composite
-from jumpstarter.drivers.network import EchoNetwork
-from jumpstarter.drivers.power import MockPower
-from jumpstarter.drivers.storage import MockStorageMux
+from jumpstarter.drivers.composite.driver import Composite
+from jumpstarter.drivers.network.driver import EchoNetwork
+from jumpstarter.drivers.power.driver import MockPower
+from jumpstarter.drivers.storage.driver import MockStorageMux
 from jumpstarter.exporter import Session
 
 
@@ -18,14 +18,12 @@ async def shell_impl():
     server = grpc.aio.server()
 
     session = Session(
-        name="transient",
         root_device=Composite(
-            name="root",
-            children=[
-                MockPower(name="power"),
-                MockStorageMux(name="storage"),
-                EchoNetwork(name="echo"),
-            ],
+            children={
+                "power": MockPower(),
+                "storage": MockStorageMux(),
+                "echo": EchoNetwork(),
+            },
         ),
     )
     session.add_to_server(server)

@@ -14,7 +14,7 @@ from jumpstarter.drivers.network.driver import EchoNetwork, TcpNetwork, UdpNetwo
 
 
 def test_echo_network():
-    with serve(EchoNetwork(name="echo")) as client:
+    with serve(EchoNetwork()) as client:
         with client.connect() as stream:
             stream.send(b"hello")
             assert stream.receive() == b"hello"
@@ -30,7 +30,7 @@ def echo_handler(s):
 
 
 def test_tcp_network():
-    with serve(TcpNetwork(name="tcp", host="127.0.0.1", port=9001)) as client:
+    with serve(TcpNetwork(host="127.0.0.1", port=9001)) as client:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 9001))
             s.listen(1)
@@ -44,7 +44,7 @@ def test_tcp_network():
 
 
 def test_tcp_network_portforward():
-    with serve(TcpNetwork(name="tcp", host="127.0.0.1", port=8001)) as client:
+    with serve(TcpNetwork(host="127.0.0.1", port=8001)) as client:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 8001))
             s.listen(1)
@@ -69,7 +69,6 @@ def test_tcp_network_portforward():
 def test_udp_network():
     with serve(
         UdpNetwork(
-            name="udp",
             host="127.0.0.1",
             port=8001,
         )
@@ -87,7 +86,6 @@ def test_unix_network():
         socketpath = Path(tempdir) / "socket"
         with serve(
             UnixNetwork(
-                name="unix",
                 path=socketpath,
             )
         ) as client:
@@ -107,7 +105,6 @@ def test_unix_network():
 def test_tcp_network_performance():
     with serve(
         TcpNetwork(
-            name="iperf3",
             host="127.0.0.1",
             port=5201,
         )
