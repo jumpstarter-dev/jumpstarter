@@ -19,10 +19,8 @@ from jumpstarter.common.resources import ClientStreamResource, PresignedRequestR
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
-    create_memory_stream,
-    forward_stream,
 )
-from jumpstarter.streams import RouterStream
+from jumpstarter.streams import RouterStream, create_memory_stream, forward_stream
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
