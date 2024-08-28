@@ -19,11 +19,11 @@ class StorageMuxClient(DriverClient):
         return self.call("write", handle)
 
     def write_file(self, operator: Operator, path: str):
-        with OpendalAdapter(client=self).file(operator, path) as handle:
+        with OpendalAdapter(client=self, operator=operator, path=path) as handle:
             return self.call("write", handle)
 
     def write_local_file(self, filepath):
-        with OpendalAdapter(client=self).file(Operator("fs", root="/"), filepath) as handle:
+        with OpendalAdapter(client=self, operator=Operator("fs", root="/"), path=filepath) as handle:
             return self.call("write", handle)
 
     def cli(self):

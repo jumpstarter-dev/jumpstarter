@@ -8,12 +8,6 @@ from jumpstarter.client import DriverClient
 class ClientAdapter(AbstractContextManager, AbstractAsyncContextManager):
     client: DriverClient
 
-    async def __aenter__(self):
-        pass
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        pass
-
     def __enter__(self):
         self.manager = self.client.portal.wrap_async_context_manager(self)
 
