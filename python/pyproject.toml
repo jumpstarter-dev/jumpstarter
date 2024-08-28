@@ -21,6 +21,7 @@ dependencies = [
     "pydantic>=2.8.2",
     "pyserial>=3.5",
     "jumpstarter-protocol",
+    "wsproto>=1.2.0",
 ]
 
 [project.optional-dependencies]
