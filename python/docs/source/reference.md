@@ -18,12 +18,6 @@ This project is still evolving, so these docs may be incomplete or out-of-date.
     :members:
 ```
 
-### Mixins
-```{eval-rst}
-.. automodule:: jumpstarter.client.mixins
-    :members:
-```
-
 ### Adapters
 ```{eval-rst}
 .. automodule:: jumpstarter.client.adapters
