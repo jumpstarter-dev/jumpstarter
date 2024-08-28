@@ -1,5 +1,3 @@
-import logging
-import os
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal, Union
 from uuid import UUID
@@ -9,11 +7,6 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter.v1 import router_pb2_grpc
-
-KEEPALIVE_INTERVAL = int(os.environ.get("JMP_KEEPALIVE_INTERVAL", "300"))
-KEEPALIVE_TOLERANCE = int(os.environ.get("JMP_KEEPALIVE_TOLERANCE", "600"))
-
-logger = logging.getLogger(__name__)
 
 
 class ResourceStreamRequest(BaseModel):
