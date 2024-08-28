@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
-from anyio import create_task_group, sleep_forever
 from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import json_format, struct_pb2
 from grpc.aio import Channel
@@ -75,24 +74,6 @@ class AsyncDriverClient(
         )
         async with RouterStream(context=context) as stream:
             yield stream
-
-    @asynccontextmanager
-    async def portforward_async(self, method, listener):
-        async def handle(client):
-            async with client:
-                context = self.Stream(
-                    metadata={"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items()
-                )
-                async with RouterStream(context=context) as stream:
-                    async with forward_stream(client, stream):
-                        await sleep_forever()
-
-        async with create_task_group() as tg:
-            tg.start_soon(listener.serve, handle)
-            try:
-                yield
-            finally:
-                tg.cancel_scope.cancel()
 
     @asynccontextmanager
     async def resource_async(

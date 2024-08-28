@@ -5,14 +5,13 @@ Mixins for extending DriverClient
 import socket
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
-from anyio import create_unix_listener
 from anyio.from_thread import BlockingPortal
 from opendal import Operator
 from pexpect.fdpexpect import fdspawn
+
+from jumpstarter.client.adapters import PortforwardAdapter
 
 
 @dataclass(kw_only=True)
@@ -41,11 +40,6 @@ class StreamMixin:
         with self.portal.wrap_async_context_manager(self.stream_async(method)) as stream:
             yield BlockingStream(stream=stream, portal=self.portal)
 
-    @contextmanager
-    def portforward(self, listener, method="connect"):
-        with self.portal.wrap_async_context_manager(self.portforward_async(method, listener)):
-            yield
-
 
 class ExpectMixin(StreamMixin):
     @contextmanager
@@ -55,15 +49,10 @@ class ExpectMixin(StreamMixin):
 
         Useful for interacting with serial consoles.
         """
-        with TemporaryDirectory() as tempdir:
-            socketpath = Path(tempdir) / "socket"
-
-            listener = self.portal.call(create_unix_listener, socketpath)
-
-            with self.portforward(listener):
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                    s.connect(str(socketpath))
-                    yield fdspawn(s)
+        with PortforwardAdapter(client=self) as addr:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(addr)
+                yield fdspawn(s)
 
 
 class ResourceMixin:
