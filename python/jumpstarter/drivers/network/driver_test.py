@@ -15,7 +15,7 @@ from jumpstarter.drivers.network.driver import EchoNetwork, TcpNetwork, UdpNetwo
 
 def test_echo_network():
     with serve(EchoNetwork()) as client:
-        with client.connect() as stream:
+        with client.stream() as stream:
             stream.send(b"hello")
             assert stream.receive() == b"hello"
 
@@ -38,7 +38,7 @@ def test_tcp_network():
             with ThreadPoolExecutor() as pool:
                 pool.submit(echo_handler, s)
 
-                with client.connect() as stream:
+                with client.stream() as stream:
                     stream.send(b"hello")
                     assert stream.receive() == b"hello"
 
@@ -69,7 +69,7 @@ def test_udp_network():
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.bind(("127.0.0.1", 8001))
 
-            with client.connect() as stream:
+            with client.stream() as stream:
                 stream.send(b"hello")
                 assert s.recv(5) == b"hello"
 
@@ -89,7 +89,7 @@ def test_unix_network():
                 with ThreadPoolExecutor() as pool:
                     pool.submit(echo_handler, s)
 
-                    with client.connect() as stream:
+                    with client.stream() as stream:
                         stream.send(b"hello")
                         assert stream.receive() == b"hello"
 
