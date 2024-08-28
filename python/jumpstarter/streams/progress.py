@@ -11,8 +11,9 @@ TQDM_KWARGS = {
 
 
 @dataclass(kw_only=True)
-class ProgressStream(ObjectStream):
+class ProgressStream(ObjectStream[bytes]):
     stream: ObjectStream
+
     __recv: tqdm = field(init=False, default=None)
     __send: tqdm = field(init=False, default=None)
 

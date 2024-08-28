@@ -11,13 +11,12 @@ from google.protobuf import json_format, struct_pb2
 from grpc.aio import Channel
 
 from jumpstarter.common import Metadata
-from jumpstarter.common.progress import ProgressStream
 from jumpstarter.common.resources import ClientStreamResource
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
 )
-from jumpstarter.streams import RouterStream, create_memory_stream, forward_stream
+from jumpstarter.streams import ProgressStream, RouterStream, create_memory_stream, forward_stream
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
