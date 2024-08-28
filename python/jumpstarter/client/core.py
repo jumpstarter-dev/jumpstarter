@@ -9,12 +9,10 @@ from uuid import UUID
 from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import json_format, struct_pb2
 from grpc.aio import Channel
-from opendal import AsyncOperator
 
 from jumpstarter.common import Metadata
-from jumpstarter.common.opendal import AsyncFileStream
 from jumpstarter.common.progress import ProgressStream
-from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource
+from jumpstarter.common.resources import ClientStreamResource
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
@@ -91,19 +89,3 @@ class AsyncDriverClient(
             async with RouterStream(context=context) as rstream:
                 async with forward_stream(combined, rstream):
                     yield ClientStreamResource(uuid=UUID((await rx.receive()).decode())).model_dump(mode="json")
-
-    @asynccontextmanager
-    async def file_async(
-        self,
-        operator: AsyncOperator,
-        path: str,
-    ):
-        if operator.capability().presign_read:
-            presigned = await operator.presign_read(path, expire_second=60)
-            yield PresignedRequestResource(
-                headers=presigned.headers, url=presigned.url, method=presigned.method
-            ).model_dump(mode="json")
-        else:
-            file = await operator.open(path, "rb")
-            async with self.resource_async(AsyncFileStream(file=file)) as handle:
-                yield handle

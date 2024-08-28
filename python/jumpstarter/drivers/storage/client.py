@@ -2,10 +2,10 @@ import click
 from opendal import Operator
 
 from jumpstarter.client import DriverClient
-from jumpstarter.client.mixins import ResourceMixin
+from jumpstarter.client.adapters import OpendalAdapter
 
 
-class StorageMuxClient(DriverClient, ResourceMixin):
+class StorageMuxClient(DriverClient):
     def host(self):
         return self.call("host")
 
@@ -19,11 +19,11 @@ class StorageMuxClient(DriverClient, ResourceMixin):
         return self.call("write", handle)
 
     def write_file(self, operator: Operator, path: str):
-        with self.file(operator, path) as handle:
+        with OpendalAdapter(client=self).file(operator, path) as handle:
             return self.call("write", handle)
 
     def write_local_file(self, filepath):
-        with self.file(Operator("fs", root="/"), filepath) as handle:
+        with OpendalAdapter(client=self).file(Operator("fs", root="/"), filepath) as handle:
             return self.call("write", handle)
 
     def cli(self):
