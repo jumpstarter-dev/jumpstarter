@@ -27,8 +27,9 @@ from jumpstarter.common.streams import (
     ResourceStreamRequest,
     StreamRequest,
     create_memory_stream,
-    forward_server_stream,
+    forward_stream,
 )
+from jumpstarter.streams import RouterStream
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 from .decorators import (
@@ -128,10 +129,11 @@ class Driver(
                 method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
 
                 async with method() as stream:
-                    async with forward_server_stream(context, stream):
-                        event = Event()
-                        context.add_done_callback(lambda _: event.set())
-                        await event.wait()
+                    async with RouterStream(context=context) as s:
+                        async with forward_stream(s, stream):
+                            event = Event()
+                            context.add_done_callback(lambda _: event.set())
+                            await event.wait()
 
             case ResourceStreamRequest():
                 remote, resource = create_memory_stream()
@@ -144,10 +146,11 @@ class Driver(
                 await resource.send_eof()
 
                 async with remote:
-                    async with forward_server_stream(context, remote):
-                        event = Event()
-                        context.add_done_callback(lambda _: event.set())
-                        await event.wait()
+                    async with RouterStream(context=context) as s:
+                        async with forward_stream(s, remote):
+                            event = Event()
+                            context.add_done_callback(lambda _: event.set())
+                            await event.wait()
 
                 # del self.resources[resource_uuid]
                 # small resources might be fully buffered in memory

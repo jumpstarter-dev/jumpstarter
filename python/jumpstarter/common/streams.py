@@ -8,7 +8,6 @@ import grpc
 from anyio import (
     create_memory_object_stream,
     create_task_group,
-    get_cancelled_exc_class,
 )
 from anyio.abc import AnyByteStream, ByteStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
@@ -48,29 +47,16 @@ async def copy_stream(tx: AnyByteStream, rx: AnyByteStream):
             await tx.send(v)
         if isinstance(tx, ObjectStream) or isinstance(tx, ByteStream):
             await tx.send_eof()
-    except Exception as e:
+    except Exception:
         logger.debug("copy stream error cancelling task")
-        raise get_cancelled_exc_class() from e
+        # raise get_cancelled_exc_class() from e
 
 
 @asynccontextmanager
-async def forward_server_stream(context, stream):
+async def forward_stream(a, b):
     async with create_task_group() as tg:
-        s = RouterStream(context=context)
-        tg.start_soon(copy_stream, s, stream)
-        tg.start_soon(copy_stream, stream, s)
-        yield
-        tg.cancel_scope.cancel()
-
-
-@asynccontextmanager
-async def forward_client_stream(router, stream, metadata):
-    context = router.Stream(metadata=metadata)
-
-    async with create_task_group() as tg:
-        s = RouterStream(context=context)
-        tg.start_soon(copy_stream, s, stream)
-        tg.start_soon(copy_stream, stream, s)
+        tg.start_soon(copy_stream, a, b)
+        tg.start_soon(copy_stream, b, a)
         yield
         tg.cancel_scope.cancel()
 
@@ -84,9 +70,10 @@ async def connect_router_stream(endpoint, token, stream):
 
     async with grpc.aio.secure_channel(endpoint, credentials) as channel:
         router = router_pb2_grpc.RouterServiceStub(channel)
-
-        async with forward_client_stream(router, stream, ()):
-            yield
+        context = router.Stream(metadata=())
+        async with RouterStream(context=context) as s:
+            async with forward_stream(s, stream):
+                yield
 
 
 def create_memory_stream():

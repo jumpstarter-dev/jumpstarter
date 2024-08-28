@@ -20,8 +20,9 @@ from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
     create_memory_stream,
-    forward_client_stream,
+    forward_stream,
 )
+from jumpstarter.streams import RouterStream
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
@@ -71,25 +72,22 @@ class AsyncDriverClient(
 
     @asynccontextmanager
     async def stream_async(self, method):
-        client_stream, device_stream = create_memory_stream()
-        async with forward_client_stream(
-            self,
-            device_stream,
-            {"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items(),
-        ):
-            async with client_stream:
-                yield client_stream
+        context = self.Stream(
+            metadata={"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items()
+        )
+        async with RouterStream(context=context) as stream:
+            yield stream
 
     @asynccontextmanager
     async def portforward_async(self, method, listener):
         async def handle(client):
             async with client:
-                async with forward_client_stream(
-                    self,
-                    client,
-                    {"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items(),
-                ):
-                    await sleep_forever()
+                context = self.Stream(
+                    metadata={"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items()
+                )
+                async with RouterStream(context=context) as stream:
+                    async with forward_stream(client, stream):
+                        await sleep_forever()
 
         async with create_task_group() as tg:
             tg.start_soon(listener.serve, handle)
@@ -108,12 +106,12 @@ class AsyncDriverClient(
         combined = StapledObjectStream(tx, ProgressStream(stream=stream))
 
         async with combined:
-            async with forward_client_stream(
-                self,
-                combined,
-                {"request": ResourceStreamRequest(uuid=self.uuid).model_dump_json()}.items(),
-            ):
-                yield ClientStreamResource(uuid=UUID((await rx.receive()).decode())).model_dump(mode="json")
+            context = self.Stream(
+                metadata={"request": ResourceStreamRequest(uuid=self.uuid).model_dump_json()}.items(),
+            )
+            async with RouterStream(context=context) as rstream:
+                async with forward_stream(combined, rstream):
+                    yield ClientStreamResource(uuid=UUID((await rx.receive()).decode())).model_dump(mode="json")
 
     @asynccontextmanager
     async def file_async(
