@@ -118,6 +118,7 @@ class Dutlink(CompositeInterface, Driver):
     storage_device: str
 
     def __post_init__(self):
+        super().__post_init__()
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:

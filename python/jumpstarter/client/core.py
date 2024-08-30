@@ -39,7 +39,8 @@ class AsyncDriverClient(
 
     channel: Channel
 
-    def __post_init__(self, *args):
+    def __post_init__(self):
+        super().__post_init__()
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
 

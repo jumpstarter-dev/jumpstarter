@@ -66,6 +66,9 @@ class Driver(
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
     """Dict of client side resources"""
 
+    def __post_init__(self):
+        super().__post_init__()
+
     @classmethod
     @abstractmethod
     def client(cls) -> str:

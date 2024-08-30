@@ -9,7 +9,13 @@ class Metadata:
     uuid: UUID = field(default_factory=uuid4)
     labels: dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self):
+        pass
+
 
 @dataclass(kw_only=True, slots=True)
 class MetadataFilter:
     labels: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self):
+        pass

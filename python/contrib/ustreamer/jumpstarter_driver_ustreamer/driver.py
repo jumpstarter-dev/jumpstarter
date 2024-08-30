@@ -35,6 +35,8 @@ class UStreamer(Driver):
         return "jumpstarter_driver_ustreamer.client.UStreamerClient"
 
     def __post_init__(self):
+        super().__post_init__()
+
         cmdline = [self.executable]
 
         for key, value in self.args.items():

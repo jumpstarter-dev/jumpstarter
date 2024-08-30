@@ -22,7 +22,8 @@ class LeaseRequest(AbstractContextManager, jumpstarter_pb2_grpc.ControllerServic
     metadata_filter: MetadataFilter
     portal: BlockingPortal
 
-    def __post_init__(self, *args):
+    def __post_init__(self):
+        super().__post_init__()
         jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
 
     def __enter__(self):
@@ -67,7 +68,8 @@ class Lease:
     uuid: UUID
     portal: BlockingPortal
 
-    def __post_init__(self, *args):
+    def __post_init__(self):
+        super().__post_init__()
         jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
 
     @asynccontextmanager
