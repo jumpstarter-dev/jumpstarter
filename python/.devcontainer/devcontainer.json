@@ -4,7 +4,7 @@
 	"name": "Python 3",
 	"dockerFile": "Containerfile",
 	// Install poetry and packages
-	"postCreateCommand": "pip3 install -U poetry && poetry install",
+	"postCreateCommand": "pip3 install -U uv && uv sync",
 	// Mount USB devices to devcontainer for tests
 	"mounts": [
 		"type=bind,source=/dev/bus/usb,target=/dev/bus/usb"
@@ -27,7 +27,7 @@
 			],
 			"settings": {
 				"extensions.ignoreRecommendations": true,
-				"python.defaultInterpreterPath": "~/.cache/pypoetry/virtualenvs/jumpstarter-64_PDEHR-py3.11/bin/python",
+				"python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
 				"[python]": {
 					"editor.formatOnType": true,
 					"editor.formatOnSave": true,
