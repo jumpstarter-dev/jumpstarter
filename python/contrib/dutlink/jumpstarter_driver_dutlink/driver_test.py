@@ -1,5 +1,6 @@
 import pytest
 
+from jumpstarter.client.adapters import PexpectAdapter
 from jumpstarter.common.utils import serve
 from jumpstarter_driver_dutlink.driver import Dutlink
 
@@ -13,7 +14,7 @@ def test_drivers_dutlink():
         pytest.skip("dutlink not available")
 
     with serve(instance) as client:
-        with client.console.expect() as expect:
+        with PexpectAdapter(client=client.console) as expect:
             expect.send("\x02" * 5)
 
             expect.send("about\r\n")

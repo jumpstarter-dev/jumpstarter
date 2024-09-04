@@ -6,16 +6,16 @@ from pathlib import Path
 from shutil import which
 from tempfile import TemporaryDirectory
 
-import anyio
 import pytest
 
+from jumpstarter.client.adapters import PortforwardAdapter
 from jumpstarter.common.utils import serve
 from jumpstarter.drivers.network.driver import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
 
 
 def test_echo_network():
     with serve(EchoNetwork()) as client:
-        with client.connect() as stream:
+        with client.stream() as stream:
             stream.send(b"hello")
             assert stream.receive() == b"hello"
 
@@ -38,7 +38,7 @@ def test_tcp_network():
             with ThreadPoolExecutor() as pool:
                 pool.submit(echo_handler, s)
 
-                with client.connect() as stream:
+                with client.stream() as stream:
                     stream.send(b"hello")
                     assert stream.receive() == b"hello"
 
@@ -52,18 +52,11 @@ def test_tcp_network_portforward():
             with ThreadPoolExecutor() as pool:
                 pool.submit(echo_handler, s)
 
-                async def create_forwarder():
-                    return await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=8002, reuse_port=True)
-
-                forwarder = client.portal.call(create_forwarder)
-
-                with client.portforward(forwarder):
+                with PortforwardAdapter(client=client) as addr:
                     stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    stream.connect(("127.0.0.1", 8002))
+                    stream.connect(addr)
                     stream.send(b"hello")
                     assert stream.recv(5) == b"hello"
-
-                client.portal.call(forwarder.aclose)
 
 
 def test_udp_network():
@@ -76,7 +69,7 @@ def test_udp_network():
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.bind(("127.0.0.1", 8001))
 
-            with client.connect() as stream:
+            with client.stream() as stream:
                 stream.send(b"hello")
                 assert s.recv(5) == b"hello"
 
@@ -96,7 +89,7 @@ def test_unix_network():
                 with ThreadPoolExecutor() as pool:
                     pool.submit(echo_handler, s)
 
-                    with client.connect() as stream:
+                    with client.stream() as stream:
                         stream.send(b"hello")
                         assert stream.receive() == b"hello"
 
@@ -109,26 +102,20 @@ def test_tcp_network_performance():
             port=5201,
         )
     ) as client:
-
-        async def create_listener():
-            return await anyio.create_tcp_listener(local_port=8001, reuse_port=True)
-
-        listener = client.portal.call(create_listener)
-
         server = subprocess.Popen(
             ["iperf3", "-s"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
 
-        with client.portforward(listener):
+        with PortforwardAdapter(client=client) as addr:
             subprocess.run(
                 [
                     "iperf3",
                     "-c",
-                    "127.0.0.1",
+                    addr[0],
                     "-p",
-                    "8001",
+                    str(addr[1]),
                     "-t",
                     "1",
                     "--bidir",

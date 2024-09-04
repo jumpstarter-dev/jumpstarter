@@ -1,9 +1,13 @@
+from contextlib import suppress
 from dataclasses import dataclass
 from uuid import UUID
 
+from anyio import Event, TypedAttributeLookupError
+
 from jumpstarter.common import Metadata
-from jumpstarter.common.streams import StreamRequest
+from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.driver import Driver
+from jumpstarter.streams import MetadataStreamAttributes, RouterStream, forward_stream
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
@@ -51,8 +55,16 @@ class Session(
             yield v
 
     async def Stream(self, _request_iterator, context):
-        metadata = dict(context.invocation_metadata())
+        request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
 
-        request = StreamRequest.validate_json(metadata["request"], strict=True)
+        async with self[request.uuid].Stream(request, context) as stream:
+            metadata = []
+            with suppress(TypedAttributeLookupError):
+                metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
+            await context.send_initial_metadata(metadata)
 
-        await self[request.uuid].Stream(_request_iterator, context)
+            async with RouterStream(context=context) as remote:
+                async with forward_stream(remote, stream):
+                    event = Event()
+                    context.add_done_callback(lambda _: event.set())
+                    await event.wait()

@@ -18,9 +18,9 @@ This project is still evolving, so these docs may be incomplete or out-of-date.
     :members:
 ```
 
-### Mixins
+### Adapters
 ```{eval-rst}
-.. automodule:: jumpstarter.client.mixins
+.. automodule:: jumpstarter.client.adapters
     :members:
 ```
 
@@ -46,7 +46,6 @@ from contextlib import asynccontextmanager
 from collections.abc import Generator
 from jumpstarter.driver import Driver, export, exportstream
 from jumpstarter.client import DriverClient
-from jumpstarter.client.mixins import StreamMixin
 from jumpstarter.common.utils import serve
 
 class ExampleDriver(Driver):
@@ -77,7 +76,7 @@ class ExampleDriver(Driver):
         async with await connect_tcp(remote_host="example.com", remote_port=80) as stream:
             yield stream
 
-class ExampleClient(DriverClient, StreamMixin):
+class ExampleClient(DriverClient):
     # client methods are sync
     def echo(self, message) -> str:
         return self.call("echo", message)

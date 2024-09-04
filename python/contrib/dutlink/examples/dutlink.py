@@ -2,9 +2,10 @@ import sys
 from threading import Thread
 
 import click
+from jumpstarter_driver_dutlink.driver import Dutlink
 
+from jumpstarter.client.adapters import PexpectAdapter
 from jumpstarter.common.utils import serve
-from jumpstarter.drivers.dutlink.base import Dutlink
 
 instance = Dutlink(
     serial="c415a913",
@@ -23,7 +24,7 @@ def monitor_power(client):
 with serve(instance) as client:
     click.secho("Connected to Dutlink", fg="red")
     Thread(target=monitor_power, args=[client]).start()
-    with client.console.expect() as expect:
+    with PexpectAdapter(client=client.console) as expect:
         expect.logfile = sys.stdout.buffer
 
         expect.send("\x02" * 5)

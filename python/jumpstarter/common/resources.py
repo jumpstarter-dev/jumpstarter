@@ -1,7 +1,7 @@
 from typing import Annotated, Literal, Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, Json
 
 
 class ClientStreamResource(BaseModel):
@@ -16,9 +16,11 @@ class PresignedRequestResource(BaseModel):
     method: str
 
 
-Resource = TypeAdapter(
-    Annotated[
-        Union[ClientStreamResource, PresignedRequestResource],
-        Field(discriminator="kind"),
-    ]
-)
+Resource = Annotated[
+    Union[ClientStreamResource, PresignedRequestResource],
+    Field(discriminator="kind"),
+]
+
+
+class ResourceMetadata(BaseModel):
+    resource: Json[Resource]

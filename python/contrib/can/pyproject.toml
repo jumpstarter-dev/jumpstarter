@@ -1,0 +1,27 @@
+[project]
+name = "jumpstarter-driver-can"
+version = "0.1.0"
+description = ""
+authors = [
+  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+  { name = "Nick Cao", email = "ncao@redhat.com" },
+  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter",
+    "python-can>=4.4.2",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "can-isotp>=2.0.6",
+]
+
+[tool.uv.sources]
+jumpstarter = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

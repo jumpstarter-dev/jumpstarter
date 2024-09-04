@@ -4,11 +4,14 @@ Base classes for drivers and driver clients
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import field
 
 from anyio.from_thread import BlockingPortal
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
+
+from jumpstarter.streams import BlockingStream
 
 from .core import AsyncDriverClient
 
@@ -58,3 +61,8 @@ class DriverClient(AsyncDriverClient):
                 yield self.portal.call(generator.__anext__)
             except StopAsyncIteration:
                 break
+
+    @contextmanager
+    def stream(self, method="connect"):
+        with self.portal.wrap_async_context_manager(self.stream_async(method)) as stream:
+            yield BlockingStream(stream=stream, portal=self.portal)
