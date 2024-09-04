@@ -5,11 +5,12 @@ Base classes for drivers and driver clients
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from google.protobuf import json_format, struct_pb2
-from grpc.aio import Channel
+from grpc import StatusCode
+from grpc.aio import AioRpcError, Channel
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.resources import ResourceMetadata
+from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
@@ -50,12 +51,21 @@ class AsyncDriverClient(
         request = jumpstarter_pb2.DriverCallRequest(
             uuid=str(self.uuid),
             method=method,
-            args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+            args=[encode_value(arg) for arg in args],
         )
 
-        response = await self.DriverCall(request)
+        try:
+            response = await self.DriverCall(request)
+        except AioRpcError as e:
+            match e.code():
+                case StatusCode.UNIMPLEMENTED:
+                    raise NotImplementedError(e.details()) from None
+                case StatusCode.INVALID_ARGUMENT:
+                    raise ValueError(e.details()) from None
+                case _:
+                    raise
 
-        return json_format.MessageToDict(response.result)
+        return decode_value(response.result)
 
     async def streamingcall_async(self, method, *args):
         """Make StreamingDriverCall by method name and arguments"""
@@ -63,11 +73,20 @@ class AsyncDriverClient(
         request = jumpstarter_pb2.StreamingDriverCallRequest(
             uuid=str(self.uuid),
             method=method,
-            args=[json_format.ParseDict(arg, struct_pb2.Value()) for arg in args],
+            args=[encode_value(arg) for arg in args],
         )
 
-        async for response in self.StreamingDriverCall(request):
-            yield json_format.MessageToDict(response.result)
+        try:
+            async for response in self.StreamingDriverCall(request):
+                yield decode_value(response.result)
+        except AioRpcError as e:
+            match e.code():
+                case StatusCode.UNIMPLEMENTED:
+                    raise NotImplementedError(e.details()) from None
+                case StatusCode.INVALID_ARGUMENT:
+                    raise ValueError(e.details()) from None
+                case _:
+                    raise
 
     @asynccontextmanager
     async def stream_async(self, method):

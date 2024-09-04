@@ -14,13 +14,13 @@ from uuid import UUID, uuid4
 
 import aiohttp
 from anyio import to_thread
-from google.protobuf import json_format, struct_pb2
 from grpc import StatusCode
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 from pydantic.dataclasses import dataclass
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
+from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
@@ -34,13 +34,6 @@ from .decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
-
-
-def encode_value(v):
-    return json_format.ParseDict(
-        v.model_dump(mode="json") if isinstance(v, BaseModel) else v,
-        struct_pb2.Value(),
-    )
 
 
 @dataclass(kw_only=True)
@@ -77,40 +70,50 @@ class Driver(
         """
         :meta private:
         """
-        method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
+        try:
+            method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
 
-        args = [json_format.MessageToDict(arg) for arg in request.args]
+            args = [decode_value(arg) for arg in request.args]
 
-        if iscoroutinefunction(method):
-            result = await method(*args)
-        else:
-            result = await to_thread.run_sync(method, *args)
+            if iscoroutinefunction(method):
+                result = await method(*args)
+            else:
+                result = await to_thread.run_sync(method, *args)
 
-        return jumpstarter_pb2.DriverCallResponse(
-            uuid=str(uuid4()),
-            result=encode_value(result),
-        )
+            return jumpstarter_pb2.DriverCallResponse(
+                uuid=str(uuid4()),
+                result=encode_value(result),
+            )
+        except NotImplementedError as e:
+            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
+        except ValueError as e:
+            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
 
     async def StreamingDriverCall(self, request, context):
         """
         :meta private:
         """
-        method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
+        try:
+            method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
 
-        args = [json_format.MessageToDict(arg) for arg in request.args]
+            args = [decode_value(arg) for arg in request.args]
 
-        if isasyncgenfunction(method):
-            async for result in method(*args):
-                yield jumpstarter_pb2.StreamingDriverCallResponse(
-                    uuid=str(uuid4()),
-                    result=encode_value(result),
-                )
-        else:
-            for result in await to_thread.run_sync(method, *args):
-                yield jumpstarter_pb2.StreamingDriverCallResponse(
-                    uuid=str(uuid4()),
-                    result=encode_value(result),
-                )
+            if isasyncgenfunction(method):
+                async for result in method(*args):
+                    yield jumpstarter_pb2.StreamingDriverCallResponse(
+                        uuid=str(uuid4()),
+                        result=encode_value(result),
+                    )
+            else:
+                for result in await to_thread.run_sync(method, *args):
+                    yield jumpstarter_pb2.StreamingDriverCallResponse(
+                        uuid=str(uuid4()),
+                        result=encode_value(result),
+                    )
+        except NotImplementedError as e:
+            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
+        except ValueError as e:
+            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
 
     @asynccontextmanager
     async def Stream(self, request, context):
