@@ -4,7 +4,7 @@
 	"name": "Python 3",
 	"dockerFile": "Containerfile",
 	// Install poetry and packages
-	"postCreateCommand": "pip3 install -U uv && uv sync --all-extras",
+	"postCreateCommand": "uv sync --all-extras",
 	// Mount USB devices to devcontainer for tests
 	"mounts": [
 		"type=bind,source=/dev/bus/usb,target=/dev/bus/usb"
