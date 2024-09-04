@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import grpc
-from anyio import connect_unix, sleep_forever
+from anyio import connect_unix
 from grpc.aio import Channel
 
 from jumpstarter.common import Metadata
@@ -28,11 +28,14 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
 
     async def __aenter__(self):
-        probe = self.device_factory()
+        probe = Session(
+            uuid=self.uuid,
+            labels=self.labels,
+            root_device=self.device_factory(),
+        )
 
         await self.Register(
             jumpstarter_pb2.RegisterRequest(
-                uuid=str(self.uuid),
                 labels=self.labels,
                 reports=(await probe.GetReport(None, None)).reports,
             )
@@ -43,7 +46,6 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self.Unregister(
             jumpstarter_pb2.UnregisterRequest(
-                uuid=str(self.uuid),
                 reason="TODO",
             )
         )
@@ -77,5 +79,5 @@ class Exporter(AbstractAsyncContextManager, Metadata):
 
     async def serve(self):
         async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
-            async with self.__handle(self, request.router_endpoint, request.router_token):
-                await sleep_forever()
+            async with self.__handle(request.router_endpoint, request.router_token):
+                pass

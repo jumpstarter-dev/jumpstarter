@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlunparse
 
-from anyio import sleep_forever
-
 from jumpstarter.streams import WebsocketServerStream, forward_stream
 
 from .portforward import PortforwardAdapter
@@ -28,4 +26,4 @@ class NovncAdapter(PortforwardAdapter):
             async with self.client.stream_async(self.method) as stream:
                 async with WebsocketServerStream(stream=stream) as stream:
                     async with forward_stream(conn, stream):
-                        await sleep_forever()
+                        pass

@@ -6,7 +6,6 @@ import grpc
 
 from jumpstarter.drivers.power.driver import MockPower
 from jumpstarter.exporter import Exporter
-from jumpstarter.v1 import jumpstarter_pb2_grpc
 
 
 async def exporter_impl():
@@ -18,9 +17,8 @@ async def exporter_impl():
     )
 
     async with grpc.aio.secure_channel("localhost:8083", credentials) as channel:
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
         async with Exporter(
-            controller=controller,
+            channel=channel,
             uuid=uuid,
             device_factory=lambda: MockPower(),
         ) as e:

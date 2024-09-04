@@ -1,10 +1,10 @@
-from contextlib import AbstractContextManager, asynccontextmanager, contextmanager
+from contextlib import AbstractAsyncContextManager, AbstractContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import UUID
 
-from anyio import create_unix_listener
+from anyio import create_unix_listener, fail_after, sleep
 from anyio.from_thread import BlockingPortal
 from google.protobuf import duration_pb2
 from grpc.aio import Channel, insecure_channel
@@ -12,53 +12,47 @@ from grpc.aio import Channel, insecure_channel
 from jumpstarter.client import client_from_channel
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.streams import connect_router_stream
-from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
+from jumpstarter.streams import CancelTask
+from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
 
 
 @dataclass(kw_only=True)
-class LeaseRequest(AbstractContextManager, jumpstarter_pb2_grpc.ControllerServiceStub):
+class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
     channel: Channel
     metadata_filter: MetadataFilter
     portal: BlockingPortal
 
     def __post_init__(self):
-        super().__post_init__()
         jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
+        self.manager = self.portal.wrap_async_context_manager(self)
+
+    async def __aenter__(self):
+        duration = duration_pb2.Duration()
+        duration.FromSeconds(1800)  # TODO: configurable duration
+
+        self.lease = await self.RequestLease(
+            jumpstarter_pb2.RequestLeaseRequest(
+                duration=duration,
+                selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
+            )
+        )
+        with fail_after(300):  # TODO: configurable timeout
+            while True:
+                result = await self.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.lease.name))
+
+                if result.exporter_uuid != "":
+                    return Lease(channel=self.channel, uuid=UUID(result.exporter_uuid), portal=self.portal)
+
+                await sleep(1)
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=self.lease.name))
 
     def __enter__(self):
-        exporters = self.portal.call(
-            self.ListExporters,
-            jumpstarter_pb2.ListExportersRequest(
-                labels=self.metadata_filter.labels,
-            ),
-        ).exporters
-
-        if not exporters:
-            # TODO: retry/wait on transient unavailability
-            raise FileNotFoundError("no matching exporters")
-
-        exporter = exporters[0]
-
-        duration = duration_pb2.Duration()
-        duration.FromSeconds(1800)
-
-        result = self.portal.call(
-            self.LeaseExporter,
-            jumpstarter_pb2.LeaseExporterRequest(
-                uuid=exporter.uuid,
-                duration=duration,  # TODO: configurable duration
-            ),
-        )
-
-        match result.WhichOneof("lease_exporter_response_oneof"):
-            case "success":
-                return Lease(channel=self.channel, uuid=exporter.uuid, portal=self.portal)
-            case "failure":
-                raise RuntimeError(result.failure.reason)
+        return self.manager.__enter__()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        # TODO: release exporter
-        pass
+        return self.manager.__exit__(exc_type, exc_value, traceback)
 
 
 @dataclass(kw_only=True)
@@ -80,6 +74,7 @@ class Lease:
                     async with await listener.accept() as stream:
                         async with connect_router_stream(endpoint, token, stream):
                             yield await client_from_channel(channel, self.portal)
+                            raise CancelTask
 
     @asynccontextmanager
     async def connect_async(self):

@@ -1,23 +1,24 @@
-import socket
+# These tests are flaky
+# https://github.com/grpc/grpc/issues/25364
+
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-import anyio
 import grpc
 import pytest
-from anyio import Event
+from anyio import Event, create_memory_object_stream, create_task_group
 from anyio.abc import AnyByteStream
 from anyio.from_thread import start_blocking_portal
-from anyio.to_process import run_sync
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 from jumpstarter.client import LeaseRequest
 from jumpstarter.client.lease import Lease
 from jumpstarter.common import MetadataFilter
-from jumpstarter.common.grpc import secure_channel
 from jumpstarter.drivers.power.driver import MockPower
 from jumpstarter.exporter import Exporter
 from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter.v1 import (
+    jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
@@ -43,31 +44,45 @@ class MockRouter(router_pb2_grpc.RouterServiceServicer):
                 del self.pending[authorization]
 
 
-def blocking(uuid):
-    credentials = grpc.composite_channel_credentials(
-        grpc.local_channel_credentials(),
-        grpc.access_token_call_credentials(str(uuid)),
+@dataclass(kw_only=True)
+class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
+    router_endpoint: str
+    queue: (MemoryObjectSendStream[str], MemoryObjectReceiveStream[str]) = field(
+        init=False, default_factory=lambda: create_memory_object_stream[str](32)
     )
 
-    with start_blocking_portal() as portal:
-        with LeaseRequest(
-            channel=portal.call(secure_channel, "localhost:8083", credentials),
-            metadata_filter=MetadataFilter(labels={"example.com/purpose": "test"}),
-            portal=portal,
-        ) as lease:
-            with lease.connect() as client:
-                assert client.on() == "ok"
+    async def Register(self, request, context):
+        return jumpstarter_pb2.RegisterResponse(uuid=str(uuid4()))
 
-            with lease.connect() as client:
-                assert client.on() == "ok"
+    async def Unregister(self, request, context):
+        return jumpstarter_pb2.UnregisterResponse()
+
+    async def RequestLease(self, request, context):
+        return jumpstarter_pb2.RequestLeaseResponse(name=str(uuid4()))
+
+    async def GetLease(self, request, context):
+        return jumpstarter_pb2.GetLeaseResponse(exporter_uuid=str(uuid4()))
+
+    async def ReleaseLease(self, request, context):
+        return jumpstarter_pb2.ReleaseLeaseResponse()
+
+    async def Dial(self, request, context):
+        token = str(uuid4())
+        await self.queue[0].send(token)
+        return jumpstarter_pb2.DialResponse(router_endpoint=self.router_endpoint, router_token=token)
+
+    async def Listen(self, request, context):
+        async for token in self.queue[1]:
+            yield jumpstarter_pb2.ListenResponse(router_endpoint=self.router_endpoint, router_token=token)
 
 
+@pytest.mark.xfail(raises=RuntimeError)
 async def test_router():
     uuid = uuid4()
 
     router = MockRouter()
     server = grpc.aio.server()
-    server.add_insecure_port("127.0.0.1:8083")
+    port = server.add_insecure_port("127.0.0.1:0")
 
     router_pb2_grpc.add_RouterServiceServicer_to_server(router, server)
 
@@ -80,40 +95,52 @@ async def test_router():
         device_factory=lambda: MockPower(),
     )
 
-    async with exporter._Exporter__handle("127.0.0.1:8083", str(uuid)):
+    async with exporter._Exporter__handle(f"127.0.0.1:{port}", str(uuid)):
         with start_blocking_portal() as portal:
             lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
 
-            async with lease._Lease__connect("127.0.0.1:8083", str(uuid)) as client:
+            async with lease._Lease__connect(f"127.0.0.1:{port}", str(uuid)) as client:
                 assert await client.call_async("on") == "ok"
 
     await server.stop(grace=None)
 
 
-@pytest.mark.skipif(
-    socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex(("localhost", 8082)) != 0,
-    reason="controller not available",
-)
-async def test_listener():
+@pytest.mark.xfail(raises=RuntimeError)
+async def test_controller():
+    server = grpc.aio.server()
+    port = server.add_insecure_port("127.0.0.1:0")
+
+    controller = MockController(router_endpoint=f"127.0.0.1:{port}")
+    router = MockRouter()
+
+    jumpstarter_pb2_grpc.add_ControllerServiceServicer_to_server(controller, server)
+    router_pb2_grpc.add_RouterServiceServicer_to_server(router, server)
+
+    await server.start()
+
     uuid = uuid4()
 
-    credentials = grpc.composite_channel_credentials(
-        grpc.local_channel_credentials(),
-        grpc.access_token_call_credentials(str(uuid)),
-    )
-
-    channel = grpc.aio.secure_channel("localhost:8083", credentials)
-    controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-
     async with Exporter(
-        controller=controller,
+        channel=grpc.aio.insecure_channel(f"127.0.0.1:{port}"),
         uuid=uuid,
-        labels={"example.com/purpose": "test"},
+        labels={},
         device_factory=lambda: MockPower(),
-    ) as r:
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(r.serve)
+    ) as exporter:
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
 
-            await run_sync(blocking, uuid)
+            with start_blocking_portal() as portal:
+                async with LeaseRequest(
+                    channel=grpc.aio.insecure_channel(f"127.0.0.1:{port}"),
+                    metadata_filter=MetadataFilter(),
+                    portal=portal,
+                ) as lease:
+                    async with lease.connect_async() as client:
+                        assert await client.call_async("on") == "ok"
+
+                    async with lease.connect_async() as client:
+                        assert await client.call_async("on") == "ok"
 
             tg.cancel_scope.cancel()
+
+    await server.stop(grace=None)

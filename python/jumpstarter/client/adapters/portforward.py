@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from anyio import create_task_group, create_tcp_listener, sleep_forever
+from anyio import create_task_group, create_tcp_listener
 from anyio.abc import SocketAttribute
 
 from jumpstarter.streams import forward_stream
@@ -36,4 +36,4 @@ class PortforwardAdapter(ClientAdapter):
         async with conn:
             async with self.client.stream_async(self.method) as stream:
                 async with forward_stream(conn, stream):
-                    await sleep_forever()
+                    pass

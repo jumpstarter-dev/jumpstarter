@@ -22,13 +22,19 @@ async def copy_stream(dst: AnyByteStream, src: AnyByteStream):
         await dst.send_eof()
 
 
+class CancelTask(Exception):
+    pass
+
+
 @asynccontextmanager
 async def forward_stream(a, b):
-    async with create_task_group() as tg:
-        tg.start_soon(copy_stream, a, b)
-        tg.start_soon(copy_stream, b, a)
-        yield
-        tg.cancel_scope.cancel()
+    try:
+        async with create_task_group() as tg:
+            tg.start_soon(copy_stream, a, b)
+            tg.start_soon(copy_stream, b, a)
+            yield
+    except* CancelTask:
+        pass
 
 
 def create_memory_stream():
