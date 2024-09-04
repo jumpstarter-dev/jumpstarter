@@ -3,7 +3,7 @@ from typing import Annotated, Literal, Union
 from uuid import UUID
 
 import grpc
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, Json
 
 from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter.v1 import router_pb2_grpc
@@ -20,12 +20,14 @@ class DriverStreamRequest(BaseModel):
     method: str
 
 
-StreamRequest = TypeAdapter(
-    Annotated[
-        Union[ResourceStreamRequest, DriverStreamRequest],
-        Field(discriminator="kind"),
-    ]
-)
+StreamRequest = Annotated[
+    Union[ResourceStreamRequest, DriverStreamRequest],
+    Field(discriminator="kind"),
+]
+
+
+class StreamRequestMetadata(BaseModel):
+    request: Json[StreamRequest]
 
 
 @asynccontextmanager

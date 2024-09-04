@@ -22,6 +22,7 @@ dependencies = [
     "pyserial>=3.5",
     "jumpstarter-protocol",
     "wsproto>=1.2.0",
+    "fabric>=3.2.2",
 ]
 
 [project.optional-dependencies]
@@ -70,7 +71,7 @@ locale = "en-us"
 omit = ["conftest.py", "test_*.py", "*_test.py"]
 
 [tool.pytest.ini_options]
-addopts = "--capture=no --verbose --cov --cov-report=html --cov-report=xml"
+addopts = "--capture=no --verbose --cov --cov-report=html --cov-report=xml --cov-append"
 
 [build-system]
 requires = ["hatchling"]

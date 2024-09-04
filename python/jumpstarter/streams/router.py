@@ -55,6 +55,8 @@ class RouterStream(ObjectStream[bytes]):
             case _:
                 logger.debug(f"RouterStream: unrecognized frame ignored: {frame}")
 
+        return b""
+
     async def send_eof(self):
         with contextlib.suppress(grpc.aio.AioRpcError, asyncio.exceptions.InvalidStateError):
             await self.context.write(self.cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY))

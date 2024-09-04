@@ -4,19 +4,24 @@ Base classes for drivers and driver clients
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from uuid import UUID
 
-from anyio.streams.stapled import StapledObjectStream
 from google.protobuf import json_format, struct_pb2
 from grpc.aio import Channel
 
 from jumpstarter.common import Metadata
-from jumpstarter.common.resources import ClientStreamResource
+from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
+    StreamRequestMetadata,
 )
-from jumpstarter.streams import ProgressStream, RouterStream, create_memory_stream, forward_stream
+from jumpstarter.streams import (
+    MetadataStream,
+    MetadataStreamAttributes,
+    ProgressStream,
+    RouterStream,
+    forward_stream,
+)
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
@@ -67,9 +72,12 @@ class AsyncDriverClient(
     @asynccontextmanager
     async def stream_async(self, method):
         context = self.Stream(
-            metadata={"request": DriverStreamRequest(uuid=self.uuid, method=method).model_dump_json()}.items()
+            metadata=StreamRequestMetadata.model_construct(request=DriverStreamRequest(uuid=self.uuid, method=method))
+            .model_dump(mode="json", round_trip=True)
+            .items(),
         )
-        async with RouterStream(context=context) as stream:
+        metadata = dict(list(await context.initial_metadata()))
+        async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as stream:
             yield stream
 
     @asynccontextmanager
@@ -77,14 +85,14 @@ class AsyncDriverClient(
         self,
         stream,
     ):
-        tx, rx = create_memory_stream()
-
-        combined = StapledObjectStream(tx, ProgressStream(stream=stream))
-
-        async with combined:
-            context = self.Stream(
-                metadata={"request": ResourceStreamRequest(uuid=self.uuid).model_dump_json()}.items(),
-            )
-            async with RouterStream(context=context) as rstream:
-                async with forward_stream(combined, rstream):
-                    yield ClientStreamResource(uuid=UUID((await rx.receive()).decode())).model_dump(mode="json")
+        context = self.Stream(
+            metadata=StreamRequestMetadata.model_construct(request=ResourceStreamRequest(uuid=self.uuid))
+            .model_dump(mode="json", round_trip=True)
+            .items(),
+        )
+        metadata = dict(list(await context.initial_metadata()))
+        async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as rstream:
+            async with forward_stream(ProgressStream(stream=stream), rstream):
+                yield ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata)).resource.model_dump(
+                    mode="json"
+                )

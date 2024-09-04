@@ -13,21 +13,19 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import aiohttp
-from anyio import Event, to_thread
+from anyio import to_thread
 from google.protobuf import json_format, struct_pb2
 from grpc import StatusCode
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from pydantic.dataclasses import dataclass
 
 from jumpstarter.common import Metadata
-from jumpstarter.common.aiohttp import AiohttpStream
-from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource
+from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
-    StreamRequest,
 )
-from jumpstarter.streams import RouterStream, create_memory_stream, forward_stream
+from jumpstarter.streams import AiohttpStreamReaderStream, MetadataStream, create_memory_stream
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 from .decorators import (
@@ -114,24 +112,17 @@ class Driver(
                     result=encode_value(result),
                 )
 
-    async def Stream(self, _request_iterator, context):
+    @asynccontextmanager
+    async def Stream(self, request, context):
         """
         :meta private:
         """
-        metadata = dict(context.invocation_metadata())
-
-        request = StreamRequest.validate_json(metadata["request"], strict=True)
-
         match request:
             case DriverStreamRequest(method=driver_method):
                 method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
 
                 async with method() as stream:
-                    async with RouterStream(context=context) as s:
-                        async with forward_stream(s, stream):
-                            event = Event()
-                            context.add_done_callback(lambda _: event.set())
-                            await event.wait()
+                    yield stream
 
             case ResourceStreamRequest():
                 remote, resource = create_memory_stream()
@@ -140,18 +131,13 @@ class Driver(
 
                 self.resources[resource_uuid] = resource
 
-                await resource.send(str(resource_uuid).encode("utf-8"))
-                await resource.send_eof()
-
-                async with remote:
-                    async with RouterStream(context=context) as s:
-                        async with forward_stream(s, remote):
-                            event = Event()
-                            context.add_done_callback(lambda _: event.set())
-                            await event.wait()
-
-                # del self.resources[resource_uuid]
-                # small resources might be fully buffered in memory
+                async with MetadataStream(
+                    stream=remote,
+                    metadata=ResourceMetadata.model_construct(
+                        resource=ClientStreamResource(uuid=resource_uuid)
+                    ).model_dump(mode="json", round_trip=True),
+                ) as stream:
+                    yield stream
 
     def report(self, *, parent=None, name=None):
         """
@@ -180,13 +166,16 @@ class Driver(
 
     @asynccontextmanager
     async def resource(self, handle: str):
-        handle = Resource.validate_python(handle)
+        handle = TypeAdapter(Resource).validate_python(handle)
         match handle:
             case ClientStreamResource(uuid=uuid):
-                yield self.resources[uuid]
+                async with self.resources[uuid] as stream:
+                    yield stream
+                del self.resources[uuid]
             case PresignedRequestResource(headers=headers, url=url, method=method):
                 async with aiohttp.request(method, url, headers=headers, raise_for_status=True) as resp:
-                    yield AiohttpStream(stream=resp.content)
+                    async with AiohttpStreamReaderStream(reader=resp.content) as stream:
+                        yield stream
 
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name
