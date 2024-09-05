@@ -28,6 +28,7 @@ ENV UV_LINK_MODE=copy
 WORKDIR /opt
 
 COPY --from=builder /root/.cargo/bin/uv $CARGO_HOME/uv
+COPY --from=builder /root/.cargo/bin/uvx $CARGO_HOME/uvx
 COPY ./.python-version ./
 
 RUN uv python pin "$(cat .python-version)"

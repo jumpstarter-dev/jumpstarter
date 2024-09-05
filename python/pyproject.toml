@@ -50,7 +50,6 @@ dev-dependencies = [
     "ruff>=0.6.1",
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
-    "uvx>=2.5.1",
 ]
 
 [tool.uv.sources.jumpstarter-protocol]
