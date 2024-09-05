@@ -9,7 +9,7 @@ from pydantic.dataclasses import dataclass
 
 from jumpstarter.driver import Driver, export
 
-from .common import CanMessage, IsotpAddress, IsotpAsymmetricAddress, IsotpMessage
+from .common import CanMessage, IsotpAddress, IsotpAsymmetricAddress, IsotpMessage, IsotpParams
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -102,7 +102,7 @@ class Isotp(Driver):
     channel: str | int | None
     interface: str | None
     address: isotp.Address
-    params: dict[str, int | float | bool | None] | None = None
+    params: IsotpParams = field(default_factory=IsotpParams)
     read_timeout: float = 0.05
 
     bus: can.Bus = field(init=False)
@@ -118,7 +118,11 @@ class Isotp(Driver):
         self.bus = can.Bus(channel=self.channel, interface=self.interface)
         self.notifier = can.Notifier(self.bus, [])
         self.stack = isotp.NotifierBasedCanStack(
-            self.bus, self.notifier, address=self.address, params=self.params, read_timeout=self.read_timeout
+            self.bus,
+            self.notifier,
+            address=self.address,
+            params=self.params.model_dump(),
+            read_timeout=self.read_timeout,
         )
 
     @export

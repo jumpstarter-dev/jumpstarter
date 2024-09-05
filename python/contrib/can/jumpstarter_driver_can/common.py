@@ -37,6 +37,27 @@ class CanMessage(BaseModel):
         )
 
 
+class IsotpParams(BaseModel):
+    stmin: int = 0
+    blocksize: int = 8
+    tx_data_length: int = 8
+    tx_data_min_length: int | None = None
+    override_receiver_stmin: float | None = None
+    rx_flowcontrol_timeout: int = 1000
+    rx_consecutive_frame_timeout: int = 1000
+    tx_padding: int | None = None
+    wftmax: int = 0
+    max_frame_size: int = 4095
+    can_fd: bool = False
+    bitrate_switch: bool = False
+    default_target_address_type: isotp.TargetAddressType = isotp.TargetAddressType.Physical
+    rate_limit_enable: bool = False
+    rate_limit_max_bitrate: int = 10000000
+    rate_limit_window_size: float = 0.2
+    listen_mode: bool = False
+    blocking_send: bool = False
+
+
 class IsotpMessage(BaseModel):
     data: Optional[Base64Bytes]
 

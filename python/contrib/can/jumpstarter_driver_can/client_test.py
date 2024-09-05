@@ -7,6 +7,7 @@ import isotp
 import pytest
 
 from jumpstarter.common.utils import serve
+from jumpstarter_driver_can.common import IsotpParams
 from jumpstarter_driver_can.driver import Can, Isotp
 
 
@@ -173,29 +174,29 @@ def test_client_can_isotp(request, tx_data_length, blocking_send):
         notifier1 = can.Notifier(client1, [])
         notifier2 = can.Notifier(client2, [])
 
-        params = {
-            "max_frame_size": 2048,
-            "tx_data_length": tx_data_length,
-            "blocking_send": blocking_send,
-        }
+        params = IsotpParams(
+            max_frame_size=2048,
+            tx_data_length=tx_data_length,
+            blocking_send=blocking_send,
+        )
 
         transport1 = isotp.NotifierBasedCanStack(
             client1,
             notifier1,
             address=isotp.Address(rxid=1, txid=2),
-            params=params,
+            params=params.model_dump(),
         )
         transport2 = isotp.NotifierBasedCanStack(
             client2,
             notifier2,
             address=isotp.Address(rxid=2, txid=1),
-            params=params,
+            params=params.model_dump(),
         )
 
         transport1.start()
         transport2.start()
 
-        message = randbytes(params["max_frame_size"])
+        message = randbytes(params.max_frame_size)
 
         transport1.send(message, send_timeout=10)
         assert transport2.recv(block=True, timeout=10) == message
@@ -224,11 +225,11 @@ def test_client_can_isotp(request, tx_data_length, blocking_send):
     ],
 )
 def test_client_isotp(request, blocking_send, addresses):
-    params = {
-        "max_frame_size": 2048,
-        "tx_data_length": 64,
-        "blocking_send": blocking_send,
-    }
+    params = IsotpParams(
+        max_frame_size=2048,
+        tx_data_length=64,
+        blocking_send=blocking_send,
+    )
 
     with (
         serve(
@@ -249,7 +250,7 @@ def test_client_isotp(request, blocking_send, addresses):
         client1.available()
         client1.transmitting()
 
-        message = randbytes(params["max_frame_size"])
+        message = randbytes(params.max_frame_size)
 
         client1.send(message, send_timeout=10)
 
