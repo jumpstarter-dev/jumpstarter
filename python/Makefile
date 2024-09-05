@@ -1,12 +1,17 @@
 CONTRIB_TARGETS = $(subst contrib/,contrib-,$(wildcard contrib/*))
 
+default: build
+
+sync:
+	uv sync --all-extras
+
 docs:
 	cd docs && make html
 
-docs-watch:
+watch-docs:
 	sphinx-autobuild docs/source docs/build/html
 
-clean:
+clean-docs:
 	rm -rf ./docs/build
 
 test-jumpstarter:
@@ -25,8 +30,22 @@ test-contrib: $(addprefix test-,$(CONTRIB_TARGETS))
 
 build-contrib: $(addprefix build-,$(CONTRIB_TARGETS))
 
+clean-venv:
+	-rm -rf ./.venv
+	-find . -type d -name __pycache__ -exec rm -r {} \+
+
+clean-build:
+	-rm -rf dist
+
+clean-test:
+	-rm .coverage
+	-rm coverage.xml
+	-rm -rf htmlcov
+
 test: test-jumpstarter test-contrib
 
-build: build-jumpstarter build-contrib
+build: sync build-jumpstarter build-contrib
 
-.PHONY: docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib
+clean: clean-docs clean-venv clean-build clean-test
+
+.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib clean-test clean-docs clean-venv clean-build
