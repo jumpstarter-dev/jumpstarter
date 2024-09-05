@@ -8,7 +8,7 @@ import pytest
 
 from jumpstarter.common.utils import serve
 from jumpstarter_driver_can.common import IsotpParams
-from jumpstarter_driver_can.driver import Can, Isotp
+from jumpstarter_driver_can.driver import Can, Isotp, IsotpSocket
 
 
 def test_client_can_send_recv(request):
@@ -258,6 +258,31 @@ def test_client_isotp(request, blocking_send, addresses):
 
         client1.stop_sending()
         client1.stop_receiving()
+
+        client1.stop()
+        client2.stop()
+
+
+@pytest.mark.parametrize("can_fd", [False, True])
+def test_client_isotp_socket(request, can_fd):
+    params = IsotpParams(
+        max_frame_size=2048,
+        blocking_send=False,
+        can_fd=can_fd,
+    )
+
+    with (
+        serve(IsotpSocket(channel="vcan0", address=isotp.Address(rxid=1, txid=2), params=params)) as client1,
+        serve(IsotpSocket(channel="vcan0", address=isotp.Address(rxid=2, txid=1), params=params)) as client2,
+    ):
+        client1.start()
+        client2.start()
+
+        message = randbytes(params.max_frame_size)
+
+        client1.send(message, send_timeout=10)
+
+        assert client2.recv(block=True, timeout=10) == message
 
         client1.stop()
         client2.stop()

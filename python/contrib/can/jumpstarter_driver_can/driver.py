@@ -171,3 +171,74 @@ class Isotp(Driver):
     @validate_call(validate_return=True)
     def stop_receiving(self) -> None:
         self.stack.stop_receiving()
+
+
+@dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
+class IsotpSocket(Driver):
+    channel: str
+    address: isotp.Address
+    params: IsotpParams = field(default_factory=IsotpParams)
+
+    sock: isotp.socket | None = field(init=False, default=None)
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_can.client.IsotpClient"
+
+    @export
+    @validate_call(validate_return=True)
+    def start(self) -> None:
+        if self.sock:
+            raise ValueError("socket already started")
+        self.sock = isotp.socket()
+        self.params.apply(self.sock)
+        self.sock.bind(self.channel, self.address)
+
+    @export
+    @validate_call(validate_return=True)
+    def stop(self) -> None:
+        if not self.sock:
+            raise ValueError("socket not started")
+        self.sock.close()
+        self.sock = None
+
+    @export
+    @validate_call(validate_return=True)
+    def send(
+        self, msg: IsotpMessage, target_address_type: int | None = None, send_timeout: float | None = None
+    ) -> None:
+        if not self.sock:
+            raise ValueError("socket not started")
+        self.sock.send(msg.data)
+
+    @export
+    @validate_call(validate_return=True)
+    def recv(self, block: bool = False, timeout: float | None = None) -> IsotpMessage:
+        if not self.sock:
+            raise ValueError("socket not started")
+        return IsotpMessage.model_construct(data=self.sock.recv())
+
+    @export
+    @validate_call(validate_return=True)
+    def available(self) -> bool:
+        raise NotImplementedError
+
+    @export
+    @validate_call(validate_return=True)
+    def transmitting(self) -> bool:
+        raise NotImplementedError
+
+    @export
+    @validate_call(validate_return=True)
+    def set_address(self, address: IsotpAddress | IsotpAsymmetricAddress) -> None:
+        raise NotImplementedError
+
+    @export
+    @validate_call(validate_return=True)
+    def stop_sending(self) -> None:
+        raise NotImplementedError
+
+    @export
+    @validate_call(validate_return=True)
+    def stop_receiving(self) -> None:
+        raise NotImplementedError

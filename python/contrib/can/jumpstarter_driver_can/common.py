@@ -57,6 +57,23 @@ class IsotpParams(BaseModel):
     listen_mode: bool = False
     blocking_send: bool = False
 
+    def apply(self, socket):
+        socket.set_opts(
+            optflag=None,
+            frame_txtime=None,
+            ext_address=None,
+            txpad=self.tx_padding,
+            rxpad=None,
+            rx_ext_address=None,
+            tx_stmin=None,
+        )
+        socket.set_fc_opts(bs=self.blocksize, stmin=self.stmin, wftmax=self.wftmax)
+        socket.set_ll_opts(
+            mtu=isotp.socket.LinkLayerProtocol.CAN_FD if self.can_fd else isotp.socket.LinkLayerProtocol.CAN,
+            tx_dl=self.tx_data_length,
+            tx_flags=None,
+        )
+
 
 class IsotpMessage(BaseModel):
     data: Optional[Base64Bytes]
