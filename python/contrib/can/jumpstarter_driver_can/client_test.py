@@ -7,7 +7,7 @@ import isotp
 import pytest
 
 from jumpstarter.common.utils import serve
-from jumpstarter_driver_can.driver import Can
+from jumpstarter_driver_can.driver import Can, Isotp
 
 
 def test_client_can_send_recv(request):
@@ -205,3 +205,58 @@ def test_client_can_isotp(request, tx_data_length, blocking_send):
 
         notifier1.stop()
         notifier2.stop()
+
+
+@pytest.mark.parametrize("blocking_send", [False, True])
+@pytest.mark.parametrize(
+    "addresses",
+    [
+        (None, None),
+        (isotp.Address(rxid=3, txid=4), isotp.Address(rxid=4, txid=3)),
+        (
+            isotp.AsymmetricAddress(
+                tx_addr=isotp.Address(rxid=5, txid=6, tx_only=True), rx_addr=isotp.Address(rxid=7, txid=8, rx_only=True)
+            ),
+            isotp.AsymmetricAddress(
+                tx_addr=isotp.Address(rxid=8, txid=7, tx_only=True), rx_addr=isotp.Address(rxid=6, txid=5, rx_only=True)
+            ),
+        ),
+    ],
+)
+def test_client_isotp(request, blocking_send, addresses):
+    params = {
+        "max_frame_size": 2048,
+        "tx_data_length": 64,
+        "blocking_send": blocking_send,
+    }
+
+    with (
+        serve(
+            Isotp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=1, txid=2), params=params)
+        ) as client1,
+        serve(
+            Isotp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=2, txid=1), params=params)
+        ) as client2,
+    ):
+        if addresses[0]:
+            client1.set_address(addresses[0])
+        if addresses[1]:
+            client2.set_address(addresses[1])
+
+        client1.start()
+        client2.start()
+
+        client1.available()
+        client1.transmitting()
+
+        message = randbytes(params["max_frame_size"])
+
+        client1.send(message, send_timeout=10)
+
+        assert client2.recv(block=True, timeout=10) == message
+
+        client1.stop_sending()
+        client1.stop_receiving()
+
+        client1.stop()
+        client2.stop()

@@ -3,12 +3,13 @@ from typing import Callable, Optional, Sequence, Tuple, Union
 from uuid import UUID, uuid4
 
 import can
+import isotp
 from pydantic import ConfigDict, validate_call
 from pydantic.dataclasses import dataclass
 
 from jumpstarter.driver import Driver, export
 
-from .common import CanMessage
+from .common import CanMessage, IsotpAddress, IsotpAsymmetricAddress, IsotpMessage
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -94,3 +95,75 @@ class Can(Driver):
     @validate_call(validate_return=True)
     def shutdown(self) -> None:
         self.bus.shutdown()
+
+
+@dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
+class Isotp(Driver):
+    channel: str | int | None
+    interface: str | None
+    address: isotp.Address
+    params: dict[str, int | float | bool | None] | None = None
+    read_timeout: float = 0.05
+
+    bus: can.Bus = field(init=False)
+    notifier: can.Notifier = field(init=False)
+    stack: isotp.NotifierBasedCanStack = field(init=False)
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_can.client.IsotpClient"
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.bus = can.Bus(channel=self.channel, interface=self.interface)
+        self.notifier = can.Notifier(self.bus, [])
+        self.stack = isotp.NotifierBasedCanStack(
+            self.bus, self.notifier, address=self.address, params=self.params, read_timeout=self.read_timeout
+        )
+
+    @export
+    @validate_call(validate_return=True)
+    def start(self) -> None:
+        self.stack.start()
+
+    @export
+    @validate_call(validate_return=True)
+    def stop(self) -> None:
+        self.stack.stop()
+
+    @export
+    @validate_call(validate_return=True)
+    def send(
+        self, msg: IsotpMessage, target_address_type: int | None = None, send_timeout: float | None = None
+    ) -> None:
+        return self.stack.send(msg.data, target_address_type, send_timeout)
+
+    @export
+    @validate_call(validate_return=True)
+    def recv(self, block: bool = False, timeout: float | None = None) -> IsotpMessage:
+        return IsotpMessage.model_construct(data=self.stack.recv(block, timeout))
+
+    @export
+    @validate_call(validate_return=True)
+    def available(self) -> bool:
+        return self.stack.available()
+
+    @export
+    @validate_call(validate_return=True)
+    def transmitting(self) -> bool:
+        return self.stack.transmitting()
+
+    @export
+    @validate_call(validate_return=True)
+    def set_address(self, address: IsotpAddress | IsotpAsymmetricAddress) -> None:
+        self.stack.set_address(address.dump())
+
+    @export
+    @validate_call(validate_return=True)
+    def stop_sending(self) -> None:
+        self.stack.stop_sending()
+
+    @export
+    @validate_call(validate_return=True)
+    def stop_receiving(self) -> None:
+        self.stack.stop_receiving()

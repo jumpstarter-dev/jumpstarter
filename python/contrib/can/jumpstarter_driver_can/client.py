@@ -6,12 +6,13 @@ from typing import Callable, List, Optional, Sequence, Tuple
 from uuid import UUID
 
 import can
+import isotp
 from can.bus import _SelfRemovingCyclicTask
 from pydantic import ConfigDict, validate_call
 
 from jumpstarter.client import DriverClient
 
-from .common import CanMessage
+from .common import CanMessage, IsotpAddress, IsotpAsymmetricAddress, IsotpMessage
 
 
 @dataclass(kw_only=True)
@@ -91,3 +92,39 @@ class CanClient(DriverClient, can.BusABC):
     def shutdown(self) -> None:
         self.call("shutdown")
         super().shutdown()
+
+
+@dataclass(kw_only=True)
+class IsotpClient(DriverClient):
+    def start(self) -> None:
+        self.call("start")
+
+    def stop(self) -> None:
+        self.call("stop")
+
+    def send(self, data: bytes, target_address_type: int | None = None, send_timeout: float | None = None) -> None:
+        return self.call("send", IsotpMessage.model_construct(data=data), target_address_type, send_timeout)
+
+    def recv(self, block: bool = False, timeout: float | None = None) -> bytes | None:
+        return IsotpMessage.model_validate(self.call("recv", block, timeout)).data
+
+    def available(self) -> bool:
+        return self.call("available")
+
+    def transmitting(self) -> bool:
+        return self.call("transmitting")
+
+    def set_address(self, address: isotp.Address | isotp.AsymmetricAddress) -> None:
+        match address:
+            case isotp.Address():
+                return self.call("set_address", IsotpAddress.validate(address))
+            case isotp.AsymmetricAddress():
+                return self.call("set_address", IsotpAsymmetricAddress.validate(address))
+            case _:
+                raise ValueError("address not isotp.Address | isotp.AsymmetricAddress")
+
+    def stop_sending(self) -> None:
+        self.call("stop_sending")
+
+    def stop_receiving(self) -> None:
+        self.call("stop_receiving")
