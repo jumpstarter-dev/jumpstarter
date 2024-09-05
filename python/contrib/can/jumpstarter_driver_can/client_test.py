@@ -1,3 +1,4 @@
+import os
 from itertools import islice
 from random import randbytes
 from threading import Semaphore
@@ -263,6 +264,7 @@ def test_client_isotp(request, blocking_send, addresses):
         client2.stop()
 
 
+@pytest.mark.skipif(not os.path.exists("/sys/devices/virtual/net/vcan0"), reason="vcan0 not available")
 @pytest.mark.parametrize("can_fd", [False, True])
 def test_client_isotp_socket(request, can_fd):
     params = IsotpParams(
