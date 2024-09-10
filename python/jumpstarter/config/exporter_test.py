@@ -1,12 +1,11 @@
-import grpc
 import pytest
 import yaml
 from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.client import LeaseRequest
 from jumpstarter.common import MetadataFilter
 
+from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Client, ClientConfigV1Alpha1Drivers
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 
 pytestmark = pytest.mark.anyio
@@ -38,15 +37,20 @@ async def test_exporter_serve(mock_controller):
         ),
     )
 
+    client = ClientConfigV1Alpha1(
+        name="testclient",
+        client=ClientConfigV1Alpha1Client(
+            endpoint=mock_controller,
+            token="dummy-client-token",
+            drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
+        ),
+    )
+
     async with create_task_group() as tg:
         tg.start_soon(exporter.serve)
 
         with start_blocking_portal() as portal:
-            async with LeaseRequest(
-                channel=grpc.aio.insecure_channel(mock_controller),
-                metadata_filter=MetadataFilter(),
-                portal=portal,
-            ) as lease:
+            async with client.lease_async(metadata_filter=MetadataFilter(), portal=portal) as lease:
                 async with lease.connect_async() as client:
                     assert await client.power.call_async("on") == "ok"
                     assert hasattr(client.nested, "tcp")
