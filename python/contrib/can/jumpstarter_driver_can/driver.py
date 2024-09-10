@@ -99,6 +99,13 @@ class Can(Driver):
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
 class IsoTp(Driver):
+    """
+    Pure python ISO-TP socket driver
+
+    Available on any platform, moderate performance and reliability,
+    wide support for non-standard hardware interfaces
+    """
+
     channel: str | int | None
     interface: str | None
     address: isotp.Address
@@ -175,6 +182,13 @@ class IsoTp(Driver):
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
 class IsoTpSocket(Driver):
+    """
+    Linux kernel ISO-TP socket driver
+
+    Available since kernel 5.10, good performance and reliability,
+    only support standard hardware interfaces
+    """
+
     channel: str
     address: isotp.Address
     params: IsoTpParams = field(default_factory=IsoTpParams)
