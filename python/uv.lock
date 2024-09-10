@@ -699,10 +699,11 @@ dependencies = [
     { name = "anyio" },
     { name = "click" },
     { name = "fabric" },
+    { name = "grpcio" },
     { name = "httpx" },
-    { name = "jumpstarter-protocol" },
     { name = "opendal" },
     { name = "pexpect" },
+    { name = "protobuf" },
     { name = "pydantic" },
     { name = "pyserial" },
     { name = "pyyaml" },
@@ -738,11 +739,12 @@ requires-dist = [
     { name = "esbonio", marker = "extra == 'docs'", specifier = ">=0.16.4" },
     { name = "fabric", specifier = ">=3.2.2" },
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2024.8.6" },
+    { name = "grpcio", specifier = ">=1.66.1" },
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "jumpstarter-protocol", git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git?subdirectory=python" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=4.0.0" },
     { name = "opendal", specifier = ">=0.45.8" },
     { name = "pexpect", specifier = ">=4.9.0" },
+    { name = "protobuf", specifier = ">=5.28.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0.2" },
@@ -828,15 +830,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "jumpstarter", editable = "." }]
-
-[[package]]
-name = "jumpstarter-protocol"
-version = "0.1.0"
-source = { git = "https://github.com/jumpstarter-dev/jumpstarter-protocol.git?subdirectory=python#d47d97342bcc035795ff6fa169fb962dfd952754" }
-dependencies = [
-    { name = "grpcio" },
-    { name = "protobuf" },
-]
 
 [[package]]
 name = "lsprotocol"
