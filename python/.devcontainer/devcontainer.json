@@ -4,7 +4,7 @@
 		"context": "..",
 		"dockerfile": "Dockerfile"
 	},
-	"postCreateCommand": "uv sync --all-extras --frozen --no-progress",
+	"postCreateCommand": "make sync",
 	"postStartCommand": "uv run pre-commit install",
 	"remoteUser": "vscode",
 	// Mount USB devices to devcontainer for tests

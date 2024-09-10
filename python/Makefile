@@ -2,9 +2,6 @@ CONTRIB_TARGETS = $(subst contrib/,contrib-,$(wildcard contrib/*))
 
 default: build
 
-sync:
-	uv sync --all-extras
-
 docs:
 	cd docs && make html
 
@@ -38,7 +35,6 @@ test-contrib: $(addprefix test-,$(CONTRIB_TARGETS))
 
 build-contrib: $(addprefix build-,$(CONTRIB_TARGETS))
 
-<<<<<<< devcontainer-uv
 clean-venv:
 	-rm -rf ./.venv
 	-find . -type d -name __pycache__ -exec rm -r {} \+
@@ -50,9 +46,8 @@ clean-test:
 	-rm .coverage
 	-rm coverage.xml
 	-rm -rf htmlcov
-=======
+
 sync: sync-jumpstarter sync-contrib
->>>>>>> main
 
 test: test-jumpstarter test-contrib
 
