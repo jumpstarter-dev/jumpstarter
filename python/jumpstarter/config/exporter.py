@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from importlib import import_module
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -9,7 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from jumpstarter.driver import Driver
-from jumpstarter.exporter import Exporter
+from jumpstarter.exporter import Exporter, Session
 
 
 class ExporterConfigV1Alpha1DriverInstance(BaseModel):
@@ -43,6 +44,20 @@ class ExporterConfigV1Alpha1(BaseModel):
         path = (cls.BASE_PATH / name).with_suffix(".yaml")
         with path.open() as f:
             return cls.model_validate(yaml.safe_load(f))
+
+    @asynccontextmanager
+    async def serve_local(self, port):
+        server = grpc.aio.server()
+        server.add_insecure_port(port)
+
+        session = Session(
+            root_device=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate(),
+        )
+        session.add_to_server(server)
+
+        await server.start()
+        yield
+        await server.stop(grace=None)
 
     async def serve(self):
         credentials = grpc.composite_channel_credentials(

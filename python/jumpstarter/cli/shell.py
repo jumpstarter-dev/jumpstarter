@@ -5,51 +5,34 @@ from tempfile import TemporaryDirectory
 
 import anyio
 import click
-import grpc
 
-from jumpstarter.drivers.composite.driver import Composite
-from jumpstarter.drivers.network.driver import EchoNetwork
-from jumpstarter.drivers.power.driver import MockPower
-from jumpstarter.drivers.storage.driver import MockStorageMux
-from jumpstarter.exporter import Session
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 
-async def shell_impl():
-    server = grpc.aio.server()
-
-    session = Session(
-        root_device=Composite(
-            children={
-                "power": MockPower(),
-                "storage": MockStorageMux(),
-                "echo": EchoNetwork(),
-            },
-        ),
-    )
-    session.add_to_server(server)
+async def shell_impl(name):
+    try:
+        exporter = ExporterConfigV1Alpha1.load(name)
+    except FileNotFoundError as e:
+        raise click.ClickException(f"exporter config with name {name} not found: {e}") from e
 
     with TemporaryDirectory() as tempdir:
         socketpath = Path(tempdir) / "socket"
-        server.add_insecure_port(f"unix://{socketpath}")
-
-        await server.start()
-
-        async with await anyio.open_process(
-            [os.environ["SHELL"]],
-            stdin=sys.stdin,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            env=os.environ
-            | {
-                "JUMPSTARTER_HOST": f"unix://{socketpath}",
-            },
-        ) as process:
-            await process.wait()
-
-        await server.stop(grace=None)
+        async with exporter.serve_local(f"unix://{socketpath}"):
+            async with await anyio.open_process(
+                [os.environ["SHELL"]],
+                stdin=sys.stdin,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+                env=os.environ
+                | {
+                    "JUMPSTARTER_HOST": f"unix://{socketpath}",
+                },
+            ) as process:
+                await process.wait()
 
 
 @click.command()
-def shell():
+@click.argument("name", type=str, default="default")
+def shell(name):
     """Spawns a shell with a transient exporter session"""
-    anyio.run(shell_impl)
+    anyio.run(shell_impl, name)
