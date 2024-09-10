@@ -16,24 +16,22 @@ async def test_exporter_serve(mock_controller):
         kind="ExporterConfig",
         endpoint=mock_controller,
         token="dummy-exporter-token",
-        export=ExporterConfigV1Alpha1DriverInstance(
-            children={
-                "power": ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter.drivers.power.driver.MockPower",
-                ),
-                "nested": ExporterConfigV1Alpha1DriverInstance(
-                    children={
-                        "tcp": ExporterConfigV1Alpha1DriverInstance(
-                            type="jumpstarter.drivers.network.driver.TcpNetwork",
-                            config={
-                                "host": "127.0.0.1",
-                                "port": 8080,
-                            },
-                        )
-                    }
-                ),
-            },
-        ),
+        export={
+            "power": ExporterConfigV1Alpha1DriverInstance(
+                type="jumpstarter.drivers.power.driver.MockPower",
+            ),
+            "nested": ExporterConfigV1Alpha1DriverInstance(
+                children={
+                    "tcp": ExporterConfigV1Alpha1DriverInstance(
+                        type="jumpstarter.drivers.network.driver.TcpNetwork",
+                        config={
+                            "host": "127.0.0.1",
+                            "port": 8080,
+                        },
+                    )
+                }
+            ),
+        },
     )
 
     client = ClientConfigV1Alpha1(
@@ -69,26 +67,25 @@ endpoint: "grpcs://jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 
 export:
-  children:
-    power:
-      type: "jumpstarter.drivers.power.PduPower"
-      config:
-        host: "192.168.1.111"
-        port: 1234
-        username: "admin"
-        password: "secret"
-    serial:
-      type: "jumpstarter.drivers.power.PduPower"
-      config:
-        type: "jumpstarter.drivers.serial.Pyserial"
-        port: "/dev/ttyUSB0"
-        baudrate: 115200
-    nested:
-      children:
-        custom:
-          type: "vendorpackage.CustomDriver"
-          config:
-            hello: "world"
+  power:
+    type: "jumpstarter.drivers.power.PduPower"
+    config:
+      host: "192.168.1.111"
+      port: 1234
+      username: "admin"
+      password: "secret"
+  serial:
+    type: "jumpstarter.drivers.power.PduPower"
+    config:
+      type: "jumpstarter.drivers.serial.Pyserial"
+      port: "/dev/ttyUSB0"
+      baudrate: 115200
+  nested:
+    children:
+      custom:
+        type: "vendorpackage.CustomDriver"
+        config:
+          hello: "world"
 """,
         encoding="utf-8",
     )
@@ -98,42 +95,39 @@ export:
         kind="ExporterConfig",
         endpoint="grpcs://jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        export=ExporterConfigV1Alpha1DriverInstance(
-            type="jumpstarter.drivers.composite.driver.Composite",  # missing type defaults to Composite
-            children={
-                "power": ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter.drivers.power.PduPower",
-                    children={},  # missing children defaults to empty
-                    config={
-                        "host": "192.168.1.111",
-                        "port": 1234,
-                        "username": "admin",
-                        "password": "secret",
-                    },
-                ),
-                "serial": ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter.drivers.power.PduPower",
-                    children={},
-                    config={
-                        "type": "jumpstarter.drivers.serial.Pyserial",
-                        "port": "/dev/ttyUSB0",
-                        "baudrate": 115200,
-                    },
-                ),
-                "nested": ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter.drivers.composite.driver.Composite",
-                    children={
-                        "custom": ExporterConfigV1Alpha1DriverInstance(
-                            type="vendorpackage.CustomDriver",
-                            children={},
-                            config={
-                                "hello": "world",
-                            },
-                        )
-                    },
-                    config={},  # missing config defaults to empty
-                ),
-            },
-            config={},
-        ),
+        export={
+            "power": ExporterConfigV1Alpha1DriverInstance(
+                type="jumpstarter.drivers.power.PduPower",
+                children={},  # missing children defaults to empty
+                config={
+                    "host": "192.168.1.111",
+                    "port": 1234,
+                    "username": "admin",
+                    "password": "secret",
+                },
+            ),
+            "serial": ExporterConfigV1Alpha1DriverInstance(
+                type="jumpstarter.drivers.power.PduPower",
+                children={},
+                config={
+                    "type": "jumpstarter.drivers.serial.Pyserial",
+                    "port": "/dev/ttyUSB0",
+                    "baudrate": 115200,
+                },
+            ),
+            "nested": ExporterConfigV1Alpha1DriverInstance(
+                type="jumpstarter.drivers.composite.driver.Composite",
+                children={
+                    "custom": ExporterConfigV1Alpha1DriverInstance(
+                        type="vendorpackage.CustomDriver",
+                        children={},
+                        config={
+                            "hello": "world",
+                        },
+                    )
+                },
+                config={},  # missing config defaults to empty
+            ),
+        },
+        config={},
     )

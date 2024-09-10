@@ -161,24 +161,23 @@ kind: Exporter
 endpoint: "grpcs://jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 export:
-  children:
-    power:
-      type: "jumpstarter.drivers.power.PduPower"
-      config:
-        host: "192.168.1.111"
-        port: 1234
-        username: "admin"
-        password: "secret"
-    serial:
-      type: "jumpstarter.drivers.power.PduPower"
-      config:
-        type: "jumpstarter.drivers.serial.Pyserial"
-        port: "/dev/ttyUSB0"
-        baudrate: 115200
-    custom:
-      type: "vendorpackage.CustomDriver"
-      config:
-        hello: "world"
+  power:
+    type: "jumpstarter.drivers.power.PduPower"
+    config:
+      host: "192.168.1.111"
+      port: 1234
+      username: "admin"
+      password: "secret"
+  serial:
+    type: "jumpstarter.drivers.power.PduPower"
+    config:
+      type: "jumpstarter.drivers.serial.Pyserial"
+      port: "/dev/ttyUSB0"
+      baudrate: 115200
+  custom:
+    type: "vendorpackage.CustomDriver"
+    config:
+      hello: "world"
 ```
 
 - `endpoint` - The gRPC endpoint of the Jumpstarter controller server.

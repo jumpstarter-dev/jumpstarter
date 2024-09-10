@@ -36,7 +36,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     endpoint: str
     token: str
 
-    export: ExporterConfigV1Alpha1DriverInstance
+    export: dict[str, ExporterConfigV1Alpha1DriverInstance]
 
     @classmethod
     def load(cls, name: str):
@@ -53,6 +53,6 @@ class ExporterConfigV1Alpha1(BaseModel):
         async with grpc.aio.secure_channel(self.endpoint, credentials) as channel:
             async with Exporter(
                 channel=channel,
-                device_factory=self.export.instantiate,
+                device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
             ) as exporter:
                 await exporter.serve()
