@@ -14,7 +14,7 @@ pytestmark = pytest.mark.anyio
 async def test_exporter_serve(mock_controller):
     exporter = ExporterConfigV1Alpha1(
         apiVersion="jumpstarter.dev/v1alpha1",
-        kind="Exporter",
+        kind="ExporterConfig",
         endpoint=mock_controller,
         token="dummy-exporter-token",
         export=ExporterConfigV1Alpha1DriverInstance(
@@ -61,7 +61,7 @@ async def test_exporter_serve(mock_controller):
 def test_exporter_config():
     config = """
 apiVersion: jumpstarter.dev/v1alpha1
-kind: Exporter
+kind: ExporterConfig
 
 endpoint: "grpcs://jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
@@ -91,7 +91,7 @@ export:
 
     assert ExporterConfigV1Alpha1.model_validate(yaml.safe_load(config)) == ExporterConfigV1Alpha1(
         apiVersion="jumpstarter.dev/v1alpha1",
-        kind="Exporter",
+        kind="ExporterConfig",
         endpoint="grpcs://jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         export=ExporterConfigV1Alpha1DriverInstance(

@@ -27,7 +27,7 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
 
 class ExporterConfigV1Alpha1(BaseModel):
     apiVersion: Literal["jumpstarter.dev/v1alpha1"]
-    kind: Literal["Exporter"]
+    kind: Literal["ExporterConfig"]
 
     endpoint: str
     token: str
