@@ -1,14 +1,12 @@
 import os
 import sys
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 import anyio
 import click
 from anyio import create_task_group, create_unix_listener
 from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.common import MetadataFilter
+from jumpstarter.common import MetadataFilter, TemporarySocket
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
@@ -39,12 +37,11 @@ async def client_shell(name):
 
     with start_blocking_portal() as portal:
         async with client.lease_async(metadata_filter=MetadataFilter(), portal=portal) as lease:
-            with TemporaryDirectory() as tempdir:
-                socketpath = Path(tempdir) / "socket"
-                async with await create_unix_listener(socketpath) as listener:
+            with TemporarySocket() as path:
+                async with await create_unix_listener(path) as listener:
                     async with create_task_group() as tg:
                         tg.start_soon(listener.serve, lease.handle_async)
-                        await user_shell(f"unix://{socketpath}")
+                        await user_shell(f"unix://{path}")
                         tg.cancel_scope.cancel()
 
 
@@ -54,10 +51,9 @@ async def exporter_shell(name):
     except FileNotFoundError as e:
         raise click.ClickException(f"exporter config with name {name} not found: {e}") from e
 
-    with TemporaryDirectory() as tempdir:
-        socketpath = Path(tempdir) / "socket"
-        async with exporter.serve_local(f"unix://{socketpath}"):
-            await user_shell(f"unix://{socketpath}")
+    with TemporarySocket() as path:
+        async with exporter.serve_local(f"unix://{path}"):
+            await user_shell(f"unix://{path}")
 
 
 @click.command()

@@ -2,13 +2,12 @@ import socket
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from shutil import which
-from tempfile import TemporaryDirectory
 
 import pytest
 
 from jumpstarter.client.adapters import PortforwardAdapter
+from jumpstarter.common import TemporarySocket
 from jumpstarter.common.utils import serve
 from jumpstarter.drivers.network.driver import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
 
@@ -75,15 +74,14 @@ def test_udp_network():
 
 
 def test_unix_network():
-    with TemporaryDirectory() as tempdir:
-        socketpath = Path(tempdir) / "socket"
+    with TemporarySocket() as path:
         with serve(
             UnixNetwork(
-                path=socketpath,
+                path=path,
             )
         ) as client:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.bind(str(socketpath))
+                s.bind(str(path))
                 s.listen(1)
 
                 with ThreadPoolExecutor() as pool:

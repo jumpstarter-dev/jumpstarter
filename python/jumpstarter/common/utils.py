@@ -1,13 +1,13 @@
 from contextlib import contextmanager
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 import grpc
 from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.client import client_from_channel
-from jumpstarter.common.grpc import insecure_channel
 from jumpstarter.exporter import Session
+
+from .grpc import insecure_channel
+from .tempfile import TemporarySocket
 
 
 async def _create_grpc_server():
@@ -22,13 +22,12 @@ def serve(root_device):
         session = Session(root_device=root_device)
         session.add_to_server(server)
 
-        with TemporaryDirectory() as tempdir:
-            socketpath = Path(tempdir) / "socket"
-            server.add_insecure_port(f"unix://{socketpath}")
+        with TemporarySocket() as path:
+            server.add_insecure_port(f"unix://{path}")
 
             portal.call(server.start)
 
-            with portal.wrap_async_context_manager(portal.call(insecure_channel, f"unix://{socketpath}")) as channel:
+            with portal.wrap_async_context_manager(portal.call(insecure_channel, f"unix://{path}")) as channel:
                 yield portal.call(client_from_channel, channel, portal)
 
             portal.call(server.stop, None)
