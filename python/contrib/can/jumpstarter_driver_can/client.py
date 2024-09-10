@@ -12,7 +12,7 @@ from pydantic import ConfigDict, validate_call
 
 from jumpstarter.client import DriverClient
 
-from .common import CanMessage, IsotpAddress, IsotpAsymmetricAddress, IsotpMessage
+from .common import CanMessage, IsoTpAddress, IsoTpAsymmetricAddress, IsoTpMessage
 
 
 @dataclass(kw_only=True)
@@ -95,7 +95,7 @@ class CanClient(DriverClient, can.BusABC):
 
 
 @dataclass(kw_only=True)
-class IsotpClient(DriverClient):
+class IsoTpClient(DriverClient):
     def start(self) -> None:
         self.call("start")
 
@@ -103,10 +103,10 @@ class IsotpClient(DriverClient):
         self.call("stop")
 
     def send(self, data: bytes, target_address_type: int | None = None, send_timeout: float | None = None) -> None:
-        return self.call("send", IsotpMessage.model_construct(data=data), target_address_type, send_timeout)
+        return self.call("send", IsoTpMessage.model_construct(data=data), target_address_type, send_timeout)
 
     def recv(self, block: bool = False, timeout: float | None = None) -> bytes | None:
-        return IsotpMessage.model_validate(self.call("recv", block, timeout)).data
+        return IsoTpMessage.model_validate(self.call("recv", block, timeout)).data
 
     def available(self) -> bool:
         return self.call("available")
@@ -117,9 +117,9 @@ class IsotpClient(DriverClient):
     def set_address(self, address: isotp.Address | isotp.AsymmetricAddress) -> None:
         match address:
             case isotp.Address():
-                return self.call("set_address", IsotpAddress.validate(address))
+                return self.call("set_address", IsoTpAddress.validate(address))
             case isotp.AsymmetricAddress():
-                return self.call("set_address", IsotpAsymmetricAddress.validate(address))
+                return self.call("set_address", IsoTpAsymmetricAddress.validate(address))
             case _:
                 raise ValueError("address not isotp.Address | isotp.AsymmetricAddress")
 

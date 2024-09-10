@@ -9,7 +9,7 @@ from pydantic.dataclasses import dataclass
 
 from jumpstarter.driver import Driver, export
 
-from .common import CanMessage, IsotpAddress, IsotpAsymmetricAddress, IsotpMessage, IsotpParams
+from .common import CanMessage, IsoTpAddress, IsoTpAsymmetricAddress, IsoTpMessage, IsoTpParams
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -98,11 +98,11 @@ class Can(Driver):
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
-class Isotp(Driver):
+class IsoTp(Driver):
     channel: str | int | None
     interface: str | None
     address: isotp.Address
-    params: IsotpParams = field(default_factory=IsotpParams)
+    params: IsoTpParams = field(default_factory=IsoTpParams)
     read_timeout: float = 0.05
 
     bus: can.Bus = field(init=False)
@@ -111,7 +111,7 @@ class Isotp(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter_driver_can.client.IsotpClient"
+        return "jumpstarter_driver_can.client.IsoTpClient"
 
     def __post_init__(self):
         super().__post_init__()
@@ -138,14 +138,14 @@ class Isotp(Driver):
     @export
     @validate_call(validate_return=True)
     def send(
-        self, msg: IsotpMessage, target_address_type: int | None = None, send_timeout: float | None = None
+        self, msg: IsoTpMessage, target_address_type: int | None = None, send_timeout: float | None = None
     ) -> None:
         return self.stack.send(msg.data, target_address_type, send_timeout)
 
     @export
     @validate_call(validate_return=True)
-    def recv(self, block: bool = False, timeout: float | None = None) -> IsotpMessage:
-        return IsotpMessage.model_construct(data=self.stack.recv(block, timeout))
+    def recv(self, block: bool = False, timeout: float | None = None) -> IsoTpMessage:
+        return IsoTpMessage.model_construct(data=self.stack.recv(block, timeout))
 
     @export
     @validate_call(validate_return=True)
@@ -159,7 +159,7 @@ class Isotp(Driver):
 
     @export
     @validate_call(validate_return=True)
-    def set_address(self, address: IsotpAddress | IsotpAsymmetricAddress) -> None:
+    def set_address(self, address: IsoTpAddress | IsoTpAsymmetricAddress) -> None:
         self.stack.set_address(address.dump())
 
     @export
@@ -174,16 +174,16 @@ class Isotp(Driver):
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
-class IsotpSocket(Driver):
+class IsoTpSocket(Driver):
     channel: str
     address: isotp.Address
-    params: IsotpParams = field(default_factory=IsotpParams)
+    params: IsoTpParams = field(default_factory=IsoTpParams)
 
     sock: isotp.socket | None = field(init=False, default=None)
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter_driver_can.client.IsotpClient"
+        return "jumpstarter_driver_can.client.IsoTpClient"
 
     @export
     @validate_call(validate_return=True)
@@ -205,7 +205,7 @@ class IsotpSocket(Driver):
     @export
     @validate_call(validate_return=True)
     def send(
-        self, msg: IsotpMessage, target_address_type: int | None = None, send_timeout: float | None = None
+        self, msg: IsoTpMessage, target_address_type: int | None = None, send_timeout: float | None = None
     ) -> None:
         if not self.sock:
             raise ValueError("socket not started")
@@ -213,10 +213,10 @@ class IsotpSocket(Driver):
 
     @export
     @validate_call(validate_return=True)
-    def recv(self, block: bool = False, timeout: float | None = None) -> IsotpMessage:
+    def recv(self, block: bool = False, timeout: float | None = None) -> IsoTpMessage:
         if not self.sock:
             raise ValueError("socket not started")
-        return IsotpMessage.model_construct(data=self.sock.recv())
+        return IsoTpMessage.model_construct(data=self.sock.recv())
 
     @export
     @validate_call(validate_return=True)
@@ -230,7 +230,7 @@ class IsotpSocket(Driver):
 
     @export
     @validate_call(validate_return=True)
-    def set_address(self, address: IsotpAddress | IsotpAsymmetricAddress) -> None:
+    def set_address(self, address: IsoTpAddress | IsoTpAsymmetricAddress) -> None:
         raise NotImplementedError
 
     @export

@@ -8,8 +8,8 @@ import isotp
 import pytest
 
 from jumpstarter.common.utils import serve
-from jumpstarter_driver_can.common import IsotpParams
-from jumpstarter_driver_can.driver import Can, Isotp, IsotpSocket
+from jumpstarter_driver_can.common import IsoTpParams
+from jumpstarter_driver_can.driver import Can, IsoTp, IsoTpSocket
 
 
 def test_client_can_send_recv(request):
@@ -175,7 +175,7 @@ def test_client_can_isotp(request, tx_data_length, blocking_send):
         notifier1 = can.Notifier(client1, [])
         notifier2 = can.Notifier(client2, [])
 
-        params = IsotpParams(
+        params = IsoTpParams(
             max_frame_size=2048,
             tx_data_length=tx_data_length,
             blocking_send=blocking_send,
@@ -226,7 +226,7 @@ def test_client_can_isotp(request, tx_data_length, blocking_send):
     ],
 )
 def test_client_isotp(request, blocking_send, addresses):
-    params = IsotpParams(
+    params = IsoTpParams(
         max_frame_size=2048,
         tx_data_length=64,
         blocking_send=blocking_send,
@@ -234,10 +234,10 @@ def test_client_isotp(request, blocking_send, addresses):
 
     with (
         serve(
-            Isotp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=1, txid=2), params=params)
+            IsoTp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=1, txid=2), params=params)
         ) as client1,
         serve(
-            Isotp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=2, txid=1), params=params)
+            IsoTp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=2, txid=1), params=params)
         ) as client2,
     ):
         if addresses[0]:
@@ -267,15 +267,15 @@ def test_client_isotp(request, blocking_send, addresses):
 @pytest.mark.skipif(not os.path.exists("/sys/devices/virtual/net/vcan0"), reason="vcan0 not available")
 @pytest.mark.parametrize("can_fd", [False, True])
 def test_client_isotp_socket(request, can_fd):
-    params = IsotpParams(
+    params = IsoTpParams(
         max_frame_size=2048,
         blocking_send=False,
         can_fd=can_fd,
     )
 
     with (
-        serve(IsotpSocket(channel="vcan0", address=isotp.Address(rxid=1, txid=2), params=params)) as client1,
-        serve(IsotpSocket(channel="vcan0", address=isotp.Address(rxid=2, txid=1), params=params)) as client2,
+        serve(IsoTpSocket(channel="vcan0", address=isotp.Address(rxid=1, txid=2), params=params)) as client1,
+        serve(IsoTpSocket(channel="vcan0", address=isotp.Address(rxid=2, txid=1), params=params)) as client2,
     ):
         client1.start()
         client2.start()

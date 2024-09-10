@@ -37,7 +37,7 @@ class CanMessage(BaseModel):
         )
 
 
-class IsotpParams(BaseModel):
+class IsoTpParams(BaseModel):
     stmin: int = 0
     blocksize: int = 8
     tx_data_length: int = 8
@@ -75,11 +75,11 @@ class IsotpParams(BaseModel):
         )
 
 
-class IsotpMessage(BaseModel):
+class IsoTpMessage(BaseModel):
     data: Optional[Base64Bytes]
 
 
-class IsotpAddress(BaseModel):
+class IsoTpAddress(BaseModel):
     addressing_mode: AddressingMode
     txid: int | None
     rxid: int | None
@@ -121,15 +121,15 @@ class IsotpAddress(BaseModel):
         )
 
 
-class IsotpAsymmetricAddress(BaseModel):
-    tx_addr: IsotpAddress
-    rx_addr: IsotpAddress
+class IsoTpAsymmetricAddress(BaseModel):
+    tx_addr: IsoTpAddress
+    rx_addr: IsoTpAddress
 
     @classmethod
     def validate(cls, addr: isotp.AsymmetricAddress):
         return cls(
-            tx_addr=IsotpAddress.validate(addr.tx_addr),
-            rx_addr=IsotpAddress.validate(addr.rx_addr),
+            tx_addr=IsoTpAddress.validate(addr.tx_addr),
+            rx_addr=IsoTpAddress.validate(addr.rx_addr),
         )
 
     def dump(self):
