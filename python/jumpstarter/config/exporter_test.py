@@ -1,5 +1,4 @@
 import pytest
-import yaml
 from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
 
@@ -58,8 +57,11 @@ async def test_exporter_serve(mock_controller):
         tg.cancel_scope.cancel()
 
 
-def test_exporter_config():
-    config = """
+def test_exporter_config(monkeypatch, tmp_path):
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
+
+    (tmp_path / "test.yaml").write_text(
+        """
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 
@@ -87,9 +89,11 @@ export:
           type: "vendorpackage.CustomDriver"
           config:
             hello: "world"
-    """
+""",
+        encoding="utf-8",
+    )
 
-    assert ExporterConfigV1Alpha1.model_validate(yaml.safe_load(config)) == ExporterConfigV1Alpha1(
+    assert ExporterConfigV1Alpha1.load("test") == ExporterConfigV1Alpha1(
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
         endpoint="grpcs://jumpstarter.my-lab.com:1443",

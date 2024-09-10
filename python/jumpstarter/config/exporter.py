@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Literal
+from pathlib import Path
+from typing import ClassVar, Literal
 
 import grpc
+import yaml
 from pydantic import BaseModel, Field
 
 from jumpstarter.driver import Driver
@@ -26,6 +28,8 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
 
 
 class ExporterConfigV1Alpha1(BaseModel):
+    BASE_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
+
     apiVersion: Literal["jumpstarter.dev/v1alpha1"]
     kind: Literal["ExporterConfig"]
 
@@ -33,6 +37,12 @@ class ExporterConfigV1Alpha1(BaseModel):
     token: str
 
     export: ExporterConfigV1Alpha1DriverInstance
+
+    @classmethod
+    def load(cls, name: str):
+        path = (cls.BASE_PATH / name).with_suffix(".yaml")
+        with path.open() as f:
+            return cls.model_validate(yaml.safe_load(f))
 
     async def serve(self):
         credentials = grpc.composite_channel_credentials(
