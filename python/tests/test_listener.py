@@ -1,6 +1,7 @@
 # These tests are flaky
 # https://github.com/grpc/grpc/issues/25364
 
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import grpc
@@ -11,6 +12,7 @@ from anyio.from_thread import start_blocking_portal
 from jumpstarter.client import LeaseRequest
 from jumpstarter.client.lease import Lease
 from jumpstarter.common import MetadataFilter
+from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.drivers.power.driver import MockPower
 from jumpstarter.exporter import Exporter
 
@@ -18,7 +20,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.xfail(raises=RuntimeError)
-async def test_router(mock_controller):
+async def test_router(mock_controller, monkeypatch):
     uuid = uuid4()
 
     exporter = Exporter(
@@ -28,11 +30,18 @@ async def test_router(mock_controller):
         device_factory=lambda: MockPower(),
     )
 
+    @asynccontextmanager
+    async def handle_async(stream):
+        async with connect_router_stream(mock_controller, str(uuid), stream):
+            yield
+
     async with exporter._Exporter__handle(mock_controller, str(uuid)):
         with start_blocking_portal() as portal:
             lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
 
-            async with lease._Lease__connect(mock_controller, str(uuid)) as client:
+            monkeypatch.setattr(lease, "handle_async", handle_async)
+
+            async with lease.connect_async() as client:
                 assert await client.call_async("on") == "ok"
 
 

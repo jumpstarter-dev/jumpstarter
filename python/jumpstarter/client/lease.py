@@ -65,22 +65,22 @@ class Lease:
         jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
 
     @asynccontextmanager
-    async def __connect(self, endpoint, token):
+    async def handle_async(self, stream):
+        response = await self.Dial(jumpstarter_pb2.DialRequest(uuid=str(self.uuid)))
+        async with connect_router_stream(response.router_endpoint, response.router_token, stream):
+            yield
+
+    @asynccontextmanager
+    async def connect_async(self):
         with TemporaryDirectory() as tempdir:
             socketpath = Path(tempdir) / "socket"
             async with await create_unix_listener(socketpath) as listener:
                 async with insecure_channel(f"unix://{socketpath}") as channel:
                     channel.get_state(try_to_connect=True)
                     async with await listener.accept() as stream:
-                        async with connect_router_stream(endpoint, token, stream):
+                        async with self.handle_async(stream):
                             yield await client_from_channel(channel, self.portal)
                             raise CancelTask
-
-    @asynccontextmanager
-    async def connect_async(self):
-        response = await self.Dial(jumpstarter_pb2.DialRequest(uuid=str(self.uuid)))
-        async with self.__connect(response.router_endpoint, response.router_token) as client:
-            yield client
 
     @contextmanager
     def connect(self):

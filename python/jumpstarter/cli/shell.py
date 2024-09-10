@@ -9,11 +9,9 @@ from anyio import create_task_group, create_unix_listener
 from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.common import MetadataFilter
-from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
-from jumpstarter.v1 import jumpstarter_pb2
 
 
 async def user_shell(host):
@@ -45,16 +43,7 @@ async def client_shell(name):
                 socketpath = Path(tempdir) / "socket"
                 async with await create_unix_listener(socketpath) as listener:
                     async with create_task_group() as tg:
-
-                        async def handler(stream):
-                            async with stream:
-                                response = await lease.Dial(jumpstarter_pb2.DialRequest(uuid=str(lease.uuid)))
-                                async with connect_router_stream(
-                                    response.router_endpoint, response.router_token, stream
-                                ):
-                                    pass
-
-                        tg.start_soon(listener.serve, handler)
+                        tg.start_soon(listener.serve, lease.handle_async)
                         await user_shell(f"unix://{socketpath}")
                         tg.cancel_scope.cancel()
 
