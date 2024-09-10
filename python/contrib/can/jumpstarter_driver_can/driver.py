@@ -98,7 +98,7 @@ class Can(Driver):
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
-class IsoTp(Driver):
+class IsoTpPython(Driver):
     """
     Pure python ISO-TP socket driver
 

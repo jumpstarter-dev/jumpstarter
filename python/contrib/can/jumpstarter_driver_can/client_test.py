@@ -9,7 +9,7 @@ import pytest
 
 from jumpstarter.common.utils import serve
 from jumpstarter_driver_can.common import IsoTpParams
-from jumpstarter_driver_can.driver import Can, IsoTp, IsoTpSocket
+from jumpstarter_driver_can.driver import Can, IsoTpPython, IsoTpSocket
 
 
 def test_client_can_send_recv(request):
@@ -234,10 +234,14 @@ def test_client_isotp(request, blocking_send, addresses):
 
     with (
         serve(
-            IsoTp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=1, txid=2), params=params)
+            IsoTpPython(
+                channel=request.node.name, interface="virtual", address=isotp.Address(rxid=1, txid=2), params=params
+            )
         ) as client1,
         serve(
-            IsoTp(channel=request.node.name, interface="virtual", address=isotp.Address(rxid=2, txid=1), params=params)
+            IsoTpPython(
+                channel=request.node.name, interface="virtual", address=isotp.Address(rxid=2, txid=1), params=params
+            )
         ) as client2,
     ):
         if addresses[0]:
