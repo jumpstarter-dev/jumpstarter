@@ -1,57 +1,57 @@
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import grpc
 import pytest
 import yaml
+from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.client import client_from_channel
-from jumpstarter.exporter.session import Session
+from jumpstarter.client import LeaseRequest
+from jumpstarter.common import MetadataFilter
 
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 
 pytestmark = pytest.mark.anyio
 
 
-async def test_exporter_instantiate():
-    export = ExporterConfigV1Alpha1DriverInstance(
-        children={
-            "power": ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter.drivers.power.driver.MockPower",
-            ),
-            "nested": ExporterConfigV1Alpha1DriverInstance(
-                children={
-                    "tcp": ExporterConfigV1Alpha1DriverInstance(
-                        type="jumpstarter.drivers.network.driver.TcpNetwork",
-                        config={
-                            "host": "127.0.0.1",
-                            "port": 8080,
-                        },
-                    )
-                }
-            ),
-        },
+async def test_exporter_serve(mock_controller):
+    exporter = ExporterConfigV1Alpha1(
+        apiVersion="jumpstarter.dev/v1alpha1",
+        kind="Exporter",
+        endpoint=mock_controller,
+        token="dummy-exporter-token",
+        export=ExporterConfigV1Alpha1DriverInstance(
+            children={
+                "power": ExporterConfigV1Alpha1DriverInstance(
+                    type="jumpstarter.drivers.power.driver.MockPower",
+                ),
+                "nested": ExporterConfigV1Alpha1DriverInstance(
+                    children={
+                        "tcp": ExporterConfigV1Alpha1DriverInstance(
+                            type="jumpstarter.drivers.network.driver.TcpNetwork",
+                            config={
+                                "host": "127.0.0.1",
+                                "port": 8080,
+                            },
+                        )
+                    }
+                ),
+            },
+        ),
     )
 
-    server = grpc.aio.server()
+    async with create_task_group() as tg:
+        tg.start_soon(exporter.serve)
 
-    session = Session(root_device=export.instantiate())
-    session.add_to_server(server)
+        with start_blocking_portal() as portal:
+            async with LeaseRequest(
+                channel=grpc.aio.insecure_channel(mock_controller),
+                metadata_filter=MetadataFilter(),
+                portal=portal,
+            ) as lease:
+                async with lease.connect_async() as client:
+                    assert await client.power.call_async("on") == "ok"
+                    assert hasattr(client.nested, "tcp")
 
-    with TemporaryDirectory() as tempdir:
-        socketpath = Path(tempdir) / "socket"
-        server.add_insecure_port(f"unix://{socketpath}")
-
-        await server.start()
-
-        async with grpc.aio.insecure_channel(f"unix://{socketpath}") as channel:
-            with start_blocking_portal() as portal:
-                client = await client_from_channel(channel, portal)
-                assert await client.power.call_async("on") == "ok"
-                assert hasattr(client.nested, "tcp")
-
-        await server.stop(grace=None)
+        tg.cancel_scope.cancel()
 
 
 def test_exporter_config():
