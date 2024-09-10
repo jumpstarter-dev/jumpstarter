@@ -1,6 +1,57 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import grpc
+import pytest
 import yaml
+from anyio.from_thread import start_blocking_portal
+
+from jumpstarter.client import client_from_channel
+from jumpstarter.exporter.session import Session
 
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
+
+pytestmark = pytest.mark.anyio
+
+
+async def test_exporter_instantiate():
+    export = ExporterConfigV1Alpha1DriverInstance(
+        children={
+            "power": ExporterConfigV1Alpha1DriverInstance(
+                type="jumpstarter.drivers.power.driver.MockPower",
+            ),
+            "nested": ExporterConfigV1Alpha1DriverInstance(
+                children={
+                    "tcp": ExporterConfigV1Alpha1DriverInstance(
+                        type="jumpstarter.drivers.network.driver.TcpNetwork",
+                        config={
+                            "host": "127.0.0.1",
+                            "port": 8080,
+                        },
+                    )
+                }
+            ),
+        },
+    )
+
+    server = grpc.aio.server()
+
+    session = Session(root_device=export.instantiate())
+    session.add_to_server(server)
+
+    with TemporaryDirectory() as tempdir:
+        socketpath = Path(tempdir) / "socket"
+        server.add_insecure_port(f"unix://{socketpath}")
+
+        await server.start()
+
+        async with grpc.aio.insecure_channel(f"unix://{socketpath}") as channel:
+            with start_blocking_portal() as portal:
+                client = await client_from_channel(channel, portal)
+                assert await client.power.call_async("on") == "ok"
+                assert hasattr(client.nested, "tcp")
+
+        await server.stop(grace=None)
 
 
 def test_exporter_config():
