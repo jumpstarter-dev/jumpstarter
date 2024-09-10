@@ -44,7 +44,7 @@ class ClientConfigV1Alpha1(BaseModel):
     path: str | None = Field(default=None, exclude=True)
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
-    kind: Literal["Client"] = Field(default="Client")
+    kind: Literal["ClientConfig"] = Field(default="ClientConfig")
     client: ClientConfigV1Alpha1Client = Field(default_factory=ClientConfigV1Alpha1Client)
 
     @contextmanager
