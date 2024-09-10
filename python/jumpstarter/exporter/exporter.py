@@ -2,11 +2,10 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 
-import grpc
 from anyio import connect_unix
 from grpc.aio import Channel
 
-from jumpstarter.common import Metadata, TemporarySocket
+from jumpstarter.common import Metadata
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.driver import Driver
 from jumpstarter.exporter.session import Session
@@ -58,20 +57,10 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             root_device=root_device,
         )
 
-        with TemporarySocket() as path:
-            server = grpc.aio.server()
-            server.add_insecure_port(f"unix://{path}")
-
-            session.add_to_server(server)
-
-            try:
-                await server.start()
-
-                async with await connect_unix(path) as stream:
-                    async with connect_router_stream(endpoint, token, stream):
-                        yield
-            finally:
-                await server.stop(grace=None)
+        async with session.serve_unix_async() as path:
+            async with await connect_unix(path) as stream:
+                async with connect_router_stream(endpoint, token, stream):
+                    yield
 
     async def serve(self):
         async for request in self.Listen(jumpstarter_pb2.ListenRequest()):

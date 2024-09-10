@@ -46,18 +46,12 @@ class ExporterConfigV1Alpha1(BaseModel):
             return cls.model_validate(yaml.safe_load(f))
 
     @asynccontextmanager
-    async def serve_local(self, port):
-        server = grpc.aio.server()
-        server.add_insecure_port(port)
-
+    async def serve_unix_async(self):
         session = Session(
             root_device=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate(),
         )
-        session.add_to_server(server)
-
-        await server.start()
-        yield
-        await server.stop(grace=None)
+        async with session.serve_unix_async() as path:
+            yield path
 
     async def serve(self):
         credentials = grpc.composite_channel_credentials(

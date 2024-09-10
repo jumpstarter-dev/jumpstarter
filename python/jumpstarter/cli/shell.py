@@ -51,9 +51,8 @@ async def exporter_shell(name):
     except FileNotFoundError as e:
         raise click.ClickException(f"exporter config with name {name} not found: {e}") from e
 
-    with TemporarySocket() as path:
-        async with exporter.serve_local(f"unix://{path}"):
-            await user_shell(f"unix://{path}")
+    async with exporter.serve_unix_async() as path:
+        await user_shell(f"unix://{path}")
 
 
 @click.command()
