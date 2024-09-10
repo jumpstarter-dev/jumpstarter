@@ -5,5 +5,5 @@ from tempfile import TemporaryDirectory
 
 @contextmanager
 def TemporarySocket():
-    with TemporaryDirectory() as tempdir:
+    with TemporaryDirectory(prefix="jumpstarter-") as tempdir:
         yield Path(tempdir) / "socket"
