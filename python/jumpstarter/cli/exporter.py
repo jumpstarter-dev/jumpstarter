@@ -1,31 +1,15 @@
-from uuid import uuid4
-
 import anyio
 import click
-import grpc
 
-from jumpstarter.drivers.power.driver import MockPower
-from jumpstarter.exporter import Exporter
-
-
-async def exporter_impl():
-    uuid = uuid4()
-
-    credentials = grpc.composite_channel_credentials(
-        grpc.local_channel_credentials(),
-        grpc.access_token_call_credentials(str(uuid)),
-    )
-
-    async with grpc.aio.secure_channel("localhost:8083", credentials) as channel:
-        async with Exporter(
-            channel=channel,
-            uuid=uuid,
-            device_factory=lambda: MockPower(),
-        ) as e:
-            click.echo(f"Exporter {uuid} started")
-            await e.serve()
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 
 @click.command
-def exporter():
-    anyio.run(exporter_impl)
+@click.argument("name", type=str, default="default")
+def exporter(name):
+    try:
+        exporter = ExporterConfigV1Alpha1.load(name)
+    except FileNotFoundError as e:
+        raise click.ClickException(f"exporter config with name {name} not found: {e}") from e
+
+    anyio.run(exporter.serve)
