@@ -3,9 +3,9 @@ name = "jumpstarter"
 version = "0.1.0"
 description = ""
 authors = [
-  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
-  { name = "Nick Cao", email = "ncao@redhat.com" },
-  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+    { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+    { name = "Nick Cao", email = "ncao@redhat.com" },
+    { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
 ]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -50,6 +50,7 @@ dev-dependencies = [
     "pytest-cov>=5.0.0",
     "ruff>=0.6.1",
     "typos>=1.23.6",
+    "pre-commit>=3.8.0",
 ]
 
 [tool.uv.workspace]
