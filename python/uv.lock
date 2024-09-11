@@ -770,23 +770,17 @@ name = "jumpstarter-driver-can"
 version = "0.1.0"
 source = { editable = "contrib/can" }
 dependencies = [
+    { name = "can-isotp" },
     { name = "jumpstarter" },
     { name = "python-can" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "can-isotp" },
-]
-
 [package.metadata]
 requires-dist = [
+    { name = "can-isotp", specifier = ">=2.0.6" },
     { name = "jumpstarter", editable = "." },
     { name = "python-can", specifier = ">=4.4.2" },
 ]
-
-[package.metadata.requires-dev]
-dev = [{ name = "can-isotp", specifier = ">=2.0.6" }]
 
 [[package]]
 name = "jumpstarter-driver-dutlink"

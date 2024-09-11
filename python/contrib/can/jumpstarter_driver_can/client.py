@@ -6,12 +6,13 @@ from typing import Callable, List, Optional, Sequence, Tuple
 from uuid import UUID
 
 import can
+import isotp
 from can.bus import _SelfRemovingCyclicTask
 from pydantic import ConfigDict, validate_call
 
 from jumpstarter.client import DriverClient
 
-from .common import CanMessage
+from .common import CanMessage, IsoTpAddress, IsoTpAsymmetricAddress, IsoTpMessage
 
 
 @dataclass(kw_only=True)
@@ -25,6 +26,10 @@ class RemoteCyclicSendTask(can.broadcastmanager.CyclicSendTaskABC):
 
 @dataclass(kw_only=True)
 class CanClient(DriverClient, can.BusABC):
+    """
+    A generic CAN client for sending/recieving traffic to/from an exported CAN bus.
+    """
+
     def __post_init__(self):
         self._periodic_tasks: List[_SelfRemovingCyclicTask] = []
         self._filters = None
@@ -35,21 +40,33 @@ class CanClient(DriverClient, can.BusABC):
     @property
     @validate_call(validate_return=True)
     def state(self) -> can.BusState:
+        """
+        The current state of the CAN bus.
+        """
         return self.call("state")
 
     @state.setter
     @validate_call(validate_return=True)
     def state(self, value: can.BusState) -> None:
+        """
+        Set the state of the CAN bus.
+        """
         self.call("state", value)
 
     @cached_property
     @validate_call(validate_return=True)
     def channel_info(self) -> str:
+        """
+        Get the CAN channel info.
+        """
         return self.call("channel_info")
 
     @cached_property
     @validate_call(validate_return=True)
     def protocol(self) -> can.CanProtocol:
+        """
+        Get the CAN protocol supported by the bus.
+        """
         return self.call("protocol")
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -61,6 +78,9 @@ class CanClient(DriverClient, can.BusABC):
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def send(self, msg: can.Message, timeout: Optional[float] = None) -> None:
+        """
+        Send an individual CAN message.
+        """
         self.call("send", CanMessage.construct(msg), timeout)
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -85,9 +105,83 @@ class CanClient(DriverClient, can.BusABC):
 
     @validate_call(validate_return=True)
     def flush_tx_buffer(self) -> None:
+        """
+        Flush the transmission buffer.
+        """
         self.call("flush_tx_buffer")
 
     @validate_call(validate_return=True)
     def shutdown(self) -> None:
+        """
+        Shutdown the bus.
+        """
         self.call("shutdown")
         super().shutdown()
+
+
+@dataclass(kw_only=True)
+class IsoTpClient(DriverClient):
+    """
+    An ISO-TP CAN client for sending/recieving ISO-TP frames to/from an exported CAN bus.
+    """
+
+    def start(self) -> None:
+        """
+        Start listening for messages.
+        """
+        self.call("start")
+
+    def stop(self) -> None:
+        """
+        Stop listening for messages.
+        """
+        self.call("stop")
+
+    def send(self, data: bytes, target_address_type: int | None = None, send_timeout: float | None = None) -> None:
+        """
+        Enqueue an ISO-TP frame to send over the CAN network.
+        """
+        return self.call("send", IsoTpMessage.model_construct(data=data), target_address_type, send_timeout)
+
+    def recv(self, block: bool = False, timeout: float | None = None) -> bytes | None:
+        """
+        Dequeue an ISO-TP frame from the reception queue if available.
+        """
+        return IsoTpMessage.model_validate(self.call("recv", block, timeout)).data
+
+    def available(self) -> bool:
+        """
+        Returns `True` if an ISO-TP frame is awaiting in the reception queue, `False` otherwise.
+        """
+        return self.call("available")
+
+    def transmitting(self) -> bool:
+        """
+        Returns `True` if an ISO-TP frame is being transmitted, `False` otherwise.
+        """
+        return self.call("transmitting")
+
+    def set_address(self, address: isotp.Address | isotp.AsymmetricAddress) -> None:
+        """
+        Sets the layer address. Can be set after initialization if needed.
+        May cause a timeout if called while a transmission is active.
+        """
+        match address:
+            case isotp.Address():
+                return self.call("set_address", IsoTpAddress.validate(address))
+            case isotp.AsymmetricAddress():
+                return self.call("set_address", IsoTpAsymmetricAddress.validate(address))
+            case _:
+                raise ValueError("address not isotp.Address | isotp.AsymmetricAddress")
+
+    def stop_sending(self) -> None:
+        """
+        Stop sending messages.
+        """
+        self.call("stop_sending")
+
+    def stop_receiving(self) -> None:
+        """
+        Stop receiving messages.
+        """
+        self.call("stop_receiving")

@@ -12,10 +12,6 @@ requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
     "python-can>=4.4.2",
-]
-
-[tool.uv]
-dev-dependencies = [
     "can-isotp>=2.0.6",
 ]
 
