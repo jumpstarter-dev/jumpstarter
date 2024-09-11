@@ -6,6 +6,10 @@ from pydantic import Base64Bytes, BaseModel
 
 
 class CanMessage(BaseModel):
+    """
+    Internal CAN message type used for gRPC transmission.
+    """
+
     timestamp: float
     arbitration_id: int
     is_extended_id: bool
@@ -38,6 +42,10 @@ class CanMessage(BaseModel):
 
 
 class IsoTpParams(BaseModel):
+    """
+    ISO-TP configuration parameters.
+    """
+
     stmin: int = 0
     blocksize: int = 8
     tx_data_length: int = 8
@@ -76,10 +84,18 @@ class IsoTpParams(BaseModel):
 
 
 class IsoTpMessage(BaseModel):
+    """
+    An ISO-TP CAN message.
+    """
+
     data: Optional[Base64Bytes]
 
 
 class IsoTpAddress(BaseModel):
+    """
+    An ISO-TP address set.
+    """
+
     addressing_mode: AddressingMode
     txid: int | None
     rxid: int | None
@@ -122,6 +138,10 @@ class IsoTpAddress(BaseModel):
 
 
 class IsoTpAsymmetricAddress(BaseModel):
+    """
+    An asymmetric ISO-TP address.
+    """
+
     tx_addr: IsoTpAddress
     rx_addr: IsoTpAddress
 
