@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from importlib import import_module
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -9,6 +8,7 @@ import grpc
 import yaml
 from pydantic import BaseModel, Field
 
+from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Exporter, Session
 
@@ -21,9 +21,7 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
     def instantiate(self) -> Driver:
         children = {name: child.instantiate() for name, child in self.children.items()}
 
-        # reference: https://docs.djangoproject.com/en/5.0/_modules/django/utils/module_loading/#import_string
-        module_path, class_name = self.type.rsplit(".", 1)
-        driver_class = getattr(import_module(module_path), class_name)
+        driver_class = import_class(self.type, [], True)
 
         return driver_class(children=children, **self.config)
 
