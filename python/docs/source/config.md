@@ -169,9 +169,8 @@ export:
       username: "admin"
       password: "secret"
   serial:
-    type: "jumpstarter.drivers.power.PduPower"
+    type: "jumpstarter.drivers.serial.Pyserial"
     config:
-      type: "jumpstarter.drivers.serial.Pyserial"
       port: "/dev/ttyUSB0"
       baudrate: 115200
   custom:
