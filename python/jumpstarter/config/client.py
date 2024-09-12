@@ -1,9 +1,15 @@
 import os
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import ClassVar, Literal, Optional, Self
 
+import grpc
 import yaml
+from anyio.from_thread import BlockingPortal, start_blocking_portal
 from pydantic import BaseModel, Field, ValidationError
+
+from jumpstarter.client import LeaseRequest
+from jumpstarter.common import MetadataFilter
 
 from .common import CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
@@ -38,8 +44,28 @@ class ClientConfigV1Alpha1(BaseModel):
     path: str | None = Field(default=None, exclude=True)
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
-    kind: Literal["Client"] = Field(default="Client")
+    kind: Literal["ClientConfig"] = Field(default="ClientConfig")
     client: ClientConfigV1Alpha1Client = Field(default_factory=ClientConfigV1Alpha1Client)
+
+    @contextmanager
+    def lease(self, metadata_filter: MetadataFilter):
+        with start_blocking_portal() as portal:
+            with portal.wrap_async_context_manager(self.lease_async(metadata_filter, portal)) as lease:
+                yield lease
+
+    @asynccontextmanager
+    async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
+        credentials = grpc.composite_channel_credentials(
+            grpc.local_channel_credentials(),  # FIXME: use ssl_channel_credentials
+            grpc.access_token_call_credentials(self.client.token),
+        )
+
+        async with LeaseRequest(
+            channel=grpc.aio.secure_channel(self.client.endpoint, credentials),
+            metadata_filter=metadata_filter,
+            portal=portal,
+        ) as lease:
+            yield lease
 
     @classmethod
     def from_file(cls, filepath):

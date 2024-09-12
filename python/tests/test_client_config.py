@@ -80,7 +80,7 @@ def test_client_config_from_env_missing_field_raises(monkeypatch, missing_field)
 
 def test_client_config_from_file():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
+kind: ClientConfig
 client:
   endpoint: grpcs://jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
@@ -107,7 +107,7 @@ client:
 def test_client_config_from_file_invalid_field_raises(invalid_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Client",
+        "kind": "ClientConfig",
         "client": {
             "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
@@ -126,7 +126,7 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
 def test_client_config_from_file_missing_field_raises(missing_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Client",
+        "kind": "ClientConfig",
         "client": {
             "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
@@ -145,7 +145,7 @@ def test_client_config_from_file_missing_field_raises(missing_field):
 def test_client_config_from_file_missing_client_field_raises(missing_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Client",
+        "kind": "ClientConfig",
         "client": {
             "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
@@ -164,7 +164,7 @@ def test_client_config_from_file_missing_client_field_raises(missing_field):
 def test_client_config_from_file_invalid_client_drivers_field_raises(invalid_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Client",
+        "kind": "ClientConfig",
         "client": {
             "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
@@ -210,7 +210,7 @@ def test_client_config_load_not_found_raises():
 
 def test_client_config_save(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
+kind: ClientConfig
 client:
   endpoint: grpcs://jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
@@ -241,7 +241,7 @@ client:
 
 def test_client_config_save_explicit_path():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
+kind: ClientConfig
 client:
   endpoint: grpcs://jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
@@ -270,7 +270,7 @@ client:
 
 def test_client_config_save_unsafe_drivers():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
+kind: ClientConfig
 client:
   endpoint: grpcs://jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
@@ -305,7 +305,7 @@ def test_client_config_exists():
 
 def test_client_config_list(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
+kind: ClientConfig
 client:
   endpoint: grpcs://jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz

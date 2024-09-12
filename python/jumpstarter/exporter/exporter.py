@@ -1,10 +1,7 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-import grpc
 from anyio import connect_unix
 from grpc.aio import Channel
 
@@ -60,22 +57,10 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             root_device=root_device,
         )
 
-        with TemporaryDirectory() as tempdir:
-            socketpath = Path(tempdir) / "socket"
-
-            server = grpc.aio.server()
-            server.add_insecure_port(f"unix://{socketpath}")
-
-            session.add_to_server(server)
-
-            try:
-                await server.start()
-
-                async with await connect_unix(socketpath) as stream:
-                    async with connect_router_stream(endpoint, token, stream):
-                        yield
-            finally:
-                await server.stop(grace=None)
+        async with session.serve_unix_async() as path:
+            async with await connect_unix(path) as stream:
+                async with connect_router_stream(endpoint, token, stream):
+                    yield
 
     async def serve(self):
         async for request in self.Listen(jumpstarter_pb2.ListenRequest()):

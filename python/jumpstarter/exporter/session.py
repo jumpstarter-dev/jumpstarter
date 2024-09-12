@@ -1,10 +1,11 @@
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from uuid import UUID
 
+import grpc
 from anyio import Event, TypedAttributeLookupError
 
-from jumpstarter.common import Metadata
+from jumpstarter.common import Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.driver import Driver
 from jumpstarter.streams import MetadataStreamAttributes, RouterStream, forward_stream
@@ -30,9 +31,19 @@ class Session(
         self.root_device = root_device
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
-    def add_to_server(self, server):
+    @asynccontextmanager
+    async def serve_unix_async(self):
+        server = grpc.aio.server()
+
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+
+        with TemporarySocket() as path:
+            server.add_insecure_port(f"unix://{path}")
+
+            await server.start()
+            yield path
+            await server.stop(grace=None)
 
     def __getitem__(self, key: UUID):
         return self.mapping[key]

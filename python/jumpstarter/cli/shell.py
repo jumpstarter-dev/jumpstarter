@@ -1,55 +1,73 @@
 import os
 import sys
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 import anyio
 import click
-import grpc
+from anyio import create_task_group, create_unix_listener
+from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.drivers.composite.driver import Composite
-from jumpstarter.drivers.network.driver import EchoNetwork
-from jumpstarter.drivers.power.driver import MockPower
-from jumpstarter.drivers.storage.driver import MockStorageMux
-from jumpstarter.exporter import Session
+from jumpstarter.common import MetadataFilter, TemporarySocket
+from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+from jumpstarter.config.user import UserConfigV1Alpha1
 
 
-async def shell_impl():
-    server = grpc.aio.server()
+async def user_shell(host):
+    async with await anyio.open_process(
+        [os.environ["SHELL"]],
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        env=os.environ
+        | {
+            "JUMPSTARTER_HOST": host,
+        },
+    ) as process:
+        await process.wait()
 
-    session = Session(
-        root_device=Composite(
-            children={
-                "power": MockPower(),
-                "storage": MockStorageMux(),
-                "echo": EchoNetwork(),
-            },
-        ),
-    )
-    session.add_to_server(server)
 
-    with TemporaryDirectory() as tempdir:
-        socketpath = Path(tempdir) / "socket"
-        server.add_insecure_port(f"unix://{socketpath}")
+async def client_shell(name):
+    if name:
+        client = ClientConfigV1Alpha1.load(name)
+    else:
+        client = UserConfigV1Alpha1.load_or_create().config.current_client
 
-        await server.start()
+    if not client:
+        raise ValueError("no client specified")
 
-        async with await anyio.open_process(
-            [os.environ["SHELL"]],
-            stdin=sys.stdin,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            env=os.environ
-            | {
-                "JUMPSTARTER_HOST": f"unix://{socketpath}",
-            },
-        ) as process:
-            await process.wait()
+    with start_blocking_portal() as portal:
+        async with client.lease_async(metadata_filter=MetadataFilter(), portal=portal) as lease:
+            with TemporarySocket() as path:
+                async with await create_unix_listener(path) as listener:
+                    async with create_task_group() as tg:
 
-        await server.stop(grace=None)
+                        async def handler(stream):
+                            async with lease.handle_async(stream):
+                                pass
+
+                        tg.start_soon(listener.serve, handler)
+                        await user_shell(f"unix://{path}")
+                        tg.cancel_scope.cancel()
+
+
+async def exporter_shell(name):
+    try:
+        exporter = ExporterConfigV1Alpha1.load(name)
+    except FileNotFoundError as e:
+        raise click.ClickException(f"exporter config with name {name} not found: {e}") from e
+
+    async with exporter.serve_unix_async() as path:
+        await user_shell(f"unix://{path}")
 
 
 @click.command()
-def shell():
+@click.option("--exporter")
+@click.option("--client")
+def shell(exporter, client):
     """Spawns a shell with a transient exporter session"""
-    anyio.run(shell_impl)
+    if exporter and client:
+        raise ValueError("exporter and client cannot be both set")
+    elif exporter:
+        anyio.run(exporter_shell, exporter)
+    else:
+        anyio.run(client_shell, client)
