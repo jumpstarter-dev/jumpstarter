@@ -17,6 +17,16 @@ def cached_import(module_path, class_name):
 
 
 def import_class(class_path: str, allow: list[str], unsafe: bool):
+    """
+    Import a class by its full class path while checking
+    the path matches the given allow list with unix style glob
+
+    e.g. `import_class("example_package.some_module.fooclass", allow=["example_package.*"], unsafe=false)`
+    is equivalent to `from example_package.some_module import FooClass; return FooClass`
+
+    while `import_class("example_package.some_module.fooclass", allow=["notexample_package.*"], unsafe=false)`
+    throws ImportError due to not matching the allow list
+    """
     if not unsafe:
         if not any(fnmatchcase(class_path, pattern) for pattern in allow):
             raise ImportError(f"{class_path} doesn't match any of the allowed patterns")
