@@ -5,6 +5,7 @@ from anyio.from_thread import start_blocking_portal
 from jumpstarter.common import MetadataFilter
 
 from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Client, ClientConfigV1Alpha1Drivers
+from .common import Metadata
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 
 pytestmark = pytest.mark.anyio
@@ -14,6 +15,7 @@ async def test_exporter_serve(mock_controller):
     exporter = ExporterConfigV1Alpha1(
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
+        metadata=Metadata(name="test", namespace="default"),
         endpoint=mock_controller,
         token="dummy-exporter-token",
         export={
@@ -58,10 +60,13 @@ async def test_exporter_serve(mock_controller):
 def test_exporter_config(monkeypatch, tmp_path):
     monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
 
-    (tmp_path / "test.yaml").write_text(
-        """
-apiVersion: jumpstarter.dev/v1alpha1
+    path = tmp_path / "test.yaml"
+
+    text = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  name: "test"
+  namespace: "default"
 
 endpoint: "grpcs://jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
@@ -75,9 +80,8 @@ export:
       username: "admin"
       password: "secret"
   serial:
-    type: "jumpstarter.drivers.power.PduPower"
+    type: "jumpstarter.drivers.serial.Pyserial"
     config:
-      type: "jumpstarter.drivers.serial.Pyserial"
       port: "/dev/ttyUSB0"
       baudrate: 115200
   nested:
@@ -86,13 +90,19 @@ export:
         type: "vendorpackage.CustomDriver"
         config:
           hello: "world"
-""",
+"""
+    path.write_text(
+        text,
         encoding="utf-8",
     )
 
-    assert ExporterConfigV1Alpha1.load("test") == ExporterConfigV1Alpha1(
+    config = ExporterConfigV1Alpha1.load("test")
+
+    assert config == ExporterConfigV1Alpha1(
+        alias="test",
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
+        metadata=Metadata(name="test", namespace="default"),
         endpoint="grpcs://jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         export={
@@ -107,10 +117,9 @@ export:
                 },
             ),
             "serial": ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter.drivers.power.PduPower",
+                type="jumpstarter.drivers.serial.Pyserial",
                 children={},
                 config={
-                    "type": "jumpstarter.drivers.serial.Pyserial",
                     "port": "/dev/ttyUSB0",
                     "baudrate": 115200,
                 },
@@ -131,3 +140,9 @@ export:
         },
         config={},
     )
+
+    path.unlink()
+
+    config.save()
+
+    assert config == ExporterConfigV1Alpha1.load("test")

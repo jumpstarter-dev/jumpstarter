@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Exporter, Session
+
+from .common import Metadata
 
 
 class ExporterConfigV1Alpha1DriverInstance(BaseModel):
@@ -29,19 +31,52 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
 class ExporterConfigV1Alpha1(BaseModel):
     BASE_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
 
-    apiVersion: Literal["jumpstarter.dev/v1alpha1"]
-    kind: Literal["ExporterConfig"]
+    alias: str = Field(default="default", exclude=True)
+
+    apiVersion: Literal["jumpstarter.dev/v1alpha1"] = "jumpstarter.dev/v1alpha1"
+    kind: Literal["ExporterConfig"] = "ExporterConfig"
+    metadata: Metadata
 
     endpoint: str
     token: str
 
-    export: dict[str, ExporterConfigV1Alpha1DriverInstance]
+    export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+
+    @property
+    def path(self):
+        return self.__path(self.alias)
 
     @classmethod
-    def load(cls, name: str):
-        path = (cls.BASE_PATH / name).with_suffix(".yaml")
+    def __path(cls, alias: str):
+        return (cls.BASE_PATH / alias).with_suffix(".yaml")
+
+    @classmethod
+    def load_path(cls, path: Path):
         with path.open() as f:
-            return cls.model_validate(yaml.safe_load(f))
+            config = cls.model_validate(yaml.safe_load(f))
+            return config
+
+    @classmethod
+    def load(cls, alias: str):
+        config = cls.load_path(cls.__path(alias))
+        config.alias = alias
+        return config
+
+    @classmethod
+    def list(cls):
+        exporters = []
+        with suppress(FileNotFoundError):
+            for entry in cls.BASE_PATH.iterdir():
+                exporters.append(cls.load(entry.stem))
+        return exporters
+
+    def save(self, delete=False):
+        if delete:
+            self.path.unlink(missing_ok=True)
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open(mode="w") as f:
+                yaml.safe_dump(self.model_dump(mode="json"), f, sort_keys=False)
 
     @asynccontextmanager
     async def serve_unix_async(self):

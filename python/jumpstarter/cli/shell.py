@@ -52,7 +52,7 @@ async def client_shell(name):
 
 async def exporter_shell(name):
     try:
-        exporter = ExporterConfigV1Alpha1.load(name)
+        exporter = ExporterConfigV1Alpha1.load("default", name)
     except FileNotFoundError as e:
         raise click.ClickException(f"exporter config with name {name} not found: {e}") from e
 
