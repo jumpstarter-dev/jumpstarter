@@ -111,7 +111,7 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      exporter.Name + "-token",
+			Name:      exporter.Name + "-exporter",
 			Namespace: exporter.Namespace,
 		},
 		Type: corev1.SecretTypeOpaque,

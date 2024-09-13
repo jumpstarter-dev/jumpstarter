@@ -3,6 +3,6 @@ kind: Exporter
 metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
-    app.kubernetes.io/managed-by: kustomize
+    dut: fancy-hardware
   name: exporter-sample
 spec: {}

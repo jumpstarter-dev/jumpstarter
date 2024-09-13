@@ -99,7 +99,7 @@ func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      client.Name + "-token",
+			Name:      client.Name + "-client",
 			Namespace: client.Namespace,
 		},
 		Type: corev1.SecretTypeOpaque,
