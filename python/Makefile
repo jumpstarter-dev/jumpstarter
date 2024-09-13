@@ -42,9 +42,6 @@ sync-example-%: examples/%
 test-example-%: examples/%
 	uv run --isolated --package jumpstarter_example_$(<F) pytest $<
 
-build-example-%: examples/%
-	uvx --from build pyproject-build --installer uv --outdir dist $<
-
 sync-examples: $(addprefix sync-,$(EXAMPLE_TARGETS))
 
 test-examples: $(addprefix test-,$(EXAMPLE_TARGETS))
@@ -67,8 +64,8 @@ sync: sync-jumpstarter sync-contrib sync-examples
 
 test: test-jumpstarter test-contrib test-examples
 
-build: sync build-jumpstarter build-contrib build-examples
+build: sync build-jumpstarter build-contrib
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib test-examples build-examples clean-test clean-docs clean-venv clean-build
+.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib test-examples clean-test clean-docs clean-venv clean-build

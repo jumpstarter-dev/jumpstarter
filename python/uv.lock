@@ -829,7 +829,7 @@ requires-dist = [{ name = "jumpstarter", editable = "." }]
 [[package]]
 name = "jumpstarter-example-automotive"
 version = "0.1.0"
-source = { editable = "examples/automotive" }
+source = { virtual = "examples/automotive" }
 dependencies = [
     { name = "jumpstarter" },
 ]
