@@ -1,14 +1,21 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+)
 
 var (
 	rootCmd = &cobra.Command{
-		Use:   "jmpctl",
-		Short: "Admin CLI for managing jumpstarter",
+		Use:          "jmpctl",
+		Short:        "Admin CLI for managing jumpstarter",
+		SilenceUsage: true,
 	}
 )
 
-func Execute() error {
-	return rootCmd.Execute()
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
