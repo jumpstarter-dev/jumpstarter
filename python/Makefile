@@ -1,4 +1,5 @@
 CONTRIB_TARGETS = $(subst contrib/,contrib-,$(wildcard contrib/*))
+EXAMPLE_TARGETS = $(subst examples/,example-,$(wildcard examples/*))
 
 default: build
 
@@ -35,6 +36,21 @@ test-contrib: $(addprefix test-,$(CONTRIB_TARGETS))
 
 build-contrib: $(addprefix build-,$(CONTRIB_TARGETS))
 
+sync-example-%: examples/%
+	uv sync --all-extras --inexact --package jumpstarter_example_$(<F)
+
+test-example-%: examples/%
+	uv run --isolated --package jumpstarter_example_$(<F) pytest $<
+
+build-example-%: examples/%
+	uvx --from build pyproject-build --installer uv --outdir dist $<
+
+sync-examples: $(addprefix sync-,$(EXAMPLE_TARGETS))
+
+test-examples: $(addprefix test-,$(EXAMPLE_TARGETS))
+
+build-examples: $(addprefix build-,$(EXAMPLE_TARGETS))
+
 clean-venv:
 	-rm -rf ./.venv
 	-find . -type d -name __pycache__ -exec rm -r {} \+
@@ -47,12 +63,12 @@ clean-test:
 	-rm coverage.xml
 	-rm -rf htmlcov
 
-sync: sync-jumpstarter sync-contrib
+sync: sync-jumpstarter sync-contrib sync-examples
 
-test: test-jumpstarter test-contrib
+test: test-jumpstarter test-contrib test-examples
 
-build: sync build-jumpstarter build-contrib
+build: sync build-jumpstarter build-contrib build-examples
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib clean-test clean-docs clean-venv clean-build
+.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib test-examples build-examples clean-test clean-docs clean-venv clean-build

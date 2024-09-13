@@ -54,7 +54,7 @@ dev-dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["contrib/*"]
+members = ["contrib/*", "examples/*"]
 
 [tool.ruff]
 exclude = ["jumpstarter/v1"]
