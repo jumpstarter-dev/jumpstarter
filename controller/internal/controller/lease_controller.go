@@ -124,8 +124,15 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}, nil
 	} else {
 		// 2. expired lease
-		if time.Now().After(lease.Status.EndTime.Time) {
+		if time.Now().After(lease.Status.EndTime.Time) || lease.Spec.Release {
 			lease.Status.Ended = true
+			// If lease has been released early, set EndTime to now
+			if lease.Spec.Release {
+				log.Info("lease released early", "lease", lease.Name)
+				lease.Status.EndTime = &metav1.Time{Time: time.Now()}
+			} else {
+				log.Info("lease expired", "lease", lease.Name)
+			}
 
 			if err := r.Status().Update(ctx, &lease); err != nil {
 				log.Error(err, "unable to update Lease status")
