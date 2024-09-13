@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -65,6 +66,15 @@ var _ = Describe("Exporter Controller", func() {
 
 			By("Cleanup the specific resource instance Exporter")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+
+			// the cascade delete of secrets does not work on test env
+			// https://book.kubebuilder.io/reference/envtest#testing-considerations
+			Expect(k8sClient.Delete(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName + "-exporter",
+					Namespace: "default",
+				},
+			})).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")

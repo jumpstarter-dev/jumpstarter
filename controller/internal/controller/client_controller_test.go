@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -40,11 +41,11 @@ var _ = Describe("Identity Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		identity := &jumpstarterdevv1alpha1.Client{}
+		client := &jumpstarterdevv1alpha1.Client{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind Identity")
-			err := k8sClient.Get(ctx, typeNamespacedName, identity)
+			By("creating the custom resource for the Kind Client")
+			err := k8sClient.Get(ctx, typeNamespacedName, client)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &jumpstarterdevv1alpha1.Client{
 					ObjectMeta: metav1.ObjectMeta{
@@ -65,6 +66,15 @@ var _ = Describe("Identity Controller", func() {
 
 			By("Cleanup the specific resource instance Identity")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+
+			// the cascade delete of secrets does not work on test env
+			// https://book.kubebuilder.io/reference/envtest#testing-considerations
+			Expect(k8sClient.Delete(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName + "-client",
+					Namespace: "default",
+				},
+			})).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
