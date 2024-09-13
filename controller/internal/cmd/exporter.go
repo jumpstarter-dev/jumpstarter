@@ -103,13 +103,6 @@ var exporterCreateCmd = &cobra.Command{
 					Value: "ExporterConfig",
 				},
 				{
-					Key: "metadata",
-					Value: []yaml.MapItem{
-						{Key: "name", Value: exporter.Name},
-						{Key: "namespace", Value: exporter.Namespace},
-					},
-				},
-				{
 					Key:   "endpoint",
 					Value: "",
 				},
