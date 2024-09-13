@@ -26,18 +26,12 @@ This project is still evolving, so these docs may be incomplete or out-of-date.
 
 ## Example
 ```{testsetup} *
-from types import SimpleNamespace
-import importlib
+import jumpstarter.common.importlib
 
-real_import_module = importlib.import_module
+def import_class(class_path, allow, unsafe):
+    return globals()["ExampleClient"]
 
-def import_module(name, package=None):
-    if name == "example":
-        return SimpleNamespace(ExampleClient=globals()["ExampleClient"])
-    else:
-        return real_import_module(name, package)
-
-importlib.import_module = import_module
+jumpstarter.common.importlib.import_class = import_class
 ```
 
 ```{testcode}

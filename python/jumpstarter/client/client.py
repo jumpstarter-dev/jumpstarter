@@ -1,11 +1,11 @@
 from collections import OrderedDict, defaultdict
 from graphlib import TopologicalSorter
-from importlib import import_module
 from uuid import UUID
 
 from google.protobuf import empty_pb2
 
 from jumpstarter.client import DriverClient
+from jumpstarter.common.importlib import import_class
 from jumpstarter.v1 import (
     jumpstarter_pb2_grpc,
 )
@@ -32,9 +32,7 @@ async def client_from_channel(
     for uuid in TopologicalSorter(topo).static_order():
         report = reports[uuid]
 
-        # reference: https://docs.djangoproject.com/en/5.0/_modules/django/utils/module_loading/#import_string
-        module_path, class_name = report.labels["jumpstarter.dev/client"].rsplit(".", 1)
-        client_class = getattr(import_module(module_path), class_name)
+        client_class = import_class(report.labels["jumpstarter.dev/client"], [], True)  # FIXME: set allowlist
         client = client_class(
             uuid=UUID(uuid),
             labels=report.labels,
