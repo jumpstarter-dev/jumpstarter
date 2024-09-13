@@ -16,7 +16,9 @@ def exporter():
 
 @exporter.command
 @click.argument("alias", default="default")
-def create(alias):
+@click.option("--endpoint", prompt=True)
+@click.option("--token", prompt=True)
+def create(alias, endpoint, token):
     """Create exporter"""
     try:
         ExporterConfigV1Alpha1.load(alias)
@@ -25,8 +27,6 @@ def create(alias):
     else:
         raise click.ClickException(f'exporter "{alias}" exists')
 
-    endpoint = click.prompt("controller endpoint")
-    token = click.prompt("token")
     config = ExporterConfigV1Alpha1(
         alias=alias,
         endpoint=endpoint,
