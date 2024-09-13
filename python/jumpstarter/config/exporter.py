@@ -12,8 +12,6 @@ from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Exporter, Session
 
-from .common import Metadata
-
 
 class ExporterConfigV1Alpha1DriverInstance(BaseModel):
     type: str = Field(default="jumpstarter.drivers.composite.driver.Composite")
@@ -35,7 +33,6 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = "jumpstarter.dev/v1alpha1"
     kind: Literal["ExporterConfig"] = "ExporterConfig"
-    metadata: Metadata
 
     endpoint: str
     token: str

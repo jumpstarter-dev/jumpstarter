@@ -3,7 +3,6 @@ from pathlib import Path
 import anyio
 import click
 
-from jumpstarter.config.common import Metadata
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 from .util import make_table
@@ -26,16 +25,10 @@ def create(alias):
     else:
         raise click.ClickException(f'exporter "{alias}" exists')
 
-    namespace = click.prompt("exporter namespace", default="default")
-    name = click.prompt("exporter name")
     endpoint = click.prompt("controller endpoint")
     token = click.prompt("token")
     config = ExporterConfigV1Alpha1(
         alias=alias,
-        metadata=Metadata(
-            name=name,
-            namespace=namespace,
-        ),
         endpoint=endpoint,
         token=token,
     )
@@ -67,12 +60,10 @@ def edit(alias):
 @exporter.command
 def list():
     exporters = ExporterConfigV1Alpha1.list()
-    columns = ["ALIAS", "NAMESPACE", "NAME", "PATH"]
+    columns = ["ALIAS", "PATH"]
     rows = [
         {
             "ALIAS": exporter.alias,
-            "NAMESPACE": exporter.metadata.namespace,
-            "NAME": exporter.metadata.name,
             "PATH": str(exporter.path),
         }
         for exporter in exporters

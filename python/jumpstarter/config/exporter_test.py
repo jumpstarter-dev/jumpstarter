@@ -5,7 +5,6 @@ from anyio.from_thread import start_blocking_portal
 from jumpstarter.common import MetadataFilter
 
 from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Client, ClientConfigV1Alpha1Drivers
-from .common import Metadata
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 
 pytestmark = pytest.mark.anyio
@@ -15,7 +14,6 @@ async def test_exporter_serve(mock_controller):
     exporter = ExporterConfigV1Alpha1(
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
-        metadata=Metadata(name="test", namespace="default"),
         endpoint=mock_controller,
         token="dummy-exporter-token",
         export={
@@ -64,9 +62,6 @@ def test_exporter_config(monkeypatch, tmp_path):
 
     text = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
-metadata:
-  name: "test"
-  namespace: "default"
 
 endpoint: "grpcs://jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
@@ -102,7 +97,6 @@ export:
         alias="test",
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
-        metadata=Metadata(name="test", namespace="default"),
         endpoint="grpcs://jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         export={
