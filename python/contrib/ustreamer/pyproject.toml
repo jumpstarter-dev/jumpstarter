@@ -13,6 +13,12 @@ dependencies = [
     "jumpstarter",
 ]
 
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.2",
+    "pytest-cov>=5.0.0",
+]
+
 [tool.uv.sources]
 jumpstarter = { workspace = true }
 
