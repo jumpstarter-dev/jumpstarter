@@ -1,4 +1,5 @@
 CONTRIB_TARGETS = $(subst contrib/,contrib-,$(wildcard contrib/*))
+EXAMPLE_TARGETS = $(subst examples/,example-,$(wildcard examples/*))
 
 default: build
 
@@ -35,6 +36,11 @@ test-contrib: $(addprefix test-,$(CONTRIB_TARGETS))
 
 build-contrib: $(addprefix build-,$(CONTRIB_TARGETS))
 
+sync-example-%: examples/%
+	uv sync --all-extras --inexact --package jumpstarter_example_$(<F)
+
+sync-examples: $(addprefix sync-,$(EXAMPLE_TARGETS))
+
 clean-venv:
 	-rm -rf ./.venv
 	-find . -type d -name __pycache__ -exec rm -r {} \+
@@ -47,7 +53,7 @@ clean-test:
 	-rm coverage.xml
 	-rm -rf htmlcov
 
-sync: sync-jumpstarter sync-contrib
+sync: sync-jumpstarter sync-contrib sync-examples
 
 test: test-jumpstarter test-contrib
 
