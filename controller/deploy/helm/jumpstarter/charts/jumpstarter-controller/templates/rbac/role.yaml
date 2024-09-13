@@ -5,12 +5,6 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - authentication.k8s.io
-  resources:
-  - tokenreviews
-  verbs:
-  - create
-- apiGroups:
   - ""
   resources:
   - secrets
@@ -35,60 +29,16 @@ rules:
   verbs:
   - create
 - apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
   - jumpstarter.dev
   resources:
   - clients
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - jumpstarter.dev
-  resources:
-  - clients/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - jumpstarter.dev
-  resources:
-  - clients/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - jumpstarter.dev
-  resources:
   - exporters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - jumpstarter.dev
-  resources:
-  - exporters/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - jumpstarter.dev
-  resources:
-  - exporters/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - jumpstarter.dev
-  resources:
   - leases
   verbs:
   - create
@@ -101,12 +51,16 @@ rules:
 - apiGroups:
   - jumpstarter.dev
   resources:
+  - clients/finalizers
+  - exporters/finalizers
   - leases/finalizers
   verbs:
   - update
 - apiGroups:
   - jumpstarter.dev
   resources:
+  - clients/status
+  - exporters/status
   - leases/status
   verbs:
   - get
