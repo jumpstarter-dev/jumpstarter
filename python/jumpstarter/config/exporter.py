@@ -70,13 +70,13 @@ class ExporterConfigV1Alpha1(BaseModel):
                 exporters.append(cls.load(entry.stem))
         return exporters
 
-    def save(self, delete=False):
-        if delete:
-            self.path.unlink(missing_ok=True)
-        else:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open(mode="w") as f:
-                yaml.safe_dump(self.model_dump(mode="json"), f, sort_keys=False)
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open(mode="w") as f:
+            yaml.safe_dump(self.model_dump(mode="json"), f, sort_keys=False)
+
+    def delete(self):
+        self.path.unlink(missing_ok=True)
 
     @asynccontextmanager
     async def serve_unix_async(self):

@@ -50,7 +50,7 @@ def delete(alias):
         config = ExporterConfigV1Alpha1.load(alias)
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
-    config.save(delete=True)
+    config.delete()
 
 
 @exporter.command
