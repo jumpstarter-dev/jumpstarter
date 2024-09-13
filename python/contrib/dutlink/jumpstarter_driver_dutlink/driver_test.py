@@ -1,4 +1,5 @@
 import pytest
+import usb
 
 from jumpstarter.client.adapters import PexpectAdapter
 from jumpstarter.common.utils import serve
@@ -12,6 +13,8 @@ def test_drivers_dutlink():
         )
     except FileNotFoundError:
         pytest.skip("dutlink not available")
+    except usb.core.USBError:
+        pytest.skip("USB not available")
 
     with serve(instance) as client:
         with PexpectAdapter(client=client.console) as expect:
