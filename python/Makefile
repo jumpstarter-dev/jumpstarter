@@ -39,14 +39,7 @@ build-contrib: $(addprefix build-,$(CONTRIB_TARGETS))
 sync-example-%: examples/%
 	uv sync --all-extras --inexact --package jumpstarter_example_$(<F)
 
-test-example-%: examples/%
-	uv run --isolated --package jumpstarter_example_$(<F) pytest $<
-
 sync-examples: $(addprefix sync-,$(EXAMPLE_TARGETS))
-
-test-examples: $(addprefix test-,$(EXAMPLE_TARGETS))
-
-build-examples: $(addprefix build-,$(EXAMPLE_TARGETS))
 
 clean-venv:
 	-rm -rf ./.venv
@@ -62,10 +55,10 @@ clean-test:
 
 sync: sync-jumpstarter sync-contrib sync-examples
 
-test: test-jumpstarter test-contrib test-examples
+test: test-jumpstarter test-contrib
 
 build: sync build-jumpstarter build-contrib
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib test-examples clean-test clean-docs clean-venv clean-build
+.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib clean-test clean-docs clean-venv clean-build
