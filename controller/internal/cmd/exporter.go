@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v2"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/printers"
@@ -38,12 +41,12 @@ var exporterCmd = &cobra.Command{
 	Short: "Manage exporters",
 }
 
-func NewClient() (client.Client, error) {
+func NewClient() (client.WithWatch, error) {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return nil, err
 	}
-	return client.New(config, client.Options{Scheme: scheme.Scheme})
+	return client.NewWithWatch(config, client.Options{Scheme: scheme.Scheme})
 }
 
 var exporterCreateCmd = &cobra.Command{
@@ -61,7 +64,60 @@ var exporterCreateCmd = &cobra.Command{
 				Namespace: namespace,
 			},
 		}
-		return clientset.Create(context.Background(), &exporter)
+		if err := clientset.Create(context.Background(), &exporter); err != nil {
+			return err
+		}
+		watch, err := clientset.Watch(context.Background(), &jumpstarterdevv1alpha1.ExporterList{
+			Items: []jumpstarterdevv1alpha1.Exporter{exporter},
+		})
+		if err != nil {
+			return err
+		}
+		for event := range watch.ResultChan() {
+			cred := event.Object.(*jumpstarterdevv1alpha1.Exporter).Status.Credential
+			if cred == nil {
+				continue
+			}
+			var secret corev1.Secret
+			if err := clientset.Get(
+				context.Background(),
+				types.NamespacedName{Name: cred.Name, Namespace: namespace},
+				&secret,
+			); err != nil {
+				return err
+			}
+			if secret.Data == nil {
+				return fmt.Errorf("Empty Secret on Exporter %s/%s", namespace, args[0])
+			}
+			token, ok := secret.Data["token"]
+			if !ok {
+				return fmt.Errorf("Missing token in Secret for Exporter %s/%s", namespace, args[0])
+			}
+			exporterConfig := []yaml.MapItem{
+				{
+					Key:   "apiVersion",
+					Value: "jumpstarter.dev/v1alpha1",
+				},
+				{
+					Key:   "kind",
+					Value: "ExporterConfig",
+				},
+				{
+					Key:   "endpoint",
+					Value: "",
+				},
+				{
+					Key:   "token",
+					Value: string(token),
+				},
+			}
+			if err := yaml.NewEncoder(os.Stdout).Encode(&exporterConfig); err != nil {
+				return err
+			}
+			watch.Stop()
+			break
+		}
+		return nil
 	},
 }
 
