@@ -49,11 +49,12 @@ jobs:
 
       - name: Run jumpstarter
         run: |
-          helm get values jumpstarter --output json
+          CONTROLLER_ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+          ROUTER_ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.routerEndpoint')
 
-          # openssl s_client -showcerts 127.0.0.1:8082 </dev/null | openssl x509 -outform PEM >> /tmp/cacerts
-          # openssl s_client -showcerts 127.0.0.1:8082 </dev/null | openssl x509 -outform PEM >> /tmp/cacerts
-          # export GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=/tmp/cacerts
+          openssl s_client -showcerts $CONTROLLER_ENDPOINT </dev/null | openssl x509 -outform PEM >> /tmp/cacerts
+          openssl s_client -showcerts $ROUTER_ENDPOINT </dev/null | openssl x509 -outform PEM >> /tmp/cacerts
+          export GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=/tmp/cacerts
 
           jmp client list
           jmp exporter list
