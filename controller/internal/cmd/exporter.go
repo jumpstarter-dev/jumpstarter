@@ -75,14 +75,14 @@ var exporterCreateCmd = &cobra.Command{
 			return err
 		}
 		for event := range watch.ResultChan() {
-			cred := event.Object.(*jumpstarterdevv1alpha1.Exporter).Status.Credential
-			if cred == nil {
+			object := event.Object.(*jumpstarterdevv1alpha1.Exporter)
+			if object.Status.Credential == nil || object.Status.Endpoint == "" {
 				continue
 			}
 			var secret corev1.Secret
 			if err := clientset.Get(
 				context.Background(),
-				types.NamespacedName{Name: cred.Name, Namespace: namespace},
+				types.NamespacedName{Name: object.Status.Credential.Name, Namespace: namespace},
 				&secret,
 			); err != nil {
 				return err
@@ -105,7 +105,7 @@ var exporterCreateCmd = &cobra.Command{
 				},
 				{
 					Key:   "endpoint",
-					Value: "",
+					Value: object.Status.Endpoint,
 				},
 				{
 					Key:   "token",
