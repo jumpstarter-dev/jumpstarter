@@ -1,0 +1,65 @@
+name: End-to-end tests
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Install python
+        run: uv python install 3.12
+
+      - name: Install jumpstarter
+        run: uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git@exporter-command"
+
+      - name: Run make deploy
+        run: make deploy
+
+      - name: Create client
+        run: |
+          mkdir -p ~/.config/jumpstarter/clients
+          go run ./cmd/jmpctl/main.go client create test-client-1 > ~/.config/jumpstarter/clients/test-client-1.yaml
+          cat <<EOF >> ~/.config/jumpstarter/clients/test-client-1.yaml
+            drivers:
+              allow: []
+              unsafe: True
+          EOF
+
+      - name: Create exporter
+        run: |
+          sudo mkdir -p /etc/jumpstarter/exporters
+          sudo chown $USER /etc/jumpstarter/exporters
+          go run ./cmd/jmpctl/main.go exporter create test-exporter-1 > /etc/jumpstarter/exporters/test-exporter-1.yaml
+          cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-1.yaml
+          export:
+            power:
+              type: jumpstarter.drivers.power.driver.MockPower
+          EOF
+
+      - name: Run jumpstarter
+        run: |
+          CONTROLLER_ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+          ROUTER_ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.routerEndpoint')
+
+          openssl s_client -showcerts $CONTROLLER_ENDPOINT </dev/null | openssl x509 -outform PEM >> /tmp/cacerts
+          openssl s_client -showcerts $ROUTER_ENDPOINT </dev/null | openssl x509 -outform PEM >> /tmp/cacerts
+          export GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=/tmp/cacerts
+
+          jmp client list
+          jmp exporter list
+
+          jmp exporter run test-exporter-1 &
+          jmp shell --client test-client-1 <<EOF
+          j power
+          EOF

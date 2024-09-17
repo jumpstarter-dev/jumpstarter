@@ -26,6 +26,7 @@ import (
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -110,7 +111,17 @@ func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 func (s *RouterService) Start(ctx context.Context) error {
 	log := log.FromContext(ctx)
 
-	server := grpc.NewServer()
+	dnsnames, ipaddresses, err := endpointToSAN(routerEndpoint())
+	if err != nil {
+		return err
+	}
+
+	cert, err := NewSelfSignedCertificate("jumpstarter router", dnsnames, ipaddresses)
+	if err != nil {
+		return err
+	}
+
+	server := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
 
 	pb.RegisterRouterServiceServer(server, s)
 

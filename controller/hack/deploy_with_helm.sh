@@ -79,7 +79,7 @@ echo -e "${GREEN}Waiting for grpc endpoints to be ready:${NC}"
 for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
     RETRIES=30
     echo -e "${GREEN} * Checking ${ep} ... ${NC}"
-    while ! podman run docker.io/fullstorydev/grpcurl -plaintext ${ep} list; do
+    while ! podman run docker.io/fullstorydev/grpcurl -insecure ${ep} list; do
         sleep 2
         RETRIES=$((RETRIES-1))
         if [ ${RETRIES} -eq 0 ]; then

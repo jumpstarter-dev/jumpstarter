@@ -12,25 +12,25 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/printers"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func init() {
-	rootCmd.AddCommand(exporterCmd)
+	rootCmd.AddCommand(clientCmd)
 
-	exporterCmd.AddCommand(exporterCreateCmd)
-	exporterCmd.AddCommand(exporterDeleteCmd)
-	exporterCmd.AddCommand(exporterListCmd)
+	clientCmd.AddCommand(clientCreateCmd)
+	clientCmd.AddCommand(clientDeleteCmd)
+	clientCmd.AddCommand(clientListCmd)
 }
 
-var exporterCmd = &cobra.Command{
-	Use:   "exporter",
-	Short: "Manage exporters",
+var clientCmd = &cobra.Command{
+	Use:   "client",
+	Short: "Manage clients",
 }
 
-var exporterCreateCmd = &cobra.Command{
+var clientCreateCmd = &cobra.Command{
 	Use:   "create [NAME]",
-	Short: "Create exporter",
+	Short: "Create client",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -39,16 +39,16 @@ var exporterCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		exporter := jumpstarterdevv1alpha1.Exporter{
+		client := jumpstarterdevv1alpha1.Client{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      args[0],
 				Namespace: namespace,
 			},
 		}
-		if err := clientset.Create(ctx, &exporter); err != nil {
+		if err := clientset.Create(ctx, &client); err != nil {
 			return err
 		}
-		watch, err := clientset.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
+		watch, err := clientset.Watch(ctx, &jumpstarterdevv1alpha1.ClientList{}, &kclient.ListOptions{
 			FieldSelector: fields.OneTermEqualSelector("metadata.name", args[0]),
 			Namespace:     namespace,
 		})
@@ -56,7 +56,7 @@ var exporterCreateCmd = &cobra.Command{
 			return err
 		}
 		for event := range watch.ResultChan() {
-			object := event.Object.(*jumpstarterdevv1alpha1.Exporter)
+			object := event.Object.(*jumpstarterdevv1alpha1.Client)
 			if object.Status.Credential == nil || object.Status.Endpoint == "" {
 				continue
 			}
@@ -69,43 +69,48 @@ var exporterCreateCmd = &cobra.Command{
 				return err
 			}
 			if secret.Data == nil {
-				return fmt.Errorf("Empty Secret on Exporter %s/%s", namespace, args[0])
+				return fmt.Errorf("Empty Secret on Client %s/%s", namespace, args[0])
 			}
 			token, ok := secret.Data["token"]
 			if !ok {
-				return fmt.Errorf("Missing token in Secret for Exporter %s/%s", namespace, args[0])
+				return fmt.Errorf("Missing token in Secret for Client %s/%s", namespace, args[0])
 			}
-			exporterConfig := []yaml.MapItem{
+			clientConfig := []yaml.MapItem{
 				{
 					Key:   "apiVersion",
 					Value: "jumpstarter.dev/v1alpha1",
 				},
 				{
 					Key:   "kind",
-					Value: "ExporterConfig",
+					Value: "ClientConfig",
 				},
 				{
-					Key:   "endpoint",
-					Value: object.Status.Endpoint,
-				},
-				{
-					Key:   "token",
-					Value: string(token),
+					Key: "client",
+					Value: []yaml.MapItem{
+						{
+							Key:   "endpoint",
+							Value: object.Status.Endpoint,
+						},
+						{
+							Key:   "token",
+							Value: string(token),
+						},
+					},
 				},
 			}
-			if err := yaml.NewEncoder(os.Stdout).Encode(&exporterConfig); err != nil {
+			if err := yaml.NewEncoder(os.Stdout).Encode(&clientConfig); err != nil {
 				return err
 			}
 			watch.Stop()
 			return nil
 		}
-		return fmt.Errorf("timout waiting for controller to update status for Exporter: %s", args[0])
+		return fmt.Errorf("timout waiting for controller to update status for Client: %s", args[0])
 	},
 }
 
-var exporterDeleteCmd = &cobra.Command{
+var clientDeleteCmd = &cobra.Command{
 	Use:   "delete [NAME]",
-	Short: "Delete exporter",
+	Short: "Delete client",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -114,20 +119,20 @@ var exporterDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var exporter jumpstarterdevv1alpha1.Exporter
+		var client jumpstarterdevv1alpha1.Client
 		if err := clientset.Get(ctx, types.NamespacedName{
 			Namespace: namespace,
 			Name:      args[0],
-		}, &exporter); err != nil {
+		}, &client); err != nil {
 			return err
 		}
-		return clientset.Delete(ctx, &exporter)
+		return clientset.Delete(ctx, &client)
 	},
 }
 
-var exporterListCmd = &cobra.Command{
+var clientListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List exporters",
+	Short: "List clients",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
@@ -135,10 +140,10 @@ var exporterListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var exporters jumpstarterdevv1alpha1.ExporterList
-		if err := clientset.List(ctx, &exporters, &client.ListOptions{Namespace: namespace}); err != nil {
+		var clients jumpstarterdevv1alpha1.ClientList
+		if err := clientset.List(ctx, &clients, &kclient.ListOptions{Namespace: namespace}); err != nil {
 			return err
 		}
-		return printers.NewTablePrinter(printers.PrintOptions{}).PrintObj(&exporters, os.Stdout)
+		return printers.NewTablePrinter(printers.PrintOptions{}).PrintObj(&clients, os.Stdout)
 	},
 }

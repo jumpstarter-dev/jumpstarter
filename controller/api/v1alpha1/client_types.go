@@ -35,6 +35,7 @@ type ClientStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
+	Endpoint   string                       `json:"endpoint,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -58,6 +58,8 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              endpoint:
+                type: string
             type: object
         type: object
     served: true
