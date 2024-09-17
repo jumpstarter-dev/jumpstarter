@@ -2,5 +2,4 @@
 resources:
 - v1alpha1_exporter.yaml
 - v1alpha1_client.yaml
-- v1alpha1_lease.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
