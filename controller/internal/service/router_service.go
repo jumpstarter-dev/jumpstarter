@@ -116,7 +116,7 @@ func (s *RouterService) Start(ctx context.Context) error {
 		return err
 	}
 
-	cert, err := NewSelfSignedCertificate(dnsnames, ipaddresses)
+	cert, err := NewSelfSignedCertificate("jumpstarter router", dnsnames, ipaddresses)
 	if err != nil {
 		return err
 	}

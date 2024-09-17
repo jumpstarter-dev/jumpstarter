@@ -464,7 +464,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return err
 	}
 
-	cert, err := NewSelfSignedCertificate(dnsnames, ipaddresses)
+	cert, err := NewSelfSignedCertificate("jumpstarter controller", dnsnames, ipaddresses)
 	if err != nil {
 		return err
 	}

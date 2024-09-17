@@ -5,14 +5,17 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"math/big"
 	"net"
 	"time"
 )
 
-func NewSelfSignedCertificate(dnsnames []string, ipaddresses []net.IP) (*tls.Certificate, error) {
+func NewSelfSignedCertificate(commonName string, dnsnames []string, ipaddresses []net.IP) (*tls.Certificate, error) {
 	template := x509.Certificate{
 		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: commonName},
+		Issuer:                pkix.Name{CommonName: commonName},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
 		BasicConstraintsValid: true,
