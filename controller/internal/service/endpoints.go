@@ -2,7 +2,6 @@ package service
 
 import (
 	"net"
-	"net/url"
 	"os"
 )
 
@@ -23,15 +22,14 @@ func routerEndpoint() string {
 }
 
 func endpointToSAN(endpoint string) ([]string, []net.IP, error) {
-	parsed, err := url.Parse(endpoint)
+	host, _, err := net.SplitHostPort(endpoint)
 	if err != nil {
 		return nil, nil, err
 	}
-	hostname := parsed.Hostname()
-	ip := net.ParseIP(hostname)
+	ip := net.ParseIP(host)
 	if ip != nil {
 		return []string{}, []net.IP{ip}, nil
 	} else {
-		return []string{hostname}, []net.IP{}, nil
+		return []string{host}, []net.IP{}, nil
 	}
 }
