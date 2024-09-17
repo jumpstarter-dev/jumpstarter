@@ -130,6 +130,8 @@ spec:
                       type: string
                   type: object
                 type: array
+              endpoint:
+                type: string
               lease:
                 description: ObjectReference contains enough information to let you
                   inspect or modify the referred object.
