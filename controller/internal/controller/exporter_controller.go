@@ -43,9 +43,6 @@ type ExporterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;delete
-// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=serviceaccounts/token,verbs=create
-// +kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -91,6 +88,17 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		err = r.Status().Update(ctx, exporter)
 		if err != nil {
 			logger.Error(err, "reconcile: unable to update Exporter with secret reference", "exporter", req.NamespacedName, "secret", secret.GetName())
+			return ctrl.Result{}, err
+		}
+	}
+
+	endpoint := controllerEndpoint()
+	if exporter.Status.Endpoint != endpoint {
+		logger.Info("reconcile: Exporter endpoint outdated, updating", "exporter", req.NamespacedName)
+		exporter.Status.Endpoint = endpoint
+		err = r.Status().Update(ctx, exporter)
+		if err != nil {
+			logger.Error(err, "reconcile: unable to update Exporter with endpoint", "exporter", req.NamespacedName)
 			return ctrl.Result{}, err
 		}
 	}
