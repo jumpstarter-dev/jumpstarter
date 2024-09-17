@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
@@ -25,7 +26,7 @@ var (
 )
 
 func init() {
-	jumpstarterdevv1alpha1.AddToScheme(scheme.Scheme)
+	utilruntime.Must(jumpstarterdevv1alpha1.AddToScheme(scheme.Scheme))
 
 	rootCmd.AddCommand(exporterCmd)
 
@@ -153,7 +154,6 @@ var exporterListCmd = &cobra.Command{
 		if err := clientset.List(context.Background(), &exporters, &client.ListOptions{Namespace: namespace}); err != nil {
 			return err
 		}
-		printers.NewTablePrinter(printers.PrintOptions{}).PrintObj(&exporters, os.Stdout)
-		return nil
+		return printers.NewTablePrinter(printers.PrintOptions{}).PrintObj(&exporters, os.Stdout)
 	},
 }
