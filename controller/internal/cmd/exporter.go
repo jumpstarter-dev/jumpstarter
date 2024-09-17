@@ -142,9 +142,9 @@ var exporterCreateCmd = &cobra.Command{
 				return err
 			}
 			watch.Stop()
-			break
+			return nil
 		}
-		return nil
+		return fmt.Errorf("timout waiting for controller to update status for Exporter: %s", args[0])
 	},
 }
 
