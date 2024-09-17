@@ -92,6 +92,17 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	endpoint := controllerEndpoint()
+	if exporter.Status.Endpoint != endpoint {
+		logger.Info("reconcile: Exporter endpoint outdated, updating", "exporter", req.NamespacedName)
+		exporter.Status.Endpoint = endpoint
+		err = r.Status().Update(ctx, exporter)
+		if err != nil {
+			logger.Error(err, "reconcile: unable to update Exporter with endpoint", "exporter", req.NamespacedName)
+			return ctrl.Result{}, err
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
