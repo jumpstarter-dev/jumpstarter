@@ -15,8 +15,6 @@ func NewSelfSignedCertificate(dnsnames []string, ipaddresses []net.IP) (*tls.Cer
 		SerialNumber:          big.NewInt(1),
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		DNSNames:              dnsnames,
 		IPAddresses:           ipaddresses,
