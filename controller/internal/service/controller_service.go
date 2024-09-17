@@ -29,6 +29,7 @@ import (
 	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -458,7 +459,17 @@ func (s *ControllerService) ReleaseLease(
 func (s *ControllerService) Start(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
-	server := grpc.NewServer()
+	dnsnames, ipaddresses, err := endpointToSAN(controllerEndpoint())
+	if err != nil {
+		return err
+	}
+
+	cert, err := NewSelfSignedCertificate(dnsnames, ipaddresses)
+	if err != nil {
+		return err
+	}
+
+	server := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
 
 	pb.RegisterControllerServiceServer(server, s)
 
