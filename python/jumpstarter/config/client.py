@@ -56,7 +56,7 @@ class ClientConfigV1Alpha1(BaseModel):
     @asynccontextmanager
     async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
         credentials = grpc.composite_channel_credentials(
-            grpc.local_channel_credentials(),  # FIXME: use ssl_channel_credentials
+            grpc.ssl_channel_credentials(),
             grpc.access_token_call_credentials(self.client.token),
         )
 

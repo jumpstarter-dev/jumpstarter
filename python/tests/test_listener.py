@@ -50,7 +50,7 @@ async def test_controller(mock_controller):
     uuid = uuid4()
 
     async with Exporter(
-        channel=grpc.aio.insecure_channel(mock_controller),
+        channel=grpc.aio.secure_channel(mock_controller, grpc.ssl_channel_credentials()),
         uuid=uuid,
         labels={},
         device_factory=lambda: MockPower(),
@@ -60,7 +60,7 @@ async def test_controller(mock_controller):
 
             with start_blocking_portal() as portal:
                 async with LeaseRequest(
-                    channel=grpc.aio.insecure_channel(mock_controller),
+                    channel=grpc.aio.secure_channel(mock_controller, grpc.ssl_channel_credentials()),
                     metadata_filter=MetadataFilter(),
                     portal=portal,
                 ) as lease:

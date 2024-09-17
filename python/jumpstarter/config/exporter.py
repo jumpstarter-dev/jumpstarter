@@ -85,7 +85,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     async def serve(self):
         credentials = grpc.composite_channel_credentials(
-            grpc.local_channel_credentials(),  # FIXME: use ssl_channel_credentials
+            grpc.ssl_channel_credentials(),
             grpc.access_token_call_credentials(self.token),
         )
 
