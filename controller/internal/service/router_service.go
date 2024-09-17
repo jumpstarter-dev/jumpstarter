@@ -111,7 +111,7 @@ func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 func (s *RouterService) Start(ctx context.Context) error {
 	log := log.FromContext(ctx)
 
-	dnsnames, ipaddresses, err := endpointToSAN(controllerEndpoint())
+	dnsnames, ipaddresses, err := endpointToSAN(routerEndpoint())
 	if err != nil {
 		return err
 	}
