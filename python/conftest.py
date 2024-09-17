@@ -72,7 +72,9 @@ def anyio_backend():
 
 
 # generated with
-# openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 -keyout /tmp/selfsigned.key -out /tmp/selfsigned.crt -batch
+# openssl req -new -newkey rsa:2048 -days 3650 \
+#    -addext "subjectAltName = IP:127.0.0.1" -nodes -x509 \
+#    -keyout /tmp/selfsigned.key -out /tmp/selfsigned.crt -batch
 
 tls_key = b"""
 -----BEGIN PRIVATE KEY-----
