@@ -724,6 +724,7 @@ docs = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "cryptography" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-anyio" },
@@ -758,6 +759,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "cryptography", specifier = ">=43.0.1" },
     { name = "pre-commit", specifier = ">=3.8.0" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
