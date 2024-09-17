@@ -83,6 +83,17 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
+	endpoint := controllerEndpoint()
+	if client.Status.Endpoint != endpoint {
+		logger.Info("reconcile: Client endpoint outdated, updating", "client", req.NamespacedName)
+		client.Status.Endpoint = endpoint
+		err = r.Status().Update(ctx, client)
+		if err != nil {
+			logger.Error(err, "reconcile: unable to update Client with endpoint", "client", req.NamespacedName)
+			return ctrl.Result{}, err
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
