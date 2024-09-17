@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/cli-runtime/pkg/printers"
@@ -23,6 +25,7 @@ import (
 var (
 	kubeconfig string
 	namespace  string
+	timeout    string
 )
 
 func init() {
@@ -32,14 +35,34 @@ func init() {
 
 	exporterCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", filepath.Join(homedir.HomeDir(), ".kube", "config"), "Path to the kubeconfig file to use")
 	exporterCmd.PersistentFlags().StringVar(&namespace, "namespace", "default", "Kubernetes namespace to operate on")
+	exporterCmd.PersistentFlags().StringVar(&timeout, "timeout", "10s", "command timeout")
 	exporterCmd.AddCommand(exporterCreateCmd)
 	exporterCmd.AddCommand(exporterDeleteCmd)
 	exporterCmd.AddCommand(exporterListCmd)
 }
 
+type contextKey string
+
 var exporterCmd = &cobra.Command{
 	Use:   "exporter",
 	Short: "Manage exporters",
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		duration, err := time.ParseDuration(timeout)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), duration)
+		ctx = context.WithValue(ctx, contextKey("cancel"), cancel)
+		cmd.SetContext(ctx)
+
+		return nil
+	},
+	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+		cmd.Context().Value(contextKey("cancel")).(context.CancelFunc)()
+
+		return nil
+	},
 }
 
 func NewClient() (client.WithWatch, error) {
@@ -55,6 +78,8 @@ var exporterCreateCmd = &cobra.Command{
 	Short: "Create exporter",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+
 		clientset, err := NewClient()
 		if err != nil {
 			return err
@@ -65,11 +90,12 @@ var exporterCreateCmd = &cobra.Command{
 				Namespace: namespace,
 			},
 		}
-		if err := clientset.Create(context.Background(), &exporter); err != nil {
+		if err := clientset.Create(ctx, &exporter); err != nil {
 			return err
 		}
-		watch, err := clientset.Watch(context.Background(), &jumpstarterdevv1alpha1.ExporterList{
-			Items: []jumpstarterdevv1alpha1.Exporter{exporter},
+		watch, err := clientset.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
+			FieldSelector: fields.OneTermEqualSelector("metadata.name", args[0]),
+			Namespace:     namespace,
 		})
 		if err != nil {
 			return err
@@ -81,7 +107,7 @@ var exporterCreateCmd = &cobra.Command{
 			}
 			var secret corev1.Secret
 			if err := clientset.Get(
-				context.Background(),
+				ctx,
 				types.NamespacedName{Name: object.Status.Credential.Name, Namespace: namespace},
 				&secret,
 			); err != nil {
@@ -127,18 +153,20 @@ var exporterDeleteCmd = &cobra.Command{
 	Short: "Delete exporter",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+
 		clientset, err := NewClient()
 		if err != nil {
 			return err
 		}
 		var exporter jumpstarterdevv1alpha1.Exporter
-		if err := clientset.Get(context.Background(), types.NamespacedName{
+		if err := clientset.Get(ctx, types.NamespacedName{
 			Namespace: namespace,
 			Name:      args[0],
 		}, &exporter); err != nil {
 			return err
 		}
-		return clientset.Delete(context.Background(), &exporter)
+		return clientset.Delete(ctx, &exporter)
 	},
 }
 
@@ -146,12 +174,14 @@ var exporterListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List exporters",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+
 		clientset, err := NewClient()
 		if err != nil {
 			return err
 		}
 		var exporters jumpstarterdevv1alpha1.ExporterList
-		if err := clientset.List(context.Background(), &exporters, &client.ListOptions{Namespace: namespace}); err != nil {
+		if err := clientset.List(ctx, &exporters, &client.ListOptions{Namespace: namespace}); err != nil {
 			return err
 		}
 		return printers.NewTablePrinter(printers.PrintOptions{}).PrintObj(&exporters, os.Stdout)
