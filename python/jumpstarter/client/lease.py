@@ -2,10 +2,11 @@ from contextlib import AbstractAsyncContextManager, AbstractContextManager, asyn
 from dataclasses import dataclass
 from uuid import UUID
 
+import grpc
 from anyio import create_unix_listener, fail_after, sleep
 from anyio.from_thread import BlockingPortal
 from google.protobuf import duration_pb2
-from grpc.aio import Channel, insecure_channel
+from grpc.aio import Channel
 
 from jumpstarter.client import client_from_channel
 from jumpstarter.common import MetadataFilter, TemporarySocket
@@ -72,7 +73,9 @@ class Lease:
     async def connect_async(self):
         with TemporarySocket() as path:
             async with await create_unix_listener(path) as listener:
-                async with insecure_channel(f"unix://{path}") as channel:
+                async with grpc.aio.secure_channel(
+                    f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+                ) as channel:
                     channel.get_state(try_to_connect=True)
                     async with await listener.accept() as stream:
                         async with self.handle_async(stream):
