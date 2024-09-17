@@ -14,7 +14,7 @@ from jumpstarter.config.user import UserConfigV1Alpha1
 
 async def user_shell(host):
     async with await anyio.open_process(
-        [os.environ["SHELL"]],
+        [os.environ.get("SHELL", "bash")],
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
