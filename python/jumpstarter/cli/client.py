@@ -1,7 +1,12 @@
 from typing import Optional
 
+import anyio
 import click
+from anyio import create_task_group, create_unix_listener
+from anyio.from_thread import start_blocking_portal
 
+from jumpstarter.common import MetadataFilter, TemporarySocket
+from jumpstarter.common.utils import launch_shell
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Client,
@@ -132,7 +137,38 @@ def client_use(name: str):
     user_config.use_client(name)
 
 
+async def client_shell_async(config, labels):
+    with start_blocking_portal() as portal:
+        async with config.lease_async(metadata_filter=MetadataFilter(labels=labels), portal=portal) as lease:
+            with TemporarySocket() as path:
+                async with await create_unix_listener(path) as listener:
+                    async with create_task_group() as tg:
+
+                        async def handler(stream):
+                            async with lease.handle_async(stream):
+                                pass
+
+                        tg.start_soon(listener.serve, handler)
+                        await launch_shell(f"unix://{path}")
+                        tg.cancel_scope.cancel()
+
+
+@click.command("shell", short_help="Spawns a shell connecting to a leased remote exporter")
+@click.argument("name", type=str, default="")
+@click.option("-l", "--label", "labels", type=(str, str), multiple=True)
+def client_shell(name: str, labels):
+    """Spawns a shell connecting to a leased remote exporter"""
+    if name:
+        config = ClientConfigV1Alpha1.load(name)
+    else:
+        config = UserConfigV1Alpha1.load_or_create().config.current_client
+    if not config:
+        raise ValueError("no client specified")
+    anyio.run(client_shell_async, config, dict(labels))
+
+
 client.add_command(client_create)
 client.add_command(client_delete)
 client.add_command(client_list)
 client.add_command(client_use)
+client.add_command(client_shell)

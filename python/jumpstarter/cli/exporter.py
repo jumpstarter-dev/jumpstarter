@@ -3,6 +3,7 @@ from pathlib import Path
 import anyio
 import click
 
+from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 from .util import make_table
@@ -85,3 +86,24 @@ def run(alias, config_path):
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
 
     anyio.run(config.serve)
+
+
+async def exporter_shell(config):
+    async with config.serve_unix_async() as path:
+        await launch_shell(f"unix://{path}")
+
+
+@exporter.command
+@click.argument("alias", default="default")
+@click.option("-c", "--config", "config_path")
+def shell(alias, config_path):
+    """Spawns a shell connecting to a transient exporter"""
+    try:
+        if config_path:
+            config = ExporterConfigV1Alpha1.load_path(Path(config_path))
+        else:
+            config = ExporterConfigV1Alpha1.load(alias)
+    except FileNotFoundError as err:
+        raise click.ClickException(f'exporter "{alias}" does not exist') from err
+
+    anyio.run(exporter_shell, config)
