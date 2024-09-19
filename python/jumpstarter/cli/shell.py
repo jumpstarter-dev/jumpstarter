@@ -26,7 +26,7 @@ async def user_shell(host):
         await process.wait()
 
 
-async def client_shell(name):
+async def client_shell(name, labels):
     if name:
         client = ClientConfigV1Alpha1.load(name)
     else:
@@ -36,7 +36,7 @@ async def client_shell(name):
         raise ValueError("no client specified")
 
     with start_blocking_portal() as portal:
-        async with client.lease_async(metadata_filter=MetadataFilter(), portal=portal) as lease:
+        async with client.lease_async(metadata_filter=MetadataFilter(labels=labels), portal=portal) as lease:
             with TemporarySocket() as path:
                 async with await create_unix_listener(path) as listener:
                     async with create_task_group() as tg:
@@ -75,6 +75,7 @@ def exporter(name):
 
 @shell.command
 @click.argument("name")
-def client(name):
+@click.option("-l", "--label", "labels", type=(str, str), multiple=True)
+def client(name, labels):
     """Spawns a shell connecting to a leased remote exporter"""
-    anyio.run(client_shell, name)
+    anyio.run(client_shell, name, dict(labels))
