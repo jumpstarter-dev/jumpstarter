@@ -60,14 +60,21 @@ async def exporter_shell(name):
         await user_shell(f"unix://{path}")
 
 
-@click.command()
-@click.option("--exporter")
-@click.option("--client")
-def shell(exporter, client):
-    """Spawns a shell with a transient exporter session"""
-    if exporter and client:
-        raise ValueError("exporter and client cannot be both set")
-    elif exporter:
-        anyio.run(exporter_shell, exporter)
-    else:
-        anyio.run(client_shell, client)
+@click.group()
+def shell():
+    """Spawns a shell connecting to an exporter"""
+    pass
+
+
+@shell.command
+@click.argument("name")
+def exporter(name):
+    """Spawns a shell connecting to a transient local exporter"""
+    anyio.run(exporter_shell, name)
+
+
+@shell.command
+@click.argument("name")
+def client(name):
+    """Spawns a shell connecting to a leased remote exporter"""
+    anyio.run(client_shell, name)
