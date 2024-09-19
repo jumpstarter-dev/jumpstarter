@@ -51,6 +51,7 @@ dev-dependencies = [
     "ruff>=0.6.1",
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
+    "cryptography>=43.0.1",
 ]
 
 [tool.uv.workspace]

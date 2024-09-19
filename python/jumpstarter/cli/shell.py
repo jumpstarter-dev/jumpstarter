@@ -14,7 +14,7 @@ from jumpstarter.config.user import UserConfigV1Alpha1
 
 async def user_shell(host):
     async with await anyio.open_process(
-        [os.environ["SHELL"]],
+        [os.environ.get("SHELL", "bash")],
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
@@ -26,7 +26,7 @@ async def user_shell(host):
         await process.wait()
 
 
-async def client_shell(name):
+async def client_shell(name, labels):
     if name:
         client = ClientConfigV1Alpha1.load(name)
     else:
@@ -36,7 +36,7 @@ async def client_shell(name):
         raise ValueError("no client specified")
 
     with start_blocking_portal() as portal:
-        async with client.lease_async(metadata_filter=MetadataFilter(), portal=portal) as lease:
+        async with client.lease_async(metadata_filter=MetadataFilter(labels=labels), portal=portal) as lease:
             with TemporarySocket() as path:
                 async with await create_unix_listener(path) as listener:
                     async with create_task_group() as tg:
@@ -60,14 +60,22 @@ async def exporter_shell(name):
         await user_shell(f"unix://{path}")
 
 
-@click.command()
-@click.option("--exporter")
-@click.option("--client")
-def shell(exporter, client):
-    """Spawns a shell with a transient exporter session"""
-    if exporter and client:
-        raise ValueError("exporter and client cannot be both set")
-    elif exporter:
-        anyio.run(exporter_shell, exporter)
-    else:
-        anyio.run(client_shell, client)
+@click.group()
+def shell():
+    """Spawns a shell connecting to an exporter"""
+    pass
+
+
+@shell.command
+@click.argument("name")
+def exporter(name):
+    """Spawns a shell connecting to a transient local exporter"""
+    anyio.run(exporter_shell, name)
+
+
+@shell.command
+@click.argument("name")
+@click.option("-l", "--label", "labels", type=(str, str), multiple=True)
+def client(name, labels):
+    """Spawns a shell connecting to a leased remote exporter"""
+    anyio.run(client_shell, name, dict(labels))

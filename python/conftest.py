@@ -1,5 +1,7 @@
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from ipaddress import IPv4Address
 from uuid import uuid4
 
 import grpc
@@ -7,6 +9,10 @@ import pytest
 from anyio import Event, create_memory_object_stream
 from anyio.abc import AnyByteStream
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter.v1 import (
@@ -71,10 +77,39 @@ def anyio_backend():
     return "asyncio"
 
 
+key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+
+cert = (
+    x509.CertificateBuilder()
+    .subject_name(x509.Name([]))
+    .issuer_name(x509.Name([]))
+    .public_key(key.public_key())
+    .serial_number(x509.random_serial_number())
+    .not_valid_before(datetime.now())
+    .not_valid_after(datetime.now() + timedelta(days=365))
+    .add_extension(x509.SubjectAlternativeName([x509.IPAddress(IPv4Address("127.0.0.1"))]), critical=False)
+    .sign(private_key=key, algorithm=hashes.SHA256(), backend=default_backend())
+)
+
+tls_crt = cert.public_bytes(serialization.Encoding.PEM)
+tls_key = key.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.TraditionalOpenSSL,
+    encryption_algorithm=serialization.NoEncryption(),
+)
+
+
 @pytest.fixture
-async def mock_controller():
+async def mock_controller(tmp_path, monkeypatch):
+    ssl_roots = tmp_path / "ssl_roots"
+    ssl_roots.write_bytes(tls_crt)
+
+    monkeypatch.setenv("GRPC_DEFAULT_SSL_ROOTS_FILE_PATH", str(ssl_roots))
+
     server = grpc.aio.server()
-    port = server.add_insecure_port("127.0.0.1:0")
+    port = server.add_secure_port(
+        "127.0.0.1:0", grpc.ssl_server_credentials(private_key_certificate_chain_pairs=[(tls_key, tls_crt)])
+    )
 
     controller = MockController(router_endpoint=f"127.0.0.1:{port}")
     router = MockRouter()
