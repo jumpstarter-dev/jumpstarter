@@ -1,5 +1,3 @@
-import os
-import sys
 
 import anyio
 import click
@@ -7,23 +5,10 @@ from anyio import create_task_group, create_unix_listener
 from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.common import MetadataFilter, TemporarySocket
+from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
-
-
-async def user_shell(host):
-    async with await anyio.open_process(
-        [os.environ.get("SHELL", "bash")],
-        stdin=sys.stdin,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        env=os.environ
-        | {
-            "JUMPSTARTER_HOST": host,
-        },
-    ) as process:
-        await process.wait()
 
 
 async def client_shell(name, labels):
@@ -46,7 +31,7 @@ async def client_shell(name, labels):
                                 pass
 
                         tg.start_soon(listener.serve, handler)
-                        await user_shell(f"unix://{path}")
+                        await launch_shell(f"unix://{path}")
                         tg.cancel_scope.cancel()
 
 
@@ -57,7 +42,7 @@ async def exporter_shell(name):
         raise click.ClickException(f"exporter config with name {name} not found: {e}") from e
 
     async with exporter.serve_unix_async() as path:
-        await user_shell(f"unix://{path}")
+        await launch_shell(f"unix://{path}")
 
 
 @click.group()
