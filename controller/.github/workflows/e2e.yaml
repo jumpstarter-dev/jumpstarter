@@ -21,7 +21,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install jumpstarter
-        run: uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git@exporter-command"
+        run: uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git@shell-command"
 
       - name: Run make deploy
         run: make deploy
@@ -40,12 +40,24 @@ jobs:
         run: |
           sudo mkdir -p /etc/jumpstarter/exporters
           sudo chown $USER /etc/jumpstarter/exporters
+
           go run ./cmd/jmpctl/main.go exporter create test-exporter-1 > /etc/jumpstarter/exporters/test-exporter-1.yaml
           cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-1.yaml
           export:
             power:
               type: jumpstarter.drivers.power.driver.MockPower
           EOF
+          kubectl patch exporters.jumpstarter.dev test-exporter-1 \
+            --type=merge --patch '{"metadata":{"labels":{"jumpstarter.dev/board":"rpi4"}}}'
+
+          go run ./cmd/jmpctl/main.go exporter create test-exporter-2 > /etc/jumpstarter/exporters/test-exporter-2.yaml
+          cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-2.yaml
+          export:
+            storage:
+              type: jumpstarter.drivers.storage.driver.MockStorageMux
+          EOF
+          kubectl patch exporters.jumpstarter.dev test-exporter-2 \
+            --type=merge --patch '{"metadata":{"labels":{"jumpstarter.dev/board":"rpi5"}}}'
 
       - name: Run jumpstarter
         run: |
@@ -60,6 +72,12 @@ jobs:
           jmp exporter list
 
           jmp exporter run test-exporter-1 &
-          jmp shell --client test-client-1 <<EOF
+          jmp exporter run test-exporter-2 &
+
+          jmp client shell test-client-1 --label jumpstarter.dev/board rpi4 <<EOF
           j power
+          EOF
+
+          jmp client shell test-client-1 --label jumpstarter.dev/board rpi5 <<EOF
+          j storage
           EOF
