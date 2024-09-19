@@ -47,7 +47,7 @@ jobs:
             power:
               type: jumpstarter.drivers.power.driver.MockPower
           EOF
-          kubectl patch exporters.jumpstarter.dev test-exporter-1 \
+          kubectl -n default patch exporters.jumpstarter.dev test-exporter-1 \
             --type=merge --patch '{"metadata":{"labels":{"jumpstarter.dev/board":"rpi4"}}}'
 
           go run ./cmd/jmpctl/main.go exporter create test-exporter-2 > /etc/jumpstarter/exporters/test-exporter-2.yaml
@@ -56,7 +56,7 @@ jobs:
             storage:
               type: jumpstarter.drivers.storage.driver.MockStorageMux
           EOF
-          kubectl patch exporters.jumpstarter.dev test-exporter-2 \
+          kubectl -n default patch exporters.jumpstarter.dev test-exporter-2 \
             --type=merge --patch '{"metadata":{"labels":{"jumpstarter.dev/board":"rpi5"}}}'
 
       - name: Run jumpstarter
