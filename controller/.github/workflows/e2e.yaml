@@ -1,6 +1,11 @@
 name: End-to-end tests
 on:
   workflow_dispatch:
+    inputs:
+      rev:
+        required: true
+        default: ""
+        type: string
   pull_request:
     branches:
       - main
@@ -21,7 +26,13 @@ jobs:
         run: uv python install 3.12
 
       - name: Install jumpstarter
-        run: uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git@shell-command"
+        run: |
+          if [ -z "${{ inputs.rev }}" ]; then
+            REV="main"
+          else
+            REV="${{ inputs.rev }}"
+          fi
+          uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git@$REV"
 
       - name: Run make deploy
         run: make deploy
