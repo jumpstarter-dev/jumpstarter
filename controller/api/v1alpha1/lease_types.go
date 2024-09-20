@@ -29,6 +29,8 @@ type LeaseSpec struct {
 	Duration metav1.Duration `json:"duration"`
 	// The selector for the exporter to be used
 	Selector metav1.LabelSelector `json:"selector"`
+	// The release flag requests the controller to end the lease now
+	Release bool `json:"release,omitempty"`
 }
 
 // LeaseStatus defines the observed state of Lease
