@@ -124,7 +124,30 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}, nil
 	} else {
 		// 2. expired lease
-		if time.Now().After(lease.Status.EndTime.Time) || lease.Spec.Release {
+		if !lease.Status.Ended && (time.Now().After(lease.Status.EndTime.Time) || lease.Spec.Release) {
+
+			// Attempt to clear the exporter first before setting lease to ended
+			var exporter jumpstarterdevv1alpha1.Exporter
+			if err := r.Get(ctx, types.NamespacedName{
+				Namespace: lease.Status.Exporter.Namespace,
+				Name:      lease.Status.Exporter.Name,
+			}, &exporter); err != nil {
+				log.Error(err, "unable to get Exporter")
+				return ctrl.Result{}, err
+			}
+
+			// only if the lease is this one, otherwise we leave it untouched
+			// i.e. this iteration loop already ran, but then we failed to update the
+			// lease as ended
+			if exporter.Status.Lease.UID == lease.UID {
+				exporter.Status.Lease = nil
+
+				if err := r.Status().Update(ctx, &exporter); err != nil {
+					log.Error(err, "unable to update Exporter status")
+					return ctrl.Result{}, err
+				}
+			}
+
 			lease.Status.Ended = true
 			// If lease has been released early, set EndTime to now
 			if lease.Spec.Release {
@@ -136,22 +159,6 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 			if err := r.Status().Update(ctx, &lease); err != nil {
 				log.Error(err, "unable to update Lease status")
-				return ctrl.Result{}, err
-			}
-
-			var exporter jumpstarterdevv1alpha1.Exporter
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: lease.Status.Exporter.Namespace,
-				Name:      lease.Status.Exporter.Name,
-			}, &exporter); err != nil {
-				log.Error(err, "unable to get Exporter")
-				return ctrl.Result{}, err
-			}
-
-			exporter.Status.Lease = nil
-
-			if err := r.Status().Update(ctx, &exporter); err != nil {
-				log.Error(err, "unable to update Exporter status")
 				return ctrl.Result{}, err
 			}
 
