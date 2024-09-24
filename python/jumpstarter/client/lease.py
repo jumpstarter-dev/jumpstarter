@@ -1,3 +1,4 @@
+import logging
 from contextlib import AbstractAsyncContextManager, AbstractContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from uuid import UUID
@@ -14,6 +15,8 @@ from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.streams import CancelTask
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(kw_only=True)
 class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
@@ -29,22 +32,27 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
         duration = duration_pb2.Duration()
         duration.FromSeconds(1800)  # TODO: configurable duration
 
+        logger.info("Leasing Exporter matching labels %s for %s", self.metadata_filter.labels, duration)
         self.lease = await self.RequestLease(
             jumpstarter_pb2.RequestLeaseRequest(
                 duration=duration,
                 selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
             )
         )
+        logger.info("Lease %s created", self.lease.name)
         with fail_after(300):  # TODO: configurable timeout
             while True:
+                logger.info("Polling Lease %s", self.lease.name)
                 result = await self.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.lease.name))
 
                 if result.exporter_uuid != "":
+                    logger.info("Lease %s acquired", self.lease.name)
                     return Lease(channel=self.channel, uuid=UUID(result.exporter_uuid), portal=self.portal)
 
                 await sleep(1)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
+        logger.info("Releasing Lease %s", self.lease.name)
         await self.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=self.lease.name))
 
     def __enter__(self):
@@ -65,6 +73,7 @@ class Lease:
 
     @asynccontextmanager
     async def handle_async(self, stream):
+        logger.info("Connecting to Exporter with uuid %s", self.uuid)
         response = await self.Dial(jumpstarter_pb2.DialRequest(uuid=str(self.uuid)))
         async with connect_router_stream(response.router_endpoint, response.router_token, stream):
             yield
