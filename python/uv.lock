@@ -11,6 +11,7 @@ members = [
     "jumpstarter-driver-can",
     "jumpstarter-driver-dutlink",
     "jumpstarter-driver-raspberrypi",
+    "jumpstarter-driver-sdwire",
     "jumpstarter-driver-ustreamer",
     "jumpstarter-example-automotive",
 ]
@@ -845,6 +846,33 @@ dev = [
 requires-dist = [
     { name = "gpiozero", specifier = ">=2.0.1" },
     { name = "jumpstarter", editable = "." },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-sdwire"
+version = "0.1.0"
+source = { editable = "contrib/sdwire" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "pyusb" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "." },
+    { name = "pyusb", specifier = ">=1.2.1" },
 ]
 
 [package.metadata.requires-dev]

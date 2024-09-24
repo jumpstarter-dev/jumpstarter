@@ -1,0 +1,26 @@
+[project]
+name = "jumpstarter-driver-sdwire"
+version = "0.1.0"
+description = ""
+authors = [
+  { name = "Nick Cao", email = "ncao@redhat.com" },
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter",
+    "pyusb>=1.2.1",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.2",
+    "pytest-cov>=5.0.0",
+]
+
+[tool.uv.sources]
+jumpstarter = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
