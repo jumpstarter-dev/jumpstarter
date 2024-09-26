@@ -70,6 +70,32 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	// TODO: use field selector once KEP-4358 is stabilized
+	// Reference: https://github.com/kubernetes/kubernetes/pull/122717
+	var leases jumpstarterdevv1alpha1.LeaseList
+	err = r.List(
+		ctx,
+		&leases,
+		client.InNamespace(req.Namespace),
+	)
+	if err != nil {
+		logger.Error(err, "Error listing leases")
+		return ctrl.Result{}, err
+	}
+
+	exporter.Status.LeaseRef = nil
+	for _, lease := range leases.Items {
+		if !lease.Status.Ended && lease.Status.ExporterRef != nil {
+			if lease.Status.ExporterRef.Name == exporter.Name {
+				exporter.Status.LeaseRef = &corev1.LocalObjectReference{Name: lease.Name}
+			}
+		}
+	}
+	if err = r.Status().Update(ctx, exporter); err != nil {
+		logger.Error(err, "reconcile: unable to update Exporter with leaseRef", "exporter", req.NamespacedName)
+		return ctrl.Result{}, err
+	}
+
 	if exporter.Status.Credential == nil {
 		logger.Info("reconcile: Exporter has no credentials, creating credentials", "exporter", req.NamespacedName)
 		secret, err := r.secretForExporter(exporter)
@@ -138,5 +164,6 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 func (r *ExporterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Exporter{}).
+		Owns(&jumpstarterdevv1alpha1.Lease{}).
 		Complete(r)
 }

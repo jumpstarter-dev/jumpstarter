@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -133,13 +134,14 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
 
-			exporter.Status.LeaseRef = &corev1.LocalObjectReference{
-				Name: lease.Name,
+			if err := controllerutil.SetControllerReference(&exporter, &lease, r.Scheme); err != nil {
+				log.Error(err, "unable to update Lease owner reference")
+				return ctrl.Result{}, err
 			}
 
-			if err := r.Status().Update(ctx, &exporter); err != nil {
-				log.Error(err, "unable to update Exporter status")
-				return ctrl.Result{}, client.IgnoreNotFound(err)
+			if err := r.Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease")
+				return ctrl.Result{}, err
 			}
 
 			// Requeue at EndTime
@@ -190,18 +192,6 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			}, &exporter); err != nil {
 				log.Error(err, "unable to get Exporter")
 				return ctrl.Result{}, err
-			}
-
-			// only if the lease is this one, otherwise we leave it untouched
-			// i.e. this iteration loop already ran, but then we failed to update the
-			// lease as ended
-			if exporter.Status.LeaseRef.Name == lease.Name {
-				exporter.Status.LeaseRef = nil
-
-				if err := r.Status().Update(ctx, &exporter); err != nil {
-					log.Error(err, "unable to update Exporter status")
-					return ctrl.Result{}, err
-				}
 			}
 
 			lease.Status.Ended = true

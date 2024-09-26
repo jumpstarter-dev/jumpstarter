@@ -287,10 +287,23 @@ func reconcileLease(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) re
 		Scheme: k8sClient.Scheme(),
 	}
 
+	exporterReconciler := &ExporterReconciler{
+		Client: k8sClient,
+		Scheme: k8sClient.Scheme(),
+	}
+
 	res, err := leaseReconciler.Reconcile(ctx, reconcile.Request{
 		NamespacedName: typeNamespacedName,
 	})
 	Expect(err).NotTo(HaveOccurred())
+
+	for _, owner := range getLease(ctx, lease.Name).OwnerReferences {
+		_, err := exporterReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: lease.Namespace, Name: owner.Name},
+		})
+		Expect(err).NotTo(HaveOccurred())
+	}
+
 	return res
 }
 
