@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-ustreamer"
-version = "0.1.0"
+dynamic = ["version", "urls"]
 description = ""
 authors = [
   { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
@@ -22,6 +22,14 @@ dev-dependencies = [
 [tool.uv.sources]
 jumpstarter = { workspace = true }
 
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../'}
+
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
