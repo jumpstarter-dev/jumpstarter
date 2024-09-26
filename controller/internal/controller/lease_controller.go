@@ -22,6 +22,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -90,6 +91,11 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 		// Find available exporter
 		for _, exporter := range exporters.Items {
+			if !(meta.IsStatusConditionTrue(exporter.Status.Conditions, "Registered") &&
+				meta.IsStatusConditionTrue(exporter.Status.Conditions, "Ready")) {
+				continue
+			}
+
 			taken := false
 			for _, existingLease := range leases.Items {
 				// if lease is active and is referencing an exporter

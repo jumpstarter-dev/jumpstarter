@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -51,6 +52,9 @@ var leaseDutA2Sec = &jumpstarterdevv1alpha1.Lease{
 var _ = Describe("Lease Controller", func() {
 	BeforeEach(func() {
 		createExporters(context.Background(), testExporter1DutA, testExporter2DutA, testExporter3DutB)
+		setExporterCondition(context.Background(), testExporter1DutA.Name, metav1.ConditionTrue)
+		setExporterCondition(context.Background(), testExporter2DutA.Name, metav1.ConditionTrue)
+		setExporterCondition(context.Background(), testExporter3DutB.Name, metav1.ConditionTrue)
 	})
 	AfterEach(func() {
 		ctx := context.Background()
@@ -272,6 +276,21 @@ var testExporter3DutB = &jumpstarterdevv1alpha1.Exporter{
 			"dut": "b",
 		},
 	},
+}
+
+func setExporterCondition(ctx context.Context, name string, status metav1.ConditionStatus) {
+	exporter := getExporter(ctx, name)
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:   "Registered",
+		Status: status,
+		Reason: "dummy",
+	})
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:   "Ready",
+		Status: status,
+		Reason: "dummy",
+	})
+	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
 }
 
 func reconcileLease(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) reconcile.Result {
