@@ -1,0 +1,35 @@
+name: Build and publish wheels
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build-and-publish-wheels:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Build wheels
+        run: make build
+
+      - name: Create release
+        run: gh release create v$(uvx hatch version) dist/* --generate-notes --prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
