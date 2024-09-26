@@ -131,16 +131,43 @@ var _ = Describe("Lease Controller", func() {
 
 	When("trying to lease an offline exporter", func() {
 		It("should fail right away", func() {
-			// TODO: add and check an Online status condition to the exporters
-			// and a status condition to the lease to indicate failure to acquire
-			Skip("Not implemented")
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			setExporterCondition(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+			setExporterCondition(ctx, testExporter2DutA.Name, metav1.ConditionFalse)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			// TODO: add a status condition to the lease to indicate failure to acquire
 		})
 	})
 
 	When("trying to lease exporters, and some matching exporters are online and while others are offline", func() {
 		It("should acquire lease for the online exporters", func() {
-			// TODO: add and check an Online status condition to the exporters
-			Skip("Not implemented")
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			setExporterCondition(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(BeElementOf([]string{testExporter2DutA.Name}))
+			Expect(updatedLease.Status.BeginTime).NotTo(BeNil())
+			Expect(updatedLease.Status.EndTime).NotTo(BeNil())
+
+			updatedExporter := getExporter(ctx, updatedLease.Status.ExporterRef.Name)
+			Expect(updatedExporter.Status.LeaseRef).NotTo(BeNil())
+			Expect(updatedExporter.Status.LeaseRef.Name).To(Equal(lease.Name))
 		})
 	})
 
