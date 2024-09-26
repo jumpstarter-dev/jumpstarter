@@ -35,6 +35,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -125,14 +126,15 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
 	}
 
-	exporter.Status.Conditions = []metav1.Condition{{
-		Type:               "Available",
-		Status:             "True",
-		ObservedGeneration: exporter.GetGeneration(),
-		LastTransitionTime: metav1.Time{Time: time.Now()},
-		Reason:             "Register",
-		Message:            "",
-	}}
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:               "Registered",
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: exporter.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "Register",
+	})
 
 	devices := []jumpstarterdevv1alpha1.Device{}
 	for _, device := range req.Reports {
@@ -168,14 +170,16 @@ func (s *ControllerService) Unregister(
 		return nil, err
 	}
 
-	exporter.Status.Conditions = []metav1.Condition{{
-		Type:               "Available",
-		Status:             "False",
-		ObservedGeneration: exporter.GetGeneration(),
-		LastTransitionTime: metav1.Time{Time: time.Now()},
-		Reason:             "Bye",
-		Message:            req.GetReason(),
-	}}
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:               "Registered",
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: exporter.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason:  "Bye",
+		Message: req.GetReason(),
+	})
 
 	if err := s.Status().Update(ctx, exporter); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter.Name)
@@ -261,7 +265,34 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
 	}
 
-	defer s.listen.Delete(exporter.UID)
+	defer func() {
+		s.listen.Delete(exporter.UID)
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: exporter.Generation,
+			LastTransitionTime: metav1.Time{
+				Time: time.Now(),
+			},
+			Reason: "Disconnect",
+		})
+		if err = s.Status().Update(ctx, exporter); err != nil {
+			logger.Error(err, "unable to update exporter status", "exporter", exporter)
+		}
+	}()
+
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: exporter.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "Connect",
+	})
+	if err = s.Status().Update(ctx, exporter); err != nil {
+		logger.Error(err, "unable to update exporter status", "exporter", exporter)
+	}
 
 	<-ctx.Done()
 	return nil
@@ -434,20 +465,20 @@ func (s *ControllerService) ReleaseLease(
 	ctx context.Context,
 	req *pb.ReleaseLeaseRequest,
 ) (*pb.ReleaseLeaseResponse, error) {
-	client, err := s.authenticateClient(ctx)
+	jclient, err := s.authenticateClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := s.Get(ctx, types.NamespacedName{
-		Namespace: client.Namespace,
+		Namespace: jclient.Namespace,
 		Name:      req.Name,
 	}, &lease); err != nil {
 		return nil, err
 	}
 
-	if lease.Spec.ClientRef.Name != client.Name {
+	if lease.Spec.ClientRef.Name != jclient.Name {
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 
