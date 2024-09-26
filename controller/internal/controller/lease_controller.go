@@ -74,10 +74,33 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
+		// TODO: use field selector once KEP-4358 is stabilized
+		// Reference: https://github.com/kubernetes/kubernetes/pull/122717
+		var leases jumpstarterdevv1alpha1.LeaseList
+		err = r.List(
+			ctx,
+			&leases,
+			client.InNamespace(req.Namespace),
+		)
+		if err != nil {
+			log.Error(err, "Error listing leases")
+			return ctrl.Result{}, err
+		}
+
 		// Find available exporter
 		for _, exporter := range exporters.Items {
+			taken := false
+			for _, existingLease := range leases.Items {
+				// if lease is active and is referencing an exporter
+				if !existingLease.Status.Ended && existingLease.Status.ExporterRef != nil {
+					// if lease is referencing this exporter
+					if existingLease.Status.ExporterRef.Name == exporter.Name {
+						taken = true
+					}
+				}
+			}
 			// Exporter taken by lease
-			if exporter.Status.LeaseRef != nil {
+			if taken {
 				continue
 			}
 
