@@ -1,5 +1,5 @@
 FROM fedora:40 as builder
-RUN dnf install -y make && \
+RUN dnf install -y make git && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 COPY --from=ghcr.io/astral-sh/uv:latest /uv  /bin/uv
