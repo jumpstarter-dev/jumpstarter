@@ -59,7 +59,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	// 1. newly created lease
-	if lease.Status.BeginTime == nil || lease.Status.EndTime == nil || lease.Status.Exporter == nil {
+	if lease.Status.BeginTime == nil || lease.Status.EndTime == nil || lease.Status.ExporterRef == nil {
 		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
 		if err != nil {
 			log.Error(err, "Error creating selector for label selector")
@@ -77,28 +77,20 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		// Find available exporter
 		for _, exporter := range exporters.Items {
 			// Exporter taken by lease
-			if exporter.Status.Lease != nil {
+			if exporter.Status.LeaseRef != nil {
 				continue
 			}
 
-			lease.Status.Exporter = &corev1.ObjectReference{
-				Kind:       exporter.Kind,
-				Namespace:  exporter.Namespace,
-				Name:       exporter.Name,
-				UID:        exporter.UID,
-				APIVersion: exporter.APIVersion,
+			lease.Status.ExporterRef = &corev1.LocalObjectReference{
+				Name: exporter.Name,
 			}
 
 			beginTime := time.Now()
 			lease.Status.BeginTime = &metav1.Time{Time: beginTime}
 			lease.Status.EndTime = &metav1.Time{Time: beginTime.Add(lease.Spec.Duration.Duration)}
 
-			exporter.Status.Lease = &corev1.ObjectReference{
-				Kind:       lease.Kind,
-				Namespace:  lease.Namespace,
-				Name:       lease.Name,
-				UID:        lease.UID,
-				APIVersion: lease.APIVersion,
+			exporter.Status.LeaseRef = &corev1.LocalObjectReference{
+				Name: lease.Name,
 			}
 
 			if err := r.Status().Update(ctx, &lease); err != nil {
@@ -129,8 +121,8 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			// Attempt to clear the exporter first before setting lease to ended
 			var exporter jumpstarterdevv1alpha1.Exporter
 			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: lease.Status.Exporter.Namespace,
-				Name:      lease.Status.Exporter.Name,
+				Namespace: req.Namespace,
+				Name:      lease.Status.ExporterRef.Name,
 			}, &exporter); err != nil {
 				log.Error(err, "unable to get Exporter")
 				return ctrl.Result{}, err
@@ -139,8 +131,8 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			// only if the lease is this one, otherwise we leave it untouched
 			// i.e. this iteration loop already ran, but then we failed to update the
 			// lease as ended
-			if exporter.Status.Lease.UID == lease.UID {
-				exporter.Status.Lease = nil
+			if exporter.Status.LeaseRef.Name == lease.Name {
+				exporter.Status.LeaseRef = nil
 
 				if err := r.Status().Update(ctx, &exporter); err != nil {
 					log.Error(err, "unable to update Exporter status")

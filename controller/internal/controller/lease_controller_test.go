@@ -35,9 +35,8 @@ var leaseDutA2Sec = &jumpstarterdevv1alpha1.Lease{
 		Namespace: "default",
 	},
 	Spec: jumpstarterdevv1alpha1.LeaseSpec{
-		Client: &corev1.ObjectReference{
-			Name:      testClient.Name,
-			Namespace: testClient.Namespace,
+		ClientRef: corev1.LocalObjectReference{
+			Name: testClient.Name,
 		},
 		Selector: metav1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -68,14 +67,14 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease := getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
-			Expect(updatedLease.Status.Exporter.Name).To(BeElementOf([]string{testExporter1DutA.Name, testExporter2DutA.Name}))
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(BeElementOf([]string{testExporter1DutA.Name, testExporter2DutA.Name}))
 			Expect(updatedLease.Status.BeginTime).NotTo(BeNil())
 			Expect(updatedLease.Status.EndTime).NotTo(BeNil())
 
-			updatedExporter := getExporter(ctx, updatedLease.Status.Exporter.Name)
-			Expect(updatedExporter.Status.Lease).NotTo(BeNil())
-			Expect(updatedExporter.Status.Lease.Name).To(Equal(lease.Name))
+			updatedExporter := getExporter(ctx, updatedLease.Status.ExporterRef.Name)
+			Expect(updatedExporter.Status.LeaseRef).NotTo(BeNil())
+			Expect(updatedExporter.Status.LeaseRef.Name).To(Equal(lease.Name))
 		})
 
 		It("should be released after the lease time", func() {
@@ -87,9 +86,9 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease := getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 
-			exporterName := updatedLease.Status.Exporter.Name
+			exporterName := updatedLease.Status.ExporterRef.Name
 
 			time.Sleep(200 * time.Millisecond)
 			_ = reconcileLease(ctx, lease)
@@ -97,13 +96,13 @@ var _ = Describe("Lease Controller", func() {
 			updatedLease = getLease(ctx, lease.Name)
 
 			// exporter is retained for record purposes
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 			// but the ended flag to be set
 			Expect(updatedLease.Status.Ended).To(BeTrue())
 
 			// the exporter should have no lease mark on status
 			updatedExporter := getExporter(ctx, exporterName)
-			Expect(updatedExporter.Status.Lease).To(BeNil())
+			Expect(updatedExporter.Status.LeaseRef).To(BeNil())
 
 		})
 	})
@@ -118,7 +117,7 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease := getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.Exporter).To(BeNil())
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
 
 			// TODO: add and check status conditions of the lease to indicate
 			// that no exporter exists for the given selector
@@ -151,12 +150,12 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease := getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
-			Expect(updatedLease.Status.Exporter.Name).To(Equal(testExporter3DutB.Name))
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter3DutB.Name))
 
-			updatedExporter := getExporter(ctx, updatedLease.Status.Exporter.Name)
-			Expect(updatedExporter.Status.Lease).NotTo(BeNil())
-			Expect(updatedExporter.Status.Lease.Name).To(Equal(lease.Name))
+			updatedExporter := getExporter(ctx, updatedLease.Status.ExporterRef.Name)
+			Expect(updatedExporter.Status.LeaseRef).NotTo(BeNil())
+			Expect(updatedExporter.Status.LeaseRef.Name).To(Equal(lease.Name))
 
 			// create another lease that attempts to acquire the only dut b exporter
 			// which is already leased
@@ -167,7 +166,7 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease = getLease(ctx, lease2.Name)
-			Expect(updatedLease.Status.Exporter).To(BeNil())
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
 			// TODO: add and check status conditions of the lease to indicate that the lease is waiting
 
 		})
@@ -182,12 +181,12 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease := getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
-			Expect(updatedLease.Status.Exporter.Name).To(Equal(testExporter3DutB.Name))
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter3DutB.Name))
 
-			updatedExporter := getExporter(ctx, updatedLease.Status.Exporter.Name)
-			Expect(updatedExporter.Status.Lease).NotTo(BeNil())
-			Expect(updatedExporter.Status.Lease.Name).To(Equal(lease.Name))
+			updatedExporter := getExporter(ctx, updatedLease.Status.ExporterRef.Name)
+			Expect(updatedExporter.Status.LeaseRef).NotTo(BeNil())
+			Expect(updatedExporter.Status.LeaseRef.Name).To(Equal(lease.Name))
 
 			// create another lease that attempts to acquire the only dut b exporter
 			// which is already leased
@@ -198,14 +197,14 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease2)
 
 			updatedLease = getLease(ctx, lease2.Name)
-			Expect(updatedLease.Status.Exporter).To(BeNil())
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
 			// TODO: add and check status conditions of the lease to indicate that the lease is waiting
 
 			time.Sleep(501 * time.Millisecond)
 			_ = reconcileLease(ctx, lease)
 			_ = reconcileLease(ctx, lease2)
 			updatedLease = getLease(ctx, lease2.Name)
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 
 		})
 	})
@@ -219,9 +218,9 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease := getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 
-			exporterName := updatedLease.Status.Exporter.Name
+			exporterName := updatedLease.Status.ExporterRef.Name
 
 			// release the lease early
 			// TODO: through the API we cannot set the status condition, we get this through the RPC,
@@ -235,12 +234,12 @@ var _ = Describe("Lease Controller", func() {
 			_ = reconcileLease(ctx, updatedLease)
 
 			updatedLease = getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.Exporter).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 			Expect(updatedLease.Status.Ended).To(BeTrue())
 			Expect(updatedLease.Status.EndTime).ToNot(Equal(endTime))
 
 			updatedExporter := getExporter(ctx, exporterName)
-			Expect(updatedExporter.Status.Lease).To(BeNil())
+			Expect(updatedExporter.Status.LeaseRef).To(BeNil())
 		})
 	})
 })

@@ -340,7 +340,7 @@ func (s *ControllerService) GetLease(
 		return nil, err
 	}
 
-	if lease.Spec.Client.UID != client.UID {
+	if lease.Spec.ClientRef.Name != client.Name {
 		return nil, fmt.Errorf("GetLease permission denied")
 	}
 
@@ -362,8 +362,16 @@ func (s *ControllerService) GetLease(
 		beginTime = timestamppb.New(lease.Status.EndTime.Time)
 	}
 	var exporterUuid *string
-	if lease.Status.Exporter != nil {
-		exporterUuid = (*string)(&lease.Status.Exporter.UID)
+	if lease.Status.ExporterRef != nil {
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := s.Client.Get(
+			ctx,
+			types.NamespacedName{Namespace: client.Namespace, Name: lease.Status.ExporterRef.Name},
+			&exporter,
+		); err != nil {
+			return nil, fmt.Errorf("GetLease fetch exporter uuid failed")
+		}
+		exporterUuid = (*string)(&exporter.UID)
 	}
 
 	return &pb.GetLeaseResponse{
@@ -403,12 +411,8 @@ func (s *ControllerService) RequestLease(
 			Name:      string(uuid.NewUUID()), // TODO: human readable name
 		},
 		Spec: jumpstarterdevv1alpha1.LeaseSpec{
-			Client: &corev1.ObjectReference{
-				Kind:       client.Kind,
-				Namespace:  client.Namespace,
-				Name:       client.Name,
-				UID:        client.UID,
-				APIVersion: client.APIVersion,
+			ClientRef: corev1.LocalObjectReference{
+				Name: client.Name,
 			},
 			Duration: metav1.Duration{Duration: req.Duration.AsDuration()},
 			Selector: metav1.LabelSelector{
@@ -443,7 +447,7 @@ func (s *ControllerService) ReleaseLease(
 		return nil, err
 	}
 
-	if lease.Spec.Client.UID != client.UID {
+	if lease.Spec.ClientRef.Name != client.Name {
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 
