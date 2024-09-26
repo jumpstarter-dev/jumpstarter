@@ -95,6 +95,10 @@ spec:
               duration:
                 description: The desired duration of the lease
                 type: string
+              release:
+                description: The release flag requests the controller to end the lease
+                  now
+                type: boolean
               selector:
                 description: The selector for the exporter to be used
                 properties:

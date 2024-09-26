@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,12 +27,16 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
@@ -84,6 +89,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	createTestClients(context.Background())
+
 })
 
 var _ = AfterSuite(func() {
@@ -91,3 +98,51 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
+
+var testClient = &jumpstarterdevv1alpha1.Client{
+	ObjectMeta: metav1.ObjectMeta{
+		Name:      "client",
+		Namespace: "default",
+	},
+}
+
+func createTestClients(ctx context.Context) {
+	Expect(k8sClient.Create(ctx, testClient)).To(Succeed())
+}
+
+func createExporters(ctx context.Context, exporters ...*jumpstarterdevv1alpha1.Exporter) {
+	for _, exporter := range exporters {
+		// we need to DeepCopy, otherwise our object gets assigned a resource version etc.
+		Expect(k8sClient.Create(ctx, exporter.DeepCopy())).To(Succeed())
+
+		// reconcile the exporters
+		typeNamespacedName := types.NamespacedName{
+			Name:      exporter.Name,
+			Namespace: "default", // TODO(user):Modify as needed
+		}
+
+		controllerReconciler := &ExporterReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+	}
+}
+
+func deleteExporters(ctx context.Context, exporters ...*jumpstarterdevv1alpha1.Exporter) {
+	for _, exporter := range exporters {
+		Expect(k8sClient.Delete(ctx, exporter)).To(Succeed())
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      exporter.Name + "-exporter",
+				Namespace: "default",
+			},
+		}
+		Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
+	}
+}
