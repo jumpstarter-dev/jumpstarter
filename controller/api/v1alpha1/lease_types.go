@@ -47,8 +47,8 @@ type LeaseStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:JSONPath=".status.ended",name=Ended,type=boolean
-// +kubebuilder:printcolumn:JSONPath=".spec.client.name",name=Client,type=string
-// +kubebuilder:printcolumn:JSONPath=".status.exporter.name",name=Exporter,type=string
+// +kubebuilder:printcolumn:JSONPath=".spec.clientRef.name",name=Client,type=string
+// +kubebuilder:printcolumn:JSONPath=".status.exporterRef.name",name=Exporter,type=string
 
 // Lease is the Schema for the exporters API
 type Lease struct {

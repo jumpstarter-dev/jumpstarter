@@ -18,10 +18,10 @@ spec:
     - jsonPath: .status.ended
       name: Ended
       type: boolean
-    - jsonPath: .spec.client.name
+    - jsonPath: .spec.clientRef.name
       name: Client
       type: string
-    - jsonPath: .status.exporter.name
+    - jsonPath: .status.exporterRef.name
       name: Exporter
       type: string
     name: v1alpha1
