@@ -137,7 +137,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					LastTransitionTime: metav1.Time{
 						Time: beginTime,
 					},
-					Reason: "acquired",
+					Reason: "Acquired",
 				}},
 			}
 
@@ -167,15 +167,24 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			EndTime:     nil,
 			ExporterRef: nil,
 			Ended:       false,
-			Conditions: []metav1.Condition{{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "pending",
-			}},
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: lease.Generation,
+					LastTransitionTime: metav1.Time{
+						Time: time.Now(),
+					},
+					Reason: "NotAvailable",
+				}, {
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: lease.Generation,
+					LastTransitionTime: metav1.Time{
+						Time: time.Now(),
+					},
+					Reason: "Pending",
+				}},
 		}
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
@@ -222,7 +231,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					LastTransitionTime: metav1.Time{
 						Time: time.Now(),
 					},
-					Reason: "released",
+					Reason: "Released",
 				}}
 			} else {
 				log.Info("lease expired", "lease", lease.Name)
@@ -233,7 +242,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					LastTransitionTime: metav1.Time{
 						Time: time.Now(),
 					},
-					Reason: "expired",
+					Reason: "Expired",
 				}}
 			}
 
