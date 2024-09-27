@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
@@ -76,6 +77,18 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
+		onlineExporters := slices.DeleteFunc(exporters.Items, func(exporter jumpstarterdevv1alpha1.Exporter) bool {
+			return !(true &&
+				meta.IsStatusConditionTrue(
+					exporter.Status.Conditions,
+					string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+				) &&
+				meta.IsStatusConditionTrue(
+					exporter.Status.Conditions,
+					string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+				))
+		})
+
 		// TODO: use field selector once KEP-4358 is stabilized
 		// Reference: https://github.com/kubernetes/kubernetes/pull/122717
 		var leases jumpstarterdevv1alpha1.LeaseList
@@ -90,18 +103,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 
 		// Find available exporter
-		for _, exporter := range exporters.Items {
-			if !(meta.IsStatusConditionTrue(
-				exporter.Status.Conditions,
-				string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-			) &&
-				meta.IsStatusConditionTrue(
-					exporter.Status.Conditions,
-					string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-				)) {
-				continue
-			}
-
+		for _, exporter := range onlineExporters {
 			taken := false
 			for _, existingLease := range leases.Items {
 				// if lease is active and is referencing an exporter
