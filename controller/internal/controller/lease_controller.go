@@ -25,7 +25,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -124,11 +126,22 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 		// TODO: use field selector once KEP-4358 is stabilized
 		// Reference: https://github.com/kubernetes/kubernetes/pull/122717
+		requirement, err := labels.NewRequirement(
+			string(jumpstarterdevv1alpha1.LeaseLabelEnded),
+			selection.DoesNotExist,
+			[]string{},
+		)
+		if err != nil {
+			log.Error(err, "Error creating leases selector")
+			return ctrl.Result{}, err
+		}
+
 		var leases jumpstarterdevv1alpha1.LeaseList
 		err = r.List(
 			ctx,
 			&leases,
 			client.InNamespace(req.Namespace),
+			client.MatchingLabelsSelector{Selector: labels.Everything().Add(*requirement)},
 		)
 		if err != nil {
 			log.Error(err, "Error listing leases")
@@ -283,6 +296,16 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 			if err := r.Status().Update(ctx, &lease); err != nil {
 				log.Error(err, "unable to update Lease status")
+				return ctrl.Result{}, err
+			}
+
+			if lease.Labels == nil {
+				lease.Labels = make(map[string]string)
+			}
+			lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = "true"
+
+			if err := r.Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease")
 				return ctrl.Result{}, err
 			}
 
