@@ -127,7 +127,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	}
 
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               "Registered",
+		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: exporter.Generation,
 		LastTransitionTime: metav1.Time{
@@ -171,7 +171,7 @@ func (s *ControllerService) Unregister(
 	}
 
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               "Registered",
+		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
 		Status:             metav1.ConditionFalse,
 		ObservedGeneration: exporter.Generation,
 		LastTransitionTime: metav1.Time{
@@ -268,7 +268,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	defer func() {
 		s.listen.Delete(exporter.UID)
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: exporter.Generation,
 			LastTransitionTime: metav1.Time{
@@ -282,7 +282,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	}()
 
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
+		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: exporter.Generation,
 		LastTransitionTime: metav1.Time{

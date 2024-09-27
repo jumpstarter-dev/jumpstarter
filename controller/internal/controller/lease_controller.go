@@ -91,8 +91,14 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 		// Find available exporter
 		for _, exporter := range exporters.Items {
-			if !(meta.IsStatusConditionTrue(exporter.Status.Conditions, "Registered") &&
-				meta.IsStatusConditionTrue(exporter.Status.Conditions, "Ready")) {
+			if !(meta.IsStatusConditionTrue(
+				exporter.Status.Conditions,
+				string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+			) &&
+				meta.IsStatusConditionTrue(
+					exporter.Status.Conditions,
+					string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+				)) {
 				continue
 			}
 
@@ -125,7 +131,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				},
 				Ended: false,
 				Conditions: []metav1.Condition{{
-					Type:               "Ready",
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 					Status:             metav1.ConditionTrue,
 					ObservedGeneration: lease.Generation,
 					LastTransitionTime: metav1.Time{
@@ -162,7 +168,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			ExporterRef: nil,
 			Ended:       false,
 			Conditions: []metav1.Condition{{
-				Type:               "Ready",
+				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 				Status:             metav1.ConditionFalse,
 				ObservedGeneration: lease.Generation,
 				LastTransitionTime: metav1.Time{
@@ -210,7 +216,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					Time: endTime,
 				}
 				lease.Status.Conditions = []metav1.Condition{{
-					Type:               "Ready",
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 					Status:             metav1.ConditionFalse,
 					ObservedGeneration: lease.Generation,
 					LastTransitionTime: metav1.Time{
@@ -221,7 +227,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			} else {
 				log.Info("lease expired", "lease", lease.Name)
 				lease.Status.Conditions = []metav1.Condition{{
-					Type:               "Ready",
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 					Status:             metav1.ConditionFalse,
 					ObservedGeneration: lease.Generation,
 					LastTransitionTime: metav1.Time{

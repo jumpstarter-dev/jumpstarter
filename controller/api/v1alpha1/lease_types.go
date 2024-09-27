@@ -44,6 +44,14 @@ type LeaseStatus struct {
 	Conditions  []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
+type LeaseConditionType string
+
+const (
+	LeaseConditionTypePending       LeaseConditionType = "Pending"
+	LeaseConditionTypeReady         LeaseConditionType = "Ready"
+	LeaseConditionTypeUnsatisfiable LeaseConditionType = "Unsatisfiable"
+)
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:JSONPath=".status.ended",name=Ended,type=boolean

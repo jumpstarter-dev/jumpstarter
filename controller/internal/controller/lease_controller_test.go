@@ -308,12 +308,12 @@ var testExporter3DutB = &jumpstarterdevv1alpha1.Exporter{
 func setExporterCondition(ctx context.Context, name string, status metav1.ConditionStatus) {
 	exporter := getExporter(ctx, name)
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:   "Registered",
+		Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
 		Status: status,
 		Reason: "dummy",
 	})
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:   "Ready",
+		Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 		Status: status,
 		Reason: "dummy",
 	})
