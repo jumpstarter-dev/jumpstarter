@@ -52,9 +52,9 @@ var leaseDutA2Sec = &jumpstarterdevv1alpha1.Lease{
 var _ = Describe("Lease Controller", func() {
 	BeforeEach(func() {
 		createExporters(context.Background(), testExporter1DutA, testExporter2DutA, testExporter3DutB)
-		setExporterCondition(context.Background(), testExporter1DutA.Name, metav1.ConditionTrue)
-		setExporterCondition(context.Background(), testExporter2DutA.Name, metav1.ConditionTrue)
-		setExporterCondition(context.Background(), testExporter3DutB.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(context.Background(), testExporter1DutA.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(context.Background(), testExporter2DutA.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(context.Background(), testExporter3DutB.Name, metav1.ConditionTrue)
 	})
 	AfterEach(func() {
 		ctx := context.Background()
@@ -135,8 +135,8 @@ var _ = Describe("Lease Controller", func() {
 
 			ctx := context.Background()
 
-			setExporterCondition(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
-			setExporterCondition(ctx, testExporter2DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter2DutA.Name, metav1.ConditionFalse)
 
 			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 			_ = reconcileLease(ctx, lease)
@@ -154,7 +154,7 @@ var _ = Describe("Lease Controller", func() {
 
 			ctx := context.Background()
 
-			setExporterCondition(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
 
 			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 			_ = reconcileLease(ctx, lease)
@@ -305,7 +305,7 @@ var testExporter3DutB = &jumpstarterdevv1alpha1.Exporter{
 	},
 }
 
-func setExporterCondition(ctx context.Context, name string, status metav1.ConditionStatus) {
+func setExporterOnlineConditions(ctx context.Context, name string, status metav1.ConditionStatus) {
 	exporter := getExporter(ctx, name)
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
