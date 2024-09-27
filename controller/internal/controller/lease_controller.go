@@ -69,25 +69,58 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
-		// List all exporters matching selector
-		var exporters jumpstarterdevv1alpha1.ExporterList
-		err = r.List(ctx, &exporters, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
-		if err != nil {
+		// List all Exporter matching selector
+		var matchedExporters jumpstarterdevv1alpha1.ExporterList
+		if err := r.List(
+			ctx,
+			&matchedExporters,
+			client.InNamespace(req.Namespace),
+			client.MatchingLabelsSelector{Selector: selector},
+		); err != nil {
 			log.Error(err, "Error listing exporters")
 			return ctrl.Result{}, err
 		}
 
-		onlineExporters := slices.DeleteFunc(exporters.Items, func(exporter jumpstarterdevv1alpha1.Exporter) bool {
-			return !(true &&
-				meta.IsStatusConditionTrue(
-					exporter.Status.Conditions,
-					string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-				) &&
-				meta.IsStatusConditionTrue(
-					exporter.Status.Conditions,
-					string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-				))
-		})
+		onlineExporters := slices.DeleteFunc(
+			matchedExporters.Items,
+			func(exporter jumpstarterdevv1alpha1.Exporter) bool {
+				return !(true &&
+					meta.IsStatusConditionTrue(
+						exporter.Status.Conditions,
+						string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+					) &&
+					meta.IsStatusConditionTrue(
+						exporter.Status.Conditions,
+						string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					))
+			},
+		)
+
+		// No Exporter available, lease unsatisfiable
+		if len(onlineExporters) == 0 {
+			lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
+				BeginTime:   nil,
+				EndTime:     nil,
+				ExporterRef: nil,
+				Ended:       true,
+				Conditions: []metav1.Condition{{
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: lease.Generation,
+					LastTransitionTime: metav1.Time{
+						Time: time.Now(),
+					},
+					Reason: "NoExporter",
+				}},
+			}
+
+			if err := r.Status().Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease status")
+				return ctrl.Result{}, client.IgnoreNotFound(err)
+			}
+
+			return ctrl.Result{}, nil
+		}
 
 		// TODO: use field selector once KEP-4358 is stabilized
 		// Reference: https://github.com/kubernetes/kubernetes/pull/122717
