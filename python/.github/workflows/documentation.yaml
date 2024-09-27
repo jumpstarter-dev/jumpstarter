@@ -47,6 +47,16 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
 
+      - name: Build the python index
+        run: |
+          LATEST_RELEASE=$(gh release list --limit 1 --json tagName | jq -r .[0].tagName)
+          uvx dumb-pypi \
+            --package-list <(gh release view $LATEST_RELEASE --json assets | jq -r .assets[].name) \
+            --packages-url https://github.com/jumpstarter-dev/jumpstarter/releases/download/$LATEST_RELEASE \
+            --title "Jumpstarter Python Packages" --output-dir docs/source/extra/packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build the documentation
         run: uv run --all-extras make docs
 

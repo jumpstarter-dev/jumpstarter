@@ -30,4 +30,5 @@ mermaid_version = "10.9.1"
 
 html_theme = "furo"
 # html_static_path = ["_static"]
+html_extra_path = ["extra"]
 html_title = "Jumpstarter Docs"

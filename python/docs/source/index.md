@@ -21,3 +21,9 @@ drivers.md
 glossary.md
 reference.md
 ```
+
+## Resources
+
+```{eval-rst}
+* `Python Packages <./packages/index.html>`_
+```
