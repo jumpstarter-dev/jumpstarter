@@ -123,9 +123,10 @@ var _ = Describe("Lease Controller", func() {
 			updatedLease := getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
 
-			// TODO: add and check status conditions of the lease to indicate
-			// that no exporter exists for the given selector
-
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)).To(BeTrue())
 		})
 	})
 
@@ -144,7 +145,10 @@ var _ = Describe("Lease Controller", func() {
 			updatedLease := getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
 
-			// TODO: add a status condition to the lease to indicate failure to acquire
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)).To(BeTrue())
 		})
 	})
 
@@ -194,12 +198,15 @@ var _ = Describe("Lease Controller", func() {
 			lease2.Name = "lease2"
 			lease2.Spec.Selector.MatchLabels["dut"] = "b"
 			Expect(k8sClient.Create(ctx, lease2)).To(Succeed())
-			_ = reconcileLease(ctx, lease)
+			_ = reconcileLease(ctx, lease2)
 
 			updatedLease = getLease(ctx, lease2.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
-			// TODO: add and check status conditions of the lease to indicate that the lease is waiting
 
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+			)).To(BeTrue())
 		})
 
 		It("should be acquired when a valid exporter lease times out", func() {

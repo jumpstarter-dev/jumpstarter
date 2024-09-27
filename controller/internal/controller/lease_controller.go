@@ -205,7 +205,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			Conditions: []metav1.Condition{
 				{
 					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
-					Status:             metav1.ConditionFalse,
+					Status:             metav1.ConditionTrue,
 					ObservedGeneration: lease.Generation,
 					LastTransitionTime: metav1.Time{
 						Time: time.Now(),
