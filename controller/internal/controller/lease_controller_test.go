@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -51,6 +52,9 @@ var leaseDutA2Sec = &jumpstarterdevv1alpha1.Lease{
 var _ = Describe("Lease Controller", func() {
 	BeforeEach(func() {
 		createExporters(context.Background(), testExporter1DutA, testExporter2DutA, testExporter3DutB)
+		setExporterOnlineConditions(context.Background(), testExporter1DutA.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(context.Background(), testExporter2DutA.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(context.Background(), testExporter3DutB.Name, metav1.ConditionTrue)
 	})
 	AfterEach(func() {
 		ctx := context.Background()
@@ -119,24 +123,55 @@ var _ = Describe("Lease Controller", func() {
 			updatedLease := getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
 
-			// TODO: add and check status conditions of the lease to indicate
-			// that no exporter exists for the given selector
-
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)).To(BeTrue())
 		})
 	})
 
 	When("trying to lease an offline exporter", func() {
 		It("should fail right away", func() {
-			// TODO: add and check an Online status condition to the exporters
-			// and a status condition to the lease to indicate failure to acquire
-			Skip("Not implemented")
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter2DutA.Name, metav1.ConditionFalse)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)).To(BeTrue())
 		})
 	})
 
 	When("trying to lease exporters, and some matching exporters are online and while others are offline", func() {
 		It("should acquire lease for the online exporters", func() {
-			// TODO: add and check an Online status condition to the exporters
-			Skip("Not implemented")
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(BeElementOf([]string{testExporter2DutA.Name}))
+			Expect(updatedLease.Status.BeginTime).NotTo(BeNil())
+			Expect(updatedLease.Status.EndTime).NotTo(BeNil())
+
+			updatedExporter := getExporter(ctx, updatedLease.Status.ExporterRef.Name)
+			Expect(updatedExporter.Status.LeaseRef).NotTo(BeNil())
+			Expect(updatedExporter.Status.LeaseRef.Name).To(Equal(lease.Name))
 		})
 	})
 
@@ -163,12 +198,15 @@ var _ = Describe("Lease Controller", func() {
 			lease2.Name = "lease2"
 			lease2.Spec.Selector.MatchLabels["dut"] = "b"
 			Expect(k8sClient.Create(ctx, lease2)).To(Succeed())
-			_ = reconcileLease(ctx, lease)
+			_ = reconcileLease(ctx, lease2)
 
 			updatedLease = getLease(ctx, lease2.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
-			// TODO: add and check status conditions of the lease to indicate that the lease is waiting
 
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+			)).To(BeTrue())
 		})
 
 		It("should be acquired when a valid exporter lease times out", func() {
@@ -272,6 +310,21 @@ var testExporter3DutB = &jumpstarterdevv1alpha1.Exporter{
 			"dut": "b",
 		},
 	},
+}
+
+func setExporterOnlineConditions(ctx context.Context, name string, status metav1.ConditionStatus) {
+	exporter := getExporter(ctx, name)
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+		Status: status,
+		Reason: "dummy",
+	})
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+		Status: status,
+		Reason: "dummy",
+	})
+	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
 }
 
 func reconcileLease(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) reconcile.Result {

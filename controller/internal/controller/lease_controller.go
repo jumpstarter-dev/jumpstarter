@@ -18,12 +18,16 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,21 +71,77 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
-		// List all exporters matching selector
-		var exporters jumpstarterdevv1alpha1.ExporterList
-		err = r.List(ctx, &exporters, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
-		if err != nil {
+		// List all Exporter matching selector
+		var matchedExporters jumpstarterdevv1alpha1.ExporterList
+		if err := r.List(
+			ctx,
+			&matchedExporters,
+			client.InNamespace(req.Namespace),
+			client.MatchingLabelsSelector{Selector: selector},
+		); err != nil {
 			log.Error(err, "Error listing exporters")
 			return ctrl.Result{}, err
 		}
 
+		onlineExporters := slices.DeleteFunc(
+			matchedExporters.Items,
+			func(exporter jumpstarterdevv1alpha1.Exporter) bool {
+				return !(true &&
+					meta.IsStatusConditionTrue(
+						exporter.Status.Conditions,
+						string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+					) &&
+					meta.IsStatusConditionTrue(
+						exporter.Status.Conditions,
+						string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					))
+			},
+		)
+
+		// No Exporter available, lease unsatisfiable
+		if len(onlineExporters) == 0 {
+			lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
+				BeginTime:   nil,
+				EndTime:     nil,
+				ExporterRef: nil,
+				Ended:       true,
+				Conditions: []metav1.Condition{{
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: lease.Generation,
+					LastTransitionTime: metav1.Time{
+						Time: time.Now(),
+					},
+					Reason: "NoExporter",
+				}},
+			}
+
+			if err := r.Status().Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease status")
+				return ctrl.Result{}, client.IgnoreNotFound(err)
+			}
+
+			return ctrl.Result{}, nil
+		}
+
 		// TODO: use field selector once KEP-4358 is stabilized
 		// Reference: https://github.com/kubernetes/kubernetes/pull/122717
+		requirement, err := labels.NewRequirement(
+			string(jumpstarterdevv1alpha1.LeaseLabelEnded),
+			selection.DoesNotExist,
+			[]string{},
+		)
+		if err != nil {
+			log.Error(err, "Error creating leases selector")
+			return ctrl.Result{}, err
+		}
+
 		var leases jumpstarterdevv1alpha1.LeaseList
 		err = r.List(
 			ctx,
 			&leases,
 			client.InNamespace(req.Namespace),
+			client.MatchingLabelsSelector{Selector: labels.Everything().Add(*requirement)},
 		)
 		if err != nil {
 			log.Error(err, "Error listing leases")
@@ -89,7 +149,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 
 		// Find available exporter
-		for _, exporter := range exporters.Items {
+		for _, exporter := range onlineExporters {
 			taken := false
 			for _, existingLease := range leases.Items {
 				// if lease is active and is referencing an exporter
@@ -119,13 +179,13 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				},
 				Ended: false,
 				Conditions: []metav1.Condition{{
-					Type:               "Ready",
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 					Status:             metav1.ConditionTrue,
 					ObservedGeneration: lease.Generation,
 					LastTransitionTime: metav1.Time{
 						Time: beginTime,
 					},
-					Reason: "acquired",
+					Reason: "Acquired",
 				}},
 			}
 
@@ -155,15 +215,24 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			EndTime:     nil,
 			ExporterRef: nil,
 			Ended:       false,
-			Conditions: []metav1.Condition{{
-				Type:               "Ready",
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "pending",
-			}},
+			Conditions: []metav1.Condition{
+				{
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: lease.Generation,
+					LastTransitionTime: metav1.Time{
+						Time: time.Now(),
+					},
+					Reason: "NotAvailable",
+				}, {
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: lease.Generation,
+					LastTransitionTime: metav1.Time{
+						Time: time.Now(),
+					},
+					Reason: "Pending",
+				}},
 		}
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
@@ -204,29 +273,39 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					Time: endTime,
 				}
 				lease.Status.Conditions = []metav1.Condition{{
-					Type:               "Ready",
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 					Status:             metav1.ConditionFalse,
 					ObservedGeneration: lease.Generation,
 					LastTransitionTime: metav1.Time{
 						Time: time.Now(),
 					},
-					Reason: "released",
+					Reason: "Released",
 				}}
 			} else {
 				log.Info("lease expired", "lease", lease.Name)
 				lease.Status.Conditions = []metav1.Condition{{
-					Type:               "Ready",
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 					Status:             metav1.ConditionFalse,
 					ObservedGeneration: lease.Generation,
 					LastTransitionTime: metav1.Time{
 						Time: time.Now(),
 					},
-					Reason: "expired",
+					Reason: "Expired",
 				}}
 			}
 
 			if err := r.Status().Update(ctx, &lease); err != nil {
 				log.Error(err, "unable to update Lease status")
+				return ctrl.Result{}, err
+			}
+
+			if lease.Labels == nil {
+				lease.Labels = make(map[string]string)
+			}
+			lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = "true"
+
+			if err := r.Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease")
 				return ctrl.Result{}, err
 			}
 
