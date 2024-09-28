@@ -44,11 +44,25 @@ type LeaseStatus struct {
 	Conditions  []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
+type LeaseConditionType string
+
+const (
+	LeaseConditionTypePending       LeaseConditionType = "Pending"
+	LeaseConditionTypeReady         LeaseConditionType = "Ready"
+	LeaseConditionTypeUnsatisfiable LeaseConditionType = "Unsatisfiable"
+)
+
+type LeaseLabel string
+
+const (
+	LeaseLabelEnded LeaseLabel = "jumpstarter.dev/lease-ended"
+)
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:JSONPath=".status.ended",name=Ended,type=boolean
-// +kubebuilder:printcolumn:JSONPath=".spec.client.name",name=Client,type=string
-// +kubebuilder:printcolumn:JSONPath=".status.exporter.name",name=Exporter,type=string
+// +kubebuilder:printcolumn:JSONPath=".spec.clientRef.name",name=Client,type=string
+// +kubebuilder:printcolumn:JSONPath=".status.exporterRef.name",name=Exporter,type=string
 
 // Lease is the Schema for the exporters API
 type Lease struct {

@@ -41,6 +41,13 @@ type ExporterStatus struct {
 	Endpoint   string                       `json:"endpoint,omitempty"`
 }
 
+type ExporterConditionType string
+
+const (
+	ExporterConditionTypeRegistered LeaseConditionType = "Registered"
+	ExporterConditionTypeOnline     LeaseConditionType = "Online"
+)
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 

@@ -23,7 +23,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -67,6 +69,43 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if err != nil {
 		logger.Error(err, "reconcile: unable to fetch Exporter")
+		return ctrl.Result{}, err
+	}
+
+	// TODO: use field selector once KEP-4358 is stabilized
+	// Reference: https://github.com/kubernetes/kubernetes/pull/122717
+	requirement, err := labels.NewRequirement(
+		string(jumpstarterdevv1alpha1.LeaseLabelEnded),
+		selection.DoesNotExist,
+		[]string{},
+	)
+	if err != nil {
+		logger.Error(err, "Error creating leases selector")
+		return ctrl.Result{}, err
+	}
+
+	var leases jumpstarterdevv1alpha1.LeaseList
+	err = r.List(
+		ctx,
+		&leases,
+		client.InNamespace(req.Namespace),
+		client.MatchingLabelsSelector{Selector: labels.Everything().Add(*requirement)},
+	)
+	if err != nil {
+		logger.Error(err, "Error listing leases")
+		return ctrl.Result{}, err
+	}
+
+	exporter.Status.LeaseRef = nil
+	for _, lease := range leases.Items {
+		if !lease.Status.Ended && lease.Status.ExporterRef != nil {
+			if lease.Status.ExporterRef.Name == exporter.Name {
+				exporter.Status.LeaseRef = &corev1.LocalObjectReference{Name: lease.Name}
+			}
+		}
+	}
+	if err = r.Status().Update(ctx, exporter); err != nil {
+		logger.Error(err, "reconcile: unable to update Exporter with leaseRef", "exporter", req.NamespacedName)
 		return ctrl.Result{}, err
 	}
 
@@ -138,5 +177,6 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 func (r *ExporterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Exporter{}).
+		Owns(&jumpstarterdevv1alpha1.Lease{}).
 		Complete(r)
 }
