@@ -24,7 +24,7 @@ import (
 // LeaseSpec defines the desired state of Lease
 type LeaseSpec struct {
 	// The client that is requesting the lease
-	Client *corev1.ObjectReference `json:"client"`
+	ClientRef corev1.LocalObjectReference `json:"clientRef"`
 	// The desired duration of the lease
 	Duration metav1.Duration `json:"duration"`
 	// The selector for the exporter to be used
@@ -37,11 +37,11 @@ type LeaseSpec struct {
 type LeaseStatus struct {
 	// If the lease has been acquired an exporter name is assigned
 	// and then and then it can be used, it will be empty while still pending
-	BeginTime  *metav1.Time            `json:"beginTime,omitempty"`
-	EndTime    *metav1.Time            `json:"endTime,omitempty"`
-	Exporter   *corev1.ObjectReference `json:"exporter,omitempty"`
-	Ended      bool                    `json:"ended"`
-	Conditions []metav1.Condition      `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	BeginTime   *metav1.Time                 `json:"beginTime,omitempty"`
+	EndTime     *metav1.Time                 `json:"endTime,omitempty"`
+	ExporterRef *corev1.LocalObjectReference `json:"exporterRef,omitempty"`
+	Ended       bool                         `json:"ended"`
+	Conditions  []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +kubebuilder:object:root=true
