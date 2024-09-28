@@ -53,9 +53,33 @@ HELM_SETS="${HELM_SETS} --set global.baseDomain=${BASEDOMAIN}"
 HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT}"
 HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT}"
 
+# Function to save images to kind, with workaround for github CI and other environment issues
+# In github CI, kind gets confused and tries to pull the image from docker instead
+# of podman, so if regular docker-image fails we need to:
+#   * save it to OCI image format
+#   * then load it into kind
+kind_load_image() {
+  local image=$1
+
+  # First, try to load the image directly
+  if kind load docker-image "${image}" --name jumpstarter; then
+    echo "Image ${image} loaded successfully."
+    return
+  fi
+
+  # Save to tar file
+  podman save "${image}" | kind load image-archive /dev/stdin --name jumpstarter
+  if [ $? -eq 0 ]; then
+    echo "Image loaded successfully."
+  else
+    echo "Error loading image ${image}."
+    exit 1
+  fi
+}
+
 echo -e "${GREEN}Loading the ${IMG} in kind ...${NC}"
 # load the docker image into the kind cluster
-${KIND} load docker-image ${IMG} --name jumpstarter
+kind_load_image ${IMG}
 
 
 # if we have an existing deployment, try to upgrade it instead
