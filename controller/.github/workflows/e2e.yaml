@@ -85,6 +85,8 @@ jobs:
           jmp exporter run test-exporter-1 &
           jmp exporter run test-exporter-2 &
 
+          sleep 5
+
           jmp client shell test-client-1 --label example.com/board rpi4 <<EOF
           j power
           EOF
