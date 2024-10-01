@@ -405,12 +405,28 @@ func (s *ControllerService) GetLease(
 		exporterUuid = (*string)(&exporter.UID)
 	}
 
+	var conditions []*pb.Condition
+	for _, condition := range lease.Status.Conditions {
+		conditions = append(conditions, &pb.Condition{
+			Type:               &condition.Type,
+			Status:             (*string)(&condition.Status),
+			ObservedGeneration: &condition.ObservedGeneration,
+			LastTransitionTime: &pb.Time{
+				Seconds: &condition.LastTransitionTime.ProtoTime().Seconds,
+				Nanos:   &condition.LastTransitionTime.ProtoTime().Nanos,
+			},
+			Reason:  &condition.Reason,
+			Message: &condition.Message,
+		})
+	}
+
 	return &pb.GetLeaseResponse{
 		Duration:     durationpb.New(lease.Spec.Duration.Duration),
 		Selector:     &pb.LabelSelector{MatchExpressions: matchExpressions, MatchLabels: lease.Spec.Selector.MatchLabels},
 		BeginTime:    beginTime,
 		EndTime:      endTime,
 		ExporterUuid: exporterUuid,
+		Conditions:   conditions,
 	}, nil
 }
 
