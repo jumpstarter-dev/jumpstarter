@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
+	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"golang.org/x/sync/errgroup"
 )
 

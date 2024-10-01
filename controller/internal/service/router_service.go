@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
-	pb "github.com/jumpstarter-dev/jumpstarter-protocol/go/jumpstarter/v1"
+	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
