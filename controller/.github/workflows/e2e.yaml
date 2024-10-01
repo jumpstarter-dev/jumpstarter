@@ -11,7 +11,7 @@ on:
       - main
 
 jobs:
-  tests:
+  e2e-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
