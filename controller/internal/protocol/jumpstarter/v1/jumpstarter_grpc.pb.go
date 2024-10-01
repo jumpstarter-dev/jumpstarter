@@ -32,6 +32,7 @@ const (
 	ControllerService_GetLease_FullMethodName      = "/jumpstarter.v1.ControllerService/GetLease"
 	ControllerService_RequestLease_FullMethodName  = "/jumpstarter.v1.ControllerService/RequestLease"
 	ControllerService_ReleaseLease_FullMethodName  = "/jumpstarter.v1.ControllerService/ReleaseLease"
+	ControllerService_ListLeases_FullMethodName    = "/jumpstarter.v1.ControllerService/ListLeases"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -69,6 +70,8 @@ type ControllerServiceClient interface {
 	RequestLease(ctx context.Context, in *RequestLeaseRequest, opts ...grpc.CallOption) (*RequestLeaseResponse, error)
 	// Release Lease
 	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
+	// List Leases
+	ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -191,6 +194,16 @@ func (c *controllerServiceClient) ReleaseLease(ctx context.Context, in *ReleaseL
 	return out, nil
 }
 
+func (c *controllerServiceClient) ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListLeasesResponse)
+	err := c.cc.Invoke(ctx, ControllerService_ListLeases_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControllerServiceServer is the server API for ControllerService service.
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility.
@@ -226,6 +239,8 @@ type ControllerServiceServer interface {
 	RequestLease(context.Context, *RequestLeaseRequest) (*RequestLeaseResponse, error)
 	// Release Lease
 	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
+	// List Leases
+	ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -265,6 +280,9 @@ func (UnimplementedControllerServiceServer) RequestLease(context.Context, *Reque
 }
 func (UnimplementedControllerServiceServer) ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReleaseLease not implemented")
+}
+func (UnimplementedControllerServiceServer) ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListLeases not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 func (UnimplementedControllerServiceServer) testEmbeddedByValue()                           {}
@@ -449,6 +467,24 @@ func _ControllerService_ReleaseLease_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_ListLeases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListLeasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).ListLeases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_ListLeases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).ListLeases(ctx, req.(*ListLeasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControllerService_ServiceDesc is the grpc.ServiceDesc for ControllerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -487,6 +523,10 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReleaseLease",
 			Handler:    _ControllerService_ReleaseLease_Handler,
+		},
+		{
+			MethodName: "ListLeases",
+			Handler:    _ControllerService_ListLeases_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
