@@ -694,7 +694,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.0.1.dev4+g3b8a725.d20240926"
+version = "0.0.2.dev6+gec2a4a3"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -771,7 +771,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.0.1.dev4+g3b8a725.d20240926"
+version = "0.0.2.dev6+gec2a4a3"
 source = { editable = "contrib/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -800,7 +800,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.0.1.dev4+g3b8a725.d20240926"
+version = "0.0.2.dev6+gec2a4a3"
 source = { editable = "contrib/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -829,7 +829,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.0.1.dev4+g3b8a725.d20240926"
+version = "0.0.2.dev6+gec2a4a3"
 source = { editable = "contrib/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -860,6 +860,7 @@ version = "0.1.0"
 source = { editable = "contrib/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "pyudev" },
     { name = "pyusb" },
 ]
 
@@ -872,6 +873,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "." },
+    { name = "pyudev", specifier = ">=0.24.3" },
     { name = "pyusb", specifier = ">=1.2.1" },
 ]
 
@@ -883,7 +885,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.0.1.dev4+g3b8a725.d20240926"
+version = "0.0.2.dev6+gec2a4a3"
 source = { editable = "contrib/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },

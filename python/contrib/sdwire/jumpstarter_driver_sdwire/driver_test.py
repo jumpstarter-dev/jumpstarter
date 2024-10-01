@@ -7,9 +7,7 @@ from jumpstarter_driver_sdwire.driver import SDWire
 
 def test_drivers_sdwire():
     try:
-        instance = SDWire(
-            storage_device="/dev/null",
-        )
+        instance = SDWire()
     except FileNotFoundError:
         pytest.skip("sd-wire not available")
     except usb.core.USBError:

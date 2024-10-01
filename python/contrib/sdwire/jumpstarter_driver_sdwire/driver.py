@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+import pyudev
 import usb.core
 import usb.util
 from anyio import fail_after, sleep
@@ -18,11 +19,30 @@ class SDWire(StorageMuxInterface, Driver):
     dev: usb.core.Device = field(init=False)
     itf: usb.core.Interface = field(init=False)
 
-    storage_device: str
+    storage_device: str | None = field(default=None)
 
     def __post_init__(self):
         super().__post_init__()
         for dev in usb.core.find(idVendor=0x04E8, idProduct=0x6001, find_all=True):
+            if self.storage_device is None:
+                context = pyudev.Context()
+                # find matching udev device
+                for udevice in (
+                    context.list_devices(subsystem="usb")
+                    .match_attribute("busnum", dev.bus)
+                    .match_attribute("devnum", dev.address)
+                ):
+                    # find siblings block device
+                    for block in filter(lambda d: d.subsystem == "block", udevice.parent.children):
+                        # find stable device link under by-diskseq
+                        for storage_device in filter(
+                            lambda link: link.startswith("/dev/disk/by-diskseq/"), block.device_links
+                        ):
+                            self.storage_device = storage_device
+
+            if self.storage_device is None:
+                raise FileNotFoundError("failed to find sdcard driver on sd-wire device")
+
             product = usb.util.get_string(dev, dev.iProduct)
             serial = usb.util.get_string(dev, dev.iSerialNumber)
 

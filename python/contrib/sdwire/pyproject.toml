@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
     "pyusb>=1.2.1",
+    "pyudev>=0.24.3",
 ]
 
 [tool.uv]
