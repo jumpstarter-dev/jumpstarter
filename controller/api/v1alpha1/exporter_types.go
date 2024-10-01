@@ -37,9 +37,16 @@ type ExporterStatus struct {
 	Conditions []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
 	Devices    []Device                     `json:"devices,omitempty"`
-	Lease      *corev1.ObjectReference      `json:"lease,omitempty"`
+	LeaseRef   *corev1.LocalObjectReference `json:"leaseRef,omitempty"`
 	Endpoint   string                       `json:"endpoint,omitempty"`
 }
+
+type ExporterConditionType string
+
+const (
+	ExporterConditionTypeRegistered LeaseConditionType = "Registered"
+	ExporterConditionTypeOnline     LeaseConditionType = "Online"
+)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

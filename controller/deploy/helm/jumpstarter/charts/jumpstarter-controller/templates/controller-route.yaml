@@ -1,7 +1,4 @@
-{{ if .Values.grpc.route.enabled }}
-  {{ if .Values.grpc.ingress.enabled }}
-    {{ required "grpc.ingress.enabled and grpc.route.enabled cannot be enabled at the same time" nil }}
-  {{ end }}
+{{ if eq .Values.grpc.mode "route" }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -18,10 +15,14 @@ spec:
   {{ end }}
   port:
     targetPort: 8082
-  {{ if .Values.grpc.tls.enabled }}
   tls:
-    termination: edge
-  {{ end }}
+    termination: {{ .Values.grpc.tls.mode }}
+    insecureEdgeTerminationPolicy: None
+    {{ if .Values.grpc.tls.controllerCertSecret }}
+    externalCertificate:
+      name: {{ .Values.grpc.tls.controllerCertSecret }}
+    {{ end }}
+
   to:
     kind: Service
     name: jumpstarter-grpc

@@ -1,10 +1,13 @@
-{{ if .Values.grpc.ingress.enabled }}
+{{ if eq .Values.grpc.mode "ingress" }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    {{ if eq .Values.grpc.tls.mode "passthrough" }}
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    {{ end }}
   name: jumpstarter-router-ingress
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
@@ -23,14 +26,12 @@ spec:
             name: jumpstarter-router-grpc
             port:
               number: 8083
-  {{ if .Values.grpc.tls.enabled }}
   tls:
-  - secretName: {{ .Values.grpc.tls.secret }}
+  - secretName: {{ .Values.grpc.tls.routerCertSecret }}
     hosts:
       {{ if .Values.grpc.routerHostname }}
       - {{ .Values.grpc.routerHostname }}
       {{ else }}
-      - router.{{ .Values.global.baseDomain | required }}
+      - router.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided" }}
       {{ end }}
-  {{ end }}
 {{ end }}
