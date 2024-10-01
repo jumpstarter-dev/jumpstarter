@@ -60,17 +60,17 @@ spec:
           {{ if .Values.grpc.endpoint }}
           value : {{ .Values.grpc.endpoint }}
           {{ else if .Values.hostname }}
-          value: {{ .Values.hostname }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
+          value: {{ .Values.hostname }}:{{ .Values.grpc.tls.port }}
           {{ else }}
-          value: grpc.{{ .Values.global.baseDomain }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
+          value: grpc.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
           {{ end }}
         - name: GRPC_ROUTER_ENDPOINT
           {{ if .Values.grpc.routerEndpoint }}
           value: {{ .Values.grpc.routerEndpoint }}
           {{ else if .Values.routerHostname }}
-          value: {{ .Values.routerHostname }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
+          value: {{ .Values.routerHostname }}:{{ .Values.grpc.tls.port }}
           {{ else }}
-          value: router.{{ .Values.global.baseDomain }}:{{ if .Values.grpc.tls.enabled }}443{{ else }}80{{ end }}
+          value: router.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
           {{ end }}
         - name: CONTROLLER_KEY
           valueFrom:
