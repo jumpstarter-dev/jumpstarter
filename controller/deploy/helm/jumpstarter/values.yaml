@@ -46,6 +46,7 @@ global:
 ## @param jumpstarter-controller.grpc.routerHostname Hostname for the controller to use for the router gRPC.
 ##
 ## @param jumpstarter-controller.grpc.tls.mode Setup the TLS mode for endpoints, either "passthrough" or "reencrypt".
+## @param jumpstarter-controller.grpc.tls.port Port to use for the gRPC endpoints ingress or route, this can be useful for ingress routers on non-standard ports.
 ## @param jumpstarter-controller.grpc.tls.controllerCertSecret Secret containing the TLS certificate/key for the gRPC endpoint.
 ## @param jumpstarter-controller.grpc.tls.routerCertSecret Secret containing the TLS certificate/key for the gRPC router endpoints.
 ##
@@ -81,6 +82,7 @@ jumpstarter-controller:
 
       tls:
         mode: "passthrough"
+        port: 443
         routerCertSecret: ""
         controllerCertSecret: ""
 
