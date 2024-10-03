@@ -498,9 +498,9 @@ func (s *ControllerService) ReleaseLease(
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 
-	lease.Status.EndTime = &metav1.Time{Time: time.Now()}
+	lease.Spec.Release = true
 
-	if err := s.Status().Update(ctx, &lease); err != nil {
+	if err := s.Update(ctx, &lease); err != nil {
 		return nil, err
 	}
 
