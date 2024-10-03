@@ -194,16 +194,17 @@ func (r *LeaseReconciler) ReconcileNewLease(
 			EndTime:     nil,
 			ExporterRef: nil,
 			Ended:       true,
-			Conditions: []metav1.Condition{{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "NoExporter",
-			}},
 		}
+
+		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: lease.Generation,
+			LastTransitionTime: metav1.Time{
+				Time: time.Now(),
+			},
+			Reason: "NoExporter",
+		})
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
 			log.Error(err, "unable to update Lease status")
@@ -267,16 +268,17 @@ func (r *LeaseReconciler) ReconcileNewLease(
 				Name: exporter.Name,
 			},
 			Ended: false,
-			Conditions: []metav1.Condition{{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: beginTime,
-				},
-				Reason: "Acquired",
-			}},
 		}
+
+		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: lease.Generation,
+			LastTransitionTime: metav1.Time{
+				Time: beginTime,
+			},
+			Reason: "Acquired",
+		})
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
 			log.Error(err, "unable to update Lease status")
@@ -304,25 +306,25 @@ func (r *LeaseReconciler) ReconcileNewLease(
 		EndTime:     nil,
 		ExporterRef: nil,
 		Ended:       false,
-		Conditions: []metav1.Condition{
-			{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "NotAvailable",
-			}, {
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "Pending",
-			}},
 	}
+	meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+		Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: lease.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "NotAvailable",
+	})
+	meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+		Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: lease.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "Pending",
+	})
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		log.Error(err, "unable to update Lease status")
