@@ -7,7 +7,14 @@ import click
 from jumpstarter.client.adapters import PexpectAdapter
 from jumpstarter.common.utils import env
 
+# initialize client from exporter config
+# from jumpstarter.common import MetadataFilter
+# from jumpstarter.config.client import ClientConfigV1Alpha1
+# with ClientConfigV1Alpha1.load("default").lease(metadata_filter=MetadataFilter()) as lease:
+#     with lease.connect() as client:
+
 # initialize client from environment
+# e.g. `jmp exporter shell dutlink`
 with env() as client:
     dutlink = client.dutlink
     click.secho("Connected to Dutlink", fg="green")
