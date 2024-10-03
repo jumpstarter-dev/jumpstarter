@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from jumpstarter.client import LeaseRequest
 from jumpstarter.common import MetadataFilter
+from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .common import CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
@@ -60,6 +61,14 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             with portal.wrap_async_context_manager(self.lease_async(metadata_filter, portal)) as lease:
                 yield lease
+
+    def list_leases(self):
+        with start_blocking_portal() as portal:
+            return portal.call(self.list_leases_async)
+
+    async def list_leases_async(self):
+        stub = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        return (await stub.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
 
     @asynccontextmanager
     async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):

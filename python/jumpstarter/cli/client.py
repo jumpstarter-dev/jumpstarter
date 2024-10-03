@@ -22,6 +22,25 @@ def client():
     pass
 
 
+@client.group(short_help="Managed leases held by client.")
+def lease():
+    pass
+
+
+@lease.command("list")
+@click.argument("name", type=str, default="")
+def lease_list(name):
+    if name:
+        config = ClientConfigV1Alpha1.load(name)
+    else:
+        config = UserConfigV1Alpha1.load_or_create().config.current_client
+    if not config:
+        raise ValueError("no client specified")
+
+    for lease in config.list_leases():
+        print(lease)
+
+
 @click.command("create", short_help="Create a client configuration.")
 @click.argument("name")
 @click.option(
