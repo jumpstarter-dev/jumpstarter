@@ -516,23 +516,12 @@ func (s *ControllerService) ListLeases(
 		return nil, err
 	}
 
-	// TODO: use field selector once KEP-4358 is stabilized
-	// Reference: https://github.com/kubernetes/kubernetes/pull/122717
-	requirement, err := labels.NewRequirement(
-		string(jumpstarterdevv1alpha1.LeaseLabelEnded),
-		selection.DoesNotExist,
-		[]string{},
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	var leases jumpstarterdevv1alpha1.LeaseList
 	if err := s.List(
 		ctx,
 		&leases,
 		client.InNamespace(jclient.Namespace),
-		client.MatchingLabelsSelector{Selector: labels.Everything().Add(*requirement)},
+		controller.MatchingActiveLeases(),
 	); err != nil {
 		return nil, err
 	}

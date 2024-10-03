@@ -25,9 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -214,24 +212,12 @@ func (r *LeaseReconciler) ReconcileNewLease(
 		return ctrl.Result{}, nil
 	}
 
-	// TODO: use field selector once KEP-4358 is stabilized
-	// Reference: https://github.com/kubernetes/kubernetes/pull/122717
-	requirement, err := labels.NewRequirement(
-		string(jumpstarterdevv1alpha1.LeaseLabelEnded),
-		selection.DoesNotExist,
-		[]string{},
-	)
-	if err != nil {
-		log.Error(err, "Error creating leases selector")
-		return ctrl.Result{}, err
-	}
-
 	var leases jumpstarterdevv1alpha1.LeaseList
 	err = r.List(
 		ctx,
 		&leases,
 		client.InNamespace(lease.Namespace),
-		client.MatchingLabelsSelector{Selector: labels.Everything().Add(*requirement)},
+		MatchingActiveLeases(),
 	)
 	if err != nil {
 		log.Error(err, "Error listing leases")
