@@ -47,6 +47,14 @@ class ClientConfigV1Alpha1(BaseModel):
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
     client: ClientConfigV1Alpha1Client = Field(default_factory=ClientConfigV1Alpha1Client)
 
+    async def channel(self):
+        credentials = grpc.composite_channel_credentials(
+            grpc.ssl_channel_credentials(),
+            grpc.access_token_call_credentials(self.client.token),
+        )
+
+        return grpc.aio.secure_channel(self.client.endpoint, credentials)
+
     @contextmanager
     def lease(self, metadata_filter: MetadataFilter):
         with start_blocking_portal() as portal:
@@ -55,13 +63,8 @@ class ClientConfigV1Alpha1(BaseModel):
 
     @asynccontextmanager
     async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
-        credentials = grpc.composite_channel_credentials(
-            grpc.ssl_channel_credentials(),
-            grpc.access_token_call_credentials(self.client.token),
-        )
-
         async with LeaseRequest(
-            channel=grpc.aio.secure_channel(self.client.endpoint, credentials),
+            channel=await self.channel(),
             metadata_filter=metadata_filter,
             portal=portal,
         ) as lease:
