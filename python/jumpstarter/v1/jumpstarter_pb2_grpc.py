@@ -66,6 +66,11 @@ class ControllerServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseResponse.FromString,
                 _registered_method=True)
+        self.ListLeases = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/ListLeases',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesResponse.FromString,
+                _registered_method=True)
 
 
 class ControllerServiceServicer(object):
@@ -151,6 +156,13 @@ class ControllerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListLeases(self, request, context):
+        """List Leases
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ControllerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -203,6 +215,11 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.ReleaseLease,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseResponse.SerializeToString,
+            ),
+            'ListLeases': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListLeases,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -476,6 +493,33 @@ class ControllerService(object):
             '/jumpstarter.v1.ControllerService/ReleaseLease',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ReleaseLeaseResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListLeases(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/ListLeases',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesResponse.FromString,
             options,
             channel_credentials,
             insecure,
