@@ -1,65 +1,46 @@
+#!/usr/bin/env python
 import sys
-from threading import Thread
+import time
 
 import click
-from jumpstarter_driver_dutlink.driver import Dutlink
 
 from jumpstarter.client.adapters import PexpectAdapter
-from jumpstarter.common.utils import serve
+from jumpstarter.common.utils import env
 
-instance = Dutlink(
-    serial="c415a913",
-    storage_device="/dev/disk/by-id/usb-SanDisk_Extreme_Pro_52A456790D93-0:0",
-)
-
-
-def monitor_power(client):
-    try:
-        for reading in client.power.read():
-            click.secho(f"{reading}", fg="red")
-    except Exception:
-        pass
-
-
-with serve(instance) as client:
-    click.secho("Connected to Dutlink", fg="red")
-    Thread(target=monitor_power, args=[client]).start()
-    with PexpectAdapter(client=client.console) as expect:
-        expect.logfile = sys.stdout.buffer
-
-        expect.send("\x02" * 5)
-
-        click.secho("Entering DUT console", fg="red")
-        expect.send("console\r\n")
-        expect.expect("Entering console mode")
-
-        client.power.off()
+# initialize client from environment
+with env() as client:
+    dutlink = client.dutlink
+    click.secho("Connected to Dutlink", fg="green")
+    # apply adapter to console for expect support
+    with PexpectAdapter(client=dutlink.console) as console:
+        # stream console output to stdout
+        console.logfile = sys.stdout.buffer
+        # ensure DUT is powered off
+        dutlink.power.off()
 
         click.secho("Writing system image", fg="red")
-        client.storage.write_local_file("/tmp/sdcard.img")
+        dutlink.storage.write_local_file("/tmp/nixos-visionfive2.img")
         click.secho("Written system image", fg="red")
 
-        client.storage.dut()
+        dutlink.storage.dut()
+        click.secho("Connected storage device to DUT", fg="green")
 
-        click.secho("Powering on DUT", fg="red")
-        client.power.on()
+        dutlink.power.on()
+        click.secho("Powered DUT on", fg="green")
 
-        expect.expect("StarFive #")
-        click.secho("Working around u-boot usb initialization issue", fg="red")
-        expect.sendline("usb reset")
+        click.secho("Waiting for boot menu", fg="red")
+        console.expect("Enter choice:")
+        console.sendline("1")
+        click.secho("Selected boot entry", fg="red")
 
-        expect.expect("StarFive #")
-        expect.sendline("boot")
+        click.secho("Waiting for login prompt", fg="red")
+        console.expect("nixos@nixos", timeout=300)
+        time.sleep(3)
 
-        expect.expect("Enter choice:")
-        click.secho("Selecting boot entry", fg="red")
-        expect.sendline("1")
+        reading = next(dutlink.power.read())
+        click.secho(f"Current power reading: {reading}", fg="blue")
 
-        expect.expect("NixOS Stage 1")
+        console.sendline("uname -a")
+        console.expect("riscv64 GNU/Linux")
 
-        click.secho("Reached initrd", fg="red")
-
-        expect.send("\x02" * 5)
-        expect.expect("Exiting console mode")
-
-        client.power.off()
+        dutlink.power.off()
