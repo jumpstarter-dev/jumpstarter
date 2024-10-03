@@ -48,6 +48,8 @@ service ControllerService {
   rpc RequestLease(RequestLeaseRequest) returns (RequestLeaseResponse);
   // Release Lease
   rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+  // List Leases
+  rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse);
 }
 
 message RegisterRequest {
@@ -191,3 +193,9 @@ message ReleaseLeaseRequest {
 }
 
 message ReleaseLeaseResponse {}
+
+message ListLeasesRequest {}
+
+message ListLeasesResponse {
+  repeated string names = 1;
+}
