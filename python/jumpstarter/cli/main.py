@@ -1,5 +1,7 @@
 """Main Jumpstarter CLI"""
 
+import logging
+
 import click
 
 from .client import client
@@ -18,7 +20,7 @@ def help():
 
 @click.group(no_args_is_help=True)
 def main():
-    pass
+    logging.basicConfig(level=logging.INFO)
 
 
 main.add_command(version)

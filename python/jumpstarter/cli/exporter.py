@@ -85,7 +85,7 @@ def run(alias, config_path):
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
 
-    anyio.run(config.serve)
+    anyio.run(config.serve_forever)
 
 
 async def exporter_shell(config):
