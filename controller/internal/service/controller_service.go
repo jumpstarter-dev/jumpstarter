@@ -128,7 +128,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
 	}
 
-	original = client.StrategicMergeFrom(exporter.DeepCopy())
+	original = client.MergeFrom(exporter.DeepCopy())
 
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
@@ -174,7 +174,7 @@ func (s *ControllerService) Unregister(
 		return nil, err
 	}
 
-	original := client.StrategicMergeFrom(exporter.DeepCopy())
+	original := client.MergeFrom(exporter.DeepCopy())
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
 		Status:             metav1.ConditionFalse,
@@ -272,7 +272,14 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 
 	defer func() {
 		s.listen.Delete(exporter.UID)
-		original := client.StrategicMergeFrom(exporter.DeepCopy())
+		if err := s.Get(
+			ctx,
+			types.NamespacedName{Name: exporter.Name, Namespace: exporter.Namespace},
+			exporter,
+		); err != nil {
+			logger.Error(err, "unable to refresh exporter status, continuing anyway", "exporter", exporter)
+		}
+		original := client.MergeFrom(exporter.DeepCopy())
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,
@@ -283,11 +290,11 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 			Reason: "Disconnect",
 		})
 		if err = s.Status().Patch(ctx, exporter, original); err != nil {
-			logger.Error(err, "unable to update exporter status", "exporter", exporter)
+			logger.Error(err, "unable to update exporter status, continuing anyway", "exporter", exporter)
 		}
 	}()
 
-	original := client.StrategicMergeFrom(exporter.DeepCopy())
+	original := client.MergeFrom(exporter.DeepCopy())
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 		Status:             metav1.ConditionTrue,
