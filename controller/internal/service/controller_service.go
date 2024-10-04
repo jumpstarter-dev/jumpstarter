@@ -498,13 +498,55 @@ func (s *ControllerService) ReleaseLease(
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 
-	lease.Status.EndTime = &metav1.Time{Time: time.Now()}
+	lease.Spec.Release = true
 
-	if err := s.Status().Update(ctx, &lease); err != nil {
+	if err := s.Update(ctx, &lease); err != nil {
 		return nil, err
 	}
 
 	return &pb.ReleaseLeaseResponse{}, nil
+}
+
+func (s *ControllerService) ListLeases(
+	ctx context.Context,
+	req *pb.ListLeasesRequest,
+) (*pb.ListLeasesResponse, error) {
+	jclient, err := s.authenticateClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: use field selector once KEP-4358 is stabilized
+	// Reference: https://github.com/kubernetes/kubernetes/pull/122717
+	requirement, err := labels.NewRequirement(
+		string(jumpstarterdevv1alpha1.LeaseLabelEnded),
+		selection.DoesNotExist,
+		[]string{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var leases jumpstarterdevv1alpha1.LeaseList
+	if err := s.List(
+		ctx,
+		&leases,
+		client.InNamespace(jclient.Namespace),
+		client.MatchingLabelsSelector{Selector: labels.Everything().Add(*requirement)},
+	); err != nil {
+		return nil, err
+	}
+
+	var leaseNames []string
+	for _, lease := range leases.Items {
+		if lease.Spec.ClientRef.Name == jclient.Name {
+			leaseNames = append(leaseNames, lease.Name)
+		}
+	}
+
+	return &pb.ListLeasesResponse{
+		Names: leaseNames,
+	}, nil
 }
 
 func (s *ControllerService) Start(ctx context.Context) error {
