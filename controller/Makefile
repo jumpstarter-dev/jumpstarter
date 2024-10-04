@@ -148,6 +148,10 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: docker-build cluster
 	./hack/deploy_with_helm.sh
 
+.PHONY: deploy-exporters
+deploy-exporters: cli
+	./hack/demoenv/prepare_exporters.sh
+
 .PHONY: lint-helm
 lint-helm:
 	helm lint deploy/helm/jumpstarter --set jumpstarter-controller.controllerSecret=abcd --set jumpstarter-controller.routerSecret=abcd
