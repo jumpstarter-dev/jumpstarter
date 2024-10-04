@@ -25,9 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -194,16 +192,17 @@ func (r *LeaseReconciler) ReconcileNewLease(
 			EndTime:     nil,
 			ExporterRef: nil,
 			Ended:       true,
-			Conditions: []metav1.Condition{{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "NoExporter",
-			}},
 		}
+
+		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: lease.Generation,
+			LastTransitionTime: metav1.Time{
+				Time: time.Now(),
+			},
+			Reason: "NoExporter",
+		})
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
 			log.Error(err, "unable to update Lease status")
@@ -213,24 +212,12 @@ func (r *LeaseReconciler) ReconcileNewLease(
 		return ctrl.Result{}, nil
 	}
 
-	// TODO: use field selector once KEP-4358 is stabilized
-	// Reference: https://github.com/kubernetes/kubernetes/pull/122717
-	requirement, err := labels.NewRequirement(
-		string(jumpstarterdevv1alpha1.LeaseLabelEnded),
-		selection.DoesNotExist,
-		[]string{},
-	)
-	if err != nil {
-		log.Error(err, "Error creating leases selector")
-		return ctrl.Result{}, err
-	}
-
 	var leases jumpstarterdevv1alpha1.LeaseList
 	err = r.List(
 		ctx,
 		&leases,
 		client.InNamespace(lease.Namespace),
-		client.MatchingLabelsSelector{Selector: labels.Everything().Add(*requirement)},
+		MatchingActiveLeases(),
 	)
 	if err != nil {
 		log.Error(err, "Error listing leases")
@@ -267,16 +254,17 @@ func (r *LeaseReconciler) ReconcileNewLease(
 				Name: exporter.Name,
 			},
 			Ended: false,
-			Conditions: []metav1.Condition{{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: beginTime,
-				},
-				Reason: "Acquired",
-			}},
 		}
+
+		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: lease.Generation,
+			LastTransitionTime: metav1.Time{
+				Time: beginTime,
+			},
+			Reason: "Acquired",
+		})
 
 		if err := r.Status().Update(ctx, &lease); err != nil {
 			log.Error(err, "unable to update Lease status")
@@ -304,25 +292,25 @@ func (r *LeaseReconciler) ReconcileNewLease(
 		EndTime:     nil,
 		ExporterRef: nil,
 		Ended:       false,
-		Conditions: []metav1.Condition{
-			{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "NotAvailable",
-			}, {
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "Pending",
-			}},
 	}
+	meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+		Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: lease.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "NotAvailable",
+	})
+	meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+		Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: lease.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "Pending",
+	})
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		log.Error(err, "unable to update Lease status")
