@@ -8,7 +8,7 @@ ADD . /src
 RUN make -C /src build
 
 FROM fedora:40
-RUN dnf install -y python3-pip ustreamer && \
+RUN dnf install -y python3-pip ustreamer libusb1 && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 RUN --mount=from=builder,source=/src/dist,target=/dist pip install /dist/*.whl
