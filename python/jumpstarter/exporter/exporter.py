@@ -3,7 +3,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 
-from anyio import connect_unix
+from anyio import connect_unix, sleep
 from grpc.aio import Channel
 
 from jumpstarter.common import Metadata
@@ -73,3 +73,12 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             logger.info("Handling new connection request")
             async with self.__handle(request.router_endpoint, request.router_token):
                 pass
+
+    async def serve_forever(self):
+        backoff = 5
+        while True:
+            try:
+                await self.serve()
+            except Exception as e:
+                logger.info("Exporter: connection interrupted, reconnecting after %d seconds: %s", backoff, e)
+                await sleep(backoff)

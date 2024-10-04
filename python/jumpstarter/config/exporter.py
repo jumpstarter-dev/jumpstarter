@@ -83,7 +83,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         async with session.serve_unix_async() as path:
             yield path
 
-    async def serve(self):
+    async def serve_forever(self):
         credentials = grpc.composite_channel_credentials(
             grpc.ssl_channel_credentials(),
             grpc.access_token_call_credentials(self.token),
@@ -94,4 +94,4 @@ class ExporterConfigV1Alpha1(BaseModel):
                 channel=channel,
                 device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
             ) as exporter:
-                await exporter.serve()
+                await exporter.serve_forever()
