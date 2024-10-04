@@ -256,13 +256,11 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		stream: stream,
 	}
 
-	_, loaded := s.listen.LoadOrStore(exporter.UID, lctx)
+	previous, loaded := s.listen.Swap(exporter.UID, lctx)
 
 	if loaded {
-		// TODO: in this case we should probably end the previous listener
-		//       and start the new one?
-		logger.Error(nil, "exporter is already listening", "exporter", exporter.GetName())
-		return status.Errorf(codes.AlreadyExists, "exporter is already listening")
+		logger.Info("replacing old listener", "exporter", exporter.GetName())
+		previous.(listenContext).cancel()
 	}
 
 	defer func() {
