@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from uuid import UUID
@@ -14,6 +15,8 @@ from jumpstarter.v1 import (
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -49,6 +52,7 @@ class Session(
         return self.mapping[key]
 
     async def GetReport(self, request, context):
+        logger.debug("GetReport()")
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
@@ -59,15 +63,17 @@ class Session(
         )
 
     async def DriverCall(self, request, context):
+        logger.debug("DriverCall(uuid=%s, method=%s)", request.uuid, request.method)
         return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
+        logger.debug("StreamingDriverCall(uuid=%s, method=%s)", request.uuid, request.method)
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
     async def Stream(self, _request_iterator, context):
         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
-
+        logger.debug("Streaming(%s)", request)
         async with self[request.uuid].Stream(request, context) as stream:
             metadata = []
             with suppress(TypedAttributeLookupError):

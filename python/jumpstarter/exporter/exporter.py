@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -31,6 +34,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             root_device=self.device_factory(),
         )
 
+        logger.info("Registering exporter with controller")
         await self.Register(
             jumpstarter_pb2.RegisterRequest(
                 labels=self.labels,
@@ -41,6 +45,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
+        logger.info("Unregistering exporter with controller")
         await self.Unregister(
             jumpstarter_pb2.UnregisterRequest(
                 reason="TODO",
@@ -63,6 +68,8 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                     yield
 
     async def serve(self):
+        logger.info("Listening for incoming connection requests")
         async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
+            logger.info("Handling new connection request")
             async with self.__handle(request.router_endpoint, request.router_token):
                 pass
