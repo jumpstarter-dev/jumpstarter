@@ -24,7 +24,10 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: build
+all: build bin/jmpctl
+
+.PHONY: cli
+cli: bin/jmpctl
 
 ##@ General
 
@@ -62,6 +65,9 @@ fmt: ## Run go fmt against code.
 .PHONY: vet
 vet: ## Run go vet against code.
 	go vet ./...
+
+bin/jmpctl: $(GO_FILES)
+	CGO_ENABLED=0 go build -o bin/jmpctl ./cmd/jmpctl
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
@@ -141,6 +147,10 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: docker-build cluster
 	./hack/deploy_with_helm.sh
+
+.PHONY: deploy-exporters
+deploy-exporters: cli
+	./hack/demoenv/prepare_exporters.sh
 
 .PHONY: lint-helm
 lint-helm:

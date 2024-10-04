@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vcan-exporter
+spec:
+  serviceName: vcan-exporter
+  replicas: 5
+  selector:
+    matchLabels:
+      exporter-mock: plain
+  template:
+    metadata:
+      labels:
+        exporter-mock: plain
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: jumpstarter-exporter
+        image: quay.io/jumpstarter-dev/jumpstarter:latest
+        imagePullPolicy: IfNotPresent
+        # note for some reason jmp exporter run $(cat /etc/hostname)   won't find the config, neither does list
+        command: ["/bin/sh", "-c", "echo running exporter $(cat /etc/hostname); jmp exporter run -c /etc/jumpstarter/exporters/$(cat /etc/hostname).yaml"]
+        # map the exporter-configs ConfigMap to /etc/jumpstarter/exporters
+        volumeMounts:
+        - name: exporter-configs
+          mountPath: /etc/jumpstarter/exporters
+      volumes:
+        - name: exporter-configs
+          configMap:
+            name: exporter-configs
