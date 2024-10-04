@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 
@@ -14,12 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 async def copy_stream(dst: AnyByteStream, src: AnyByteStream):
-    with suppress(BrokenResourceError, ClosedResourceError):
-        async for v in src:
-            await dst.send(v)
-    with suppress(AttributeError, BrokenResourceError, ClosedResourceError):
-        # some streams like UDP does not support send_eof
-        await dst.send_eof()
+    with suppress(BrokenResourceError, ClosedResourceError, asyncio.exceptions.InvalidStateError):
+        async with dst:
+            async for v in src:
+                await dst.send(v)
 
 
 class CancelTask(Exception):
