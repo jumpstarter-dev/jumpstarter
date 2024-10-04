@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from jumpstarter.client import LeaseRequest
 from jumpstarter.common import MetadataFilter
+from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .common import CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
@@ -47,21 +48,40 @@ class ClientConfigV1Alpha1(BaseModel):
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
     client: ClientConfigV1Alpha1Client = Field(default_factory=ClientConfigV1Alpha1Client)
 
+    async def channel(self):
+        credentials = grpc.composite_channel_credentials(
+            grpc.ssl_channel_credentials(),
+            grpc.access_token_call_credentials(self.client.token),
+        )
+
+        return grpc.aio.secure_channel(self.client.endpoint, credentials)
+
     @contextmanager
     def lease(self, metadata_filter: MetadataFilter):
         with start_blocking_portal() as portal:
             with portal.wrap_async_context_manager(self.lease_async(metadata_filter, portal)) as lease:
                 yield lease
 
+    def list_leases(self):
+        with start_blocking_portal() as portal:
+            return portal.call(self.list_leases_async)
+
+    def release_lease(self, name):
+        with start_blocking_portal() as portal:
+            portal.call(self.release_lease_async, name)
+
+    async def list_leases_async(self):
+        stub = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        return (await stub.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
+
+    async def release_lease_async(self, name):
+        stub = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        await stub.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
+
     @asynccontextmanager
     async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
-        credentials = grpc.composite_channel_credentials(
-            grpc.ssl_channel_credentials(),
-            grpc.access_token_call_credentials(self.client.token),
-        )
-
         async with LeaseRequest(
-            channel=grpc.aio.secure_channel(self.client.endpoint, credentials),
+            channel=await self.channel(),
             metadata_filter=metadata_filter,
             portal=portal,
         ) as lease:
