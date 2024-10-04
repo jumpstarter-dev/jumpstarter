@@ -18,23 +18,15 @@ sync-jumpstarter:
 test-jumpstarter:
 	uv run --isolated --package jumpstarter pytest jumpstarter tests
 
-build-jumpstarter:
-	uvx --from build pyproject-build --installer uv --outdir dist
-
 sync-contrib-%: contrib/%
 	uv sync --all-extras --inexact --package jumpstarter_driver_$(<F)
 
 test-contrib-%: contrib/%
 	uv run --isolated --package jumpstarter_driver_$(<F) pytest $<
 
-build-contrib-%: contrib/%
-	uvx --from build pyproject-build --installer uv --outdir dist $<
-
 sync-contrib: $(addprefix sync-,$(CONTRIB_TARGETS))
 
 test-contrib: $(addprefix test-,$(CONTRIB_TARGETS))
-
-build-contrib: $(addprefix build-,$(CONTRIB_TARGETS))
 
 sync-example-%: examples/%
 	uv sync --all-extras --inexact --package jumpstarter_example_$(<F)
@@ -57,8 +49,9 @@ sync: sync-jumpstarter sync-contrib sync-examples
 
 test: test-jumpstarter test-contrib
 
-build: sync build-jumpstarter build-contrib
+build:
+	uv build --all --out-dir dist
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs test test-jumpstarter test-contrib build build-jumpstarter build-contrib clean-test clean-docs clean-venv clean-build
+.PHONY: sync docs test test-jumpstarter test-contrib build clean-test clean-docs clean-venv clean-build
