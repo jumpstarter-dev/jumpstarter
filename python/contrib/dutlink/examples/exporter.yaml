@@ -1,0 +1,10 @@
+# /etc/jumpstarter/exporters/dutlink.yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+endpoint: ""
+token: ""
+export:
+  dutlink:
+    type: jumpstarter_driver_dutlink.driver.Dutlink
+    config:
+      storage_device: "/dev/null" # TODO: replace with real storage device
