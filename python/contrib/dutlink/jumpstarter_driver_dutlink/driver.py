@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import pyudev
 import usb.core
@@ -94,13 +93,13 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
         with fail_after(20):
             while True:
                 if os.path.exists(self.storage_device):
+                    # https://stackoverflow.com/a/2774125
+                    fd = os.open(self.storage_device, os.O_WRONLY)
                     try:
-                        Path(self.storage_device).write_bytes(b"\0")
-                    except OSError:
-                        pass  # wait for device ready
-                    else:
-                        break
-
+                        if os.lseek(fd, 0, os.SEEK_END) > 0:
+                            break
+                    finally:
+                        os.close(fd)
                 await sleep(1)
 
         async with await FileWriteStream.from_path(self.storage_device) as stream:
