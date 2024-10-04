@@ -105,7 +105,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, err
 	}
 
-	original := client.StrategicMergeFrom(exporter.DeepCopy())
+	original := client.MergeFrom(exporter.DeepCopy())
 
 	if exporter.Labels == nil {
 		exporter.Labels = make(map[string]string)
@@ -505,7 +505,7 @@ func (s *ControllerService) ReleaseLease(
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 
-	original := client.StrategicMergeFrom(lease.DeepCopy())
+	original := client.MergeFrom(lease.DeepCopy())
 	lease.Spec.Release = true
 
 	if err := s.Patch(ctx, &lease, original); err != nil {
