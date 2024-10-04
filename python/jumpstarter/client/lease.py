@@ -11,6 +11,7 @@ from grpc.aio import Channel
 
 from jumpstarter.client import client_from_channel
 from jumpstarter.common import MetadataFilter, TemporarySocket
+from jumpstarter.common.condition import condition_false, condition_true
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.streams import CancelTask
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
@@ -45,10 +46,16 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
                 logger.info("Polling Lease %s", self.lease.name)
                 result = await self.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.lease.name))
 
-                if result.exporter_uuid != "":
+                # lease ready
+                if condition_true(result.conditions, "Ready"):
                     logger.info("Lease %s acquired", self.lease.name)
                     return Lease(channel=self.channel, uuid=UUID(result.exporter_uuid), portal=self.portal)
-
+                # lease unsatisfiable
+                if condition_true(result.conditions, "Unsatisfiable"):
+                    raise ValueError("lease unsatisfiable")
+                # lease not pending
+                if condition_false(result.conditions, "Pending"):
+                    raise ValueError("lease not pending")
                 await sleep(1)
 
     async def __aexit__(self, exc_type, exc_value, traceback):

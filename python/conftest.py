@@ -18,6 +18,7 @@ from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter.v1 import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
+    kubernetes_pb2,
     router_pb2_grpc,
 )
 
@@ -57,7 +58,19 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
         return jumpstarter_pb2.RequestLeaseResponse(name=str(uuid4()))
 
     async def GetLease(self, request, context):
-        return jumpstarter_pb2.GetLeaseResponse(exporter_uuid=str(uuid4()))
+        return jumpstarter_pb2.GetLeaseResponse(
+            exporter_uuid=str(uuid4()),
+            conditions=[
+                kubernetes_pb2.Condition(
+                    type="Pending",
+                    status="False",
+                ),
+                kubernetes_pb2.Condition(
+                    type="Ready",
+                    status="True",
+                ),
+            ],
+        )
 
     async def ReleaseLease(self, request, context):
         return jumpstarter_pb2.ReleaseLeaseResponse()
