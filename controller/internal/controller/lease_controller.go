@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -63,70 +62,78 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// lease already ended, ignoring
+	if lease.Status.Ended {
+		return ctrl.Result{}, nil
+	}
+
+	// force release lease
+	if lease.Spec.Release {
+		log.Info("lease released early", "lease", lease.Name)
+		now := time.Now()
+
+		if lease.Labels == nil {
+			lease.Labels = make(map[string]string)
+		}
+		lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = jumpstarterdevv1alpha1.LeaseLabelEndedValue
+
+		if err := r.Update(ctx, &lease); err != nil {
+			log.Error(err, "unable to update Lease labels")
+			return ctrl.Result{}, err
+		}
+
+		lease.Status.Ended = true
+		lease.Status.EndTime = &metav1.Time{
+			Time: now,
+		}
+		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: lease.Generation,
+			LastTransitionTime: metav1.Time{
+				Time: now,
+			},
+			Reason: "Released",
+		})
+
+		if err := r.Status().Update(ctx, &lease); err != nil {
+			log.Error(err, "unable to update Lease status")
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	}
+
 	// 1. newly created lease
 	if lease.Status.BeginTime == nil || lease.Status.EndTime == nil || lease.Status.ExporterRef == nil {
 		return r.ReconcileNewLease(ctx, lease)
 	} else {
 		// 2. expired lease
-		if !lease.Status.Ended &&
-			// lease expired
-			(time.Now().After(lease.Status.EndTime.Time) ||
-				// lease force released
-				lease.Spec.Release) {
+		if time.Now().After(lease.Status.EndTime.Time) {
+			log.Info("lease expired", "lease", lease.Name)
+			if lease.Labels == nil {
+				lease.Labels = make(map[string]string)
+			}
+			lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = jumpstarterdevv1alpha1.LeaseLabelEndedValue
 
-			// Attempt to clear the exporter first before setting lease to ended
-			var exporter jumpstarterdevv1alpha1.Exporter
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: req.Namespace,
-				Name:      lease.Status.ExporterRef.Name,
-			}, &exporter); err != nil {
-				log.Error(err, "unable to get Exporter")
+			if err := r.Update(ctx, &lease); err != nil {
+				log.Error(err, "unable to update Lease labels")
 				return ctrl.Result{}, err
 			}
 
 			lease.Status.Ended = true
-
-			// If lease has been released early, set EndTime to now
-			if lease.Spec.Release {
-				log.Info("lease released early", "lease", lease.Name)
-				endTime := time.Now()
-				lease.Status.EndTime = &metav1.Time{
-					Time: endTime,
-				}
-				lease.Status.Conditions = []metav1.Condition{{
-					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-					Status:             metav1.ConditionFalse,
-					ObservedGeneration: lease.Generation,
-					LastTransitionTime: metav1.Time{
-						Time: time.Now(),
-					},
-					Reason: "Released",
-				}}
-			} else {
-				log.Info("lease expired", "lease", lease.Name)
-				lease.Status.Conditions = []metav1.Condition{{
-					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-					Status:             metav1.ConditionFalse,
-					ObservedGeneration: lease.Generation,
-					LastTransitionTime: metav1.Time{
-						Time: time.Now(),
-					},
-					Reason: "Expired",
-				}}
-			}
+			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: lease.Generation,
+				LastTransitionTime: metav1.Time{
+					Time: time.Now(),
+				},
+				Reason: "Expired",
+			})
 
 			if err := r.Status().Update(ctx, &lease); err != nil {
 				log.Error(err, "unable to update Lease status")
-				return ctrl.Result{}, err
-			}
-
-			if lease.Labels == nil {
-				lease.Labels = make(map[string]string)
-			}
-			lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = "true"
-
-			if err := r.Update(ctx, &lease); err != nil {
-				log.Error(err, "unable to update Lease")
 				return ctrl.Result{}, err
 			}
 
