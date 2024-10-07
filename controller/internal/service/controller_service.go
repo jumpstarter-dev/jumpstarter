@@ -105,6 +105,8 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		return nil, err
 	}
 
+	original := client.MergeFrom(exporter.DeepCopy())
+
 	if exporter.Labels == nil {
 		exporter.Labels = make(map[string]string)
 	}
@@ -121,10 +123,12 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		}
 	}
 
-	if err := s.Update(ctx, exporter); err != nil {
+	if err := s.Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter", "exporter", exporter)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
 	}
+
+	original = client.MergeFrom(exporter.DeepCopy())
 
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
@@ -146,7 +150,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	}
 	exporter.Status.Devices = devices
 
-	if err := s.Status().Update(ctx, exporter); err != nil {
+	if err := s.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
@@ -170,6 +174,7 @@ func (s *ControllerService) Unregister(
 		return nil, err
 	}
 
+	original := client.MergeFrom(exporter.DeepCopy())
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
 		Status:             metav1.ConditionFalse,
@@ -181,7 +186,7 @@ func (s *ControllerService) Unregister(
 		Message: req.GetReason(),
 	})
 
-	if err := s.Status().Update(ctx, exporter); err != nil {
+	if err := s.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter.Name)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
@@ -265,6 +270,14 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 
 	defer func() {
 		s.listen.Delete(exporter.UID)
+		if err := s.Get(
+			ctx,
+			types.NamespacedName{Name: exporter.Name, Namespace: exporter.Namespace},
+			exporter,
+		); err != nil {
+			logger.Error(err, "unable to refresh exporter status, continuing anyway", "exporter", exporter)
+		}
+		original := client.MergeFrom(exporter.DeepCopy())
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,
@@ -274,11 +287,12 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 			},
 			Reason: "Disconnect",
 		})
-		if err = s.Status().Update(ctx, exporter); err != nil {
-			logger.Error(err, "unable to update exporter status", "exporter", exporter)
+		if err = s.Status().Patch(ctx, exporter, original); err != nil {
+			logger.Error(err, "unable to update exporter status, continuing anyway", "exporter", exporter)
 		}
 	}()
 
+	original := client.MergeFrom(exporter.DeepCopy())
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 		Status:             metav1.ConditionTrue,
@@ -288,7 +302,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		},
 		Reason: "Connect",
 	})
-	if err = s.Status().Update(ctx, exporter); err != nil {
+	if err = s.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter)
 	}
 
@@ -496,9 +510,10 @@ func (s *ControllerService) ReleaseLease(
 		return nil, fmt.Errorf("ReleaseLease permission denied")
 	}
 
+	original := client.MergeFrom(lease.DeepCopy())
 	lease.Spec.Release = true
 
-	if err := s.Update(ctx, &lease); err != nil {
+	if err := s.Patch(ctx, &lease, original); err != nil {
 		return nil, err
 	}
 
