@@ -9,7 +9,7 @@ from jumpstarter.common.utils import serve
 from jumpstarter.drivers.storage.driver import MockStorageMux
 
 
-def test_drivers_mock_storage_mux_fs():
+def test_drivers_mock_storage_mux_fs(monkeypatch):
     with serve(MockStorageMux()) as client:
         with TemporaryDirectory() as tempdir:
             fs = Operator("fs", root=tempdir)
@@ -17,7 +17,13 @@ def test_drivers_mock_storage_mux_fs():
             fs.write("test", b"testcontent" * 1000)
 
             client.write_file(fs, "test")
+            # absolute path
             client.write_local_file(str(Path(tempdir) / "test"))
+            # relative path
+            with monkeypatch.context() as m:
+                m.chdir(tempdir)
+                client.write_local_file("test")
+                client.write_local_file("./test")
 
 
 def test_drivers_mock_storage_mux_http():

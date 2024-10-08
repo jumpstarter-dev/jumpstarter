@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import click
 from opendal import Operator
 
@@ -23,7 +25,8 @@ class StorageMuxClient(DriverClient):
             return self.call("write", handle)
 
     def write_local_file(self, filepath):
-        with OpendalAdapter(client=self, operator=Operator("fs", root="/"), path=filepath) as handle:
+        absolute = Path(filepath).resolve()
+        with OpendalAdapter(client=self, operator=Operator("fs", root="/"), path=str(absolute)) as handle:
             return self.call("write", handle)
 
     def cli(self):
