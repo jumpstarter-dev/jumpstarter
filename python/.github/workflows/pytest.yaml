@@ -30,7 +30,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Run pytest
-        run: make test -j $(nproc)
+        run: make test
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
