@@ -72,8 +72,9 @@ export:
     config:
       host: "192.168.1.111"
       port: 1234
-      username: "admin"
-      password: "secret"
+      auth:
+          username: "admin"
+          password: "secret"
   serial:
     type: "jumpstarter.drivers.serial.Pyserial"
     config:
@@ -106,8 +107,10 @@ export:
                 config={
                     "host": "192.168.1.111",
                     "port": 1234,
-                    "username": "admin",
-                    "password": "secret",
+                    "auth": {
+                        "username": "admin",
+                        "password": "secret",
+                    },
                 },
             ),
             "serial": ExporterConfigV1Alpha1DriverInstance(

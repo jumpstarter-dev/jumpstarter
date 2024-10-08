@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 import grpc
 import yaml
@@ -16,7 +16,7 @@ from jumpstarter.exporter import Exporter, Session
 class ExporterConfigV1Alpha1DriverInstance(BaseModel):
     type: str = Field(default="jumpstarter.drivers.composite.driver.Composite")
     children: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
-    config: dict[str, str | int | float] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
 
     def instantiate(self) -> Driver:
         children = {name: child.instantiate() for name, child in self.children.items()}
