@@ -59,6 +59,14 @@ class Driver(
     def __post_init__(self):
         super().__post_init__()
 
+    def close(self):
+        for child in self.children.values():
+            child.close()
+
+    def reset(self):
+        for child in self.children.values():
+            child.reset()
+
     @classmethod
     @abstractmethod
     def client(cls) -> str:

@@ -48,13 +48,12 @@ class UStreamer(Driver):
 
         self.process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
 
-    def __del__(self):
-        if hasattr(self, "process"):
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=5)
-            except TimeoutExpired:
-                self.process.kill()
+    def close(self):
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=5)
+        except TimeoutExpired:
+            self.process.kill()
 
     @export
     async def state(self):

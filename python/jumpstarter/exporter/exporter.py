@@ -28,19 +28,18 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
 
     async def __aenter__(self):
-        probe = Session(
+        with Session(
             uuid=self.uuid,
             labels=self.labels,
             root_device=self.device_factory(),
-        )
-
-        logger.info("Registering exporter with controller")
-        await self.Register(
-            jumpstarter_pb2.RegisterRequest(
-                labels=self.labels,
-                reports=(await probe.GetReport(None, None)).reports,
+        ) as probe:
+            logger.info("Registering exporter with controller")
+            await self.Register(
+                jumpstarter_pb2.RegisterRequest(
+                    labels=self.labels,
+                    reports=(await probe.GetReport(None, None)).reports,
+                )
             )
-        )
 
         return self
 
@@ -56,16 +55,15 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     async def __handle(self, endpoint, token):
         root_device = self.device_factory()
 
-        session = Session(
+        with Session(
             uuid=self.uuid,
             labels=self.labels,
             root_device=root_device,
-        )
-
-        async with session.serve_unix_async() as path:
-            async with await connect_unix(path) as stream:
-                async with connect_router_stream(endpoint, token, stream):
-                    yield
+        ) as session:
+            async with session.serve_unix_async() as path:
+                async with await connect_unix(path) as stream:
+                    async with connect_router_stream(endpoint, token, stream):
+                        yield
 
     async def serve(self):
         logger.info("Listening for incoming connection requests")

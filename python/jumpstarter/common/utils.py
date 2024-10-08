@@ -12,12 +12,12 @@ from jumpstarter.exporter import Session
 
 @asynccontextmanager
 async def serve_async(root_device, portal):
-    session = Session(root_device=root_device)
-    async with session.serve_unix_async() as path:
-        async with grpc.aio.secure_channel(
-            f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
-        ) as channel:
-            yield await client_from_channel(channel, portal)
+    with Session(root_device=root_device) as session:
+        async with session.serve_unix_async() as path:
+            async with grpc.aio.secure_channel(
+                f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+            ) as channel:
+                yield await client_from_channel(channel, portal)
 
 
 @contextmanager

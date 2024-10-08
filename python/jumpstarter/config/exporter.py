@@ -77,11 +77,11 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @asynccontextmanager
     async def serve_unix_async(self):
-        session = Session(
+        with Session(
             root_device=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate(),
-        )
-        async with session.serve_unix_async() as path:
-            yield path
+        ) as session:
+            async with session.serve_unix_async() as path:
+                yield path
 
     async def serve_forever(self):
         credentials = grpc.composite_channel_credentials(

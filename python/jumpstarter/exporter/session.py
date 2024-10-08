@@ -1,5 +1,5 @@
 import logging
-from contextlib import asynccontextmanager, suppress
+from contextlib import AbstractContextManager, asynccontextmanager, suppress
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -24,9 +24,17 @@ class Session(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
     Metadata,
+    AbstractContextManager,
 ):
     root_device: Driver
     mapping: dict[UUID, Driver]
+
+    def __enter__(self):
+        self.root_device.reset()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.root_device.close()
 
     def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)
