@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import which
-from subprocess import Popen
+from subprocess import Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
 from aiohttp import ClientSession, UnixConnector
@@ -51,19 +51,22 @@ class UStreamer(Driver):
     def __del__(self):
         if hasattr(self, "process"):
             self.process.terminate()
-            self.process.wait(timeout=5)
+            try:
+                self.process.wait(timeout=5)
+            except TimeoutExpired:
+                self.process.kill()
 
     @export
     async def state(self):
-        sess = ClientSession(connector=UnixConnector(path=self.socketp))
-        async with sess.get("http://localhost/state") as r:
-            return UStreamerState.model_validate(await r.json())
+        async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
+            async with session.get("http://localhost/state") as r:
+                return UStreamerState.model_validate(await r.json())
 
     @export
     async def snapshot(self):
-        sess = ClientSession(connector=UnixConnector(path=self.socketp))
-        async with sess.get("http://localhost/snapshot") as r:
-            return b64encode(await r.read()).decode("ascii")
+        async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
+            async with session.get("http://localhost/snapshot") as r:
+                return b64encode(await r.read()).decode("ascii")
 
     @exportstream
     @asynccontextmanager
