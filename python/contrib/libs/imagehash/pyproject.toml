@@ -1,5 +1,5 @@
 [project]
-name = "jumpstarter-driver-can"
+name = "jumpstarter-imagehash"
 dynamic = ["version", "urls"]
 description = ""
 authors = [
@@ -10,9 +10,8 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "imagehash>=4.3.1",
     "jumpstarter",
-    "python-can>=4.4.2",
-    "can-isotp>=2.0.6",
 ]
 
 [tool.uv]
@@ -30,7 +29,8 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../../'}
+
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"

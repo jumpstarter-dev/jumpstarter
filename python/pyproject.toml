@@ -14,7 +14,7 @@ dependencies = [
     "pexpect>=4.9.0",
     "httpx>=0.27.0",
     "pyyaml>=6.0.2",
-    "anyio>=4.4.0",
+    "anyio>=4.4.0,!=4.6.2",
     "aiohttp>=3.10.5",
     "tqdm>=4.66.5",
     "opendal>=0.45.8",
@@ -62,7 +62,7 @@ dev-dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["contrib/*", "examples/*"]
+members = ["contrib/drivers/*", "contrib/libs/*", "examples/*"]
 
 [tool.ruff]
 exclude = ["jumpstarter/v1"]
