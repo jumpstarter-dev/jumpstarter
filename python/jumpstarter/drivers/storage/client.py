@@ -9,12 +9,15 @@ from jumpstarter.client.adapters import OpendalAdapter
 
 class StorageMuxClient(DriverClient):
     def host(self):
+        """Connect storage to host"""
         return self.call("host")
 
     def dut(self):
+        """Connect storage to dut"""
         return self.call("dut")
 
     def off(self):
+        """Disconnect storage"""
         return self.call("off")
 
     def write(self, handle):
@@ -25,6 +28,7 @@ class StorageMuxClient(DriverClient):
             return self.call("write", handle)
 
     def write_local_file(self, filepath):
+        """Write a local file to the storage device"""
         absolute = Path(filepath).resolve()
         with OpendalAdapter(client=self, operator=Operator("fs", root="/"), path=str(absolute)) as handle:
             return self.call("write", handle)
