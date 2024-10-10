@@ -18,8 +18,9 @@ getting-started/index.md
 cli/index.md
 config.md
 drivers.md
+architecture.md
 glossary.md
-reference.md
+reference/index.md
 ```
 
 ## Resources
