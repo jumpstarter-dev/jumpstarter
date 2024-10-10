@@ -1,7 +1,6 @@
 # These tests are flaky
 # https://github.com/grpc/grpc/issues/25364
 
-from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import grpc
@@ -23,10 +22,9 @@ pytestmark = pytest.mark.anyio
 async def test_router(mock_controller, monkeypatch):
     uuid = uuid4()
 
-    @asynccontextmanager
     async def handle_async(stream):
         async with connect_router_stream(mock_controller, str(uuid), stream):
-            yield
+            pass
 
     with Session(
         uuid=uuid,
