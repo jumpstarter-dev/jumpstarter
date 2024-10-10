@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 
 from anyio import connect_unix, create_task_group, sleep
@@ -36,13 +36,12 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             )
         )
 
-    @asynccontextmanager
     async def __handle(self, path, endpoint, token):
         async with await connect_unix(path) as stream:
             async with connect_router_stream(endpoint, token, stream):
-                yield
+                pass
 
-    async def handle(self):
+    async def handle(self, tg):
         logger.info("Listening for incoming connection requests")
         with Session(
             uuid=self.uuid,
@@ -58,12 +57,11 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             async with session.serve_unix_async() as path:
                 async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
                     logger.info("Handling new connection request")
-                    async with self.__handle(path, request.router_endpoint, request.router_token):
-                        pass
+                    tg.start_soon(self.__handle, path, request.router_endpoint, request.router_token)
 
     async def serve(self):
         async with create_task_group() as tg:
-            tg.start_soon(self.handle)
+            tg.start_soon(self.handle, tg)
             async for status in self.Status(jumpstarter_pb2.StatusRequest()):
                 if self.lease_name is not None and self.lease_name != status.lease_name:
                     self.lease_name = status.lease_name

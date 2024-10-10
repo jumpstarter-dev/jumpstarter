@@ -34,7 +34,8 @@ async def test_router(mock_controller, monkeypatch):
         root_device=MockPower(),
     ) as session:
         async with session.serve_unix_async() as path:
-            async with Exporter._Exporter__handle(None, path, mock_controller, str(uuid)):
+            async with create_task_group() as tg:
+                tg.start_soon(Exporter._Exporter__handle, None, path, mock_controller, str(uuid))
                 with start_blocking_portal() as portal:
                     lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
 
@@ -42,6 +43,7 @@ async def test_router(mock_controller, monkeypatch):
 
                     async with lease.connect_async() as client:
                         assert await client.call_async("on") == "ok"
+                tg.cancel_scope.cancel()
 
 
 @pytest.mark.xfail(raises=RuntimeError)
@@ -65,6 +67,9 @@ async def test_controller(mock_controller):
                 ) as lease:
                     async with lease.connect_async() as client:
                         assert await client.call_async("on") == "ok"
+                        # test concurrent connections
+                        async with lease.connect_async() as client2:
+                            assert await client2.call_async("on") == "ok"
 
                     async with lease.connect_async() as client:
                         assert await client.call_async("on") == "ok"
