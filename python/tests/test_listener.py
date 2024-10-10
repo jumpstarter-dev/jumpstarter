@@ -33,14 +33,15 @@ async def test_router(mock_controller, monkeypatch):
         labels={},
         root_device=MockPower(),
     ) as session:
-        async with Exporter._Exporter__handle(None, session, mock_controller, str(uuid)):
-            with start_blocking_portal() as portal:
-                lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
+        async with session.serve_unix_async() as path:
+            async with Exporter._Exporter__handle(None, path, mock_controller, str(uuid)):
+                with start_blocking_portal() as portal:
+                    lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
 
-                monkeypatch.setattr(lease, "handle_async", handle_async)
+                    monkeypatch.setattr(lease, "handle_async", handle_async)
 
-                async with lease.connect_async() as client:
-                    assert await client.call_async("on") == "ok"
+                    async with lease.connect_async() as client:
+                        assert await client.call_async("on") == "ok"
 
 
 @pytest.mark.xfail(raises=RuntimeError)
