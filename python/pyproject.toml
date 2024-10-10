@@ -76,7 +76,7 @@ extend-select = ["I", "C", "E", "F", "W", "B"]
 locale = "en-us"
 
 [tool.coverage.run]
-omit = ["conftest.py", "test_*.py", "*_test.py"]
+omit = ["conftest.py", "test_*.py", "*_test.py", "*_pb2.py", "*_pb2_grpc.py"]
 
 [tool.pytest.ini_options]
 addopts = "--capture=no --verbose --cov --cov-report=html --cov-report=xml --cov-append"
