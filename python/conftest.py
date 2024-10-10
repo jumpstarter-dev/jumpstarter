@@ -44,6 +44,10 @@ class MockRouter(router_pb2_grpc.RouterServiceServicer):
 @dataclass(kw_only=True)
 class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
     router_endpoint: str
+    status: (
+        MemoryObjectSendStream[jumpstarter_pb2.StatusResponse],
+        MemoryObjectReceiveStream[jumpstarter_pb2.StatusResponse],
+    ) = field(init=False, default_factory=lambda: create_memory_object_stream[jumpstarter_pb2.StatusResponse](32))
     queue: (MemoryObjectSendStream[str], MemoryObjectReceiveStream[str]) = field(
         init=False, default_factory=lambda: create_memory_object_stream[str](32)
     )
@@ -55,6 +59,7 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
         return jumpstarter_pb2.UnregisterResponse()
 
     async def RequestLease(self, request, context):
+        await self.status[0].send(jumpstarter_pb2.StatusResponse(leased=True, lease_name="dummy", client_name="dummy"))
         return jumpstarter_pb2.RequestLeaseResponse(name=str(uuid4()))
 
     async def GetLease(self, request, context):
@@ -73,12 +78,17 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
         )
 
     async def ReleaseLease(self, request, context):
+        await self.status[0].send(jumpstarter_pb2.StatusResponse(leased=False))
         return jumpstarter_pb2.ReleaseLeaseResponse()
 
     async def Dial(self, request, context):
         token = str(uuid4())
         await self.queue[0].send(token)
         return jumpstarter_pb2.DialResponse(router_endpoint=self.router_endpoint, router_token=token)
+
+    async def Status(self, request, context):
+        async for status in self.status[1]:
+            yield status
 
     async def Listen(self, request, context):
         async for token in self.queue[1]:
