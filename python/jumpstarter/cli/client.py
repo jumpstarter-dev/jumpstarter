@@ -180,7 +180,7 @@ async def client_shell_async(config, labels):
     with start_blocking_portal() as portal:
         async with config.lease_async(metadata_filter=MetadataFilter(labels=labels), portal=portal) as lease:
             async with TemporaryUnixListener(lease.handle_async) as path:
-                await launch_shell(f"unix://{path}")
+                await launch_shell(path)
 
 
 @click.command("shell", short_help="Spawns a shell connecting to a leased remote exporter")
