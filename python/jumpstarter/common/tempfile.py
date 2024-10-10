@@ -19,8 +19,10 @@ async def TemporaryUnixListener(handler):
         async with await create_unix_listener(path) as listener:
             async with create_task_group() as tg:
                 tg.start_soon(listener.serve, handler, tg)
-                yield path
-                tg.cancel_scope.cancel()
+                try:
+                    yield path
+                finally:
+                    tg.cancel_scope.cancel()
 
 
 @asynccontextmanager
@@ -36,5 +38,7 @@ async def TemporaryTcpListener(
     ) as listener:
         async with create_task_group() as tg:
             tg.start_soon(listener.serve, handler, tg)
-            yield listener.extra(SocketAttribute.local_address)
-            tg.cancel_scope.cancel()
+            try:
+                yield listener.extra(SocketAttribute.local_address)
+            finally:
+                tg.cancel_scope.cancel()

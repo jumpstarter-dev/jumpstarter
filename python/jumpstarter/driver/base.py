@@ -185,8 +185,10 @@ class Driver(
         match handle:
             case ClientStreamResource(uuid=uuid):
                 async with self.resources[uuid] as stream:
-                    yield stream
-                del self.resources[uuid]
+                    try:
+                        yield stream
+                    finally:
+                        del self.resources[uuid]
             case PresignedRequestResource(headers=headers, url=url, method=method):
                 async with aiohttp.request(method, url, headers=headers, raise_for_status=True) as resp:
                     async with AiohttpStreamReaderStream(reader=resp.content) as stream:

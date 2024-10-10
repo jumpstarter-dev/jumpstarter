@@ -51,8 +51,10 @@ class Session(
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
         await server.start()
-        yield
-        await server.stop(grace=None)
+        try:
+            yield
+        finally:
+            await server.stop(grace=None)
 
     @asynccontextmanager
     async def serve_unix_async(self):
