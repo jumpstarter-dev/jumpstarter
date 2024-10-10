@@ -53,25 +53,23 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         )
 
     @asynccontextmanager
-    async def __handle(self, endpoint, token):
-        root_device = self.device_factory()
-
-        with Session(
-            uuid=self.uuid,
-            labels=self.labels,
-            root_device=root_device,
-        ) as session:
-            async with session.serve_unix_async() as path:
-                async with await connect_unix(path) as stream:
-                    async with connect_router_stream(endpoint, token, stream):
-                        yield
+    async def __handle(self, session, endpoint, token):
+        async with session.serve_unix_async() as path:
+            async with await connect_unix(path) as stream:
+                async with connect_router_stream(endpoint, token, stream):
+                    yield
 
     async def handle(self):
         logger.info("Listening for incoming connection requests")
-        async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
-            logger.info("Handling new connection request")
-            async with self.__handle(request.router_endpoint, request.router_token):
-                pass
+        with Session(
+            uuid=self.uuid,
+            labels=self.labels,
+            root_device=self.device_factory(),
+        ) as session:
+            async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
+                logger.info("Handling new connection request")
+                async with self.__handle(session, request.router_endpoint, request.router_token):
+                    pass
 
     async def serve(self):
         async with create_task_group() as tg:

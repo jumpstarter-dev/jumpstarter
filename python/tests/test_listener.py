@@ -14,7 +14,7 @@ from jumpstarter.client.lease import Lease
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.drivers.power.driver import MockPower
-from jumpstarter.exporter import Exporter
+from jumpstarter.exporter import Exporter, Session
 
 pytestmark = pytest.mark.anyio
 
@@ -23,26 +23,24 @@ pytestmark = pytest.mark.anyio
 async def test_router(mock_controller, monkeypatch):
     uuid = uuid4()
 
-    exporter = Exporter(
-        channel=grpc.aio.insecure_channel("grpc.invalid"),
-        uuid=uuid,
-        labels={},
-        device_factory=lambda: MockPower(),
-    )
-
     @asynccontextmanager
     async def handle_async(stream):
         async with connect_router_stream(mock_controller, str(uuid), stream):
             yield
 
-    async with exporter._Exporter__handle(mock_controller, str(uuid)):
-        with start_blocking_portal() as portal:
-            lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
+    with Session(
+        uuid=uuid,
+        labels={},
+        root_device=MockPower(),
+    ) as session:
+        async with Exporter._Exporter__handle(None, session, mock_controller, str(uuid)):
+            with start_blocking_portal() as portal:
+                lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
 
-            monkeypatch.setattr(lease, "handle_async", handle_async)
+                monkeypatch.setattr(lease, "handle_async", handle_async)
 
-            async with lease.connect_async() as client:
-                assert await client.call_async("on") == "ok"
+                async with lease.connect_async() as client:
+                    assert await client.call_async("on") == "ok"
 
 
 @pytest.mark.xfail(raises=RuntimeError)
