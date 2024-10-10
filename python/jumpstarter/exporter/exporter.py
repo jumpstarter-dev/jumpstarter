@@ -28,22 +28,6 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         super().__post_init__()
         jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
 
-    async def __aenter__(self):
-        with Session(
-            uuid=self.uuid,
-            labels=self.labels,
-            root_device=self.device_factory(),
-        ) as probe:
-            logger.info("Registering exporter with controller")
-            await self.Register(
-                jumpstarter_pb2.RegisterRequest(
-                    labels=self.labels,
-                    reports=(await probe.GetReport(None, None)).reports,
-                )
-            )
-
-        return self
-
     async def __aexit__(self, exc_type, exc_value, traceback):
         logger.info("Unregistering exporter with controller")
         await self.Unregister(
@@ -65,6 +49,12 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             labels=self.labels,
             root_device=self.device_factory(),
         ) as session:
+            await self.Register(
+                jumpstarter_pb2.RegisterRequest(
+                    labels=self.labels,
+                    reports=(await session.GetReport(None, None)).reports,
+                )
+            )
             async with session.serve_unix_async() as path:
                 async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
                     logger.info("Handling new connection request")
