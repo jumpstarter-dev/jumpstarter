@@ -3,8 +3,9 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 
+import grpc
 from anyio import connect_unix, create_task_group, sleep
-from grpc.aio import Channel
+from google.protobuf import empty_pb2
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.streams import connect_router_stream
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class Exporter(AbstractAsyncContextManager, Metadata):
-    channel: Channel
+    channel: grpc.aio.Channel
     device_factory: Callable[[], Driver]
     lease_name: str | None = field(init=False, default=None)
 
@@ -48,13 +49,17 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             labels=self.labels,
             root_device=self.device_factory(),
         ) as session:
-            await self.Register(
-                jumpstarter_pb2.RegisterRequest(
-                    labels=self.labels,
-                    reports=(await session.GetReport(None, None)).reports,
-                )
-            )
             async with session.serve_unix_async() as path:
+                async with grpc.aio.secure_channel(
+                    f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+                ) as channel:
+                    response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
+                    await self.Register(
+                        jumpstarter_pb2.RegisterRequest(
+                            labels=self.labels,
+                            reports=response.reports,
+                        )
+                    )
                 async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
                     logger.info("Handling new connection request")
                     tg.start_soon(self.__handle, path, request.router_endpoint, request.router_token)
