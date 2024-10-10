@@ -2,10 +2,9 @@ from typing import Optional
 
 import anyio
 import click
-from anyio import create_task_group, create_unix_listener
 from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.common import MetadataFilter, TemporarySocket
+from jumpstarter.common import MetadataFilter, TemporaryUnixListener
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
@@ -180,12 +179,8 @@ def client_use(name: str):
 async def client_shell_async(config, labels):
     with start_blocking_portal() as portal:
         async with config.lease_async(metadata_filter=MetadataFilter(labels=labels), portal=portal) as lease:
-            with TemporarySocket() as path:
-                async with await create_unix_listener(path) as listener:
-                    async with create_task_group() as tg:
-                        tg.start_soon(listener.serve, lease.handle_async, tg)
-                        await launch_shell(f"unix://{path}")
-                        tg.cancel_scope.cancel()
+            async with TemporaryUnixListener(lease.handle_async) as path:
+                await launch_shell(f"unix://{path}")
 
 
 @click.command("shell", short_help="Spawns a shell connecting to a leased remote exporter")

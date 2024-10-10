@@ -3,13 +3,13 @@ from contextlib import AbstractAsyncContextManager, AbstractContextManager, asyn
 from dataclasses import dataclass, field
 
 import grpc
-from anyio import create_task_group, create_unix_listener, fail_after, sleep
+from anyio import fail_after, sleep
 from anyio.from_thread import BlockingPortal
 from google.protobuf import duration_pb2
 from grpc.aio import Channel
 
 from jumpstarter.client import client_from_channel
-from jumpstarter.common import MetadataFilter, TemporarySocket
+from jumpstarter.common import MetadataFilter, TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_true
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
@@ -78,15 +78,11 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
 
     @asynccontextmanager
     async def connect_async(self):
-        with TemporarySocket() as path:
-            async with await create_unix_listener(path) as listener:
-                async with create_task_group() as tg:
-                    tg.start_soon(listener.serve, self.handle_async, tg)
-                    async with grpc.aio.secure_channel(
-                        f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
-                    ) as channel:
-                        yield await client_from_channel(channel, self.portal)
-                    tg.cancel_scope.cancel()
+        async with TemporaryUnixListener(self.handle_async) as path:
+            async with grpc.aio.secure_channel(
+                f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+            ) as channel:
+                yield await client_from_channel(channel, self.portal)
 
     @contextmanager
     def connect(self):
