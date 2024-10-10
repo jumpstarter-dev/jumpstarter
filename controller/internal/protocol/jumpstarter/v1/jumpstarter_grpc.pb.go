@@ -25,6 +25,7 @@ const (
 	ControllerService_Register_FullMethodName      = "/jumpstarter.v1.ControllerService/Register"
 	ControllerService_Unregister_FullMethodName    = "/jumpstarter.v1.ControllerService/Unregister"
 	ControllerService_Listen_FullMethodName        = "/jumpstarter.v1.ControllerService/Listen"
+	ControllerService_Status_FullMethodName        = "/jumpstarter.v1.ControllerService/Status"
 	ControllerService_Dial_FullMethodName          = "/jumpstarter.v1.ControllerService/Dial"
 	ControllerService_AuditStream_FullMethodName   = "/jumpstarter.v1.ControllerService/AuditStream"
 	ControllerService_ListExporters_FullMethodName = "/jumpstarter.v1.ControllerService/ListExporters"
@@ -51,6 +52,9 @@ type ControllerServiceClient interface {
 	// Exporter listening
 	// Returns stream tokens for accepting incoming client connections
 	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ListenResponse], error)
+	// Exporter status
+	// Returns lease status for the exporter
+	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error)
 	// Client connecting
 	// Returns stream token for connecting to the desired exporter
 	// Leases are checked before token issuance
@@ -121,6 +125,25 @@ func (c *controllerServiceClient) Listen(ctx context.Context, in *ListenRequest,
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ControllerService_ListenClient = grpc.ServerStreamingClient[ListenResponse]
 
+func (c *controllerServiceClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[1], ControllerService_Status_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StatusRequest, StatusResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ControllerService_StatusClient = grpc.ServerStreamingClient[StatusResponse]
+
 func (c *controllerServiceClient) Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DialResponse)
@@ -133,7 +156,7 @@ func (c *controllerServiceClient) Dial(ctx context.Context, in *DialRequest, opt
 
 func (c *controllerServiceClient) AuditStream(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[AuditStreamRequest, emptypb.Empty], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[1], ControllerService_AuditStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[2], ControllerService_AuditStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +243,9 @@ type ControllerServiceServer interface {
 	// Exporter listening
 	// Returns stream tokens for accepting incoming client connections
 	Listen(*ListenRequest, grpc.ServerStreamingServer[ListenResponse]) error
+	// Exporter status
+	// Returns lease status for the exporter
+	Status(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error
 	// Client connecting
 	// Returns stream token for connecting to the desired exporter
 	// Leases are checked before token issuance
@@ -259,6 +285,9 @@ func (UnimplementedControllerServiceServer) Unregister(context.Context, *Unregis
 }
 func (UnimplementedControllerServiceServer) Listen(*ListenRequest, grpc.ServerStreamingServer[ListenResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method Listen not implemented")
+}
+func (UnimplementedControllerServiceServer) Status(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method Status not implemented")
 }
 func (UnimplementedControllerServiceServer) Dial(context.Context, *DialRequest) (*DialResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Dial not implemented")
@@ -351,6 +380,17 @@ func _ControllerService_Listen_Handler(srv interface{}, stream grpc.ServerStream
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ControllerService_ListenServer = grpc.ServerStreamingServer[ListenResponse]
+
+func _ControllerService_Status_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StatusRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ControllerServiceServer).Status(m, &grpc.GenericServerStream[StatusRequest, StatusResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ControllerService_StatusServer = grpc.ServerStreamingServer[StatusResponse]
 
 func _ControllerService_Dial_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DialRequest)
@@ -536,6 +576,11 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 		{
+			StreamName:    "Status",
+			Handler:       _ControllerService_Status_Handler,
+			ServerStreams: true,
+		},
+		{
 			StreamName:    "AuditStream",
 			Handler:       _ControllerService_AuditStream_Handler,
 			ClientStreams: true,
@@ -549,6 +594,7 @@ const (
 	ExporterService_DriverCall_FullMethodName          = "/jumpstarter.v1.ExporterService/DriverCall"
 	ExporterService_StreamingDriverCall_FullMethodName = "/jumpstarter.v1.ExporterService/StreamingDriverCall"
 	ExporterService_LogStream_FullMethodName           = "/jumpstarter.v1.ExporterService/LogStream"
+	ExporterService_Reset_FullMethodName               = "/jumpstarter.v1.ExporterService/Reset"
 )
 
 // ExporterServiceClient is the client API for ExporterService service.
@@ -563,6 +609,7 @@ type ExporterServiceClient interface {
 	DriverCall(ctx context.Context, in *DriverCallRequest, opts ...grpc.CallOption) (*DriverCallResponse, error)
 	StreamingDriverCall(ctx context.Context, in *StreamingDriverCallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamingDriverCallResponse], error)
 	LogStream(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogStreamResponse], error)
+	Reset(ctx context.Context, in *ResetRequest, opts ...grpc.CallOption) (*ResetResponse, error)
 }
 
 type exporterServiceClient struct {
@@ -631,6 +678,16 @@ func (c *exporterServiceClient) LogStream(ctx context.Context, in *emptypb.Empty
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ExporterService_LogStreamClient = grpc.ServerStreamingClient[LogStreamResponse]
 
+func (c *exporterServiceClient) Reset(ctx context.Context, in *ResetRequest, opts ...grpc.CallOption) (*ResetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResetResponse)
+	err := c.cc.Invoke(ctx, ExporterService_Reset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExporterServiceServer is the server API for ExporterService service.
 // All implementations must embed UnimplementedExporterServiceServer
 // for forward compatibility.
@@ -643,6 +700,7 @@ type ExporterServiceServer interface {
 	DriverCall(context.Context, *DriverCallRequest) (*DriverCallResponse, error)
 	StreamingDriverCall(*StreamingDriverCallRequest, grpc.ServerStreamingServer[StreamingDriverCallResponse]) error
 	LogStream(*emptypb.Empty, grpc.ServerStreamingServer[LogStreamResponse]) error
+	Reset(context.Context, *ResetRequest) (*ResetResponse, error)
 	mustEmbedUnimplementedExporterServiceServer()
 }
 
@@ -664,6 +722,9 @@ func (UnimplementedExporterServiceServer) StreamingDriverCall(*StreamingDriverCa
 }
 func (UnimplementedExporterServiceServer) LogStream(*emptypb.Empty, grpc.ServerStreamingServer[LogStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method LogStream not implemented")
+}
+func (UnimplementedExporterServiceServer) Reset(context.Context, *ResetRequest) (*ResetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Reset not implemented")
 }
 func (UnimplementedExporterServiceServer) mustEmbedUnimplementedExporterServiceServer() {}
 func (UnimplementedExporterServiceServer) testEmbeddedByValue()                         {}
@@ -744,6 +805,24 @@ func _ExporterService_LogStream_Handler(srv interface{}, stream grpc.ServerStrea
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ExporterService_LogStreamServer = grpc.ServerStreamingServer[LogStreamResponse]
 
+func _ExporterService_Reset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExporterServiceServer).Reset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExporterService_Reset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExporterServiceServer).Reset(ctx, req.(*ResetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ExporterService_ServiceDesc is the grpc.ServiceDesc for ExporterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -758,6 +837,10 @@ var ExporterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DriverCall",
 			Handler:    _ExporterService_DriverCall_Handler,
+		},
+		{
+			MethodName: "Reset",
+			Handler:    _ExporterService_Reset_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
