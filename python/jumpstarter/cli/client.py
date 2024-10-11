@@ -183,12 +183,7 @@ async def client_shell_async(config, labels):
             with TemporarySocket() as path:
                 async with await create_unix_listener(path) as listener:
                     async with create_task_group() as tg:
-
-                        async def handler(stream):
-                            async with lease.handle_async(stream):
-                                pass
-
-                        tg.start_soon(listener.serve, handler)
+                        tg.start_soon(listener.serve, lease.handle_async, tg)
                         await launch_shell(f"unix://{path}")
                         tg.cancel_scope.cancel()
 
