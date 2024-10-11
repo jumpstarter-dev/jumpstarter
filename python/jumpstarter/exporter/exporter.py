@@ -97,6 +97,8 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         while True:
             try:
                 await self.serve()
-            except Exception as e:
-                logger.info("Exporter: connection interrupted, reconnecting after %d seconds: %s", backoff, e)
+            except* Exception as excgroup:
+                logger.info(
+                    "Exporter: connection interrupted, reconnecting after %d seconds: %s", backoff, excgroup.exceptions
+                )
                 await sleep(backoff)
