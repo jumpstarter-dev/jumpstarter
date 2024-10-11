@@ -55,14 +55,9 @@ import (
 // ControlerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
-	Client client.WithWatch
-	Scheme *runtime.Scheme
-	listen sync.Map
-}
-
-type listenContext struct {
-	cancel context.CancelFunc
-	stream pb.ControllerService_ListenServer
+	Client       client.WithWatch
+	Scheme       *runtime.Scheme
+	listenQueues sync.Map
 }
 
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
@@ -278,23 +273,17 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	lctx := listenContext{
-		cancel: cancel,
-		stream: stream,
+	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case msg := <-queue.(chan *pb.ListenResponse):
+			if err := stream.Send(msg); err != nil {
+				return err
+			}
+		}
 	}
-
-	previous, loaded := s.listen.Swap(leaseName, lctx)
-
-	if loaded {
-		logger.Info("replacing old listener", "exporter", exporter.GetName())
-		previous.(listenContext).cancel()
-	}
-
-	<-ctx.Done()
-	return nil
 }
 
 func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerService_StatusServer) error {
@@ -321,7 +310,6 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 	}
 
 	defer func() {
-		s.listen.Delete(exporter.UID)
 		if err := s.Client.Get(
 			ctx,
 			types.NamespacedName{Name: exporter.Name, Namespace: exporter.Namespace},
@@ -419,15 +407,6 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	value, ok := s.listen.Load(leaseName)
-	if !ok {
-		logger.Error(nil, "no matching listener", "client", client.GetName(), "lease", leaseName)
-		return nil, status.Errorf(codes.Unavailable, "no matching listener")
-	}
-
-	// TODO: put the name of the listener in the listen context, so we can
-	//       log it here
-
 	stream := uuid.NewUUID()
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
@@ -453,9 +432,11 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	if err := value.(listenContext).stream.Send(response); err != nil {
-		logger.Error(err, "failed to send listen response", "response", response)
-		return nil, err
+	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case queue.(chan *pb.ListenResponse) <- response:
 	}
 
 	logger.Info("Client dial assigned stream ", "client", client.GetName(), "stream", stream)
