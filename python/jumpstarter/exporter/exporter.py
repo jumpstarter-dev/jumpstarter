@@ -43,8 +43,8 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             async with connect_router_stream(endpoint, token, stream):
                 pass
 
-    async def handle(self, tg):
-        logger.info("Listening for incoming connection requests")
+    async def handle(self, lease_name, tg):
+        logger.info("Listening for incoming connection requests on lease %s", lease_name)
         with Session(
             uuid=self.uuid,
             labels=self.labels,
@@ -61,19 +61,23 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                             reports=response.reports,
                         )
                     )
-                async for request in self.stub.Listen(jumpstarter_pb2.ListenRequest()):
-                    logger.info("Handling new connection request")
+                async for request in self.stub.Listen(jumpstarter_pb2.ListenRequest(lease_name=lease_name)):
+                    logger.info("Handling new connection request on lease %s", lease_name)
                     tg.start_soon(self.__handle, path, request.router_endpoint, request.router_token)
 
     async def serve(self):
+        started = False
         async with create_task_group() as tg:
-            tg.start_soon(self.handle, tg)
             async for status in self.stub.Status(jumpstarter_pb2.StatusRequest()):
                 if self.lease_name is not None and self.lease_name != status.lease_name:
                     self.lease_name = status.lease_name
                     logger.info("Lease status changed, killing existing connections")
                     tg.cancel_scope.cancel()
                     break
+                self.lease_name = status.lease_name
+                if not started and self.lease_name is not None:
+                    started = True
+                    tg.start_soon(self.handle, self.lease_name, tg)
                 if status.leased:
                     logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
                 else:

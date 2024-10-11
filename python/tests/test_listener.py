@@ -35,7 +35,7 @@ async def test_router(mock_controller, monkeypatch):
             async with create_task_group() as tg:
                 tg.start_soon(Exporter._Exporter__handle, None, path, mock_controller, str(uuid))
                 with start_blocking_portal() as portal:
-                    lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), uuid=uuid, portal=portal)
+                    lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), lease_name="dummy", portal=portal)
 
                     monkeypatch.setattr(lease, "handle_async", handle_async)
 

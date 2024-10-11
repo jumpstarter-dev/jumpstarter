@@ -59,8 +59,11 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
         return jumpstarter_pb2.UnregisterResponse()
 
     async def RequestLease(self, request, context):
-        await self.status[0].send(jumpstarter_pb2.StatusResponse(leased=True, lease_name="dummy", client_name="dummy"))
-        return jumpstarter_pb2.RequestLeaseResponse(name=str(uuid4()))
+        lease_name = "dummy"
+        await self.status[0].send(
+            jumpstarter_pb2.StatusResponse(leased=True, lease_name=lease_name, client_name="dummy")
+        )
+        return jumpstarter_pb2.RequestLeaseResponse(name=lease_name)
 
     async def GetLease(self, request, context):
         return jumpstarter_pb2.GetLeaseResponse(
