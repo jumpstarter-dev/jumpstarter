@@ -71,12 +71,12 @@ class ClientConfigV1Alpha1(BaseModel):
             portal.call(self.release_lease_async, name)
 
     async def list_leases_async(self):
-        stub = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
-        return (await stub.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
+        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        return (await controller.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
 
     async def release_lease_async(self, name):
-        stub = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
-        await stub.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
+        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
 
     @asynccontextmanager
     async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):

@@ -22,10 +22,10 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
     channel: Channel
     metadata_filter: MetadataFilter
     portal: BlockingPortal
-    stub: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
+    controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
 
     def __post_init__(self):
-        self.stub = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
+        self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.manager = self.portal.wrap_async_context_manager(self)
 
     async def __aenter__(self):
@@ -33,7 +33,7 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
         duration.FromSeconds(1800)  # TODO: configurable duration
 
         logger.info("Leasing Exporter matching labels %s for %s", self.metadata_filter.labels, duration)
-        self.lease = await self.stub.RequestLease(
+        self.lease = await self.controller.RequestLease(
             jumpstarter_pb2.RequestLeaseRequest(
                 duration=duration,
                 selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
@@ -43,7 +43,7 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
         with fail_after(300):  # TODO: configurable timeout
             while True:
                 logger.info("Polling Lease %s", self.lease.name)
-                result = await self.stub.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.lease.name))
+                result = await self.controller.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.lease.name))
 
                 # lease ready
                 if condition_true(result.conditions, "Ready"):
@@ -59,7 +59,7 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         logger.info("Releasing Lease %s", self.lease.name)
-        await self.stub.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=self.lease.name))
+        await self.controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=self.lease.name))
 
     def __enter__(self):
         return self.manager.__enter__()
@@ -73,14 +73,14 @@ class Lease:
     channel: Channel
     lease_name: str
     portal: BlockingPortal
-    stub: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
+    controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
 
     def __post_init__(self):
-        self.stub = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
+        self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
 
     async def handle_async(self, stream):
         logger.info("Connecting to Lease with name %s", self.lease_name)
-        response = await self.stub.Dial(jumpstarter_pb2.DialRequest(lease_name=self.lease_name))
+        response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.lease_name))
         async with connect_router_stream(response.router_endpoint, response.router_token, stream):
             pass
 
