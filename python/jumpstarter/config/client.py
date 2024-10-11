@@ -8,7 +8,7 @@ import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from pydantic import BaseModel, Field, ValidationError
 
-from jumpstarter.client import LeaseRequest
+from jumpstarter.client import Lease
 from jumpstarter.common import MetadataFilter
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
@@ -80,7 +80,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
     @asynccontextmanager
     async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
-        async with LeaseRequest(
+        async with Lease(
             channel=await self.channel(),
             metadata_filter=metadata_filter,
             portal=portal,
