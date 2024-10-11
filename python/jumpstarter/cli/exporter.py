@@ -88,11 +88,6 @@ def run(alias, config_path):
     anyio.run(config.serve_forever)
 
 
-async def exporter_shell(config):
-    async with config.serve_unix_async() as path:
-        await launch_shell(path)
-
-
 @exporter.command
 @click.argument("alias", default="default")
 @click.option("-c", "--config", "config_path")
@@ -106,4 +101,5 @@ def shell(alias, config_path):
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
 
-    anyio.run(exporter_shell, config)
+    with config.serve_unix() as path:
+        launch_shell(path)

@@ -1,10 +1,8 @@
 from typing import Optional
 
-import anyio
 import click
-from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.common import MetadataFilter, TemporaryUnixListener
+from jumpstarter.common import MetadataFilter
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
@@ -176,13 +174,6 @@ def client_use(name: str):
     user_config.use_client(name)
 
 
-async def client_shell_async(config, labels):
-    with start_blocking_portal() as portal:
-        async with config.lease_async(metadata_filter=MetadataFilter(labels=labels), portal=portal) as lease:
-            async with TemporaryUnixListener(lease.handle_async) as path:
-                await launch_shell(path)
-
-
 @click.command("shell", short_help="Spawns a shell connecting to a leased remote exporter")
 @click.argument("name", type=str, default="")
 @click.option("-l", "--label", "labels", type=(str, str), multiple=True)
@@ -194,7 +185,10 @@ def client_shell(name: str, labels):
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
         raise ValueError("no client specified")
-    anyio.run(client_shell_async, config, dict(labels))
+
+    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels))) as lease:
+        with lease.serve_unix() as path:
+            launch_shell(path)
 
 
 client.add_command(client_create)
