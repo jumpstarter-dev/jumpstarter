@@ -123,6 +123,7 @@ service ExporterService {
   rpc DriverCall(DriverCallRequest) returns (DriverCallResponse);
   rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
   rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
+  rpc Reset(ResetRequest) returns (ResetResponse);
 }
 
 message GetReportResponse {
@@ -161,6 +162,9 @@ message LogStreamResponse {
   string severity = 2;
   string message = 3;
 }
+
+message ResetRequest {}
+message ResetResponse {}
 
 message ListExportersRequest {
   map<string, string> labels = 1;
