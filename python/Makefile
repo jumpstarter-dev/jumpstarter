@@ -3,8 +3,8 @@ EXAMPLE_TARGETS = $(subst examples/,example-,$(wildcard examples/*))
 
 default: build
 
-docs:
-	cd docs && make html
+docs: sync
+	cd docs && uv run make html
 
 watch-docs:
 	sphinx-autobuild docs/source docs/build/html
