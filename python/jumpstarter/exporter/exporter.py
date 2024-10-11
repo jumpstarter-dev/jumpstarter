@@ -24,7 +24,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     channel: grpc.aio.Channel
     device_factory: Callable[[], Driver]
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
-    lease_name: str | None = field(init=False, default=None)
+    lease_name: str = field(init=False, default="")
 
     def __post_init__(self):
         super().__post_init__()
@@ -78,13 +78,13 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         started = False
         async with create_task_group() as tg:
             async for status in self.controller.Status(jumpstarter_pb2.StatusRequest()):
-                if self.lease_name is not None and self.lease_name != status.lease_name:
+                if self.lease_name != "" and self.lease_name != status.lease_name:
                     self.lease_name = status.lease_name
                     logger.info("Lease status changed, killing existing connections")
                     tg.cancel_scope.cancel()
                     break
                 self.lease_name = status.lease_name
-                if not started and self.lease_name is not None:
+                if not started and self.lease_name != "":
                     started = True
                     tg.start_soon(self.handle, self.lease_name, tg)
                 if status.leased:
