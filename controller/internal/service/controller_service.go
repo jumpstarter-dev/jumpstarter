@@ -37,11 +37,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/watch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -53,7 +55,7 @@ import (
 // ControlerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
-	client.Client
+	Client client.WithWatch
 	Scheme *runtime.Scheme
 	listen sync.Map
 }
@@ -123,7 +125,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 		}
 	}
 
-	if err := s.Patch(ctx, exporter, original); err != nil {
+	if err := s.Client.Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter", "exporter", exporter)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
 	}
@@ -150,7 +152,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	}
 	exporter.Status.Devices = devices
 
-	if err := s.Status().Patch(ctx, exporter, original); err != nil {
+	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
@@ -186,7 +188,7 @@ func (s *ControllerService) Unregister(
 		Message: req.GetReason(),
 	})
 
-	if err := s.Status().Patch(ctx, exporter, original); err != nil {
+	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter.Name)
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
@@ -215,7 +217,7 @@ func (s *ControllerService) ListExporters(
 		selector = selector.Add(*requirement)
 	}
 
-	if err := s.List(ctx, &exporters, &client.ListOptions{
+	if err := s.Client.List(ctx, &exporters, &client.ListOptions{
 		LabelSelector: selector,
 	}); err != nil {
 		logger.Error(err, "unable to list exporters")
@@ -270,7 +272,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 
 	defer func() {
 		s.listen.Delete(exporter.UID)
-		if err := s.Get(
+		if err := s.Client.Get(
 			ctx,
 			types.NamespacedName{Name: exporter.Name, Namespace: exporter.Namespace},
 			exporter,
@@ -287,7 +289,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 			},
 			Reason: "Disconnect",
 		})
-		if err = s.Status().Patch(ctx, exporter, original); err != nil {
+		if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
 			logger.Error(err, "unable to update exporter status, continuing anyway", "exporter", exporter)
 		}
 	}()
@@ -302,11 +304,64 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		},
 		Reason: "Connect",
 	})
-	if err = s.Status().Patch(ctx, exporter, original); err != nil {
+	if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status", "exporter", exporter)
 	}
 
 	<-ctx.Done()
+	return nil
+}
+
+func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerService_StatusServer) error {
+	ctx := stream.Context()
+	logger := log.FromContext(ctx)
+
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return err
+	}
+
+	watcher, err := s.Client.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector("metadata.name", exporter.Name),
+		Namespace:     exporter.Namespace,
+	})
+	if err != nil {
+		logger.Error(err, "failed to watch exporter")
+		return err
+	}
+
+	defer watcher.Stop()
+	for result := range watcher.ResultChan() {
+		switch result.Type {
+		case watch.Added, watch.Modified, watch.Deleted:
+			exporter = result.Object.(*jumpstarterdevv1alpha1.Exporter)
+			leased := exporter.Status.LeaseRef != nil
+			leaseName := (*string)(nil)
+			clientName := (*string)(nil)
+			if leased {
+				leaseName = &exporter.Status.LeaseRef.Name
+				var lease jumpstarterdevv1alpha1.Lease
+				if err := s.Client.Get(
+					ctx,
+					types.NamespacedName{Namespace: exporter.Namespace, Name: *leaseName},
+					&lease,
+				); err != nil {
+					logger.Error(err, "failed to get lease on exporter")
+					return err
+				}
+				clientName = &lease.Spec.ClientRef.Name
+			}
+			if err = stream.Send(&pb.StatusResponse{
+				Leased:     leased,
+				LeaseName:  leaseName,
+				ClientName: clientName,
+			}); err != nil {
+				return err
+			}
+		case watch.Error:
+			return fmt.Errorf("received error when watching exporter")
+		}
+	}
 	return nil
 }
 
@@ -376,7 +431,7 @@ func (s *ControllerService) GetLease(
 	}
 
 	var lease jumpstarterdevv1alpha1.Lease
-	if err := s.Get(ctx, types.NamespacedName{
+	if err := s.Client.Get(ctx, types.NamespacedName{
 		Namespace: client.Namespace,
 		Name:      req.Name,
 	}, &lease); err != nil {
@@ -480,7 +535,7 @@ func (s *ControllerService) RequestLease(
 			},
 		},
 	}
-	if err := s.Create(ctx, &lease); err != nil {
+	if err := s.Client.Create(ctx, &lease); err != nil {
 		return nil, err
 	}
 
@@ -499,7 +554,7 @@ func (s *ControllerService) ReleaseLease(
 	}
 
 	var lease jumpstarterdevv1alpha1.Lease
-	if err := s.Get(ctx, types.NamespacedName{
+	if err := s.Client.Get(ctx, types.NamespacedName{
 		Namespace: jclient.Namespace,
 		Name:      req.Name,
 	}, &lease); err != nil {
@@ -513,7 +568,7 @@ func (s *ControllerService) ReleaseLease(
 	original := client.MergeFrom(lease.DeepCopy())
 	lease.Spec.Release = true
 
-	if err := s.Patch(ctx, &lease, original); err != nil {
+	if err := s.Client.Patch(ctx, &lease, original); err != nil {
 		return nil, err
 	}
 
@@ -530,7 +585,7 @@ func (s *ControllerService) ListLeases(
 	}
 
 	var leases jumpstarterdevv1alpha1.LeaseList
-	if err := s.List(
+	if err := s.Client.List(
 		ctx,
 		&leases,
 		client.InNamespace(jclient.Namespace),
