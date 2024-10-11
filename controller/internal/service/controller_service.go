@@ -255,6 +255,29 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
+	leaseName := req.GetLeaseName()
+	if leaseName == "" {
+		err := fmt.Errorf("empty lease name")
+		logger.Error(err, "lease name not specified in dial request")
+		return err
+	}
+
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(
+		ctx,
+		types.NamespacedName{Namespace: exporter.Namespace, Name: leaseName},
+		&lease,
+	); err != nil {
+		logger.Error(err, "unable to get lease")
+		return err
+	}
+
+	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		err := fmt.Errorf("permission denied")
+		logger.Error(err, "lease not held by exporter")
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -263,7 +286,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		stream: stream,
 	}
 
-	previous, loaded := s.listen.Swap(exporter.UID, lctx)
+	previous, loaded := s.listen.Swap(leaseName, lctx)
 
 	if loaded {
 		logger.Info("replacing old listener", "exporter", exporter.GetName())
@@ -373,11 +396,32 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	// TODO: authorize user with Client/Lease resource
+	leaseName := req.GetLeaseName()
+	if leaseName == "" {
+		err := fmt.Errorf("empty lease name")
+		logger.Error(err, "lease name not specified in dial request")
+		return nil, err
+	}
 
-	value, ok := s.listen.Load(types.UID(req.GetUuid()))
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(
+		ctx,
+		types.NamespacedName{Namespace: client.Namespace, Name: leaseName},
+		&lease,
+	); err != nil {
+		logger.Error(err, "unable to get lease")
+		return nil, err
+	}
+
+	if lease.Spec.ClientRef.Name != client.Name {
+		err := fmt.Errorf("permission denied")
+		logger.Error(err, "lease not held by client")
+		return nil, err
+	}
+
+	value, ok := s.listen.Load(leaseName)
 	if !ok {
-		logger.Error(nil, "no matching listener", "client", client.GetName(), "uuid", req.GetUuid())
+		logger.Error(nil, "no matching listener", "client", client.GetName(), "lease", leaseName)
 		return nil, status.Errorf(codes.Unavailable, "no matching listener")
 	}
 
