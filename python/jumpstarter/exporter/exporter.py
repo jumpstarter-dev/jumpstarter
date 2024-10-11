@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 
 import grpc
@@ -43,8 +43,8 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             async with connect_router_stream(endpoint, token, stream):
                 pass
 
-    async def handle(self, lease_name, tg):
-        logger.info("Listening for incoming connection requests on lease %s", lease_name)
+    @asynccontextmanager
+    async def session(self):
         with Session(
             uuid=self.uuid,
             labels=self.labels,
@@ -55,17 +55,26 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                     f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
                 ) as channel:
                     response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
+                    logger.info("Registering exporter with controller")
                     await self.controller.Register(
                         jumpstarter_pb2.RegisterRequest(
                             labels=self.labels,
                             reports=response.reports,
                         )
                     )
-                async for request in self.controller.Listen(jumpstarter_pb2.ListenRequest(lease_name=lease_name)):
-                    logger.info("Handling new connection request on lease %s", lease_name)
-                    tg.start_soon(self.__handle, path, request.router_endpoint, request.router_token)
+                yield path
+
+    async def handle(self, lease_name, tg):
+        logger.info("Listening for incoming connection requests on lease %s", lease_name)
+        async with self.session() as path:
+            async for request in self.controller.Listen(jumpstarter_pb2.ListenRequest(lease_name=lease_name)):
+                logger.info("Handling new connection request on lease %s", lease_name)
+                tg.start_soon(self.__handle, path, request.router_endpoint, request.router_token)
 
     async def serve(self):
+        # initial registration
+        async with self.session():
+            pass
         started = False
         async with create_task_group() as tg:
             async for status in self.controller.Status(jumpstarter_pb2.StatusRequest()):
