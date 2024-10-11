@@ -25,6 +25,10 @@ service ControllerService {
   // Returns stream tokens for accepting incoming client connections
   rpc Listen(ListenRequest) returns (stream ListenResponse);
 
+  // Exporter status
+  // Returns lease status for the exporter
+  rpc Status(StatusRequest) returns (stream StatusResponse);
+
   // Client connecting
   // Returns stream token for connecting to the desired exporter
   // Leases are checked before token issuance
@@ -83,6 +87,14 @@ message ListenRequest {}
 message ListenResponse {
   string router_endpoint = 1;
   string router_token = 2;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  bool leased = 1;
+  optional string lease_name = 2;
+  optional string client_name = 3;
 }
 
 message DialRequest {
