@@ -82,7 +82,9 @@ message UnregisterRequest {
 
 message UnregisterResponse {}
 
-message ListenRequest {}
+message ListenRequest {
+  string lease_name = 1;
+}
 
 message ListenResponse {
   string router_endpoint = 1;
