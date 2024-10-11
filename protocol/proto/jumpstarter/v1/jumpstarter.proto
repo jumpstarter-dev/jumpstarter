@@ -100,7 +100,7 @@ message StatusResponse {
 }
 
 message DialRequest {
-  string uuid = 1;
+  string lease_name = 1;
 }
 
 message DialResponse {
