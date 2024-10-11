@@ -1,7 +1,6 @@
 import logging
 from contextlib import AbstractAsyncContextManager, AbstractContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
-from uuid import UUID
 
 import grpc
 from anyio import create_task_group, create_unix_listener, fail_after, sleep
@@ -49,7 +48,7 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
                 # lease ready
                 if condition_true(result.conditions, "Ready"):
                     logger.info("Lease %s acquired", self.lease.name)
-                    return Lease(channel=self.channel, uuid=UUID(result.exporter_uuid), portal=self.portal)
+                    return Lease(channel=self.channel, lease_name=self.lease.name, portal=self.portal)
                 # lease unsatisfiable
                 if condition_true(result.conditions, "Unsatisfiable"):
                     raise ValueError("lease unsatisfiable")
@@ -72,7 +71,7 @@ class LeaseRequest(AbstractContextManager, AbstractAsyncContextManager):
 @dataclass(kw_only=True)
 class Lease:
     channel: Channel
-    uuid: UUID
+    lease_name: str
     portal: BlockingPortal
     stub: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
 
@@ -80,8 +79,8 @@ class Lease:
         self.stub = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
 
     async def handle_async(self, stream):
-        logger.info("Connecting to Exporter with uuid %s", self.uuid)
-        response = await self.stub.Dial(jumpstarter_pb2.DialRequest(uuid=str(self.uuid)))
+        logger.info("Connecting to Lease with name %s", self.lease_name)
+        response = await self.stub.Dial(jumpstarter_pb2.DialRequest(lease_name=self.lease_name))
         async with connect_router_stream(response.router_endpoint, response.router_token, stream):
             pass
 
