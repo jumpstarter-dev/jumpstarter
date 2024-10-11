@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 import grpc
 import yaml
+from anyio.from_thread import start_blocking_portal
 from pydantic import BaseModel, Field
 
 from jumpstarter.common.importlib import import_class
@@ -81,6 +82,12 @@ class ExporterConfigV1Alpha1(BaseModel):
             root_device=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate(),
         ) as session:
             async with session.serve_unix_async() as path:
+                yield path
+
+    @contextmanager
+    def serve_unix(self):
+        with start_blocking_portal() as portal:
+            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
                 yield path
 
     async def serve_forever(self):

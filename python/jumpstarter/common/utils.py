@@ -1,8 +1,8 @@
 import os
 import sys
 from contextlib import asynccontextmanager, contextmanager
+from subprocess import Popen
 
-import anyio
 from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.client import client_from_path
@@ -41,8 +41,8 @@ def env():
             yield client
 
 
-async def launch_shell(host):
-    async with await anyio.open_process(
+def launch_shell(host):
+    process = Popen(
         [os.environ.get("SHELL", "bash")],
         stdin=sys.stdin,
         stdout=sys.stdout,
@@ -51,5 +51,5 @@ async def launch_shell(host):
         | {
             "JUMPSTARTER_HOST": host,
         },
-    ) as process:
-        await process.wait()
+    )
+    process.wait()

@@ -76,8 +76,13 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
             pass
 
     @asynccontextmanager
-    async def connect_async(self):
+    async def serve_unix_async(self):
         async with TemporaryUnixListener(self.handle_async) as path:
+            yield path
+
+    @asynccontextmanager
+    async def connect_async(self):
+        async with self.serve_unix_async() as path:
             async with client_from_path(path, self.portal) as client:
                 yield client
 
@@ -85,3 +90,8 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     def connect(self):
         with self.portal.wrap_async_context_manager(self.connect_async()) as client:
             yield client
+
+    @contextmanager
+    def serve_unix(self):
+        with self.portal.wrap_async_context_manager(self.serve_unix_async()) as path:
+            yield path
