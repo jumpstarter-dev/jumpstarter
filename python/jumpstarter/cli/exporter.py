@@ -90,7 +90,7 @@ def run(alias, config_path):
 
 async def exporter_shell(config):
     async with config.serve_unix_async() as path:
-        await launch_shell(f"unix://{path}")
+        await launch_shell(path)
 
 
 @exporter.command

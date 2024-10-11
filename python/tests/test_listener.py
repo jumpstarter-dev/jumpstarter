@@ -8,8 +8,7 @@ import pytest
 from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.client import LeaseRequest
-from jumpstarter.client.lease import Lease
+from jumpstarter.client import Lease
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.drivers.power.driver import MockPower
@@ -35,7 +34,11 @@ async def test_router(mock_controller, monkeypatch):
             async with create_task_group() as tg:
                 tg.start_soon(Exporter._Exporter__handle, None, path, mock_controller, str(uuid))
                 with start_blocking_portal() as portal:
-                    lease = Lease(channel=grpc.aio.insecure_channel("grpc.invalid"), lease_name="dummy", portal=portal)
+                    lease = Lease(
+                        channel=grpc.aio.insecure_channel("grpc.invalid"),
+                        metadata_filter=MetadataFilter(),
+                        portal=portal,
+                    )
 
                     monkeypatch.setattr(lease, "handle_async", handle_async)
 
@@ -58,7 +61,7 @@ async def test_controller(mock_controller):
             tg.start_soon(exporter.serve)
 
             with start_blocking_portal() as portal:
-                async with LeaseRequest(
+                async with Lease(
                     channel=grpc.aio.secure_channel(mock_controller, grpc.ssl_channel_credentials()),
                     metadata_filter=MetadataFilter(),
                     portal=portal,

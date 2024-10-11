@@ -3,10 +3,9 @@ import sys
 from contextlib import asynccontextmanager, contextmanager
 
 import anyio
-import grpc
 from anyio.from_thread import start_blocking_portal
 
-from jumpstarter.client import client_from_channel
+from jumpstarter.client import client_from_path
 from jumpstarter.exporter import Session
 
 
@@ -14,10 +13,8 @@ from jumpstarter.exporter import Session
 async def serve_async(root_device, portal):
     with Session(root_device=root_device) as session:
         async with session.serve_unix_async() as path:
-            async with grpc.aio.secure_channel(
-                f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
-            ) as channel:
-                yield await client_from_channel(channel, portal)
+            async with client_from_path(path, portal) as client:
+                yield client
 
 
 @contextmanager
@@ -33,8 +30,8 @@ async def env_async(portal):
     if host is None:
         raise RuntimeError("JUMPSTARTER_HOST not set")
 
-    async with grpc.aio.secure_channel(host, grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)) as channel:
-        yield await client_from_channel(channel, portal)
+    async with client_from_path(host, portal) as client:
+        yield client
 
 
 @contextmanager

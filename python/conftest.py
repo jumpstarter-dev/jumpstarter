@@ -144,10 +144,10 @@ async def mock_controller(tmp_path, monkeypatch):
     router_pb2_grpc.add_RouterServiceServicer_to_server(router, server)
 
     await server.start()
-
-    yield f"127.0.0.1:{port}"
-
-    await server.stop(grace=None)
+    try:
+        yield f"127.0.0.1:{port}"
+    finally:
+        await server.stop(grace=None)
 
 
 os.environ["TQDM_DISABLE"] = "1"
