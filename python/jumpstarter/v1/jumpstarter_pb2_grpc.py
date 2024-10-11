@@ -31,6 +31,11 @@ class ControllerServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenResponse.FromString,
                 _registered_method=True)
+        self.Status = channel.unary_stream(
+                '/jumpstarter.v1.ControllerService/Status',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StatusRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.Dial = channel.unary_unary(
                 '/jumpstarter.v1.ControllerService/Dial',
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialRequest.SerializeToString,
@@ -97,6 +102,14 @@ class ControllerServiceServicer(object):
     def Listen(self, request, context):
         """Exporter listening
         Returns stream tokens for accepting incoming client connections
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Status(self, request, context):
+        """Exporter status
+        Returns lease status for the exporter
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -180,6 +193,11 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.Listen,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenResponse.SerializeToString,
+            ),
+            'Status': grpc.unary_stream_rpc_method_handler(
+                    servicer.Status,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StatusRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.StatusResponse.SerializeToString,
             ),
             'Dial': grpc.unary_unary_rpc_method_handler(
                     servicer.Dial,
@@ -304,6 +322,33 @@ class ControllerService(object):
             '/jumpstarter.v1.ControllerService/Listen',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Status(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/Status',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.StatusRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -562,6 +607,11 @@ class ExporterServiceStub(object):
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LogStreamResponse.FromString,
                 _registered_method=True)
+        self.Reset = channel.unary_unary(
+                '/jumpstarter.v1.ExporterService/Reset',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetResponse.FromString,
+                _registered_method=True)
 
 
 class ExporterServiceServicer(object):
@@ -594,6 +644,12 @@ class ExporterServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Reset(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ExporterServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -616,6 +672,11 @@ def add_ExporterServiceServicer_to_server(servicer, server):
                     servicer.LogStream,
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.LogStreamResponse.SerializeToString,
+            ),
+            'Reset': grpc.unary_unary_rpc_method_handler(
+                    servicer.Reset,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -728,6 +789,33 @@ class ExporterService(object):
             '/jumpstarter.v1.ExporterService/LogStream',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.LogStreamResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Reset(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ExporterService/Reset',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetResponse.FromString,
             options,
             channel_credentials,
             insecure,

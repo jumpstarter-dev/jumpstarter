@@ -43,18 +43,22 @@ class Session(
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
     @asynccontextmanager
-    async def serve_unix_async(self):
+    async def serve_port_async(self, port):
         server = grpc.aio.server()
+        server.add_insecure_port(port)
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
 
-        with TemporarySocket() as path:
-            server.add_insecure_port(f"unix://{path}")
+        await server.start()
+        yield
+        await server.stop(grace=None)
 
-            await server.start()
-            yield path
-            await server.stop(grace=None)
+    @asynccontextmanager
+    async def serve_unix_async(self):
+        with TemporarySocket() as path:
+            async with self.serve_port_async(f"unix://{path}"):
+                yield path
 
     def __getitem__(self, key: UUID):
         return self.mapping[key]

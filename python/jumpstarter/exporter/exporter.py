@@ -1,10 +1,11 @@
 import logging
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from anyio import connect_unix, sleep
-from grpc.aio import Channel
+import grpc
+from anyio import connect_unix, create_task_group, sleep
+from google.protobuf import empty_pb2
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.streams import connect_router_stream
@@ -20,63 +21,84 @@ logger = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class Exporter(AbstractAsyncContextManager, Metadata):
-    channel: Channel
+    channel: grpc.aio.Channel
     device_factory: Callable[[], Driver]
+    controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
+    lease_name: str = field(init=False, default="")
 
     def __post_init__(self):
         super().__post_init__()
-        jumpstarter_pb2_grpc.ControllerServiceStub.__init__(self, self.channel)
-
-    async def __aenter__(self):
-        with Session(
-            uuid=self.uuid,
-            labels=self.labels,
-            root_device=self.device_factory(),
-        ) as probe:
-            logger.info("Registering exporter with controller")
-            await self.Register(
-                jumpstarter_pb2.RegisterRequest(
-                    labels=self.labels,
-                    reports=(await probe.GetReport(None, None)).reports,
-                )
-            )
-
-        return self
+        self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         logger.info("Unregistering exporter with controller")
-        await self.Unregister(
+        await self.controller.Unregister(
             jumpstarter_pb2.UnregisterRequest(
                 reason="TODO",
             )
         )
 
-    @asynccontextmanager
-    async def __handle(self, endpoint, token):
-        root_device = self.device_factory()
+    async def __handle(self, path, endpoint, token):
+        async with await connect_unix(path) as stream:
+            async with connect_router_stream(endpoint, token, stream):
+                pass
 
+    @asynccontextmanager
+    async def session(self):
         with Session(
             uuid=self.uuid,
             labels=self.labels,
-            root_device=root_device,
+            root_device=self.device_factory(),
         ) as session:
             async with session.serve_unix_async() as path:
-                async with await connect_unix(path) as stream:
-                    async with connect_router_stream(endpoint, token, stream):
-                        yield
+                async with grpc.aio.secure_channel(
+                    f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+                ) as channel:
+                    response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
+                    logger.info("Registering exporter with controller")
+                    await self.controller.Register(
+                        jumpstarter_pb2.RegisterRequest(
+                            labels=self.labels,
+                            reports=response.reports,
+                        )
+                    )
+                yield path
+
+    async def handle(self, lease_name, tg):
+        logger.info("Listening for incoming connection requests on lease %s", lease_name)
+        async with self.session() as path:
+            async for request in self.controller.Listen(jumpstarter_pb2.ListenRequest(lease_name=lease_name)):
+                logger.info("Handling new connection request on lease %s", lease_name)
+                tg.start_soon(self.__handle, path, request.router_endpoint, request.router_token)
 
     async def serve(self):
-        logger.info("Listening for incoming connection requests")
-        async for request in self.Listen(jumpstarter_pb2.ListenRequest()):
-            logger.info("Handling new connection request")
-            async with self.__handle(request.router_endpoint, request.router_token):
-                pass
+        # initial registration
+        async with self.session():
+            pass
+        started = False
+        async with create_task_group() as tg:
+            async for status in self.controller.Status(jumpstarter_pb2.StatusRequest()):
+                if self.lease_name != "" and self.lease_name != status.lease_name:
+                    self.lease_name = status.lease_name
+                    logger.info("Lease status changed, killing existing connections")
+                    tg.cancel_scope.cancel()
+                    break
+                self.lease_name = status.lease_name
+                if not started and self.lease_name != "":
+                    started = True
+                    tg.start_soon(self.handle, self.lease_name, tg)
+                if status.leased:
+                    logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
+                else:
+                    logger.info("Currently not leased")
 
     async def serve_forever(self):
         backoff = 5
         while True:
             try:
                 await self.serve()
-            except Exception as e:
-                logger.info("Exporter: connection interrupted, reconnecting after %d seconds: %s", backoff, e)
+            except* Exception as excgroup:
+                logger.info(
+                    "Exporter: connection interrupted, reconnecting after %d seconds: %s", backoff, excgroup.exceptions
+                )
                 await sleep(backoff)
