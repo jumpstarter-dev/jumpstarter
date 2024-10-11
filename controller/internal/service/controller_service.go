@@ -293,6 +293,33 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		previous.(listenContext).cancel()
 	}
 
+	<-ctx.Done()
+	return nil
+}
+
+func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerService_StatusServer) error {
+	ctx := stream.Context()
+	logger := log.FromContext(ctx)
+
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return err
+	}
+
+	original := client.MergeFrom(exporter.DeepCopy())
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: exporter.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "Connect",
+	})
+	if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
+		logger.Error(err, "unable to update exporter status", "exporter", exporter)
+	}
+
 	defer func() {
 		s.listen.Delete(exporter.UID)
 		if err := s.Client.Get(
@@ -316,33 +343,6 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 			logger.Error(err, "unable to update exporter status, continuing anyway", "exporter", exporter)
 		}
 	}()
-
-	original := client.MergeFrom(exporter.DeepCopy())
-	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: exporter.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason: "Connect",
-	})
-	if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
-		logger.Error(err, "unable to update exporter status", "exporter", exporter)
-	}
-
-	<-ctx.Done()
-	return nil
-}
-
-func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerService_StatusServer) error {
-	ctx := stream.Context()
-	logger := log.FromContext(ctx)
-
-	exporter, err := s.authenticateExporter(ctx)
-	if err != nil {
-		return err
-	}
 
 	watcher, err := s.Client.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector("metadata.name", exporter.Name),
