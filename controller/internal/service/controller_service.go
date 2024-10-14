@@ -55,14 +55,9 @@ import (
 // ControlerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
-	Client client.WithWatch
-	Scheme *runtime.Scheme
-	listen sync.Map
-}
-
-type listenContext struct {
-	cancel context.CancelFunc
-	stream pb.ControllerService_ListenServer
+	Client       client.WithWatch
+	Scheme       *runtime.Scheme
+	listenQueues sync.Map
 }
 
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
@@ -255,23 +250,66 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	lctx := listenContext{
-		cancel: cancel,
-		stream: stream,
+	leaseName := req.GetLeaseName()
+	if leaseName == "" {
+		err := fmt.Errorf("empty lease name")
+		logger.Error(err, "lease name not specified in dial request")
+		return err
 	}
 
-	previous, loaded := s.listen.Swap(exporter.UID, lctx)
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(
+		ctx,
+		types.NamespacedName{Namespace: exporter.Namespace, Name: leaseName},
+		&lease,
+	); err != nil {
+		logger.Error(err, "unable to get lease")
+		return err
+	}
 
-	if loaded {
-		logger.Info("replacing old listener", "exporter", exporter.GetName())
-		previous.(listenContext).cancel()
+	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		err := fmt.Errorf("permission denied")
+		logger.Error(err, "lease not held by exporter")
+		return err
+	}
+
+	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case msg := <-queue.(chan *pb.ListenResponse):
+			if err := stream.Send(msg); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerService_StatusServer) error {
+	ctx := stream.Context()
+	logger := log.FromContext(ctx)
+
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		return err
+	}
+
+	original := client.MergeFrom(exporter.DeepCopy())
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: exporter.Generation,
+		LastTransitionTime: metav1.Time{
+			Time: time.Now(),
+		},
+		Reason: "Connect",
+	})
+	if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
+		logger.Error(err, "unable to update exporter status", "exporter", exporter)
 	}
 
 	defer func() {
-		s.listen.Delete(exporter.UID)
 		if err := s.Client.Get(
 			ctx,
 			types.NamespacedName{Name: exporter.Name, Namespace: exporter.Namespace},
@@ -293,33 +331,6 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 			logger.Error(err, "unable to update exporter status, continuing anyway", "exporter", exporter)
 		}
 	}()
-
-	original := client.MergeFrom(exporter.DeepCopy())
-	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: exporter.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason: "Connect",
-	})
-	if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
-		logger.Error(err, "unable to update exporter status", "exporter", exporter)
-	}
-
-	<-ctx.Done()
-	return nil
-}
-
-func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerService_StatusServer) error {
-	ctx := stream.Context()
-	logger := log.FromContext(ctx)
-
-	exporter, err := s.authenticateExporter(ctx)
-	if err != nil {
-		return err
-	}
 
 	watcher, err := s.Client.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector("metadata.name", exporter.Name),
@@ -373,16 +384,28 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	// TODO: authorize user with Client/Lease resource
-
-	value, ok := s.listen.Load(types.UID(req.GetUuid()))
-	if !ok {
-		logger.Error(nil, "no matching listener", "client", client.GetName(), "uuid", req.GetUuid())
-		return nil, status.Errorf(codes.Unavailable, "no matching listener")
+	leaseName := req.GetLeaseName()
+	if leaseName == "" {
+		err := fmt.Errorf("empty lease name")
+		logger.Error(err, "lease name not specified in dial request")
+		return nil, err
 	}
 
-	// TODO: put the name of the listener in the listen context, so we can
-	//       log it here
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(
+		ctx,
+		types.NamespacedName{Namespace: client.Namespace, Name: leaseName},
+		&lease,
+	); err != nil {
+		logger.Error(err, "unable to get lease")
+		return nil, err
+	}
+
+	if lease.Spec.ClientRef.Name != client.Name {
+		err := fmt.Errorf("permission denied")
+		logger.Error(err, "lease not held by client")
+		return nil, err
+	}
 
 	stream := uuid.NewUUID()
 
@@ -409,9 +432,11 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	if err := value.(listenContext).stream.Send(response); err != nil {
-		logger.Error(err, "failed to send listen response", "response", response)
-		return nil, err
+	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case queue.(chan *pb.ListenResponse) <- response:
 	}
 
 	logger.Info("Client dial assigned stream ", "client", client.GetName(), "stream", stream)
