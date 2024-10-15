@@ -48,6 +48,18 @@ async def test_router(mock_controller, monkeypatch):
 
 
 @pytest.mark.xfail(raises=RuntimeError)
+async def test_unsatisfiable(mock_controller):
+    with start_blocking_portal() as portal:
+        with pytest.raises(ValueError):
+            async with Lease(
+                channel=grpc.aio.secure_channel(mock_controller, grpc.ssl_channel_credentials()),
+                metadata_filter=MetadataFilter(labels={"unsatisfiable": "true"}),
+                portal=portal,
+            ):
+                pass
+
+
+@pytest.mark.xfail(raises=RuntimeError)
 async def test_controller(mock_controller):
     uuid = uuid4()
 

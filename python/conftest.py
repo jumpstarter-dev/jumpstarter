@@ -51,6 +51,7 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
     queue: (MemoryObjectSendStream[str], MemoryObjectReceiveStream[str]) = field(
         init=False, default_factory=lambda: create_memory_object_stream[str](32)
     )
+    leases: dict[str, int | str] = field(init=False, default_factory=dict)
 
     async def Register(self, request, context):
         return jumpstarter_pb2.RegisterResponse(uuid=str(uuid4()))
@@ -59,26 +60,54 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
         return jumpstarter_pb2.UnregisterResponse()
 
     async def RequestLease(self, request, context):
-        lease_name = "dummy"
+        lease_name = str(uuid4())
+        if "unsatisfiable" in request.selector.match_labels:
+            self.leases[lease_name] = "unsatisfiable"
+        else:
+            self.leases[lease_name] = 0
         await self.status[0].send(
             jumpstarter_pb2.StatusResponse(leased=True, lease_name=lease_name, client_name="dummy")
         )
         return jumpstarter_pb2.RequestLeaseResponse(name=lease_name)
 
     async def GetLease(self, request, context):
-        return jumpstarter_pb2.GetLeaseResponse(
-            exporter_uuid=str(uuid4()),
-            conditions=[
-                kubernetes_pb2.Condition(
-                    type="Pending",
-                    status="False",
-                ),
-                kubernetes_pb2.Condition(
-                    type="Ready",
-                    status="True",
-                ),
-            ],
-        )
+        if self.leases[request.name] == "unsatisfiable":
+            return jumpstarter_pb2.GetLeaseResponse(
+                exporter_uuid=str(uuid4()),
+                conditions=[
+                    kubernetes_pb2.Condition(
+                        type="Unsatisfiable",
+                        status="True",
+                    ),
+                ],
+            )
+
+        self.leases[request.name] += 1
+        if self.leases[request.name] == 1:
+            return jumpstarter_pb2.GetLeaseResponse(
+                exporter_uuid=str(uuid4()),
+                conditions=[],
+            )
+        if self.leases[request.name] == 2:
+            return jumpstarter_pb2.GetLeaseResponse(
+                exporter_uuid=str(uuid4()),
+                conditions=[
+                    kubernetes_pb2.Condition(
+                        type="Pending",
+                        status="True",
+                    ),
+                ],
+            )
+        else:
+            return jumpstarter_pb2.GetLeaseResponse(
+                exporter_uuid=str(uuid4()),
+                conditions=[
+                    kubernetes_pb2.Condition(
+                        type="Ready",
+                        status="True",
+                    ),
+                ],
+            )
 
     async def ReleaseLease(self, request, context):
         await self.status[0].send(jumpstarter_pb2.StatusResponse(leased=False))
