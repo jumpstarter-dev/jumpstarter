@@ -1,19 +1,14 @@
-from typing import TypeVar
+from typing import Any
 
 from google.protobuf import json_format, struct_pb2
 from pydantic import TypeAdapter
 
-T = TypeVar("U")
+adapter = TypeAdapter(Any)
 
 
-def encode_value(v: T):
-    adapter = TypeAdapter(T)
-    return json_format.ParseDict(
-        adapter.dump_python(v, mode="json"),
-        struct_pb2.Value(),
-    )
+def encode_value(v: Any):
+    return json_format.ParseDict(adapter.dump_python(v, mode="json"), struct_pb2.Value())
 
 
-def decode_value(v: struct_pb2.Value) -> T:
-    adapter = TypeAdapter(T)
+def decode_value(v: struct_pb2.Value) -> Any:
     return adapter.validate_python(json_format.MessageToDict(v))
