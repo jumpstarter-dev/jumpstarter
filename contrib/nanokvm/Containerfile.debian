@@ -1,0 +1,23 @@
+FROM docker.io/riscv64/debian:sid-slim AS builder
+
+RUN apt-get update
+RUN apt-get install -y python3-pip python3-venv python3-wheel
+RUN python3 -m venv /venv
+RUN apt-get install -y rustup
+#RUN rustup default stable
+RUN apt-get install -y rustc cargo
+ENV RUST_MIN_STACK=32777216
+
+COPY ./dist/jumpstarter-0.1.0-py3-none-any.whl /tmp
+RUN /venv/bin/pip install --verbose /tmp/jumpstarter-0.1.0-py3-none-any.whl
+RUN find /venv -name "*.so" -exec strip {} \;
+
+FROM docker.io/riscv64/debian:sid-slim
+RUN apt-get update && apt-get install -y python3 --no-install-recommends --no-install-suggests && \
+	apt-get clean autoclean && apt-get autoremove --yes && \
+	rm -rf /var/lib/{apt,dpkg,cache,log}/	
+
+COPY --from=builder /venv /venv
+ENV PATH="/venv/bin/:$PATH"
+
+CMD ["python3"]
