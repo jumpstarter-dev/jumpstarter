@@ -1,6 +1,7 @@
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import imagehash
@@ -19,6 +20,8 @@ class ImageHash:
 
     param client: video client object, must provide a snapshot method
     type client: object
+    param outdir: where to store actual image files, default is Path.cwd()
+    type outdir: Path
     param hash_func: hash function to use from imagehash library, default is average_hash
     type hash_func: function
     param hash_size: hash size to use from imagehash library, default is 8
@@ -26,6 +29,7 @@ class ImageHash:
     """
 
     client: DriverClient
+    outdir: Path = field(default_factory=Path.cwd)
     hash_func: Any = imagehash.average_hash
     hash_size: int = 8
 
@@ -58,10 +62,9 @@ class ImageHash:
         """
         diff, snapshot_img = self._snapshot_diff(reference_img_file)
         if diff > tolerance:
-            directory = os.getcwd()
             reference_img_file = "FAILED_" + os.path.basename(reference_img_file)
 
-            save_filename = os.path.join(directory, reference_img_file)
+            save_filename = self.outdir / reference_img_file
             log.error(f"Image hashes are different, saving the actual image as {save_filename}")
             snapshot_img.save(save_filename)
             raise AssertionError(

@@ -17,11 +17,12 @@ def test_imagehash_assert_snapshot():
     ImageHash(snapshot_a).assert_snapshot(_image_path("test_image_a.jpeg"))
 
 
-def test_imagehash_fail_assert_snapshot():
+def test_imagehash_fail_assert_snapshot(tmp_path):
     snapshot_a = SnapshotMock("test_image_a.jpeg")
     # this should raise an AssertionError
     with pytest.raises(AssertionError):
-        ImageHash(snapshot_a).assert_snapshot(_image_path("test_image_b.jpeg"))
+        ImageHash(snapshot_a, outdir=tmp_path).assert_snapshot(_image_path("test_image_b.jpeg"))
+    assert (tmp_path / "FAILED_test_image_b.jpeg").exists()
 
 
 def test_imagehash_passthrough_snapshot():
