@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from jumpstarter.client import Lease
 from jumpstarter.common import MetadataFilter
+from jumpstarter.common.grpc import ssl_channel_credentials
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .common import CONFIG_PATH
@@ -50,7 +51,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
-            grpc.ssl_channel_credentials(),
+            ssl_channel_credentials(self.client.endpoint),
             grpc.access_token_call_credentials(self.client.token),
         )
 

@@ -5,6 +5,7 @@ from uuid import UUID
 import grpc
 from pydantic import BaseModel, Field, Json
 
+from jumpstarter.common.grpc import ssl_channel_credentials
 from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter.v1 import router_pb2_grpc
 
@@ -33,7 +34,7 @@ class StreamRequestMetadata(BaseModel):
 @asynccontextmanager
 async def connect_router_stream(endpoint, token, stream):
     credentials = grpc.composite_channel_credentials(
-        grpc.ssl_channel_credentials(),
+        ssl_channel_credentials(endpoint),
         grpc.access_token_call_credentials(token),
     )
 
