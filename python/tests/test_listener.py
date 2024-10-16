@@ -10,6 +10,7 @@ from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.client import Lease
 from jumpstarter.common import MetadataFilter
+from jumpstarter.common.grpc import ssl_channel_credentials
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.drivers.power.driver import MockPower
 from jumpstarter.exporter import Exporter, Session
@@ -52,7 +53,7 @@ async def test_unsatisfiable(mock_controller):
     with start_blocking_portal() as portal:
         with pytest.raises(ValueError):
             async with Lease(
-                channel=grpc.aio.secure_channel(mock_controller, grpc.ssl_channel_credentials()),
+                channel=grpc.aio.secure_channel(mock_controller, ssl_channel_credentials(mock_controller)),
                 metadata_filter=MetadataFilter(labels={"unsatisfiable": "true"}),
                 portal=portal,
             ):
@@ -64,7 +65,7 @@ async def test_controller(mock_controller):
     uuid = uuid4()
 
     async with Exporter(
-        channel=grpc.aio.secure_channel(mock_controller, grpc.ssl_channel_credentials()),
+        channel=grpc.aio.secure_channel(mock_controller, ssl_channel_credentials(mock_controller)),
         uuid=uuid,
         labels={},
         device_factory=lambda: MockPower(),
@@ -74,7 +75,7 @@ async def test_controller(mock_controller):
 
             with start_blocking_portal() as portal:
                 async with Lease(
-                    channel=grpc.aio.secure_channel(mock_controller, grpc.ssl_channel_credentials()),
+                    channel=grpc.aio.secure_channel(mock_controller, ssl_channel_credentials(mock_controller)),
                     metadata_filter=MetadataFilter(),
                     portal=portal,
                 ) as lease:

@@ -156,10 +156,7 @@ tls_key = key.private_bytes(
 
 @pytest.fixture
 async def mock_controller(tmp_path, monkeypatch):
-    ssl_roots = tmp_path / "ssl_roots"
-    ssl_roots.write_bytes(tls_crt)
-
-    monkeypatch.setenv("GRPC_DEFAULT_SSL_ROOTS_FILE_PATH", str(ssl_roots))
+    monkeypatch.setenv("JUMPSTARTER_GRPC_INSECURE", "1")
 
     server = grpc.aio.server()
     port = server.add_secure_port(

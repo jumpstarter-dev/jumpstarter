@@ -9,6 +9,7 @@ import yaml
 from anyio.from_thread import start_blocking_portal
 from pydantic import BaseModel, Field
 
+from jumpstarter.common.grpc import ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Exporter, Session
@@ -92,7 +93,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     async def serve_forever(self):
         credentials = grpc.composite_channel_credentials(
-            grpc.ssl_channel_credentials(),
+            ssl_channel_credentials(self.endpoint),
             grpc.access_token_call_credentials(self.token),
         )
 
