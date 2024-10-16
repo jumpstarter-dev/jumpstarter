@@ -12,6 +12,10 @@ class Metadata:
     def __post_init__(self):
         pass
 
+    @property
+    def name(self):
+        return self.labels.get("jumpstarter.dev/name", "unknown")
+
 
 @dataclass(kw_only=True, slots=True)
 class MetadataFilter:

@@ -1,17 +1,17 @@
 [project]
-name = "jumpstarter-driver-raspberrypi"
+name = "jumpstarter-driver-ustreamer"
 dynamic = ["version", "urls"]
 description = ""
 authors = [
-  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
   { name = "Nick Cao", email = "ncao@redhat.com" },
+  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
   { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
 ]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
-    "gpiozero>=2.0.1",
+    "pillow>=10.4.0",
 ]
 
 [tool.uv]
@@ -29,7 +29,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../../'}
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

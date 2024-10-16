@@ -1,4 +1,5 @@
-CONTRIB_TARGETS = $(subst contrib/,contrib-,$(wildcard contrib/*))
+DRIVER_TARGETS = $(subst contrib/drivers/,driver-,$(wildcard contrib/drivers/*))
+LIB_TARGETS = $(subst contrib/libs/,lib-,$(wildcard contrib/libs/*))
 EXAMPLE_TARGETS = $(subst examples/,example-,$(wildcard examples/*))
 
 default: build
@@ -18,15 +19,21 @@ sync-jumpstarter:
 test-jumpstarter:
 	uv run --isolated --package jumpstarter pytest jumpstarter tests
 
-sync-contrib-%: contrib/%
+sync-driver-%: contrib/drivers/%
 	uv sync --all-extras --inexact --package jumpstarter_driver_$(<F)
 
-test-contrib-%: contrib/%
+test-driver-%: contrib/drivers/%
 	uv run --isolated --package jumpstarter_driver_$(<F) pytest $<
 
-sync-contrib: $(addprefix sync-,$(CONTRIB_TARGETS))
+sync-lib-%: contrib/libs/%
+	uv sync --all-extras --inexact --package jumpstarter_$(<F)
 
-test-contrib: $(addprefix test-,$(CONTRIB_TARGETS))
+test-lib-%: contrib/libs/%
+	uv run --isolated --package jumpstarter_$(<F) pytest $<
+
+sync-contrib: $(addprefix sync-,$(DRIVER_TARGETS)) $(addprefix sync-,$(LIB_TARGETS))
+
+test-contrib: $(addprefix test-,$(DRIVER_TARGETS)) $(addprefix sync-,$(LIB_TARGETS))
 
 sync-example-%: examples/%
 	uv sync --all-extras --inexact --package jumpstarter_example_$(<F)
