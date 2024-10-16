@@ -10,6 +10,7 @@ from .common import UStreamerState
 
 log = logging.getLogger("ustreamer")
 
+
 class UStreamerClient(DriverClient):
     """UStreamer client class
 
