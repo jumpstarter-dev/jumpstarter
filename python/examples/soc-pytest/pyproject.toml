@@ -1,0 +1,28 @@
+[project]
+name = "jumpstarter-example-soc-pytest"
+version = "0.1.0"
+description = ""
+authors = [
+  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+  { name = "Nick Cao", email = "ncao@redhat.com" },
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter",
+    "pytest>=8.3.2",
+    # TODO: figure this out
+    #"jumsptarter_imagehash",
+    #"jumpstarter_driver_dutlink",
+]
+
+[tool.uv.sources]
+jumpstarter = { workspace = true }
+#jumpstarter-imagehash = { workspace = true }
+#jumpstarter-driver-dutlink = { workspace = true }
+
+[tool.pytest.ini_options]
+addopts = "-s --ignore examples/pytest/test_on_rpi4.py"
+log_cli = 1
+log_cli_level = "INFO"
