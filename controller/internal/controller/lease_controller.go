@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -146,182 +147,171 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 }
 
+func (r *LeaseReconciler) reconcileStatusBeginEndTime(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	logger := log.FromContext(ctx)
+
+	if lease.Status.BeginTime == nil && lease.Status.ExporterRef != nil {
+		logger.Info("reconcileStatusBeginEndTime: updating begin time", "lease", lease)
+		lease.Status.BeginTime = &metav1.Time{
+			Time: time.Now(),
+		}
+	}
+
+	if lease.Status.EndTime == nil && lease.Status.BeginTime != nil {
+		logger.Info("reconcileStatusBeginEndTime: updating end time", "lease", lease)
+		lease.Status.EndTime = &metav1.Time{
+			Time: lease.Status.BeginTime.Add(lease.Spec.Duration.Duration),
+		}
+	}
+
+	return nil
+}
+
+// Also manages LeaseConditionTypeUnsatisfiable and LeaseConditionTypePending
+func (r *LeaseReconciler) reconcileStatusExporterRef(
+	ctx context.Context,
+	result *ctrl.Result,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	logger := log.FromContext(ctx)
+
+	if lease.Status.ExporterRef == nil {
+		logger.Info("reconcileStatusExporterRef: looking for matching exporter", "lease", lease)
+
+		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
+		if err != nil {
+			logger.Error(err, "reconcileStatusExporterRef: failed to create selector from label selector", "lease", lease)
+			return err
+		}
+
+		// List all Exporter matching selector
+		var matchingExporters jumpstarterdevv1alpha1.ExporterList
+		if err := r.List(
+			ctx,
+			&matchingExporters,
+			client.InNamespace(lease.Namespace),
+			client.MatchingLabelsSelector{Selector: selector},
+		); err != nil {
+			logger.Error(err, "reconcileStatusExporterRef: failed to list exporters matching selector", "lease", lease)
+			return err
+		}
+
+		// Filter out offline exporters
+		onlineExporters := slices.DeleteFunc(
+			matchingExporters.Items,
+			func(exporter jumpstarterdevv1alpha1.Exporter) bool {
+				return !(true &&
+					meta.IsStatusConditionTrue(
+						exporter.Status.Conditions,
+						string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+					) &&
+					meta.IsStatusConditionTrue(
+						exporter.Status.Conditions,
+						string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					))
+			},
+		)
+
+		// No matching exporter online, lease unsatisfiable
+		if len(onlineExporters) == 0 {
+			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+				Status:             metav1.ConditionTrue,
+				ObservedGeneration: lease.Generation,
+				LastTransitionTime: metav1.Time{
+					Time: time.Now(),
+				},
+				Reason: "NoExporter",
+			})
+			return nil
+		}
+
+		var leases jumpstarterdevv1alpha1.LeaseList
+		if err := r.List(
+			ctx,
+			&leases,
+			client.InNamespace(lease.Namespace),
+			MatchingActiveLeases(),
+		); err != nil {
+			logger.Error(err, "reconcileStatusExporterRef: failed to list active leases", "lease", lease)
+			return err
+		}
+
+		availableExporters := slices.DeleteFunc(onlineExporters, func(exporter jumpstarterdevv1alpha1.Exporter) bool {
+			for _, existingLease := range leases.Items {
+				// if the lease is referencing the current exporter
+				if existingLease.Status.ExporterRef != nil && existingLease.Status.ExporterRef.Name == exporter.Name {
+					return true
+				}
+			}
+			return false
+		})
+
+		if len(availableExporters) == 0 {
+			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+				Status:             metav1.ConditionTrue,
+				ObservedGeneration: lease.Generation,
+				LastTransitionTime: metav1.Time{
+					Time: time.Now(),
+				},
+				Reason: "NotAvailable",
+			})
+			result.RequeueAfter = time.Second
+			return nil
+		} else {
+			lease.Status.ExporterRef = &corev1.LocalObjectReference{
+				Name: availableExporters[0].Name,
+			}
+			return nil
+		}
+	}
+
+	return nil
+}
+
 func (r *LeaseReconciler) ReconcileNewLease(
 	ctx context.Context,
 	lease jumpstarterdevv1alpha1.Lease,
 ) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
-	if err != nil {
-		log.Error(err, "Error creating selector for label selector")
-		return ctrl.Result{}, err
+	var result ctrl.Result
+	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
+		return result, err
 	}
 
-	// List all Exporter matching selector
-	var matchedExporters jumpstarterdevv1alpha1.ExporterList
-	if err := r.List(
-		ctx,
-		&matchedExporters,
-		client.InNamespace(lease.Namespace),
-		client.MatchingLabelsSelector{Selector: selector},
-	); err != nil {
-		log.Error(err, "Error listing exporters")
-		return ctrl.Result{}, err
+	if err := r.reconcileStatusBeginEndTime(ctx, &lease); err != nil {
+		return result, err
 	}
-
-	onlineExporters := slices.DeleteFunc(
-		matchedExporters.Items,
-		func(exporter jumpstarterdevv1alpha1.Exporter) bool {
-			return !(true &&
-				meta.IsStatusConditionTrue(
-					exporter.Status.Conditions,
-					string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-				) &&
-				meta.IsStatusConditionTrue(
-					exporter.Status.Conditions,
-					string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-				))
-		},
-	)
-
-	// No Exporter available, lease unsatisfiable
-	if len(onlineExporters) == 0 {
-		lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
-			BeginTime:   nil,
-			EndTime:     nil,
-			ExporterRef: nil,
-			Ended:       true,
-		}
-
-		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: lease.Generation,
-			LastTransitionTime: metav1.Time{
-				Time: time.Now(),
-			},
-			Reason: "NoExporter",
-		})
-
-		if err := r.Status().Update(ctx, &lease); err != nil {
-			log.Error(err, "unable to update Lease status")
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	var leases jumpstarterdevv1alpha1.LeaseList
-	err = r.List(
-		ctx,
-		&leases,
-		client.InNamespace(lease.Namespace),
-		MatchingActiveLeases(),
-	)
-	if err != nil {
-		log.Error(err, "Error listing leases")
-		return ctrl.Result{}, err
-	}
-
-	// Find available exporter
-	for _, exporter := range onlineExporters {
-		taken := false
-		for _, existingLease := range leases.Items {
-			// if lease is active and is referencing an exporter
-			if !existingLease.Status.Ended && existingLease.Status.ExporterRef != nil {
-				// if lease is referencing this exporter
-				if existingLease.Status.ExporterRef.Name == exporter.Name {
-					taken = true
-				}
-			}
-		}
-		// Exporter taken by lease
-		if taken {
-			continue
-		}
-
-		beginTime := time.Now()
-
-		lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
-			BeginTime: &metav1.Time{
-				Time: beginTime,
-			},
-			EndTime: &metav1.Time{
-				Time: beginTime.Add(lease.Spec.Duration.Duration),
-			},
-			ExporterRef: &corev1.LocalObjectReference{
-				Name: exporter.Name,
-			},
-			Ended: false,
-		}
-
-		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: lease.Generation,
-			LastTransitionTime: metav1.Time{
-				Time: beginTime,
-			},
-			Reason: "Acquired",
-		})
-
-		if err := r.Status().Update(ctx, &lease); err != nil {
-			log.Error(err, "unable to update Lease status")
-			return ctrl.Result{}, client.IgnoreNotFound(err)
-		}
-
-		if err := controllerutil.SetControllerReference(&exporter, &lease, r.Scheme); err != nil {
-			log.Error(err, "unable to update Lease owner reference")
-			return ctrl.Result{}, err
-		}
-
-		if err := r.Update(ctx, &lease); err != nil {
-			log.Error(err, "unable to update Lease")
-			return ctrl.Result{}, err
-		}
-
-		// Requeue at EndTime
-		return ctrl.Result{
-			RequeueAfter: time.Until(lease.Status.EndTime.Time),
-		}, nil
-	}
-
-	lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
-		BeginTime:   nil,
-		EndTime:     nil,
-		ExporterRef: nil,
-		Ended:       false,
-	}
-	meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: lease.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason: "NotAvailable",
-	})
-	meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-		Status:             metav1.ConditionFalse,
-		ObservedGeneration: lease.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason: "Pending",
-	})
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
-		log.Error(err, "unable to update Lease status")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		logger.Error(err, "unable to update Lease status")
+		return result, err
 	}
 
-	// No exporter available
-	// Try again later
-	return ctrl.Result{
-		RequeueAfter: time.Second,
-	}, nil
+	if lease.Status.ExporterRef != nil {
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      lease.Status.ExporterRef.Name,
+		}, &exporter); err != nil {
+			return result, err
+		}
+		if err := controllerutil.SetControllerReference(&exporter, &lease, r.Scheme); err != nil {
+			logger.Error(err, "unable to update Lease owner reference")
+			return result, err
+		}
+		if err := r.Update(ctx, &lease); err != nil {
+			logger.Error(err, "unable to update Lease status")
+			return result, err
+		}
+	}
+
+	return result, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
