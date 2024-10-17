@@ -29,7 +29,7 @@ file called `my-client.yaml`:
 ```yaml
 client:
     name: my-client
-    endpoint: "grpcs://jumpstarter.my-lab.com:1443"
+    endpoint: "jumpstarter.my-lab.com:1443"
     token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 ```
 

@@ -14,7 +14,7 @@ service.
 Alternatively the client can receive the endpoint and token as environment variables:
 
 ```bash
-export JUMPSTARTER_ENDPOINT=grpcs://jumpstarter.my-lab.com:1443
+export JUMPSTARTER_ENDPOINT=jumpstarter.my-lab.com:1443
 export JUMPSTARTER_TOKEN=dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 ```
 
