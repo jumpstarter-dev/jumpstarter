@@ -85,17 +85,12 @@ var clientCreateCmd = &cobra.Command{
 					Value: "ClientConfig",
 				},
 				{
-					Key: "client",
-					Value: []yaml.MapItem{
-						{
-							Key:   "endpoint",
-							Value: object.Status.Endpoint,
-						},
-						{
-							Key:   "token",
-							Value: string(token),
-						},
-					},
+					Key:   "endpoint",
+					Value: object.Status.Endpoint,
+				},
+				{
+					Key:   "token",
+					Value: string(token),
 				},
 			}
 			if err := yaml.NewEncoder(os.Stdout).Encode(&clientConfig); err != nil {

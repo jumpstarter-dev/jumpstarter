@@ -42,9 +42,9 @@ jobs:
           mkdir -p ~/.config/jumpstarter/clients
           go run ./cmd/jmpctl/main.go client create test-client-1 > ~/.config/jumpstarter/clients/test-client-1.yaml
           cat <<EOF >> ~/.config/jumpstarter/clients/test-client-1.yaml
-            drivers:
-              allow: []
-              unsafe: True
+          drivers:
+            allow: []
+            unsafe: True
           EOF
 
       - name: Create exporter
