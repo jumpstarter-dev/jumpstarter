@@ -53,117 +53,136 @@ type LeaseReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := r.Get(ctx, req.NamespacedName, &lease); err != nil {
-		log.Error(err, "unable to fetch Lease")
+		logger.Error(err, "Reconcile: unable to get lease", "lease", req.NamespacedName)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// lease already ended, ignoring
+	var result ctrl.Result
+	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
+		return result, err
+	}
+
+	if err := r.reconcileStatusBeginTime(ctx, &lease); err != nil {
+		return result, err
+	}
+
+	if err := r.reconcileStatusEnded(ctx, &result, &lease); err != nil {
+		return result, err
+	}
+
+	if err := r.Status().Update(ctx, &lease); err != nil {
+		return result, err
+	}
+
+	if lease.Labels == nil {
+		lease.Labels = make(map[string]string)
+	}
 	if lease.Status.Ended {
-		return ctrl.Result{}, nil
-	}
-
-	// force release lease
-	if lease.Spec.Release {
-		log.Info("lease released early", "lease", lease.Name)
-		now := time.Now()
-
-		if lease.Labels == nil {
-			lease.Labels = make(map[string]string)
-		}
 		lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = jumpstarterdevv1alpha1.LeaseLabelEndedValue
-
-		if err := r.Update(ctx, &lease); err != nil {
-			log.Error(err, "unable to update Lease labels")
-			return ctrl.Result{}, err
-		}
-
-		lease.Status.Ended = true
-		lease.Status.EndTime = &metav1.Time{
-			Time: now,
-		}
-		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: lease.Generation,
-			LastTransitionTime: metav1.Time{
-				Time: now,
-			},
-			Reason: "Released",
-		})
-
-		if err := r.Status().Update(ctx, &lease); err != nil {
-			log.Error(err, "unable to update Lease status")
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, nil
 	}
 
-	// 1. newly created lease
-	if lease.Status.BeginTime == nil || lease.Status.EndTime == nil || lease.Status.ExporterRef == nil {
-		return r.ReconcileNewLease(ctx, lease)
-	} else {
-		// 2. expired lease
-		if time.Now().After(lease.Status.EndTime.Time) {
-			log.Info("lease expired", "lease", lease.Name)
-			if lease.Labels == nil {
-				lease.Labels = make(map[string]string)
-			}
-			lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = jumpstarterdevv1alpha1.LeaseLabelEndedValue
+	if lease.Status.ExporterRef != nil {
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      lease.Status.ExporterRef.Name,
+		}, &exporter); err != nil {
+			return result, err
+		}
+		if err := controllerutil.SetControllerReference(&exporter, &lease, r.Scheme); err != nil {
+			logger.Error(err, "Reconcile: failed to update lease controller reference", "lease", lease)
+			return result, err
+		}
+	}
 
-			if err := r.Update(ctx, &lease); err != nil {
-				log.Error(err, "unable to update Lease labels")
-				return ctrl.Result{}, err
-			}
+	if err := r.Update(ctx, &lease); err != nil {
+		logger.Error(err, "Reconcile: failed to update lease metadata", "lease", lease)
+		return result, err
+	}
 
-			lease.Status.Ended = true
+	return result, nil
+}
+
+// also manages EndTime and LeaseConditionTypeReady
+// nolint:unparam
+func (r *LeaseReconciler) reconcileStatusEnded(
+	ctx context.Context,
+	result *ctrl.Result,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	logger := log.FromContext(ctx)
+
+	now := time.Now()
+	if !lease.Status.Ended {
+		if lease.Spec.Release {
+			logger.Info("reconcileStatusEndTime: force releasing lease", "lease", lease)
 			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
 				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 				Status:             metav1.ConditionFalse,
 				ObservedGeneration: lease.Generation,
 				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
+					Time: now,
 				},
-				Reason: "Expired",
+				Reason: "Released",
 			})
-
-			if err := r.Status().Update(ctx, &lease); err != nil {
-				log.Error(err, "unable to update Lease status")
-				return ctrl.Result{}, err
+			lease.Status.Ended = true
+			lease.Status.EndTime = &metav1.Time{
+				Time: now,
 			}
-
-			return ctrl.Result{}, nil
-		} else {
-			// 3. acquired lease
-			// Requeue acquire lease on EndTime
-			return ctrl.Result{
-				RequeueAfter: time.Until(lease.Status.EndTime.Time),
-			}, nil
+			return nil
+		} else if lease.Status.BeginTime != nil {
+			expiration := lease.Status.BeginTime.Add(lease.Spec.Duration.Duration)
+			if expiration.Before(now) {
+				logger.Info("reconcileStatusEndTime: lease expired", "lease", lease)
+				meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: lease.Generation,
+					LastTransitionTime: metav1.Time{
+						Time: time.Now(),
+					},
+					Reason: "Expired",
+				})
+				lease.Status.Ended = true
+				lease.Status.EndTime = &metav1.Time{
+					Time: now,
+				}
+				return nil
+			} else {
+				result.RequeueAfter = expiration.Sub(now)
+				return nil
+			}
 		}
 	}
+
+	return nil
 }
 
-func (r *LeaseReconciler) reconcileStatusBeginEndTime(
+// nolint:unparam
+func (r *LeaseReconciler) reconcileStatusBeginTime(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
 	logger := log.FromContext(ctx)
 
+	now := time.Now()
 	if lease.Status.BeginTime == nil && lease.Status.ExporterRef != nil {
-		logger.Info("reconcileStatusBeginEndTime: updating begin time", "lease", lease)
+		logger.Info("reconcileStatusBeginTime: updating begin time", "lease", lease)
+		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: lease.Generation,
+			LastTransitionTime: metav1.Time{
+				Time: now,
+			},
+			Reason: "Ready",
+		})
 		lease.Status.BeginTime = &metav1.Time{
-			Time: time.Now(),
-		}
-	}
-
-	if lease.Status.EndTime == nil && lease.Status.BeginTime != nil {
-		logger.Info("reconcileStatusBeginEndTime: updating end time", "lease", lease)
-		lease.Status.EndTime = &metav1.Time{
-			Time: lease.Status.BeginTime.Add(lease.Spec.Duration.Duration),
+			Time: now,
 		}
 	}
 
@@ -271,47 +290,6 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 	}
 
 	return nil
-}
-
-func (r *LeaseReconciler) ReconcileNewLease(
-	ctx context.Context,
-	lease jumpstarterdevv1alpha1.Lease,
-) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	var result ctrl.Result
-	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
-		return result, err
-	}
-
-	if err := r.reconcileStatusBeginEndTime(ctx, &lease); err != nil {
-		return result, err
-	}
-
-	if err := r.Status().Update(ctx, &lease); err != nil {
-		logger.Error(err, "unable to update Lease status")
-		return result, err
-	}
-
-	if lease.Status.ExporterRef != nil {
-		var exporter jumpstarterdevv1alpha1.Exporter
-		if err := r.Get(ctx, types.NamespacedName{
-			Namespace: lease.Namespace,
-			Name:      lease.Status.ExporterRef.Name,
-		}, &exporter); err != nil {
-			return result, err
-		}
-		if err := controllerutil.SetControllerReference(&exporter, &lease, r.Scheme); err != nil {
-			logger.Error(err, "unable to update Lease owner reference")
-			return result, err
-		}
-		if err := r.Update(ctx, &lease); err != nil {
-			logger.Error(err, "unable to update Lease status")
-			return result, err
-		}
-	}
-
-	return result, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
