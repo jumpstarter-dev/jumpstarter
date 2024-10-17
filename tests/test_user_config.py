@@ -6,7 +6,6 @@ import pytest
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Client,
     ClientConfigV1Alpha1Drivers,
     UserConfigV1Alpha1,
     UserConfigV1Alpha1Config,
@@ -32,10 +31,7 @@ config:
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
-            client=ClientConfigV1Alpha1Client(
-                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
-            ),
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
@@ -63,10 +59,7 @@ config: {}
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
-            client=ClientConfigV1Alpha1Client(
-                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
-            ),
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
@@ -89,10 +82,7 @@ config:
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
-            client=ClientConfigV1Alpha1Client(
-                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
-            ),
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
@@ -192,9 +182,9 @@ config:
             config=UserConfigV1Alpha1Config(
                 current_client=ClientConfigV1Alpha1(
                     name="testclient",
-                    client=ClientConfigV1Alpha1Client(
-                        endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
-                    ),
+                    endpoint="abc",
+                    token="123",
+                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
                 )
             )
         )
@@ -231,10 +221,7 @@ config:
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
-            client=ClientConfigV1Alpha1Client(
-                endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
-            ),
+            name="testclient", endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
         ),
     ) as mock_load:
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
@@ -243,9 +230,9 @@ config:
                 config=UserConfigV1Alpha1Config(
                     current_client=ClientConfigV1Alpha1(
                         name="another",
-                        client=ClientConfigV1Alpha1Client(
-                            endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
-                        ),
+                        endpoint="abc",
+                        token="123",
+                        drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
                     )
                 )
             )
@@ -270,9 +257,9 @@ config:
             config=UserConfigV1Alpha1Config(
                 current_client=ClientConfigV1Alpha1(
                     name="another",
-                    client=ClientConfigV1Alpha1Client(
-                        endpoint="abc", token="123", drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False)
-                    ),
+                    endpoint="abc",
+                    token="123",
+                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
                 )
             )
         )

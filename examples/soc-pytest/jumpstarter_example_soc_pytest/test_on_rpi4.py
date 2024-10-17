@@ -14,8 +14,9 @@ from jumpstarter.testing.utils import wait_and_login
 
 log = logging.getLogger(__file__)
 
+
 class TestResource(JumpstarterTest):
-    filter_labels = {"board":"rpi4"}
+    filter_labels = {"board": "rpi4"}
 
     @classmethod
     def teardown_class(cls):
@@ -52,8 +53,9 @@ class TestResource(JumpstarterTest):
         try:
             client.dutlink.storage.write_local_file("image/images/latest.raw")
         except opendal.exceptions.NotFound:
-            pytest.exit("No image found, please enter the image directory and run `make`, "
-                        "more details in the README.md")
+            pytest.exit(
+                "No image found, please enter the image directory and run `make`, " "more details in the README.md"
+            )
             return
         client.dutlink.storage.dut()
         client.dutlink.power.on()
@@ -66,13 +68,15 @@ class TestResource(JumpstarterTest):
     def test_tpm2_device(self, shell):
         shell.logfile_read = sys.stdout.buffer
 
-        lines = ["apt-get install -y tpm2-tools",
-                 "tpm2_createprimary -C e -c primary.ctx",
-                 "tpm2_create -G rsa -u key.pub -r key.priv -C primary.ctx",
-                 "tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx",
-                 "echo my message > message.dat",
-                 "tpm2_sign -c key.ctx -g sha256 -o sig.rssa message.dat",
-                 "tpm2_verifysignature -c key.ctx -g sha256 -s sig.rssa -m message.dat"]
+        lines = [
+            "apt-get install -y tpm2-tools",
+            "tpm2_createprimary -C e -c primary.ctx",
+            "tpm2_create -G rsa -u key.pub -r key.priv -C primary.ctx",
+            "tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx",
+            "echo my message > message.dat",
+            "tpm2_sign -c key.ctx -g sha256 -o sig.rssa message.dat",
+            "tpm2_verifysignature -c key.ctx -g sha256 -s sig.rssa -m message.dat",
+        ]
 
         for line in lines:
             log.info(f"Running command: {line}")
