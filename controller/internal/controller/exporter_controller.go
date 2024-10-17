@@ -21,14 +21,12 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 )
@@ -56,79 +54,103 @@ type ExporterReconciler struct {
 func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	exporter := &jumpstarterdevv1alpha1.Exporter{}
-	err := r.Get(ctx, req.NamespacedName, exporter)
-	if apierrors.IsNotFound(err) {
-		logger.Info("reconcile: Exporter deleted", "exporter", req.NamespacedName)
-		// Request object not found, could have been deleted after reconcile request.
-		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-		return reconcile.Result{}, nil
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := r.Get(ctx, req.NamespacedName, &exporter); err != nil {
+		logger.Error(err, "Reconcile: unable to get exporter", "exporter", req.NamespacedName)
+		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if err != nil {
-		logger.Error(err, "reconcile: unable to fetch Exporter")
+	original := client.MergeFrom(exporter.DeepCopy())
+
+	if err := r.reconcileStatusCredential(ctx, &exporter); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	if err := r.reconcileStatusLeaseRef(ctx, &exporter); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileStatusEndpoint(ctx, &exporter); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.Status().Patch(ctx, &exporter, original); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *ExporterReconciler) reconcileStatusCredential(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) error {
+	logger := log.FromContext(ctx)
+
+	if exporter.Status.Credential == nil {
+		logger.Info("reconcileStatusCredential: creating credential for exporter", "exporter", exporter)
+		secret, err := r.secretForExporter(exporter)
+		if err != nil {
+			logger.Error(err, "reconcileStatusCredential: failed to prepare credential for exporter", "exporter", exporter)
+			return err
+		}
+		if err := r.Create(ctx, secret); err != nil {
+			logger.Error(err, "reconcileStatusCredential: failed to create credential for exporter", "exporter", exporter)
+			return err
+		}
+		exporter.Status.Credential = &corev1.LocalObjectReference{
+			Name: secret.Name,
+		}
+	}
+
+	return nil
+}
+
+func (r *ExporterReconciler) reconcileStatusLeaseRef(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) error {
+	logger := log.FromContext(ctx)
 
 	var leases jumpstarterdevv1alpha1.LeaseList
-	err = r.List(
+	if err := r.List(
 		ctx,
 		&leases,
-		client.InNamespace(req.Namespace),
+		client.InNamespace(exporter.Namespace),
 		MatchingActiveLeases(),
-	)
-	if err != nil {
-		logger.Error(err, "Error listing leases")
-		return ctrl.Result{}, err
+	); err != nil {
+		logger.Error(err, "reconcileStatusLeaseRef: failed to list active leases", "exporter", exporter)
+		return err
 	}
 
 	exporter.Status.LeaseRef = nil
 	for _, lease := range leases.Items {
 		if !lease.Status.Ended && lease.Status.ExporterRef != nil {
 			if lease.Status.ExporterRef.Name == exporter.Name {
-				exporter.Status.LeaseRef = &corev1.LocalObjectReference{Name: lease.Name}
+				exporter.Status.LeaseRef = &corev1.LocalObjectReference{
+					Name: lease.Name,
+				}
 			}
 		}
 	}
-	if err = r.Status().Update(ctx, exporter); err != nil {
-		logger.Error(err, "reconcile: unable to update Exporter with leaseRef", "exporter", req.NamespacedName)
-		return ctrl.Result{}, err
-	}
 
-	if exporter.Status.Credential == nil {
-		logger.Info("reconcile: Exporter has no credentials, creating credentials", "exporter", req.NamespacedName)
-		secret, err := r.secretForExporter(exporter)
-		if err != nil {
-			logger.Error(err, "reconcile: unable to create secret for Exporter")
-			return ctrl.Result{}, err
-		}
-		err = r.Create(ctx, secret)
-		if err != nil {
-			logger.Error(err, "reconcile: unable to create secret for Exporter", "exporter", req.NamespacedName, "secret", secret.GetName())
-			return ctrl.Result{}, err
-		}
-		exporter.Status.Credential = &corev1.LocalObjectReference{
-			Name: secret.Name,
-		}
-		err = r.Status().Update(ctx, exporter)
-		if err != nil {
-			logger.Error(err, "reconcile: unable to update Exporter with secret reference", "exporter", req.NamespacedName, "secret", secret.GetName())
-			return ctrl.Result{}, err
-		}
-	}
+	return nil
+}
+
+// nolint:unparam
+func (r *ExporterReconciler) reconcileStatusEndpoint(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) error {
+	logger := log.FromContext(ctx)
 
 	endpoint := controllerEndpoint()
 	if exporter.Status.Endpoint != endpoint {
-		logger.Info("reconcile: Exporter endpoint outdated, updating", "exporter", req.NamespacedName)
+		logger.Info("reconcileStatusEndpoint: updating controller endpoint", "exporter", exporter)
 		exporter.Status.Endpoint = endpoint
-		err = r.Status().Update(ctx, exporter)
-		if err != nil {
-			logger.Error(err, "reconcile: unable to update Exporter with endpoint", "exporter", req.NamespacedName)
-			return ctrl.Result{}, err
-		}
 	}
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.Exporter) (*corev1.Secret, error) {
