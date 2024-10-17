@@ -735,7 +735,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.0.3.dev49+g43aabe2.d20241016"
+version = "0.0.3.dev57+g246d472.d20241017"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -812,7 +812,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.0.3.dev49+g43aabe2.d20241016"
+version = "0.0.3.dev52+gd6f700c.d20241016"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -841,7 +841,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.0.3.dev49+g43aabe2.d20241016"
+version = "0.0.3.dev52+gd6f700c.d20241016"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -870,7 +870,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.0.3.dev49+g43aabe2.d20241016"
+version = "0.0.3.dev52+gd6f700c.d20241016"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -897,7 +897,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.0.3.dev49+g43aabe2.d20241016"
+version = "0.0.3.dev52+gd6f700c.d20241016"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -926,7 +926,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.0.3.dev49+g43aabe2.d20241016"
+version = "0.0.3.dev52+gd6f700c.d20241016"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -968,18 +968,22 @@ version = "0.1.0"
 source = { virtual = "examples/soc-pytest" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-dutlink" },
+    { name = "jumpstarter-imagehash" },
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter-driver-dutlink", editable = "contrib/drivers/dutlink" },
+    { name = "jumpstarter-imagehash", editable = "contrib/libs/imagehash" },
     { name = "pytest", specifier = ">=8.3.2" },
 ]
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.0.3.dev49+g43aabe2.d20241016"
+version = "0.0.3.dev57+g246d472.d20241017"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
