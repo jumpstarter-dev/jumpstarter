@@ -1,0 +1,32 @@
+#!/bin/sh
+set -x
+# all output to serial port
+sudo sed -i 's/console=serial0,115200 console=tty1/console=serial0,115200/g' mnt/boot/firmware/cmdline.txt
+cat mnt/boot/firmware/cmdline.txt
+
+cat << EOF | sudo tee mnt/boot/firmware/custom.toml
+# Raspberry Pi First Boot Setup
+[system]
+hostname = "rpitest"
+
+[user]
+name = "root"
+password = "changeme"
+password_encrypted = false
+
+[ssh]
+enabled = false
+
+[wlan]
+country = "es"
+
+[locale]
+keymap = "es"
+timezone = "Europe/Madrid"
+EOF
+
+cat << EOF | sudo tee -a mnt/boot/firmware/config.txt
+dtparam=spi=on
+dtoverlay=tpm-slb9670
+enable_uart=1
+EOF
