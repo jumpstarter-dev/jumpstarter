@@ -68,12 +68,11 @@ the client name, access token, and any configuration parameters.
 
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
-client:
-  endpoint: "jumpstarter.my-lab.com:1443"
-  token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-  drivers:
-    # Wildcards are supported
-    allow: ["jumpstarter.drivers.*", "vendorpackage.*"]
+endpoint: "jumpstarter.my-lab.com:1443"
+token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+drivers:
+  # Wildcards are supported
+  allow: ["jumpstarter.drivers.*", "vendorpackage.*"]
 ```
 
 - `endpoint` - The gRPC endpoint of the Jumpstarter controller server.
