@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Client,
     ClientConfigV1Alpha1Drivers,
 )
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
@@ -29,10 +28,10 @@ def test_client_config_try_from_env(monkeypatch):
 
     config = ClientConfigV1Alpha1.try_from_env()
     assert config.name == "default"
-    assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
-    assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
-    assert config.client.drivers.unsafe is False
+    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+    assert config.endpoint == "jumpstarter.my-lab.com:1443"
+    assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
+    assert config.drivers.unsafe is False
 
 
 def test_client_config_try_from_env_not_set():
@@ -47,10 +46,10 @@ def test_client_config_from_env(monkeypatch):
 
     config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
-    assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
-    assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
-    assert config.client.drivers.unsafe is False
+    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+    assert config.endpoint == "jumpstarter.my-lab.com:1443"
+    assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
+    assert config.drivers.unsafe is False
 
 
 def test_client_config_from_env_allow_unsafe(monkeypatch):
@@ -60,10 +59,10 @@ def test_client_config_from_env_allow_unsafe(monkeypatch):
 
     config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
-    assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
-    assert config.client.drivers.allow == []
-    assert config.client.drivers.unsafe is True
+    assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+    assert config.endpoint == "jumpstarter.my-lab.com:1443"
+    assert config.drivers.allow == []
+    assert config.drivers.unsafe is True
 
 
 @pytest.mark.parametrize("missing_field", [JMP_TOKEN, JMP_ENDPOINT])
@@ -81,25 +80,22 @@ def test_client_config_from_env_missing_field_raises(monkeypatch, missing_field)
 def test_client_config_from_file():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
-client:
-  endpoint: jumpstarter.my-lab.com:1443
-  token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-  drivers:
-    allow:
-      - jumpstarter.drivers.*
-      - vendorpackage.*
+endpoint: jumpstarter.my-lab.com:1443
+token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+drivers:
+  allow:
+  - jumpstarter.drivers.*
+  - vendorpackage.*
 """
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write(CLIENT_CONFIG)
         f.close()
         config = ClientConfigV1Alpha1.from_file(f.name)
         assert config.name == f.name.split("/")[-1]
-        assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
-        assert (
-            config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-        )
-        assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
-        assert config.client.drivers.unsafe is False
+        assert config.endpoint == "jumpstarter.my-lab.com:1443"
+        assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+        assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
+        assert config.drivers.unsafe is False
         os.unlink(f.name)
 
 
@@ -108,11 +104,9 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
-        "client": {
-            "endpoint": "jumpstarter.my-lab.com:1443",
-            "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-            "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
-        },
+        "endpoint": "jumpstarter.my-lab.com:1443",
+        "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
     }
 
     CLIENT_CONFIG[invalid_field] = "foo"
@@ -122,16 +116,14 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
             _ = ClientConfigV1Alpha1.from_file(f.name)
 
 
-@pytest.mark.parametrize("missing_field", ["client"])
+@pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
 def test_client_config_from_file_missing_field_raises(missing_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
-        "client": {
-            "endpoint": "jumpstarter.my-lab.com:1443",
-            "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-            "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
-        },
+        "endpoint": "jumpstarter.my-lab.com:1443",
+        "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
     }
 
     del CLIENT_CONFIG[missing_field]
@@ -141,38 +133,17 @@ def test_client_config_from_file_missing_field_raises(missing_field):
             _ = ClientConfigV1Alpha1.from_file(f.name)
 
 
-@pytest.mark.parametrize("missing_field", ["token", "endpoint", "drivers"])
-def test_client_config_from_file_missing_client_field_raises(missing_field):
-    CLIENT_CONFIG = {
-        "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "ClientConfig",
-        "client": {
-            "endpoint": "jumpstarter.my-lab.com:1443",
-            "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-            "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
-        },
-    }
-
-    del CLIENT_CONFIG["client"][missing_field]
-    with tempfile.NamedTemporaryFile(mode="w") as f:
-        yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
-        with pytest.raises(ValidationError):
-            _ = ClientConfigV1Alpha1.from_file(f.name)
-
-
 @pytest.mark.parametrize("invalid_field", ["allow"])
-def test_client_config_from_file_invalid_client_drivers_field_raises(invalid_field):
+def test_client_config_from_file_invalid_drivers_field_raises(invalid_field):
     CLIENT_CONFIG = {
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
-        "client": {
-            "endpoint": "jumpstarter.my-lab.com:1443",
-            "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-            "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
-        },
+        "endpoint": "jumpstarter.my-lab.com:1443",
+        "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
     }
 
-    CLIENT_CONFIG["client"]["drivers"][invalid_field] = "foo"
+    CLIENT_CONFIG["drivers"][invalid_field] = "foo"
     with tempfile.NamedTemporaryFile(mode="w") as f:
         yaml.safe_dump(CLIENT_CONFIG, f, sort_keys=False)
         with pytest.raises(ValidationError):
@@ -189,11 +160,9 @@ def test_client_config_load():
                 "from_file",
                 return_value=ClientConfigV1Alpha1(
                     name="another",
-                    client=ClientConfigV1Alpha1Client(
-                        endpoint="abc",
-                        token="123",
-                        drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
-                    ),
+                    endpoint="abc",
+                    token="123",
+                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
                 ),
             ) as from_file_mock:
                 value = ClientConfigV1Alpha1.load("another")
@@ -211,22 +180,19 @@ def test_client_config_load_not_found_raises():
 def test_client_config_save(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
-client:
-  endpoint: jumpstarter.my-lab.com:1443
-  token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-  drivers:
-    allow:
-    - jumpstarter.drivers.*
-    - vendorpackage.*
-    unsafe: false
+endpoint: jumpstarter.my-lab.com:1443
+token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+drivers:
+  allow:
+  - jumpstarter.drivers.*
+  - vendorpackage.*
+  unsafe: false
 """
     config = ClientConfigV1Alpha1(
         name="testclient",
-        client=ClientConfigV1Alpha1Client(
-            endpoint="jumpstarter.my-lab.com:1443",
-            token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-            drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
-        ),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=f.name) as _get_path_mock:
@@ -242,22 +208,19 @@ client:
 def test_client_config_save_explicit_path():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
-client:
-  endpoint: jumpstarter.my-lab.com:1443
-  token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-  drivers:
-    allow:
-    - jumpstarter.drivers.*
-    - vendorpackage.*
-    unsafe: false
+endpoint: jumpstarter.my-lab.com:1443
+token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+drivers:
+  allow:
+  - jumpstarter.drivers.*
+  - vendorpackage.*
+  unsafe: false
 """
     config = ClientConfigV1Alpha1(
         name="testclient",
-        client=ClientConfigV1Alpha1Client(
-            endpoint="jumpstarter.my-lab.com:1443",
-            token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-            drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
-        ),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
@@ -271,20 +234,17 @@ client:
 def test_client_config_save_unsafe_drivers():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
-client:
-  endpoint: jumpstarter.my-lab.com:1443
-  token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-  drivers:
-    allow: []
-    unsafe: true
+endpoint: jumpstarter.my-lab.com:1443
+token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+drivers:
+  allow: []
+  unsafe: true
 """
     config = ClientConfigV1Alpha1(
         name="testclient",
-        client=ClientConfigV1Alpha1Client(
-            endpoint="jumpstarter.my-lab.com:1443",
-            token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-            drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
-        ),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
@@ -306,13 +266,12 @@ def test_client_config_exists():
 def test_client_config_list(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
-client:
-  endpoint: jumpstarter.my-lab.com:1443
-  token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-  drivers:
-    allow:
-    - jumpstarter.drivers.*
-    - vendorpackage.*
+endpoint: jumpstarter.my-lab.com:1443
+token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+drivers:
+  allow:
+  - jumpstarter.drivers.*
+  - vendorpackage.*
 """
     with tempfile.TemporaryDirectory() as d:
         with open(Path(d) / "testclient.yaml", "w") as f:

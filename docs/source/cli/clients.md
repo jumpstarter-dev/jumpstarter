@@ -7,7 +7,7 @@ The Jumpstarter CLI can be used to manage your client configurations.
 To create a new client config, run the following command:
 
 ```bash
-$ jumpstarter client create my-client
+$ jmp client create my-client
 ```
 
 ### Automatic Provisioning
@@ -27,10 +27,10 @@ This creates a client a new client named `my-client` and outputs the configurati
 file called `my-client.yaml`:
 
 ```yaml
-client:
-    name: my-client
-    endpoint: "jumpstarter.my-lab.com:1443"
-    token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ClientConfig
+endpoint: "jumpstarter.my-lab.com:1443"
+token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 ```
 
 
@@ -46,7 +46,7 @@ a client can also be provisioned manually on a different machine.
     apiVersion: jumpstarter.dev/v1alpha1
     kind: Client
     metadata:
-    name: my-client
+      name: my-client
     ```
 
     ```bash
@@ -64,7 +64,7 @@ a client can also be provisioned manually on a different machine.
 3. Create the client config manually:
 
     ```bash
-    $ jmp client create --manual
+    $ jmp client create
     Enter a valid Jumpstarter service endpoint: devl.jumpstarter.dev
     Enter a Jumpstarter auth token (hidden): ***
     Enter a comma-separated list of allowed driver packages (optional):
