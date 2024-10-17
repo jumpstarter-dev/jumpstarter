@@ -6,7 +6,6 @@ from jumpstarter.common import MetadataFilter
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Client,
     ClientConfigV1Alpha1Drivers,
     UserConfigV1Alpha1,
 )
@@ -105,9 +104,9 @@ def client_create(
 
     config = ClientConfigV1Alpha1(
         name=name,
-        client=ClientConfigV1Alpha1Client(
-            endpoint=endpoint, token=token, drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe)
-        ),
+        endpoint=endpoint,
+        token=token,
+        drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe),
     )
     ClientConfigV1Alpha1.save(config, out)
 
@@ -158,7 +157,7 @@ def client_list():
         return {
             "CURRENT": "*" if current_name == c.name else "",
             "NAME": c.name,
-            "ENDPOINT": c.client.endpoint,
+            "ENDPOINT": c.endpoint,
             "PATH": str(c.path),
         }
 

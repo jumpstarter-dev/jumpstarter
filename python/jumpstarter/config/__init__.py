@@ -1,6 +1,5 @@
 from .client import (
     ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Client,
     ClientConfigV1Alpha1Drivers,
 )
 from .common import CONFIG_API_VERSION, CONFIG_PATH
@@ -18,6 +17,5 @@ __all__ = [
     "UserConfigV1Alpha1",
     "UserConfigV1Alpha1Config",
     "ClientConfigV1Alpha1",
-    "ClientConfigV1Alpha1Client",
     "ClientConfigV1Alpha1Drivers",
 ]

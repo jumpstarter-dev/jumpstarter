@@ -33,12 +33,6 @@ class ClientConfigV1Alpha1Drivers(BaseModel):
     unsafe: bool = Field(default=False)
 
 
-class ClientConfigV1Alpha1Client(BaseModel):
-    endpoint: str
-    token: str
-    drivers: ClientConfigV1Alpha1Drivers
-
-
 class ClientConfigV1Alpha1(BaseModel):
     CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
 
@@ -47,15 +41,19 @@ class ClientConfigV1Alpha1(BaseModel):
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
-    client: ClientConfigV1Alpha1Client = Field(default_factory=ClientConfigV1Alpha1Client)
+
+    endpoint: str
+    token: str
+
+    drivers: ClientConfigV1Alpha1Drivers
 
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
-            ssl_channel_credentials(self.client.endpoint),
-            grpc.access_token_call_credentials(self.client.token),
+            ssl_channel_credentials(self.endpoint),
+            grpc.access_token_call_credentials(self.token),
         )
 
-        return grpc.aio.secure_channel(self.client.endpoint, credentials)
+        return grpc.aio.secure_channel(self.endpoint, credentials)
 
     @contextmanager
     def lease(self, metadata_filter: MetadataFilter):
@@ -111,14 +109,12 @@ class ClientConfigV1Alpha1(BaseModel):
     @classmethod
     def from_env(cls):
         return cls(
-            client=ClientConfigV1Alpha1Client(
-                endpoint=os.environ.get(JMP_ENDPOINT),
-                token=os.environ.get(JMP_TOKEN),
-                drivers=ClientConfigV1Alpha1Drivers(
-                    allow=_allow_from_env(),
-                    unsafe=os.environ.get(JMP_DRIVERS_ALLOW) == "UNSAFE",
-                ),
-            )
+            endpoint=os.environ.get(JMP_ENDPOINT),
+            token=os.environ.get(JMP_TOKEN),
+            drivers=ClientConfigV1Alpha1Drivers(
+                allow=_allow_from_env(),
+                unsafe=os.environ.get(JMP_DRIVERS_ALLOW) == "UNSAFE",
+            ),
         )
 
     @classmethod

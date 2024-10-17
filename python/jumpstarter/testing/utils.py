@@ -2,6 +2,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
 def wait_and_login(pexpect_console, username, password, prompt, timeout=240):
     """
     Wait for login prompt and login

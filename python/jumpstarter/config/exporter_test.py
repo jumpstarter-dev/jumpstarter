@@ -4,7 +4,7 @@ from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.common import MetadataFilter
 
-from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Client, ClientConfigV1Alpha1Drivers
+from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 
 pytestmark = pytest.mark.anyio
@@ -36,11 +36,9 @@ async def test_exporter_serve(mock_controller):
 
     client = ClientConfigV1Alpha1(
         name="testclient",
-        client=ClientConfigV1Alpha1Client(
-            endpoint=mock_controller,
-            token="dummy-client-token",
-            drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
-        ),
+        endpoint=mock_controller,
+        token="dummy-client-token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
     )
 
     async with create_task_group() as tg:

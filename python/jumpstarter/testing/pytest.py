@@ -35,6 +35,7 @@ class JumpstarterTest:
             client.dutlink.power.on()
     ```
     """
+
     @classmethod
     def setup_class(cls):
         try:
@@ -58,4 +59,3 @@ class JumpstarterTest:
     @pytest.fixture()
     def client(self):
         return self._client
-
