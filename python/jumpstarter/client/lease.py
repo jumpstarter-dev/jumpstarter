@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 class Lease(AbstractContextManager, AbstractAsyncContextManager):
     channel: Channel
     timeout: int = 1800
-    metadata_filter: MetadataFilter
+    metadata_filter: MetadataFilter = field(default_factory=MetadataFilter)
     portal: BlockingPortal
+    lease_name: str | None = field(default=None)
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
 
     def __post_init__(self):
@@ -29,26 +30,31 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         self.manager = self.portal.wrap_async_context_manager(self)
 
     async def __aenter__(self):
-        duration = duration_pb2.Duration()
-        duration.FromSeconds(self.timeout)
+        if self.lease_name:
+            logger.info("Usig existing lease %s", self.lease_name)
+        else:
+            duration = duration_pb2.Duration()
+            duration.FromSeconds(self.timeout)
 
-        logger.info("Leasing Exporter matching labels %s for %s", self.metadata_filter.labels, duration)
-        self.lease = await self.controller.RequestLease(
-            jumpstarter_pb2.RequestLeaseRequest(
-                duration=duration,
-                selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
-            )
-        )
-        logger.info("Lease %s created", self.lease.name)
+            logger.info("Leasing Exporter matching labels %s for %s", self.metadata_filter.labels, duration)
+            self.lease_name = (
+                await self.controller.RequestLease(
+                    jumpstarter_pb2.RequestLeaseRequest(
+                        duration=duration,
+                        selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
+                    )
+                )
+            ).name
+            logger.info("Lease %s created", self.lease_name)
 
         with fail_after(300):  # TODO: configurable timeout
             while True:
-                logger.info("Polling Lease %s", self.lease.name)
-                result = await self.controller.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.lease.name))
+                logger.info("Polling Lease %s", self.lease_name)
+                result = await self.controller.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.lease_name))
 
                 # lease ready
                 if condition_true(result.conditions, "Ready"):
-                    logger.info("Lease %s acquired", self.lease.name)
+                    logger.info("Lease %s acquired", self.lease_name)
                     return self
                 # lease unsatisfiable
                 if condition_true(result.conditions, "Unsatisfiable"):
@@ -60,8 +66,8 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
                 await sleep(1)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        logger.info("Releasing Lease %s", self.lease.name)
-        await self.controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=self.lease.name))
+        logger.info("Releasing Lease %s", self.lease_name)
+        await self.controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=self.lease_name))
 
     def __enter__(self):
         return self.manager.__enter__()
@@ -70,8 +76,8 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         return self.manager.__exit__(exc_type, exc_value, traceback)
 
     async def handle_async(self, stream):
-        logger.info("Connecting to Lease with name %s", self.lease.name)
-        response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.lease.name))
+        logger.info("Connecting to Lease with name %s", self.lease_name)
+        response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.lease_name))
         async with connect_router_stream(response.router_endpoint, response.router_token, stream):
             pass
 
