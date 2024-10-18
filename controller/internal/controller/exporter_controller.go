@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -56,7 +57,9 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	var exporter jumpstarterdevv1alpha1.Exporter
 	if err := r.Get(ctx, req.NamespacedName, &exporter); err != nil {
-		logger.Error(err, "Reconcile: unable to get exporter", "exporter", req.NamespacedName)
+		if !apierrors.IsNotFound(err) {
+			logger.Error(err, "Reconcile: unable to get exporter", "exporter", req.NamespacedName)
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
