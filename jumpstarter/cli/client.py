@@ -176,7 +176,8 @@ def client_use(name: str):
 @click.command("shell", short_help="Spawns a shell connecting to a leased remote exporter")
 @click.argument("name", type=str, default="")
 @click.option("-l", "--label", "labels", type=(str, str), multiple=True)
-def client_shell(name: str, labels):
+@click.option("-n", "--lease", "lease_name", type=str)
+def client_shell(name: str, labels, lease_name):
     """Spawns a shell connecting to a leased remote exporter"""
     if name:
         config = ClientConfigV1Alpha1.load(name)
@@ -185,7 +186,7 @@ def client_shell(name: str, labels):
     if not config:
         raise ValueError("no client specified")
 
-    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels))) as lease:
+    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
         with lease.serve_unix() as path:
             launch_shell(path)
 

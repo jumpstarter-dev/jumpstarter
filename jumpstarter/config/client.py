@@ -56,9 +56,9 @@ class ClientConfigV1Alpha1(BaseModel):
         return grpc.aio.secure_channel(self.endpoint, credentials)
 
     @contextmanager
-    def lease(self, metadata_filter: MetadataFilter):
+    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.lease_async(metadata_filter, portal)) as lease:
+            with portal.wrap_async_context_manager(self.lease_async(metadata_filter, lease_name, portal)) as lease:
                 yield lease
 
     def list_leases(self):
@@ -78,9 +78,10 @@ class ClientConfigV1Alpha1(BaseModel):
         await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
 
     @asynccontextmanager
-    async def lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
+    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal):
         async with Lease(
             channel=await self.channel(),
+            lease_name=lease_name,
             metadata_filter=metadata_filter,
             portal=portal,
         ) as lease:

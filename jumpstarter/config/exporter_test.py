@@ -45,7 +45,7 @@ async def test_exporter_serve(mock_controller):
         tg.start_soon(exporter.serve_forever)
 
         with start_blocking_portal() as portal:
-            async with client.lease_async(metadata_filter=MetadataFilter(), portal=portal) as lease:
+            async with client.lease_async(metadata_filter=MetadataFilter(), lease_name=None, portal=portal) as lease:
                 async with lease.connect_async() as client:
                     assert await client.power.call_async("on") == "ok"
                     assert hasattr(client.nested, "tcp")
