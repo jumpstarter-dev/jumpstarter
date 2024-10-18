@@ -63,7 +63,7 @@ def test_exporter_config(monkeypatch, tmp_path):
     text = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 
-endpoint: "grpcs://jumpstarter.my-lab.com:1443"
+endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 
 export:
@@ -98,7 +98,7 @@ export:
         alias="test",
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
-        endpoint="grpcs://jumpstarter.my-lab.com:1443",
+        endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         export={
             "power": ExporterConfigV1Alpha1DriverInstance(

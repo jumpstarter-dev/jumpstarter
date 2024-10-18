@@ -69,7 +69,7 @@ the client name, access token, and any configuration parameters.
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
 client:
-  endpoint: "grpcs://jumpstarter.my-lab.com:1443"
+  endpoint: "jumpstarter.my-lab.com:1443"
   token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
   drivers:
     # Wildcards are supported
@@ -115,10 +115,10 @@ All client configurations can be listed with `jmp client list`:
 
 ```bash
 $ jmp client list
-CURRENT   NAME       ENDPOINT                               PATH
-*         default    grpcs://jumpstarter1.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/default.yaml
-          myclient   grpcs://jumpstarter2.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/myclient.yaml
-          another    grpcs://jumpstarter3.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/another.yaml
+CURRENT   NAME       ENDPOINT                       PATH
+*         default    jumpstarter1.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/default.yaml
+          myclient   jumpstarter2.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/myclient.yaml
+          another    jumpstarter3.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/another.yaml
 ```
 
 Clients can also be removed using `jmp client delete <name>`:
@@ -158,7 +158,7 @@ of built-in drivers and any additional driver packages registered by the user.
 
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Exporter
-endpoint: "grpcs://jumpstarter.my-lab.com:1443"
+endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 export:
   power:
@@ -222,10 +222,10 @@ All exporter configurations can be listed with `jmp exporter list`:
 
 ```bash
 $ jmp exporter list
-CURRENT   NAME         ENDPOINT                               PATH                                           SCRIPT
-*         default      grpcs://jumpstarter1.my-lab.com:1443   /etc/jumpstarter/exporters/default.yaml            N/A
-          myexporter   grpcs://jumpstarter2.my-lab.com:1443   /etc/jumpstarter/exporters/myexporter.yaml         N/A
-          another      grpcs://jumpstarter3.my-lab.com:1443   /etc/jumpstarter/exporters/another/exporter.yaml   /etc/jumpstarter/exporters/another/setup.py
+CURRENT   NAME         ENDPOINT                       PATH
+*         default      jumpstarter1.my-lab.com:1443   /etc/jumpstarter/exporters/default.yaml
+          myexporter   jumpstarter2.my-lab.com:1443   /etc/jumpstarter/exporters/myexporter.yaml
+          another      jumpstarter3.my-lab.com:1443   /etc/jumpstarter/exporters/another/exporter.yaml
 ```
 
 Clients can also be removed using `jmp client delete <name>`:

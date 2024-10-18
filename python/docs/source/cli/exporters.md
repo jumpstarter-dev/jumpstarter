@@ -22,7 +22,7 @@ YAML file called `my-exporter.yaml`:
 ```yaml
 exporter:
     name: my-exporter
-    endpoint: "grpcs://jumpstarter.my-lab.com:1443"
+    endpoint: "jumpstarter.my-lab.com:1443"
     token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
     # environmentConfig: /etc/jumpstarter/environment.py
 ```

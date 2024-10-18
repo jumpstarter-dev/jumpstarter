@@ -24,13 +24,13 @@ def test_client_ensure_exists_makes_dir(monkeypatch):
 
 def test_client_config_try_from_env(monkeypatch):
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
-    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfigV1Alpha1.try_from_env()
     assert config.name == "default"
     assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+    assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
     assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
     assert config.client.drivers.unsafe is False
 
@@ -42,26 +42,26 @@ def test_client_config_try_from_env_not_set():
 
 def test_client_config_from_env(monkeypatch):
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
-    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
     assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+    assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
     assert config.client.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
     assert config.client.drivers.unsafe is False
 
 
 def test_client_config_from_env_allow_unsafe(monkeypatch):
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
-    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "UNSAFE")
 
     config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
     assert config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+    assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
     assert config.client.drivers.allow == []
     assert config.client.drivers.unsafe is True
 
@@ -69,7 +69,7 @@ def test_client_config_from_env_allow_unsafe(monkeypatch):
 @pytest.mark.parametrize("missing_field", [JMP_TOKEN, JMP_ENDPOINT])
 def test_client_config_from_env_missing_field_raises(monkeypatch, missing_field):
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
-    monkeypatch.setenv(JMP_ENDPOINT, "grpcs://jumpstarter.my-lab.com:1443")
+    monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     monkeypatch.delenv(missing_field)
@@ -82,7 +82,7 @@ def test_client_config_from_file():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
+  endpoint: jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
   drivers:
     allow:
@@ -94,7 +94,7 @@ client:
         f.close()
         config = ClientConfigV1Alpha1.from_file(f.name)
         assert config.name == f.name.split("/")[-1]
-        assert config.client.endpoint == "grpcs://jumpstarter.my-lab.com:1443"
+        assert config.client.endpoint == "jumpstarter.my-lab.com:1443"
         assert (
             config.client.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
         )
@@ -109,7 +109,7 @@ def test_client_config_from_file_invalid_field_raises(invalid_field):
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
         "client": {
-            "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
+            "endpoint": "jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
             "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
         },
@@ -128,7 +128,7 @@ def test_client_config_from_file_missing_field_raises(missing_field):
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
         "client": {
-            "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
+            "endpoint": "jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
             "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
         },
@@ -147,7 +147,7 @@ def test_client_config_from_file_missing_client_field_raises(missing_field):
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
         "client": {
-            "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
+            "endpoint": "jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
             "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
         },
@@ -166,7 +166,7 @@ def test_client_config_from_file_invalid_client_drivers_field_raises(invalid_fie
         "apiVersion": "jumpstarter.dev/v1alpha1",
         "kind": "ClientConfig",
         "client": {
-            "endpoint": "grpcs://jumpstarter.my-lab.com:1443",
+            "endpoint": "jumpstarter.my-lab.com:1443",
             "token": "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
             "drivers": {"allow": ["jumpstarter.drivers.*", "vendorpackage.*"]},
         },
@@ -212,7 +212,7 @@ def test_client_config_save(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
+  endpoint: jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
   drivers:
     allow:
@@ -223,7 +223,7 @@ client:
     config = ClientConfigV1Alpha1(
         name="testclient",
         client=ClientConfigV1Alpha1Client(
-            endpoint="grpcs://jumpstarter.my-lab.com:1443",
+            endpoint="jumpstarter.my-lab.com:1443",
             token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
             drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
         ),
@@ -243,7 +243,7 @@ def test_client_config_save_explicit_path():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
+  endpoint: jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
   drivers:
     allow:
@@ -254,7 +254,7 @@ client:
     config = ClientConfigV1Alpha1(
         name="testclient",
         client=ClientConfigV1Alpha1Client(
-            endpoint="grpcs://jumpstarter.my-lab.com:1443",
+            endpoint="jumpstarter.my-lab.com:1443",
             token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
             drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
         ),
@@ -272,7 +272,7 @@ def test_client_config_save_unsafe_drivers():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
+  endpoint: jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
   drivers:
     allow: []
@@ -281,7 +281,7 @@ client:
     config = ClientConfigV1Alpha1(
         name="testclient",
         client=ClientConfigV1Alpha1Client(
-            endpoint="grpcs://jumpstarter.my-lab.com:1443",
+            endpoint="jumpstarter.my-lab.com:1443",
             token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
             drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
         ),
@@ -307,7 +307,7 @@ def test_client_config_list(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 client:
-  endpoint: grpcs://jumpstarter.my-lab.com:1443
+  endpoint: jumpstarter.my-lab.com:1443
   token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
   drivers:
     allow:
