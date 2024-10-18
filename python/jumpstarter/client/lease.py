@@ -31,7 +31,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
 
     async def __aenter__(self):
         if self.lease_name:
-            logger.info("Usig existing lease %s", self.lease_name)
+            logger.info("Using existing lease %s", self.lease_name)
         else:
             duration = duration_pb2.Duration()
             duration.FromSeconds(self.timeout)
