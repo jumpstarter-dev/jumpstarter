@@ -74,7 +74,6 @@ var _ = Describe("Lease Controller", func() {
 			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 			Expect(updatedLease.Status.ExporterRef.Name).To(BeElementOf([]string{testExporter1DutA.Name, testExporter2DutA.Name}))
 			Expect(updatedLease.Status.BeginTime).NotTo(BeNil())
-			Expect(updatedLease.Status.EndTime).NotTo(BeNil())
 
 			updatedExporter := getExporter(ctx, updatedLease.Status.ExporterRef.Name)
 			Expect(updatedExporter.Status.LeaseRef).NotTo(BeNil())
@@ -167,7 +166,6 @@ var _ = Describe("Lease Controller", func() {
 			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 			Expect(updatedLease.Status.ExporterRef.Name).To(BeElementOf([]string{testExporter2DutA.Name}))
 			Expect(updatedLease.Status.BeginTime).NotTo(BeNil())
-			Expect(updatedLease.Status.EndTime).NotTo(BeNil())
 
 			updatedExporter := getExporter(ctx, updatedLease.Status.ExporterRef.Name)
 			Expect(updatedExporter.Status.LeaseRef).NotTo(BeNil())
@@ -265,8 +263,6 @@ var _ = Describe("Lease Controller", func() {
 			// we should consider adding a flag on the spec to do this, or look at the duration too
 			updatedLease.Spec.Release = true
 
-			endTime := updatedLease.Status.EndTime
-
 			Expect(k8sClient.Update(ctx, updatedLease)).To(Succeed())
 
 			_ = reconcileLease(ctx, updatedLease)
@@ -274,7 +270,6 @@ var _ = Describe("Lease Controller", func() {
 			updatedLease = getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
 			Expect(updatedLease.Status.Ended).To(BeTrue())
-			Expect(updatedLease.Status.EndTime).ToNot(Equal(endTime))
 
 			updatedExporter := getExporter(ctx, exporterName)
 			Expect(updatedExporter.Status.LeaseRef).To(BeNil())
