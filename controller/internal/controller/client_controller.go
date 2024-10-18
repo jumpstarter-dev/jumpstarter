@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -49,7 +50,9 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	var client jumpstarterdevv1alpha1.Client
 	if err := r.Get(ctx, req.NamespacedName, &client); err != nil {
-		logger.Error(err, "Reconcile: failed to get client", "client", req.NamespacedName)
+		if !apierrors.IsNotFound(err) {
+			logger.Error(err, "Reconcile: failed to get client", "client", req.NamespacedName)
+		}
 		return ctrl.Result{}, kclient.IgnoreNotFound(err)
 	}
 
