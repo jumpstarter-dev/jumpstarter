@@ -82,20 +82,17 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	var leaseRef *corev1.LocalObjectReference
+	exporter.Status.LeaseRef = nil
 	for _, lease := range leases.Items {
 		if !lease.Status.Ended && lease.Status.ExporterRef != nil {
 			if lease.Status.ExporterRef.Name == exporter.Name {
-				leaseRef = &corev1.LocalObjectReference{Name: lease.Name}
+				exporter.Status.LeaseRef = &corev1.LocalObjectReference{Name: lease.Name}
 			}
 		}
 	}
-	if !compareLocalObjectReference(exporter.Status.LeaseRef, leaseRef) {
-		exporter.Status.LeaseRef = leaseRef
-		if err = r.Status().Update(ctx, exporter); err != nil {
-			logger.Error(err, "reconcile: unable to update Exporter with leaseRef", "exporter", req.NamespacedName)
-			return ctrl.Result{}, err
-		}
+	if err = r.Status().Update(ctx, exporter); err != nil {
+		logger.Error(err, "reconcile: unable to update Exporter with leaseRef", "exporter", req.NamespacedName)
+		return ctrl.Result{}, err
 	}
 
 	if exporter.Status.Credential == nil {
@@ -160,16 +157,6 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		return nil, fmt.Errorf("secretForExporter, error setting owner reference: %w", err)
 	}
 	return secret, nil
-}
-
-func compareLocalObjectReference(a, b *corev1.LocalObjectReference) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return *a == *b
 }
 
 // SetupWithManager sets up the controller with the Manager.
