@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -47,54 +48,70 @@ type ClientReconciler struct {
 func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	client := &jumpstarterdevv1alpha1.Client{}
-	err := r.Get(ctx, req.NamespacedName, client)
-	if apierrors.IsNotFound(err) {
-		logger.Info("reconcile: Client deleted", "client", req.NamespacedName)
-		// Request object not found, could have been deleted after reconcile request.
-		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-		return ctrl.Result{}, nil
+	var client jumpstarterdevv1alpha1.Client
+	if err := r.Get(ctx, req.NamespacedName, &client); err != nil {
+		if !apierrors.IsNotFound(err) {
+			logger.Error(err, "Reconcile: failed to get client", "client", req.NamespacedName)
+		}
+		return ctrl.Result{}, kclient.IgnoreNotFound(err)
 	}
 
-	if err != nil {
-		logger.Error(err, "reconcile: unable to fetch Client")
+	original := kclient.MergeFrom(client.DeepCopy())
+
+	if err := r.reconcileStatusCredential(ctx, &client); err != nil {
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileStatusEndpoint(ctx, &client); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.Status().Patch(ctx, &client, original); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *ClientReconciler) reconcileStatusCredential(
+	ctx context.Context,
+	client *jumpstarterdevv1alpha1.Client,
+) error {
+	logger := log.FromContext(ctx)
+
 	if client.Status.Credential == nil {
-		logger.Info("reconcile: Client has no credentials, creating credentials", "client", req.NamespacedName)
+		logger.Info("reconcileStatusCredential: creating credential for client", "client", client)
 		secret, err := r.secretForClient(client)
 		if err != nil {
-			logger.Error(err, "reconcile: unable to create secret for Client")
-			return ctrl.Result{}, err
+			logger.Error(err, "reconcileStatusCredential: failed to prepare credential for client", "client", client)
+			return err
 		}
-		err = r.Create(ctx, secret)
-		if err != nil {
-			logger.Error(err, "reconcile: unable to create secret for Client", "exporter", req.NamespacedName, "secret", secret.GetName())
-			return ctrl.Result{}, err
+		if err := r.Create(ctx, secret); err != nil {
+			logger.Error(err, "reconcileStatusCredential: failed to create credential for client", "client", client)
+			return err
 		}
 		client.Status.Credential = &corev1.LocalObjectReference{
 			Name: secret.Name,
 		}
-		err = r.Status().Update(ctx, client)
-		if err != nil {
-			logger.Error(err, "reconcile: unable to update Client with secret reference", "exporter", req.NamespacedName, "secret", secret.GetName())
-			return ctrl.Result{}, err
-		}
 	}
+
+	return nil
+}
+
+// nolint:unparam
+func (r *ClientReconciler) reconcileStatusEndpoint(
+	ctx context.Context,
+	client *jumpstarterdevv1alpha1.Client,
+) error {
+	logger := log.FromContext(ctx)
 
 	endpoint := controllerEndpoint()
 	if client.Status.Endpoint != endpoint {
-		logger.Info("reconcile: Client endpoint outdated, updating", "client", req.NamespacedName)
+		logger.Info("reconcileStatusEndpoint: updating controller endpoint", "client", client)
 		client.Status.Endpoint = endpoint
-		err = r.Status().Update(ctx, client)
-		if err != nil {
-			logger.Error(err, "reconcile: unable to update Client with endpoint", "client", req.NamespacedName)
-			return ctrl.Result{}, err
-		}
 	}
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client) (*corev1.Secret, error) {
