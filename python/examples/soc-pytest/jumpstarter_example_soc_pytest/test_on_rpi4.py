@@ -10,7 +10,6 @@ from jumpstarter_imagehash import ImageHash
 
 from jumpstarter.client.adapters import PexpectAdapter
 from jumpstarter.testing.pytest import JumpstarterTest
-from jumpstarter.testing.utils import wait_and_login
 
 log = logging.getLogger(__file__)
 
@@ -44,7 +43,7 @@ class TestResource(JumpstarterTest):
         client.dutlink.power.off()
         time.sleep(1)
         client.dutlink.power.on()
-        yield wait_and_login(console, "root", "changeme", "@rpitest:~#")
+        yield _wait_and_login(console, "root", "changeme", "@rpitest:~#")
         _power_off(client, console)
 
     def test_setup_device(self, client, console):
@@ -61,7 +60,7 @@ class TestResource(JumpstarterTest):
         client.dutlink.power.on()
         console.logfile_read = sys.stdout.buffer
         # first boot on raspbian will take some time, we wait for the login
-        wait_and_login(console, "root", "changeme", "@rpitest:~#")
+        _wait_and_login(console, "root", "changeme", "@rpitest:~#")
         # then power off the device
         _power_off(client, console)
 
@@ -121,3 +120,13 @@ def _power_off(client, console):
         log.error("Timeout waiting for power down, continuing with hard power off")
     finally:
         client.dutlink.power.off()
+
+def _wait_and_login(pexpect_console, username, password, prompt, timeout=240):
+    log.info("Waiting for login prompt")
+    pexpect_console.expect("login:", timeout=timeout)
+    pexpect_console.sendline(username)
+    pexpect_console.expect("Password:")
+    pexpect_console.sendline(password)
+    pexpect_console.expect(prompt, timeout=60)
+    log.info("Logged in")
+    return pexpect_console
