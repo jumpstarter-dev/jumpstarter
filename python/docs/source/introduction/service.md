@@ -1,22 +1,22 @@
 # Jumpstarter Service
 
-When building a lab with many devices under test, it quickly becomes difficult 
-to keep track of devices, schedule access for automated tests, and perform routine 
+When building a lab with many devices under test, it quickly becomes difficult
+to keep track of devices, schedule access for automated tests, and perform routine
 tasks such as batch updates.
 
 Jumpstarter provides a [Cloud Native](https://www.cncf.io/) service that can
-be installed in any [Kubernetes](https://kubernetes.io/) cluster to manage 
+be installed in any [Kubernetes](https://kubernetes.io/) cluster to manage
 connected clients and exporters.
 
-If you're already using a Kubernetes-native CI tool such as 
+If you're already using a Kubernetes-native CI tool such as
 [Tekton](https://tekton.dev/), [Jenkins X](https://jenkins-x.io/),
-or [GitLab CI](https://docs.gitlab.com/ee/user/clusters/agent/ci_cd_workflow.html), 
+or [GitLab CI](https://docs.gitlab.com/ee/user/clusters/agent/ci_cd_workflow.html),
 Jumpstarter can integrate directly into your existing cloud or on-prem cluster.
 
 ```{mermaid}
 block-beta
 
-    client["Client"]
+    client("Client")
     space
     block:service
     columns 1
@@ -24,9 +24,25 @@ block-beta
         router
     end
     space
-    exporter["Exporter"]
-
+    block:exporters
+    columns 1
+        exporter["Exporter"]
+        exporter2["Exporter"]
+        exporter3["Exporter"]
+    end
+    space
+    block:duts
+    columns 1
+        dut1["Target"]
+        dut2["Target"]
+        dut3["Target"]
+    end
     exporter-->service
+    exporter2-->service
+    exporter3-->service
+    exporter-->dut1
+    exporter2-->dut2
+    exporter3-->dut3
     client-->service
 ```
 

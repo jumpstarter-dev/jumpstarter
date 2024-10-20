@@ -8,10 +8,15 @@ This package includes:
 - A CLI tool.
 - An exporter runtime and built-in drivers.
 
-The Python package can be installed using ``pip`` or similar:
+The Python package can be installed using ``pip`` or similar, Python 3.10 or newer is required.:
+
+<!-- TODO: create meta-package-to-install-all -->
 
 ```bash
-$ pip install jumpstarter
+$ pip3 install --extra-index-url https://docs.jumpstarter.dev/packages/simple \
+        jumpstarter jumpstarter-driver-ustreamer jumpstarter-driver-can jumpstarter-driver-sdwire \
+        jumpstarter-driver-dutlink jumpstarter-driver-raspberrypi \
+        jumpstarter-imagehash
 ```
 
 ```{tip}

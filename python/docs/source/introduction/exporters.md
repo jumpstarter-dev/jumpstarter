@@ -53,9 +53,9 @@ While Jumpstarter comes with drivers for many basic interfaces, custom drivers
 can also be developed for specialized hardware/interfaces or to provide
 domain-specific abstractions for your use case.
 
-## Harnesses
+## Composite drivers
 
-Multiple drivers can be combined to create a `harness` module with additional
+Multiple drivers can be combined to create a `composite` driver with additional
 device-specific functionality for your use case. For example, you may want to
-develop a harness module that provides methods that simulate the physical wiring
+develop a composite driver that provides methods that simulate the physical wiring
 harness your device will use in production.
