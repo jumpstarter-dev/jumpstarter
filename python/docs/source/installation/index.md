@@ -17,6 +17,7 @@ The Jumpstarter which can be installed are:
 service/index.md
 service-cli.md
 python-package.md
+container-jmp.md
 ```
 
 
