@@ -4,7 +4,7 @@ This section contains guides to install the latest version of the Jumpstarter
 components. For other versions, please select the appropriate release of this
 documentation.
 
-The Jumpstarter which can be installed are:
+The Jumpstarter components which can be installed are:
 
 | Component                 | Description                                                   |
 | ---------                 | -----------                                                   |
