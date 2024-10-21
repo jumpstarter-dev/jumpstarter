@@ -10,7 +10,7 @@ Welcome to the Jumpstarter documentation!
 ## Table of Contents
 
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 3
 
 introduction/index.md
 installation/index.md

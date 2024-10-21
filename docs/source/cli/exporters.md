@@ -1,65 +1,66 @@
 # Manage Exporters
 
-The Jumpstarter CLI can be used to manage your exporter configurations.
+The `jmpctl` admin CLI can be used to manage your exporter configurations
+on the distributed service.
 
 ## Creating a exporter
 
-To connect a device to Jumpstarter, an exporter instance must be registered.
+If you have configured the [Jumpstarter service](../introduction/service.md),
+and you have a kubeconfig the `jmpctl` CLI will attempt to use
+your current credentials to provision the client automatically, and produce
+a base exporter configuration file.
+
+To connect a target device to Jumpstarter, an exporter instance must be registered.
 
 Exporter creation must be done by an administrator user who has access to
 the Kubernetes cluster where the `jumpstarter-controller` service is hosted.
 
 ```bash
-# Specify the location of the kubeconfig to use
-export KUBECONFIG=/path/to/kubeconfig
 # Create the exporter instance
-jumpstarter exporter create my-exporter -o my-exporter.yaml
+$ jmpctl exporter create my-exporter --namespace jumpstarter-lab > my-exporter.yaml
 ```
 
-This creates an exporter named `my-exporter` and outputs the configuration to a
-YAML file called `my-exporter.yaml`:
+This creates an exporter named `my-exporter` and produces a YAML configuration: `my-exporter.yaml`:
+
+`my-exporter.yaml` should be configured with the desired exported drivers filling up the
+export section, see [exporter configuration docs](../config.md#exporter-config) for more details.
+
+### Example configuration
+If you don't have the hardware ready yet but you want to try things out you
+can setup the exporter with something like the following example which
+will provide a few mock interfaces to play with:
 
 ```yaml
-exporter:
-    name: my-exporter
-    endpoint: "jumpstarter.my-lab.com:1443"
-    token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
-    # environmentConfig: /etc/jumpstarter/environment.py
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
+token: << token data >>
+export:
+    storage:
+        type: jumpstarter.drivers.storage.driver.MockStorageMux
+    power:
+        type: jumpstarter.drivers.power.driver.MockPower
+    echonet:
+        type: jumpstarter.drivers.network.driver.EchoNetwork
+    can:
+        type: jumpstarter_driver_can.driver.Can
+        config:
+            channel: 1
+            interface: "virtual"
 ```
 
-Creating an exporter registers the custom resource object in the k8s API, the
-`jumpstarter-controller` will create an authentication token and attach it to
-the object.
+Once the exporter configuration is ready it should be installed in the
+exporter host machine at
+`/etc/jumpstarter/exporters/my-exporter.yaml`.
 
-## Running an Exporter
-
-The exporter service can be run as a container either within the same cluster
-(using node affinity) or on a remote machine that has access to the cluster over
-the network.
-
-### Running using Podman
-
-To run the exporter container on a test runner using Podman:
-
-```bash
-# Must be run as privileged to access hardware
-podman run --cap-add=all --privileged \
-        -v /dev:/dev -v /lib/modules:/lib/modules -v /etc/jumpstarter/:/etc/jumpstarter \
-        quay.io/jumpstarter-dev/exporter -c my-exporter.yaml
-
-# additional flags like could be necessary depending on the drivers:
-#  --security-opt label=disable
-#  --security-opt seccomp=unconfined
+```{note}
+Remember, the exporter is Linux service that exports the interfaces to the target DUT(s)
+(serial ports, video interfaces, bluetooth, anything that Jumpstarter has a driver for,
+and the exporter service can reach via linux device or network). In this case the exporter
+service calls back to the Jumpstarter service to report the available interfaces and
+wait for commands.
 ```
 
-#### Running as a Service
-
-To run the exporter as a service on a test runner with Jumpstarter installed:
-
-```bash
-jumpstarter config set-exporter my-exporter
-sudo systemctl start jumpstarter 
+```{tip}
+For information on how to run and setup a exporter, see the [exporter config section](../config.md#running-an-exporter).
 ```
-
-<!-- TODO: create instructions to setup as quadlets with podman and systemd 
-https://www.redhat.com/sysadmin/quadlet-podman -->

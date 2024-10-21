@@ -1,38 +1,52 @@
 # Manage Clients
 
-The Jumpstarter CLI can be used to manage your client configurations.
+The `jmpctl` admin CLI can be used to manage your client configurations
+on the distributed service.
 
-## Creating a Client Config
+## Creating a Client
 
-To create a new client config, run the following command:
-
-```bash
-$ jmp client create my-client
-```
-
-### Automatic Provisioning
-
-If you have [Kubectl](https://www.downloadkubernetes.com/) installed on your
-system and the current context contains an installation of the 
-[Jumpstarter service](../introduction/service.md), the CLI will attempt to use
-your admin credentials to provision the client automatically.
+If you have configured the [Jumpstarter service](../introduction/service.md),
+and you have a kubeconfig the `jmpctl` CLI will attempt to use
+your current credentials to provision the client automatically, and produce
+a client configuration file.
 
 You can also use the following options to specify kubeconfig and context to use:
 
 - `--kubeconfig` - Set the location of your kubeconfig file.
-- `--context` - The context to use (default is the `current-context`).
-- `--namespace` - The namespace to search in (default is `jumpstarter-lab`)
+- `--namespace` - The namespace to search in (default is `default`)
 
-This creates a client a new client named `my-client` and outputs the configuration to a YAML
-file called `my-client.yaml`:
+To create a new client and its associated config, run the following command:
+
+```bash
+$ jmpctl client create john --namespace jumpstarter-lab > john.yaml
+$ cat >> john.yaml <<EOF
+drivers:
+  allow: []
+  unsafe: True
+EOF
+```
+
+This creates a client a new client named `john` and outputs the configuration to a YAML
+file called `john.yaml`:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
-endpoint: "jumpstarter.my-lab.com:1443"
-token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
+token: <<token>>
+drivers:
+  allow: []
+  unsafe: True
 ```
 
+In addition we have included a `drivers` section in the configuration file, which
+allows you to specify a list of allowed driver packages and enable unsafe mode (allow any driver).
+
+```{warning}
+This section can be important if you don't trust the exporter's configuration, since every
+driver is composed of two parts, a cliend and a exporter side, the client side Python module
+is dynamically loaded when a client connects to a exporter.
+```
 
 ### Manual Provisioning
 
@@ -55,16 +69,18 @@ a client can also be provisioned manually on a different machine.
 
 2. Get the created client resource:
 
-    % TODO: Determine the actual instructions here.
     ```bash
-    $ kubectl get client my-client
-    ...
+    $ kubectl get client my-client -o yaml
+    $ kubectl get client my-client -o=jsonpath='{.status.endpoint}'
+    $ kubectl get secret $(kubectl get client my-client -o=jsonpath='{.status.credential.name}') -o=jsonpath='{.data.token}' | base64 -d
     ```
 
-3. Create the client config manually:
+3. Those details can be installed as a secret on CI, or passed down to the final user.
+
+    Then the user can create the client performing:
 
     ```bash
-    $ jmp client create
+    $ jmp client create my-client
     Enter a valid Jumpstarter service endpoint: devl.jumpstarter.dev
     Enter a Jumpstarter auth token (hidden): ***
     Enter a comma-separated list of allowed driver packages (optional):

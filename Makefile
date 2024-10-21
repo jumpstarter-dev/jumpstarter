@@ -7,6 +7,9 @@ default: build
 docs: sync
 	cd docs && uv run make html
 
+serve-docs: sync
+	cd docs && uv run make serve
+
 watch-docs:
 	sphinx-autobuild docs/source docs/build/html
 

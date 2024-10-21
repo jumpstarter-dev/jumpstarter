@@ -34,26 +34,14 @@ configurations for `jmp` CLI tool.
 apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
-  current-client: ./clients/myclient.yaml
+  current-client: default
 ```
 
 ## System Configuration
 
 Jumpstarter stores system configs in the `/etc/jumpstarter` directory.
-This configuration directory is primarily used by the exporters as they often
-run as daemon services on the host system.
-
-The system config file defines the current exporter config and any system-level
-configurations for the exporters.
-
-```yaml
-# /etc/jumpstarter/config.yaml
-
-apiVersion: jumpstarter.dev/v1alpha1
-kind: SystemConfig
-config:
-  current-exporter: ./exporters/myexporter/exporter.yaml
-```
+This configuration directory is primarily used by the exporters
+`/etc/jumpstarter/exporters` as they often run as daemon services on the host system.
 
 ## Clients
 
@@ -90,18 +78,17 @@ Similar to kubectl, Jumpstarter allows you to switch between different client
 configurations using the CLI tool. A `default` client is automatically configured
 when installing the Jumpstarter Helm chart with `jmp install`.
 
-### Client CLI Commands
+### Creating a client in the distributed service
 
-To create a new client, the `jmp client create <name>` command can be used. When
-`kubectl` is installed and the current context contains a Jumpstarter controller
-instance, client tokens will be automatically generated using the controller endpoint.
+To create a new client in the distributed service you must use the `jmpctl` command,
+please follow the instructions in the [Jumpstarter service CLI](./cli/clients.md).
 
-```bash
-$ jmp client create myclient
-Using kubectl context 'my-cluster'
-Generating client auth token
-Created client config '/home/jdoe/.config/jumpstarter/clients/myclient.yaml'
-```
+### Importing a client created by the administrator
+
+Importing a new client is as simple as copying the administrator provided yaml
+file to `~/.config/jumpstarter/clients/`, alternatively if we have the token
+and endpoint the `jmp client create <name>` command can be used to create
+the config file.
 
 To switch between different client configs, use the `jmp client use <name>` command:
 
@@ -127,11 +114,14 @@ $ jmp client delete myclient
 Deleted client config '/home/jdoe/.config/jumpstarter/clients/myclient.yaml'
 ```
 
+
+
 ### Client Environment Variables
 
 The client configuration may also be provided by environment variables which may
 be useful in CI or when writing a script that uses Jumpstarter.
 
+- `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification.
 - `JMP_CLIENT_CONFIG` - A path to a client configuration YAML file to use.
 - `JMP_CLIENT` - The name of a registered client config to use.
 - `JMP_ENDPOINT` - The gRPC endpoint of the Jumpstarter controller server
@@ -144,8 +134,8 @@ to automatically load. Can be set to `UNSAFE` to allow unsafe loading of drivers
 ## Exporters
 
 Exporter configurations are by default stored globally in the Jumpstarter config
-directory `/etc/jumpstarter/exporters`. Each exporter config is a YAML file and
-optionally a Python script to initialize the exporter and its associated drivers.
+directory `/etc/jumpstarter/exporters`. Each exporter config is a YAML file that
+provides connection details and a list of exporter drivers.
 
 ### Exporter Config
 
@@ -184,53 +174,47 @@ export:
 
 ### Exporter CLI Commands
 
-To create a new exporter, the `jmp exporter create <name>` command can be used.
-When `kubectl` is installed and the current context contains a Jumpstarter controller
-instance, exporter tokens will be automatically generated using the controller endpoint.
-By default, a basic YAML config will be generated.
+### Creating a exporter in the distributed service
+
+To create a new exporter in the distributed service you must use the `jmpctl` command,
+please follow the instructions in the [Jumpstarter service CLI](./cli/exporters.md).
+
+### Creating a exporter configuration file
+To create a new exporter configuration file from a know endpoint and
+token the `jmp exporter create <name>` command can be used.
 
 ```bash
 $ jmp exporter create myexporter
-Using kubectl context 'my-cluster'
-Generating exporter auth token
-Created exporter config '/etc/jumpstarter/exporters/myexporter.yaml'
-```
-
-To switch between different exporter configs, use the `jmp exporter use <name>`
-command:
-
-```bash
-$ jmp exporter use another
-Using exporter config '/etc/jumpstarter/exporters/another/exporter.yaml'
+Endpoint: grpc.jumpstarter.my.domain.com
+Token: <<token data>>
 ```
 
 To use a specific config when starting the exporter:
 
 ```bash
-$ jmp exporter start another
+$ jmp exporter run my-exporter
 Using exporter config '/etc/jumpstarter/exporters/another/exporter.yaml'
 ```
 
 The path to a config can also be provided:
 
 ```bash
-jmp exporter start --config /etc/jumpstarter/exporters/another/exporter.yaml
+jmp exporter run -c /etc/jumpstarter/exporters/another/exporter.yaml
 ```
 
 All exporter configurations can be listed with `jmp exporter list`:
 
 ```bash
 $ jmp exporter list
-CURRENT   NAME         ENDPOINT                       PATH
-*         default      jumpstarter1.my-lab.com:1443   /etc/jumpstarter/exporters/default.yaml
-          myexporter   jumpstarter2.my-lab.com:1443   /etc/jumpstarter/exporters/myexporter.yaml
-          another      jumpstarter3.my-lab.com:1443   /etc/jumpstarter/exporters/another/exporter.yaml
+ALIAS             PATH
+test-exporter-2   /etc/jumpstarter/exporters/test-exporter-2.yaml
+my-exporter       /etc/jumpstarter/exporters/my-exporter.yaml
 ```
 
-Clients can also be removed using `jmp client delete <name>`:
+Exporers can also be removed using `jmp exporter delete <name>`:
 
 ```bash
-$ jmp client delete myexporter
+$ jmp exporter delete myexporter
 Deleted exporter config '/etc/jumpstarter/exporters/myexporter.yaml'
 ```
 
@@ -239,6 +223,7 @@ Deleted exporter config '/etc/jumpstarter/exporters/myexporter.yaml'
 The exporter configuration may also be provided by environment variables which
 may be useful in CI or when writing a script that uses Jumpstarter.
 
+- `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification.
 - `JMP_EXPORTER_CONFIG` - A path to a exporter configuration YAML file
 to use.
 - `JMP_EXPORTER` - The name of a registered exporter config to use.
@@ -248,3 +233,63 @@ to use.
 (overrides the config value).
 - `JMP_DRIVERS` - A comma-separated list of allowed driver namespaces
 to automatically load (overrides the config value).
+
+## Running an Exporter
+
+The exporter service can be run as a container either within the same cluster
+(using node affinity) or on a remote machine that has access to the cluster over
+the network.
+
+### Running using Podman
+
+To run the exporter container on a test runner using Podman:
+
+```bash
+$ sudo podman run --rm -ti --name my-exporter --net=host  --privileged \
+                -e JUMPSTARTER_GRPC_INSECURE=1 \
+                -v /run/udev:/run/udev -v /dev:/dev -v /etc/jumpstarter:/etc/jumpstarter \
+                quay.io/jumpstarter-dev/jumpstarter:main \
+                jmp exporter run my-exporter
+
+INFO:jumpstarter.exporter.exporter:Registering exporter with controller
+INFO:jumpstarter.exporter.exporter:Currently not leased
+```
+
+
+This will run the exporter in the foreground and allow you to observe the behavior.
+Please note that we are running the exporter as root, with access to all devices and network
+interfaces, this is most likely necessary for the exporter to access the interface
+devices that will allow it to control the target DUT(s).
+
+Once we are satisfied with the behavior we can install the exporter as a systemd service:
+
+#### Running as a Service
+
+To run the exporter as a service podman-systemd is recommended, by using podman-systemd
+you can simply create a systemd service file at `/etc/containers/systemd/my-exporter.container` with
+the following content:
+
+```ini
+[Unit]
+Description=My exporter
+
+[Container]
+ContainerName=my-exporter
+Environment=JUMPSTARTER_GRPC_INSECURE=1
+Exec=jmp exporter run my-exporter
+Image=quay.io/jumpstarter-dev/jumpstarter:main
+Network=host
+PodmanArgs=--privileged
+Volume=/run/udev:/run/udev
+Volume=/dev:/dev
+Volume=/etc/jumpstarter:/etc/jumpstarter
+
+[Install]
+WantedBy=multi-user.target default.target
+```
+
+Then enable and start the service:
+
+```bash
+sudo systemctl enable --now my-exporter
+```
