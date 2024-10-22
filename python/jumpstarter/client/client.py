@@ -15,7 +15,7 @@ from jumpstarter.v1 import (
 
 
 @asynccontextmanager
-async def client_from_path(path: str, portal: BlockingPortal, allow: list[str] = None, unsafe: bool = True):
+async def client_from_path(path: str, portal: BlockingPortal, allow: list[str], unsafe: bool):
     async with grpc.aio.secure_channel(
         f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
     ) as channel:
