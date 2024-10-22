@@ -8,7 +8,7 @@ import pyudev
 import usb.core
 import usb.util
 from anyio import fail_after, sleep
-from anyio.streams.file import FileWriteStream
+from anyio.streams.file import FileReadStream, FileWriteStream
 
 from jumpstarter.driver import Driver, export
 from jumpstarter.drivers.composite.driver import CompositeInterface
@@ -86,10 +86,7 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
     def off(self):
         return self.control("off")
 
-    @export
-    async def write(self, src: str):
-        self.control("host")
-
+    async def wait_for_storage_device(self):
         with fail_after(20):
             while True:
                 if os.path.exists(self.storage_device):
@@ -102,10 +99,23 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
                         os.close(fd)
                 await sleep(1)
 
+    @export
+    async def write(self, src: str):
+        self.host()
+        await self.wait_for_storage_device()
         async with await FileWriteStream.from_path(self.storage_device) as stream:
             async with self.resource(src) as res:
                 async for chunk in res:
                     await stream.send(chunk)
+
+    @export
+    async def read(self, dst: str):
+        self.host()
+        await self.wait_for_storage_device()
+        async with await FileReadStream.from_path(self.storage_device) as stream:
+            async with self.resource(dst) as res:
+                async for chunk in stream:
+                    await res.send(chunk)
 
 
 @dataclass(kw_only=True)
