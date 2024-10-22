@@ -23,8 +23,8 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     metadata_filter: MetadataFilter = field(default_factory=MetadataFilter)
     portal: BlockingPortal
     lease_name: str | None = field(default=None)
-    allow: list[str] = field(default_factory=list)
-    unsafe: bool = field(default=True)
+    allow: list[str]
+    unsafe: bool
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
 
     def __post_init__(self):

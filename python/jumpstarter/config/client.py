@@ -84,6 +84,8 @@ class ClientConfigV1Alpha1(BaseModel):
             lease_name=lease_name,
             metadata_filter=metadata_filter,
             portal=portal,
+            allow=self.drivers.allow,
+            unsafe=self.drivers.unsafe,
         ) as lease:
             yield lease
 
