@@ -1,7 +1,8 @@
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile
 
-from anyio.streams.file import FileWriteStream
+from anyio.streams.file import FileReadStream, FileWriteStream
 
 from jumpstarter.driver import Driver, export
 
@@ -23,8 +24,14 @@ class StorageMuxInterface(metaclass=ABCMeta):
     @abstractmethod
     async def write(self, src: str): ...
 
+    @abstractmethod
+    async def read(self, dst: str): ...
 
+
+@dataclass
 class MockStorageMux(StorageMuxInterface, Driver):
+    file: NamedTemporaryFile = field(default_factory=NamedTemporaryFile)
+
     @export
     async def host(self):
         pass
@@ -39,8 +46,14 @@ class MockStorageMux(StorageMuxInterface, Driver):
 
     @export
     async def write(self, src: str):
-        with NamedTemporaryFile() as file:
-            async with FileWriteStream(file) as stream:
-                async with self.resource(src) as res:
-                    async for chunk in res:
-                        await stream.send(chunk)
+        async with await FileWriteStream.from_path(self.file.name) as stream:
+            async with self.resource(src) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
+
+    @export
+    async def read(self, dst: str):
+        async with await FileReadStream.from_path(self.file.name) as stream:
+            async with self.resource(dst) as res:
+                async for chunk in stream:
+                    await res.send(chunk)
