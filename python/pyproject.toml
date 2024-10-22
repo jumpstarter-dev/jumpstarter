@@ -59,6 +59,7 @@ dev-dependencies = [
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
     "cryptography>=43.0.1",
+    "websocket-client>=1.8.0",
 ]
 
 [tool.uv.workspace]
