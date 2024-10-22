@@ -735,7 +735,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.0.3.dev57+g246d472.d20241017"
+version = "0.0.4.dev18+gc90bbc5.d20241022"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -773,6 +773,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "typos" },
+    { name = "websocket-client" },
 ]
 
 [package.metadata]
@@ -808,11 +809,12 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "ruff", specifier = ">=0.6.1" },
     { name = "typos", specifier = ">=1.23.6" },
+    { name = "websocket-client", specifier = ">=1.8.0" },
 ]
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.0.3.dev52+gd6f700c.d20241016"
+version = "0.0.4.dev18+gc90bbc5"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -841,7 +843,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.0.3.dev52+gd6f700c.d20241016"
+version = "0.0.4.dev18+gc90bbc5"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -870,7 +872,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.0.3.dev52+gd6f700c.d20241016"
+version = "0.0.4.dev18+gc90bbc5"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -897,7 +899,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.0.3.dev52+gd6f700c.d20241016"
+version = "0.0.4.dev18+gc90bbc5"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -926,7 +928,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.0.3.dev52+gd6f700c.d20241016"
+version = "0.0.4.dev18+gc90bbc5"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -983,7 +985,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.0.3.dev57+g246d472.d20241017"
+version = "0.0.4.dev18+gc90bbc5"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
@@ -2127,6 +2129,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/6d/d5/b96eeb9fe3fda137200dd2f31553670cbc731b1e13164fd69b49870b76ec/watchfiles-0.24.0-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:edf71b01dec9f766fb285b73930f95f730bb0943500ba0566ae234b5c1618c18", size = 593625 },
     { url = "https://files.pythonhosted.org/packages/c1/e5/c326fe52ee0054107267608d8cea275e80be4455b6079491dfd9da29f46f/watchfiles-0.24.0-cp313-none-win32.whl", hash = "sha256:f4c96283fca3ee09fb044f02156d9570d156698bc3734252175a38f0e8975f07", size = 263899 },
     { url = "https://files.pythonhosted.org/packages/a6/8b/8a7755c5e7221bb35fe4af2dc44db9174f90ebf0344fd5e9b1e8b42d381e/watchfiles-0.24.0-cp313-none-win_amd64.whl", hash = "sha256:a974231b4fdd1bb7f62064a0565a6b107d27d21d9acb50c484d2cdba515b9366", size = 276622 },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/30/fba0d96b4b5fbf5948ed3f4681f7da2f9f64512e1d303f94b4cc174c24a5/websocket_client-1.8.0.tar.gz", hash = "sha256:3239df9f44da632f96012472805d40a23281a991027ce11d2f45a6f24ac4c3da", size = 54648 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/84/44687a29792a70e111c5c477230a72c4b957d88d16141199bf9acb7537a3/websocket_client-1.8.0-py3-none-any.whl", hash = "sha256:17b44cc997f5c498e809b22cdf2d9c7a9e71c02c8cc2b6c56e7c2d1239bfa526", size = 58826 },
 ]
 
 [[package]]

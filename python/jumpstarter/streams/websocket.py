@@ -63,5 +63,6 @@ class WebsocketServerStream(ObjectStream[bytes]):
         pass
 
     async def aclose(self):
-        await self.stream.send(self.ws.send(CloseConnection(code=CloseReason.NORMAL_CLOSURE)))
+        with suppress(LocalProtocolError):
+            await self.stream.send(self.ws.send(CloseConnection(code=CloseReason.NORMAL_CLOSURE)))
         await self.stream.aclose()
