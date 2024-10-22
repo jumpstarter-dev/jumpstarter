@@ -121,6 +121,7 @@ def _power_off(client, console):
     finally:
         client.dutlink.power.off()
 
+
 def _wait_and_login(pexpect_console, username, password, prompt, timeout=240):
     log.info("Waiting for login prompt")
     pexpect_console.expect("login:", timeout=timeout)

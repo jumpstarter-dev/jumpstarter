@@ -39,6 +39,8 @@ async def test_router(mock_controller, monkeypatch):
                         channel=grpc.aio.insecure_channel("grpc.invalid"),
                         metadata_filter=MetadataFilter(),
                         portal=portal,
+                        allow=[],
+                        unsafe=True,
                     )
 
                     monkeypatch.setattr(lease, "handle_async", handle_async)
@@ -56,6 +58,8 @@ async def test_unsatisfiable(mock_controller):
                 channel=grpc.aio.secure_channel(mock_controller, ssl_channel_credentials(mock_controller)),
                 metadata_filter=MetadataFilter(labels={"unsatisfiable": "true"}),
                 portal=portal,
+                allow=[],
+                unsafe=True,
             ):
                 pass
 
@@ -78,6 +82,8 @@ async def test_controller(mock_controller):
                     channel=grpc.aio.secure_channel(mock_controller, ssl_channel_credentials(mock_controller)),
                     metadata_filter=MetadataFilter(),
                     portal=portal,
+                    allow=[],
+                    unsafe=True,
                 ) as lease:
                     async with lease.connect_async() as client:
                         assert await client.call_async("on") == "ok"

@@ -23,6 +23,8 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     metadata_filter: MetadataFilter = field(default_factory=MetadataFilter)
     portal: BlockingPortal
     lease_name: str | None = field(default=None)
+    allow: list[str]
+    unsafe: bool
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
 
     def __post_init__(self):
@@ -89,7 +91,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     @asynccontextmanager
     async def connect_async(self):
         async with self.serve_unix_async() as path:
-            async with client_from_path(path, self.portal) as client:
+            async with client_from_path(path, self.portal, allow=self.allow, unsafe=self.unsafe) as client:
                 yield client
 
     @contextmanager

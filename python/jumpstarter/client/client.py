@@ -4,6 +4,7 @@ from graphlib import TopologicalSorter
 from uuid import UUID
 
 import grpc
+from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
 
 from jumpstarter.client import DriverClient
@@ -14,16 +15,18 @@ from jumpstarter.v1 import (
 
 
 @asynccontextmanager
-async def client_from_path(path, portal):
+async def client_from_path(path: str, portal: BlockingPortal, allow: list[str], unsafe: bool):
     async with grpc.aio.secure_channel(
         f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
     ) as channel:
-        yield await client_from_channel(channel, portal)
+        yield await client_from_channel(channel, portal, allow, unsafe)
 
 
 async def client_from_channel(
-    channel,
-    portal,
+    channel: grpc.aio.Channel,
+    portal: BlockingPortal,
+    allow: list[str],
+    unsafe: bool,
 ) -> DriverClient:
     topo = defaultdict(list)
     reports = {}
@@ -42,7 +45,7 @@ async def client_from_channel(
     for uuid in TopologicalSorter(topo).static_order():
         report = reports[uuid]
 
-        client_class = import_class(report.labels["jumpstarter.dev/client"], [], True)  # FIXME: set allowlist
+        client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
         client = client_class(
             uuid=UUID(uuid),
             labels=report.labels,

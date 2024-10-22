@@ -21,11 +21,11 @@ def _allow_from_env():
     allow = os.environ.get(JMP_DRIVERS_ALLOW)
     match allow:
         case None:
-            return None
+            return [], False
         case "UNSAFE":
-            return []
+            return [], True
         case _:
-            return allow.split(",")
+            return allow.split(","), False
 
 
 class ClientConfigV1Alpha1Drivers(BaseModel):
@@ -84,6 +84,8 @@ class ClientConfigV1Alpha1(BaseModel):
             lease_name=lease_name,
             metadata_filter=metadata_filter,
             portal=portal,
+            allow=self.drivers.allow,
+            unsafe=self.drivers.unsafe,
         ) as lease:
             yield lease
 
@@ -109,12 +111,13 @@ class ClientConfigV1Alpha1(BaseModel):
 
     @classmethod
     def from_env(cls):
+        allow, unsafe = _allow_from_env()
         return cls(
             endpoint=os.environ.get(JMP_ENDPOINT),
             token=os.environ.get(JMP_TOKEN),
             drivers=ClientConfigV1Alpha1Drivers(
-                allow=_allow_from_env(),
-                unsafe=os.environ.get(JMP_DRIVERS_ALLOW) == "UNSAFE",
+                allow=allow,
+                unsafe=unsafe,
             ),
         )
 

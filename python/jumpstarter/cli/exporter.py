@@ -102,4 +102,5 @@ def shell(alias, config_path):
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
 
     with config.serve_unix() as path:
-        launch_shell(path)
+        # SAFETY: the exporter config is local thus considered trusted
+        launch_shell(path, allow=[], unsafe=True)
