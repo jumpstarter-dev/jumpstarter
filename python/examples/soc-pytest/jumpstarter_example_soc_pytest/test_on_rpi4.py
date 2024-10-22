@@ -17,16 +17,6 @@ log = logging.getLogger(__file__)
 class TestResource(JumpstarterTest):
     filter_labels = {"board": "rpi4"}
 
-    @classmethod
-    def teardown_class(cls):
-        try:
-            cls._client.dutlink.power.off()
-        except Exception as e:
-            log.error(f"Failed to power off the device: {e}")
-
-        # call parent teardown
-        super().teardown_class()
-
     @pytest.fixture()
     def console(self, client):
         with PexpectAdapter(client=client.dutlink.console) as console:

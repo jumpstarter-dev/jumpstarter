@@ -1,10 +1,11 @@
 import logging
-from contextlib import AbstractContextManager, asynccontextmanager, suppress
+from contextlib import AbstractContextManager, asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
 from uuid import UUID
 
 import grpc
 from anyio import Event, TypedAttributeLookupError
+from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.common import Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
@@ -60,6 +61,12 @@ class Session(
     async def serve_unix_async(self):
         with TemporarySocket() as path:
             async with self.serve_port_async(f"unix://{path}"):
+                yield path
+
+    @contextmanager
+    def serve_unix(self):
+        with start_blocking_portal() as portal:
+            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
                 yield path
 
     def __getitem__(self, key: UUID):

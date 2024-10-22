@@ -1,4 +1,5 @@
 import time
+from typing import ClassVar
 
 import pytest
 
@@ -36,26 +37,17 @@ class JumpstarterTest:
     ```
     """
 
-    @classmethod
-    def setup_class(cls):
-        try:
-            cls.__client = env()
-            cls._client = cls.__client.__enter__()
-        except RuntimeError:
-            labels = getattr(cls, "filter_labels", {})
-            cls._lease = ClientConfigV1Alpha1.load("default").lease(metadata_filter=MetadataFilter(labels=labels))
-            cls.__client = cls._lease.__enter__().connect()
-            cls._client = cls.__client.__enter__()
+    filter_labels: ClassVar[dict[str, str]]
 
-    @classmethod
-    def teardown_class(cls):
-        cls.__client.__exit__(None, None, None)
-        if hasattr(cls, "_lease"):
-            cls._lease.__exit__(None, None, None)
-
-            # BUG workaround: make sure that grpc servers get the client/lease release properly
-            time.sleep(1)
-
-    @pytest.fixture()
+    @pytest.fixture(scope="class")
     def client(self):
-        return self._client
+        try:
+            with env() as client:
+                yield client
+        except RuntimeError:
+            labels = getattr(self, "filter_labels", {})
+            client = ClientConfigV1Alpha1.load("default")
+            with client.lease(metadata_filter=MetadataFilter(labels=labels), lease_name=None) as lease:
+                yield lease.connect()
+        # BUG workaround: make sure that grpc servers get the client/lease release properly
+        time.sleep(1)

@@ -177,3 +177,5 @@ async def mock_controller(tmp_path, monkeypatch):
 
 
 os.environ["TQDM_DISABLE"] = "1"
+
+pytest_plugins = ["pytester"]
