@@ -17,12 +17,12 @@ Jumpstarter provides two modes of operation, a distributed mode, and a local-onl
 * The *local-only mode* is useful for development and testing of Jumpstarter drivers and
   for very small labs where only one developer is working on a project.
 
-<!-- TODO: image here -->
+![local mode](how-it-works-local.svg)
 
 * The *distributed mode* is useful for bigger, more distributed labs where collaboration
   across teams, seamless CI integration and device sharing is needed.
 
-<!-- TODO: image here -->
+![distributed mode](how-it-works-distributed.svg)
 
 The following sections provide more information on the basics of Jumpstarter,
 its core components, and how they work together to make hardware testing easier.
