@@ -6,6 +6,8 @@ from subprocess import Popen
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
+from jumpstarter.config.client import _allow_from_env
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Session
 
@@ -32,7 +34,9 @@ async def env_async(portal):
     if host is None:
         raise RuntimeError("JUMPSTARTER_HOST not set")
 
-    async with client_from_path(host, portal) as client:
+    allow, unsafe = _allow_from_env()
+
+    async with client_from_path(host, portal, allow=allow, unsafe=unsafe) as client:
         yield client
 
 
@@ -43,7 +47,7 @@ def env():
             yield client
 
 
-def launch_shell(host):
+def launch_shell(host: str, allow: list[str], unsafe: bool):
     process = Popen(
         [os.environ.get("SHELL", "bash")],
         stdin=sys.stdin,
@@ -52,6 +56,7 @@ def launch_shell(host):
         env=os.environ
         | {
             "JUMPSTARTER_HOST": host,
+            JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
         },
     )
     process.wait()
