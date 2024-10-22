@@ -46,8 +46,9 @@ class JumpstarterTest:
                 yield client
         except RuntimeError:
             labels = getattr(self, "filter_labels", {})
-            client = ClientConfigV1Alpha1.load("default")
-            with client.lease(metadata_filter=MetadataFilter(labels=labels), lease_name=None) as lease:
-                yield lease.connect()
+            config = ClientConfigV1Alpha1.load("default")
+            with config.lease(metadata_filter=MetadataFilter(labels=labels), lease_name=None) as lease:
+                with lease.connect() as client:
+                    yield client
         # BUG workaround: make sure that grpc servers get the client/lease release properly
         time.sleep(1)
