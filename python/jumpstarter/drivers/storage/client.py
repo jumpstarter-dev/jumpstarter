@@ -25,13 +25,12 @@ class StorageMuxClient(DriverClient):
 
     def write_file(self, operator: Operator, path: str):
         with OpendalAdapter(client=self, operator=operator, path=path) as handle:
-            return self.call("write", handle)
+            return self.write(handle)
 
     def write_local_file(self, filepath):
         """Write a local file to the storage device"""
         absolute = Path(filepath).resolve()
-        with OpendalAdapter(client=self, operator=Operator("fs", root="/"), path=str(absolute)) as handle:
-            return self.call("write", handle)
+        return self.write_file(operator=Operator("fs", root="/"), path=str(absolute))
 
     def cli(self):
         @click.group
