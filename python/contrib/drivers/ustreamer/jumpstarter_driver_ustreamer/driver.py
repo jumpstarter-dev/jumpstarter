@@ -17,6 +17,7 @@ from .common import UStreamerState
 
 log = logging.getLogger(__name__)
 
+
 def find_ustreamer():
     executable = which("ustreamer")
 

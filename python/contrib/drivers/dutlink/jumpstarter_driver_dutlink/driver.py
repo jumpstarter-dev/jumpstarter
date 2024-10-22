@@ -10,7 +10,7 @@ import pyudev
 import usb.core
 import usb.util
 from anyio import fail_after, sleep
-from anyio.streams.file import FileWriteStream
+from anyio.streams.file import FileReadStream, FileWriteStream
 from serial.serialutil import SerialException
 
 from jumpstarter.driver import Driver, export
@@ -21,10 +21,11 @@ from jumpstarter.drivers.storage.driver import StorageMuxInterface
 
 log = logging.getLogger(__name__)
 
+
 @dataclass(kw_only=True)
 class DutlinkPower(PowerInterface, Driver):
     parent: Dutlink
-    last_action: str | None= field(default=None)
+    last_action: str | None = field(default=None)
 
     def control(self, action):
         log.debug(f"power control: {action}")
@@ -110,10 +111,7 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
     def off(self):
         return self.control("off")
 
-    @export
-    async def write(self, src: str):
-        self.control("host")
-
+    async def wait_for_storage_device(self):
         with fail_after(20):
             while True:
                 log.debug(f"waiting for storage device {self.storage_device}")
@@ -128,6 +126,10 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
                         os.close(fd)
                 await sleep(1)
 
+    @export
+    async def write(self, src: str):
+        self.host()
+        await self.wait_for_storage_device()
         async with await FileWriteStream.from_path(self.storage_device) as stream:
             async with self.resource(src) as res:
                 total_bytes = 0
@@ -136,15 +138,24 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
                     await stream.send(chunk)
                     if total_bytes > next_print:
                         log.debug(f"{self.storage_device} written {total_bytes/(1024*1024)} MB")
-                        next_print += 50 * 1024*1024
+                        next_print += 50 * 1024 * 1024
                     total_bytes += len(chunk)
+
+    @export
+    async def read(self, dst: str):
+        self.host()
+        await self.wait_for_storage_device()
+        async with await FileReadStream.from_path(self.storage_device) as stream:
+            async with self.resource(dst) as res:
+                async for chunk in stream:
+                    await res.send(chunk)
 
 
 @dataclass(kw_only=True)
 class Dutlink(CompositeInterface, Driver):
     serial: str | None = field(default=None)
     alternate_console: str | None = field(default=None)
-    timeout_s: int = field(default=20) # 20 seconds, power control sequences can block USB for a long time
+    timeout_s: int = field(default=20)  # 20 seconds, power control sequences can block USB for a long time
     storage_device: str
     baudrate: int = field(default=115200)
 
@@ -191,8 +202,10 @@ class Dutlink(CompositeInterface, Driver):
                     try:
                         self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
                     except SerialException:
-                        log.info(f"failed to open alternate console {self.alternate_console} "
-                                 "but trying to power on the target once")
+                        log.info(
+                            f"failed to open alternate console {self.alternate_console} "
+                            "but trying to power on the target once"
+                        )
                         self.children["power"].on()
                         time.sleep(5)
                         self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
@@ -207,7 +220,6 @@ class Dutlink(CompositeInterface, Driver):
 
                 if "console" not in self.children:
                     raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
-
 
                 return
 
@@ -232,5 +244,7 @@ class Dutlink(CompositeInterface, Driver):
 
         if direction == usb.ENDPOINT_IN:
             str_value = bytes(res).decode("utf-8")
-            log.debug("ctrl_transfer result: %s", )
+            log.debug(
+                "ctrl_transfer result: %s",
+            )
             return str_value
