@@ -30,6 +30,12 @@ class DutlinkPower(PowerInterface, Driver):
             None,
         )
 
+    def reset(self):
+        self.off()
+
+    def close(self):
+        self.off()
+
     @export
     def on(self):
         return self.control("on")
@@ -73,6 +79,12 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
             action,
             None,
         )
+
+    def reset(self):
+        self.off()
+
+    def close(self):
+        self.off()
 
     @export
     def host(self):
