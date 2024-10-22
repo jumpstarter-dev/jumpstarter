@@ -7,7 +7,7 @@ from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
 from jumpstarter.config.client import _allow_from_env
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Session
 
@@ -30,9 +30,9 @@ def serve(root_device: Driver):
 
 @asynccontextmanager
 async def env_async(portal):
-    host = os.environ.get("JUMPSTARTER_HOST", None)
+    host = os.environ.get(JUMPSTARTER_HOST, None)
     if host is None:
-        raise RuntimeError("JUMPSTARTER_HOST not set")
+        raise RuntimeError(f"{JUMPSTARTER_HOST} not set")
 
     allow, unsafe = _allow_from_env()
 
@@ -55,7 +55,7 @@ def launch_shell(host: str, allow: list[str], unsafe: bool):
         stderr=sys.stderr,
         env=os.environ
         | {
-            "JUMPSTARTER_HOST": host,
+            JUMPSTARTER_HOST: host,
             JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
         },
     )
