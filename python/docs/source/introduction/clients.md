@@ -36,7 +36,7 @@ with the Jumpstarter Service.
 ```
 
 You can get started with a remove client by following the
-[Setup a Remove Client](../getting-started/setup-local-client.md) guide.
+[Setup a Remote Client](../getting-started/setup-remote-client.md) guide.
 
 We will discuss how remote clients connect to exporters in the next section
 on the [Jumpstarter Service](./service.md).
