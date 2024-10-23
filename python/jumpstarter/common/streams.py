@@ -5,7 +5,7 @@ from uuid import UUID
 import grpc
 from pydantic import BaseModel, Field, Json
 
-from jumpstarter.common.grpc import ssl_channel_credentials
+from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter.v1 import router_pb2_grpc
 
@@ -38,7 +38,7 @@ async def connect_router_stream(endpoint, token, stream):
         grpc.access_token_call_credentials(token),
     )
 
-    async with grpc.aio.secure_channel(endpoint, credentials) as channel:
+    async with aio_secure_channel(endpoint, credentials) as channel:
         router = router_pb2_grpc.RouterServiceStub(channel)
         context = router.Stream(metadata=())
         async with RouterStream(context=context) as s:
