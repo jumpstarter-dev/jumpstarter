@@ -1,26 +1,60 @@
 # How Jumpstarter Works
 
-Jumpstarter bridges the gap between your local development environment, 
-CI/CD pipelines, and the target device you're developing for.
+Jumpstarter provides a set of tools that enable you to build a consistent
+development environment for your hardware. Think of it as a *Makefile*
+for hardware automation.
 
-We accomplish this by providing ways to decouple the target hardware from
-your CI runners and development systems. This means that you can setup a test
-lab with low-cost hosts such as Raspberry Pis or mini PCs, while still using the
-same CI systems you currently host in the cloud.
+These tools enable you to decouple your target hardware from the test runners,
+development machines, and CI/CD pipelines allowing you to use the same automation
+scripts, commands, and processes everywhere.
 
-Since we provide remote access to hardware, Jumpstarter also makes sharing
-limited hardware across multiple developers easy weather they are sitting at the
-next desk over or on the other side of the earth.
+The core components of Jumpstarter are:
+- [Clients](./clients.md) that allow you to interact with your hardware through
+  a CLI tool or Python library.
+- [Drivers](./drivers.md) that describe how to interact with your hardware interfaces.
+- [Exporters](./exporters.md) that expose your device's hardware using the drivers.
+- A [Service](./service.md) that helps you manage hardware access from anywhere.
 
-Jumpstarter provides two modes of operation, a distributed mode, and a local-only mode.
+Since Jumpstarter's core components are written in Python, it is possible to run
+them almost everywhere. This means that you can setup a test lab with low-cost
+exporters such as Raspberry Pis or mini PCs, while still using the same
+Linux-based CI systems you currently host in the cloud.
 
-* The *local-only mode* is useful for development and testing of Jumpstarter drivers and
-  for very small labs where only one developer is working on a project.
+Jumpstarter is also able to seamlessly integrate into the existing ecosystem of
+Python testing tools such as [pytest](https://docs.pytest.org/en/stable/).
+You can also use the Jumpstarter CLI directly from shell scripts and Makefiles
+allowing you to write simple automation scripts easily.
+
+In addition to testing, Jumpstarter can also act as a
+[KVM](https://en.wikipedia.org/wiki/KVM_switch) allowing developers to remotely
+access hardware for ad-hoc development whether they are sitting at the next desk
+or on the other side of the globe.
+
+## Development Modes
+
+Jumpstarter can be used in either a *local-only* or *distributed* environment
+depending on your hardware development needs.
+
+### Local-Only
+
+When using Jumpstarter locally, you can easily develop drivers, write automated
+tests, and control your hardware from your development machine
+
+The *local-only mode* is useful when working directly with hardware on your desk
+that you have unlimited access to.
 
 ![local mode](how-it-works-local.svg)
 
-* The *distributed mode* is useful for bigger, more distributed labs where collaboration
-  across teams, seamless CI integration and device sharing is needed.
+### Distributed
+
+When your project grows, Jumpstarter also can help you collaborate across teams,
+implement CI/CD pipelines, and automate common tasks such as firmware updates.
+
+The *distributed mode* takes advantage of [Kubernetes](https://kubernetes.io/)
+to support the management of multiple target devices directly from your existing
+cluster. This allows for seamless integration with many existing Cloud Native
+technologies such as [Tekton](https://tekton.dev), [ArgoCD](https://argoproj.github.io/cd/),
+and [Prometheus](https://prometheus.io/docs/introduction/overview/).
 
 ![distributed mode](how-it-works-distributed.svg)
 

@@ -1,61 +1,44 @@
 # Exporters
 
-To enable access to your target device, Jumpstarter uses a component called
-the `exporter`, which runs on a host system connected directly to your hardware.
-We call it an exporter because it "exports" the interfaces connected to the
-target.
+Jumpstarter uses a program called an Exporter to enable remote access to your
+hardware. The Exporter typically runs on a "host" system directly connected
+to your hardware. We call it an exporter because it "exports" the interfaces
+connected to the target.
 
 ## Hosts
 
-Typically, the exporter will run on a low-power host systems such as a
-Raspberry Pi or mini PC with sufficient interfaces to connect to your hardware.
-If the host has sufficient interfaces, it may be connected to multiple targets,
-however, each target requires its own exporter instance.
+Typically, the host will be a low-cost test system such as a Raspberry Pi
+or Mini PC with sufficient interfaces to connect to your hardware. It is also
+possible to use a local high-power server (or CI runner) as the host device.
 
-```{mermaid}
-block-beta
-  block:host
-    exporter
-  end
+A host can run multiple Exporter instances simultaneously if it needs to interact
+with several different devices at the same time.
 
-  space
+## Configuration
 
-  target["Target Device"]
+Exporters use a YAML configuration file to define which Drivers must be loaded
+and the configuration required.
 
-  exporter-->target
+Here is an example Exporter config file:
+
+```yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
+export:
+  # a DUTLink interface to the DUT
+  dutlink:
+    type: jumpstarter_driver_dutlink.driver.Dutlink
+    config:
+      storage_device: "/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_5B4C0AB025C0-0:0"
 ```
 
-## Drivers
+## Running an Exporter
 
-Exporters use modules called `drivers`, which define how to interact with
-a specific interface (e.g. USB, Serial, CAN, etc.). Each driver provides a
-method to interact with and/or tunnel an interface connected to the target.
+To run an Exporter on a host system, you must have Python >= 3.11 installed
+and the required driver packages installed locally.
 
-```{mermaid}
-block-beta
-  block:host
-    columns 1
-    exporter
-    block:drivers
-        usb["USB"]
-        serial["Serial"]
-        can["CAN"]
-        etc["etc."]
-    end
-  end
-  space
-  target["Target Device"]
-
-  host-->target
-```
-
-While Jumpstarter comes with drivers for many basic interfaces, custom drivers
-can also be developed for specialized hardware/interfaces or to provide
-domain-specific abstractions for your use case.
-
-## Composite drivers
-
-Multiple drivers can be combined to create a `composite` driver with additional
-device-specific functionality for your use case. For example, you may want to
-develop a composite driver that provides methods that simulate the physical wiring
-harness your device will use in production.
+Exporters can be run in a privileged container or as a systemd daemon. It is
+recommended to run the Exporter service in the background with auto-restart
+in case something goes wrong.
