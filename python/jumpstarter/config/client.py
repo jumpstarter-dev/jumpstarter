@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from jumpstarter.client import Lease
 from jumpstarter.common import MetadataFilter
-from jumpstarter.common.grpc import ssl_channel_credentials
+from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .common import CONFIG_PATH
@@ -53,7 +53,7 @@ class ClientConfigV1Alpha1(BaseModel):
             grpc.access_token_call_credentials(self.token),
         )
 
-        return grpc.aio.secure_channel(self.endpoint, credentials)
+        return aio_secure_channel(self.endpoint, credentials)
 
     @contextmanager
     def lease(self, metadata_filter: MetadataFilter, lease_name: str | None):

@@ -9,7 +9,7 @@ import yaml
 from anyio.from_thread import start_blocking_portal
 from pydantic import BaseModel, Field
 
-from jumpstarter.common.grpc import ssl_channel_credentials
+from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Exporter, Session
@@ -97,7 +97,7 @@ class ExporterConfigV1Alpha1(BaseModel):
             grpc.access_token_call_credentials(self.token),
         )
 
-        async with grpc.aio.secure_channel(self.endpoint, credentials) as channel:
+        async with aio_secure_channel(self.endpoint, credentials) as channel:
             async with Exporter(
                 channel=channel,
                 device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
