@@ -1,7 +1,7 @@
 # Exporters
 
 Jumpstarter uses a program called an Exporter to enable remote access to your
-hardware. The Expoter typically runs on a "host" system directly connected
+hardware. The Exporter typically runs on a "host" system directly connected
 to your hardware. We call it an exporter because it "exports" the interfaces
 connected to the target.
 
