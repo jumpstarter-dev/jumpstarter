@@ -69,7 +69,7 @@ async def test_controller(mock_controller):
     uuid = uuid4()
 
     async with Exporter(
-        channel=aio_secure_channel(mock_controller, ssl_channel_credentials(mock_controller)),
+        channel_factory=lambda: aio_secure_channel(mock_controller, ssl_channel_credentials(mock_controller)),
         uuid=uuid,
         labels={},
         device_factory=lambda: MockPower(),
