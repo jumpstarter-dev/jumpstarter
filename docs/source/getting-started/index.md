@@ -7,4 +7,5 @@ test your software on real hardware.
 setup-local-client.md
 setup-exporter.md
 setup-controller.md
+custom-driver.md
 ```

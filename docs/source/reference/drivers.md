@@ -1,3 +1,4 @@
+(driver-api)=
 # Driver API Reference
 
 ```{warning}

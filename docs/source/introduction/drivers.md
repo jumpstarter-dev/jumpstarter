@@ -9,9 +9,10 @@ simplified API for an interface or device type.
 
 Each driver consists of two components:
 - A driver class that implements the "backend" functionality of the driver.
-- A client class (optional) that provides a Python and CLI "frontend" for the driver.
+- A client class that provides a Python and CLI "frontend" for the driver.
 
-While Jumpstarter comes with drivers for many basic interfaces, custom drivers
+While Jumpstarter comes with drivers for many basic interfaces,
+[custom drivers](../getting-started/custom-driver.md)
 can also be developed for specialized hardware/interfaces or to provide
 domain-specific abstractions for your use case.
 
@@ -19,21 +20,20 @@ domain-specific abstractions for your use case.
 
 Drivers are configured using the a YAML Exporter config file, which specifies
 the drivers to load and the parameters for each. Drivers are distributed as Python
-packages making it easy to develop and install your own drivers.
+packages making it easy to develop and install community drivers.
 
-Here is an example exporter config that loads a driver:
+Here is an example exporter config that loads a custom driver:
 
 ```yaml
+# /etc/jumpstarter/exporters/custom.yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
-endpoint: grpc.jumpstarter.example.com:443
-token: xxxxx
+endpoint: "grpc.jumpstarter.example.com:443"
+token: "abc123"
 export:
-  # a DUTLink interface to the DUT
-  dutlink:
-    type: jumpstarter_driver_dutlink.driver.Dutlink
-    config:
-      storage_device: "/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_5B4C0AB025C0-0:0"
+    custom:
+        # Full import path of the driver class
+        type: jumpstarter_driver_custom.CustomDriver
 ```
 
 ## Driver I/O
@@ -65,14 +65,14 @@ device-specific functionality for your use case.
 
 Here is an example of a driver tree with two custom composite drivers:
 
-```yaml
+```
 MyDevice # Custom composite driver for the entire target device
-├─ TcpNetwork # TCP Network driver to tunnel port 8000
+├─ TcpNetwork # TCP Network driver to tunnel port 8000
 ├─ MyPower # Custom power driver to control device power
-├─ SDWire # SD Wire storage emulator to enable re-flash on demand
-├─ DigitalOutput # GPIO pin control to send signals to the device
-└─ MyDebugger # Custom debugger interface composite driver
-   └─ PySerial # Serial debugger with PySerial
+├─ SDWire # SD Wire storage emulator to enable re-flash on demand
+├─ DigitalOutput # GPIO pin control to send signals to the device
+└─ MyDebugger # Custom debugger interface composite driver
+   └─ PySerial # Serial debugger with PySerial
 ```
 
 Creating a composite driver can automate common tasks related to your specific
