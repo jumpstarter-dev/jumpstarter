@@ -94,11 +94,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: ko-build
 ko-build: ko ## Build docker image with the manager.
-	$(KO) build ./cmd --bare --sbom none --tags $(KO_DOCKER_TAG) --local
+	KO_DOCKER_REPO=$(KO_DOCKER_REPO) $(KO) build ./cmd --bare --sbom none --tags $(KO_DOCKER_TAG) --local
 
 .PHONY: ko-push
 ko-push: ko ## Push docker image with the manager.
-	$(KO) build ./cmd --bare --sbom none --tags $(KO_DOCKER_TAG)
+	KO_DOCKER_REPO=$(KO_DOCKER_REPO) $(KO) build ./cmd --bare --sbom none --tags $(KO_DOCKER_TAG)
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
