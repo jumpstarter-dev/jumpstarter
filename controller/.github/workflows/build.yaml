@@ -38,7 +38,7 @@ jobs:
           password: ${{ secrets.QUAY_TOKEN }}
 
       - name: Build and push Docker image
-        run:
+        run: |
           make ko-push IMG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }},latest
 
   publish-helm-charts-containers:
