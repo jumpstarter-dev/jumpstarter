@@ -92,14 +92,15 @@ class ExporterConfigV1Alpha1(BaseModel):
                 yield path
 
     async def serve_forever(self):
-        credentials = grpc.composite_channel_credentials(
-            ssl_channel_credentials(self.endpoint),
-            grpc.access_token_call_credentials(self.token),
-        )
+        def channel_factory():
+            credentials = grpc.composite_channel_credentials(
+                ssl_channel_credentials(self.endpoint),
+                grpc.access_token_call_credentials(self.token),
+            )
+            return aio_secure_channel(self.endpoint, credentials)
 
-        async with aio_secure_channel(self.endpoint, credentials) as channel:
-            async with Exporter(
-                channel=channel,
-                device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
-            ) as exporter:
-                await exporter.serve_forever()
+        async with Exporter(
+            channel_factory=channel_factory,
+            device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
+        ) as exporter:
+            await exporter.serve_forever()
