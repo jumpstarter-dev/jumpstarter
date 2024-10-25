@@ -2,12 +2,10 @@ name: Build and push container image
 on:
   workflow_dispatch:
   push:
-    tags:
-      - '*'
-    branches:
-      - main
+  merge_group:
 
 env:
+  PUSH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
   REGISTRY: quay.io
   IMAGE_NAME: jumpstarter-dev/jumpstarter
   QUAY_ORG: quay.io/jumpstarter-dev
@@ -33,6 +31,9 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -54,13 +55,15 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: ${{ env.PUSH }}
           tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1
+        if: ${{ env.PUSH == 'true' }}
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
+          push-to-registry: ${{ env.PUSH }}
