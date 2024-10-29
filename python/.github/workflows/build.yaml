@@ -16,6 +16,7 @@ jobs:
         image:
           - jumpstarter-dev/jumpstarter Dockerfile
           - jumpstarter-dev/jumpstarter-dev .devfile/Containerfile
+          - jumpstarter-dev/jumpstarter-devspace .devfile/Containerfile.client
     runs-on: ubuntu-latest
     permissions:
       contents: read
