@@ -7,6 +7,7 @@ SPHINXOPTS    ?=
 SPHINXBUILD   ?= sphinx-build
 SOURCEDIR     = source
 BUILDDIR      = build
+HOST          ?= --host 127.0.0.1
 
 # Put it first so that "make" without argument is like "make help".
 help:
@@ -20,4 +21,4 @@ help:
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
 serve:
-	sphinx-autobuild "$(SOURCEDIR)" "$(BUILDDIR)"
+	sphinx-autobuild $(HOST) "$(SOURCEDIR)" "$(BUILDDIR)"
