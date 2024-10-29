@@ -52,7 +52,7 @@ type ExporterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
 func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("exporter", req.NamespacedName)
+	logger := log.FromContext(ctx)
 
 	var exporter jumpstarterdevv1alpha1.Exporter
 	if err := r.Get(ctx, req.NamespacedName, &exporter); err != nil {
@@ -86,7 +86,7 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
-	logger := log.FromContext(ctx).WithValues("exporter", exporter)
+	logger := log.FromContext(ctx)
 
 	if exporter.Status.Credential == nil {
 		logger.Info("reconcileStatusCredential: creating credential for exporter")
@@ -138,7 +138,7 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
-	logger := log.FromContext(ctx).WithValues("exporter", exporter)
+	logger := log.FromContext(ctx)
 
 	endpoint := controllerEndpoint()
 	if exporter.Status.Endpoint != endpoint {

@@ -54,7 +54,8 @@ type LeaseReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("lease", req.NamespacedName)
+	logger := log.FromContext(ctx)
+	ctx = ctrl.LoggerInto(ctx, logger)
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := r.Get(ctx, req.NamespacedName, &lease); err != nil {
@@ -114,7 +115,7 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 	result *ctrl.Result,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
-	logger := log.FromContext(ctx).WithValues("lease", lease)
+	logger := log.FromContext(ctx)
 
 	now := time.Now()
 	if !lease.Status.Ended {
@@ -167,7 +168,7 @@ func (r *LeaseReconciler) reconcileStatusBeginTime(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
-	logger := log.FromContext(ctx).WithValues("lease", lease)
+	logger := log.FromContext(ctx)
 
 	now := time.Now()
 	if lease.Status.BeginTime == nil && lease.Status.ExporterRef != nil {
@@ -195,7 +196,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 	result *ctrl.Result,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
-	logger := log.FromContext(ctx).WithValues("lease", lease)
+	logger := log.FromContext(ctx)
 
 	if lease.Status.ExporterRef == nil {
 		logger.Info("reconcileStatusExporterRef: looking for matching exporter")
