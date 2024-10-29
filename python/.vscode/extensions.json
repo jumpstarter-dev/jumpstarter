@@ -21,7 +21,8 @@
         "shardulm94.trailing-spaces",
         "usernamehw.errorlens",
         "yzhang.markdown-all-in-one",
-        "ms-vscode.makefile-tools"
+        "ms-vscode.makefile-tools",
+        "cnshenj.vscode-task-manager"
     ],
     "unwantedRecommendations": [
         "ms-python.autopep8"

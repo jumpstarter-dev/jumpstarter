@@ -1,6 +1,7 @@
 DRIVER_TARGETS = $(subst contrib/drivers/,driver-,$(wildcard contrib/drivers/*))
 LIB_TARGETS = $(subst contrib/libs/,lib-,$(wildcard contrib/libs/*))
 EXAMPLE_TARGETS = $(subst examples/,example-,$(wildcard examples/*))
+DOC_LISTEN ?= --host 127.0.0.1
 
 default: build
 
@@ -8,10 +9,7 @@ docs: sync
 	cd docs && uv run make html
 
 serve-docs: sync
-	cd docs && uv run make serve
-
-watch-docs:
-	sphinx-autobuild docs/source docs/build/html
+	cd docs && uv run make serve HOST="$(DOC_LISTEN)"
 
 clean-docs:
 	rm -rf ./docs/build
