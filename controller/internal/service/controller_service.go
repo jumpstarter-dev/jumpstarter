@@ -91,16 +91,20 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
-
 	logger := log.FromContext(ctx)
-
-	logger.Info("Registering exporter", "request", req)
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
 		logger.Error(err, "unable to authenticate exporter")
 		return nil, err
 	}
+
+	logger = logger.WithValues("exporter", types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Name,
+	})
+
+	logger.Info("Registering exporter")
 
 	original := client.MergeFrom(exporter.DeepCopy())
 
@@ -121,7 +125,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	}
 
 	if err := s.Client.Patch(ctx, exporter, original); err != nil {
-		logger.Error(err, "unable to update exporter", "exporter", exporter)
+		logger.Error(err, "unable to update exporter")
 		return nil, status.Errorf(codes.Internal, "unable to update exporter: %s", err)
 	}
 
@@ -148,7 +152,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	exporter.Status.Devices = devices
 
 	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
-		logger.Error(err, "unable to update exporter status", "exporter", exporter)
+		logger.Error(err, "unable to update exporter status")
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
 
@@ -165,11 +169,17 @@ func (s *ControllerService) Unregister(
 	error,
 ) {
 	logger := log.FromContext(ctx)
+
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
 		logger.Error(err, "unable to authenticate exporter")
 		return nil, err
 	}
+
+	logger = logger.WithValues("exporter", types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Name,
+	})
 
 	original := client.MergeFrom(exporter.DeepCopy())
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
@@ -184,11 +194,11 @@ func (s *ControllerService) Unregister(
 	})
 
 	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
-		logger.Error(err, "unable to update exporter status", "exporter", exporter.Name)
+		logger.Error(err, "unable to update exporter status")
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
 
-	logger.Info("exporter unregistered, updated as unavailable", "exporter", exporter.Name)
+	logger.Info("exporter unregistered, updated as unavailable")
 
 	return &pb.UnregisterResponse{}, nil
 }
@@ -197,6 +207,8 @@ func (s *ControllerService) ListExporters(
 	ctx context.Context,
 	req *pb.ListExportersRequest,
 ) (*pb.ListExportersResponse, error) {
+	// FIXME: authenticate client
+
 	logger := log.FromContext(ctx)
 
 	var exporters jumpstarterdevv1alpha1.ExporterList
@@ -250,12 +262,22 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
+	logger = logger.WithValues("exporter", types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Name,
+	})
+
 	leaseName := req.GetLeaseName()
 	if leaseName == "" {
 		err := fmt.Errorf("empty lease name")
 		logger.Error(err, "lease name not specified in dial request")
 		return err
 	}
+
+	logger.WithValues("lease", types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      leaseName,
+	})
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := s.Client.Get(
@@ -295,6 +317,11 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		return err
 	}
 
+	logger = logger.WithValues("exporter", types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Name,
+	})
+
 	original := client.MergeFrom(exporter.DeepCopy())
 	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
@@ -306,16 +333,19 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		Reason: "Connect",
 	})
 	if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
-		logger.Error(err, "unable to update exporter status", "exporter", exporter)
+		logger.Error(err, "unable to update exporter status")
 	}
 
 	defer func() {
+		// Make sure defer runs under a fresh context
+		// otherwise these operations would fail if the rpc context is cancelled
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 		if err := s.Client.Get(
 			ctx,
 			types.NamespacedName{Name: exporter.Name, Namespace: exporter.Namespace},
 			exporter,
 		); err != nil {
-			logger.Error(err, "unable to refresh exporter status, continuing anyway", "exporter", exporter)
+			logger.Error(err, "unable to refresh exporter status, continuing anyway")
 		}
 		original := client.MergeFrom(exporter.DeepCopy())
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
@@ -328,8 +358,9 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 			Reason: "Disconnect",
 		})
 		if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
-			logger.Error(err, "unable to update exporter status, continuing anyway", "exporter", exporter)
+			logger.Error(err, "unable to update exporter status, continuing anyway")
 		}
+		cancel()
 	}()
 
 	watcher, err := s.Client.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
@@ -378,11 +409,17 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
 	logger := log.FromContext(ctx)
+
 	client, err := s.authenticateClient(ctx)
 	if err != nil {
 		logger.Error(err, "unable to authenticate client")
 		return nil, err
 	}
+
+	logger = logger.WithValues("client", types.NamespacedName{
+		Namespace: client.Namespace,
+		Name:      client.Name,
+	})
 
 	leaseName := req.GetLeaseName()
 	if leaseName == "" {
@@ -390,6 +427,11 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		logger.Error(err, "lease name not specified in dial request")
 		return nil, err
 	}
+
+	logger = logger.WithValues("lease", types.NamespacedName{
+		Namespace: client.Namespace,
+		Name:      leaseName,
+	})
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := s.Client.Get(
@@ -439,7 +481,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	case queue.(chan *pb.ListenResponse) <- response:
 	}
 
-	logger.Info("Client dial assigned stream ", "client", client.GetName(), "stream", stream)
+	logger.Info("Client dial assigned stream", "stream", stream)
 	return &pb.DialResponse{
 		RouterEndpoint: endpoint,
 		RouterToken:    token,

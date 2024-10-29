@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,10 +49,9 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	var client jumpstarterdevv1alpha1.Client
 	if err := r.Get(ctx, req.NamespacedName, &client); err != nil {
-		if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Reconcile: failed to get client", "client", req.NamespacedName)
-		}
-		return ctrl.Result{}, kclient.IgnoreNotFound(err)
+		return ctrl.Result{}, kclient.IgnoreNotFound(
+			fmt.Errorf("Reconcile: failed to get client: %w", err),
+		)
 	}
 
 	original := kclient.MergeFrom(client.DeepCopy())
@@ -67,7 +65,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if err := r.Status().Patch(ctx, &client, original); err != nil {
-		return ctrl.Result{}, err
+		return RequeueConflict(logger, ctrl.Result{}, err)
 	}
 
 	return ctrl.Result{}, nil
@@ -80,15 +78,13 @@ func (r *ClientReconciler) reconcileStatusCredential(
 	logger := log.FromContext(ctx)
 
 	if client.Status.Credential == nil {
-		logger.Info("reconcileStatusCredential: creating credential for client", "client", client)
+		logger.Info("reconcileStatusCredential: creating credential for client")
 		secret, err := r.secretForClient(client)
 		if err != nil {
-			logger.Error(err, "reconcileStatusCredential: failed to prepare credential for client", "client", client)
-			return err
+			return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
 		}
 		if err := r.Create(ctx, secret); err != nil {
-			logger.Error(err, "reconcileStatusCredential: failed to create credential for client", "client", client)
-			return err
+			return fmt.Errorf("reconcileStatusCredential: failed to create credential for client: %w", err)
 		}
 		client.Status.Credential = &corev1.LocalObjectReference{
 			Name: secret.Name,
@@ -107,7 +103,7 @@ func (r *ClientReconciler) reconcileStatusEndpoint(
 
 	endpoint := controllerEndpoint()
 	if client.Status.Endpoint != endpoint {
-		logger.Info("reconcileStatusEndpoint: updating controller endpoint", "client", client)
+		logger.Info("reconcileStatusEndpoint: updating controller endpoint")
 		client.Status.Endpoint = endpoint
 	}
 

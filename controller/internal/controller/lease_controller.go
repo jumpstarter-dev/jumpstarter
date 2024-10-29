@@ -18,12 +18,12 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -55,13 +55,13 @@ type LeaseReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+	ctx = ctrl.LoggerInto(ctx, logger)
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := r.Get(ctx, req.NamespacedName, &lease); err != nil {
-		if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Reconcile: unable to get lease", "lease", req.NamespacedName)
-		}
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{}, client.IgnoreNotFound(
+			fmt.Errorf("Reconcile: unable to get lease: %w", err),
+		)
 	}
 
 	var result ctrl.Result
@@ -78,7 +78,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
-		return result, err
+		return RequeueConflict(logger, result, err)
 	}
 
 	if lease.Labels == nil {
@@ -97,14 +97,12 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return result, err
 		}
 		if err := controllerutil.SetControllerReference(&exporter, &lease, r.Scheme); err != nil {
-			logger.Error(err, "Reconcile: failed to update lease controller reference", "lease", lease)
-			return result, err
+			return result, fmt.Errorf("Reconcile: failed to update lease controller reference: %w", err)
 		}
 	}
 
 	if err := r.Update(ctx, &lease); err != nil {
-		logger.Error(err, "Reconcile: failed to update lease metadata", "lease", lease)
-		return result, err
+		return RequeueConflict(logger, result, fmt.Errorf("Reconcile: failed to update lease metadata: %w", err))
 	}
 
 	return result, nil
@@ -122,7 +120,7 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 	now := time.Now()
 	if !lease.Status.Ended {
 		if lease.Spec.Release {
-			logger.Info("reconcileStatusEndTime: force releasing lease", "lease", lease)
+			logger.Info("reconcileStatusEndTime: force releasing lease")
 			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
 				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 				Status:             metav1.ConditionFalse,
@@ -140,7 +138,7 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 		} else if lease.Status.BeginTime != nil {
 			expiration := lease.Status.BeginTime.Add(lease.Spec.Duration.Duration)
 			if expiration.Before(now) {
-				logger.Info("reconcileStatusEndTime: lease expired", "lease", lease)
+				logger.Info("reconcileStatusEndTime: lease expired")
 				meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
 					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 					Status:             metav1.ConditionFalse,
@@ -174,7 +172,7 @@ func (r *LeaseReconciler) reconcileStatusBeginTime(
 
 	now := time.Now()
 	if lease.Status.BeginTime == nil && lease.Status.ExporterRef != nil {
-		logger.Info("reconcileStatusBeginTime: updating begin time", "lease", lease)
+		logger.Info("reconcileStatusBeginTime: updating begin time")
 		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
 			Status:             metav1.ConditionTrue,
@@ -201,12 +199,11 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 	logger := log.FromContext(ctx)
 
 	if lease.Status.ExporterRef == nil {
-		logger.Info("reconcileStatusExporterRef: looking for matching exporter", "lease", lease)
+		logger.Info("reconcileStatusExporterRef: looking for matching exporter")
 
 		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
 		if err != nil {
-			logger.Error(err, "reconcileStatusExporterRef: failed to create selector from label selector", "lease", lease)
-			return err
+			return fmt.Errorf("reconcileStatusExporterRef: failed to create selector from label selector: %w", err)
 		}
 
 		// List all Exporter matching selector
@@ -217,8 +214,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			client.InNamespace(lease.Namespace),
 			client.MatchingLabelsSelector{Selector: selector},
 		); err != nil {
-			logger.Error(err, "reconcileStatusExporterRef: failed to list exporters matching selector", "lease", lease)
-			return err
+			return fmt.Errorf("reconcileStatusExporterRef: failed to list exporters matching selector: %w", err)
 		}
 
 		// Filter out offline exporters
@@ -258,8 +254,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			client.InNamespace(lease.Namespace),
 			MatchingActiveLeases(),
 		); err != nil {
-			logger.Error(err, "reconcileStatusExporterRef: failed to list active leases", "lease", lease)
-			return err
+			return fmt.Errorf("reconcileStatusExporterRef: failed to list active leases: %w", err)
 		}
 
 		availableExporters := slices.DeleteFunc(onlineExporters, func(exporter jumpstarterdevv1alpha1.Exporter) bool {
