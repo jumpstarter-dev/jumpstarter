@@ -52,6 +52,8 @@ type ExporterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
 func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("exporter", req.NamespacedName)
+
 	var exporter jumpstarterdevv1alpha1.Exporter
 	if err := r.Get(ctx, req.NamespacedName, &exporter); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(
@@ -74,7 +76,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if err := r.Status().Patch(ctx, &exporter, original); err != nil {
-		return ctrl.Result{}, err
+		return RequeueConflict(logger, ctrl.Result{}, err)
 	}
 
 	return ctrl.Result{}, nil

@@ -45,6 +45,8 @@ type ClientReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
 func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("client", req.NamespacedName)
+
 	var client jumpstarterdevv1alpha1.Client
 	if err := r.Get(ctx, req.NamespacedName, &client); err != nil {
 		return ctrl.Result{}, kclient.IgnoreNotFound(
@@ -63,7 +65,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if err := r.Status().Patch(ctx, &client, original); err != nil {
-		return ctrl.Result{}, err
+		return RequeueConflict(logger, ctrl.Result{}, err)
 	}
 
 	return ctrl.Result{}, nil

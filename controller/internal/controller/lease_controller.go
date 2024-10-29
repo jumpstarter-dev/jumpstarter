@@ -54,6 +54,8 @@ type LeaseReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("lease", req.NamespacedName)
+
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := r.Get(ctx, req.NamespacedName, &lease); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(
@@ -75,7 +77,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
-		return result, err
+		return RequeueConflict(logger, result, err)
 	}
 
 	if lease.Labels == nil {
@@ -99,7 +101,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if err := r.Update(ctx, &lease); err != nil {
-		return result, fmt.Errorf("Reconcile: failed to update lease metadata: %w", err)
+		return RequeueConflict(logger, result, fmt.Errorf("Reconcile: failed to update lease metadata: %w", err))
 	}
 
 	return result, nil
