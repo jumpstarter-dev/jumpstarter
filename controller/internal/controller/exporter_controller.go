@@ -53,14 +53,11 @@ type ExporterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
 func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
 	var exporter jumpstarterdevv1alpha1.Exporter
 	if err := r.Get(ctx, req.NamespacedName, &exporter); err != nil {
-		if !apierrors.IsNotFound(err) {
-			logger.Error(err, "Reconcile: unable to get exporter", "exporter", req.NamespacedName)
-		}
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{}, client.IgnoreNotFound(
+			fmt.Errorf("Reconcile: unable to get exporter: %w", err),
+		)
 	}
 
 	original := client.MergeFrom(exporter.DeepCopy())
@@ -88,18 +85,16 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithValues("exporter", exporter)
 
 	if exporter.Status.Credential == nil {
-		logger.Info("reconcileStatusCredential: creating credential for exporter", "exporter", exporter)
+		logger.Info("reconcileStatusCredential: creating credential for exporter")
 		secret, err := r.secretForExporter(exporter)
 		if err != nil {
-			logger.Error(err, "reconcileStatusCredential: failed to prepare credential for exporter", "exporter", exporter)
-			return err
+			return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
 		}
 		if err := r.Create(ctx, secret); err != nil {
-			logger.Error(err, "reconcileStatusCredential: failed to create credential for exporter", "exporter", exporter)
-			return err
+			return fmt.Errorf("reconcileStatusCredential: failed to create credential for exporter: %w", err)
 		}
 		exporter.Status.Credential = &corev1.LocalObjectReference{
 			Name: secret.Name,
@@ -113,8 +108,6 @@ func (r *ExporterReconciler) reconcileStatusLeaseRef(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
-	logger := log.FromContext(ctx)
-
 	var leases jumpstarterdevv1alpha1.LeaseList
 	if err := r.List(
 		ctx,
@@ -122,8 +115,7 @@ func (r *ExporterReconciler) reconcileStatusLeaseRef(
 		client.InNamespace(exporter.Namespace),
 		MatchingActiveLeases(),
 	); err != nil {
-		logger.Error(err, "reconcileStatusLeaseRef: failed to list active leases", "exporter", exporter)
-		return err
+		return fmt.Errorf("reconcileStatusLeaseRef: failed to list active leases: %w", err)
 	}
 
 	exporter.Status.LeaseRef = nil
@@ -145,11 +137,11 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithValues("exporter", exporter)
 
 	endpoint := controllerEndpoint()
 	if exporter.Status.Endpoint != endpoint {
-		logger.Info("reconcileStatusEndpoint: updating controller endpoint", "exporter", exporter)
+		logger.Info("reconcileStatusEndpoint: updating controller endpoint")
 		exporter.Status.Endpoint = endpoint
 	}
 
