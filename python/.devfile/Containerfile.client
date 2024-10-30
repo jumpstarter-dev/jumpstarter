@@ -23,7 +23,11 @@ USER root
 # switch to python 3.12 as the default
 RUN rm -rf /usr/bin/python && ln -s /usr/bin/python3.12 /usr/bin/python
 
-RUN dnf -y install make git python3.12 python3.12-pytest libusbx python3-pyusb python3.12-pip golang && dnf clean all
+RUN dnf -y install make git python3.12 python3.12 libusbx python3-pyusb python3.12-pip golang && dnf clean all
 
 USER 10001
 RUN --mount=from=builder,source=/src/dist,target=/dist python3.12 -m pip install /dist/*.whl
+RUN python3.12 -m pip install pytest
+
+RUN mkdir -p /home/user/.config/jumpstarter/clients && chmod a+rwx -R /home/user/.config/jumpstarter/clients
+

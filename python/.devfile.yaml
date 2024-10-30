@@ -1,6 +1,6 @@
 schemaVersion: 2.3.0
 metadata:
-  name: jumpstarter-devspace
+  name: jumpstarter-dev
   icon: https://jumpstarter.dev/jumpstarter.svg
   tags:
     - Python
