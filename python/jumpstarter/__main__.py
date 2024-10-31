@@ -1,6 +1,6 @@
 """Allow running Jumpstarter through `python -m jumpstarter`."""
 
-from jumpstarter.cli import main
+from jumpstarter.cli.client import client
 
 if __name__ == "__main__":
-    main(prog_name="jmp")
+    client(prog_name="jmp")

@@ -23,7 +23,7 @@ Once the exporter configuration is ready it should be placed at `/etc/jumpstarte
 ## Enter Exporter Shell
 Now we can run the following command to enter the "Exporter Shell", inside which we can interact with the local exporter with jumpstarter client.
 ```shell
-$ jmp exporter shell demo
+$ jmp-exporter shell demo
 ```
 
 ## Use j Command

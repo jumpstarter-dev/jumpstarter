@@ -14,7 +14,7 @@ from jumpstarter.common.utils import env
 #     with lease.connect() as client:
 
 # initialize client from environment
-# e.g. `jmp exporter shell dutlink`
+# e.g. `jmp-exporter shell dutlink`
 with env() as client:
     dutlink = client.dutlink
     click.secho("Connected to Dutlink", fg="green")

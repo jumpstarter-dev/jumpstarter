@@ -20,7 +20,8 @@ config.md
 drivers.md
 architecture.md
 glossary.md
-reference/index.md
+cli-reference/index.md
+api-reference/index.md
 ```
 
 ## Resources

@@ -6,10 +6,10 @@ DOC_LISTEN ?= --host 127.0.0.1
 default: build
 
 docs: sync
-	cd docs && uv run make html
+	cd docs && uv run --group docs make html
 
 serve-docs: sync
-	cd docs && uv run make serve HOST="$(DOC_LISTEN)"
+	cd docs && uv run --group docs make serve HOST="$(DOC_LISTEN)"
 
 clean-docs:
 	rm -rf ./docs/build

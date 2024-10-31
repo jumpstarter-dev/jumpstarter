@@ -27,6 +27,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+pytest = [
+    "pytest>=8.3.2",
+]
+
+[dependency-groups]
 docs = [
     "sphinx<8.1.0",
     "myst-parser>=4.0.0",
@@ -34,10 +39,22 @@ docs = [
     "furo>=2024.8.6",
     "esbonio>=0.16.4",
     "sphinx-autobuild>=2024.4.16",
+    "sphinx-click>=6.0.0",
+]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-anyio>=0.0.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.1",
+    "typos>=1.23.6",
+    "pre-commit>=3.8.0",
+    "cryptography>=43.0.1",
+    "websocket-client>=1.8.0",
 ]
 
 [project.scripts]
-jmp = "jumpstarter.__main__:main"
+jmp = "jumpstarter.cli.client:client"
+jmp-exporter = "jumpstarter.cli.exporter:exporter"
 j = "jumpstarter.cli.j:main"
 
 [tool.hatch.version]
@@ -49,18 +66,6 @@ packages = ["jumpstarter"]
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
-[tool.uv]
-dev-dependencies = [
-    "pytest>=8.3.2",
-    "pytest-anyio>=0.0.0",
-    "pytest-cov>=5.0.0",
-    "ruff>=0.6.1",
-    "typos>=1.23.6",
-    "pre-commit>=3.8.0",
-    "cryptography>=43.0.1",
-    "websocket-client>=1.8.0",
-]
 
 [tool.uv.workspace]
 members = ["contrib/drivers/*", "contrib/libs/*", "examples/*"]
