@@ -16,7 +16,7 @@ $ alias jmp='podman run --rm -it -e JUMPSTARTER_GRPC_INSECURE=1 \
 Then you can try:
 
 ```bash
-$ jmp client list
+$ jmp list
 CURRENT   NAME      ENDPOINT                         PATH
 *         default   grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/default.yaml
           kirkb     grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/kirkb.yaml

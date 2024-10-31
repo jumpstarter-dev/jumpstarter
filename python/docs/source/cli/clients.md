@@ -80,7 +80,7 @@ a client can also be provisioned manually on a different machine.
     Then the user can create the client performing:
 
     ```bash
-    $ jmp client create my-client
+    $ jmp create my-client
     Enter a valid Jumpstarter service endpoint: devl.jumpstarter.dev
     Enter a Jumpstarter auth token (hidden): ***
     Enter a comma-separated list of allowed driver packages (optional):
