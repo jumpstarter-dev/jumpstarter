@@ -74,18 +74,18 @@ jobs:
         run: |
           export JUMPSTARTER_GRPC_INSECURE=1
 
-          jmp client list
-          jmp exporter list
+          jmp list
+          jmp-exporter list
 
-          jmp exporter run test-exporter-1 &
-          jmp exporter run test-exporter-2 &
+          jmp-exporter run test-exporter-1 &
+          jmp-exporter run test-exporter-2 &
 
           sleep 5
 
-          jmp client shell test-client-1 --label example.com/board rpi4 <<EOF
+          jmp shell test-client-1 --label example.com/board rpi4 <<EOF
           j power
           EOF
 
-          jmp client shell test-client-1 --label example.com/board rpi5 <<EOF
+          jmp shell test-client-1 --label example.com/board rpi5 <<EOF
           j storage
           EOF
