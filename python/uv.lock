@@ -735,7 +735,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.0.4.dev46+g0f32764.d20241031"
+version = "0.0.4.dev51+g03411f1.d20241031"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -752,6 +752,11 @@ dependencies = [
     { name = "pyyaml" },
     { name = "tqdm" },
     { name = "wsproto" },
+]
+
+[package.optional-dependencies]
+pytest = [
+    { name = "pytest" },
 ]
 
 [package.dev-dependencies]
@@ -788,6 +793,7 @@ requires-dist = [
     { name = "protobuf", specifier = ">=5.28.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyserial", specifier = ">=3.5" },
+    { name = "pytest", marker = "extra == 'pytest'", specifier = ">=8.3.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "tqdm", specifier = ">=4.66.5" },
     { name = "wsproto", specifier = ">=1.2.0" },
@@ -816,7 +822,7 @@ docs = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.0.4.dev46+g0f32764"
+version = "0.0.4.dev51+g03411f1.d20241031"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -845,7 +851,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.0.4.dev46+g0f32764"
+version = "0.0.4.dev51+g03411f1.d20241031"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -874,7 +880,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.0.4.dev46+g0f32764"
+version = "0.0.4.dev51+g03411f1.d20241031"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -901,7 +907,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.0.4.dev46+g0f32764"
+version = "0.0.4.dev51+g03411f1.d20241031"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -930,7 +936,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.0.4.dev46+g0f32764"
+version = "0.0.4.dev51+g03411f1.d20241031"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -987,7 +993,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.0.4.dev46+g0f32764"
+version = "0.0.4.dev51+g03411f1.d20241031"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
