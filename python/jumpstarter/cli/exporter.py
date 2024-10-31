@@ -17,10 +17,16 @@ def exporter():
     logging.basicConfig(level=logging.INFO)
 
 
+arg_alias = click.argument("alias", default="default")
+opt_config_path = click.option(
+    "-c", "--config", "config_path", type=click.Path(exists=True), help="Path of exporter config, overrides ALIAS"
+)
+
+
 @exporter.command
-@click.argument("alias", default="default")
 @click.option("--endpoint", prompt=True)
 @click.option("--token", prompt=True)
+@arg_alias
 def create(alias, endpoint, token):
     """Create exporter"""
     try:
@@ -39,7 +45,7 @@ def create(alias, endpoint, token):
 
 
 @exporter.command
-@click.argument("alias", default="default")
+@arg_alias
 def delete(alias):
     """Delete exporter"""
     try:
@@ -50,7 +56,7 @@ def delete(alias):
 
 
 @exporter.command
-@click.argument("alias", default="default")
+@arg_alias
 def edit(alias):
     """Edit exporter"""
     try:
@@ -62,6 +68,7 @@ def edit(alias):
 
 @exporter.command
 def list():
+    """List exporters"""
     exporters = ExporterConfigV1Alpha1.list()
     columns = ["ALIAS", "PATH"]
     rows = [
@@ -75,8 +82,8 @@ def list():
 
 
 @exporter.command
-@click.argument("alias", default="default")
-@click.option("-c", "--config", "config_path")
+@arg_alias
+@opt_config_path
 def run(alias, config_path):
     """Run exporter"""
     try:
@@ -91,8 +98,8 @@ def run(alias, config_path):
 
 
 @exporter.command
-@click.argument("alias", default="default")
-@click.option("-c", "--config", "config_path")
+@arg_alias
+@opt_config_path
 def shell(alias, config_path):
     """Spawns a shell connecting to a transient exporter"""
     try:
