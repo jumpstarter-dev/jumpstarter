@@ -18,7 +18,7 @@ author = "Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["sphinxcontrib.mermaid", "myst_parser", "sphinx.ext.autodoc", "sphinx.ext.doctest"]
+extensions = ["sphinxcontrib.mermaid", "myst_parser", "sphinx.ext.autodoc", "sphinx.ext.doctest", "sphinx_click"]
 
 templates_path = ["_templates"]
 exclude_patterns = []
