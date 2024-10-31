@@ -37,7 +37,8 @@ docs = [
 ]
 
 [project.scripts]
-jmp = "jumpstarter.__main__:main"
+jmp = "jumpstarter.cli.client:client"
+jmp-exporter = "jumpstarter.cli.exporter:exporter"
 j = "jumpstarter.cli.j:main"
 
 [tool.hatch.version]

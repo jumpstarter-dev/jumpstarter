@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import anyio
@@ -7,12 +8,13 @@ from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 from .util import make_table
+from .version import version
 
 
 @click.group()
 def exporter():
     """Manage and run exporters"""
-    pass
+    logging.basicConfig(level=logging.INFO)
 
 
 @exporter.command
@@ -104,3 +106,10 @@ def shell(alias, config_path):
     with config.serve_unix() as path:
         # SAFETY: the exporter config is local thus considered trusted
         launch_shell(path, allow=[], unsafe=True)
+
+
+exporter.add_command(version)
+
+
+if __name__ == "__main__":
+    exporter()

@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 import click
@@ -11,11 +12,12 @@ from jumpstarter.config import (
 )
 
 from .util import AliasedGroup, make_table
+from .version import version
 
 
 @click.group(cls=AliasedGroup, short_help="Manage and interact with clients.")
 def client():
-    pass
+    logging.basicConfig(level=logging.INFO)
 
 
 @client.group(short_help="Managed leases held by client.")
@@ -196,3 +198,8 @@ client.add_command(client_delete)
 client.add_command(client_list)
 client.add_command(client_use)
 client.add_command(client_shell)
+client.add_command(version)
+
+
+if __name__ == "__main__":
+    client()
