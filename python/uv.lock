@@ -735,7 +735,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.0.4.dev18+gc90bbc5.d20241022"
+version = "0.0.4.dev46+g0f32764.d20241031"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -754,16 +754,6 @@ dependencies = [
     { name = "wsproto" },
 ]
 
-[package.optional-dependencies]
-docs = [
-    { name = "esbonio" },
-    { name = "furo" },
-    { name = "myst-parser" },
-    { name = "sphinx" },
-    { name = "sphinx-autobuild" },
-    { name = "sphinxcontrib-mermaid" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "cryptography" },
@@ -775,27 +765,30 @@ dev = [
     { name = "typos" },
     { name = "websocket-client" },
 ]
+docs = [
+    { name = "esbonio" },
+    { name = "furo" },
+    { name = "myst-parser" },
+    { name = "sphinx" },
+    { name = "sphinx-autobuild" },
+    { name = "sphinx-click" },
+    { name = "sphinxcontrib-mermaid" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
     { name = "click", specifier = ">=8.1.7" },
-    { name = "esbonio", marker = "extra == 'docs'", specifier = ">=0.16.4" },
     { name = "fabric", specifier = ">=3.2.2" },
-    { name = "furo", marker = "extra == 'docs'", specifier = ">=2024.8.6" },
     { name = "grpcio", specifier = ">=1.66.1" },
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=4.0.0" },
     { name = "opendal", specifier = ">=0.45.8" },
     { name = "pexpect", specifier = ">=4.9.0" },
     { name = "protobuf", specifier = ">=5.28.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "sphinx", marker = "extra == 'docs'", specifier = "<8.1.0" },
-    { name = "sphinx-autobuild", marker = "extra == 'docs'", specifier = ">=2024.4.16" },
-    { name = "sphinxcontrib-mermaid", marker = "extra == 'docs'", specifier = ">=0.9.2" },
     { name = "tqdm", specifier = ">=4.66.5" },
     { name = "wsproto", specifier = ">=1.2.0" },
 ]
@@ -811,10 +804,19 @@ dev = [
     { name = "typos", specifier = ">=1.23.6" },
     { name = "websocket-client", specifier = ">=1.8.0" },
 ]
+docs = [
+    { name = "esbonio", specifier = ">=0.16.4" },
+    { name = "furo", specifier = ">=2024.8.6" },
+    { name = "myst-parser", specifier = ">=4.0.0" },
+    { name = "sphinx", specifier = "<8.1.0" },
+    { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
+    { name = "sphinx-click", specifier = ">=6.0.0" },
+    { name = "sphinxcontrib-mermaid", specifier = ">=0.9.2" },
+]
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.0.4.dev18+gc90bbc5"
+version = "0.0.4.dev46+g0f32764"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -843,7 +845,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.0.4.dev18+gc90bbc5"
+version = "0.0.4.dev46+g0f32764"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -872,7 +874,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.0.4.dev18+gc90bbc5"
+version = "0.0.4.dev46+g0f32764"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -899,7 +901,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.0.4.dev18+gc90bbc5"
+version = "0.0.4.dev46+g0f32764"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -928,7 +930,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.0.4.dev18+gc90bbc5"
+version = "0.0.4.dev46+g0f32764"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -985,7 +987,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.0.4.dev18+gc90bbc5"
+version = "0.0.4.dev46+g0f32764"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
@@ -1918,6 +1920,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/98/0b/a866924ded68efec7a1759587a4e478aec7559d8165fac8b2ad1c0e774d6/sphinx_basic_ng-1.0.0b2.tar.gz", hash = "sha256:9ec55a47c90c8c002b5960c57492ec3021f5193cb26cebc2dc4ea226848651c9", size = 20736 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3c/dd/018ce05c532a22007ac58d4f45232514cd9d6dd0ee1dc374e309db830983/sphinx_basic_ng-1.0.0b2-py3-none-any.whl", hash = "sha256:eb09aedbabfb650607e9b4b68c9d240b90b1e1be221d6ad71d61c52e29f7932b", size = 22496 },
+]
+
+[[package]]
+name = "sphinx-click"
+version = "6.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "docutils" },
+    { name = "sphinx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/0a/5b1e8d0579dbb4ca8114e456ca4a68020bfe8e15c7001f3856be4929ab83/sphinx_click-6.0.0.tar.gz", hash = "sha256:f5d664321dc0c6622ff019f1e1c84e58ce0cecfddeb510e004cf60c2a3ab465b", size = 29574 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/d7/8621c4726ad3f788a1db4c0c409044b16edc563f5c9542807b3724037555/sphinx_click-6.0.0-py3-none-any.whl", hash = "sha256:1e0a3c83bcb7c55497751b19d07ebe56b5d7b85eb76dd399cf9061b497adc317", size = 9922 },
 ]
 
 [[package]]
