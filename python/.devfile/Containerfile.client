@@ -29,5 +29,4 @@ USER 10001
 RUN --mount=from=builder,source=/src/dist,target=/dist python3.12 -m pip install /dist/*.whl
 RUN python3.12 -m pip install pytest
 
-RUN mkdir -p /home/user/.config/jumpstarter/clients && chmod a+rwx -R /home/user/.config/jumpstarter/clients
-
+RUN mkdir -p /home/user/.config/jumpstarter/clients && chgrp 0 -R /home/user/.config && chmod g+rwx -R /home/user/.config
