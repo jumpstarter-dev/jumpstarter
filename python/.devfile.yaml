@@ -16,10 +16,6 @@ components:
    - name: runtime
      container:
        image: quay.io/jumpstarter-dev/jumpstarter-dev:latest
-       endpoints:
-         - name: http-docs
-           targetPort: 8000
-           protocol: http
        mountSources: true
 
 commands:
