@@ -7,8 +7,9 @@ Please refer to https://github.com/jumpstarter-dev/jumpstarter-controller/releas
 the latest release.
 
 ## Installing the CLI
-```bash
-export VERSION=0.1.0
+```{code-block} bash
+:substitutions:
+export VERSION={{version}}
 export ARCH=amd64
 
 curl -L https://github.com/jumpstarter-dev/jumpstarter-controller/releases/download/${VERSION}/jmpctl_${VERSION}_linux_${ARCH} \

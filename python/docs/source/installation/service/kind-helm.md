@@ -58,7 +58,8 @@ kind create cluster  --config kind_config.yaml
 
 ### Install Jumpstarter
 
-```bash
+```{code-block} bash
+:substitutions:
 export BASEDOMAIN="jumpstarter.${IP}.nip.io"
 export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
 export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
@@ -71,6 +72,5 @@ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarte
             --set global.metrics.enabled=false \
             --set jumpstarter-controller.grpc.nodeport.enabled=true \
             --set jumpstarter-controller.grpc.mode=nodeport \
-            --version=0.1.0
-        {{< / highlight >}}
+            --version={{version}}
 ```
