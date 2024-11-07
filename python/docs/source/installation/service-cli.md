@@ -10,7 +10,7 @@ the latest release.
 ```{code-block} bash
 :substitutions:
 export VERSION={{version}}
-export ARCH=amd64
+export ARCH=amd64 # or arm64
 
 curl -L https://github.com/jumpstarter-dev/jumpstarter-controller/releases/download/${VERSION}/jmpctl_${VERSION}_linux_${ARCH} \
      -o /usr/local/bin/jmpctl

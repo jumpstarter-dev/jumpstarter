@@ -36,7 +36,7 @@ export:
 
 ## Running an Exporter
 
-To run an Exporter on a host system, you must have Python >= 3.11 installed
+To run an Exporter on a host system, you must have Python {{requires_python}} installed
 and the required driver packages installed locally.
 
 Exporters can be run in a privileged container or as a systemd daemon. It is
