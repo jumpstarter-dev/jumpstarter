@@ -1,8 +1,10 @@
-FROM fedora:40 AS builder
+FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:latest AS uv
+
+FROM --platform=$BUILDPLATFORM fedora:40 AS builder
 RUN dnf install -y make git && \
     dnf clean all && \
     rm -rf /var/cache/dnf
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=uv /uv /uvx /bin/
 
 FROM fedora:40 AS product
 RUN dnf install -y python3 ustreamer libusb1 && \
