@@ -65,9 +65,9 @@ device-specific functionality for your use case.
 
 Here is an example of a driver tree with two custom composite drivers:
 
-```yaml
+```
 MyDevice # Custom composite driver for the entire target device
-├─ TcpNetwork # TCP Network driver to tunnel port 8000
+├─ TcpNetwork # TCP Network driver to tunnel port 8000
 ├─ MyPower # Custom power driver to control device power
 ├─ SDWire # SD Wire storage emulator to enable re-flash on demand
 ├─ DigitalOutput # GPIO pin control to send signals to the device
