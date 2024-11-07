@@ -17,7 +17,6 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-jumpstarter = { workspace = true }
 jumpstarter-imagehash = { workspace = true }
 jumpstarter-driver-dutlink = { workspace = true }
 

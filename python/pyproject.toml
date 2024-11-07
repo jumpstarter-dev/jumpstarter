@@ -65,6 +65,9 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 [tool.uv.workspace]
 members = ["contrib/drivers/*", "contrib/libs/*", "examples/*"]
 
+[tool.uv.sources]
+jumpstarter = { workspace = true }
+
 [tool.ruff]
 exclude = ["jumpstarter/v1"]
 line-length = 120

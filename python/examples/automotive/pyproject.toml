@@ -12,6 +12,3 @@ requires-python = ">=3.11"
 dependencies = [
     "jumpstarter"
 ]
-
-[tool.uv.sources]
-jumpstarter = { workspace = true }
