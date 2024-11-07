@@ -16,7 +16,7 @@ with the provided example the services will be available at grpc.jumpstarter.exa
 helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
         --create-namespace --namespace jumpstarter-lab \
         --set global.baseDomain=jumpstarter.example.com \
-        --set global.metrics.enabled=true # disable if metrics not available \
+        --set global.metrics.enabled=true `# disable if metrics not available` \
         --set jumpstarter-controller.grpc.mode=ingress \
         --version={{version}}
 ```
