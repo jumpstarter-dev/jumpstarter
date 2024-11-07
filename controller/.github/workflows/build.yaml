@@ -25,7 +25,7 @@ jobs:
 
       - name: Get version
         run: |
-          VERSION=$(git describe --long --tags)
+          VERSION=$(git describe --tags)
           VERSION=${VERSION#v} # remove the leading v prefix for version
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
@@ -51,7 +51,7 @@ jobs:
 
       - name: Get version
         run: |
-          VERSION=$(git describe --long --tags)
+          VERSION=$(git describe --tags)
           VERSION=${VERSION#v} # remove the leading v prefix for version
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
