@@ -17,7 +17,7 @@ jobs:
           - jumpstarter-dev/jumpstarter Dockerfile
           - jumpstarter-dev/jumpstarter-dev .devfile/Containerfile
           - jumpstarter-dev/jumpstarter-devspace .devfile/Containerfile.client
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     permissions:
       contents: read
       packages: write
@@ -44,9 +44,6 @@ jobs:
           VERSION=${VERSION#v} # remove the leading v prefix for version
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
