@@ -14,8 +14,8 @@ dependencies = [
     "gpiozero>=2.0.1",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.3.2",
     "pytest-cov>=5.0.0",
 ]

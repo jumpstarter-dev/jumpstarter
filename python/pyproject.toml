@@ -26,11 +26,6 @@ dependencies = [
     "protobuf>=5.28.0",
 ]
 
-[project.optional-dependencies]
-pytest = [
-    "pytest>=8.3.2",
-]
-
 [dependency-groups]
 docs = [
     "sphinx<8.1.0",
