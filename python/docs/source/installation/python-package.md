@@ -9,7 +9,7 @@ This package includes:
 - The client CLI tool.
 - An exporter runtime and built-in drivers.
 
-The Python package can be installed using ``pip`` or similar, Python 3.10 or newer is required.:
+The Python package can be installed using ``pip`` or similar, Python {{requires_python}} is required.:
 
 <!-- TODO: create meta-package-to-install-all -->
 

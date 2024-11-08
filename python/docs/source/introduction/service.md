@@ -34,16 +34,6 @@ a set of requested labels, similar to [node selection](https://kubernetes.io/doc
 in Kubernetes. This enable flexible CI-driven testing even when physical resources
 are limited.
 
-### Sessions
-
-Within a lease, a Session is be created to interact with the hardware.
-The lifecycle of a session typically follows that of a test suite, with some
-setup logic, a set of tests, and teardown logic to reset the hardware to a known
-state.
-
-Multiple sessions may be created within one lease, however only one session can
-exist at one time.
-
 ## Router
 
 The Router service is used by the controller to route messages between

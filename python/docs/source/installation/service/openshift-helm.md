@@ -12,13 +12,14 @@ this is because the install process will install some CRDs and ClusterRoles.
 
 To install using helm:
 
-```bash
-  helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-              --create-namespace --namespace jumpstarter-lab \
-              --set global.baseDomain=jumpstarter.example.com \
-              --set global.metrics.enabled=true \
-              --set jumpstarter-controller.grpc.mode=route \
-              --version=0.1.0
+```{code-block} bash
+:substitutions:
+helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
+          --create-namespace --namespace jumpstarter-lab \
+          --set global.baseDomain=jumpstarter.example.com \
+          --set global.metrics.enabled=true \
+          --set jumpstarter-controller.grpc.mode=route \
+          --version={{controller_version}}
 ```
 
 

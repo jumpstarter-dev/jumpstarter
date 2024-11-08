@@ -63,7 +63,8 @@ auto-generate values for these, but with ArgoCD such mechanism doesn't work. You
 create these secrets in the namespace where the jumpstarter is installed.
 ```
 
-```yaml
+```{code-block} yaml
+:substitutions:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -89,6 +90,6 @@ spec:
       - name: jumpstarter-controller.grpc.mode
         value: "route"
     repoURL: quay.io/jumpstarter-dev/helm
-    targetRevision: "0.1.0"
+    targetRevision: "{{controller_version}}"
 ```
 

@@ -12,7 +12,11 @@ configurations, and run transient or persistent exporter instances.
 
 The `jmp` and `jmp-exporter` CLI tools are available as part of the `jumpstarter` Python package.
 You can learn how to install this package [here](../installation/python-package.md),
-but it is also available as a container image `quay.io/jumpstarter/jumpstarter:main`.
+but it is also available as a container image
+```{code-block}
+:substitutions:
+quay.io/jumpstarter/jumpstarter:{{version}}
+```
 
 To check if you have the client CLI installed, run:
 

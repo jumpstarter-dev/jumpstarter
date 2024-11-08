@@ -15,8 +15,8 @@ Drivers in Jumpstarter consist of three components:
 
 - `Driver` - Implements the logic to configure and use the interface(s) provided
 by the host system. e.g. a TCP port.
-- `DriverInterface` - Defines the contract between the driver client and the
-driver itself.
+- `DriverInterface` - Optionally defines the contract between the driver client and the
+driver itself, so multiple drivers can share the same client.
 - `DriverClient` - Provides a user-friendly interface that can be used byclients
 to interact with the underlying `Driver` either locally or remotely over the network.
 
@@ -25,8 +25,8 @@ The exporter instance runs the `Driver` itself to interact with the hardware.
 Clients use a `DriverClient` class to interact with the driver through the
 contract defined in the `DriverInterface`.
 
-When a client connects to the exporter and requests a lease, a session is created
-for each set of tests to execute. Within the session, the specified `Driver`
+When a client requests a lease and  connects to the exporter, a session is created
+for all the tests the client has to execute. Within the session, the specified `Driver`
 subclass is instantiated for each of the configured interfaces defined in the
 exporter configuration. These driver instances live throughout the duration of
 the session and can run setup/teardown logic and keep state internally for that

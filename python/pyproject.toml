@@ -36,6 +36,7 @@ docs = [
     "esbonio>=0.16.4",
     "sphinx-autobuild>=2024.4.16",
     "sphinx-click>=6.0.0",
+    "sphinx-substitution-extensions>=2024.10.17",
 ]
 dev = [
     "pytest>=8.3.2",
