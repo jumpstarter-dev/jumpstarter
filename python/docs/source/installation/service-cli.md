@@ -9,7 +9,7 @@ the latest release.
 ## Installing the CLI
 ```{code-block} bash
 :substitutions:
-export VERSION={{version}}
+export VERSION={{controller_version}}
 export ARCH=amd64 # or arm64
 
 curl -L https://github.com/jumpstarter-dev/jumpstarter-controller/releases/download/${VERSION}/jmpctl_${VERSION}_linux_${ARCH} \

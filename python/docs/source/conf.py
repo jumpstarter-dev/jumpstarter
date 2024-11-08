@@ -46,5 +46,6 @@ myst_enable_extensions = [
 ]
 myst_substitutions = {
     "requires_python": ">=3.11",
-    "version": "0.5.0rc2",
+    "version": "0.5.0",
+    "controller_version": "0.5.0",
 }

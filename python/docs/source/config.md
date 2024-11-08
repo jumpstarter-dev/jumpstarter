@@ -240,11 +240,12 @@ the network.
 
 To run the exporter container on a test runner using Podman:
 
-```bash
+```{code-block} bash
+:substitutions:
 $ sudo podman run --rm -ti --name my-exporter --net=host  --privileged \
                 -e JUMPSTARTER_GRPC_INSECURE=1 \
                 -v /run/udev:/run/udev -v /dev:/dev -v /etc/jumpstarter:/etc/jumpstarter \
-                quay.io/jumpstarter-dev/jumpstarter:main \
+                quay.io/jumpstarter-dev/jumpstarter:{{version}} \
                 jmp-exporter run my-exporter
 
 INFO:jumpstarter.exporter.exporter:Registering exporter with controller
@@ -265,7 +266,8 @@ To run the exporter as a service podman-systemd is recommended, by using podman-
 you can simply create a systemd service file at `/etc/containers/systemd/my-exporter.container` with
 the following content:
 
-```ini
+```{code-block} ini
+:substitutions:
 [Unit]
 Description=My exporter
 
@@ -273,7 +275,7 @@ Description=My exporter
 ContainerName=my-exporter
 Environment=JUMPSTARTER_GRPC_INSECURE=1
 Exec=jmp-exporter run my-exporter
-Image=quay.io/jumpstarter-dev/jumpstarter:main
+Image=quay.io/jumpstarter-dev/jumpstarter:{{version}}
 Network=host
 PodmanArgs=--privileged
 Volume=/run/udev:/run/udev

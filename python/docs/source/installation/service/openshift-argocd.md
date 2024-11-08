@@ -90,6 +90,6 @@ spec:
       - name: jumpstarter-controller.grpc.mode
         value: "route"
     repoURL: quay.io/jumpstarter-dev/helm
-    targetRevision: "{{version}}"
+    targetRevision: "{{controller_version}}"
 ```
 

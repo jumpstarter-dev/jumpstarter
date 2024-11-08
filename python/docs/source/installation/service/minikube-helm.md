@@ -43,5 +43,5 @@ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarte
             --set global.metrics.enabled=false \
             --set jumpstarter-controller.grpc.nodeport.enabled=true \
             --set jumpstarter-controller.grpc.mode=nodeport \
-            --version={{version}}
+            --version={{controller_version}}
 ```

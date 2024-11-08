@@ -19,7 +19,7 @@ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarte
           --set global.baseDomain=jumpstarter.example.com \
           --set global.metrics.enabled=true \
           --set jumpstarter-controller.grpc.mode=route \
-          --version={{version}}
+          --version={{controller_version}}
 ```
 
 
