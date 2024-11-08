@@ -51,10 +51,10 @@ EOF
     kubectl label exporter -n "${NAMESPACE}" "${EXPORTER_NAME}" device-type=can
 done
 
-kubectl delete statefulset -n jumpstarter-exporters exporters
-kubectl delete statefulset -n jumpstarter-exporters vcan-exporters
+kubectl delete statefulset -n jumpstarter-exporters exporter vcan-exporter
+kubectl delete pod --all -n jumpstarter-exporters --force --grace-period=0
 
-kubectl create namespace jumpstarter-exporters
+kubectl create namespace jumpstarter-exporters || true
 kubectl apply -k ./hack/demoenv/
 
 echo "Waiting for exporters to be ready...."
