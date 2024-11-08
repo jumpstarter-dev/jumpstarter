@@ -26,11 +26,6 @@ dependencies = [
     "protobuf>=5.28.0",
 ]
 
-[project.optional-dependencies]
-pytest = [
-    "pytest>=8.3.2",
-]
-
 [dependency-groups]
 docs = [
     "sphinx<8.1.0",
@@ -69,6 +64,9 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.uv.workspace]
 members = ["contrib/drivers/*", "contrib/libs/*", "examples/*"]
+
+[tool.uv.sources]
+jumpstarter = { workspace = true }
 
 [tool.ruff]
 exclude = ["jumpstarter/v1"]
