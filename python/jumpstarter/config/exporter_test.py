@@ -42,7 +42,7 @@ async def test_exporter_serve(mock_controller):
     )
 
     async with create_task_group() as tg:
-        tg.start_soon(exporter.serve_forever)
+        tg.start_soon(exporter.serve)
 
         with start_blocking_portal() as portal:
             async with client.lease_async(metadata_filter=MetadataFilter(), lease_name=None, portal=portal) as lease:

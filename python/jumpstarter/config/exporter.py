@@ -91,7 +91,7 @@ class ExporterConfigV1Alpha1(BaseModel):
             with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
                 yield path
 
-    async def serve_forever(self):
+    async def serve(self):
         def channel_factory():
             credentials = grpc.composite_channel_credentials(
                 ssl_channel_credentials(self.endpoint),
@@ -103,4 +103,4 @@ class ExporterConfigV1Alpha1(BaseModel):
             channel_factory=channel_factory,
             device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
         ) as exporter:
-            await exporter.serve_forever()
+            await exporter.serve()

@@ -1,4 +1,5 @@
 import logging
+import sys
 from pathlib import Path
 
 import anyio
@@ -90,6 +91,16 @@ def list():
     click.echo(make_table(columns, rows))
 
 
+async def _serve_with_exc_handling(exporter):
+    result = 0
+    try:
+        await exporter.serve()
+    except* Exception as excgroup:
+        print(f"Exception while serving on the exporter: {excgroup.exveptions}", file=sys.stderr)
+        result = 1
+    return result
+
+
 @exporter.command
 @arg_alias
 @opt_config_path
@@ -103,7 +114,7 @@ def run(alias, config_path):
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
 
-    anyio.run(config.serve_forever)
+    return anyio.run(_serve_with_exc_handling, config)
 
 
 @exporter.command

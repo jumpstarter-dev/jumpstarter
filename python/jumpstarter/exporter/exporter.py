@@ -4,7 +4,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 
 import grpc
-from anyio import connect_unix, create_task_group, sleep
+from anyio import connect_unix, create_task_group
 from google.protobuf import empty_pb2
 
 from jumpstarter.common import Metadata
@@ -90,14 +90,3 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                     logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
                 else:
                     logger.info("Currently not leased")
-
-    async def serve_forever(self):
-        backoff = 5
-        while True:
-            try:
-                await self.serve()
-            except* Exception as excgroup:
-                logger.info(
-                    "Exporter: connection interrupted, reconnecting after %d seconds: %s", backoff, excgroup.exceptions
-                )
-                await sleep(backoff)
