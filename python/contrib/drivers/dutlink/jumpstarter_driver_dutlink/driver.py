@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -16,12 +17,14 @@ from jumpstarter.drivers.power.driver import PowerInterface, PowerReading
 from jumpstarter.drivers.pyserial.driver import PySerial
 from jumpstarter.drivers.storage.driver import StorageMuxInterface
 
+log = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class DutlinkPower(PowerInterface, Driver):
     parent: Dutlink
 
     def control(self, action):
+        log.debug(f"power control: {action}")
         return self.parent.control(
             usb.ENDPOINT_OUT,
             0x01,
@@ -72,6 +75,7 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
     storage_device: str
 
     def control(self, action):
+        log.debug(f"storage control: {action}")
         return self.parent.control(
             usb.ENDPOINT_OUT,
             0x02,
@@ -104,7 +108,9 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
 
         with fail_after(20):
             while True:
+                log.debug(f"waiting for storage device {self.storage_device}")
                 if os.path.exists(self.storage_device):
+                    log.debug(f"storage device {self.storage_device} is ready")
                     # https://stackoverflow.com/a/2774125
                     fd = os.open(self.storage_device, os.O_WRONLY)
                     try:
@@ -133,6 +139,7 @@ class Dutlink(CompositeInterface, Driver):
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:
+                log.debug(f"found dutlink board with serial {serial}")
                 self.dev = dev
                 self.itf = usb.util.find_descriptor(
                     dev.get_active_configuration(),
@@ -173,6 +180,8 @@ class Dutlink(CompositeInterface, Driver):
             wValue=op,
             data_or_wLength=(value if direction == usb.ENDPOINT_OUT else 512),
         )
+
+        log.debug("ctrl_transfer result: %s", res)
 
         if direction == usb.ENDPOINT_IN:
             return bytes(res).decode("utf-8")

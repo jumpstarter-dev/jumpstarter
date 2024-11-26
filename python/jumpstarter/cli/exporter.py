@@ -11,17 +11,26 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from .util import make_table
 from .version import version
 
-
-@click.group()
-def exporter():
-    """Manage and run exporters"""
-    logging.basicConfig(level=logging.INFO)
-
-
 arg_alias = click.argument("alias", default="default")
+
 opt_config_path = click.option(
     "-c", "--config", "config_path", type=click.Path(exists=True), help="Path of exporter config, overrides ALIAS"
 )
+
+opt_log_level = click.option(
+       "-l", "--log-level", "log_level",
+       type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+       help="Log level"
+)
+
+@click.group()
+@opt_log_level
+def exporter(log_level):
+    """Manage and run exporters"""
+    if log_level:
+        logging.basicConfig(level=log_level.upper())
+    else:
+        logging.basicConfig(level=logging.INFO)
 
 
 @exporter.command
