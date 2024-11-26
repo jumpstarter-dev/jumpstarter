@@ -1,3 +1,4 @@
+import logging
 import sys
 from base64 import b64encode
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from jumpstarter.driver import Driver, export, exportstream
 
 from .common import UStreamerState
 
+log = logging.getLogger(__name__)
 
 def find_ustreamer():
     executable = which("ustreamer")
@@ -59,16 +61,22 @@ class UStreamer(Driver):
     async def state(self):
         async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
             async with session.get("http://localhost/state") as r:
-                return UStreamerState.model_validate(await r.json())
+                json = await r.json()
+                log.debug(f"state: {json}")
+                return UStreamerState.model_validate(json)
 
     @export
     async def snapshot(self):
         async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
             async with session.get("http://localhost/snapshot") as r:
-                return b64encode(await r.read()).decode("ascii")
+                data = await r.read()
+                length = len(data)
+                log.debug(f"snapshot: {length} bytes")
+                return b64encode(data).decode("ascii")
 
     @exportstream
     @asynccontextmanager
     async def connect(self):
+        log.debug("streaming video")
         async with await connect_unix(self.socketp) as stream:
             yield stream
