@@ -157,13 +157,15 @@ class Dutlink(CompositeInterface, Driver):
         The serial number of the DUTLink device. Default is None.
     alternate_console : str or None
         The alternative console to be used, if a separate serial port console must be used,
-        the path to the device i.e. '/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_TOPOD83B461B-if01'. Default is None.
+        the path to the device i.e. '/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_TOPOD83B461B-if01'.
+        Default is None.
     timeout_s : int
         The timeout in seconds for USB operations. Default is set to 20 seconds.
     storage_device : str
         The path of the storage device used for data storage operations, as it will be enumerated when connected
-        to the expoter host. i.e. '/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_54345678AE6C-0:0', it is recommended to use
-        by-id or by-path paths to avoid issues with device enumeration like 'sda,sdb,sdc...' which will change. Default is None.
+        to the exporter host. i.e. '/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_54345678AE6C-0:0', it is recommended to use
+        by-id or by-path paths to avoid issues with device enumeration like 'sda,sdb,sdc...'
+        which will change. Default is None.
     """
 
     def __post_init__(self):
@@ -188,8 +190,9 @@ class Dutlink(CompositeInterface, Driver):
                 if self.alternate_console is not None:
                     try:
                         self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
-                    except SerialException as e:
-                        log.info(f"failed to open alternate console {self.alternate_console} but trying to power on the target once")
+                    except SerialException:
+                        log.info(f"failed to open alternate console {self.alternate_console} "
+                                 "but trying to power on the target once")
                         self.children["power"].on()
                         time.sleep(5)
                         self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
