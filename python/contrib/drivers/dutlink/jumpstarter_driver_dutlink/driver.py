@@ -131,6 +131,7 @@ class Dutlink(CompositeInterface, Driver):
     serial: str | None = field(default=None)
     dev: usb.core.Device = field(init=False)
     itf: usb.core.Interface = field(init=False)
+    timeout_s: int = field(default=20) # 20 seconds, power control sequences can block USB for a long time
 
     storage_device: str
 
@@ -140,6 +141,7 @@ class Dutlink(CompositeInterface, Driver):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:
                 log.debug(f"found dutlink board with serial {serial}")
+                dev.default_timeout = self.timeout_s * 1000
                 self.dev = dev
                 self.itf = usb.util.find_descriptor(
                     dev.get_active_configuration(),
