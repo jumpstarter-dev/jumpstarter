@@ -7,7 +7,7 @@ import pyudev
 import usb.core
 import usb.util
 from anyio import fail_after, sleep
-from anyio.streams.file import FileWriteStream
+from anyio.streams.file import FileReadStream, FileWriteStream
 
 from jumpstarter.driver import Driver, export
 from jumpstarter.drivers.storage.driver import StorageMuxInterface
@@ -96,10 +96,7 @@ class SDWire(StorageMuxInterface, Driver):
     def off(self):
         self.host()
 
-    @export
-    async def write(self, src: str):
-        self.host()
-
+    async def wait_for_storage_device(self):
         with fail_after(10):
             while True:
                 # https://stackoverflow.com/a/2774125
@@ -111,7 +108,20 @@ class SDWire(StorageMuxInterface, Driver):
                     os.close(fd)
                 await sleep(1)
 
+    @export
+    async def write(self, src: str):
+        self.host()
+        await self.wait_for_storage_device()
         async with await FileWriteStream.from_path(self.storage_device) as stream:
             async with self.resource(src) as res:
                 async for chunk in res:
                     await stream.send(chunk)
+
+    @export
+    async def read(self, dst: str):
+        self.host()
+        await self.wait_for_storage_device()
+        async with await FileReadStream.from_path(self.storage_device) as stream:
+            async with self.resource(dst) as res:
+                async for chunk in stream:
+                    await res.send(chunk)

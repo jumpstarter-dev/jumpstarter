@@ -23,6 +23,8 @@ class AsyncFileStream(ObjectStream[bytes]):
             raise BrokenResourceError from e
 
     async def receive(self) -> bytes:
+        if not await self.file.readable():
+            raise EndOfStream
         try:
             item = await self.file.read(size=65536)
         except Error as e:
