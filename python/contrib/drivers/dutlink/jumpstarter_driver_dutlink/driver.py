@@ -227,7 +227,7 @@ class Dutlink(CompositeInterface, Driver):
             data_or_wLength=(value if direction == usb.ENDPOINT_OUT else 512),
         )
 
-        log.debug("ctrl_transfer result: %s", res)
-
         if direction == usb.ENDPOINT_IN:
-            return bytes(res).decode("utf-8")
+            str_value = bytes(res).decode("utf-8")
+            log.debug("ctrl_transfer result: %s", )
+            return str_value
