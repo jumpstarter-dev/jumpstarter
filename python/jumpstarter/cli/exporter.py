@@ -9,7 +9,7 @@ import click
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
-from .util import make_table
+from .util import AliasedGroup, make_table, opt_log_level
 from .version import version
 
 arg_alias = click.argument("alias", default="default")
@@ -18,13 +18,7 @@ opt_config_path = click.option(
     "-c", "--config", "config_path", type=click.Path(exists=True), help="Path of exporter config, overrides ALIAS"
 )
 
-opt_log_level = click.option(
-       "-l", "--log-level", "log_level",
-       type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
-       help="Log level"
-)
-
-@click.group()
+@click.group(cls=AliasedGroup)
 @opt_log_level
 def exporter(log_level):
     """Manage and run exporters"""

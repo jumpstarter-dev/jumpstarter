@@ -3,64 +3,23 @@ from typing import Optional
 
 import click
 
-from jumpstarter.common import MetadataFilter
-from jumpstarter.common.utils import launch_shell
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
     UserConfigV1Alpha1,
 )
 
-from .util import AliasedGroup, make_table
+from .util import AliasedGroup, make_table, opt_log_level
 from .version import version
 
 
-@click.group(cls=AliasedGroup, short_help="Manage and interact with clients.")
+@click.group(cls=AliasedGroup)
+@opt_log_level
 def client():
+    """Manage and interact with clients."""
     logging.basicConfig(level=logging.INFO)
 
-
-@client.group(short_help="Managed leases held by client.")
-def lease():
-    pass
-
-
-@lease.command("list")
-@click.argument("name", type=str, default="")
-def lease_list(name):
-    if name:
-        config = ClientConfigV1Alpha1.load(name)
-    else:
-        config = UserConfigV1Alpha1.load_or_create().config.current_client
-    if not config:
-        raise ValueError("no client specified")
-
-    for lease in config.list_leases():
-        print(lease)
-
-
-@lease.command("release")
-@click.argument("name", type=str, default="")
-@click.option("-l", "--lease", "lease", type=str, default="")
-@click.option("--all", "all_leases", is_flag=True)
-def lease_release(name, lease, all_leases):
-    if name:
-        config = ClientConfigV1Alpha1.load(name)
-    else:
-        config = UserConfigV1Alpha1.load_or_create().config.current_client
-    if not config:
-        raise ValueError("no client specified")
-
-    if all_leases:
-        for lease in config.list_leases():
-            config.release_lease(lease)
-    else:
-        if not lease:
-            raise ValueError("no lease specified")
-        config.release_lease(lease)
-
-
-@click.command("create", short_help="Create a client configuration.")
+@client.command("create", short_help="Create a client configuration.")
 @click.argument("name")
 @click.option(
     "-o",
@@ -135,7 +94,7 @@ def set_next_client(name: str):
         user_config.use_client(None)
 
 
-@click.command("delete", short_help="Delete a client configuration.")
+@client.command("delete", short_help="Delete a client configuration.")
 @click.argument("name", type=str)
 def client_delete(name: str):
     """Delete a Jumpstarter client configuration."""
@@ -143,7 +102,7 @@ def client_delete(name: str):
     ClientConfigV1Alpha1.delete(name)
 
 
-@click.command("list", short_help="List available client configurations.")
+@client.command("list", short_help="List available client configurations.")
 def client_list():
     # Allow listing if there is no user config defined
     current_name = None
@@ -167,39 +126,14 @@ def client_list():
     click.echo(make_table(columns, rows))
 
 
-@click.command("use", short_help="Select the current client configuration.")
+@client.command("use", short_help="Select the current client configuration.")
 @click.argument("name", type=str)
 def client_use(name: str):
     """Select the current Jumpstarter client configuration to use."""
     user_config = UserConfigV1Alpha1.load_or_create()
     user_config.use_client(name)
 
-
-@click.command("shell", short_help="Spawns a shell connecting to a leased remote exporter")
-@click.argument("name", type=str, default="")
-@click.option("-l", "--label", "labels", type=(str, str), multiple=True)
-@click.option("-n", "--lease", "lease_name", type=str)
-def client_shell(name: str, labels, lease_name):
-    """Spawns a shell connecting to a leased remote exporter"""
-    if name:
-        config = ClientConfigV1Alpha1.load(name)
-    else:
-        config = UserConfigV1Alpha1.load_or_create().config.current_client
-    if not config:
-        raise ValueError("no client specified")
-
-    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
-        with lease.serve_unix() as path:
-            launch_shell(path, config.drivers.allow, config.drivers.unsafe)
-
-
-client.add_command(client_create)
-client.add_command(client_delete)
-client.add_command(client_list)
-client.add_command(client_use)
-client.add_command(client_shell)
 client.add_command(version)
-
 
 if __name__ == "__main__":
     client()

@@ -759,7 +759,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
+version = "0.5.1.dev11+gd102c03.d20241130"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -842,7 +842,7 @@ docs = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
+version = "0.5.1.dev6+gacf66ff.d20241127"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -871,7 +871,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
+version = "0.5.1.dev6+gacf66ff.d20241127"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -900,7 +900,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
+version = "0.5.1.dev6+gacf66ff.d20241127"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -927,7 +927,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
+version = "0.5.1.dev6+gacf66ff.d20241127"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -956,7 +956,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
+version = "0.5.1.dev6+gacf66ff.d20241127"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1013,7 +1013,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
+version = "0.5.1.dev6+gacf66ff.d20241127"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
