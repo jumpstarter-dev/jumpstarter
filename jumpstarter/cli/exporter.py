@@ -96,7 +96,7 @@ async def _serve_with_exc_handling(exporter):
     try:
         await exporter.serve()
     except* Exception as excgroup:
-        print(f"Exception while serving on the exporter: {excgroup.exveptions}", file=sys.stderr)
+        print(f"Exception while serving on the exporter: {excgroup.exceptions}", file=sys.stderr)
         result = 1
     return result
 
