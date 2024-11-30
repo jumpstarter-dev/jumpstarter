@@ -1,5 +1,6 @@
 import logging
 import sys
+import traceback
 from pathlib import Path
 
 import anyio
@@ -96,7 +97,9 @@ async def _serve_with_exc_handling(exporter):
     try:
         await exporter.serve()
     except* Exception as excgroup:
-        print(f"Exception while serving on the exporter: {excgroup.exveptions}", file=sys.stderr)
+        print(f"Exception while serving on the exporter: {excgroup.exceptions}", file=sys.stderr)
+        for exc in excgroup.exceptions:
+            traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
         result = 1
     return result
 

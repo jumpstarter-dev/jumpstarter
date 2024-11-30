@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
@@ -7,6 +8,7 @@ from serial import Serial, serial_for_url
 
 from jumpstarter.driver import Driver, exportstream
 
+log = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class AsyncSerial(ObjectStream):
@@ -30,10 +32,11 @@ class AsyncSerial(ObjectStream):
 class PySerial(Driver):
     url: str
     device: Serial = field(init=False)
+    baudrate: int = field(default=115200)
 
     def __post_init__(self):
         super().__post_init__()
-        self.device = serial_for_url(self.url)
+        self.device = serial_for_url(self.url, baudrate=self.baudrate)
 
     @classmethod
     def client(cls) -> str:
@@ -42,6 +45,8 @@ class PySerial(Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        device = await run_sync(serial_for_url, self.url)
+        log.info("Connecting to %s, baudrate: %d", self.url, self.baudrate)
+        device = await run_sync(serial_for_url, self.url, self.baudrate)
         async with AsyncSerial(device=device) as stream:
             yield stream
+        log.info("Disconnected from %s", self.url)
