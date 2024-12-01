@@ -10,7 +10,7 @@ from .util import AliasedGroup
 
 @click.group(cls=AliasedGroup, short_help="")
 def lease():
-    """Manage leases held by the current client."""
+    """Manage leases held by the current client"""
     pass
 
 

@@ -2,6 +2,7 @@ import logging
 import sys
 import traceback
 from pathlib import Path
+from typing import Optional
 
 import anyio
 import click
@@ -10,7 +11,6 @@ from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 from .util import AliasedGroup, make_table, opt_log_level
-from .version import version
 
 arg_alias = click.argument("alias", default="default")
 
@@ -20,7 +20,7 @@ opt_config_path = click.option(
 
 @click.group(cls=AliasedGroup)
 @opt_log_level
-def exporter(log_level):
+def exporter(log_level: Optional[str]):
     """Manage and run exporters"""
     if log_level:
         logging.basicConfig(level=log_level.upper())
@@ -131,9 +131,3 @@ def shell(alias, config_path):
         # SAFETY: the exporter config is local thus considered trusted
         launch_shell(path, allow=[], unsafe=True)
 
-
-exporter.add_command(version)
-
-
-if __name__ == "__main__":
-    exporter()

@@ -25,6 +25,7 @@ dependencies = [
     "fabric>=3.2.2",
     "grpcio>=1.66.1",
     "protobuf>=5.28.0",
+    "kubernetes>=31.0.0",
 ]
 
 [dependency-groups]
@@ -51,8 +52,6 @@ dev = [
 
 [project.scripts]
 jmp = "jumpstarter.cli.jmp:jmp"
-jmp-client = "jumpstarter.cli.client:client"
-jmp-exporter = "jumpstarter.cli.exporter:exporter"
 j = "jumpstarter.cli.j:main"
 
 [tool.hatch.version]

@@ -10,14 +10,17 @@ from jumpstarter.config import (
 )
 
 from .util import AliasedGroup, make_table, opt_log_level
-from .version import version
 
 
 @click.group(cls=AliasedGroup)
 @opt_log_level
-def client():
+def client(log_level: Optional[str]):
     """Manage and interact with clients."""
-    logging.basicConfig(level=logging.INFO)
+    if log_level:
+        logging.basicConfig(level=log_level.upper())
+    else:
+        logging.basicConfig(level=logging.INFO)
+
 
 @client.command("create", short_help="Create a client configuration.")
 @click.argument("name")
@@ -63,11 +66,12 @@ def client_create(
     if out is None and ClientConfigV1Alpha1.exists(name):
         raise click.ClickException(f"A client with the name '{name}' already exists.")
 
+    allow_drivers = allow.split(",") if len(allow) > 0 else []
     config = ClientConfigV1Alpha1(
         name=name,
         endpoint=endpoint,
         token=token,
-        drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe),
+        drivers=ClientConfigV1Alpha1Drivers(allow=allow_drivers, unsafe=unsafe),
     )
     ClientConfigV1Alpha1.save(config, out)
 
@@ -102,7 +106,7 @@ def client_delete(name: str):
     ClientConfigV1Alpha1.delete(name)
 
 
-@client.command("list", short_help="List available client configurations.")
+@client.command("list", short_help="List local client configurations.")
 def client_list():
     # Allow listing if there is no user config defined
     current_name = None
@@ -133,7 +137,11 @@ def client_use(name: str):
     user_config = UserConfigV1Alpha1.load_or_create()
     user_config.use_client(name)
 
-client.add_command(version)
-
-if __name__ == "__main__":
-    client()
+# @client.command("add")
+# @opt_kubeconfig
+# def client_add(kubeconfig: Optional[str]):
+#     """Add a client config from a Kubernetes cluster."""
+#     config.load_kube_config(config_file=kubeconfig)
+#     api = ClientsApi()
+#     client = api.get_namespaced_client()
+#     click.echo(client)

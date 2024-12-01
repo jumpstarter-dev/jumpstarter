@@ -142,8 +142,9 @@ class ClientConfigV1Alpha1(BaseModel):
         # Ensure the clients dir exists
         if path is None:
             cls.ensure_exists()
-
-        with open(path or cls._get_path(config.name), "w") as f:
+        # Set the config path before saving
+        config.path = cls._get_path(config.name)
+        with open(path or config.path, "w") as f:
             yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
 
     @classmethod
