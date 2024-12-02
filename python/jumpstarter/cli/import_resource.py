@@ -11,7 +11,7 @@ from jumpstarter.config import (
     UserConfigV1Alpha1,
 )
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
-from jumpstarter.k8s import ClientsApi, ExportersApi
+from jumpstarter.k8s import ClientsV1Alpha1Api, ExportersV1Alpha1Api
 
 from .util import handle_k8s_api_exception, opt_context, opt_kubeconfig, opt_namespace
 
@@ -52,7 +52,7 @@ def import_client(
 ):
     """Import a client config from a Kubernetes cluster"""
     config.load_kube_config(config_file=kubeconfig, context=context)
-    clients_api = ClientsApi()
+    clients_api = ClientsV1Alpha1Api()
     core_api = client.CoreV1Api()
     # Check that a client config with the same name does not exist
     if out is None and ClientConfigV1Alpha1.exists(name):
@@ -98,7 +98,7 @@ def create(
 ):
     """Import an exporter config from a Kubernetes cluster"""
     config.load_kube_config(config_file=kubeconfig, context=context)
-    exporters_api = ExportersApi()
+    exporters_api = ExportersV1Alpha1Api()
     core_api = client.CoreV1Api()
 
     try:

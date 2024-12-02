@@ -3,7 +3,7 @@ from typing import Optional
 from kubernetes import client
 
 
-class ClientsApi:
+class ClientsV1Alpha1Api:
     """Interact with the clients custom resource API"""
     api: client.CustomObjectsApi
 
@@ -11,7 +11,7 @@ class ClientsApi:
         self.api = client.CustomObjectsApi()
 
     def get_namespaced_clients(self, namespace: str):
-        """List the client CRDs in the cluster."""
+        """List the client objects in the cluster."""
         res = self.api.list_namespaced_custom_object(
             namespace=namespace,
             group="jumpstarter.dev",
@@ -21,7 +21,7 @@ class ClientsApi:
         return res["items"]
 
     def get_namespaced_client(self, namespace: str, name: str) -> Optional[object]:
-        """Get a single client CRD from the cluster."""
+        """Get a single client object from the cluster."""
         res = self.api.get_namespaced_custom_object(
             namespace=namespace,
             group="jumpstarter.dev",
