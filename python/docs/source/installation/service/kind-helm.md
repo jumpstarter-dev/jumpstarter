@@ -1,28 +1,31 @@
 # Local cluster with kind
 
 If you want to play with the Jumpstarter Controller on your local machine,
-we recommend running a local Kubernetes cluster on your development machine.
+we recommend running a local Kubernetes cluster.
 
 ```{warning}
-We do not recommend a local cluster for a production environment such as a lab.
+We do not recommend a local cluster for a production environment.
 Please use a full Kubernetes installation either on-prem or in the cloud.
 ```
 
 Kind is a tool for running local Kubernetes clusters using Podman or Docker container “nodes”.
+
+```{tip}
+We recommend using [minikube](./minikube-helm.md) if you cannot easily use Kind in your local environment
+(e.g. need to use [untrusted root certificates](https://minikube.sigs.k8s.io/docs/handbook/untrusted_certs/)).
+```
+
+
 You can find more information on the [kind website](https://kind.sigs.k8s.io/docs/user/quick-start/).
 
 ## Installation
 
-Begin by figuring out the LAN ip address that it's accessible for your docker/podman host, and do:
-
-```bash
-export IP="LAN accessible address to your docker/podman instance"
-```
-
 ### Create a kind cluster
 
-```bash
-cat <<EOF > kind_config.yaml
+First, create a kind cluster config that enables the use of nodeports to host the Jumpstarter services.
+
+```yaml
+# kind_config.yaml
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 kubeadmConfigPatches:
@@ -51,19 +54,31 @@ nodes:
   - containerPort: 443 # minimalistic UI
     hostPort: 5443
     protocol: TCP
-EOF
+```
 
+Next, create a kind cluster using the config you created.
+
+```bash
 kind create cluster  --config kind_config.yaml
 ```
 
-### Install Jumpstarter
+### Install Jumpstarter with Helm
+
+```{tip}
+If you do not have Helm installed, please [install the latest release](https://helm.sh/docs/intro/install/).
+```
 
 ```{code-block} bash
 :substitutions:
+# Get the IP address of your computer
+# On Linux you can run: ip route get 1.1.1.1 | grep -oP 'src \K\S+'
+export IP="X.X.X.X"
+# Setup the base domain and endpoints with nip.io
 export BASEDOMAIN="jumpstarter.${IP}.nip.io"
 export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
 export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 
+# Install the Jumpstarter service in the namespace jumpstarter-lab with Helm
 helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
             --create-namespace --namespace jumpstarter-lab \
             --set global.baseDomain=${BASEDOMAIN} \
