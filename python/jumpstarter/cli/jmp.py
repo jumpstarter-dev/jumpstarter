@@ -1,6 +1,7 @@
 import click
 
 from .client import client
+from .create import create
 from .exporter import exporter
 from .get import get
 from .import_resource import import_resource
@@ -19,6 +20,7 @@ jmp.add_command(exporter)
 jmp.add_command(lease)
 jmp.add_command(shell)
 jmp.add_command(get)
+jmp.add_command(create)
 jmp.add_command(import_resource)
 jmp.add_command(version)
 
