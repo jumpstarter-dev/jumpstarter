@@ -2,7 +2,7 @@ import importlib.metadata
 import os
 import sys
 
-import click
+import asyncclick as click
 
 
 def get_client_version():

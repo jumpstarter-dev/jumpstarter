@@ -1,7 +1,7 @@
 import json
 
-import click
-from kubernetes.client.exceptions import ApiException
+import asyncclick as click
+from kubernetes_asyncio.client.exceptions import ApiException
 
 
 def handle_k8s_api_exception(e: ApiException):

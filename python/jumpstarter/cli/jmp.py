@@ -1,4 +1,4 @@
-import click
+import asyncclick as click
 
 from .client import client
 from .create import create

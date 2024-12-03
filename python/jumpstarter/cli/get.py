@@ -1,11 +1,11 @@
 import logging
+import pprint
 from typing import Optional
 
-import click
-from kubernetes import config
-from kubernetes.client.exceptions import ApiException
+import asyncclick as click
+from kubernetes_asyncio.client.exceptions import ApiException
 
-from jumpstarter.k8s import ClientsV1Alpha1Api, ExportersV1Alpha1Api, LeasesV1Alpha1Api
+from jumpstarter.k8s import ClientsV1Alpha1Api, ExportersV1Alpha1Api, LeasesV1Alpha1Api, V1Alpha1Client, V1Alpha1Exporter
 
 from .util import (
     AliasedGroup,
@@ -30,12 +30,11 @@ def get(log_level: Optional[str]):
 
 CLIENT_COLUMNS = ["NAME", "ENDPOINT", "AGE"]
 
-def make_client_row(client: dict):
-    creationTimestamp = client["metadata"]["creationTimestamp"]
+def make_client_row(client: V1Alpha1Client):
     return {
-        "NAME": client["metadata"]["name"],
-        "ENDPOINT": client["status"]["endpoint"],
-        "AGE": time_since(creationTimestamp),
+        "NAME": client.metadata.name,
+        "ENDPOINT": client.status.endpoint,
+        "AGE": time_since(client.metadata.creation_timestamp),
     }
 
 @get.command("client")
@@ -43,60 +42,56 @@ def make_client_row(client: dict):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-def get_client(
+async def get_client(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
     namespace: str
 ):
     """Get the client objects in a Kubernetes cluster"""
-    config.load_kube_config(config_file=kubeconfig, context=context)
-    api = ClientsV1Alpha1Api()
-
-    try:
-        if name is not None:
-            # Get a single client in a namespace
-            client = api.get_namespaced_client(namespace, name)
-            click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
-        else:
-            # List clients in a namespace
-            clients = api.get_namespaced_clients(namespace)
-            if len(clients) == 0:
-                raise click.ClickException(f'No resources found in "{namespace}" namespace')
+    async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
+        try:
+            if name is not None:
+                # Get a single client in a namespace
+                client = await api.get_client(name)
+                click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
             else:
-                rows = list(map(make_client_row, clients))
-                click.echo(make_table(CLIENT_COLUMNS, rows))
-    except ApiException as e:
-        handle_k8s_api_exception(e)
+                # List clients in a namespace
+                clients = await api.list_clients()
+                if len(clients) == 0:
+                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
+                else:
+                    rows = list(map(make_client_row, clients))
+                    click.echo(make_table(CLIENT_COLUMNS, rows))
+        except ApiException as e:
+            handle_k8s_api_exception(e)
 
 EXPORTER_COLUMNS = ["NAME", "ENDPOINT", "DEVICES", "AGE"]
 DEVICE_COLUMNS = ["NAME", "ENDPOINT", "AGE", "LABELS", "UUID"]
 
-def make_exporter_row(c: dict):
+def make_exporter_row(exporter: V1Alpha1Exporter):
     """Make an exporter row to print"""
-    creationTimestamp = c["metadata"]["creationTimestamp"]
     return {
-        "NAME": c["metadata"]["name"],
-        "ENDPOINT": c["status"]["endpoint"],
-        "DEVICES": str(len(c["status"]["devices"])),
-        "AGE": time_since(creationTimestamp),
+        "NAME": exporter.metadata.name,
+        "ENDPOINT": exporter.status.endpoint,
+        "DEVICES": str(len(exporter.status.devices)),
+        "AGE": time_since(exporter.metadata.creation_timestamp),
     }
 
-def get_device_rows(exporters: list[dict]):
+def get_device_rows(exporters: list[V1Alpha1Exporter]):
     """Get the device rows to print from the exporters"""
     devices = []
     for e in exporters:
-        creationTimestamp = e["metadata"]["creationTimestamp"]
-        for d in e["status"]["devices"]:
+        for d in e.status.devices:
             labels = []
-            for label in d["labels"]:
-                labels.append(f"{label}:{str(d["labels"][label])}")
+            for label in d.labels:
+                labels.append(f"{label}:{str(d.labels[label])}")
             devices.append({
-                "NAME": e["metadata"]["name"],
-                "ENDPOINT": e["status"]["endpoint"],
-                "AGE": time_since(creationTimestamp),
+                "NAME": e.metadata.name,
+                "ENDPOINT": e.status.endpoint,
+                "AGE": time_since(e.metadata.creation_timestamp),
                 "LABELS": ",".join(labels),
-                "UUID": d["uuid"],
+                "UUID": d.uuid,
             })
     return devices
 
@@ -106,7 +101,7 @@ def get_device_rows(exporters: list[dict]):
 @opt_kubeconfig
 @opt_context
 @click.option("-d", "--devices", is_flag=True, help="Display the devices hosted by the exporter(s)")
-def get_exporter(
+async def get_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -114,34 +109,32 @@ def get_exporter(
     devices: bool
 ):
     """Get the exporter objects in a Kubernetes cluster"""
-    config.load_kube_config(config_file=kubeconfig, context=context)
-    api = ExportersV1Alpha1Api()
-
-    try:
-        if name is not None:
-            # Get a single client in a namespace
-            exporter = api.get_namespaced_exporter(namespace, name)
-            if devices:
-                # Print the devices for the exporter
-                click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
+    async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
+        try:
+            if name is not None:
+                # Get a single client in a namespace
+                exporter = await api.get_exporter(name)
+                if devices:
+                    # Print the devices for the exporter
+                    click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
+                else:
+                    # Print the exporter
+                    click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
             else:
-                # Print the exporter
-                click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
-        else:
-            # List clients in a namespace
-            exporters = api.get_namespaced_exporters(namespace)
-            if len(exporters) == 0:
-                raise click.ClickException(f'No resources found in "{namespace}" namespace')
-            elif devices:
-                # Print the devices for each exporter
-                rows = get_device_rows(exporters)
-                click.echo(make_table(DEVICE_COLUMNS, rows))
-            else:
-                # Print the exporters
-                rows = list(map(make_exporter_row, exporters))
-                click.echo(make_table(EXPORTER_COLUMNS, rows))
-    except ApiException as e:
-        handle_k8s_api_exception(e)
+                # List clients in a namespace
+                exporters = await api.list_exporters()
+                if len(exporters) == 0:
+                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
+                elif devices:
+                    # Print the devices for each exporter
+                    rows = get_device_rows(exporters)
+                    click.echo(make_table(DEVICE_COLUMNS, rows))
+                else:
+                    # Print the exporters
+                    rows = list(map(make_exporter_row, exporters))
+                    click.echo(make_table(EXPORTER_COLUMNS, rows))
+        except ApiException as e:
+            handle_k8s_api_exception(e)
 
 LEASE_COLUMNS = ["NAME", "CLIENT", "EXPORTER", "STATUS", "REASON", "BEGIN", "END", "DURATION", "AGE"]
 
@@ -165,30 +158,29 @@ def make_lease_row(lease: dict):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-def get_lease(
+async def get_lease(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
     namespace: str
 ):
     """Get the lease objects in a Kubernetes cluster"""
-    config.load_kube_config(config_file=kubeconfig, context=context)
-    api = LeasesV1Alpha1Api()
-
-    try:
-        if name is not None:
-            # Get a single lease in a namespace
-            lease = api.get_namespaced_lease(namespace, name)
-            # Print the lease
-            click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
-        else:
-            # List leases in a namespace
-            leases = api.get_namespaced_leases(namespace)
-            if len(leases) == 0:
-                raise click.ClickException(f'No resources found in "{namespace}" namespace')
+    async with LeasesV1Alpha1Api(namespace, kubeconfig, context) as api:
+        try:
+            if name is not None:
+                # Get a single lease in a namespace
+                lease = await api.get_lease(name)
+                pprint.pp(lease)
+                # Print the lease
+                click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
             else:
-                # Print the leases
-                rows = list(map(make_lease_row, leases))
-                click.echo(make_table(LEASE_COLUMNS, rows))
-    except ApiException as e:
-        handle_k8s_api_exception(e)
+                # List leases in a namespace
+                leases = await api.list_leases()
+                if len(leases) == 0:
+                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
+                else:
+                    # Print the leases
+                    rows = list(map(make_lease_row, leases))
+                    click.echo(make_table(LEASE_COLUMNS, rows))
+        except ApiException as e:
+            handle_k8s_api_exception(e)

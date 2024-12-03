@@ -1,4 +1,4 @@
-import click
+import asyncclick as click
 
 opt_log_level = click.option(
        "-l", "--log-level", "log_level",

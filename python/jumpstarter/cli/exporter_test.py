@@ -1,5 +1,5 @@
 import pytest
-from click.testing import CliRunner
+from asyncclick.testing import CliRunner
 
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 

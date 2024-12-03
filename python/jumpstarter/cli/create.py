@@ -1,9 +1,9 @@
 import logging
 from typing import Optional
 
-import click
-from kubernetes import config
-from kubernetes.client.exceptions import ApiException
+import asyncclick as click
+from kubernetes_asyncio import config
+from kubernetes_asyncio.client.exceptions import ApiException
 
 from jumpstarter.k8s import ClientsV1Alpha1Api, ExportersV1Alpha1Api, LeasesV1Alpha1Api
 
@@ -34,7 +34,7 @@ def create(log_level: Optional[str]):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-def create_client(
+async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -42,9 +42,8 @@ def create_client(
     save: bool
 ):
     """Create a client object in the Kubernetes cluster"""
-    config.load_kube_config(config_file=kubeconfig, context=context)
-    api = ClientsV1Alpha1Api()
-    try:
-        client = api.create_namespaced_client(namespace, name)
-    except ApiException as e:
-        handle_k8s_api_exception(e)
+    async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
+        try:
+            await api.create_client(name)
+        except ApiException as e:
+            handle_k8s_api_exception(e)

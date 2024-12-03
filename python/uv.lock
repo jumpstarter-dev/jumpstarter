@@ -132,6 +132,19 @@ wheels = [
 ]
 
 [[package]]
+name = "asyncclick"
+version = "8.1.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "colorama", marker = "platform_system == 'Windows'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/bf/59d836c3433d7aa07f76c2b95c4eb763195ea8a5d7f9ad3311ed30c2af61/asyncclick-8.1.7.2.tar.gz", hash = "sha256:219ea0f29ccdc1bb4ff43bcab7ce0769ac6d48a04f997b43ec6bee99a222daa0", size = 349073 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/6e/9acdbb25733e1de411663b59abe521bec738e72fe4e85843f6ff8b212832/asyncclick-8.1.7.2-py3-none-any.whl", hash = "sha256:1ab940b04b22cb89b5b400725132b069d01b0c3472a9702c7a2c9d5d007ded02", size = 99191 },
+]
+
+[[package]]
 name = "attrs"
 version = "24.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -791,20 +804,22 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.1.dev14+g7a97890.d20241202"
+version = "0.5.1.dev15+gf6c2773.d20241203"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
-    { name = "click" },
+    { name = "asyncclick" },
     { name = "fabric" },
     { name = "grpcio" },
     { name = "httpx" },
     { name = "kubernetes" },
+    { name = "kubernetes-asyncio" },
     { name = "opendal" },
     { name = "pexpect" },
     { name = "protobuf" },
     { name = "pydantic" },
+    { name = "pyhelm3" },
     { name = "pyserial" },
     { name = "pyyaml" },
     { name = "tqdm" },
@@ -814,6 +829,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "cryptography" },
+    { name = "esbonio" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-anyio" },
@@ -837,15 +853,17 @@ docs = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
-    { name = "click", specifier = ">=8.1.7" },
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
     { name = "fabric", specifier = ">=3.2.2" },
     { name = "grpcio", specifier = ">=1.66.1" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "kubernetes", specifier = ">=31.0.0" },
+    { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
     { name = "opendal", specifier = ">=0.45.8" },
     { name = "pexpect", specifier = ">=4.9.0" },
     { name = "protobuf", specifier = ">=5.28.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
+    { name = "pyhelm3", specifier = ">=0.4.0" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "tqdm", specifier = ">=4.66.5" },
@@ -855,6 +873,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "cryptography", specifier = ">=43.0.1" },
+    { name = "esbonio", specifier = ">=0.16.5" },
     { name = "pre-commit", specifier = ">=3.8.0" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
@@ -876,7 +895,7 @@ docs = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.5.1.dev6+gacf66ff.d20241127"
+version = "0.5.1.dev15+gf6c2773.d20241202"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -905,7 +924,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.5.1.dev6+gacf66ff.d20241127"
+version = "0.5.1.dev15+gf6c2773.d20241202"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -934,7 +953,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.5.1.dev6+gacf66ff.d20241127"
+version = "0.5.1.dev15+gf6c2773.d20241202"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -961,7 +980,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.5.1.dev6+gacf66ff.d20241127"
+version = "0.5.1.dev15+gf6c2773.d20241202"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -990,7 +1009,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.5.1.dev6+gacf66ff.d20241127"
+version = "0.5.1.dev15+gf6c2773.d20241202"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1047,7 +1066,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.5.1.dev6+gacf66ff.d20241127"
+version = "0.5.1.dev15+gf6c2773.d20241202"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
@@ -1092,6 +1111,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7e/bd/ffcd3104155b467347cd9b3a64eb24182e459579845196b3a200569c8912/kubernetes-31.0.0.tar.gz", hash = "sha256:28945de906c8c259c1ebe62703b56a03b714049372196f854105afe4e6d014c0", size = 916096 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/a8/17f5e28cecdbd6d48127c22abdb794740803491f422a11905c4569d8e139/kubernetes-31.0.0-py2.py3-none-any.whl", hash = "sha256:bf141e2d380c8520eada8b351f4e319ffee9636328c137aa432bc486ca1200e1", size = 1857013 },
+]
+
+[[package]]
+name = "kubernetes-asyncio"
+version = "31.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "certifi" },
+    { name = "python-dateutil" },
+    { name = "pyyaml" },
+    { name = "six" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0a/dc/4ca52809f3b662df8c5e6058b0beb489d8d6426d5c189c28ec5a3168fdd4/kubernetes_asyncio-31.1.0.tar.gz", hash = "sha256:00128a96eb0284de0cbee53bd2fe044593f2e1547c48d09901cddf9258adfd88", size = 962239 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/2a/93b7a49598d660e259d0db8dd92b97e99910d5e7a349a8995797dd49be9d/kubernetes_asyncio-31.1.0-py3-none-any.whl", hash = "sha256:76898fea5dee601b209fefeae4ecee2fb20bfe3ebf872b5ff37c96230fbda6cc", size = 1902366 },
 ]
 
 [[package]]
@@ -1673,6 +1709,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8e/62/8336eff65bcbc8e4cb5d05b55faf041285951b6e80f33e2bff2024788f31/pygments-2.18.0.tar.gz", hash = "sha256:786ff802f32e91311bff3889f6e9a86e81505fe99f2735bb6d60ae0c5004f199", size = 4891905 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/3f/01c8b82017c199075f8f788d0d906b9ffbbc5a47dc9918a945e13d5a2bda/pygments-2.18.0-py3-none-any.whl", hash = "sha256:b8e6aca0523f3ab76fee51799c488e38782ac06eafcf95e7ba832985c8e7b13a", size = 1205513 },
+]
+
+[[package]]
+name = "pyhelm3"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/94/06/87de4675e8c114a0251e87ed97e4cae1b9bc4d36d3471348ac20c7e7db1e/pyhelm3-0.4.0.tar.gz", hash = "sha256:7ce688cab8e12df5240641774c36acfd3cad6d9a6325781bc7b5a354e522c594", size = 20221 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/fd/8521dc138655be8f9d736d30dd198bdeb35b8b2f0683331e5b08febd9b06/pyhelm3-0.4.0-py3-none-any.whl", hash = "sha256:6f608891fbe8db9b8015b839f29524dccd6eade0da879820690d71de9c3f2f8d", size = 20925 },
 ]
 
 [[package]]

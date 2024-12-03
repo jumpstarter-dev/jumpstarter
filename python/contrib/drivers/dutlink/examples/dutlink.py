@@ -2,7 +2,7 @@
 import sys
 import time
 
-import click
+import asyncclick as click
 
 from jumpstarter.client.adapters import PexpectAdapter
 from jumpstarter.common.utils import env

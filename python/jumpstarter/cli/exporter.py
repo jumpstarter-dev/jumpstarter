@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 import anyio
-import click
+import asyncclick as click
 
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -101,7 +101,7 @@ async def _serve_with_exc_handling(exporter):
 @exporter.command
 @arg_alias
 @opt_config_path
-def run(alias, config_path):
+async def run(alias, config_path):
     """Run exporter"""
     try:
         if config_path:
@@ -111,7 +111,7 @@ def run(alias, config_path):
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
 
-    return anyio.run(_serve_with_exc_handling, config)
+    return await _serve_with_exc_handling(config)
 
 
 @exporter.command

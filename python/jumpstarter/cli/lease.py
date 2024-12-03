@@ -1,4 +1,4 @@
-import click
+import asyncclick as click
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,

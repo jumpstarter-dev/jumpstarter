@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-import click
+import asyncclick as click
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,

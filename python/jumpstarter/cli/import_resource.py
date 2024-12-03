@@ -1,9 +1,9 @@
 import base64
 from typing import Optional
 
-import click
-from kubernetes import client, config
-from kubernetes.client.exceptions import ApiException
+import asyncclick as click
+from kubernetes_asyncio import client, config
+from kubernetes_asyncio.client.exceptions import ApiException
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
@@ -111,7 +111,7 @@ def create(
      # Try to get the exporter
     try:
         # Get the exporter and token secret
-        result = exporters_api.get_namespaced_exporter(namespace, name)
+        result = exporters_api.get_exporter(namespace, name)
         secret = core_api.read_namespaced_secret(result["status"]["credential"]["name"], namespace)
         endpoint = result["status"]["endpoint"]
         token = base64.b64decode(secret.data["token"]).decode("utf8")

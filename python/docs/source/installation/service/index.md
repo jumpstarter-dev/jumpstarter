@@ -1,6 +1,6 @@
 # Service
 
-To manage your Jumpstarter lab from Kubernetes, the Jumpstarter Service must
+To manage your Jumpstarter lab from kubernetes_asyncio, the Jumpstarter Service must
 be installed in your Kubernetes cluster.
 
 ## Prerequisites
