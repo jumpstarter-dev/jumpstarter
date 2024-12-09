@@ -25,7 +25,6 @@ dependencies = [
     "grpcio>=1.66.1",
     "protobuf>=5.28.0",
     "kubernetes>=31.0.0",
-    "pyhelm3>=0.4.0",
     "kubernetes-asyncio>=31.1.0",
     "asyncclick>=8.1.7.2",
 ]

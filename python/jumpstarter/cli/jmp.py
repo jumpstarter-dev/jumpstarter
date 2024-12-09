@@ -5,6 +5,7 @@ from .create import create
 from .exporter import exporter
 from .get import get
 from .import_resource import import_resource
+from .install import install
 from .lease import lease
 from .shell import shell
 from .util import AliasedGroup
@@ -21,6 +22,7 @@ jmp.add_command(lease)
 jmp.add_command(shell)
 jmp.add_command(get)
 jmp.add_command(create)
+jmp.add_command(install)
 jmp.add_command(import_resource)
 jmp.add_command(version)
 

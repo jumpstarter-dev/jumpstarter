@@ -804,7 +804,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.1.dev15+gf6c2773.d20241203"
+version = "0.5.1.dev16+g0dd752c.d20241209"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -819,7 +819,6 @@ dependencies = [
     { name = "pexpect" },
     { name = "protobuf" },
     { name = "pydantic" },
-    { name = "pyhelm3" },
     { name = "pyserial" },
     { name = "pyyaml" },
     { name = "tqdm" },
@@ -863,7 +862,6 @@ requires-dist = [
     { name = "pexpect", specifier = ">=4.9.0" },
     { name = "protobuf", specifier = ">=5.28.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
-    { name = "pyhelm3", specifier = ">=0.4.0" },
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "tqdm", specifier = ">=4.66.5" },
@@ -895,7 +893,7 @@ docs = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.5.1.dev15+gf6c2773.d20241202"
+version = "0.5.1.dev16+gc1f555c.d20241209"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -924,7 +922,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.5.1.dev15+gf6c2773.d20241202"
+version = "0.5.1.dev16+gc1f555c.d20241209"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -953,7 +951,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.5.1.dev15+gf6c2773.d20241202"
+version = "0.5.1.dev16+gc1f555c.d20241209"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -980,7 +978,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.5.1.dev15+gf6c2773.d20241202"
+version = "0.5.1.dev16+gc1f555c.d20241209"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1009,7 +1007,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.5.1.dev15+gf6c2773.d20241202"
+version = "0.5.1.dev16+gc1f555c.d20241209"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1066,7 +1064,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.5.1.dev15+gf6c2773.d20241202"
+version = "0.5.1.dev16+gc1f555c.d20241209"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
@@ -1709,19 +1707,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8e/62/8336eff65bcbc8e4cb5d05b55faf041285951b6e80f33e2bff2024788f31/pygments-2.18.0.tar.gz", hash = "sha256:786ff802f32e91311bff3889f6e9a86e81505fe99f2735bb6d60ae0c5004f199", size = 4891905 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/3f/01c8b82017c199075f8f788d0d906b9ffbbc5a47dc9918a945e13d5a2bda/pygments-2.18.0-py3-none-any.whl", hash = "sha256:b8e6aca0523f3ab76fee51799c488e38782ac06eafcf95e7ba832985c8e7b13a", size = 1205513 },
-]
-
-[[package]]
-name = "pyhelm3"
-version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pyyaml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/94/06/87de4675e8c114a0251e87ed97e4cae1b9bc4d36d3471348ac20c7e7db1e/pyhelm3-0.4.0.tar.gz", hash = "sha256:7ce688cab8e12df5240641774c36acfd3cad6d9a6325781bc7b5a354e522c594", size = 20221 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/fd/8521dc138655be8f9d736d30dd198bdeb35b8b2f0683331e5b08febd9b06/pyhelm3-0.4.0-py3-none-any.whl", hash = "sha256:6f608891fbe8db9b8015b839f29524dccd6eade0da879820690d71de9c3f2f8d", size = 20925 },
 ]
 
 [[package]]
