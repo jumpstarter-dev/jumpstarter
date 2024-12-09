@@ -158,9 +158,9 @@ export:
       username: "admin"
       password: "secret"
   serial:
-    type: "jumpstarter.drivers.serial.Pyserial"
+    type: "jumpstarter.drivers.pyserial.driver.PySerial"
     config:
-      port: "/dev/ttyUSB0"
+      url: "/dev/ttyUSB0"
       baudrate: 115200
   custom:
     type: "vendorpackage.CustomDriver"
