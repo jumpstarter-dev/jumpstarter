@@ -62,13 +62,13 @@ kind_load_image() {
   local image=$1
 
   # First, try to load the image directly
-  if kind load docker-image "${image}" --name jumpstarter; then
+  if ${KIND} load docker-image "${image}" --name jumpstarter; then
     echo "Image ${image} loaded successfully."
     return
   fi
 
   # Save to tar file
-  podman save "${image}" | kind load image-archive /dev/stdin --name jumpstarter
+  podman save "${image}" | ${KIND} load image-archive /dev/stdin --name jumpstarter
   if [ $? -eq 0 ]; then
     echo "Image loaded successfully."
   else
