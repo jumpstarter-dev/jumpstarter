@@ -1,0 +1,14 @@
+
+FROM fedora.riscv.rocks:3000/davidlt/fedora-minimal:40 as builder
+RUN microdnf install -y python3-wheel python3-pip python3-virtualenv python3-devel c++ && microdnf clean all
+RUN python3 -m venv /venv
+RUN /venv/bin/pip install --verbose ./dist/jumpstarter-0.1.0-py3-none-any.whl
+RUN find /venv -name "*.so" -exec strip {} \;
+
+FROM fedora.riscv.rocks:3000/davidlt/fedora-minimal:40
+RUN microdnf install -y python3 && microdnf clean all
+
+COPY --from=builder /venv /venv
+ENV PATH="/venv/bin/:$PATH"
+
+CMD ["python3"]
