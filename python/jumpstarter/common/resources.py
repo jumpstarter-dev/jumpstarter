@@ -13,7 +13,7 @@ class PresignedRequestResource(BaseModel):
     kind: Literal["presigned_request"] = "presigned_request"
     headers: dict[str, str]
     url: str
-    method: str
+    method: Literal["GET", "PUT"]
 
 
 Resource = Annotated[

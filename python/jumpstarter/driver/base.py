@@ -190,9 +190,21 @@ class Driver(
                     finally:
                         del self.resources[uuid]
             case PresignedRequestResource(headers=headers, url=url, method=method):
-                async with aiohttp.request(method, url, headers=headers, raise_for_status=True) as resp:
-                    async with AiohttpStreamReaderStream(reader=resp.content) as stream:
-                        yield stream
+                match method:
+                    case "GET":
+                        async with aiohttp.request(method, url, headers=headers, raise_for_status=True) as resp:
+                            async with AiohttpStreamReaderStream(reader=resp.content) as stream:
+                                yield stream
+                    case "PUT":
+                        remote, stream = create_memory_stream()
+                        async with aiohttp.request(
+                            method, url, headers=headers, raise_for_status=True, data=remote
+                        ) as resp:
+                            async with stream:
+                                yield stream
+                    case _:
+                        # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
+                        raise ValueError("unreachable")
 
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name

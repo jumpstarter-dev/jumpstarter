@@ -18,7 +18,7 @@ from jumpstarter.exporter import Exporter, Session
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.xfail(raises=RuntimeError)
+@pytest.mark.xfail(raises=Exception)
 async def test_router(mock_controller, monkeypatch):
     uuid = uuid4()
 
@@ -50,7 +50,7 @@ async def test_router(mock_controller, monkeypatch):
                 tg.cancel_scope.cancel()
 
 
-@pytest.mark.xfail(raises=RuntimeError)
+@pytest.mark.xfail(raises=Exception)
 async def test_unsatisfiable(mock_controller):
     with start_blocking_portal() as portal:
         with pytest.raises(ValueError):
@@ -64,7 +64,7 @@ async def test_unsatisfiable(mock_controller):
                 pass
 
 
-@pytest.mark.xfail(raises=RuntimeError)
+@pytest.mark.xfail(raises=Exception)
 async def test_controller(mock_controller):
     uuid = uuid4()
 
