@@ -35,6 +35,9 @@ apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
 token: << token data >>
+tls:
+    ca: ''
+    insecure: True
 export:
     storage:
         type: jumpstarter.drivers.storage.driver.MockStorageMux

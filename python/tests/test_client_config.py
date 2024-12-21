@@ -181,6 +181,9 @@ def test_client_config_save(monkeypatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 endpoint: jumpstarter.my-lab.com:1443
+tls:
+  ca: ''
+  insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 drivers:
   allow:
@@ -209,6 +212,9 @@ def test_client_config_save_explicit_path():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 endpoint: jumpstarter.my-lab.com:1443
+tls:
+  ca: ''
+  insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 drivers:
   allow:
@@ -235,6 +241,9 @@ def test_client_config_save_unsafe_drivers():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 endpoint: jumpstarter.my-lab.com:1443
+tls:
+  ca: ''
+  insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 drivers:
   allow: []

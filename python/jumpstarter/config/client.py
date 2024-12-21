@@ -27,6 +27,9 @@ def _allow_from_env():
         case _:
             return allow.split(","), False
 
+class ClientConfigV1Alpha1TLS(BaseModel):
+    ca: str = Field(default="")
+    insecure: bool = Field(default=False)
 
 class ClientConfigV1Alpha1Drivers(BaseModel):
     allow: list[str] = Field(default_factory=[])
@@ -43,13 +46,14 @@ class ClientConfigV1Alpha1(BaseModel):
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
 
     endpoint: str
+    tls: ClientConfigV1Alpha1TLS = Field(default_factory=ClientConfigV1Alpha1TLS)
     token: str
 
     drivers: ClientConfigV1Alpha1Drivers
 
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
-            ssl_channel_credentials(self.endpoint),
+            ssl_channel_credentials(self.endpoint, self.tls.insecure, self.tls.ca),
             grpc.access_token_call_credentials(self.token),
         )
 
