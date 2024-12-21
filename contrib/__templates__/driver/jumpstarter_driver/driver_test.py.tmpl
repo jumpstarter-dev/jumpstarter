@@ -1,0 +1,11 @@
+from jumpstarter.common.utils import serve
+
+from .driver import ${DRIVER_CLASS}
+
+
+def test_drivers_${DRIVER_NAME}():
+    instance = ${DRIVER_CLASS}()
+
+    with serve(instance) as client:
+        assert client.state().ok
+        _ = client.snapshot()

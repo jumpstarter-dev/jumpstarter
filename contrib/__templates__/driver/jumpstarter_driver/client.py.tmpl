@@ -1,0 +1,19 @@
+from dataclasses import dataclass
+
+from jumpstarter.client import DriverClient
+
+
+@dataclass(kw_only=True)
+class ${DRIVER_CLASS}Client(DriverClient):
+    """
+    Client interface for ...
+
+    This client provides methods to
+    """
+
+    def method1(self):
+        self.call("method1")
+
+    def method2(self):
+        self.call("method2")
+

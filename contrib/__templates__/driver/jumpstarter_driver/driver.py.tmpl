@@ -1,0 +1,31 @@
+import logging
+from dataclasses import dataclass
+
+from jumpstarter.driver import Driver, export
+
+logger = logging.getLogger(__name__)
+
+@dataclass(kw_only=True)
+class ${DRIVER_CLASS}(Driver):
+    """${DRIVE_NAME} driver for Jumpstarter"""
+
+    some_config: str = "default"
+    some_other_config: int = 69
+
+    def __post_init__(self):
+        super().__post_init__()
+        # some initialization here.
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_${DRIVER_NAME}.client.${DRIVER_CLASS}Client"
+
+    @export
+    def method1(self):
+        logger.info("Method1 called")
+        return "method1 response"
+
+    @export
+    def method2(self):
+        logger.info("Method2 called")
+        return "method2 response"
