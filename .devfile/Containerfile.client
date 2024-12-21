@@ -24,7 +24,16 @@ USER root
 # switch to python 3.12 as the default
 RUN rm -rf /usr/bin/python && ln -s /usr/bin/python3.12 /usr/bin/python
 
-RUN dnf -y install make git python3.12 python3.12 libusbx python3-pyusb python3.12-pip golang && dnf clean all
+RUN dnf -y install make git python3.12 libusbx python3-pyusb python3.12-pip golang xz && dnf clean all
+
+# download openshift/kubernetes/jumpstarter admin tools which are handy inside devspace
+RUN [[ `uname -m` == "x86_64" ]] && curl https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux-amd64-rhel9.tar.gz | sudo tar xvz -C /usr/local/bin
+RUN [[ `uname -m` == "x86_64" ]] && curl https://github.com/jumpstarter-dev/jumpstarter-controller/releases/download/v0.5.0/jmpctl_0.5.0_linux_amd64 -L -o /usr/local/bin/jmp
+
+RUN [[ `uname -m` == "aarch64" ]] && curl https://mirror.openshift.com/pub/openshift-v4/aarch64/clients/ocp/stable/openshift-client-linux-arm64-rhel9.tar.gz | sudo tar xvz -C /usr/local/bin
+RUN [[ `uname -m` == "aarch64" ]] && curl https://github.com/jumpstarter-dev/jumpstarter-controller/releases/download/v0.5.0/jmpctl_0.5.0_linux_arm64 -L -o /usr/local/bin/jmp
+
+RUN chmod a+x /usr/local/bin/jmp
 
 USER 10001
 
