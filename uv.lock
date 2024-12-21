@@ -9,6 +9,7 @@ members = [
     "jumpstarter-driver-http",
     "jumpstarter-driver-raspberrypi",
     "jumpstarter-driver-sdwire",
+    "jumpstarter-driver-shell",
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-ustreamer",
     "jumpstarter-example-automotive",
@@ -730,7 +731,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.1.dev97+g619099f.d20250121"
+version = "0.5.1.dev94+gdb58fe2.d20250116"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -821,7 +822,7 @@ docs = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.5.1.dev95+g202bb62"
+version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -850,7 +851,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.5.1.dev96+ge2601e1"
+version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -910,7 +911,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.5.1.dev96+ge2601e1"
+version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -937,7 +938,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.5.1.dev96+ge2601e1"
+version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -962,6 +963,35 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-shell"
+version = "0.1.0"
+source = { editable = "contrib/drivers/shell" }
+dependencies = [
+    { name = "anyio" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "jumpstarter", editable = "." },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "ruff", specifier = ">=0.7.1" },
 ]
 
 [[package]]
@@ -999,7 +1029,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.5.1.dev96+ge2601e1"
+version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1056,6 +1086,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
+version = "0.5.0rc3.dev7+gf0f92e6.d20241108"
 source = { editable = "contrib/libs/imagehash" }
 dependencies = [
     { name = "imagehash" },
