@@ -34,6 +34,9 @@ apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
 token: <<token>>
+tls:
+  ca: ''
+  insecure: True
 drivers:
   allow: []
   unsafe: True
@@ -41,6 +44,10 @@ drivers:
 
 In addition we have included a `drivers` section in the configuration file, which
 allows you to specify a list of allowed driver packages and enable unsafe mode (allow any driver).
+
+A `tls` section is also included, which allows you to specify a custom CA certificate
+to use for the connection, or to disable TLS verification if your system is using
+self-signed certificates.
 
 ```{warning}
 This section can be important if you don't trust the exporter's configuration, since every
