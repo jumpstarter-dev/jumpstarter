@@ -3,10 +3,12 @@
 from jumpstarter.v1 import kubernetes_pb2
 
 
-def condition_present_and_equal(conditions: list[kubernetes_pb2.Condition], condition_type: str, status: str) -> bool:
+def condition_present_and_equal(conditions: list[kubernetes_pb2.Condition],
+                                condition_type: str, status: str, reason: str | None=None) -> bool:
     for condition in conditions:
         if condition.type == condition_type:
-            return condition.status == status
+            if reason is None or condition.reason == reason:
+                return condition.status == status
     return False
 
 

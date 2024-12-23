@@ -1,15 +1,12 @@
 import logging
+import os
 from typing import Optional
 
 import click
 
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.utils import launch_shell
-from jumpstarter.config import (
-    ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Drivers,
-    UserConfigV1Alpha1,
-)
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, UserConfigV1Alpha1, env
 
 from .util import AliasedGroup, make_table
 from .version import version
@@ -24,6 +21,44 @@ def client():
 def lease():
     pass
 
+@lease.command("request")
+@click.option("-l", "--label", "labels", type=(str, str), multiple=True)
+@click.argument("name", type=str, default="")
+def lease_request(name, labels):
+    """Request an exporter lease from the jumpstarter controller.
+
+The result of this command will be a lease ID that can be used to
+connect to the remote exporter.
+
+This is useful for multi-step workflows where you want to hold a lease
+for a specific exporter while performing multiple operations, or for
+CI environments where one step will request the lease and other steps
+will perform operations on the leased exporter.
+
+Example:
+
+.. code-block:: bash
+
+    $ JMP_LEASE=$(jmp lease request -l label match)
+    $ jmp shell
+    $$ j --help
+    $$ exit
+    $ jmp lease release -l "${JMP_LEASE}"
+
+"""
+    try:
+        if name:
+            config = ClientConfigV1Alpha1.load(name)
+        else:
+            config = UserConfigV1Alpha1.load_or_create().config.current_client
+        if not config:
+            raise ValueError("No client specified")
+        lease = config.request_lease(metadata_filter=MetadataFilter(labels=dict(labels)))
+        print(lease.name)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    except Exception as e:
+        raise e
 
 @lease.command("list")
 @click.argument("name", type=str, default="")
@@ -33,7 +68,7 @@ def lease_list(name):
     else:
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
-        raise ValueError("no client specified")
+        raise click.ClickException("no client specified")
 
     for lease in config.list_leases():
         print(lease)
@@ -49,14 +84,14 @@ def lease_release(name, lease, all_leases):
     else:
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
-        raise ValueError("no client specified")
+        raise click.ClickException("no client specified")
 
     if all_leases:
         for lease in config.list_leases():
             config.release_lease(lease)
     else:
         if not lease:
-            raise ValueError("no lease specified")
+            raise click.ClickException("no lease specified")
         config.release_lease(lease)
 
 
@@ -188,7 +223,14 @@ def client_shell(name: str, labels, lease_name):
     if not config:
         raise ValueError("no client specified")
 
-    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
+    # lease_name can be provided as an argument or via environment variable
+    lease_name = lease_name or os.environ.get(env.JMP_LEASE, "")
+
+    # when no lease name is provided, release the lease on exit
+    release_lease = lease_name == ""
+
+    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name,
+                      release=release_lease) as lease:
         with lease.serve_unix() as path:
             launch_shell(path, config.drivers.allow, config.drivers.unsafe)
 
