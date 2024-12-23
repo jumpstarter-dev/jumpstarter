@@ -48,7 +48,7 @@ class HttpServerClient(DriverClient):
             src_stream: Stream/source to read the file data from.
 
         Returns:
-            str: Name of the uploaded file
+            str: URL of the uploaded file
         """
         return self.call("put_file", filename, src_stream)
 

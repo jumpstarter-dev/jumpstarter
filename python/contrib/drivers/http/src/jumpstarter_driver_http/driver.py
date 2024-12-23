@@ -51,8 +51,6 @@ class HttpServer(Driver):
         os.makedirs(self.root_dir, exist_ok=True)
         self.app.router.add_routes([
             web.get('/{filename}', self.get_file),
-            web.get('/', self.list_files),
-            web.post('/{filename}', self.put_file),
         ])
 
     @classmethod
@@ -88,7 +86,7 @@ class HttpServer(Driver):
                         await dst.send(chunk)
 
             logger.info(f"File '{filename}' written to '{self.root_dir}'")
-            return filename
+            return f"{self.get_url()}/{filename}"
 
         except Exception as e:
             logger.error(f"Failed to upload file '{filename}': {e}")
@@ -119,7 +117,6 @@ class HttpServer(Driver):
             logger.error(f"Failed to delete file '{filename}': {e}")
             raise HttpServerError(f"Failed to delete file '{filename}': {e}") from e
 
-    @export
     async def get_file(self, request) -> web.FileResponse:
         """
         Retrieve a file from the HTTP server.

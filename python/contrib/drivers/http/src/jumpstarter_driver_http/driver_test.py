@@ -19,8 +19,8 @@ async def test_http_server():
             test_file_path = Path(temp_dir) / "test.txt"
             test_file_path.write_bytes(test_content)
 
-            uploaded_filename = client.put_local_file(str(test_file_path))
-            assert uploaded_filename == "test.txt"
+            uploaded_filename_url = client.put_local_file(str(test_file_path))
+            assert uploaded_filename_url == f"{client.get_url()}/test.txt"
 
             files = client.list_files()
             assert "test.txt" in files
