@@ -10,15 +10,26 @@ Device.pin_factory = MockFactory()
 
 
 def test_drivers_gpio_digital_output():
-    instance = DigitalOutput(pin=1)
+    pin_factory = MockFactory()
+    Device.pin_factory = pin_factory
+    pin_number = 1
+    mock_pin = pin_factory.pin(pin_number)
+
+    instance = DigitalOutput(pin=pin_number)
+
+    assert not mock_pin.state
 
     with serve(instance) as client:
         client.off()
+        assert not mock_pin.state
+
         client.on()
+        assert mock_pin.state
+
         client.off()
+        assert not mock_pin.state
 
-    instance.device.pin.assert_states((False, True, False))
-
+    mock_pin.assert_states([False, True, False])
 
 def test_drivers_gpio_digital_input():
     instance = DigitalInput(pin=4)

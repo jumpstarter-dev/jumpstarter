@@ -1,5 +1,6 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from random import randbytes
 from tempfile import TemporaryDirectory
 from threading import Thread
 
@@ -12,18 +13,28 @@ from jumpstarter.drivers.storage.driver import MockStorageMux
 def test_drivers_mock_storage_mux_fs(monkeypatch):
     with serve(MockStorageMux()) as client:
         with TemporaryDirectory() as tempdir:
-            fs = Operator("fs", root=tempdir)
+            original = Path(tempdir) / "original"
+            readback = Path(tempdir) / "readback"
 
-            fs.write("test", b"testcontent" * 1000)
-
-            client.write_file(fs, "test")
             # absolute path
-            client.write_local_file(str(Path(tempdir) / "test"))
+            original.write_bytes(randbytes(1024 * 1024 * 10))
+            client.write_local_file(str(original))
+            client.read_local_file(str(readback))
+            assert original.read_bytes() == readback.read_bytes()
+
             # relative path
             with monkeypatch.context() as m:
                 m.chdir(tempdir)
-                client.write_local_file("test")
-                client.write_local_file("./test")
+
+                original.write_bytes(randbytes(1024 * 1024 * 1))
+                client.write_local_file("original")
+                client.read_local_file("readback")
+                assert original.read_bytes() == readback.read_bytes()
+
+                original.write_bytes(randbytes(1024 * 1024 * 1))
+                client.write_local_file("./original")
+                client.read_local_file("./readback")
+                assert original.read_bytes() == readback.read_bytes()
 
 
 def test_drivers_mock_storage_mux_http():

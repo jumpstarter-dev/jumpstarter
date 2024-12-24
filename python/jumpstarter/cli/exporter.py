@@ -4,7 +4,6 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
-import anyio
 import asyncclick as click
 
 from jumpstarter.common.utils import launch_shell

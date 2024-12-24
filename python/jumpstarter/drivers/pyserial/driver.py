@@ -10,6 +10,7 @@ from jumpstarter.driver import Driver, exportstream
 
 log = logging.getLogger(__name__)
 
+
 @dataclass(kw_only=True)
 class AsyncSerial(ObjectStream):
     device: Serial

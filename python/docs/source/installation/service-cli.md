@@ -10,12 +10,11 @@ the latest release.
 ```{code-block} bash
 :substitutions:
 export VERSION={{controller_version}}
-export ARCH=amd64 # or arm64
+export ARCH=amd64 # or arm64 (Apple Silicon)
+export PLATFORM=linux # or darwin for macOS
 
-curl -L https://github.com/jumpstarter-dev/jumpstarter-controller/releases/download/${VERSION}/jmpctl_${VERSION}_linux_${ARCH} \
-     -o /usr/local/bin/jmpctl
-
-chmod a+x /usr/local/bin/jmpctl
+curl -L https://github.com/jumpstarter-dev/jumpstarter-controller/releases/download/v${VERSION}/jmpctl_${VERSION}_${PLATFORM}_${ARCH} -o jmpctl
+sudo install jmpctl /usr/local/bin/jmpctl && rm jmpctl
 ```
 
 ## Configuration

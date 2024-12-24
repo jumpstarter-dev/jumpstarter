@@ -5,6 +5,6 @@ Jumpstarter resources and services.
 
 For more details see the following documents:
 
-* [Glossary](docs/glossary.md)
-* [Usage](docs/usage.md)
-* [Architecture](docs/architecture.md)
+* [Glossary](https://docs.jumpstarter.dev/glossary)
+* [Usage](https://docs.jumpstarter.dev/getting-started/)
+* [Architecture](https://docs.jumpstarter.dev/architecture.html)
