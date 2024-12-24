@@ -1,29 +1,11 @@
-import asyncio
-import shutil
-import socket
 from typing import Literal, Optional
 
 import asyncclick as click
 
+from jumpstarter.k8s import get_ip_address, helm_installed, install_helm_chart
+
 from .util import opt_context, opt_kubeconfig
 from .version import get_client_version
-
-
-def get_ip_address() -> str:
-    """Get the IP address of the host machine"""
-    # Try to get the IP address using the hostname
-    hostname = socket.gethostname()
-    address = socket.gethostbyname(hostname)
-    # If it returns a bogus address, do it the hard way
-    if not address or address.startswith("127."):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("1.1.1.1", 0))
-        address = s.getsockname()[0]
-    return address
-
-
-def helm_installed(name: str) -> bool:
-    return shutil.which(name) is not None
 
 
 def get_chart_version() -> str:
@@ -82,10 +64,9 @@ async def install(
         basedomain = f"jumpstarter.{ip}.nip.io"
     if grpc_endpoint is None:
         grpc_endpoint = f"grpc.{basedomain}:8082"
-    grpc_port = grpc_endpoint.split(":")[1]
+
     if router_endpoint is None:
         router_endpoint = f"router.{basedomain}:8083"
-    router_port = router_endpoint.split(":")[1]
 
     click.echo(f'Installing Jumpstarter service v{version} in namespace "{namespace}" with Helm\n')
     click.echo(f"Chart URI: {chart}")
@@ -96,46 +77,6 @@ async def install(
     click.echo(f"Router Endpoint: {router_endpoint}")
     click.echo(f"gPRC Mode: {mode}\n")
 
-    args = [
-        helm,
-        "upgrade",
-        name,
-        "--install",
-        chart,
-        "--create-namespace",
-        "--namespace",
-        namespace,
-        "--set",
-        f"global.baseDomain={basedomain}",
-        "--set",
-        f"jumpstarter-controller.grpc.endpoint={grpc_endpoint}",
-        "--set",
-        f"jumpstarter-controller.grpc.routerEndpoint={router_endpoint}",
-        "--set",
-        "global.metrics.enabled=false",
-        "--set",
-        f"jumpstarter-controller.grpc.nodeport.enabled={"true" if mode == "nodeport" else "false"}",
-        "--set",
-        f"jumpstarter-controller.grpc.nodeport.port={grpc_port}",
-        "--set",
-        f"jumpstarter-controller.grpc.nodeport.routerPort={router_port}",
-        "--set",
-        f"jumpstarter-controller.grpc.mode={mode}",
-        "--version",
-        version,
-        "--wait"
-    ]
-
-    # click.echo(str.join(" ", args) + "\n")
-
-    if kubeconfig is not None:
-        args.append("--kubeconfig")
-        args.append(kubeconfig)
-
-    if context is not None:
-        args.append("--kube-context")
-        args.append(context)
-
-    # Attempt to install Jumpstarter using Helm
-    process = await asyncio.create_subprocess_exec(*args)
-    await process.wait()
+    await install_helm_chart(
+        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm
+    )

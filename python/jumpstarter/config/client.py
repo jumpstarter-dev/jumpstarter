@@ -148,6 +148,10 @@ class ClientConfigV1Alpha1(BaseModel):
             yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
 
     @classmethod
+    def dump_yaml(cls, config: Self) -> str:
+        return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+
+    @classmethod
     def exists(cls, name: str) -> bool:
         """Check if a client config exists by name."""
         return os.path.exists(cls._get_path(name))

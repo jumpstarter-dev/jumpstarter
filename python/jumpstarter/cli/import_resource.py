@@ -41,7 +41,7 @@ def import_resource():
     default="",
 )
 @click.option("--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).")
-def import_client(
+async def import_client(
     name: str,
     namespace: str,
     kubeconfig: Optional[str],

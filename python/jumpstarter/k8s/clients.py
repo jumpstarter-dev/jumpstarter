@@ -1,14 +1,19 @@
 import asyncio
+import base64
 import logging
-import pprint
 from dataclasses import dataclass
 from typing import Literal, Optional
 
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+
 from .util import AbstractAsyncCustomObjectApi
 
 logger = logging.getLogger(__name__)
+
+CREATE_CLIENT_DELAY = 1
+CREATE_CLIENT_COUNT = 10
 
 
 @dataclass(kw_only=True)
@@ -46,7 +51,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 if "credential" in result["status"]
                 else None,
                 endpoint=result["status"]["endpoint"],
-            ),
+            ) if "status" in result else V1Alpha1ClientStatus(credential=None, endpoint=""),
         )
 
     async def create_client(self, name: str) -> V1Alpha1Client:
@@ -64,13 +69,22 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         count = 0
         updated_client = {}
         # Retry for a maximum of 10s
-        while count < 10:
-            await asyncio.sleep(1)
+        while count < CREATE_CLIENT_COUNT:
             # Try to get the updated client resource
-            updated_client = await self.get_client(name)
-            pprint.pp(updated_client)
+            updated_client = await self.api.get_namespaced_custom_object(
+                namespace=self.namespace,
+                group="jumpstarter.dev",
+                plural="clients",
+                version="v1alpha1",
+                name=name
+            )
+            # check if the client status is updated with the credentials
+            if "status" in updated_client:
+                if "credential" in updated_client["status"]:
+                    return ClientsV1Alpha1Api._deserialize(updated_client)
             count += 1
-        return ClientsV1Alpha1Api._deserialize(updated_client)
+            await asyncio.sleep(CREATE_CLIENT_DELAY)
+        raise Exception("Timeout waiting for client credentials.")
 
     async def list_clients(self) -> list[V1Alpha1Client]:
         """List the client objects in the cluster async"""
@@ -85,3 +99,16 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             namespace=self.namespace, group="jumpstarter.dev", plural="clients", version="v1alpha1", name=name
         )
         return ClientsV1Alpha1Api._deserialize(result)
+
+    async def get_client_config(self, name: str, allow: list[str], unsafe = False) -> ClientConfigV1Alpha1:
+        """Create a client config for a specified client name"""
+        client = await self.get_client(name)
+        secret = await self.core_api.read_namespaced_secret(client.status.credential.name, self.namespace)
+        endpoint = client.status.endpoint
+        token = base64.b64decode(secret.data["token"]).decode("utf8")
+        return ClientConfigV1Alpha1(
+            name=name,
+            endpoint=endpoint,
+            token=token,
+            drivers=ClientConfigV1Alpha1Drivers(allow=allow, unsafe=unsafe),
+        )

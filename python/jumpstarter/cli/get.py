@@ -4,6 +4,7 @@ from typing import Optional
 
 import asyncclick as click
 from kubernetes_asyncio.client.exceptions import ApiException
+from kubernetes_asyncio.config.config_exception import ConfigException
 
 from jumpstarter.k8s import (
     ClientsV1Alpha1Api,
@@ -16,6 +17,7 @@ from jumpstarter.k8s import (
 from .util import (
     AliasedGroup,
     handle_k8s_api_exception,
+    handle_k8s_config_exception,
     make_table,
     opt_context,
     opt_kubeconfig,
@@ -55,22 +57,24 @@ async def get_client(
     namespace: str
 ):
     """Get the client objects in a Kubernetes cluster"""
-    async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
-        try:
-            if name is not None:
-                # Get a single client in a namespace
-                client = await api.get_client(name)
-                click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
-            else:
-                # List clients in a namespace
-                clients = await api.list_clients()
-                if len(clients) == 0:
-                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
+    try:
+        async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
+                if name is not None:
+                    # Get a single client in a namespace
+                    client = await api.get_client(name)
+                    click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
                 else:
-                    rows = list(map(make_client_row, clients))
-                    click.echo(make_table(CLIENT_COLUMNS, rows))
-        except ApiException as e:
-            handle_k8s_api_exception(e)
+                    # List clients in a namespace
+                    clients = await api.list_clients()
+                    if len(clients) == 0:
+                        raise click.ClickException(f'No resources found in "{namespace}" namespace')
+                    else:
+                        rows = list(map(make_client_row, clients))
+                        click.echo(make_table(CLIENT_COLUMNS, rows))
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
 
 EXPORTER_COLUMNS = ["NAME", "ENDPOINT", "DEVICES", "AGE"]
 DEVICE_COLUMNS = ["NAME", "ENDPOINT", "AGE", "LABELS", "UUID"]
@@ -115,32 +119,34 @@ async def get_exporter(
     devices: bool
 ):
     """Get the exporter objects in a Kubernetes cluster"""
-    async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
-        try:
-            if name is not None:
-                # Get a single client in a namespace
-                exporter = await api.get_exporter(name)
-                if devices:
-                    # Print the devices for the exporter
-                    click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
+    try:
+        async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
+                if name is not None:
+                    # Get a single client in a namespace
+                    exporter = await api.get_exporter(name)
+                    if devices:
+                        # Print the devices for the exporter
+                        click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
+                    else:
+                        # Print the exporter
+                        click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
                 else:
-                    # Print the exporter
-                    click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
-            else:
-                # List clients in a namespace
-                exporters = await api.list_exporters()
-                if len(exporters) == 0:
-                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
-                elif devices:
-                    # Print the devices for each exporter
-                    rows = get_device_rows(exporters)
-                    click.echo(make_table(DEVICE_COLUMNS, rows))
-                else:
-                    # Print the exporters
-                    rows = list(map(make_exporter_row, exporters))
-                    click.echo(make_table(EXPORTER_COLUMNS, rows))
-        except ApiException as e:
-            handle_k8s_api_exception(e)
+                    # List clients in a namespace
+                    exporters = await api.list_exporters()
+                    if len(exporters) == 0:
+                        raise click.ClickException(f'No resources found in "{namespace}" namespace')
+                    elif devices:
+                        # Print the devices for each exporter
+                        rows = get_device_rows(exporters)
+                        click.echo(make_table(DEVICE_COLUMNS, rows))
+                    else:
+                        # Print the exporters
+                        rows = list(map(make_exporter_row, exporters))
+                        click.echo(make_table(EXPORTER_COLUMNS, rows))
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
 
 LEASE_COLUMNS = ["NAME", "CLIENT", "EXPORTER", "STATUS", "REASON", "BEGIN", "END", "DURATION", "AGE"]
 
@@ -171,8 +177,8 @@ async def get_lease(
     namespace: str
 ):
     """Get the lease objects in a Kubernetes cluster"""
-    async with LeasesV1Alpha1Api(namespace, kubeconfig, context) as api:
-        try:
+    try:
+        async with LeasesV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 # Get a single lease in a namespace
                 lease = await api.get_lease(name)
@@ -188,5 +194,7 @@ async def get_lease(
                     # Print the leases
                     rows = list(map(make_lease_row, leases))
                     click.echo(make_table(LEASE_COLUMNS, rows))
-        except ApiException as e:
-            handle_k8s_api_exception(e)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
