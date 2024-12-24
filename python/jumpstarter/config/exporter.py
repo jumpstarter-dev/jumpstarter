@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Optional, Self
 
 import grpc
 import yaml
@@ -41,23 +41,22 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
 
-    @property
-    def path(self):
-        return self.__path(self.alias)
+    path: Path | None = Field(default=None, exclude=True)
 
     @classmethod
-    def __path(cls, alias: str):
+    def _get_path(cls, alias: str):
         return (cls.BASE_PATH / alias).with_suffix(".yaml")
 
     @classmethod
     def load_path(cls, path: Path):
         with path.open() as f:
             config = cls.model_validate(yaml.safe_load(f))
+            config.path = path
             return config
 
     @classmethod
     def load(cls, alias: str):
-        config = cls.load_path(cls.__path(alias))
+        config = cls.load_path(cls._get_path(alias))
         config.alias = alias
         return config
 
@@ -69,10 +68,16 @@ class ExporterConfigV1Alpha1(BaseModel):
                 exporters.append(cls.load(entry.stem))
         return exporters
 
-    def save(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open(mode="w") as f:
-            yaml.safe_dump(self.model_dump(mode="json"), f, sort_keys=False)
+    @classmethod
+    def save(cls, config: Self, path: Optional[str] = None):
+        # Set the config path before saving
+        if path is None:
+            config.path = cls._get_path(config.alias)
+            config.path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            config.path = Path(path)
+        with config.path.open(mode="w") as f:
+            yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
 
     def delete(self):
         self.path.unlink(missing_ok=True)

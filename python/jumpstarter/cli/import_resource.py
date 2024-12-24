@@ -1,19 +1,17 @@
-import base64
 from typing import Optional
 
 import asyncclick as click
-from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client.exceptions import ApiException
+from kubernetes_asyncio.config.config_exception import ConfigException
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Drivers,
     UserConfigV1Alpha1,
 )
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.k8s import ClientsV1Alpha1Api, ExportersV1Alpha1Api
 
-from .util import handle_k8s_api_exception, opt_context, opt_kubeconfig, opt_namespace
+from .util import handle_k8s_api_exception, handle_k8s_config_exception, opt_context, opt_kubeconfig, opt_namespace
 
 
 @click.group("import")
@@ -51,77 +49,58 @@ async def import_client(
     out: Optional[str],
 ):
     """Import a client config from a Kubernetes cluster"""
-    config.load_kube_config(config_file=kubeconfig, context=context)
-    clients_api = ClientsV1Alpha1Api()
-    core_api = client.CoreV1Api()
     # Check that a client config with the same name does not exist
     if out is None and ClientConfigV1Alpha1.exists(name):
-        raise click.ClickException(f"A client with the name '{name}' already exists.")
-
-    # Try to get the client
+        raise click.ClickException(f"A client with the name '{name}' already exists")
     try:
-        # Get the client and token secret
-        result = clients_api.get_namespaced_client(namespace, name)
-        secret = core_api.read_namespaced_secret(result["status"]["credential"]["name"], namespace)
-        endpoint = result["status"]["endpoint"]
-        token = base64.b64decode(secret.data["token"]).decode("utf8")
-        # Create the client config and save it
-        allow_drivers = allow.split(",") if len(allow) > 0 else []
-        client_config = ClientConfigV1Alpha1(
-            name=name,
-            endpoint=endpoint,
-            token=token,
-            drivers=ClientConfigV1Alpha1Drivers(allow=allow_drivers, unsafe=unsafe),
-        )
-        ClientConfigV1Alpha1.save(client_config, out)
-
-        # If this is the only client config, set it as default
-        if out is None and len(ClientConfigV1Alpha1.list()) == 1:
-            user_config = UserConfigV1Alpha1.load_or_create()
-            user_config.config.current_client = client_config
-            UserConfigV1Alpha1.save(user_config)
-
-        click.echo(f"Client configuration successfully saved to {client_config.path}")
+        async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
+            click.echo("Fetching client credentials from cluster")
+            allow_drivers = allow.split(",") if len(allow) > 0 else []
+            client_config = await api.get_client_config(name, allow=allow_drivers, unsafe=unsafe)
+            ClientConfigV1Alpha1.save(client_config, out)
+            # If this is the only client config, set it as default
+            if out is None and len(ClientConfigV1Alpha1.list()) == 1:
+                user_config = UserConfigV1Alpha1.load_or_create()
+                user_config.config.current_client = client_config
+                UserConfigV1Alpha1.save(user_config)
+            click.echo(f"Client configuration successfully saved to {client_config.path}")
     except ApiException as e:
         handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
 
 @import_resource.command("exporter")
 @click.argument("name", default="default")
+@click.option(
+    "-o",
+    "--out",
+    type=click.Path(dir_okay=False, resolve_path=True, writable=True),
+    help="Specify an output file for the exporter config.",
+)
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-def create(
+async def import_exporter(
     name: str,
     namespace: str,
+    out: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str]
 ):
     """Import an exporter config from a Kubernetes cluster"""
-    config.load_kube_config(config_file=kubeconfig, context=context)
-    exporters_api = ExportersV1Alpha1Api()
-    core_api = client.CoreV1Api()
-
     try:
         ExporterConfigV1Alpha1.load(name)
     except FileNotFoundError:
         pass
     else:
         raise click.ClickException(f'An exporter with the name "{name}" already exists')
-
-     # Try to get the exporter
     try:
-        # Get the exporter and token secret
-        result = exporters_api.get_exporter(namespace, name)
-        secret = core_api.read_namespaced_secret(result["status"]["credential"]["name"], namespace)
-        endpoint = result["status"]["endpoint"]
-        token = base64.b64decode(secret.data["token"]).decode("utf8")
-        # Create the exporter config and save it
-        exporter_config = ExporterConfigV1Alpha1(
-            alias=name,
-            endpoint=endpoint,
-            token=token,
-        )
-        exporter_config.save()
-        click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
+        async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
+            click.echo("Fetching exporter credentials from cluster")
+            exporter_config = await api.get_exporter_config(name)
+            ExporterConfigV1Alpha1.save(exporter_config, out)
+            click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
     except ApiException as e:
         handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)

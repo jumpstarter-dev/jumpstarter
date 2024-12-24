@@ -5,8 +5,8 @@ import asyncclick as click
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
-from jumpstarter.config import ClientConfigV1Alpha1, UserConfigV1Alpha1
-from jumpstarter.k8s import ClientsV1Alpha1Api
+from jumpstarter.config import ClientConfigV1Alpha1, ExporterConfigV1Alpha1, UserConfigV1Alpha1
+from jumpstarter.k8s import ClientsV1Alpha1Api, ExportersV1Alpha1Api
 
 from .util import (
     AliasedGroup,
@@ -69,7 +69,7 @@ async def create_client(
     """Create a client object in the Kubernetes cluster"""
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
-            click.echo(f"Creating client \"{name}\" in namespace \"{namespace}\"")
+            click.echo(f"Creating client '{name}' in namespace '{namespace}'")
             await api.create_client(name)
             # Save the client config
             if save or out is not None or click.confirm("Save client configuration?"):
@@ -91,6 +91,50 @@ async def create_client(
                     user_config.config.current_client = client_config
                     UserConfigV1Alpha1.save(user_config)
                 click.echo(f"Client configuration successfully saved to {client_config.path}")
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+@create.command("exporter")
+@click.argument("name", type=str, required=False, default=None)
+@click.option(
+    "--save",
+    "-s",
+    help="Save the config file for the created exporter.",
+    is_flag=True,
+    default=False,
+)
+@click.option(
+    "-o",
+    "--out",
+    type=click.Path(dir_okay=False, resolve_path=True, writable=True),
+    help="Specify an output file for the exporter config.",
+    default=None,
+)
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+async def create_exporter(
+    name: Optional[str],
+    kubeconfig: Optional[str],
+    context: Optional[str],
+    namespace: str,
+    save: bool,
+    out: Optional[str],
+):
+    """Create an exporter object in the Kubernetes cluster"""
+    try:
+        async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
+            click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
+            await api.create_exporter(name)
+            # Save the client config
+            if save or out is not None or click.confirm("Save exporter configuration?"):
+                click.echo("Fetching exporter credentials from cluster")
+                exporter_config = await api.get_exporter_config(name)
+                ExporterConfigV1Alpha1.save(exporter_config, out)
+                click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

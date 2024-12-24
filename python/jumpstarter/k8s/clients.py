@@ -84,7 +84,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                     return ClientsV1Alpha1Api._deserialize(updated_client)
             count += 1
             await asyncio.sleep(CREATE_CLIENT_DELAY)
-        raise Exception("Timeout waiting for client credentials.")
+        raise Exception("Timeout waiting for client credentials")
 
     async def list_clients(self) -> list[V1Alpha1Client]:
         """List the client objects in the cluster async"""
@@ -101,7 +101,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         return ClientsV1Alpha1Api._deserialize(result)
 
     async def get_client_config(self, name: str, allow: list[str], unsafe = False) -> ClientConfigV1Alpha1:
-        """Create a client config for a specified client name"""
+        """Get a client config for a specified client name"""
         client = await self.get_client(name)
         secret = await self.core_api.read_namespaced_secret(client.status.credential.name, self.namespace)
         endpoint = client.status.endpoint
