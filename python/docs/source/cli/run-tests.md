@@ -1,4 +1,4 @@
-# Run Tests
+# Running tests
 
 ## Running tests through a central server
 
@@ -26,10 +26,30 @@ When no client configuration or environment variables are set, the client will
 run in local mode and create an exporter instance to interact with the hardware.
 
 Communication between the local client and exporter take place over a local
-socket: `/var/run/jumpstarter.sock`.
+socket provided by `$JUMPSTARTER_HOST`.
 
-A local instance of the exporter can also be started using the following command:
-
-```bash
-systemctl start jumpstarter-exporter
 ```
+$ jmp-exporter shell -c /exporter-config.yaml
+$$ echo $JUMPSTARTER_HOST
+$$ j ...
+$$ exit
+$
+```
+
+## Using jumpstarter from testing frameworks
+
+### Pytest
+
+Jumpstarter provides a pytest base class that can be used to run tests,
+the base class will attempt to:
+
+1. Use a local connection based on the `JUMPSTARTER_HOST` environment variable
+2. Use an existing lease based on the `JMP_LEASE` environment variable, and existing credentials.
+   See the cli reference for [jmp lease request](../cli-reference/jmp.md#jmp-lease-request).
+3. Request a lease based on the `filter_labels` provided in the test class.
+
+```{eval-rst}
+.. autoclass:: jumpstarter.testing.pytest.JumpstarterTest
+    :members:
+```
+

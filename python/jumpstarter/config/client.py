@@ -60,10 +60,15 @@ class ClientConfigV1Alpha1(BaseModel):
         return aio_secure_channel(self.endpoint, credentials)
 
     @contextmanager
-    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None):
+    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None, release: bool = False):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.lease_async(metadata_filter, lease_name, portal)) as lease:
+            with portal.wrap_async_context_manager(
+                self.lease_async(metadata_filter, lease_name, portal, release)) as lease:
                 yield lease
+
+    def request_lease(self, metadata_filter: MetadataFilter):
+        with start_blocking_portal() as portal:
+            return portal.call(self.request_lease_async, metadata_filter, portal)
 
     def list_leases(self):
         with start_blocking_portal() as portal:
@@ -72,6 +77,17 @@ class ClientConfigV1Alpha1(BaseModel):
     def release_lease(self, name):
         with start_blocking_portal() as portal:
             portal.call(self.release_lease_async, name)
+
+    async def request_lease_async(self, metadata_filter: MetadataFilter, portal:BlockingPortal):
+        lease = Lease(
+            channel=await self.channel(),
+            name=None,
+            metadata_filter=metadata_filter,
+            portal=portal,
+            allow=self.drivers.allow,
+            unsafe=self.drivers.unsafe,
+        )
+        return await lease.request_async()
 
     async def list_leases_async(self):
         controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
@@ -82,14 +98,16 @@ class ClientConfigV1Alpha1(BaseModel):
         await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
 
     @asynccontextmanager
-    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal):
+    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal,
+                          release=True):
         async with Lease(
             channel=await self.channel(),
-            lease_name=lease_name,
+            name=lease_name,
             metadata_filter=metadata_filter,
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
+            release=release,
         ) as lease:
             yield lease
 
