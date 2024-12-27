@@ -4,13 +4,14 @@ from random import randbytes
 from tempfile import TemporaryDirectory
 from threading import Thread
 
+import pytest
 from opendal import Operator
 
 from jumpstarter.common.utils import serve
 from jumpstarter.drivers.storage.driver import MockStorageMux
 
 
-def test_drivers_mock_storage_mux_fs(monkeypatch):
+def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
     with serve(MockStorageMux()) as client:
         with TemporaryDirectory() as tempdir:
             original = Path(tempdir) / "original"

@@ -94,11 +94,11 @@ class ClientConfigV1Alpha1(BaseModel):
             yield lease
 
     @classmethod
-    def from_file(cls, path: Path):
-        with path.open() as f:
+    def from_file(cls, path: os.PathLike):
+        with open(path) as f:
             v = cls.model_validate(yaml.safe_load(f))
             v.name = os.path.basename(path).split(".")[0]
-            v.path = path
+            v.path = Path(path)
             return v
 
     @classmethod
@@ -139,7 +139,7 @@ class ClientConfigV1Alpha1(BaseModel):
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None):
+    def save(cls, config: Self, path: Optional[os.PathLike] = None):
         """Saves a client config as YAML."""
         # Ensure the clients dir exists
         if path is None:

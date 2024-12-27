@@ -12,7 +12,7 @@ from jumpstarter.config import (
 )
 
 
-def test_user_config_exists(monkeypatch):
+def test_user_config_exists(monkeypatch: pytest.MonkeyPatch):
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         f.write("")
         f.close()
@@ -21,7 +21,7 @@ def test_user_config_exists(monkeypatch):
         os.unlink(f.name)
 
 
-def test_user_config_load(monkeypatch):
+def test_user_config_load(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -44,13 +44,13 @@ config:
             os.unlink(f.name)
 
 
-def test_user_config_load_does_not_exist(monkeypatch):
+def test_user_config_load_does_not_exist(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", "/nowhere/config.yaml`")
     with pytest.raises(FileNotFoundError):
         _ = UserConfigV1Alpha1.load()
 
 
-def test_user_config_load_no_current_client(monkeypatch):
+def test_user_config_load_no_current_client(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config: {}
@@ -72,7 +72,7 @@ config: {}
             os.unlink(f.name)
 
 
-def test_user_config_load_current_client_empty(monkeypatch):
+def test_user_config_load_current_client_empty(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -95,7 +95,7 @@ config:
             os.unlink(f.name)
 
 
-def test_user_config_load_invalid_api_version_raises(monkeypatch):
+def test_user_config_load_invalid_api_version_raises(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: abc
 kind: UserConfig
 config:
@@ -110,7 +110,7 @@ config:
         os.unlink(f.name)
 
 
-def test_user_config_load_invalid_kind_raises(monkeypatch):
+def test_user_config_load_invalid_kind_raises(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 config:
@@ -125,7 +125,7 @@ config:
         os.unlink(f.name)
 
 
-def test_user_config_load_no_config_raises(monkeypatch):
+def test_user_config_load_no_config_raises(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 """
@@ -170,7 +170,7 @@ def test_user_config_load_or_create_dir_does_not_exist():
             mock_save.assert_called_once_with(UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None)))
 
 
-def test_user_config_save(monkeypatch):
+def test_user_config_save(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -195,7 +195,7 @@ config:
         os.unlink(f.name)
 
 
-def test_user_config_save_no_current_client(monkeypatch):
+def test_user_config_save_no_current_client(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -211,7 +211,7 @@ config:
         os.unlink(f.name)
 
 
-def test_user_config_use_client(monkeypatch):
+def test_user_config_use_client(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -245,7 +245,7 @@ config:
             os.unlink(f.name)
 
 
-def test_user_config_use_client_none(monkeypatch):
+def test_user_config_use_client_none(monkeypatch: pytest.MonkeyPatch):
     USER_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:

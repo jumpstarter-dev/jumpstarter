@@ -45,7 +45,7 @@ def create(alias, endpoint, token):
         endpoint=endpoint,
         token=token,
     )
-    config.save()
+    ExporterConfigV1Alpha1.save(config)
 
 
 @exporter.command
