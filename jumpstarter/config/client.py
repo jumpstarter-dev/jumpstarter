@@ -15,6 +15,7 @@ from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .common import CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
+from .tls import TLSConfigV1Alpha1
 
 
 def _allow_from_env():
@@ -26,10 +27,6 @@ def _allow_from_env():
             return [], True
         case _:
             return allow.split(","), False
-
-class ClientConfigV1Alpha1TLS(BaseModel):
-    ca: str = Field(default="")
-    insecure: bool = Field(default=False)
 
 class ClientConfigV1Alpha1Drivers(BaseModel):
     allow: list[str] = Field(default_factory=[])
@@ -46,14 +43,14 @@ class ClientConfigV1Alpha1(BaseModel):
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
 
     endpoint: str
-    tls: ClientConfigV1Alpha1TLS = Field(default_factory=ClientConfigV1Alpha1TLS)
+    tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
 
     drivers: ClientConfigV1Alpha1Drivers
 
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
-            ssl_channel_credentials(self.endpoint, self.tls.insecure, self.tls.ca),
+            ssl_channel_credentials(self.endpoint, self.tls),
             grpc.access_token_call_credentials(self.token),
         )
 
@@ -86,6 +83,7 @@ class ClientConfigV1Alpha1(BaseModel):
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
+            tls_config=self.tls,
         )
         return await lease.request_async()
 
@@ -108,6 +106,7 @@ class ClientConfigV1Alpha1(BaseModel):
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
             release=release,
+            tls_config=self.tls,
         ) as lease:
             yield lease
 

@@ -14,6 +14,8 @@ from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Exporter, Session
 
+from .tls import TLSConfigV1Alpha1
+
 
 class ExporterConfigV1Alpha1DriverInstance(BaseModel):
     type: str = Field(default="jumpstarter.drivers.composite.driver.Composite")
@@ -27,10 +29,6 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
 
         return driver_class(children=children, **self.config)
 
-class ExporterConfigV1Alpha1TLS(BaseModel):
-    ca: str = Field(default="")
-    insecure: bool = Field(default=False)
-
 class ExporterConfigV1Alpha1(BaseModel):
     BASE_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
 
@@ -40,7 +38,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     kind: Literal["ExporterConfig"] = "ExporterConfig"
 
     endpoint: str
-    tls: ExporterConfigV1Alpha1TLS = Field(default_factory=ExporterConfigV1Alpha1TLS)
+    tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
 
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
@@ -98,7 +96,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     async def serve(self):
         def channel_factory():
             credentials = grpc.composite_channel_credentials(
-                ssl_channel_credentials(self.endpoint, self.tls.insecure, self.tls.ca),
+                ssl_channel_credentials(self.endpoint, self.tls),
                 grpc.access_token_call_credentials(self.token),
             )
             return aio_secure_channel(self.endpoint, credentials)
@@ -106,5 +104,6 @@ class ExporterConfigV1Alpha1(BaseModel):
         async with Exporter(
             channel_factory=channel_factory,
             device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
+            tls=self.tls,
         ) as exporter:
             await exporter.serve()
