@@ -40,14 +40,13 @@ either through Python (as a library) or the CLI.
 #### Client
 
 The Jumpstarter client is a Python library and CLI tool that can connect to one
-or more exporters either locally through socket or remotely through a central server.
+or more exporters either locally through a socket or remotely through a central server.
 
 #### Tests
 
-Tests are any test scripts written in Python or YAML that utilize the
-CLI or Python library to interact with hardware via Jumpstarter. Basic tests
-can be written as YAML steps, while more complex testing can take full advantage
-of Jumpstarter as a library through Python.
+Tests are any test scripts that utilize the CLI or Python library to interact with
+hardware via Jumpstarter. Basic tests can be written as YAML steps, while more complex
+testing can take full advantage of Jumpstarter as a library through Python.
 
 ### [`jumpstarter-controller`](https://github.com/jumpstarter-dev/jumpstarter-controller/)
 
@@ -78,7 +77,7 @@ The `jumpstarter-router` provides routing via gRPC streams.
 ## Authentication
 
 Client and Exporter authentication is managed via JWT tokens provided by the
-`TokenRequest`and `TokenReview` Kubernetes APIs under the `jumpstarter-controller`
+`TokenRequest` and `TokenReview` Kubernetes APIs under the `jumpstarter-controller`
 service account, the audience field indicates the location of the Jumpstarter
 gRPC endpoint.
 

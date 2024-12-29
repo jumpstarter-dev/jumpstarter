@@ -2,7 +2,7 @@
 
 ## Running tests through a central server
 
-When client configuration exists, Jumpstarter will use the specified endpoint
+When a client configuration is present, Jumpstarter uses the specified endpoint
 and token to authenticate with that server
 
 ### Configuration

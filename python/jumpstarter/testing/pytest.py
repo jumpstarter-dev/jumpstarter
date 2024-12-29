@@ -17,9 +17,9 @@ class JumpstarterTest:
 This class provides a client fixture that can be used to interact with
 Jumpstarter services in test cases.
 
-Looks for the JUMPSTARTER_HOST environment variable to connect to a
-established Jumpstarter shell, otherwise it will try to acquire a lease
-for a single exporter using the filter_labels annotation.
+Looks for the JUMPSTARTER_HOST environment variable to connect to an
+established Jumpstarter shell, or otherwise it will try to acquire a
+lease for a single exporter using the filter_labels annotation.
 i.e.:
 
 .. code-block:: python
