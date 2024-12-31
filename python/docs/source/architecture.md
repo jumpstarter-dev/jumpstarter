@@ -45,8 +45,8 @@ or more exporters either locally through a socket or remotely through a central 
 #### Tests
 
 Tests are any test scripts that utilize the CLI or Python library to interact with
-hardware via Jumpstarter. Basic tests can be written as YAML steps, while more complex
-testing can take full advantage of Jumpstarter as a library through Python.
+hardware via Jumpstarter.<!-- Basic tests can be written as YAML steps, while more complex
+testing can take full advantage of Jumpstarter as a library through Python. -->
 
 ### [`jumpstarter-controller`](https://github.com/jumpstarter-dev/jumpstarter-controller/)
 
@@ -100,40 +100,6 @@ will run in local mode and communicate with a built-in exporter service
 
 This mode enables easy development of tests and drivers without having to configure
 a local k8s cluster using a tool such as [Kind](https://kind.sigs.k8s.io/).
-
-### YAML Tests
-
-```{mermaid}
-block-beta
-columns 1
-  user(("User"))
-  space
-  jumpstarter
-  block:tests
-    testA["test_a.yaml"]
-    testB["test_b.yaml"]
-  end
-  block:test
-    client
-    space
-    exporter
-  end
-  space
-
-  block:hardware
-    power
-    storage
-    video
-    serial
-    etc
-  end
-
-  user --> jumpstarter
-  client -- "gRPC" --> exporter
-  exporter --> hardware
-
-style test fill:#999,stroke:#333,stroke-width:4px
-```
 
 ### Python Tests
 
