@@ -8,16 +8,16 @@ Jumpstarter uses Python modules called drivers to interact with the hardware
 interfaces connected to the Device Under Test (DUT).
 
 Similar to the drivers used by your operating system, drivers in Jumpstarter
-enable the us to interact with hardware and provide abstractions that makethat
-it easier to use.
+enable us to interact with hardware and provide abstractions that make it
+easier to use.
 
 Drivers in Jumpstarter consist of three components:
 
 - `Driver` - Implements the logic to configure and use the interface(s) provided
-by the host system. e.g. a TCP port.
+by the host system. For instance, a TCP port.
 - `DriverInterface` - Optionally defines the contract between the driver client and the
 driver itself, so multiple drivers can share the same client.
-- `DriverClient` - Provides a user-friendly interface that can be used byclients
+- `DriverClient` - Provides a user-friendly interface that can be used by clients
 to interact with the underlying `Driver` either locally or remotely over the network.
 
 Drivers follow a client/server model similar to the client and exporter.
@@ -39,7 +39,7 @@ client may not be on the same machine as the exporter, the `DriverClient`
 classes are loaded dynamically if they are specified in the list of allowed
 packages.
 
-To keep the client/server library versions in sync, it is recommended to not make
+To keep the client/server library versions in sync, it is recommended not to make
 breaking changes to the `DriverInterface`. Only add new methods when necessary and
 avoid changing the method signatures. If breaking changes are required, new
 `MyDriverInterfaceV2`, `MyDriverClientV2`, and `MyDriverV2` classes can be created
