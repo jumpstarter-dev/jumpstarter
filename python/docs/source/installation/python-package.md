@@ -1,7 +1,7 @@
 # Python Packages
 
-The [jumpstarter Python packages](https://docs.jumpstarter.dev/packages/))
-contain all the necessary tools to run a exporter or to interact with your
+The [Jumpstarter Python packages](https://docs.jumpstarter.dev/packages/)
+contain all the necessary tools to run an exporter or interact with your
 hardware as a client.
 
 This package includes:

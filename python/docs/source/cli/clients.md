@@ -5,8 +5,8 @@ on the distributed service.
 
 ## Creating a Client
 
-If you have configured the [Jumpstarter service](../introduction/service.md),
-and you have a kubeconfig the `jmpctl` CLI will attempt to use
+If you have configured [a Jumpstarter service](../introduction/service.md)
+and you have a kubeconfig, the `jmpctl` CLI will attempt to use
 your current credentials to provision the client automatically, and produce
 a client configuration file.
 
@@ -26,8 +26,8 @@ drivers:
 EOF
 ```
 
-This creates a client a new client named `john` and outputs the configuration to a YAML
-file called `john.yaml`:
+This creates a client named `john` and outputs the configuration to a YAML
+file named `john.yaml`:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -45,19 +45,19 @@ drivers:
 In addition we have included a `drivers` section in the configuration file, which
 allows you to specify a list of allowed driver packages and enable unsafe mode (allow any driver).
 
+```{warning}
+This section can be important if you don't trust the exporter's configuration, since every
+driver is composed of two parts, a client side and an exporter side, the client side Python module
+is dynamically loaded when a client connects to an exporter.
+```
+
 A `tls` section is also included, which allows you to specify a custom CA certificate
 to use for the connection, or to disable TLS verification if your system is using
 self-signed certificates.
 
-```{warning}
-This section can be important if you don't trust the exporter's configuration, since every
-driver is composed of two parts, a cliend and a exporter side, the client side Python module
-is dynamically loaded when a client connects to a exporter.
-```
-
 ### Manual Provisioning
 
-If you do not have Kubectl installed or don't have direct access to the cluster,
+If you do not have `jmpctl` installed or don't have direct access to the cluster,
 a client can also be provisioned manually on a different machine.
 
 1. Apply the YAML to your cluster:
