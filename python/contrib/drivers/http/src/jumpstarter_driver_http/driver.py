@@ -85,7 +85,7 @@ class HttpServer(Driver):
                     async for chunk in src:
                         await dst.send(chunk)
 
-            logger.info(f"File '{filename}' written to '{self.root_dir}'")
+            logger.info(f"File '{filename}' written to '{file_path}'")
             return f"{self.get_url()}/{filename}"
 
         except Exception as e:
