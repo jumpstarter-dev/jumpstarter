@@ -10,16 +10,16 @@ from .driver import HttpServer
 
 @pytest.mark.asyncio
 async def test_http_server():
-    with TemporaryDirectory() as temp_dir:
-        server = HttpServer(root_dir=temp_dir)
+    with TemporaryDirectory() as source_dir, TemporaryDirectory() as server_dir:
+        server = HttpServer(root_dir=server_dir)
         await server.start()
 
         with serve(server) as client:
             test_content = b"test content"
-            test_file_path = Path(temp_dir) / "test.txt"
-            test_file_path.write_bytes(test_content)
+            source_file_path = Path(source_dir) / "test.txt"
+            source_file_path.write_bytes(test_content)
 
-            uploaded_filename_url = client.put_local_file(str(test_file_path))
+            uploaded_filename_url = client.put_local_file(str(source_file_path))
             assert uploaded_filename_url == f"{client.get_url()}/test.txt"
 
             files = client.list_files()
