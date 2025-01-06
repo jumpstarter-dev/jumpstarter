@@ -19,6 +19,9 @@ async def serve_async(root_device: Driver, portal: BlockingPortal):
             # SAFETY: the root_device instance is constructed locally thus considered trusted
             async with client_from_path(path, portal, allow=[], unsafe=True) as client:
                 yield client
+                if hasattr(client, "close"):
+                    client.close()
+
 
 
 @contextmanager
@@ -26,10 +29,19 @@ def serve(root_device: Driver):
     with start_blocking_portal() as portal:
         with portal.wrap_async_context_manager(serve_async(root_device, portal)) as client:
             yield client
+            if hasattr(client, "close"):
+                client.close()
 
 
 @asynccontextmanager
 async def env_async(portal):
+    """ Provide a client for an existing JUMPSTARTER_HOST environment variable.
+
+    Async version of env()
+
+    This is useful when interacting with an already established Jumpstarter shell,
+    to either a local exporter or a remote one.
+    """
     host = os.environ.get(JUMPSTARTER_HOST, None)
     if host is None:
         raise RuntimeError(f"{JUMPSTARTER_HOST} not set")
@@ -38,10 +50,17 @@ async def env_async(portal):
 
     async with client_from_path(host, portal, allow=allow, unsafe=unsafe) as client:
         yield client
+        if hasattr(client, "close"):
+            client.close()
 
 
 @contextmanager
 def env():
+    """ Provide a client for an existing JUMPSTARTER_HOST environment variable.
+
+    This is useful when interacting with an already established Jumpstarter shell,
+    to either a local exporter or a remote one.
+    """
     with start_blocking_portal() as portal:
         with portal.wrap_async_context_manager(env_async(portal)) as client:
             yield client

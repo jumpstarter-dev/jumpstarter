@@ -11,7 +11,7 @@ be installed in your Kubernetes cluster.
 
 ```{tip}
 If you don't have a Kubernetes cluster you can use a local cluster for testing,
-such as `kind` or `minikube`.
+such as [`kind`](https://kind.sigs.k8s.io), [`minikube`](https://minikube.sigs.k8s.io), or [`OpenShift Local`](https://developers.redhat.com/products/openshift-local/overview).
 ```
 
 ## Installation

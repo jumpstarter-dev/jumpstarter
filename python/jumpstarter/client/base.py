@@ -64,5 +64,34 @@ class DriverClient(AsyncDriverClient):
 
     @contextmanager
     def stream(self, method="connect"):
+        """
+        Open a blocking stream session with a context manager.
+
+        :param str method: method name of streaming driver call
+
+        :return: blocking stream session object context manager.
+        """
+
         with self.portal.wrap_async_context_manager(self.stream_async(method)) as stream:
             yield BlockingStream(stream=stream, portal=self.portal)
+
+    def open_stream(self) -> BlockingStream:
+        """
+        Open a blocking stream session without a context manager.
+
+        :return: blocking stream session object.
+        :rtype: BlockingStream
+        """
+        self._context_manager = self.stream()
+        return self._context_manager.__enter__()
+
+    def close(self):
+        """
+        Close the open stream session without a context manager.
+        """
+        if hasattr(self, "_context_manager"):
+            self._context_manager.__exit__(None, None, None)
+            del self._context_manager
+
+    def __del__(self):
+        self.close()

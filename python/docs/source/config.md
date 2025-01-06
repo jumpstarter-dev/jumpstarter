@@ -186,7 +186,7 @@ token the `jmp-exporter create <name>` command can be used.
 ```bash
 $ jmp-exporter create myexporter
 Endpoint: grpc.jumpstarter.my.domain.com
-Token: <<token data>>
+Token: <<token>>
 ```
 
 To use a specific config when starting the exporter:

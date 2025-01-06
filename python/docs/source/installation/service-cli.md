@@ -3,8 +3,8 @@
 The distributed service CLI (jmpctl) is a command line interface that enables easy administration
 of your Exporters and Clients.
 
-Please refer to https://github.com/jumpstarter-dev/jumpstarter-controller/releases/latest for
-the latest release.
+Please refer to [the latest release page](https://github.com/jumpstarter-dev/jumpstarter-controller/releases/latest) for
+the latest version.
 
 ## Installing the CLI
 ```{code-block} bash

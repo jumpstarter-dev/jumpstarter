@@ -40,14 +40,13 @@ either through Python (as a library) or the CLI.
 #### Client
 
 The Jumpstarter client is a Python library and CLI tool that can connect to one
-or more exporters either locally through socket or remotely through a central server.
+or more exporters either locally through a socket or remotely through a central server.
 
 #### Tests
 
-Tests are any test scripts written in Python or YAML that utilize the
-CLI or Python library to interact with hardware via Jumpstarter. Basic tests
-can be written as YAML steps, while more complex testing can take full advantage
-of Jumpstarter as a library through Python.
+Tests are any test scripts that utilize the CLI or Python library to interact with
+hardware via Jumpstarter.<!-- Basic tests can be written as YAML steps, while more complex
+testing can take full advantage of Jumpstarter as a library through Python. -->
 
 ### [`jumpstarter-controller`](https://github.com/jumpstarter-dev/jumpstarter-controller/)
 
@@ -77,10 +76,8 @@ The `jumpstarter-router` provides routing via gRPC streams.
 
 ## Authentication
 
-Client and Exporter authentication is managed via JWT tokens provided by the
-`TokenRequest`and `TokenReview` Kubernetes APIs under the `jumpstarter-controller`
-service account, the audience field indicates the location of the Jumpstarter
-gRPC endpoint.
+Authentication for both Clients and Exporters is handled through JWT tokens,
+which are managed by Jumpstarter.
 
 This authentication mechanism makes it possible to dynamically register different
 Jumpstarter clients and exporters to communicate through the server.
@@ -101,40 +98,6 @@ will run in local mode and communicate with a built-in exporter service
 
 This mode enables easy development of tests and drivers without having to configure
 a local k8s cluster using a tool such as [Kind](https://kind.sigs.k8s.io/).
-
-### YAML Tests
-
-```{mermaid}
-block-beta
-columns 1
-  user(("User"))
-  space
-  jumpstarter
-  block:tests
-    testA["test_a.yaml"]
-    testB["test_b.yaml"]
-  end
-  block:test
-    client
-    space
-    exporter
-  end
-  space
-
-  block:hardware
-    power
-    storage
-    video
-    serial
-    etc
-  end
-
-  user --> jumpstarter
-  client -- "gRPC" --> exporter
-  exporter --> hardware
-
-style test fill:#999,stroke:#333,stroke-width:4px
-```
 
 ### Python Tests
 

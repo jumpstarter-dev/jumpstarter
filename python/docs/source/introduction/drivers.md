@@ -17,7 +17,7 @@ domain-specific abstractions for your use case.
 
 ## Driver Configuration
 
-Drivers are configured using the a YAML Exporter config file, which specifies
+Drivers are configured using a YAML Exporter config file, which specifies
 the drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
@@ -38,8 +38,8 @@ export:
 
 ## Driver I/O
 
-All drivers are based off of the base `Driver` class which provides abstractions
-to use Jumpstarter's gRPC transport for sending messages and creating streams
+All drivers are built upon the base `Driver` class, which provides abstractions
+for utilizing Jumpstarter's gRPC transport to send messages and create streams
 to tunnel data between the exporter and the client.
 
 ### Messages
@@ -56,7 +56,7 @@ TCP port forwarding and CAN bus emulation.
 
 ## Composite Drivers
 
-In Jumpstarter, drivers are are organized in a tree structure which allows for
+In Jumpstarter, drivers are organized in a tree structure which allows for
 the development of hierarchical relationships between interfaces and their
 associated devices.
 

@@ -1,6 +1,6 @@
 # Setup a Local Exporter
 
-This guide walks you through the process of using jumpstarter with a local exporter (the client and the exporter running on the same host)
+This guide walks you through the process of using Jumpstarter with a local exporter (the client and the exporter running on the same host)
 
 ## Create Exporter Configuration
 Create a text file with the following content
@@ -21,13 +21,13 @@ export:
 Once the exporter configuration is ready it should be placed at `/etc/jumpstarter/exporters/demo.yaml`.
 
 ## Enter Exporter Shell
-Now we can run the following command to enter the "Exporter Shell", inside which we can interact with the local exporter with jumpstarter client.
+Now we can run the following command to enter the "Exporter Shell", inside which we can interact with the local exporter with Jumpstarter client.
 ```shell
 $ jmp-exporter shell demo
 ```
 
 ## Use j Command
-`j` command is available in the exporter shell for controlling the exporter with shell commands.
+The `j` command is available in the exporter shell for controlling the exporter with shell commands.
 ```shell
 # running inside exporter shell
 $ j
@@ -46,7 +46,7 @@ ok
 ```
 
 ## Use Python API
-Or we can use the jumpstarter python API to programmatically control the exporter.
+Or we can use the Jumpstarter Python API to programmatically control the exporter.
 
 ```shell
 # running inside exporter shell
