@@ -734,7 +734,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.1.dev47+g10218a5.d20241224"
+version = "0.5.1.dev69+gf4278f5.d20250106"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -762,6 +762,7 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "typos" },
@@ -805,6 +806,7 @@ dev = [
     { name = "pre-commit", specifier = ">=3.8.0" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "ruff", specifier = ">=0.6.1" },
     { name = "typos", specifier = ">=1.23.6" },
