@@ -4,14 +4,12 @@ from unittest.mock import patch
 
 import pytest
 from asyncclick.testing import CliRunner
-from kubernetes_asyncio.client.exceptions import ApiException
-from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
+from kubernetes_asyncio.client.models import V1ObjectMeta
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
     ExporterConfigV1Alpha1,
-    ExporterConfigV1Alpha1DriverInstance,
 )
 from jumpstarter.k8s import (
     ClientsV1Alpha1Api,
@@ -19,25 +17,10 @@ from jumpstarter.k8s import (
     V1Alpha1Client,
     V1Alpha1ClientStatus,
     V1Alpha1Exporter,
-    V1Alpha1ExporterDevice,
     V1Alpha1ExporterStatus,
 )
 
 from .create import create
-
-
-class MockResponse:
-    status: int
-    reason: str
-    data: str
-
-    def __init__(self, status: int, reason: str, body: str):
-        self.status = status
-        self.reason = reason
-        self.data = body
-
-    def getheaders(self):
-        return {}
 
 
 @pytest.mark.anyio
@@ -114,16 +97,6 @@ drivers:
                 assert content == UNSAFE_CLIENT_CONFIG
             os.unlink(default_config_path)  # Cleanup config file
 
-            # Save with arguments
-            result = await runner.invoke(create, ["client", name, "--save", "--allow", DRIVER_NAME], input="n\n")
-            assert result.exit_code == 0
-            assert "Client configuration successfully saved" in result.output
-            assert os.path.isfile(default_config_path)
-            with open(default_config_path, "r") as f:
-                content = f.read()
-                assert content == CLIENT_CONFIG
-            os.unlink(default_config_path)  # Cleanup config file
-
             # Save with custom output
             out = f"./{name}.yaml"
             result = await runner.invoke(create, ["client", name, "--unsafe", "--out", out], input="\n\n")
@@ -135,7 +108,6 @@ drivers:
                 assert content == UNSAFE_CLIENT_CONFIG
             os.unlink(out)  # Cleanup config file
 
-        # Create and save client config to default path
         with patch.object(
             ClientsV1Alpha1Api,
             "get_client_config",
@@ -146,12 +118,26 @@ drivers:
                 drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
             ),
         ):
-            result = await runner.invoke(create, ["client", name], input=f"Y\nn\n{DRIVER_NAME}")
+            # Save with arguments
+            result = await runner.invoke(create, ["client", name, "--save", "--allow", DRIVER_NAME], input="n\n")
             assert result.exit_code == 0
+            assert "Client configuration successfully saved" in result.output
+            assert os.path.isfile(default_config_path)
             with open(default_config_path, "r") as f:
                 content = f.read()
                 assert content == CLIENT_CONFIG
             os.unlink(default_config_path)  # Cleanup config file
+
+            # Save with prompts
+            result = await runner.invoke(create, ["client", name], input=f"Y\nn\n{DRIVER_NAME}\n")
+            assert result.exit_code == 0
+            assert "Client configuration successfully saved" in result.output
+            assert os.path.isfile(default_config_path)
+            with open(default_config_path, "r") as f:
+                content = f.read()
+                assert content == CLIENT_CONFIG
+            os.unlink(default_config_path)  # Cleanup config file
+
 
 @pytest.mark.anyio
 async def test_create_exporter():

@@ -35,16 +35,17 @@ def import_res():
     "--allow",
     type=str,
     help="A comma-separated list of driver client packages to load.",
-    prompt="Enter a comma-separated list of allowed driver packages (optional)",
-    default="",
+    default=None,
 )
-@click.option("--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).")
+@click.option(
+    "--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!)."
+)
 async def import_client(
     name: str,
     namespace: str,
     kubeconfig: Optional[str],
     context: Optional[str],
-    allow: str,
+    allow: Optional[str],
     unsafe: bool,
     out: Optional[str],
 ):
@@ -54,8 +55,14 @@ async def import_client(
         raise click.ClickException(f"A client with the name '{name}' already exists")
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
+            if unsafe is False and allow is None:
+                unsafe = click.confirm("Allow unsafe driver client imports?")
+                if unsafe is False:
+                    allow = click.prompt(
+                        "Enter a comma-separated list of allowed driver packages (optional)", default="", type=str
+                    )
             click.echo("Fetching client credentials from cluster")
-            allow_drivers = allow.split(",") if len(allow) > 0 else []
+            allow_drivers = allow.split(",") if allow is not None and len(allow) > 0 else []
             client_config = await api.get_client_config(name, allow=allow_drivers, unsafe=unsafe)
             ClientConfigV1Alpha1.save(client_config, out)
             # If this is the only client config, set it as default
@@ -69,6 +76,7 @@ async def import_client(
     except ConfigException as e:
         handle_k8s_config_exception(e)
 
+
 @import_res.command("exporter")
 @click.argument("name", default="default")
 @click.option(
@@ -81,11 +89,7 @@ async def import_client(
 @opt_kubeconfig
 @opt_context
 async def import_exporter(
-    name: str,
-    namespace: str,
-    out: Optional[str],
-    kubeconfig: Optional[str],
-    context: Optional[str]
+    name: str, namespace: str, out: Optional[str], kubeconfig: Optional[str], context: Optional[str]
 ):
     """Import an exporter config from a Kubernetes cluster"""
     try:

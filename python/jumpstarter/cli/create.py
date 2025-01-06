@@ -75,12 +75,12 @@ async def create_client(
             if save or out is not None or click.confirm("Save client configuration?"):
                 click.echo("Fetching client credentials from cluster")
                 client_config = await api.get_client_config(name, allow=[], unsafe=unsafe)
-                if unsafe is False:
-                    unsafe = click.confirm("Allow unsafe driver client imports?")
                 if unsafe is False and allow is None:
-                    allow = click.prompt(
-                        "Enter a comma-separated list of allowed driver packages (optional)", default="", type=str
-                    )
+                    unsafe = click.confirm("Allow unsafe driver client imports?")
+                    if unsafe is False:
+                        allow = click.prompt(
+                            "Enter a comma-separated list of allowed driver packages (optional)", default="", type=str
+                        )
                 allow_drivers = allow.split(",") if allow is not None and len(allow) > 0 else []
                 client_config.drivers.unsafe = unsafe
                 client_config.drivers.allow = allow_drivers
