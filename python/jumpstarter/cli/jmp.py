@@ -4,7 +4,7 @@ from .client import client
 from .create import create
 from .exporter import exporter
 from .get import get
-from .import_resource import import_resource
+from .import_res import import_res
 from .install import install
 from .lease import lease
 from .shell import shell
@@ -23,7 +23,7 @@ jmp.add_command(shell)
 jmp.add_command(get)
 jmp.add_command(create)
 jmp.add_command(install)
-jmp.add_command(import_resource)
+jmp.add_command(import_res)
 jmp.add_command(version)
 
 if __name__ == "__main__":

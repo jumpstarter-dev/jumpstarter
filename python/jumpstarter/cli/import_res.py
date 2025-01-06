@@ -15,11 +15,11 @@ from .util import handle_k8s_api_exception, handle_k8s_config_exception, opt_con
 
 
 @click.group("import")
-def import_resource():
+def import_res():
     """Import configs from a Kubernetes clsuter"""
 
 
-@import_resource.command("client")
+@import_res.command("client")
 @click.argument("name", type=str)
 @opt_namespace
 @opt_kubeconfig
@@ -69,7 +69,7 @@ async def import_client(
     except ConfigException as e:
         handle_k8s_config_exception(e)
 
-@import_resource.command("exporter")
+@import_res.command("exporter")
 @click.argument("name", default="default")
 @click.option(
     "-o",
