@@ -112,3 +112,13 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
         endpoint = exporter.status.endpoint
         token = base64.b64decode(secret.data["token"]).decode("utf8")
         return ExporterConfigV1Alpha1(alias=name, endpoint=endpoint, token=token, export={})
+
+    async def delete_exporter(self, name: str):
+        """Delete an exporter object"""
+        await self.api.delete_namespaced_custom_object(
+            namespace=self.namespace,
+            name=name,
+            group="jumpstarter.dev",
+            plural="exporters",
+            version="v1alpha1",
+        )

@@ -2,6 +2,7 @@ import asyncclick as click
 
 from .client import client
 from .create import create
+from .delete import delete
 from .exporter import exporter
 from .get import get
 from .import_res import import_res
@@ -22,6 +23,7 @@ jmp.add_command(lease)
 jmp.add_command(shell)
 jmp.add_command(get)
 jmp.add_command(create)
+jmp.add_command(delete)
 jmp.add_command(install)
 jmp.add_command(import_res)
 jmp.add_command(version)

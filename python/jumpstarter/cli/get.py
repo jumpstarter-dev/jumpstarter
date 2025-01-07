@@ -1,5 +1,4 @@
 import logging
-import pprint
 from typing import Optional
 
 import asyncclick as click
@@ -12,6 +11,7 @@ from jumpstarter.k8s import (
     LeasesV1Alpha1Api,
     V1Alpha1Client,
     V1Alpha1Exporter,
+    V1Alpha1Lease,
 )
 
 from .util import (
@@ -149,22 +149,38 @@ async def get_exporter(
         handle_k8s_config_exception(e)
 
 
-LEASE_COLUMNS = ["NAME", "CLIENT", "EXPORTER", "STATUS", "REASON", "BEGIN", "END", "DURATION", "AGE"]
+LEASE_COLUMNS = ["NAME", "CLIENT", "SELECTOR", "EXPORTER", "STATUS", "REASON", "BEGIN", "END", "DURATION", "AGE"]
 
+def get_reason(lease: V1Alpha1Lease):
+    condition = lease.status.conditions[-1] if len(lease.status.conditions) > 0 else None
+    reason = condition.reason if condition is not None else "Unknown"
+    status = condition.status if condition is not None else "False"
+    if reason == "Ready":
+        if status == "True":
+            return "Ready"
+        else:
+            return "Waiting"
+    elif reason == "Expired":
+        if status == "True":
+            return "Expired"
+        else:
+            return "Complete"
 
-def make_lease_row(lease: dict):
-    creationTimestamp = lease["metadata"]["creationTimestamp"]
-    status = lease["status"]["conditions"][-1]["reason"] if len(lease["status"]["conditions"]) > 0 else "Unknown"
+def make_lease_row(lease: V1Alpha1Lease):
+    selectors = []
+    for label in lease.spec.selector:
+        selectors.append(f"{label}:{str(lease.spec.selector[label])}")
     return {
-        "NAME": lease["metadata"]["name"],
-        "CLIENT": lease["spec"]["clientRef"]["name"] if "clientRef" in lease["spec"] else "",
-        "EXPORTER": lease["status"]["exporterRef"]["name"] if "exporterRef" in lease["status"] else "",
-        "DURATION": lease["spec"]["duration"],
-        "STATUS": "Ended" if lease["status"]["ended"] else "InProgress",
-        "REASON": status,
-        "BEGIN": lease["status"]["beginTime"] if "beginTime" in lease["status"] else "",
-        "END": lease["status"]["endTime"] if "endTime" in lease["status"] else "",
-        "AGE": time_since(creationTimestamp),
+        "NAME": lease.metadata.name,
+        "CLIENT": lease.spec.client.name if lease.spec.client is not None else "",
+        "SELECTOR": ",".join(selectors) if len(selectors) > 0 else "*",
+        "EXPORTER": lease.status.exporter.name if lease.status.exporter is not None else "",
+        "DURATION": lease.spec.duration,
+        "STATUS": "Ended" if lease.status.ended else "InProgress",
+        "REASON": get_reason(lease),
+        "BEGIN": lease.status.begin_time if lease.status.begin_time is not None else "",
+        "END": lease.status.end_time if lease.status.end_time is not None else "",
+        "AGE": time_since(lease.metadata.creation_timestamp),
     }
 
 
@@ -180,7 +196,6 @@ async def get_lease(name: Optional[str], kubeconfig: Optional[str], context: Opt
             if name is not None:
                 # Get a single lease in a namespace
                 lease = await api.get_lease(name)
-                pprint.pp(lease)
                 # Print the lease
                 click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
             else:

@@ -53,10 +53,10 @@ def create(alias, endpoint, token):
 def delete(alias):
     """Delete exporter"""
     try:
-        config = ExporterConfigV1Alpha1.load(alias)
+        ExporterConfigV1Alpha1.load(alias)
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
-    config.delete()
+    ExporterConfigV1Alpha1.delete(alias)
 
 
 @exporter.command

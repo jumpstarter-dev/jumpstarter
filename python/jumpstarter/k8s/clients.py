@@ -51,7 +51,9 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 if "credential" in result["status"]
                 else None,
                 endpoint=result["status"]["endpoint"],
-            ) if "status" in result else V1Alpha1ClientStatus(credential=None, endpoint=""),
+            )
+            if "status" in result
+            else V1Alpha1ClientStatus(credential=None, endpoint=""),
         )
 
     async def create_client(self, name: str) -> V1Alpha1Client:
@@ -72,11 +74,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         while count < CREATE_CLIENT_COUNT:
             # Try to get the updated client resource
             updated_client = await self.api.get_namespaced_custom_object(
-                namespace=self.namespace,
-                group="jumpstarter.dev",
-                plural="clients",
-                version="v1alpha1",
-                name=name
+                namespace=self.namespace, group="jumpstarter.dev", plural="clients", version="v1alpha1", name=name
             )
             # check if the client status is updated with the credentials
             if "status" in updated_client:
@@ -100,7 +98,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         )
         return ClientsV1Alpha1Api._deserialize(result)
 
-    async def get_client_config(self, name: str, allow: list[str], unsafe = False) -> ClientConfigV1Alpha1:
+    async def get_client_config(self, name: str, allow: list[str], unsafe=False) -> ClientConfigV1Alpha1:
         """Get a client config for a specified client name"""
         client = await self.get_client(name)
         secret = await self.core_api.read_namespaced_secret(client.status.credential.name, self.namespace)
@@ -111,4 +109,10 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             endpoint=endpoint,
             token=token,
             drivers=ClientConfigV1Alpha1Drivers(allow=allow, unsafe=unsafe),
+        )
+
+    async def delete_client(self, name: str):
+        """Delete a client object"""
+        await self.api.delete_namespaced_custom_object(
+            namespace=self.namespace, group="jumpstarter.dev", plural="clients", version="v1alpha1", name=name
         )

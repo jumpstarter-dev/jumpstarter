@@ -52,6 +52,10 @@ class ExporterConfigV1Alpha1(BaseModel):
         return (cls.BASE_PATH / alias).with_suffix(".yaml")
 
     @classmethod
+    def exists(cls, alias: str):
+        return cls._get_path(alias).exists()
+
+    @classmethod
     def load_path(cls, path: Path):
         with path.open() as f:
             config = cls.model_validate(yaml.safe_load(f))
@@ -83,8 +87,9 @@ class ExporterConfigV1Alpha1(BaseModel):
         with config.path.open(mode="w") as f:
             yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
 
-    def delete(self):
-        self.path.unlink(missing_ok=True)
+    @classmethod
+    def delete(cls, alias: str):
+        cls._get_path(alias).unlink(missing_ok=True)
 
     @asynccontextmanager
     async def serve_unix_async(self):
