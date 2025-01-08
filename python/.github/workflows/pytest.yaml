@@ -30,7 +30,10 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Fix permissions
-        run: sudo mkdir /etc/jumpstarter && sudo chown $USER:$USER /etc/jumpstarter
+        run: |
+          sudo mkdir /etc/jumpstarter && \
+          sudo chown $USER:$USER /etc/jumpstarter && \
+          mkdir -p $HOME/.config/jumpstarter/clients
 
       - name: Run pytest
         run: make test
