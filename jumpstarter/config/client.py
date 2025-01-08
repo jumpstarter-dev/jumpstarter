@@ -13,7 +13,7 @@ from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .common import CONFIG_PATH
-from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
+from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_TOKEN
 from .tls import TLSConfigV1Alpha1
 
 
@@ -56,10 +56,10 @@ class ClientConfigV1Alpha1(BaseModel):
         return aio_secure_channel(self.endpoint, credentials)
 
     @contextmanager
-    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None, release: bool = False):
+    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None):
         with start_blocking_portal() as portal:
             with portal.wrap_async_context_manager(
-                self.lease_async(metadata_filter, lease_name, portal, release)) as lease:
+                self.lease_async(metadata_filter, lease_name, portal)) as lease:
                 yield lease
 
     def request_lease(self, metadata_filter: MetadataFilter):
@@ -97,10 +97,14 @@ class ClientConfigV1Alpha1(BaseModel):
         await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
 
     @asynccontextmanager
-    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal,
-                          release=True):
-        # dynamically import to avoid circular imports
+    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal):
         from jumpstarter.client import Lease
+
+        # if no lease_name provided, check if it is set in the environment
+        lease_name = lease_name or os.environ.get(JMP_LEASE, "")
+        # when no lease name is provided, release the lease on exit
+        release_lease = lease_name == ""
+
         async with Lease(
             channel=await self.channel(),
             name=lease_name,
@@ -108,7 +112,7 @@ class ClientConfigV1Alpha1(BaseModel):
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
-            release=release,
+            release=release_lease,
             tls_config=self.tls,
         ) as lease:
             yield lease
