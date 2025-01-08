@@ -56,7 +56,7 @@ class ClientConfigV1Alpha1(BaseModel):
         return aio_secure_channel(self.endpoint, credentials)
 
     @contextmanager
-    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None):
+    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None = None):
         with start_blocking_portal() as portal:
             with portal.wrap_async_context_manager(
                 self.lease_async(metadata_filter, lease_name, portal)) as lease:
