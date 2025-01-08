@@ -23,7 +23,7 @@ class AbstractAsyncCustomObjectApi(AbstractAsyncContextManager):
 
     async def __aenter__(self) -> Self:
         # Load the kubeconfig
-        await config.load_kube_config(self.config_file, self.context)
+        await self._load_kube_config()
         # Construct the API client and enter context
         self._client = ApiClient()
         await self._client.__aenter__()
@@ -31,6 +31,9 @@ class AbstractAsyncCustomObjectApi(AbstractAsyncContextManager):
         self.api = CustomObjectsApi(self._client)
         self.core_api = CoreV1Api(self._client)
         return self
+
+    async def _load_kube_config(self):
+        await config.load_kube_config(self.config_file, self.context)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         await self._client.__aexit__(exc_type, exc_value, traceback)
