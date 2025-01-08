@@ -29,6 +29,9 @@ jobs:
       - name: Install Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Fix permissions
+        run: mkdir /etc/jumpstarter && chown $USER:$USER /etc/jumpstarter
+
       - name: Run pytest
         run: make test
 
