@@ -11,6 +11,7 @@ from jumpstarter.client import client_from_path
 from jumpstarter.common import MetadataFilter, TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_present_and_equal, condition_true
 from jumpstarter.common.streams import connect_router_stream
+from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     unsafe: bool
     release: bool = True # release on contexts exit
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
+    tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
 
     def __post_init__(self):
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
@@ -110,7 +112,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     async def handle_async(self, stream):
         logger.info("Connecting to Lease with name %s", self.name)
         response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
-        async with connect_router_stream(response.router_endpoint, response.router_token, stream):
+        async with connect_router_stream(response.router_endpoint, response.router_token, stream, self.tls_config):
             pass
 
     @asynccontextmanager

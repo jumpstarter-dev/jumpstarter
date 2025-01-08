@@ -1,12 +1,11 @@
 import logging
-import os
 from typing import Optional
 
 import asyncclick as click
 
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.utils import launch_shell
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, UserConfigV1Alpha1, env
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, UserConfigV1Alpha1
 
 from .util import AliasedGroup, make_table
 from .version import version
@@ -223,14 +222,7 @@ def client_shell(name: str, labels, lease_name):
     if not config:
         raise ValueError("no client specified")
 
-    # lease_name can be provided as an argument or via environment variable
-    lease_name = lease_name or os.environ.get(env.JMP_LEASE, "")
-
-    # when no lease name is provided, release the lease on exit
-    release_lease = lease_name == ""
-
-    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name,
-                      release=release_lease) as lease:
+    with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
         with lease.serve_unix() as path:
             launch_shell(path, config.drivers.allow, config.drivers.unsafe)
 
