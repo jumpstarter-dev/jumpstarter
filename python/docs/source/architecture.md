@@ -76,10 +76,8 @@ The `jumpstarter-router` provides routing via gRPC streams.
 
 ## Authentication
 
-Client and Exporter authentication is managed via JWT tokens provided by the
-`TokenRequest` and `TokenReview` Kubernetes APIs under the `jumpstarter-controller`
-service account, the audience field indicates the location of the Jumpstarter
-gRPC endpoint.
+Authentication for both Clients and Exporters is handled through JWT tokens,
+which are managed by Jumpstarter.
 
 This authentication mechanism makes it possible to dynamically register different
 Jumpstarter clients and exporters to communicate through the server.
