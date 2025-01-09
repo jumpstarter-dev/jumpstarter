@@ -32,9 +32,9 @@ class StreamRequestMetadata(BaseModel):
 
 
 @asynccontextmanager
-async def connect_router_stream(endpoint, token, stream):
+async def connect_router_stream(endpoint, token, stream, tls_config):
     credentials = grpc.composite_channel_credentials(
-        ssl_channel_credentials(endpoint),
+        ssl_channel_credentials(endpoint, tls_config),
         grpc.access_token_call_credentials(token),
     )
 

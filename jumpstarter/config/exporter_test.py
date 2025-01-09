@@ -5,7 +5,8 @@ from anyio.from_thread import start_blocking_portal
 from jumpstarter.common import MetadataFilter
 
 from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
-from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance, ExporterConfigV1Alpha1TLS
+from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
+from .tls import TLSConfigV1Alpha1
 
 pytestmark = pytest.mark.anyio
 
@@ -39,6 +40,7 @@ async def test_exporter_serve(mock_controller):
         endpoint=mock_controller,
         token="dummy-client-token",
         drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
+        tls=TLSConfigV1Alpha1(insecure=True),
     )
 
     async with create_task_group() as tg:
@@ -100,7 +102,7 @@ export:
         kind="ExporterConfig",
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
-        tls=ExporterConfigV1Alpha1TLS(ca="cacertificatedata", insecure=True),
+        tls=TLSConfigV1Alpha1(ca="cacertificatedata", insecure=True),
         export={
             "power": ExporterConfigV1Alpha1DriverInstance(
                 type="jumpstarter.drivers.power.PduPower",
