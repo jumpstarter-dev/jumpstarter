@@ -9,7 +9,7 @@ the `methods` field of the exporter driver configuration.
 ```yaml
 export:
   my_serial:
-    type: "jumpstarter.drivers.pyserial.PySerial"
+    type: "jumpstarter.drivers.pyserial.driver.PySerial"
     config:
       url: "/dev/ttyUSB0"
       baudrate: 115200
