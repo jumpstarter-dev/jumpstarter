@@ -28,7 +28,7 @@ async def install_helm_chart(
     basedomain: str,
     grpc_endpoint: str,
     router_endpoint: str,
-    mode: Literal["nodeport"] | Literal["ingress"],
+    mode: Literal["nodeport"] | Literal["ingress"] | Literal["route"],
     version: str,
     kubeconfig: Optional[str],
     context: Optional[str],

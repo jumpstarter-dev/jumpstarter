@@ -33,6 +33,7 @@ def get_chart_version() -> str:
 @click.option("-r", "--router-endpoint", type=str, help="The gRPC endpoint to use for the router", default=None)
 @click.option("--nodeport", "mode", flag_value="nodeport", help="Use Nodeport routing (recommended)", default=True)
 @click.option("--ingress", "mode", flag_value="ingress", help="Use a Kubernetes ingress")
+@click.option("--route", "mode", flag_value="route", help="Use a Kubernetes route")
 @click.option("-v", "--version", help="The version of the service to install", default=get_chart_version())
 @opt_kubeconfig
 @opt_context
@@ -45,7 +46,7 @@ async def install(
     basedomain: Optional[str],
     grpc_endpoint: Optional[str],
     router_endpoint: Optional[str],
-    mode: Literal["nodeport"] | Literal["ingress"],
+    mode: Literal["nodeport"] | Literal["ingress"] | Literal["route"],
     version: str,
     kubeconfig: Optional[str],
     context: Optional[str],
