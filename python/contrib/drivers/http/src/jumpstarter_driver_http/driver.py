@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
@@ -170,7 +169,9 @@ class HttpServer(Driver):
             return
 
         self.runner = web.AppRunner(self.app)
-        await self.runner.setup()
+        if self.runner:
+          await self.runner.setup()
+
         site = web.TCPSite(self.runner, self.host, self.port)
         await site.start()
         logger.info(f"HTTP server started at http://{self.host}:{self.port}")
@@ -224,17 +225,17 @@ class HttpServer(Driver):
     def close(self):
         if self.runner:
             try:
-                loop = asyncio.get_running_loop()
-                if loop.is_running():
-                    asyncio.create_task(self._async_cleanup(loop))
-            except RuntimeError:
-                anyio.run(self.runner.cleanup)
+                if anyio.get_current_task():
+                    anyio.from_thread.run(self._async_cleanup)
+            except Exception as e:
+                logger.warning(f"HTTP server cleanup failed synchronously: {e}")
             self.runner = None
         super().close()
 
-    async def _async_cleanup(self, loop):
+    async def _async_cleanup(self):
         try:
             if self.runner:
+                await self.runner.shutdown()
                 await self.runner.cleanup()
                 logger.info("HTTP server cleanup completed asynchronously.")
         except Exception as e:
