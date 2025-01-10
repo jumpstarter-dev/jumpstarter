@@ -1,6 +1,5 @@
-import os.path
 import uuid
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
@@ -22,202 +21,152 @@ from jumpstarter.k8s import (
 
 from .create import create
 
+# Generate a random client name
+CLIENT_NAME = uuid.uuid4().hex
+# Default config path
+CLIENT_CONFIG_PATH = ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH / (CLIENT_NAME + ".yaml")
 
-@pytest.mark.anyio
-async def test_create_client():
-    runner = CliRunner()
-    # Generate a random client name
-    name = uuid.uuid4().hex
-    ENDPOINT = "grpc://example.com:443"
-    TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    DRIVER_NAME = "jumpstarter.Testing"
-    # Default config path
-    default_config_path = ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH / (name + ".yaml")
-    # Create a test client config
-    UNSAFE_CLIENT_CONFIG = f"""apiVersion: jumpstarter.dev/v1alpha1
-kind: ClientConfig
-endpoint: {ENDPOINT}
-tls:
-  ca: ''
-  insecure: false
-token: {TOKEN}
-drivers:
-  allow: []
-  unsafe: true
-"""
-    CLIENT_CONFIG = f"""apiVersion: jumpstarter.dev/v1alpha1
-kind: ClientConfig
-endpoint: {ENDPOINT}
-tls:
-  ca: ''
-  insecure: false
-token: {TOKEN}
-drivers:
-  allow:
-  - {DRIVER_NAME}
-  unsafe: false
-"""
-    with patch.object(ClientsV1Alpha1Api, "_load_kube_config"):
-        # Create a client config
-        with patch.object(
-            ClientsV1Alpha1Api,
-            "create_client",
-            return_value=V1Alpha1Client(
-                api_version="jumpstarter.dev/v1alpha1",
-                kind="Client",
-                metadata=V1ObjectMeta(name=name, namespace="default", creation_timestamp="2024-01-01T21:00:00Z"),
-                status=V1Alpha1ClientStatus(endpoint=ENDPOINT, credential=None),
-            ),
-        ):
-            # Don't save client config
-            result = await runner.invoke(create, ["client", name], input="n\nY\n")
-            assert result.exit_code == 0
-            assert "Creating client" in result.output
-            assert name in result.output
-            assert "Client configuration successfully saved" not in result.output
-            assert os.path.isfile(default_config_path) is False
+CLIENT_ENDPOINT = "grpc://example.com:443"
+CLIENT_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+DRIVER_NAME = "jumpstarter.Testing"
 
-            # Create and save unsafe client config to default path
-            with patch.object(
-                ClientsV1Alpha1Api,
-                "get_client_config",
-                return_value=ClientConfigV1Alpha1(
-                    name=name,
-                    endpoint=ENDPOINT,
-                    token=TOKEN,
-                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
-                ),
-            ):
-                # Save with prompts
-                result = await runner.invoke(create, ["client", name], input="Y\nY\n")
-                assert result.exit_code == 0
-                assert "Client configuration successfully saved" in result.output
-                assert os.path.isfile(default_config_path)
-                with open(default_config_path, "r") as f:
-                    content = f.read()
-                    assert content == UNSAFE_CLIENT_CONFIG
-                os.unlink(default_config_path)  # Cleanup config file
+CLIENT_OBJECT = V1Alpha1Client(
+    api_version="jumpstarter.dev/v1alpha1",
+    kind="Client",
+    metadata=V1ObjectMeta(name=CLIENT_NAME, namespace="default", creation_timestamp="2024-01-01T21:00:00Z"),
+    status=V1Alpha1ClientStatus(endpoint=CLIENT_ENDPOINT, credential=None),
+)
 
-                # Save with custom output
-                out = f"./{name}.yaml"
-                result = await runner.invoke(create, ["client", name, "--unsafe", "--out", out], input="\n\n")
-                assert result.exit_code == 0
-                assert "Client configuration successfully saved" in result.output
-                assert os.path.isfile(out)
-                with open(out, "r") as f:
-                    content = f.read()
-                    assert content == UNSAFE_CLIENT_CONFIG
-                os.unlink(out)  # Cleanup config file
+UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
+    name=CLIENT_NAME,
+    endpoint=CLIENT_ENDPOINT,
+    token=CLIENT_TOKEN,
+    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
+)
 
-            with patch.object(
-                ClientsV1Alpha1Api,
-                "get_client_config",
-                return_value=ClientConfigV1Alpha1(
-                    name=name,
-                    endpoint=ENDPOINT,
-                    token=TOKEN,
-                    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
-                ),
-            ):
-                # Save with arguments
-                result = await runner.invoke(create, ["client", name, "--save", "--allow", DRIVER_NAME], input="n\n")
-                assert result.exit_code == 0
-                assert "Client configuration successfully saved" in result.output
-                assert os.path.isfile(default_config_path)
-                with open(default_config_path, "r") as f:
-                    content = f.read()
-                    assert content == CLIENT_CONFIG
-                os.unlink(default_config_path)  # Cleanup config file
-
-                # Save with prompts
-                result = await runner.invoke(create, ["client", name], input=f"Y\nn\n{DRIVER_NAME}\n")
-                assert result.exit_code == 0
-                assert "Client configuration successfully saved" in result.output
-                assert os.path.isfile(default_config_path)
-                with open(default_config_path, "r") as f:
-                    content = f.read()
-                    assert content == CLIENT_CONFIG
-                os.unlink(default_config_path)  # Cleanup config file
+CLIENT_CONFIG = ClientConfigV1Alpha1(
+    name=CLIENT_NAME,
+    endpoint=CLIENT_ENDPOINT,
+    token=CLIENT_TOKEN,
+    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
+)
 
 
 @pytest.mark.anyio
-async def test_create_exporter():
+@patch.object(ClientConfigV1Alpha1, "save")
+@patch.object(ClientsV1Alpha1Api, "get_client_config")
+@patch.object(ClientsV1Alpha1Api, "create_client", return_value=CLIENT_OBJECT)
+@patch.object(ClientsV1Alpha1Api, "_load_kube_config")
+async def test_create_client(
+    _mock_load_kube_config, _mock_create_client, mock_get_client_config: AsyncMock, mock_save_client: AsyncMock
+):
     runner = CliRunner()
-    # Generate a random exporter name
-    name = uuid.uuid4().hex
-    ENDPOINT = "grpc://example.com:443"
-    TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-    # Default config path
-    default_config_path = ExporterConfigV1Alpha1.BASE_PATH / (name + ".yaml")
-    # Create a test exporter config
-    EXPORTER_CONFIG = f"""apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-endpoint: {ENDPOINT}
-tls:
-  ca: ''
-  insecure: false
-token: {TOKEN}
-export: {{}}
-"""
-    with patch.object(ExportersV1Alpha1Api, "_load_kube_config"):
-        # Create an exporter config
-        with patch.object(
-            ExportersV1Alpha1Api,
-            "create_exporter",
-            return_value=V1Alpha1Exporter(
-                api_version="jumpstarter.dev/v1alpha1",
-                kind="Exporter",
-                metadata=V1ObjectMeta(name=name, namespace="default", creation_timestamp="2024-01-01T21:00:00Z"),
-                status=V1Alpha1ExporterStatus(endpoint=ENDPOINT, credential=None, devices=[]),
-            ),
-        ):
-            # Don't save exporter config
-            result = await runner.invoke(create, ["exporter", name], input="n\n")
-            assert result.exit_code == 0
-            assert "Creating exporter" in result.output
-            assert name in result.output
-            assert "Exporter configuration successfully saved" not in result.output
-            assert os.path.isfile(default_config_path) is False
 
-            with patch.object(
-                ExportersV1Alpha1Api,
-                "get_exporter_config",
-                return_value=ExporterConfigV1Alpha1(
-                    alias=name,
-                    endpoint=ENDPOINT,
-                    token=TOKEN,
-                ),
-            ):
-                # Save with prompts
-                result = await runner.invoke(create, ["exporter", name], input="Y\n")
-                assert result.exit_code == 0
-                assert "Exporter configuration successfully saved" in result.output
-                assert os.path.isfile(default_config_path)
-                with open(default_config_path, "r") as f:
-                    content = f.read()
-                    assert content == EXPORTER_CONFIG
-                os.unlink(default_config_path)  # Cleanup config file
+    # Don't save client config save = n
+    result = await runner.invoke(create, ["client", CLIENT_NAME], input="n\n")
+    assert result.exit_code == 0
+    assert "Creating client" in result.output
+    assert CLIENT_NAME in result.output
+    assert "Client configuration successfully saved" not in result.output
+    mock_save_client.assert_not_called()
+    mock_save_client.reset_mock()
 
-                # Save with arguments
-                result = await runner.invoke(create, ["exporter", name, "--save"])
-                assert result.exit_code == 0
-                assert "Exporter configuration successfully saved" in result.output
-                assert os.path.isfile(default_config_path)
-                with open(default_config_path, "r") as f:
-                    content = f.read()
-                    assert content == EXPORTER_CONFIG
-                os.unlink(default_config_path)  # Cleanup config file
+    # Unsafe client config is returned
+    mock_get_client_config.return_value = UNSAFE_CLIENT_CONFIG
 
-                # Save with arguments and custom path
-                out = f"./{name}.yaml"
-                result = await runner.invoke(create, ["exporter", name, "--out", out])
-                assert result.exit_code == 0
-                assert "Exporter configuration successfully saved" in result.output
-                assert os.path.isfile(out)
-                with open(out, "r") as f:
-                    content = f.read()
-                    assert content == EXPORTER_CONFIG
-                os.unlink(out)  # Cleanup config file
+    # Save with prompts save = Y, unsafe = Y
+    result = await runner.invoke(create, ["client", CLIENT_NAME], input="Y\nY\n")
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, None)
+    mock_save_client.reset_mock()
+
+    # Save with unsafe with custom output file
+    out = f"/tmp/{CLIENT_NAME}.yaml"
+    result = await runner.invoke(create, ["client", CLIENT_NAME, "--unsafe", "--out", out], input="\n\n")
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    mock_save_client.reset_mock()
+
+    # Regular client config is returned
+    mock_get_client_config.return_value = CLIENT_CONFIG
+
+    # Save with arguments
+    result = await runner.invoke(create, ["client", CLIENT_NAME, "--save", "--allow", DRIVER_NAME], input="n\n")
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    mock_save_client.assert_called_once_with(CLIENT_CONFIG, None)
+    mock_save_client.reset_mock()
+
+    # Save with prompts, save = Y, unsafe = n, allow = DRIVER_NAME
+    result = await runner.invoke(create, ["client", CLIENT_NAME], input=f"Y\nn\n{DRIVER_NAME}\n")
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    mock_save_client.assert_called_once_with(CLIENT_CONFIG, None)
+    mock_save_client.reset_mock()
+
+
+# Generate a random exporter name
+EXPORTER_NAME = uuid.uuid4().hex
+EXPORTER_ENDPOINT = "grpc://example.com:443"
+EXPORTER_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+# Default config path
+default_config_path = ExporterConfigV1Alpha1.BASE_PATH / (EXPORTER_NAME + ".yaml")
+# Create a test exporter config
+EXPORTER_OBJECT = V1Alpha1Exporter(
+    api_version="jumpstarter.dev/v1alpha1",
+    kind="Exporter",
+    metadata=V1ObjectMeta(name=EXPORTER_NAME, namespace="default", creation_timestamp="2024-01-01T21:00:00Z"),
+    status=V1Alpha1ExporterStatus(endpoint=EXPORTER_ENDPOINT, credential=None, devices=[]),
+)
+EXPORTER_CONFIG = ExporterConfigV1Alpha1(
+    alias=EXPORTER_NAME,
+    endpoint=EXPORTER_ENDPOINT,
+    token=EXPORTER_TOKEN,
+)
+
+
+@pytest.mark.anyio
+@patch.object(ExporterConfigV1Alpha1, "save")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+@patch.object(ExportersV1Alpha1Api, "create_exporter", return_value=EXPORTER_OBJECT)
+@patch.object(ExportersV1Alpha1Api, "get_exporter_config", return_value=EXPORTER_CONFIG)
+async def test_create_exporter(
+    get_exporter_config_mock, create_exporter_mock, load_kube_config_mock, save_exporter_mock: AsyncMock
+):
+    runner = CliRunner()
+
+    # Don't save exporter config
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME], input="n\n")
+    assert result.exit_code == 0
+    assert "Creating exporter" in result.output
+    assert EXPORTER_NAME in result.output
+    assert "Exporter configuration successfully saved" not in result.output
+    save_exporter_mock.assert_not_called()
+    save_exporter_mock.reset_mock()
+
+    # Save with prompts
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME], input="Y\n")
+    assert result.exit_code == 0
+    assert "Exporter configuration successfully saved" in result.output
+    save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, None)
+    save_exporter_mock.reset_mock()
+
+    # Save with arguments
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--save"])
+    assert result.exit_code == 0
+    assert "Exporter configuration successfully saved" in result.output
+    save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, None)
+    save_exporter_mock.reset_mock()
+
+    # Save with arguments and custom path
+    out = f"/tmp/{EXPORTER_NAME}.yaml"
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--out", out])
+    assert result.exit_code == 0
+    assert "Exporter configuration successfully saved" in result.output
+    save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, out)
+    save_exporter_mock.reset_mock()
 
 
 @pytest.fixture

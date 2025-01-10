@@ -74,6 +74,10 @@ class ExporterConfigV1Alpha1(BaseModel):
         return exporters
 
     @classmethod
+    def dump_yaml(self, config: Self) -> str:
+        return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+
+    @classmethod
     def save(cls, config: Self, path: Optional[str] = None):
         # Set the config path before saving
         if path is None:

@@ -16,7 +16,7 @@ from .util import handle_k8s_api_exception, handle_k8s_config_exception, opt_con
 
 @click.group("import")
 def import_res():
-    """Import configs from a Kubernetes clsuter"""
+    """Import configs from a Kubernetes cluster"""
 
 
 @import_res.command("client")
