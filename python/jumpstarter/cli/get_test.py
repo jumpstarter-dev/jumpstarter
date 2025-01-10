@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
@@ -37,266 +37,240 @@ class MockResponse:
 
 
 @pytest.mark.anyio
-async def test_get_client():
+@patch.object(ClientsV1Alpha1Api, "get_client")
+@patch.object(ClientsV1Alpha1Api, "_load_kube_config")
+async def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
     runner = CliRunner()
-    with patch.object(ClientsV1Alpha1Api, "_load_kube_config"):
-        # Returns client
-        with patch.object(
-            ClientsV1Alpha1Api,
-            "get_client",
-            return_value=V1Alpha1Client(
-                api_version="jumpstarter.dev/v1alpha1",
-                kind="Client",
-                metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-                status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
-            ),
-        ):
-            result = await runner.invoke(get, ["client", "test"])
-            assert result.exit_code == 0
-            assert "test" in result.output
-            assert "grpc://example.com:443" in result.output
-        # No client found
-        with patch.object(ClientsV1Alpha1Api, "get_client", return_value=None) as mock_get_client:
-            mock_get_client.side_effect = ApiException(
-                http_resp=MockResponse(
-                    404,
-                    "Not Found",
-                    '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"clients.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"clients"},"code":404}',  # noqa: E501
-                )
-            )
-            result = await runner.invoke(get, ["client", "hello"])
-            assert result.exit_code == 1
-            assert "NotFound" in result.output
+
+    # Get a single client
+    get_client_mock.return_value = V1Alpha1Client(
+        api_version="jumpstarter.dev/v1alpha1",
+        kind="Client",
+        metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+        status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
+    )
+    result = await runner.invoke(get, ["client", "test"])
+    assert result.exit_code == 0
+    assert "test" in result.output
+    assert "grpc://example.com:443" in result.output
+    get_client_mock.reset_mock()
+
+    # No client found
+    get_client_mock.side_effect = ApiException(
+        http_resp=MockResponse(
+            404,
+            "Not Found",
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"clients.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"clients"},"code":404}',  # noqa: E501
+        )
+    )
+    result = await runner.invoke(get, ["client", "hello"])
+    assert result.exit_code == 1
+    assert "NotFound" in result.output
 
 
 @pytest.mark.anyio
-async def test_get_clients():
+@patch.object(ClientsV1Alpha1Api, "list_clients")
+@patch.object(ClientsV1Alpha1Api, "_load_kube_config")
+async def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock):
     runner = CliRunner()
-    with patch.object(ClientsV1Alpha1Api, "_load_kube_config"):
-        # Found clients
-        with patch.object(
-            ClientsV1Alpha1Api,
-            "list_clients",
-            return_value=[
-                V1Alpha1Client(
-                    api_version="jumpstarter.dev/v1alpha1",
-                    kind="Client",
-                    metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-                    status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
-                ),
-                V1Alpha1Client(
-                    api_version="jumpstarter.dev/v1alpha1",
-                    kind="Client",
-                    metadata=V1ObjectMeta(
-                        name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"
-                    ),
-                    status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
-                ),
+
+    # List clients
+    list_clients_mock.return_value = [
+        V1Alpha1Client(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Client",
+            metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
+        ),
+        V1Alpha1Client(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Client",
+            metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
+        ),
+    ]
+    result = await runner.invoke(get, ["clients"])
+    assert result.exit_code == 0
+    assert "test" in result.output
+    assert "another" in result.output
+    assert "grpc://example.com:443" in result.output
+    list_clients_mock.reset_mock()
+
+    # No clients found
+    list_clients_mock.return_value = []
+    result = await runner.invoke(get, ["clients"])
+    assert result.exit_code == 1
+    assert "No resources found" in result.output
+
+
+@pytest.mark.anyio
+@patch.object(ExportersV1Alpha1Api, "get_exporter")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+async def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock):
+    runner = CliRunner()
+
+    # Get a single exporter
+    get_exporter_mock.return_value = V1Alpha1Exporter(
+        api_version="jumpstarter.dev/v1alpha1",
+        kind="Exporter",
+        metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+        status=V1Alpha1ExporterStatus(
+            endpoint="grpc://example.com:443", credential=V1ObjectReference(name="test-credential"), devices=[]
+        ),
+    )
+    result = await runner.invoke(get, ["exporter", "test"])
+    assert result.exit_code == 0
+    assert "test" in result.output
+    assert "grpc://example.com:443" in result.output
+    get_exporter_mock.reset_mock()
+
+    # No exporter found
+    get_exporter_mock.side_effect = ApiException(
+        http_resp=MockResponse(
+            404,
+            "Not Found",
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
+        )
+    )
+    result = await runner.invoke(get, ["exporter", "hello"])
+    assert result.exit_code == 1
+    assert "NotFound" in result.output
+
+
+@pytest.mark.anyio
+@patch.object(ExportersV1Alpha1Api, "get_exporter")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+async def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: AsyncMock):
+    runner = CliRunner()
+    # Returns exporter
+    get_exporter_mock.return_value = V1Alpha1Exporter(
+        api_version="jumpstarter.dev/v1alpha1",
+        kind="Exporter",
+        metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+        status=V1Alpha1ExporterStatus(
+            endpoint="grpc://example.com:443",
+            credential=V1ObjectReference(name="test-credential"),
+            devices=[
+                V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1"),
+                V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
             ],
-        ):
-            result = await runner.invoke(get, ["clients"])
-            assert result.exit_code == 0
-            assert "test" in result.output
-            assert "another" in result.output
-            assert "grpc://example.com:443" in result.output
-        # No clients found
-        with patch.object(
-            ClientsV1Alpha1Api,
-            "list_clients",
-            return_value=[],
-        ):
-            result = await runner.invoke(get, ["clients"])
-            assert result.exit_code == 1
-            assert "No resources found" in result.output
+        ),
+    )
+    result = await runner.invoke(get, ["exporter", "test", "--devices"])
+    assert result.exit_code == 0
+    assert "test" in result.output
+    assert "grpc://example.com:443" in result.output
+    assert "hardware:rpi4" in result.output
+    assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
+    assert "f7cd30ac-64a3-42c6-ba31-b25f033b97c1" in result.output
+    get_exporter_mock.reset_mock()
+
+    # No exporter found
+    get_exporter_mock.side_effect = ApiException(
+        http_resp=MockResponse(
+            404,
+            "Not Found",
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
+        )
+    )
+    result = await runner.invoke(get, ["exporter", "hello", "--devices"])
+    assert result.exit_code == 1
+    assert "NotFound" in result.output
 
 
 @pytest.mark.anyio
-async def test_get_exporter():
+@patch.object(ExportersV1Alpha1Api, "list_exporters")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
     runner = CliRunner()
-    with patch.object(ExportersV1Alpha1Api, "_load_kube_config"):
-        # Returns exporter
-        with patch.object(
-            ExportersV1Alpha1Api,
-            "get_exporter",
-            return_value=V1Alpha1Exporter(
-                api_version="jumpstarter.dev/v1alpha1",
-                kind="Exporter",
-                metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-                status=V1Alpha1ExporterStatus(
-                    endpoint="grpc://example.com:443", credential=V1ObjectReference(name="test-credential"), devices=[]
-                ),
+
+    # List exporters
+    list_exporters_mock.return_value = [
+        V1Alpha1Exporter(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Exporter",
+            metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ExporterStatus(
+                endpoint="grpc://example.com:443",
+                credential=V1ObjectReference(name="test-credential"),
+                devices=[],
             ),
-        ):
-            result = await runner.invoke(get, ["exporter", "test"])
-            assert result.exit_code == 0
-            assert "test" in result.output
-            assert "grpc://example.com:443" in result.output
-        # No exporter found
-        with patch.object(ExportersV1Alpha1Api, "get_exporter", return_value=None) as mock_get_client:
-            mock_get_client.side_effect = ApiException(
-                http_resp=MockResponse(
-                    404,
-                    "Not Found",
-                    '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
-                )
-            )
-            result = await runner.invoke(get, ["exporter", "hello"])
-            assert result.exit_code == 1
-            assert "NotFound" in result.output
-
-
-@pytest.mark.anyio
-async def test_get_exporter_devices():
-    runner = CliRunner()
-    with patch.object(ExportersV1Alpha1Api, "_load_kube_config"):
-        # Returns exporter
-        with patch.object(
-            ExportersV1Alpha1Api,
-            "get_exporter",
-            return_value=V1Alpha1Exporter(
-                api_version="jumpstarter.dev/v1alpha1",
-                kind="Exporter",
-                metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-                status=V1Alpha1ExporterStatus(
-                    endpoint="grpc://example.com:443",
-                    credential=V1ObjectReference(name="test-credential"),
-                    devices=[
-                        V1Alpha1ExporterDevice(
-                            labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1"
-                        ),
-                        V1Alpha1ExporterDevice(
-                            labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"
-                        ),
-                    ],
-                ),
+        ),
+        V1Alpha1Exporter(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Exporter",
+            metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ExporterStatus(
+                endpoint="grpc://example.com:443",
+                credential=V1ObjectReference(name="another-credential"),
+                devices=[],
             ),
-        ):
-            result = await runner.invoke(get, ["exporter", "test", "--devices"])
-            assert result.exit_code == 0
-            assert "test" in result.output
-            assert "grpc://example.com:443" in result.output
-            assert "hardware:rpi4" in result.output
-            assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
-            assert "f7cd30ac-64a3-42c6-ba31-b25f033b97c1" in result.output
-        # No exporter found
-        with patch.object(ExportersV1Alpha1Api, "get_exporter", return_value=None) as mock_get_client:
-            mock_get_client.side_effect = ApiException(
-                http_resp=MockResponse(
-                    404,
-                    "Not Found",
-                    '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
-                )
-            )
-            result = await runner.invoke(get, ["exporter", "hello", "--devices"])
-            assert result.exit_code == 1
-            assert "NotFound" in result.output
+        ),
+    ]
+    result = await runner.invoke(get, ["exporters"])
+    assert result.exit_code == 0
+    assert "test" in result.output
+    assert "another" in result.output
+    list_exporters_mock.reset_mock()
+
+    # No exporters found
+    with patch.object(
+        ExportersV1Alpha1Api,
+        "list_exporters",
+        return_value=[],
+    ):
+        result = await runner.invoke(get, ["exporters"])
+        assert result.exit_code == 1
+        assert "No resources found" in result.output
 
 
 @pytest.mark.anyio
-async def test_get_exporters():
+@patch.object(ExportersV1Alpha1Api, "list_exporters")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: AsyncMock):
     runner = CliRunner()
-    with patch.object(ExportersV1Alpha1Api, "_load_kube_config"):
-        # Found clients
-        with patch.object(
-            ExportersV1Alpha1Api,
-            "list_exporters",
-            return_value=[
-                V1Alpha1Exporter(
-                    api_version="jumpstarter.dev/v1alpha1",
-                    kind="Exporter",
-                    metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-                    status=V1Alpha1ExporterStatus(
-                        endpoint="grpc://example.com:443",
-                        credential=V1ObjectReference(name="test-credential"),
-                        devices=[],
-                    ),
-                ),
-                V1Alpha1Exporter(
-                    api_version="jumpstarter.dev/v1alpha1",
-                    kind="Exporter",
-                    metadata=V1ObjectMeta(
-                        name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"
-                    ),
-                    status=V1Alpha1ExporterStatus(
-                        endpoint="grpc://example.com:443",
-                        credential=V1ObjectReference(name="another-credential"),
-                        devices=[],
-                    ),
-                ),
-            ],
-        ):
-            result = await runner.invoke(get, ["exporters"])
-            assert result.exit_code == 0
-            assert "test" in result.output
-            assert "another" in result.output
-        # No clients found
-        with patch.object(
-            ExportersV1Alpha1Api,
-            "list_exporters",
-            return_value=[],
-        ):
-            result = await runner.invoke(get, ["exporters"])
-            assert result.exit_code == 1
-            assert "No resources found" in result.output
 
+    # List exporters
+    list_exporters_mock.return_value = [
+        V1Alpha1Exporter(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Exporter",
+            metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ExporterStatus(
+                endpoint="grpc://example.com:443",
+                credential=V1ObjectReference(name="test-credential"),
+                devices=[
+                    V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1")
+                ],
+            ),
+        ),
+        V1Alpha1Exporter(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Exporter",
+            metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ExporterStatus(
+                endpoint="grpc://example.com:443",
+                credential=V1ObjectReference(name="another-credential"),
+                devices=[
+                    V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
+                ],
+            ),
+        ),
+    ]
+    result = await runner.invoke(get, ["exporters", "--devices"])
+    assert result.exit_code == 0
+    assert "test" in result.output
+    assert "another" in result.output
+    assert "hardware:rpi4" in result.output
+    assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
+    assert "f7cd30ac-64a3-42c6-ba31-b25f033b97c1" in result.output
+    list_exporters_mock.reset_mock()
 
-@pytest.mark.anyio
-async def test_get_exporters_devices():
-    runner = CliRunner()
-    with patch.object(ExportersV1Alpha1Api, "_load_kube_config"):
-        # Found clients
-        with patch.object(
-            ExportersV1Alpha1Api,
-            "list_exporters",
-            return_value=[
-                V1Alpha1Exporter(
-                    api_version="jumpstarter.dev/v1alpha1",
-                    kind="Exporter",
-                    metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-                    status=V1Alpha1ExporterStatus(
-                        endpoint="grpc://example.com:443",
-                        credential=V1ObjectReference(name="test-credential"),
-                        devices=[
-                            V1Alpha1ExporterDevice(
-                                labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1"
-                            )
-                        ],
-                    ),
-                ),
-                V1Alpha1Exporter(
-                    api_version="jumpstarter.dev/v1alpha1",
-                    kind="Exporter",
-                    metadata=V1ObjectMeta(
-                        name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"
-                    ),
-                    status=V1Alpha1ExporterStatus(
-                        endpoint="grpc://example.com:443",
-                        credential=V1ObjectReference(name="another-credential"),
-                        devices=[
-                            V1Alpha1ExporterDevice(
-                                labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"
-                            ),
-                        ],
-                    ),
-                ),
-            ],
-        ):
-            result = await runner.invoke(get, ["exporters", "--devices"])
-            assert result.exit_code == 0
-            assert "test" in result.output
-            assert "another" in result.output
-            assert "hardware:rpi4" in result.output
-            assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
-            assert "f7cd30ac-64a3-42c6-ba31-b25f033b97c1" in result.output
-        # No clients found
-        with patch.object(
-            ExportersV1Alpha1Api,
-            "list_exporters",
-            return_value=[],
-        ):
-            result = await runner.invoke(get, ["exporters", "--devices"])
-            assert result.exit_code == 1
-            assert "No resources found" in result.output
+    # No exporters found
+    list_exporters_mock.return_value = []
+    result = await runner.invoke(get, ["exporters", "--devices"])
+    assert result.exit_code == 1
+    assert "No resources found" in result.output
 
 
 IN_PROGRESS_LEASE = V1Alpha1Lease(
@@ -363,85 +337,83 @@ FINISHED_LEASE = V1Alpha1Lease(
 
 
 @pytest.mark.anyio
-async def test_get_lease():
+@patch.object(LeasesV1Alpha1Api, "get_lease")
+@patch.object(LeasesV1Alpha1Api, "_load_kube_config")
+async def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
     runner = CliRunner()
-    with patch.object(LeasesV1Alpha1Api, "_load_kube_config"):
-        # Test with in progress lease
-        with patch.object(LeasesV1Alpha1Api, "get_lease", return_value=IN_PROGRESS_LEASE):
-            result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
-            assert result.exit_code == 0
-            assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
-            assert "test_client" in result.output
-            assert "test_exporter" in result.output
-            assert "hardware:rpi4" in result.output
-            assert "InProgress" in result.output
-            assert "Ready" in result.output
-            assert "2024-01-01T21:00:00Z" in result.output
-            assert "5m" in result.output
 
-        # Test with finished lease
-        with patch.object(LeasesV1Alpha1Api, "get_lease", return_value=FINISHED_LEASE):
-            result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2"])
-            assert result.exit_code == 0
-            assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b2" in result.output
-            assert "test_client" in result.output
-            assert "test_exporter" in result.output
-            assert "*" in result.output
-            assert "Ended" in result.output
-            assert "Complete" in result.output
-            assert "2024-01-01T21:00:00Z" in result.output
-            assert "2024-01-01T22:00:00Z" in result.output
-            assert "1h" in result.output
+    # Get an in progress lease
+    get_lease_mock.return_value = IN_PROGRESS_LEASE
+    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
+    assert result.exit_code == 0
+    assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
+    assert "test_client" in result.output
+    assert "test_exporter" in result.output
+    assert "hardware:rpi4" in result.output
+    assert "InProgress" in result.output
+    assert "Ready" in result.output
+    assert "2024-01-01T21:00:00Z" in result.output
+    assert "5m" in result.output
+    get_lease_mock.reset_mock()
 
-        # No lease found
-        with patch.object(LeasesV1Alpha1Api, "get_lease", return_value=None) as mock_get_lease:
-            mock_get_lease.side_effect = ApiException(
-                http_resp=MockResponse(
-                    404,
-                    "Not Found",
-                    '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"leases.jumpstarter.dev "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" not found","reason":"NotFound","details":{"name":"82a8ac0d-d7ff-4009-8948-18a3c5c607b1","group":"jumpstarter.dev","kind":"leases"},"code":404}',  # noqa: E501
-                )
-            )
-            result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
-            assert result.exit_code == 1
-            assert "NotFound" in result.output
+    # Get a finished lease
+    get_lease_mock.return_value = FINISHED_LEASE
+    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2"])
+    assert result.exit_code == 0
+    assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b2" in result.output
+    assert "test_client" in result.output
+    assert "test_exporter" in result.output
+    assert "*" in result.output
+    assert "Ended" in result.output
+    assert "Complete" in result.output
+    assert "2024-01-01T21:00:00Z" in result.output
+    assert "2024-01-01T22:00:00Z" in result.output
+    assert "1h" in result.output
+    get_lease_mock.reset_mock()
+
+    # No lease found
+    get_lease_mock.side_effect = ApiException(
+        http_resp=MockResponse(
+            404,
+            "Not Found",
+            '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"leases.jumpstarter.dev "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" not found","reason":"NotFound","details":{"name":"82a8ac0d-d7ff-4009-8948-18a3c5c607b1","group":"jumpstarter.dev","kind":"leases"},"code":404}',  # noqa: E501
+        )
+    )
+    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
+    assert result.exit_code == 1
+    assert "NotFound" in result.output
 
 
 @pytest.mark.anyio
-async def test_get_leases():
+@patch.object(LeasesV1Alpha1Api, "list_leases")
+@patch.object(LeasesV1Alpha1Api, "_load_kube_config")
+async def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     runner = CliRunner()
-    with patch.object(LeasesV1Alpha1Api, "_load_kube_config"):
-        # Found leases
-        with patch.object(
-            LeasesV1Alpha1Api,
-            "list_leases",
-            return_value=[IN_PROGRESS_LEASE, FINISHED_LEASE],
-        ):
-            result = await runner.invoke(get, ["leases"])
-            assert result.exit_code == 0
-            assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
-            assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b2" in result.output
-            assert "test_client" in result.output
-            assert "test_exporter" in result.output
-            assert "hardware:rpi4" in result.output
-            assert "*" in result.output
-            assert "InProgress" in result.output
-            assert "Ended" in result.output
-            assert "Complete" in result.output
-            assert "Ready" in result.output
-            assert "2024-01-01T21:00:00Z" in result.output
-            assert "5m" in result.output
-            assert "1h" in result.output
 
-        # No leases found
-        with patch.object(
-            LeasesV1Alpha1Api,
-            "list_leases",
-            return_value=[],
-        ):
-            result = await runner.invoke(get, ["leases"])
-            assert result.exit_code == 1
-            assert "No resources found" in result.output
+    # Found leases
+    list_leases_mock.return_value = [IN_PROGRESS_LEASE, FINISHED_LEASE]
+    result = await runner.invoke(get, ["leases"])
+    assert result.exit_code == 0
+    assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
+    assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b2" in result.output
+    assert "test_client" in result.output
+    assert "test_exporter" in result.output
+    assert "hardware:rpi4" in result.output
+    assert "*" in result.output
+    assert "InProgress" in result.output
+    assert "Ended" in result.output
+    assert "Complete" in result.output
+    assert "Ready" in result.output
+    assert "2024-01-01T21:00:00Z" in result.output
+    assert "5m" in result.output
+    assert "1h" in result.output
+    list_leases_mock.reset_mock()
+
+    # No leases found
+    list_leases_mock.return_value = []
+    result = await runner.invoke(get, ["leases"])
+    assert result.exit_code == 1
+    assert "No resources found" in result.output
 
 
 @pytest.fixture

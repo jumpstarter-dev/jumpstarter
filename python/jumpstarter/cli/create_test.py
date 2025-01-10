@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
@@ -58,7 +58,7 @@ CLIENT_CONFIG = ClientConfigV1Alpha1(
 @patch.object(ClientsV1Alpha1Api, "create_client", return_value=CLIENT_OBJECT)
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")
 async def test_create_client(
-    _mock_load_kube_config, _mock_create_client, mock_get_client_config: AsyncMock, mock_save_client: AsyncMock
+    _mock_load_kube_config, _mock_create_client, mock_get_client_config: AsyncMock, mock_save_client: Mock
 ):
     runner = CliRunner()
 
@@ -133,7 +133,7 @@ EXPORTER_CONFIG = ExporterConfigV1Alpha1(
 @patch.object(ExportersV1Alpha1Api, "create_exporter", return_value=EXPORTER_OBJECT)
 @patch.object(ExportersV1Alpha1Api, "get_exporter_config", return_value=EXPORTER_CONFIG)
 async def test_create_exporter(
-    get_exporter_config_mock, create_exporter_mock, load_kube_config_mock, save_exporter_mock: AsyncMock
+    _get_exporter_config_mock, _create_exporter_mock, _load_kube_config_mock, save_exporter_mock: Mock
 ):
     runner = CliRunner()
 
