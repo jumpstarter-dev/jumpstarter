@@ -8,13 +8,13 @@ import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from pydantic import BaseModel, Field, ValidationError
 
-from jumpstarter.client import Lease
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.v1 import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .common import CONFIG_PATH
-from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
+from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_TOKEN
+from .tls import TLSConfigV1Alpha1
 
 
 def _allow_from_env():
@@ -26,10 +26,6 @@ def _allow_from_env():
             return [], True
         case _:
             return allow.split(","), False
-
-class ClientConfigV1Alpha1TLS(BaseModel):
-    ca: str = Field(default="")
-    insecure: bool = Field(default=False)
 
 class ClientConfigV1Alpha1Drivers(BaseModel):
     allow: list[str] = Field(default_factory=[])
@@ -46,24 +42,24 @@ class ClientConfigV1Alpha1(BaseModel):
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
 
     endpoint: str
-    tls: ClientConfigV1Alpha1TLS = Field(default_factory=ClientConfigV1Alpha1TLS)
+    tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
 
     drivers: ClientConfigV1Alpha1Drivers
 
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
-            ssl_channel_credentials(self.endpoint, self.tls.insecure, self.tls.ca),
+            ssl_channel_credentials(self.endpoint, self.tls),
             grpc.access_token_call_credentials(self.token),
         )
 
         return aio_secure_channel(self.endpoint, credentials)
 
     @contextmanager
-    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None, release: bool = False):
+    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None = None):
         with start_blocking_portal() as portal:
             with portal.wrap_async_context_manager(
-                self.lease_async(metadata_filter, lease_name, portal, release)) as lease:
+                self.lease_async(metadata_filter, lease_name, portal)) as lease:
                 yield lease
 
     def request_lease(self, metadata_filter: MetadataFilter):
@@ -79,6 +75,8 @@ class ClientConfigV1Alpha1(BaseModel):
             portal.call(self.release_lease_async, name)
 
     async def request_lease_async(self, metadata_filter: MetadataFilter, portal:BlockingPortal):
+        # dynamically import to avoid circular imports
+        from jumpstarter.client import Lease
         lease = Lease(
             channel=await self.channel(),
             name=None,
@@ -86,6 +84,7 @@ class ClientConfigV1Alpha1(BaseModel):
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
+            tls_config=self.tls,
         )
         return await lease.request_async()
 
@@ -98,8 +97,14 @@ class ClientConfigV1Alpha1(BaseModel):
         await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
 
     @asynccontextmanager
-    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal,
-                          release=True):
+    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal):
+        from jumpstarter.client import Lease
+
+        # if no lease_name provided, check if it is set in the environment
+        lease_name = lease_name or os.environ.get(JMP_LEASE, "")
+        # when no lease name is provided, release the lease on exit
+        release_lease = lease_name == ""
+
         async with Lease(
             channel=await self.channel(),
             name=lease_name,
@@ -107,7 +112,8 @@ class ClientConfigV1Alpha1(BaseModel):
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
-            release=release,
+            release=release_lease,
+            tls_config=self.tls,
         ) as lease:
             yield lease
 
