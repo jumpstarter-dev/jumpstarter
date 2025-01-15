@@ -23,10 +23,7 @@ dependencies = [
     "wsproto>=1.2.0",
     "fabric>=3.2.2",
     "grpcio>=1.66.1",
-    "protobuf>=5.28.0",
-    "kubernetes>=31.0.0",
-    "kubernetes-asyncio>=31.1.0",
-    "asyncclick>=8.1.7.2",
+    "protobuf>=5.28.0"
 ]
 
 [dependency-groups]
@@ -53,10 +50,6 @@ dev = [
     "esbonio>=0.16.5",
 ]
 
-[project.scripts]
-jmp = "jumpstarter.cli.jmp:jmp"
-j = "jumpstarter.cli.j:main"
-
 [tool.hatch.version]
 source = "vcs"
 
@@ -68,7 +61,7 @@ Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
 
 [tool.uv.workspace]
-members = ["contrib/drivers/*", "contrib/libs/*", "examples/*"]
+members = ["contrib/drivers/*", "contrib/libs/*", "examples/*", "cli/*"]
 
 [tool.uv.sources]
 jumpstarter = { workspace = true }

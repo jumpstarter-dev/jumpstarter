@@ -1,11 +1,9 @@
 from typing import Literal, Optional
 
 import asyncclick as click
+from jumpstarter_cli_common import get_client_version, opt_context, opt_kubeconfig
 
 from jumpstarter.k8s import get_ip_address, helm_installed, install_helm_chart
-
-from .util import opt_context, opt_kubeconfig
-from .version import get_client_version
 
 
 def get_chart_version() -> str:

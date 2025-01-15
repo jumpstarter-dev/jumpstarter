@@ -11,7 +11,7 @@ def get_client_version():
 
 
 def get_cli_path():
-    """Get the path of the current Jumpstarter binary"""
+    """Get the path of the current Jumpstarter CLI binary"""
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

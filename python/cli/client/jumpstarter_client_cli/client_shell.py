@@ -12,7 +12,7 @@ from jumpstarter.config import (
 @click.argument("name", type=str, default="")
 @click.option("-l", "--label", "labels", type=(str, str), multiple=True)
 @click.option("-n", "--lease", "lease_name", type=str)
-def shell(name: str, labels, lease_name):
+def client_shell(name: str, labels, lease_name):
     """Spawns a shell connecting to a leased remote exporter"""
     if name:
         config = ClientConfigV1Alpha1.load(name)

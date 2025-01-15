@@ -3,7 +3,7 @@ from asyncclick.testing import CliRunner
 
 from jumpstarter.config import ClientConfigV1Alpha1, UserConfigV1Alpha1
 
-from .client import client
+from .client_config import client
 
 
 @pytest.fixture

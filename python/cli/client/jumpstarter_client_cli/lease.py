@@ -1,11 +1,10 @@
 import asyncclick as click
+from jumpstarter_cli_common import AliasedGroup
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
     UserConfigV1Alpha1,
 )
-
-from .util import AliasedGroup
 
 
 @click.group(cls=AliasedGroup, short_help="")
