@@ -15,6 +15,7 @@ class Shell(Driver):
     # to be executed by each method
     methods: dict[str, str]
     shell: list[str] = field(default_factory=lambda: ["bash", "-c"])
+    timeout: int = 300
     log_level: str = "INFO"
     cwd: str | None = None
 
@@ -67,6 +68,9 @@ class Shell(Driver):
         if env_vars:
             combined_env.update(env_vars)
 
+        if not isinstance(script, str) or not script.strip():
+            raise ValueError("Shell script must be a non-empty string")
+
         cmd = self.shell + [script, method] + list(args)
 
         # Run the command
@@ -75,7 +79,8 @@ class Shell(Driver):
             capture_output=True,  # Captures stdout and stderr
             text=True,            # Returns stdout/stderr as strings (not bytes)
             env=combined_env,     # Pass our merged environment
-            cwd=self.cwd          # Run in the working directory (if set)
+            cwd=self.cwd,         # Run in the working directory (if set)
+            timeout=self.timeout,
         )
 
         return result
