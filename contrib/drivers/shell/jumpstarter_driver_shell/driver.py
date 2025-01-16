@@ -41,14 +41,18 @@ class Shell(Driver):
             raise ValueError(f"Method '{method}' not found in available methods: {list(self.methods.keys())}")
         script = self.methods[method]
         logger.debug(f"running script: {script}")
-        result = self._run_inline_shell_script(method, script, *args, env_vars=env)
-        if result.returncode != 0:
-            logger.info(f"{method} return code: {result.returncode}")
-        if result.stderr != "":
-            logger.debug(f"{method} stderr:\n{result.stderr.rstrip("\n")}")
-        if result.stdout != "":
-            logger.debug(f"{method} stdout:\n{result.stdout.rstrip("\n")}")
-        return result.stdout, result.stderr, result.returncode
+        try:
+            result = self._run_inline_shell_script(method, script, *args, env_vars=env)
+            if result.returncode != 0:
+                logger.info(f"{method} return code: {result.returncode}")
+            if result.stderr != "":
+                logger.debug(f"{method} stderr:\n{result.stderr.rstrip("\n")}")
+            if result.stdout != "":
+                logger.debug(f"{method} stdout:\n{result.stdout.rstrip("\n")}")
+            return result.stdout, result.stderr, result.returncode
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"Timeout expired while running {method}: {e}")
+            return "", f"Timeout expired while running {method}: {e}", 199
 
     def _run_inline_shell_script(self, method, script, *args, env_vars=None):
         """
