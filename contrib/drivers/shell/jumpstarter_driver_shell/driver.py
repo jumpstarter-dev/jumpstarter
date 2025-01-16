@@ -36,6 +36,8 @@ class Shell(Driver):
     @export
     def call_method(self, method: str, env, *args):
         logger.info(f"calling {method} with args: {args} and kwargs as env: {env}")
+        if method not in self.methods:
+            raise ValueError(f"Method '{method}' not found in available methods: {list(self.methods.keys())}")
         script = self.methods[method]
         logger.debug(f"running script: {script}")
         result = self._run_inline_shell_script(method, script, *args, env_vars=env)
