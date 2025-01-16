@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-import click
+import asyncclick as click
 
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.utils import launch_shell

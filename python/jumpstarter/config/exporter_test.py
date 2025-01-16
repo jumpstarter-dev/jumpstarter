@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
@@ -55,7 +57,7 @@ async def test_exporter_serve(mock_controller):
         tg.cancel_scope.cancel()
 
 
-def test_exporter_config(monkeypatch, tmp_path):
+def test_exporter_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
 
     path = tmp_path / "test.yaml"
@@ -139,10 +141,11 @@ export:
             ),
         },
         config={},
+        path=path
     )
 
     path.unlink()
 
-    config.save()
+    ExporterConfigV1Alpha1.save(config)
 
     assert config == ExporterConfigV1Alpha1.load("test")

@@ -11,7 +11,6 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
-    "click>=8.1.7",
     "pexpect>=4.9.0",
     "httpx>=0.27.0",
     "pyyaml>=6.0.2",
@@ -25,6 +24,9 @@ dependencies = [
     "fabric>=3.2.2",
     "grpcio>=1.66.1",
     "protobuf>=5.28.0",
+    "kubernetes>=31.0.0",
+    "kubernetes-asyncio>=31.1.0",
+    "asyncclick>=8.1.7.2",
 ]
 
 [dependency-groups]
@@ -48,11 +50,11 @@ dev = [
     "pre-commit>=3.8.0",
     "cryptography>=43.0.1",
     "websocket-client>=1.8.0",
+    "esbonio>=0.16.5",
 ]
 
 [project.scripts]
-jmp = "jumpstarter.cli.client:client"
-jmp-exporter = "jumpstarter.cli.exporter:exporter"
+jmp = "jumpstarter.cli.jmp:jmp"
 j = "jumpstarter.cli.j:main"
 
 [tool.hatch.version]

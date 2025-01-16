@@ -36,7 +36,7 @@ class ClientConfigV1Alpha1(BaseModel):
     CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
 
     name: str = Field(default="default", exclude=True)
-    path: str | None = Field(default=None, exclude=True)
+    path: Path | None = Field(default=None, exclude=True)
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
@@ -118,11 +118,11 @@ class ClientConfigV1Alpha1(BaseModel):
             yield lease
 
     @classmethod
-    def from_file(cls, filepath):
-        with open(filepath) as f:
+    def from_file(cls, path: os.PathLike):
+        with open(path) as f:
             v = cls.model_validate(yaml.safe_load(f))
-            v.name = os.path.basename(filepath).split(".")[0]
-            v.path = filepath
+            v.name = os.path.basename(path).split(".")[0]
+            v.path = Path(path)
             return v
 
     @classmethod
@@ -152,37 +152,42 @@ class ClientConfigV1Alpha1(BaseModel):
     @classmethod
     def _get_path(cls, name: str) -> Path:
         """Get the regular path of a client config given a name."""
-
-        return cls.CLIENT_CONFIGS_PATH / f"{name}.yaml"
+        return (cls.CLIENT_CONFIGS_PATH / name).with_suffix(".yaml")
 
     @classmethod
     def load(cls, name: str) -> Self:
         """Load a client config by name."""
         path = cls._get_path(name)
-        if os.path.exists(path) is False:
+        if path.exists() is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
-
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None):
+    def save(cls, config: Self, path: Optional[os.PathLike] = None):
         """Saves a client config as YAML."""
         # Ensure the clients dir exists
         if path is None:
             cls.ensure_exists()
-
-        with open(path or cls._get_path(config.name), "w") as f:
+            # Set the config path before saving
+            config.path = cls._get_path(config.name)
+        else:
+            config.path = Path(path)
+        with config.path.open(mode="w") as f:
             yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
+
+    @classmethod
+    def dump_yaml(cls, config: Self) -> str:
+        return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
 
     @classmethod
     def exists(cls, name: str) -> bool:
         """Check if a client config exists by name."""
-        return os.path.exists(cls._get_path(name))
+        return cls._get_path(name).exists()
 
     @classmethod
     def list(cls) -> list[Self]:
         """List the available client configs."""
-        if os.path.exists(cls.CLIENT_CONFIGS_PATH) is False:
+        if cls.CLIENT_CONFIGS_PATH.exists() is False:
             # Return an empty list if the dir does not exist
             return []
 
@@ -200,6 +205,6 @@ class ClientConfigV1Alpha1(BaseModel):
     def delete(cls, name: str):
         """Delete a client config by name."""
         path = cls._get_path(name)
-        if os.path.exists(path) is False:
+        if path.exists() is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
-        os.unlink(path)
+        path.unlink()

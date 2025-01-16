@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-import click
+import asyncclick as click
 
 from jumpstarter.client import DriverClient
 

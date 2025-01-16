@@ -1,5 +1,5 @@
 def make_table(columns: list[str], values: list[dict]):
-    """Make a pretty table from a list of `columns` and a list of `values`, each of which is a valid `dict`."""
+    """Make a pretty table from a list of `columns` and a list of `values`, each of which is a valid `dict`"""
 
     # Initialize the max_lens dict with the length of the column titles
     max_lens: dict[str, int] = {}

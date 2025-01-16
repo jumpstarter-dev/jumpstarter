@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import click
+import asyncclick as click
 from opendal import Operator
 
 from jumpstarter.client import DriverClient

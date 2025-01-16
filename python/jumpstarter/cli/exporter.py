@@ -2,15 +2,14 @@ import logging
 import sys
 import traceback
 from pathlib import Path
+from typing import Optional
 
-import anyio
-import click
+import asyncclick as click
 
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
-from .util import make_table
-from .version import version
+from .util import AliasedGroup, make_table, opt_log_level
 
 arg_alias = click.argument("alias", default="default")
 
@@ -18,18 +17,9 @@ opt_config_path = click.option(
     "-c", "--config", "config_path", type=click.Path(exists=True), help="Path of exporter config, overrides ALIAS"
 )
 
-opt_log_level = click.option(
-    "-l",
-    "--log-level",
-    "log_level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
-    help="Log level",
-)
-
-
-@click.group()
+@click.group(cls=AliasedGroup)
 @opt_log_level
-def exporter(log_level):
+def exporter(log_level: Optional[str]):
     """Manage and run exporters"""
     if log_level:
         logging.basicConfig(level=log_level.upper())
@@ -55,7 +45,7 @@ def create(alias, endpoint, token):
         endpoint=endpoint,
         token=token,
     )
-    config.save()
+    ExporterConfigV1Alpha1.save(config)
 
 
 @exporter.command
@@ -63,10 +53,10 @@ def create(alias, endpoint, token):
 def delete(alias):
     """Delete exporter"""
     try:
-        config = ExporterConfigV1Alpha1.load(alias)
+        ExporterConfigV1Alpha1.load(alias)
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
-    config.delete()
+    ExporterConfigV1Alpha1.delete(alias)
 
 
 @exporter.command
@@ -110,7 +100,7 @@ async def _serve_with_exc_handling(exporter):
 @exporter.command
 @arg_alias
 @opt_config_path
-def run(alias, config_path):
+async def run(alias, config_path):
     """Run exporter"""
     try:
         if config_path:
@@ -120,7 +110,7 @@ def run(alias, config_path):
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
 
-    return anyio.run(_serve_with_exc_handling, config)
+    return await _serve_with_exc_handling(config)
 
 
 @exporter.command
@@ -140,9 +130,3 @@ def shell(alias, config_path):
         # SAFETY: the exporter config is local thus considered trusted
         launch_shell(path, allow=[], unsafe=True)
 
-
-exporter.add_command(version)
-
-
-if __name__ == "__main__":
-    exporter()
