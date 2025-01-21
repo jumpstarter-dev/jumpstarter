@@ -730,7 +730,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.1.dev95+g202bb62"
+version = "0.5.1.dev97+g619099f.d20250121"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
