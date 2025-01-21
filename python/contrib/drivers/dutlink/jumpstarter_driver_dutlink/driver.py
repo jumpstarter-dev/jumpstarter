@@ -83,6 +83,22 @@ class DutlinkConfig:
 
 
 @dataclass(kw_only=True)
+class DutlinkSerial(DutlinkConfig, PySerial):
+    url: str | None = field(init=False, default=None)
+    alternate_console: str | None = field(default=None)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        if self.alternate_console is not None:
+            self.url = self.alternate_console
+        else:
+            self.url = self.tty
+
+        super(PySerial, self).__post_init__()
+
+
+@dataclass(kw_only=True)
 class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
     last_action: str | None = field(default=None)
 
@@ -199,7 +215,7 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
                 async for chunk in res:
                     await stream.send(chunk)
                     if total_bytes > next_print:
-                        log.debug(f"{self.storage_device} written {total_bytes/(1024*1024)} MB")
+                        log.debug(f"{self.storage_device} written {total_bytes / (1024 * 1024)} MB")
                         next_print += 50 * 1024 * 1024
                     total_bytes += len(chunk)
 
@@ -246,19 +262,15 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
         self.children["power"] = DutlinkPower(serial=self.serial)
         self.children["storage"] = DutlinkStorageMux(serial=self.serial, storage_device=self.storage_device)
 
-        # if an alternate serial port has been requested, use it
-        if self.alternate_console is not None:
-            try:
-                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
-            except SerialException:
-                log.info(
-                    f"failed to open alternate console {self.alternate_console} "
-                    "but trying to power on the target once"
-                )
-                self.children["power"].on()
-                time.sleep(5)
-                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
-                self.children["power"].off()
-        else:
-            # otherwise look up the tty console provided by dutlink
-            self.children["console"] = PySerial(url=self.tty, baudrate=self.baudrate)
+        try:
+            self.children["console"] = DutlinkSerial(
+                serial=self.serial, alternate_console=self.alternate_console, baudrate=self.baudrate
+            )
+        except SerialException:
+            log.info("failed to open console but trying to power on the target once")
+            self.children["power"].on()
+            time.sleep(5)
+            self.children["console"] = DutlinkSerial(
+                serial=self.serial, alternate_console=self.alternate_console, baudrate=self.baudrate
+            )
+            self.children["power"].off()
