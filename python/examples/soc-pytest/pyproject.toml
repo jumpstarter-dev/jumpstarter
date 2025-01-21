@@ -17,10 +17,6 @@ dependencies = [
     "jumpstarter_driver_dutlink",
 ]
 
-[tool.uv.sources]
-jumpstarter-imagehash = { workspace = true }
-jumpstarter-driver-dutlink = { workspace = true }
-
 [tool.pytest.ini_options]
 addopts = "-s --ignore examples/pytest/test_on_rpi4.py"
 log_cli = 1

@@ -8,21 +8,43 @@ resolution-markers = [
 [manifest]
 members = [
     "jumpstarter",
-    "jumpstarter-admin-cli",
     "jumpstarter-cli",
+    "jumpstarter-cli-admin",
+    "jumpstarter-cli-client",
     "jumpstarter-cli-common",
-    "jumpstarter-client-cli",
+    "jumpstarter-cli-exporter",
     "jumpstarter-driver-can",
+    "jumpstarter-driver-composite",
     "jumpstarter-driver-dutlink",
     "jumpstarter-driver-http",
+    "jumpstarter-driver-network",
+    "jumpstarter-driver-opendal",
+    "jumpstarter-driver-power",
+    "jumpstarter-driver-pyserial",
     "jumpstarter-driver-raspberrypi",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-ustreamer",
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
-    "jumpstarter-exporter-cli",
     "jumpstarter-imagehash",
+    "jumpstarter-kubernetes",
+    "jumpstarter-protocol",
+    "jumpstarter-testing",
+]
+requirements = [
+    { name = "esbonio", specifier = ">=0.16.4" },
+    { name = "esbonio", specifier = ">=0.16.5" },
+    { name = "furo", specifier = ">=2024.8.6" },
+    { name = "myst-parser", specifier = ">=4.0.0" },
+    { name = "pre-commit", specifier = ">=3.8.0" },
+    { name = "ruff", specifier = ">=0.6.1" },
+    { name = "sphinx", specifier = "<8.1.0" },
+    { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
+    { name = "sphinx-click", specifier = ">=6.0.0" },
+    { name = "sphinx-substitution-extensions", specifier = ">=2024.10.17" },
+    { name = "sphinxcontrib-mermaid", specifier = ">=0.9.2" },
+    { name = "typos", specifier = ">=1.23.6" },
 ]
 
 [[package]]
@@ -638,35 +660,6 @@ wheels = [
 ]
 
 [[package]]
-name = "httpcore"
-version = "1.0.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "certifi" },
-    { name = "h11" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/44/ed0fa6a17845fb033bd885c03e842f08c1b9406c86a2e60ac1ae1b9206a6/httpcore-1.0.6.tar.gz", hash = "sha256:73f6dbd6eb8c21bbf7ef8efad555481853f5f6acdeaff1edb0694289269ee17f", size = 85180 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/89/b161908e2f51be56568184aeb4a880fd287178d176fd1c860d2217f41106/httpcore-1.0.6-py3-none-any.whl", hash = "sha256:27b59625743b85577a8c0e10e55b50b5368a4f2cfe8cc7bcfa9cf00829c2682f", size = 78011 },
-]
-
-[[package]]
-name = "httpx"
-version = "0.27.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "certifi" },
-    { name = "httpcore" },
-    { name = "idna" },
-    { name = "sniffio" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/78/82/08f8c936781f67d9e6b9eeb8a0c8b4e406136ea4c3d1f89a5db71d42e0e6/httpx-0.27.2.tar.gz", hash = "sha256:f7c2be1d2f3c3c3160d441802406b206c2b76f5947b11115e6df10c6c65e66c2", size = 144189 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/95/9377bcb415797e44274b51d46e3249eba641711cf3348050f76ee7b15ffc/httpx-0.27.2-py3-none-any.whl", hash = "sha256:7bb2708e112d8fdd7829cd4243970f0c223274051cb35ee80c03301ee29a3df0", size = 76395 },
-]
-
-[[package]]
 name = "identify"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -740,136 +733,59 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.1.dev93+gb7ef843.d20250115"
-source = { editable = "." }
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
-    { name = "fabric" },
-    { name = "grpcio" },
-    { name = "httpx" },
-    { name = "opendal" },
-    { name = "pexpect" },
-    { name = "protobuf" },
+    { name = "jumpstarter-protocol" },
     { name = "pydantic" },
-    { name = "pyserial" },
     { name = "pyyaml" },
     { name = "tqdm" },
-    { name = "wsproto" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "cryptography" },
-    { name = "esbonio" },
-    { name = "pre-commit" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-power" },
     { name = "pytest" },
     { name = "pytest-anyio" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "typos" },
-    { name = "websocket-client" },
-]
-docs = [
-    { name = "esbonio" },
-    { name = "furo" },
-    { name = "myst-parser" },
-    { name = "sphinx" },
-    { name = "sphinx-autobuild" },
-    { name = "sphinx-click" },
-    { name = "sphinx-substitution-extensions" },
-    { name = "sphinxcontrib-mermaid" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
-    { name = "fabric", specifier = ">=3.2.2" },
-    { name = "grpcio", specifier = ">=1.66.1" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "opendal", specifier = ">=0.45.8" },
-    { name = "pexpect", specifier = ">=4.9.0" },
-    { name = "protobuf", specifier = ">=5.28.0" },
+    { name = "jumpstarter-protocol", editable = "packages/jumpstarter_protocol" },
     { name = "pydantic", specifier = ">=2.8.2" },
-    { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "tqdm", specifier = ">=4.66.5" },
-    { name = "wsproto", specifier = ">=1.2.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cryptography", specifier = ">=43.0.1" },
-    { name = "esbonio", specifier = ">=0.16.5" },
-    { name = "pre-commit", specifier = ">=3.8.0" },
+    { name = "cryptography", specifier = ">=43.0.3" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter_driver_composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter_driver_network" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter_driver_power" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-    { name = "ruff", specifier = ">=0.6.1" },
-    { name = "typos", specifier = ">=1.23.6" },
-    { name = "websocket-client", specifier = ">=1.8.0" },
-]
-docs = [
-    { name = "esbonio", specifier = ">=0.16.4" },
-    { name = "furo", specifier = ">=2024.8.6" },
-    { name = "myst-parser", specifier = ">=4.0.0" },
-    { name = "sphinx", specifier = "<8.1.0" },
-    { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
-    { name = "sphinx-click", specifier = ">=6.0.0" },
-    { name = "sphinx-substitution-extensions", specifier = ">=2024.10.17" },
-    { name = "sphinxcontrib-mermaid", specifier = ">=0.9.2" },
-]
-
-[[package]]
-name = "jumpstarter-admin-cli"
-version = "0.5.1.dev93+gb7ef843.d20250115"
-source = { editable = "cli/admin" }
-dependencies = [
-    { name = "asyncclick" },
-    { name = "jumpstarter" },
-    { name = "jumpstarter-cli-common" },
-    { name = "kubernetes" },
-    { name = "kubernetes-asyncio" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "asyncclick", specifier = ">=8.1.7.2" },
-    { name = "jumpstarter", editable = "." },
-    { name = "jumpstarter-cli-common", editable = "cli/common" },
-    { name = "kubernetes", specifier = ">=31.0.0" },
-    { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
 name = "jumpstarter-cli"
-version = "0.5.1.dev93+gb7ef843.d20250115"
-source = { editable = "cli/jmp" }
+version = "0.5.1.dev94+g3eaebda.d20250118"
+source = { editable = "packages/jumpstarter_cli" }
 dependencies = [
-    { name = "jumpstarter" },
-    { name = "jumpstarter-admin-cli" },
-    { name = "jumpstarter-cli-common" },
-    { name = "jumpstarter-client-cli" },
-    { name = "jumpstarter-exporter-cli" },
+    { name = "jumpstarter-cli-admin" },
+    { name = "jumpstarter-cli-client" },
+    { name = "jumpstarter-cli-exporter" },
 ]
 
 [package.dev-dependencies]
@@ -882,12 +798,68 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jumpstarter", editable = "." },
-    { name = "jumpstarter-admin-cli", editable = "cli/admin" },
-    { name = "jumpstarter-cli-common", editable = "cli/common" },
-    { name = "jumpstarter-client-cli", editable = "cli/client" },
-    { name = "jumpstarter-exporter-cli", editable = "cli/exporter" },
+    { name = "jumpstarter-cli-admin", editable = "packages/jumpstarter_cli_admin" },
+    { name = "jumpstarter-cli-client", editable = "packages/jumpstarter_cli_client" },
+    { name = "jumpstarter-cli-exporter", editable = "packages/jumpstarter_cli_exporter" },
 ]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-cli-admin"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_cli_admin" }
+dependencies = [
+    { name = "jumpstarter-cli-common" },
+    { name = "jumpstarter-kubernetes" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter-cli-common", editable = "packages/jumpstarter_cli_common" },
+    { name = "jumpstarter-kubernetes", editable = "packages/jumpstarter_kubernetes" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-cli-client"
+version = "0.5.1.dev94+g3eaebda.d20250117"
+source = { editable = "packages/jumpstarter_cli_client" }
+dependencies = [
+    { name = "jumpstarter-cli-common" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "jumpstarter-cli-common", editable = "packages/jumpstarter_cli_common" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -899,8 +871,8 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-common"
-version = "0.5.1.dev93+gb7ef843.d20250115"
-source = { editable = "cli/common" }
+version = "0.5.1.dev94+g3eaebda.d20250117"
+source = { editable = "packages/jumpstarter_cli_common" }
 dependencies = [
     { name = "asyncclick" },
     { name = "jumpstarter" },
@@ -917,7 +889,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "asyncclick", specifier = ">=8.1.7.2" },
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
 
 [package.metadata.requires-dev]
@@ -929,12 +901,11 @@ dev = [
 ]
 
 [[package]]
-name = "jumpstarter-client-cli"
-version = "0.5.1.dev93+gb7ef843.d20250115"
-source = { editable = "cli/client" }
+name = "jumpstarter-cli-exporter"
+version = "0.5.1.dev94+g3eaebda.d20250117"
+source = { editable = "packages/jumpstarter_cli_exporter" }
 dependencies = [
     { name = "asyncclick" },
-    { name = "jumpstarter" },
     { name = "jumpstarter-cli-common" },
 ]
 
@@ -949,8 +920,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "asyncclick", specifier = ">=8.1.7.2" },
-    { name = "jumpstarter", editable = "." },
-    { name = "jumpstarter-cli-common", editable = "cli/common" },
+    { name = "jumpstarter-cli-common", editable = "packages/jumpstarter_cli_common" },
 ]
 
 [package.metadata.requires-dev]
@@ -963,8 +933,8 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.5.1.dev16+gc1f555c.d20241209"
-source = { editable = "contrib/drivers/can" }
+version = "0.5.1.dev94+g3eaebda.d20250117"
+source = { editable = "packages/jumpstarter_driver_can" }
 dependencies = [
     { name = "can-isotp" },
     { name = "jumpstarter" },
@@ -980,7 +950,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "can-isotp", specifier = ">=2.0.6" },
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "python-can", specifier = ">=4.4.2" },
 ]
 
@@ -991,11 +961,46 @@ dev = [
 ]
 
 [[package]]
-name = "jumpstarter-driver-dutlink"
-version = "0.5.1.dev16+gc1f555c.d20241209"
-source = { editable = "contrib/drivers/dutlink" }
+name = "jumpstarter-driver-composite"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_driver_composite" }
 dependencies = [
+    { name = "asyncclick" },
     { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jumpstarter-driver-power" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter_driver_power" },
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-dutlink"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_driver_dutlink" }
+dependencies = [
+    { name = "asyncclick" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-pyserial" },
     { name = "pyudev" },
     { name = "pyusb" },
 ]
@@ -1008,7 +1013,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jumpstarter", editable = "." },
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter_driver_composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter_driver_network" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter_driver_opendal" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter_driver_power" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter_driver_pyserial" },
     { name = "pyudev", specifier = ">=0.24.3" },
     { name = "pyusb", specifier = ">=1.2.1" },
 ]
@@ -1022,10 +1033,11 @@ dev = [
 [[package]]
 name = "jumpstarter-driver-http"
 version = "0.1.0"
-source = { editable = "contrib/drivers/http" }
+source = { editable = "packages/jumpstarter_driver_http" }
 dependencies = [
     { name = "anyio" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-opendal" },
 ]
 
 [package.dev-dependencies]
@@ -1039,7 +1051,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=4.6.2.post1" },
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter_driver_opendal" },
 ]
 
 [package.metadata.requires-dev]
@@ -1051,9 +1064,133 @@ dev = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-network"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_driver_network" }
+dependencies = [
+    { name = "fabric" },
+    { name = "jumpstarter" },
+    { name = "pexpect" },
+    { name = "wsproto" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "websocket-client" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fabric", specifier = ">=3.2.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pexpect", specifier = ">=4.9.0" },
+    { name = "wsproto", specifier = ">=1.2.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "websocket-client", specifier = ">=1.8.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-opendal"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_driver_opendal" }
+dependencies = [
+    { name = "asyncclick" },
+    { name = "jumpstarter" },
+    { name = "opendal" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "opendal", specifier = ">=0.45.8" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-power"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_driver_power" }
+dependencies = [
+    { name = "asyncclick" },
+    { name = "jumpstarter" },
+    { name = "pyserial" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "trio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pyserial", specifier = ">=3.5" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "trio", specifier = ">=0.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-pyserial"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_driver_pyserial" }
+dependencies = [
+    { name = "asyncclick" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-network" },
+    { name = "pyserial" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter_driver_network" },
+    { name = "pyserial", specifier = ">=3.5" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.5.1.dev16+gc1f555c.d20241209"
-source = { editable = "contrib/drivers/raspberrypi" }
+version = "0.5.1.dev94+g3eaebda.d20250117"
+source = { editable = "packages/jumpstarter_driver_raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
     { name = "jumpstarter" },
@@ -1068,7 +1205,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "gpiozero", specifier = ">=2.0.1" },
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
 
 [package.metadata.requires-dev]
@@ -1079,10 +1216,11 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.5.1.dev16+gc1f555c.d20241209"
-source = { editable = "contrib/drivers/sdwire" }
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_driver_sdwire" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-opendal" },
     { name = "pyudev" },
     { name = "pyusb" },
 ]
@@ -1095,7 +1233,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter_driver_opendal" },
     { name = "pyudev", specifier = ">=0.24.3" },
     { name = "pyusb", specifier = ">=1.2.1" },
 ]
@@ -1109,38 +1248,44 @@ dev = [
 [[package]]
 name = "jumpstarter-driver-tftp"
 version = "0.1.0"
-source = { editable = "contrib/drivers/tftp" }
+source = { editable = "packages/jumpstarter_driver_tftp" }
 dependencies = [
     { name = "aiofiles" },
     { name = "anyio" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-opendal" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "jumpstarter-testing" },
     { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=24.1.0" },
     { name = "anyio", specifier = ">=4.6.2.post1" },
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter_driver_opendal" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "jumpstarter-testing", editable = "packages/jumpstarter_testing" },
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "ruff", specifier = ">=0.7.1" },
 ]
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.5.1.dev16+gc1f555c.d20241209"
-source = { editable = "contrib/drivers/ustreamer" }
+version = "0.5.1.dev94+g3eaebda.d20250117"
+source = { editable = "packages/jumpstarter_driver_ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "pillow" },
@@ -1154,7 +1299,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "pillow", specifier = ">=10.4.0" },
 ]
 
@@ -1173,7 +1318,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "jumpstarter", editable = "." }]
+requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
 
 [[package]]
 name = "jumpstarter-example-soc-pytest"
@@ -1188,49 +1333,16 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jumpstarter", editable = "." },
-    { name = "jumpstarter-driver-dutlink", editable = "contrib/drivers/dutlink" },
-    { name = "jumpstarter-imagehash", editable = "contrib/libs/imagehash" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-dutlink", editable = "packages/jumpstarter_driver_dutlink" },
+    { name = "jumpstarter-imagehash", editable = "packages/jumpstarter_imagehash" },
     { name = "pytest", specifier = ">=8.3.2" },
-]
-
-[[package]]
-name = "jumpstarter-exporter-cli"
-version = "0.5.1.dev93+gb7ef843.d20250115"
-source = { editable = "cli/exporter" }
-dependencies = [
-    { name = "asyncclick" },
-    { name = "jumpstarter" },
-    { name = "jumpstarter-cli-common" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "asyncclick", specifier = ">=8.1.7.2" },
-    { name = "jumpstarter", editable = "." },
-    { name = "jumpstarter-cli-common", editable = "cli/common" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.5.1.dev16+gc1f555c.d20241209"
-source = { editable = "contrib/libs/imagehash" }
+version = "0.5.1.dev94+g3eaebda.d20250117"
+source = { editable = "packages/jumpstarter_imagehash" }
 dependencies = [
     { name = "imagehash" },
     { name = "jumpstarter" },
@@ -1245,7 +1357,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "imagehash", specifier = ">=4.3.1" },
-    { name = "jumpstarter", editable = "." },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
 
 [package.metadata.requires-dev]
@@ -1253,6 +1365,99 @@ dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
+
+[[package]]
+name = "jumpstarter-kubernetes"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_kubernetes" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "kubernetes" },
+    { name = "kubernetes-asyncio" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "kubernetes", specifier = ">=31.0.0" },
+    { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-protocol"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_protocol" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "protobuf" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.66.1" },
+    { name = "protobuf", specifier = ">=5.29.3" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-testing"
+version = "0.5.1.dev94+g3eaebda.d20250121"
+source = { editable = "packages/jumpstarter_testing" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jumpstarter-driver-power" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "jumpstarter-driver-power", editable = "packages/jumpstarter_driver_power" }]
 
 [[package]]
 name = "kubernetes"
@@ -1520,6 +1725,18 @@ wheels = [
 ]
 
 [[package]]
+name = "outcome"
+version = "1.3.0.post0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/df/77698abfac98571e65ffeb0c1fba8ffd692ab8458d617a0eed7d9a8d38f2/outcome-1.3.0.post0.tar.gz", hash = "sha256:9dcf02e65f2971b80047b377468e72a268e15c0af3cf1238e6ff14f7f91143b8", size = 21060 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/8b/5ab7257531a5d830fc8000c476e63c935488d74609b50f9384a643ec0a62/outcome-1.3.0.post0-py2.py3-none-any.whl", hash = "sha256:e771c5ce06d1415e356078d3bdd68523f284b4ce5419828922b6871e65eda82b", size = 10692 },
+]
+
+[[package]]
 name = "packaging"
 version = "24.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1669,16 +1886,16 @@ wheels = [
 
 [[package]]
 name = "protobuf"
-version = "5.28.3"
+version = "5.29.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/74/6e/e69eb906fddcb38f8530a12f4b410699972ab7ced4e21524ece9d546ac27/protobuf-5.28.3.tar.gz", hash = "sha256:64badbc49180a5e401f373f9ce7ab1d18b63f7dd4a9cdc43c92b9f0b481cef7b", size = 422479 }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/d1/e0a911544ca9993e0f17ce6d3cc0932752356c1b0a834397f28e63479344/protobuf-5.29.3.tar.gz", hash = "sha256:5da0f41edaf117bde316404bad1a486cb4ededf8e4a54891296f648e8e076620", size = 424945 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/c5/05163fad52d7c43e124a545f1372d18266db36036377ad29de4271134a6a/protobuf-5.28.3-cp310-abi3-win32.whl", hash = "sha256:0c4eec6f987338617072592b97943fdbe30d019c56126493111cf24344c1cc24", size = 419624 },
-    { url = "https://files.pythonhosted.org/packages/9c/4c/4563ebe001ff30dca9d7ed12e471fa098d9759712980cde1fd03a3a44fb7/protobuf-5.28.3-cp310-abi3-win_amd64.whl", hash = "sha256:91fba8f445723fcf400fdbe9ca796b19d3b1242cd873907979b9ed71e4afe868", size = 431464 },
-    { url = "https://files.pythonhosted.org/packages/1c/f2/baf397f3dd1d3e4af7e3f5a0382b868d25ac068eefe1ebde05132333436c/protobuf-5.28.3-cp38-abi3-macosx_10_9_universal2.whl", hash = "sha256:a3f6857551e53ce35e60b403b8a27b0295f7d6eb63d10484f12bc6879c715687", size = 414743 },
-    { url = "https://files.pythonhosted.org/packages/85/50/cd61a358ba1601f40e7d38bcfba22e053f40ef2c50d55b55926aecc8fec7/protobuf-5.28.3-cp38-abi3-manylinux2014_aarch64.whl", hash = "sha256:3fa2de6b8b29d12c61911505d893afe7320ce7ccba4df913e2971461fa36d584", size = 316511 },
-    { url = "https://files.pythonhosted.org/packages/5d/ae/3257b09328c0b4e59535e497b0c7537d4954038bdd53a2f0d2f49d15a7c4/protobuf-5.28.3-cp38-abi3-manylinux2014_x86_64.whl", hash = "sha256:712319fbdddb46f21abb66cd33cb9e491a5763b2febd8f228251add221981135", size = 316624 },
-    { url = "https://files.pythonhosted.org/packages/ad/c3/2377c159e28ea89a91cf1ca223f827ae8deccb2c9c401e5ca233cd73002f/protobuf-5.28.3-py3-none-any.whl", hash = "sha256:cee1757663fa32a1ee673434fcf3bf24dd54763c79690201208bafec62f19eed", size = 169511 },
+    { url = "https://files.pythonhosted.org/packages/dc/7a/1e38f3cafa022f477ca0f57a1f49962f21ad25850c3ca0acd3b9d0091518/protobuf-5.29.3-cp310-abi3-win32.whl", hash = "sha256:3ea51771449e1035f26069c4c7fd51fba990d07bc55ba80701c78f886bf9c888", size = 422708 },
+    { url = "https://files.pythonhosted.org/packages/61/fa/aae8e10512b83de633f2646506a6d835b151edf4b30d18d73afd01447253/protobuf-5.29.3-cp310-abi3-win_amd64.whl", hash = "sha256:a4fa6f80816a9a0678429e84973f2f98cbc218cca434abe8db2ad0bffc98503a", size = 434508 },
+    { url = "https://files.pythonhosted.org/packages/dd/04/3eaedc2ba17a088961d0e3bd396eac764450f431621b58a04ce898acd126/protobuf-5.29.3-cp38-abi3-macosx_10_9_universal2.whl", hash = "sha256:a8434404bbf139aa9e1300dbf989667a83d42ddda9153d8ab76e0d5dcaca484e", size = 417825 },
+    { url = "https://files.pythonhosted.org/packages/4f/06/7c467744d23c3979ce250397e26d8ad8eeb2bea7b18ca12ad58313c1b8d5/protobuf-5.29.3-cp38-abi3-manylinux2014_aarch64.whl", hash = "sha256:daaf63f70f25e8689c072cfad4334ca0ac1d1e05a92fc15c54eb9cf23c3efd84", size = 319573 },
+    { url = "https://files.pythonhosted.org/packages/a8/45/2ebbde52ad2be18d3675b6bee50e68cd73c9e0654de77d595540b5129df8/protobuf-5.29.3-cp38-abi3-manylinux2014_x86_64.whl", hash = "sha256:c027e08a08be10b67c06bf2370b99c811c466398c357e615ca88c91c07f0910f", size = 319672 },
+    { url = "https://files.pythonhosted.org/packages/fd/b2/ab07b09e0f6d143dfb839693aa05765257bceaa13d03bf1a696b78323e7a/protobuf-5.29.3-py3-none-any.whl", hash = "sha256:0a18ed4a24198528f2333802eb075e59dea9d679ab7a6c5efb017a59004d849f", size = 172550 },
 ]
 
 [[package]]
@@ -2126,6 +2343,15 @@ wheels = [
 ]
 
 [[package]]
+name = "sortedcontainers"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575 },
+]
+
+[[package]]
 name = "soupsieve"
 version = "2.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2307,6 +2533,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e8/4f/0153c21dc5779a49a0598c445b1978126b1344bab9ee71e53e44877e14e0/tqdm-4.67.0.tar.gz", hash = "sha256:fe5a6f95e6fe0b9755e9469b77b9c3cf850048224ecaa8293d7d2d31f97d869a", size = 169739 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2b/78/57043611a16c655c8350b4c01b8d6abfb38cc2acb475238b62c2146186d7/tqdm-4.67.0-py3-none-any.whl", hash = "sha256:0cd8af9d56911acab92182e88d763100d4788bdf421d251616040cc4d44863be", size = 78590 },
+]
+
+[[package]]
+name = "trio"
+version = "0.28.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "cffi", marker = "implementation_name != 'pypy' and os_name == 'nt'" },
+    { name = "idna" },
+    { name = "outcome" },
+    { name = "sniffio" },
+    { name = "sortedcontainers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b3/73/57efab729506a8d4b89814f1e356ec8f3369de0ed4fd7e7616974d09646d/trio-0.28.0.tar.gz", hash = "sha256:4e547896fe9e8a5658e54e4c7c5fa1db748cbbbaa7c965e7d40505b928c73c05", size = 580318 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/04/9954a59e1fb6732f5436225c9af963811d7b24ea62a8bf96991f2cb8c26e/trio-0.28.0-py3-none-any.whl", hash = "sha256:56d58977acc1635735a96581ec70513cc781b8b6decd299c487d3be2a721cd94", size = 486317 },
 ]
 
 [[package]]
