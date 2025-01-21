@@ -83,8 +83,7 @@ class DutlinkConfig:
 
 
 @dataclass(kw_only=True)
-class DutlinkPower(PowerInterface, Driver):
-    parent: Dutlink
+class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
     last_action: str | None = field(default=None)
 
     def control(self, action):
@@ -92,7 +91,7 @@ class DutlinkPower(PowerInterface, Driver):
         if self.last_action == action:
             return
 
-        result = self.parent.control(
+        result = super().control(
             usb.ENDPOINT_OUT,
             0x01,
             ["off", "on", "force-off", "force-on", "rescue"],
@@ -121,13 +120,17 @@ class DutlinkPower(PowerInterface, Driver):
         prev = None
 
         while True:
-            [v, a, _] = self.parent.control(
-                usb.ENDPOINT_IN,
-                0x04,
-                ["version", "power", "voltage", "current"],
-                "power",
-                None,
-            ).split()
+            [v, a, _] = (
+                super()
+                .control(
+                    usb.ENDPOINT_IN,
+                    0x04,
+                    ["version", "power", "voltage", "current"],
+                    "power",
+                    None,
+                )
+                .split()
+            )
 
             curr = PowerReading(voltage=float(v[:-1]), current=float(a[:-1]))
 
@@ -139,13 +142,12 @@ class DutlinkPower(PowerInterface, Driver):
 
 
 @dataclass(kw_only=True)
-class DutlinkStorageMux(StorageMuxInterface, Driver):
-    parent: Dutlink
+class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
     storage_device: str
 
     def control(self, action):
         log.debug(f"storage control: {action}")
-        return self.parent.control(
+        return super().control(
             usb.ENDPOINT_OUT,
             0x02,
             ["off", "host", "dut"],
@@ -241,8 +243,8 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
 
         self.dev.default_timeout = self.timeout_s * 1000
 
-        self.children["power"] = DutlinkPower(parent=self)
-        self.children["storage"] = DutlinkStorageMux(parent=self, storage_device=self.storage_device)
+        self.children["power"] = DutlinkPower(serial=self.serial)
+        self.children["storage"] = DutlinkStorageMux(serial=self.serial, storage_device=self.storage_device)
 
         # if an alternate serial port has been requested, use it
         if self.alternate_console is not None:
