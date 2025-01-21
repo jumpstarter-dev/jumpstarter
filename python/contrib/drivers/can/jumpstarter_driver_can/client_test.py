@@ -153,12 +153,15 @@ def test_client_can_send_periodic_remote(request, msgs, expected):
         client1,
         client2,
     ):
-        client1.send_periodic(
+        task = client1.send_periodic(
             msgs=msgs,
             period=0.1,
             duration=1,
+            autostart=False,
             store_task=True,
         )
+
+        task.start()
 
         assert [(msg.arbitration_id, msg.data) for msg in islice(client2, 4)] == expected
 
