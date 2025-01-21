@@ -730,6 +730,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
+version = "0.5.1.dev95+g202bb62"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -820,6 +821,7 @@ docs = [
 
 [[package]]
 name = "jumpstarter-driver-can"
+version = "0.5.1.dev95+g202bb62"
 source = { editable = "contrib/drivers/can" }
 dependencies = [
     { name = "can-isotp" },
@@ -848,6 +850,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
+version = "0.5.1.dev96+ge2601e1"
 source = { editable = "contrib/drivers/dutlink" }
 dependencies = [
     { name = "jumpstarter" },
@@ -907,6 +910,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
+version = "0.5.1.dev96+ge2601e1"
 source = { editable = "contrib/drivers/raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -933,6 +937,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
+version = "0.5.1.dev96+ge2601e1"
 source = { editable = "contrib/drivers/sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -972,6 +977,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
@@ -986,12 +992,14 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "ruff", specifier = ">=0.7.1" },
 ]
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
+version = "0.5.1.dev96+ge2601e1"
 source = { editable = "contrib/drivers/ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
