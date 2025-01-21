@@ -52,10 +52,34 @@ class DutlinkConfig:
                         raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
                 if not self.tty:
                     raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
-                
+
                 return
 
         raise FileNotFoundError("failed to find dutlink device")
+
+    def control(self, direction, ty, actions, action, value):
+        if direction == usb.ENDPOINT_IN:
+            self.dev.ctrl_transfer(
+                bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
+                wIndex=self.itf.bInterfaceNumber,
+                bRequest=0x00,
+            )
+
+        op = actions.index(action)
+        res = self.dev.ctrl_transfer(
+            bmRequestType=direction | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
+            wIndex=self.itf.bInterfaceNumber,
+            bRequest=ty,
+            wValue=op,
+            data_or_wLength=(value if direction == usb.ENDPOINT_OUT else 512),
+        )
+
+        if direction == usb.ENDPOINT_IN:
+            str_value = bytes(res).decode("utf-8")
+            log.debug(
+                "ctrl_transfer result: %s",
+            )
+            return str_value
 
 
 @dataclass(kw_only=True)
@@ -236,27 +260,3 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
         else:
             # otherwise look up the tty console provided by dutlink
             self.children["console"] = PySerial(url=self.tty, baudrate=self.baudrate)
-
-    def control(self, direction, ty, actions, action, value):
-        if direction == usb.ENDPOINT_IN:
-            self.dev.ctrl_transfer(
-                bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
-                wIndex=self.itf.bInterfaceNumber,
-                bRequest=0x00,
-            )
-
-        op = actions.index(action)
-        res = self.dev.ctrl_transfer(
-            bmRequestType=direction | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
-            wIndex=self.itf.bInterfaceNumber,
-            bRequest=ty,
-            wValue=op,
-            data_or_wLength=(value if direction == usb.ENDPOINT_OUT else 512),
-        )
-
-        if direction == usb.ENDPOINT_IN:
-            str_value = bytes(res).decode("utf-8")
-            log.debug(
-                "ctrl_transfer result: %s",
-            )
-            return str_value
