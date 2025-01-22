@@ -20,6 +20,9 @@ class RemoteCyclicSendTask(can.broadcastmanager.CyclicSendTaskABC):
     client: CanClient
     uuid: UUID
 
+    def start(self) -> None:
+        self.client.call("_start_task", self.uuid)
+
     def stop(self) -> None:
         self.client.call("_stop_task", self.uuid)
 
@@ -89,13 +92,16 @@ class CanClient(DriverClient, can.BusABC):
         msgs: Sequence[can.Message],
         period: float,
         duration: Optional[float] = None,
+        autostart: bool = True,
         modifier_callback: Optional[Callable[[can.Message], None]] = None,
     ) -> can.broadcastmanager.CyclicSendTaskABC:
         if modifier_callback:
-            return super()._send_periodic_internal(msgs, period, duration, modifier_callback)
+            return super()._send_periodic_internal(msgs, period, duration, autostart, modifier_callback)
         else:
             msgs = [CanMessage.construct(msg) for msg in msgs]
-            return RemoteCyclicSendTask(client=self, uuid=self.call("_send_periodic_internal", msgs, period, duration))
+            return RemoteCyclicSendTask(
+                client=self, uuid=self.call("_send_periodic_internal", msgs, period, duration, autostart)
+            )
 
     # python-can bug
     # https://docs.pydantic.dev/2.8/errors/usage_errors/#typed-dict-version
