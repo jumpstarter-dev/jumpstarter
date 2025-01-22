@@ -72,17 +72,23 @@ class Can(Driver):
         msgs: Union[Sequence[CanMessage], CanMessage],
         period: float,
         duration: Optional[float] = None,
+        autostart: bool = True,
         modifier_callback: Optional[Callable[[can.Message], None]] = None,
     ) -> UUID:
         assert modifier_callback is None
-        task = self.bus._send_periodic_internal(msgs, period, duration, modifier_callback)
+        task = self.bus._send_periodic_internal(msgs, period, duration, autostart, modifier_callback)
         uuid = uuid4()
         self.__tasks[uuid] = task
         return uuid
 
     @export
     @validate_call(validate_return=True)
-    def _stop_task(self, uuid: UUID):
+    def _start_task(self, uuid: UUID) -> None:
+        self.__tasks[uuid].start()
+
+    @export
+    @validate_call(validate_return=True)
+    def _stop_task(self, uuid: UUID) -> None:
         self.__tasks.pop(uuid).stop()
 
     @export
