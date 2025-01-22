@@ -23,8 +23,67 @@ log = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
-class DutlinkPower(PowerInterface, Driver):
-    parent: Dutlink
+class DutlinkConfig:
+    serial: str | None = field(default=None)
+
+    dev: usb.core.Device = field(init=False)
+    itf: usb.core.Interface = field(init=False)
+    tty: str | None = field(init=False, default=None)
+
+    def __post_init__(self):
+        for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
+            serial = usb.util.get_string(dev, dev.iSerialNumber)
+            if serial == self.serial or self.serial is None:
+                log.debug(f"found dutlink board with serial {serial}")
+
+                self.serial = serial
+                self.dev = dev
+                self.itf = usb.util.find_descriptor(
+                    dev.get_active_configuration(),
+                    bInterfaceClass=0xFF,
+                    bInterfaceSubClass=0x1,
+                    bInterfaceProtocol=0x1,
+                )
+
+                for tty in pyudev.Context().list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
+                    if not self.tty:
+                        self.tty = tty.device_node
+                    else:
+                        raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
+                if not self.tty:
+                    raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
+
+                return
+
+        raise FileNotFoundError("failed to find dutlink device")
+
+    def control(self, direction, ty, actions, action, value):
+        if direction == usb.ENDPOINT_IN:
+            self.dev.ctrl_transfer(
+                bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
+                wIndex=self.itf.bInterfaceNumber,
+                bRequest=0x00,
+            )
+
+        op = actions.index(action)
+        res = self.dev.ctrl_transfer(
+            bmRequestType=direction | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
+            wIndex=self.itf.bInterfaceNumber,
+            bRequest=ty,
+            wValue=op,
+            data_or_wLength=(value if direction == usb.ENDPOINT_OUT else 512),
+        )
+
+        if direction == usb.ENDPOINT_IN:
+            str_value = bytes(res).decode("utf-8")
+            log.debug(
+                "ctrl_transfer result: %s",
+            )
+            return str_value
+
+
+@dataclass(kw_only=True)
+class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
     last_action: str | None = field(default=None)
 
     def control(self, action):
@@ -32,7 +91,7 @@ class DutlinkPower(PowerInterface, Driver):
         if self.last_action == action:
             return
 
-        result = self.parent.control(
+        result = super().control(
             usb.ENDPOINT_OUT,
             0x01,
             ["off", "on", "force-off", "force-on", "rescue"],
@@ -61,13 +120,17 @@ class DutlinkPower(PowerInterface, Driver):
         prev = None
 
         while True:
-            [v, a, _] = self.parent.control(
-                usb.ENDPOINT_IN,
-                0x04,
-                ["version", "power", "voltage", "current"],
-                "power",
-                None,
-            ).split()
+            [v, a, _] = (
+                super()
+                .control(
+                    usb.ENDPOINT_IN,
+                    0x04,
+                    ["version", "power", "voltage", "current"],
+                    "power",
+                    None,
+                )
+                .split()
+            )
 
             curr = PowerReading(voltage=float(v[:-1]), current=float(a[:-1]))
 
@@ -79,13 +142,12 @@ class DutlinkPower(PowerInterface, Driver):
 
 
 @dataclass(kw_only=True)
-class DutlinkStorageMux(StorageMuxInterface, Driver):
-    parent: Dutlink
+class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
     storage_device: str
 
     def control(self, action):
         log.debug(f"storage control: {action}")
-        return self.parent.control(
+        return super().control(
             usb.ENDPOINT_OUT,
             0x02,
             ["off", "host", "dut"],
@@ -152,15 +214,12 @@ class DutlinkStorageMux(StorageMuxInterface, Driver):
 
 
 @dataclass(kw_only=True)
-class Dutlink(CompositeInterface, Driver):
-    serial: str | None = field(default=None)
+class Dutlink(DutlinkConfig, CompositeInterface, Driver):
     alternate_console: str | None = field(default=None)
     timeout_s: int = field(default=20)  # 20 seconds, power control sequences can block USB for a long time
     storage_device: str
     baudrate: int = field(default=115200)
 
-    dev: usb.core.Device = field(init=False)
-    itf: usb.core.Interface = field(init=False)
     """
     Parameters:
     ----------
@@ -181,70 +240,25 @@ class Dutlink(CompositeInterface, Driver):
 
     def __post_init__(self):
         super().__post_init__()
-        for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
-            serial = usb.util.get_string(dev, dev.iSerialNumber)
-            if serial == self.serial or self.serial is None:
-                log.debug(f"found dutlink board with serial {serial}")
-                dev.default_timeout = self.timeout_s * 1000
-                self.dev = dev
-                self.itf = usb.util.find_descriptor(
-                    dev.get_active_configuration(),
-                    bInterfaceClass=0xFF,
-                    bInterfaceSubClass=0x1,
-                    bInterfaceProtocol=0x1,
+
+        self.dev.default_timeout = self.timeout_s * 1000
+
+        self.children["power"] = DutlinkPower(serial=self.serial)
+        self.children["storage"] = DutlinkStorageMux(serial=self.serial, storage_device=self.storage_device)
+
+        # if an alternate serial port has been requested, use it
+        if self.alternate_console is not None:
+            try:
+                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
+            except SerialException:
+                log.info(
+                    f"failed to open alternate console {self.alternate_console} "
+                    "but trying to power on the target once"
                 )
-
-                self.children["power"] = DutlinkPower(parent=self)
-                self.children["storage"] = DutlinkStorageMux(parent=self, storage_device=self.storage_device)
-
-                # if an alternate serial port has been requested, use it
-                if self.alternate_console is not None:
-                    try:
-                        self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
-                    except SerialException:
-                        log.info(
-                            f"failed to open alternate console {self.alternate_console} "
-                            "but trying to power on the target once"
-                        )
-                        self.children["power"].on()
-                        time.sleep(5)
-                        self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
-                        self.children["power"].off()
-                else:
-                    # otherwise look up the tty console provided by dutlink
-                    for tty in pyudev.Context().list_devices(subsystem="tty", ID_SERIAL_SHORT=serial):
-                        if "console" not in self.children:
-                            self.children["console"] = PySerial(url=tty.device_node, baudrate=self.baudrate)
-                        else:
-                            raise RuntimeError(f"multiple console found for the dutlink board with serial {serial}")
-
-                if "console" not in self.children:
-                    raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
-
-                return
-
-        raise FileNotFoundError("failed to find dutlink device")
-
-    def control(self, direction, ty, actions, action, value):
-        if direction == usb.ENDPOINT_IN:
-            self.dev.ctrl_transfer(
-                bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
-                wIndex=self.itf.bInterfaceNumber,
-                bRequest=0x00,
-            )
-
-        op = actions.index(action)
-        res = self.dev.ctrl_transfer(
-            bmRequestType=direction | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
-            wIndex=self.itf.bInterfaceNumber,
-            bRequest=ty,
-            wValue=op,
-            data_or_wLength=(value if direction == usb.ENDPOINT_OUT else 512),
-        )
-
-        if direction == usb.ENDPOINT_IN:
-            str_value = bytes(res).decode("utf-8")
-            log.debug(
-                "ctrl_transfer result: %s",
-            )
-            return str_value
+                self.children["power"].on()
+                time.sleep(5)
+                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
+                self.children["power"].off()
+        else:
+            # otherwise look up the tty console provided by dutlink
+            self.children["console"] = PySerial(url=self.tty, baudrate=self.baudrate)

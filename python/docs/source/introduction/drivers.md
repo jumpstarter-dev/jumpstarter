@@ -34,6 +34,11 @@ export:
     type: jumpstarter_driver_dutlink.driver.Dutlink
     config:
       storage_device: "/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_5B4C0AB025C0-0:0"
+  # using the DUTLink power interface individually
+  power:
+    type: jumpstarter_driver_dutlink.driver.DutlinkPower
+    config:
+      serial: "c415a913" # serial number of the DUTLink board
 ```
 
 ## Driver I/O
