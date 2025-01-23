@@ -8,9 +8,8 @@ from uuid import UUID
 import can
 import isotp
 from can.bus import _SelfRemovingCyclicTask
-from pydantic import ConfigDict, validate_call
-
 from jumpstarter.client import DriverClient
+from pydantic import ConfigDict, validate_call
 
 from .common import CanMessage, IsoTpAddress, IsoTpAsymmetricAddress, IsoTpMessage
 

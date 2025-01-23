@@ -6,10 +6,9 @@ import grpc
 from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
 from graphlib import TopologicalSorter
-from jumpstarter_protocol import jumpstarter_pb2_grpc
-
 from jumpstarter.client import DriverClient
 from jumpstarter.common.importlib import import_class
+from jumpstarter_protocol import jumpstarter_pb2_grpc
 
 
 @asynccontextmanager

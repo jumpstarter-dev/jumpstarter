@@ -3,9 +3,8 @@ import base64
 from dataclasses import dataclass
 from typing import Literal
 
-from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
-
 from jumpstarter.config import ExporterConfigV1Alpha1
+from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from .util import AbstractAsyncCustomObjectApi
 

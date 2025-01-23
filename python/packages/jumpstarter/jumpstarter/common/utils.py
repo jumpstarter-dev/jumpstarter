@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager, contextmanager
 from subprocess import Popen
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
-
 from jumpstarter.client import client_from_path
 from jumpstarter.config.client import _allow_from_env
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST

@@ -1,8 +1,8 @@
 import pytest
 import usb
+from jumpstarter.common.utils import serve
 from jumpstarter_driver_network.adapters import PexpectAdapter
 
-from jumpstarter.common.utils import serve
 from jumpstarter_driver_dutlink.driver import Dutlink
 
 

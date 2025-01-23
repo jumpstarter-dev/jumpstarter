@@ -7,8 +7,6 @@ from dataclasses import dataclass
 
 from grpc import StatusCode
 from grpc.aio import AioRpcError, Channel
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
-
 from jumpstarter.common import Metadata
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
@@ -24,6 +22,7 @@ from jumpstarter.streams import (
     RouterStream,
     forward_stream,
 )
+from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 
 @dataclass(kw_only=True)

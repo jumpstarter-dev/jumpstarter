@@ -1,6 +1,6 @@
 import pytest
-
 from jumpstarter.common.utils import serve
+
 from jumpstarter_driver_ustreamer.driver import UStreamer
 
 

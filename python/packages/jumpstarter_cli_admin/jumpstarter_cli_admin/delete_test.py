@@ -2,14 +2,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
-from jumpstarter_kubernetes import (
-    ClientsV1Alpha1Api,
-    ExportersV1Alpha1Api,
-    V1Alpha1Exporter,
-    V1Alpha1ExporterStatus,
-)
-from kubernetes_asyncio.client.models import V1ObjectMeta
-
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
@@ -17,6 +9,13 @@ from jumpstarter.config import (
     UserConfigV1Alpha1,
     UserConfigV1Alpha1Config,
 )
+from jumpstarter_kubernetes import (
+    ClientsV1Alpha1Api,
+    ExportersV1Alpha1Api,
+    V1Alpha1Exporter,
+    V1Alpha1ExporterStatus,
+)
+from kubernetes_asyncio.client.models import V1ObjectMeta
 
 from .delete import delete
 

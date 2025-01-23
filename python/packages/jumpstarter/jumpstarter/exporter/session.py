@@ -6,16 +6,15 @@ from uuid import UUID
 import grpc
 from anyio import Event, TypedAttributeLookupError
 from anyio.from_thread import start_blocking_portal
+from jumpstarter.common import Metadata, TemporarySocket
+from jumpstarter.common.streams import StreamRequestMetadata
+from jumpstarter.driver import Driver
+from jumpstarter.streams import MetadataStreamAttributes, RouterStream, forward_stream
 from jumpstarter_protocol import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     router_pb2_grpc,
 )
-
-from jumpstarter.common import Metadata, TemporarySocket
-from jumpstarter.common.streams import StreamRequestMetadata
-from jumpstarter.driver import Driver
-from jumpstarter.streams import MetadataStreamAttributes, RouterStream, forward_stream
 
 logger = logging.getLogger(__name__)
 

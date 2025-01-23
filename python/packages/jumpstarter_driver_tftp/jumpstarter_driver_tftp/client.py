@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from jumpstarter.client import DriverClient
 from jumpstarter_driver_opendal.adapter import OpendalAdapter
 from opendal import Operator
-
-from jumpstarter.client import DriverClient
 
 
 @dataclass(kw_only=True)

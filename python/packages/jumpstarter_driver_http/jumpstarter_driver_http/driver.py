@@ -7,7 +7,6 @@ from typing import Optional
 import anyio
 from aiohttp import web
 from anyio.streams.file import FileWriteStream
-
 from jumpstarter.driver import Driver, export
 
 logger = logging.getLogger(__name__)
