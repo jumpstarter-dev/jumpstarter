@@ -10,5 +10,6 @@ Drivers packages from the [drivers](https://github.com/jumpstarter-dev/jumpstart
 can.md
 pyserial.md
 sdwire.md
+shell.md
 ustreamer.md
 ```
