@@ -85,15 +85,11 @@ class DutlinkConfig:
 @dataclass(kw_only=True)
 class DutlinkSerial(DutlinkConfig, PySerial):
     url: str | None = field(init=False, default=None)
-    alternate_console: str | None = field(default=None)
 
     def __post_init__(self):
         super().__post_init__()
 
-        if self.alternate_console is not None:
-            self.url = self.alternate_console
-        else:
-            self.url = self.tty
+        self.url = self.tty
 
         super(PySerial, self).__post_init__()
 
@@ -262,15 +258,18 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
         self.children["power"] = DutlinkPower(serial=self.serial)
         self.children["storage"] = DutlinkStorageMux(serial=self.serial, storage_device=self.storage_device)
 
-        try:
-            self.children["console"] = DutlinkSerial(
-                serial=self.serial, alternate_console=self.alternate_console, baudrate=self.baudrate
-            )
-        except SerialException:
-            log.info("failed to open console but trying to power on the target once")
-            self.children["power"].on()
-            time.sleep(5)
-            self.children["console"] = DutlinkSerial(
-                serial=self.serial, alternate_console=self.alternate_console, baudrate=self.baudrate
-            )
-            self.children["power"].off()
+        # if an alternate serial port has been requested, use it
+        if self.alternate_console is not None:
+            try:
+                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
+            except SerialException:
+                log.info(
+                    f"failed to open alternate console {self.alternate_console} but trying to power on the target once"
+                )
+                self.children["power"].on()
+                time.sleep(5)
+                self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
+                self.children["power"].off()
+        else:
+            # otherwise look up the tty console provided by dutlink
+            self.children["console"] = DutlinkSerial(serial=self.serial, baudrate=self.baudrate)
