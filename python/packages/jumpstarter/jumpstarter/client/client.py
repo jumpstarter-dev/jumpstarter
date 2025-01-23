@@ -1,11 +1,11 @@
 from collections import OrderedDict, defaultdict
 from contextlib import asynccontextmanager
+from graphlib import TopologicalSorter
 from uuid import UUID
 
 import grpc
 from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
-from graphlib import TopologicalSorter
 from jumpstarter.client import DriverClient
 from jumpstarter.common.importlib import import_class
 from jumpstarter_protocol import jumpstarter_pb2_grpc
