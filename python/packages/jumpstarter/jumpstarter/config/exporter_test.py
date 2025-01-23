@@ -141,7 +141,7 @@ export:
             ),
         },
         config={},
-        path=path
+        path=path,
     )
 
     path.unlink()

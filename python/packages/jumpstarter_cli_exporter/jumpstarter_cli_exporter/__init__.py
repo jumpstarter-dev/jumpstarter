@@ -17,6 +17,7 @@ def exporter(log_level: Optional[str]):
     else:
         logging.basicConfig(level=logging.INFO)
 
+
 exporter.add_command(create_exporter_config)
 exporter.add_command(delete_exporter_config)
 exporter.add_command(edit_exporter_config)

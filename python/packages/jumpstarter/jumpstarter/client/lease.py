@@ -26,7 +26,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     name: str | None = field(default=None)
     allow: list[str]
     unsafe: bool
-    release: bool = True # release on contexts exit
+    release: bool = True  # release on contexts exit
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
 
@@ -53,7 +53,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         return self.portal.call(self.request_async)
 
     async def request_async(self):
-        """ Request a lease, or verifies a lease which was already created.
+        """Request a lease, or verifies a lease which was already created.
 
         :return: lease
         :rtype: Lease
@@ -68,7 +68,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         return await self._acquire()
 
     async def _acquire(self):
-        """ Acquire a lease.
+        """Acquire a lease.
 
         Makes sure the lease is ready, and returns the lease object.
         """

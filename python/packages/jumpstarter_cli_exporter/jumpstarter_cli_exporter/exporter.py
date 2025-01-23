@@ -41,6 +41,7 @@ async def run_exporter(alias, config_path):
 
     return await _serve_with_exc_handling(config)
 
+
 @click.command("shell")
 @arg_alias
 @opt_config_path

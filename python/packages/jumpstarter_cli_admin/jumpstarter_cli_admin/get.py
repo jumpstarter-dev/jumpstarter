@@ -152,6 +152,7 @@ async def get_exporter(
 
 LEASE_COLUMNS = ["NAME", "CLIENT", "SELECTOR", "EXPORTER", "STATUS", "REASON", "BEGIN", "END", "DURATION", "AGE"]
 
+
 def get_reason(lease: V1Alpha1Lease):
     condition = lease.status.conditions[-1] if len(lease.status.conditions) > 0 else None
     reason = condition.reason if condition is not None else "Unknown"
@@ -166,6 +167,7 @@ def get_reason(lease: V1Alpha1Lease):
             return "Expired"
         else:
             return "Complete"
+
 
 def make_lease_row(lease: V1Alpha1Lease):
     selectors = []

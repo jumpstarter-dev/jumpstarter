@@ -19,11 +19,13 @@ def temp_dir():
     with tempfile.TemporaryDirectory() as tmpdir:
         yield tmpdir
 
+
 @pytest.fixture
 def server(temp_dir):
     server = Tftp(root_dir=temp_dir, host="127.0.0.1")
     yield server
     server.close()
+
 
 @pytest.mark.anyio
 async def test_tftp_file_operations(server):
@@ -64,12 +66,14 @@ def test_tftp_host_config(temp_dir):
     server = Tftp(root_dir=temp_dir, host=custom_host)
     assert server.get_host() == custom_host
 
+
 def test_tftp_root_directory_creation(temp_dir):
     new_dir = os.path.join(temp_dir, "new_tftp_root")
     server = Tftp(root_dir=new_dir)
     assert os.path.exists(new_dir)
     server.close()
 
+
 @pytest.fixture
 def anyio_backend():
-    return 'asyncio'
+    return "asyncio"

@@ -14,6 +14,7 @@ from jumpstarter_driver_tftp.server import TftpServer
 
 logger = logging.getLogger(__name__)
 
+
 def get_default_ip():
     """Get the IP address of the default route interface"""
     try:
@@ -24,17 +25,24 @@ def get_default_ip():
         logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
         return "0.0.0.0"
 
+
 class TftpError(Exception):
     """Base exception for TFTP server errors"""
+
     pass
+
 
 class ServerNotRunning(TftpError):
     """Server is not running"""
+
     pass
+
 
 class FileNotFound(TftpError):
     """File not found"""
+
     pass
+
 
 @dataclass(kw_only=True)
 class Tftp(Driver):
@@ -43,7 +51,7 @@ class Tftp(Driver):
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default_factory=get_default_ip)
     port: int = 69
-    server: Optional['TftpServer'] = field(init=False, default=None)
+    server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: Optional[threading.Thread] = field(init=False, default=None)
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
@@ -82,10 +90,7 @@ class Tftp(Driver):
     async def _run_server(self):
         try:
             server_task = asyncio.create_task(self.server.start())
-            await asyncio.gather(
-                server_task,
-                self._wait_for_shutdown()
-            )
+            await asyncio.gather(server_task, self._wait_for_shutdown())
         except asyncio.CancelledError:
             logger.info("Server task cancelled")
             raise
@@ -95,7 +100,7 @@ class Tftp(Driver):
             await asyncio.sleep(0.1)
         logger.info("Shutdown event detected")
         if self.server is not None:
-          await self.server.shutdown()
+            await self.server.shutdown()
 
     @export
     def start(self):

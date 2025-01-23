@@ -16,10 +16,12 @@ from .driver import HttpServer
 def anyio_backend():
     return "asyncio"
 
+
 @pytest.fixture
 def temp_dir():
     with TemporaryDirectory() as tmpdir:
         yield tmpdir
+
 
 @pytest.fixture
 async def server(temp_dir):
@@ -29,6 +31,7 @@ async def server(temp_dir):
         yield server
     finally:
         await server.stop()
+
 
 @pytest.mark.anyio
 async def test_http_server(server):
@@ -67,10 +70,12 @@ async def test_http_server(server):
     files_after_deletion = server.list_files()
     assert filename not in files_after_deletion
 
+
 def test_http_server_host_config(temp_dir):
     custom_host = "192.168.1.1"
     server = HttpServer(root_dir=temp_dir, host=custom_host)
     assert server.get_host() == custom_host
+
 
 def test_http_server_root_directory_creation(temp_dir):
     new_dir = os.path.join(temp_dir, "new_http_root")

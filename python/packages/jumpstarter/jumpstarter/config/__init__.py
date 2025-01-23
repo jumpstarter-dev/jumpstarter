@@ -20,5 +20,5 @@ __all__ = [
     "ClientConfigV1Alpha1",
     "ClientConfigV1Alpha1Drivers",
     "ExporterConfigV1Alpha1",
-    "ExporterConfigV1Alpha1DriverInstance"
+    "ExporterConfigV1Alpha1DriverInstance",
 ]

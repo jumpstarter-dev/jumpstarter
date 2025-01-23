@@ -10,41 +10,42 @@ from jumpstarter.config.client import ClientConfigV1Alpha1
 
 log = logging.getLogger(__name__)
 
+
 class JumpstarterTest:
-    """ Base class for Jumpstarter test cases in pytest
+    """Base class for Jumpstarter test cases in pytest
 
-This class provides a client fixture that can be used to interact with
-Jumpstarter services in test cases.
+    This class provides a client fixture that can be used to interact with
+    Jumpstarter services in test cases.
 
-Looks for the `JUMPSTARTER_HOST` environment variable to connect to an
-established Jumpstarter shell, otherwise it will try to acquire a lease
-for a single exporter using the filter_labels annotation.
-i.e.:
+    Looks for the `JUMPSTARTER_HOST` environment variable to connect to an
+    established Jumpstarter shell, otherwise it will try to acquire a lease
+    for a single exporter using the filter_labels annotation.
+    i.e.:
 
-.. code-block:: python
+    .. code-block:: python
 
-    import os
-    import pytest
-    import logging
+        import os
+        import pytest
+        import logging
 
-    from jumpstarter_testing.pytest import JumpstarterTest
+        from jumpstarter_testing.pytest import JumpstarterTest
 
-    log = logging.getLogger(__name__)
+        log = logging.getLogger(__name__)
 
-    class TestResource(JumpstarterTest):
-        filter_labels = {"board":"rpi4"}
+        class TestResource(JumpstarterTest):
+            filter_labels = {"board":"rpi4"}
 
-        @pytest.fixture()
-        def console(self, client):
-            with PexpectAdapter(client=client.dutlink.console) as console:
-                yield console
+            @pytest.fixture()
+            def console(self, client):
+                with PexpectAdapter(client=client.dutlink.console) as console:
+                    yield console
 
-        def test_setup_device(self, client, console):
-            client.dutlink.power.off()
-            log.info("Setting up device")
-            client.dutlink.storage.write_local_file("2024-07-04-raspios-bookworm-arm64-lite.img")
-            client.dutlink.storage.dut()
-            client.dutlink.power.on()
+            def test_setup_device(self, client, console):
+                client.dutlink.power.off()
+                log.info("Setting up device")
+                client.dutlink.storage.write_local_file("2024-07-04-raspios-bookworm-arm64-lite.img")
+                client.dutlink.storage.dut()
+                client.dutlink.power.on()
 
     """
 

@@ -48,9 +48,11 @@ class HttpServer(Driver):
     def __post_init__(self):
         super().__post_init__()
         os.makedirs(self.root_dir, exist_ok=True)
-        self.app.router.add_routes([
-            web.get('/{filename}', self.get_file),
-        ])
+        self.app.router.add_routes(
+            [
+                web.get("/{filename}", self.get_file),
+            ]
+        )
 
     @classmethod
     def client(cls) -> str:
@@ -129,7 +131,7 @@ class HttpServer(Driver):
         Raises:
             web.HTTPNotFound: If the requested file does not exist.
         """
-        filename = request.match_info['filename']
+        filename = request.match_info["filename"]
         file_path = os.path.join(self.root_dir, filename)
         if not os.path.isfile(file_path):
             logger.warning(f"File not found: {file_path}")
@@ -170,7 +172,7 @@ class HttpServer(Driver):
 
         self.runner = web.AppRunner(self.app)
         if self.runner:
-          await self.runner.setup()
+            await self.runner.setup()
 
         site = web.TCPSite(self.runner, self.host, self.port)
         await site.start()

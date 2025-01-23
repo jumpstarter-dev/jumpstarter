@@ -13,5 +13,5 @@ __all__ = [
     "opt_namespace",
     "time_since",
     "version",
-    "get_client_version"
+    "get_client_version",
 ]

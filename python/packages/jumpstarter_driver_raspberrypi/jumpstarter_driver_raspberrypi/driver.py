@@ -20,7 +20,7 @@ class DigitalOutput(Driver):
         self.device = InputDevice(pin=self.pin)
 
     def close(self):
-        if hasattr(self, 'device'):
+        if hasattr(self, "device"):
             self.device.close()
         super().close()
 

@@ -27,6 +27,7 @@ def _allow_from_env():
         case _:
             return allow.split(","), False
 
+
 class ClientConfigV1Alpha1Drivers(BaseModel):
     allow: list[str] = Field(default_factory=[])
     unsafe: bool = Field(default=False)
@@ -58,8 +59,7 @@ class ClientConfigV1Alpha1(BaseModel):
     @contextmanager
     def lease(self, metadata_filter: MetadataFilter, lease_name: str | None = None):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(
-                self.lease_async(metadata_filter, lease_name, portal)) as lease:
+            with portal.wrap_async_context_manager(self.lease_async(metadata_filter, lease_name, portal)) as lease:
                 yield lease
 
     def request_lease(self, metadata_filter: MetadataFilter):
@@ -74,9 +74,10 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             portal.call(self.release_lease_async, name)
 
-    async def request_lease_async(self, metadata_filter: MetadataFilter, portal:BlockingPortal):
+    async def request_lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
         # dynamically import to avoid circular imports
         from jumpstarter.client import Lease
+
         lease = Lease(
             channel=await self.channel(),
             name=None,

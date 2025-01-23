@@ -9,6 +9,7 @@ from jumpstarter_cli_exporter import exporter
 def jmp():
     """The Jumpstarter CLI"""
 
+
 jmp.add_command(client)
 jmp.add_command(exporter)
 jmp.add_command(admin)

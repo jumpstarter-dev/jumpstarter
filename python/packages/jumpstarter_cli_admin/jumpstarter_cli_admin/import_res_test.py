@@ -95,9 +95,7 @@ EXPORTER_CONFIG = ExporterConfigV1Alpha1(
 @patch.object(ExporterConfigV1Alpha1, "save")
 @patch.object(ExportersV1Alpha1Api, "get_exporter_config", return_value=EXPORTER_CONFIG)
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_import_exporter(
-    _load_kube_config_mock, _get_exporter_config_mock, save_exporter_config_mock: Mock
-):
+async def test_import_exporter(_load_kube_config_mock, _get_exporter_config_mock, save_exporter_config_mock: Mock):
     runner = CliRunner()
 
     # Save with prompts

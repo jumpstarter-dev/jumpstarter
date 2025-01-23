@@ -1,4 +1,3 @@
-
 import os
 import sys
 import termios
@@ -9,7 +8,7 @@ from jumpstarter.client import DriverClient
 
 
 class Console:
-    def __init__(self, serial_client:DriverClient):
+    def __init__(self, serial_client: DriverClient):
         self.serial_client = serial_client
 
     def run(self):
@@ -28,7 +27,7 @@ class Console:
                 data = sys.stdin.buffer.read(1)
                 if not data:
                     continue
-                if data == b"\x02": # Ctrl-B
+                if data == b"\x02":  # Ctrl-B
                     ctrl_b_count += 1
                     if ctrl_b_count == 3:
                         return
@@ -51,4 +50,3 @@ class Console:
                 sys.stdout.flush()
         finally:
             self._reset_terminal()
-

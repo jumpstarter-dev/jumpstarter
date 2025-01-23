@@ -31,6 +31,7 @@ def test_drivers_gpio_digital_output():
 
     mock_pin.assert_states([False, True, False])
 
+
 def test_drivers_gpio_digital_input():
     instance = DigitalInput(pin=4)
 

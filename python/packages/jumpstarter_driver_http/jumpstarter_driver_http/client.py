@@ -68,12 +68,7 @@ class HttpServerClient(DriverClient):
             >>> client.put_local_file("/path/to/local/file.txt")
         """
         absolute = Path(filepath).resolve()
-        with OpendalAdapter(
-            client=self,
-            operator=Operator("fs", root="/"),
-            path=str(absolute),
-            mode="rb"
-        ) as handle:
+        with OpendalAdapter(client=self, operator=Operator("fs", root="/"), path=str(absolute), mode="rb") as handle:
             return self.call("put_file", absolute.name, handle)
 
     def delete_file(self, filename: str) -> str:

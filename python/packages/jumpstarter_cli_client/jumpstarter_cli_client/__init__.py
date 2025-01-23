@@ -12,6 +12,7 @@ from .lease import lease
 def client():
     """Jumpstarter client CLI tool"""
 
+
 def j():
     with env() as client:
         client.cli()(standalone_mode=False)

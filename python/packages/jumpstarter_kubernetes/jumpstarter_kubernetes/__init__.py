@@ -17,5 +17,5 @@ __all__ = [
     "V1Alpha1LeaseSpec",
     "get_ip_address",
     "helm_installed",
-    "install_helm_chart"
+    "install_helm_chart",
 ]

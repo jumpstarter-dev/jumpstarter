@@ -13,6 +13,7 @@ async def test_cli():
     assert "exporter" in result.output
     assert "version" in result.output
 
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"

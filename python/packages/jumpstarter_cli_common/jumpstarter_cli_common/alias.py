@@ -23,7 +23,7 @@ class AliasedGroup(click.Group):
         "exporter": ["exporters", "e"],
         "client": ["clients", "c"],
         "lease": ["leases", "l"],
-        "version": ["ver", "v"]
+        "version": ["ver", "v"],
     }
 
     def get_command(self, ctx: click.Context, cmd_name: str):
@@ -31,8 +31,9 @@ class AliasedGroup(click.Group):
         if rv is not None:
             return rv
         # Match if listed in the common aliases
-        matches = [x for x in self.list_commands(ctx)
-                   if x in self.common_aliases and cmd_name in self.common_aliases[x]]
+        matches = [
+            x for x in self.list_commands(ctx) if x in self.common_aliases and cmd_name in self.common_aliases[x]
+        ]
         if not matches:
             return None
         elif len(matches) == 1:

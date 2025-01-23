@@ -23,7 +23,6 @@ async def serve_async(root_device: Driver, portal: BlockingPortal):
                     client.close()
 
 
-
 @contextmanager
 def serve(root_device: Driver):
     with start_blocking_portal() as portal:
@@ -35,7 +34,7 @@ def serve(root_device: Driver):
 
 @asynccontextmanager
 async def env_async(portal):
-    """ Provide a client for an existing JUMPSTARTER_HOST environment variable.
+    """Provide a client for an existing JUMPSTARTER_HOST environment variable.
 
     Async version of env()
 
@@ -56,7 +55,7 @@ async def env_async(portal):
 
 @contextmanager
 def env():
-    """ Provide a client for an existing JUMPSTARTER_HOST environment variable.
+    """Provide a client for an existing JUMPSTARTER_HOST environment variable.
 
     This is useful when interacting with an already established Jumpstarter shell,
     to either a local exporter or a remote one.

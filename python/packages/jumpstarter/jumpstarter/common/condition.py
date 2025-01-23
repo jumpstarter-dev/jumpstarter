@@ -3,8 +3,9 @@
 from jumpstarter_protocol import kubernetes_pb2
 
 
-def condition_present_and_equal(conditions: list[kubernetes_pb2.Condition],
-                                condition_type: str, status: str, reason: str | None=None) -> bool:
+def condition_present_and_equal(
+    conditions: list[kubernetes_pb2.Condition], condition_type: str, status: str, reason: str | None = None
+) -> bool:
     for condition in conditions:
         if condition.type == condition_type:
             if reason is None or condition.reason == reason:

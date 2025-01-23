@@ -7,8 +7,9 @@ from jumpstarter_testing.pytest import JumpstarterTest
 
 log = logging.getLogger(__name__)
 
+
 class TestResource(JumpstarterTest):
-    filter_labels = {"board":"rpi4"}
+    filter_labels = {"board": "rpi4"}
 
     @pytest.fixture()
     def test_tftp_upload(self, client):

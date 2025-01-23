@@ -28,6 +28,7 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
 
         return driver_class(children=children, **self.config)
 
+
 class ExporterConfigV1Alpha1(BaseModel):
     BASE_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
 
@@ -96,6 +97,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     async def serve_unix_async(self):
         # dynamic import to avoid circular imports
         from jumpstarter.exporter import Session
+
         with Session(
             root_device=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate(),
         ) as session:
@@ -111,6 +113,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     async def serve(self):
         # dynamic import to avoid circular imports
         from jumpstarter.exporter import Exporter
+
         def channel_factory():
             credentials = grpc.composite_channel_credentials(
                 ssl_channel_credentials(self.endpoint, self.tls),
