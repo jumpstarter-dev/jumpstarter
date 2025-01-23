@@ -1332,25 +1332,21 @@ source = { virtual = "examples/soc-pytest" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-dutlink" },
+    { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-imagehash" },
-    { name = "pytest" },
-]
-
-[package.dev-dependencies]
-dev = [
     { name = "jumpstarter-testing" },
+    { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-dutlink", editable = "packages/jumpstarter_driver_dutlink" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter_driver_network" },
     { name = "jumpstarter-imagehash", editable = "packages/jumpstarter_imagehash" },
+    { name = "jumpstarter-testing", editable = "packages/jumpstarter_testing" },
     { name = "pytest", specifier = ">=8.3.2" },
 ]
-
-[package.metadata.requires-dev]
-dev = [{ name = "jumpstarter-testing", editable = "packages/jumpstarter_testing" }]
 
 [[package]]
 name = "jumpstarter-imagehash"
