@@ -1,6 +1,7 @@
 import asyncclick as click
-from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter_cli_common import make_table
+
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 arg_alias = click.argument("alias", default="default")
 

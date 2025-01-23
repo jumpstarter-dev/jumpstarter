@@ -2,9 +2,10 @@ from contextlib import closing
 from urllib.parse import parse_qsl, urlparse
 
 from anyio.from_thread import start_blocking_portal
+from websocket import create_connection
+
 from jumpstarter.common import TemporaryTcpListener
 from jumpstarter.common.utils import serve
-from websocket import create_connection
 
 from ..driver import TcpNetwork
 from .novnc import NovncAdapter

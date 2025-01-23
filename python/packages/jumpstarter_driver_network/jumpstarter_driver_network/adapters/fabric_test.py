@@ -2,9 +2,10 @@ from socketserver import BaseRequestHandler, TCPServer
 from threading import Thread
 from time import sleep
 
-from jumpstarter.common.utils import serve
 from paramiko import AUTH_SUCCESSFUL, OPEN_SUCCEEDED, ServerInterface, Transport
 from paramiko.rsakey import RSAKey
+
+from jumpstarter.common.utils import serve
 
 from ..driver import TcpNetwork
 from .fabric import FabricAdapter

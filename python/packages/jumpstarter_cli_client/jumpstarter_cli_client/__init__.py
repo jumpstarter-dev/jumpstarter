@@ -1,6 +1,7 @@
 import asyncclick as click
-from jumpstarter.common.utils import env
 from jumpstarter_cli_common import AliasedGroup, version
+
+from jumpstarter.common.utils import env
 
 from .client_config import create_client_config, delete_client_config, list_client_configs, use_client_config
 from .client_shell import client_shell

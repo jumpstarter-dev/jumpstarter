@@ -44,11 +44,11 @@ dev = [
 ]
 
 [tool.ruff]
-exclude = ["jumpstarter/v1"]
+exclude = ["packages/jumpstarter_protocol"]
 line-length = 120
 
 [tool.ruff.lint]
-exclude = ["jumpstarter/v1"]
+exclude = ["packages/jumpstarter_protocol"]
 extend-select = ["I", "C", "E", "F", "W", "B"]
 
 [tool.typos.default]

@@ -2,9 +2,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
-from kubernetes_asyncio.client.exceptions import ApiException
-from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
-
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
@@ -18,6 +15,8 @@ from jumpstarter_kubernetes import (
     V1Alpha1LeaseSpec,
     V1Alpha1LeaseStatus,
 )
+from kubernetes_asyncio.client.exceptions import ApiException
+from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
 
 from .get import get
 

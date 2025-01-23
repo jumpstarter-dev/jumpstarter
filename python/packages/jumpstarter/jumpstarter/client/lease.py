@@ -6,12 +6,13 @@ from anyio import fail_after, sleep
 from anyio.from_thread import BlockingPortal
 from google.protobuf import duration_pb2
 from grpc.aio import Channel
+from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
+
 from jumpstarter.client import client_from_path
 from jumpstarter.common import MetadataFilter, TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_present_and_equal, condition_true
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
 
 logger = logging.getLogger(__name__)
 

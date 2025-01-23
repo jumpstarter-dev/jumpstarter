@@ -1,8 +1,9 @@
 from typing import Optional
 
 import asyncclick as click
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, UserConfigV1Alpha1
 from jumpstarter_cli_common import make_table
+
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, UserConfigV1Alpha1
 
 
 @click.command("create-config", short_help="Create a client config.")
