@@ -37,7 +37,7 @@ docs = [
     "sphinx-substitution-extensions>=2024.10.17",
 ]
 dev = [
-    "ruff>=0.6.1",
+    "ruff>=0.7.3",
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
