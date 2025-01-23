@@ -32,19 +32,23 @@ members = [
     "jumpstarter-protocol",
     "jumpstarter-testing",
 ]
-requirements = [
-    { name = "esbonio", specifier = ">=0.16.4" },
+
+[manifest.dependency-groups]
+dev = [
     { name = "esbonio", specifier = ">=0.16.5" },
-    { name = "furo", specifier = ">=2024.8.6" },
-    { name = "myst-parser", specifier = ">=4.0.0" },
     { name = "pre-commit", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.6.1" },
+    { name = "typos", specifier = ">=1.23.6" },
+]
+docs = [
+    { name = "esbonio", specifier = ">=0.16.4" },
+    { name = "furo", specifier = ">=2024.8.6" },
+    { name = "myst-parser", specifier = ">=4.0.0" },
     { name = "sphinx", specifier = "<8.1.0" },
     { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
     { name = "sphinx-click", specifier = ">=6.0.0" },
     { name = "sphinx-substitution-extensions", specifier = ">=2024.10.17" },
     { name = "sphinxcontrib-mermaid", specifier = ">=0.9.2" },
-    { name = "typos", specifier = ">=1.23.6" },
 ]
 
 [[package]]
@@ -160,7 +164,7 @@ version = "8.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cb/b5/e1e5fdf1c1bb7e6e614987c120a98d9324bf8edfaa5f5cd16a6235c9d91b/asyncclick-8.1.8.tar.gz", hash = "sha256:0f0eb0f280e04919d67cf71b9fcdfb4db2d9ff7203669c40284485c149578e4c", size = 232900 }
 wheels = [
@@ -362,7 +366,7 @@ name = "click"
 version = "8.1.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/96/d3/f04c7bfcf5c1862a2a5b845c6b2b360488cf47af55dfa79c98f6a6bf98b5/click-8.1.7.tar.gz", hash = "sha256:ca9853ad459e787e2192211578cc907e7594e294c7ccc834310722b41b9ca6de", size = 336121 }
 wheels = [
@@ -733,7 +737,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter" }
 dependencies = [
     { name = "aiohttp" },
@@ -780,7 +784,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_cli" }
 dependencies = [
     { name = "jumpstarter-cli-admin" },
@@ -813,7 +817,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-admin"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_cli_admin" }
 dependencies = [
     { name = "jumpstarter-cli-common" },
@@ -844,7 +848,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-client"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_cli_client" }
 dependencies = [
     { name = "jumpstarter-cli-common" },
@@ -871,7 +875,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-common"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_cli_common" }
 dependencies = [
     { name = "asyncclick" },
@@ -902,7 +906,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-exporter"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_cli_exporter" }
 dependencies = [
     { name = "asyncclick" },
@@ -933,7 +937,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-can"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_can" }
 dependencies = [
     { name = "can-isotp" },
@@ -962,7 +966,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-composite"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_composite" }
 dependencies = [
     { name = "asyncclick" },
@@ -991,7 +995,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_dutlink" }
 dependencies = [
     { name = "asyncclick" },
@@ -1066,7 +1070,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-network"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_network" }
 dependencies = [
     { name = "fabric" },
@@ -1099,7 +1103,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-opendal"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_opendal" }
 dependencies = [
     { name = "asyncclick" },
@@ -1128,7 +1132,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-power"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_power" }
 dependencies = [
     { name = "asyncclick" },
@@ -1159,7 +1163,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-pyserial"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_pyserial" }
 dependencies = [
     { name = "asyncclick" },
@@ -1190,7 +1194,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -1217,7 +1221,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1285,7 +1289,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_driver_ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1342,7 +1346,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_imagehash" }
 dependencies = [
     { name = "imagehash" },
@@ -1369,7 +1373,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-kubernetes"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_kubernetes" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1402,7 +1406,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-protocol"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_protocol" }
 dependencies = [
     { name = "grpcio" },
@@ -1433,7 +1437,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-testing"
-version = "0.5.1.dev96+geabdbb7.d20250122"
+version = "0.5.1.dev112+ge72cc41.d20250123"
 source = { editable = "packages/jumpstarter_testing" }
 dependencies = [
     { name = "jumpstarter" },
@@ -2105,9 +2109,9 @@ name = "python-can"
 version = "4.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "msgpack", marker = "platform_system != 'Windows'" },
+    { name = "msgpack", marker = "sys_platform != 'win32'" },
     { name = "packaging" },
-    { name = "pywin32", marker = "platform_python_implementation == 'CPython' and platform_system == 'Windows'" },
+    { name = "pywin32", marker = "platform_python_implementation == 'CPython' and sys_platform == 'win32'" },
     { name = "typing-extensions" },
     { name = "wrapt" },
 ]
@@ -2529,7 +2533,7 @@ name = "tqdm"
 version = "4.67.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e8/4f/0153c21dc5779a49a0598c445b1978126b1344bab9ee71e53e44877e14e0/tqdm-4.67.0.tar.gz", hash = "sha256:fe5a6f95e6fe0b9755e9469b77b9c3cf850048224ecaa8293d7d2d31f97d869a", size = 169739 }
 wheels = [
