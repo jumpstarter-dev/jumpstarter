@@ -1,4 +1,4 @@
-PKG_TARGETS = $(subst packages/,pkg-,$(wildcard packages/*))
+PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
 EXAMPLE_TARGETS = $(subst examples/,example-,$(wildcard examples/*))
 DOC_LISTEN ?= --host 127.0.0.1
 
@@ -13,10 +13,7 @@ serve-docs:
 clean-docs:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs clean
 
-test-jumpstarter:
-	uv run --isolated --package jumpstarter pytest jumpstarter tests
-
-test-pkg-%: packages/%
+test-%: packages/%
 	uv run --isolated --directory $< pytest
 
 test-packages: $(addprefix test-,$(PKG_TARGETS))
