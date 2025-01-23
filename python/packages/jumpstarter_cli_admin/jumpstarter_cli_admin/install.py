@@ -8,7 +8,7 @@ from jumpstarter_kubernetes import get_ip_address, helm_installed, install_helm_
 def get_chart_version() -> str:
     client_version = get_client_version()
     parts = client_version.split(".")
-    return f"{parts[0].replace("v", "")}.{parts[1]}.{parts[2]}"
+    return f"{parts[0].replace('v', '')}.{parts[1]}.{parts[2]}"
 
 
 @click.command

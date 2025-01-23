@@ -67,7 +67,7 @@ class ImageHash:
             log.error(f"Image hashes are different, saving the actual image as {save_filename}")
             snapshot_img.save(save_filename)
             raise AssertionError(
-                f"{self.client.name}.assert_snapshot {reference_img_file}:" f" diff {diff} > tolerance {tolerance}"
+                f"{self.client.name}.assert_snapshot {reference_img_file}: diff {diff} > tolerance {tolerance}"
             )
 
     def _snapshot_diff(self, reference_img_file, hash_func=imagehash.average_hash, hash_size=8):

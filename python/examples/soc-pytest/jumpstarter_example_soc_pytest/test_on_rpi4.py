@@ -42,7 +42,7 @@ class TestResource(JumpstarterTest):
             client.dutlink.storage.write_local_file("image/images/latest.raw")
         except opendal.exceptions.NotFound:
             pytest.exit(
-                "No image found, please enter the image directory and run `make`, " "more details in the README.md"
+                "No image found, please enter the image directory and run `make`, more details in the README.md"
             )
             return
         client.dutlink.storage.dut()

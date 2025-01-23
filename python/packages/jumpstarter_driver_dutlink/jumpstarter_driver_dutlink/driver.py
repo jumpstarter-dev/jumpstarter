@@ -198,7 +198,7 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
                 async for chunk in res:
                     await stream.send(chunk)
                     if total_bytes > next_print:
-                        log.debug(f"{self.storage_device} written {total_bytes/(1024*1024)} MB")
+                        log.debug(f"{self.storage_device} written {total_bytes / (1024 * 1024)} MB")
                         next_print += 50 * 1024 * 1024
                     total_bytes += len(chunk)
 
@@ -251,8 +251,7 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
                 self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
             except SerialException:
                 log.info(
-                    f"failed to open alternate console {self.alternate_console} "
-                    "but trying to power on the target once"
+                    f"failed to open alternate console {self.alternate_console} but trying to power on the target once"
                 )
                 self.children["power"].on()
                 time.sleep(5)

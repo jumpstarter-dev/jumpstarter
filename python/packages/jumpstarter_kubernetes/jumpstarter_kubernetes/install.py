@@ -54,7 +54,7 @@ async def install_helm_chart(
         "--set",
         "global.metrics.enabled=false",
         "--set",
-        f"jumpstarter-controller.grpc.nodeport.enabled={"true" if mode == "nodeport" else "false"}",
+        f"jumpstarter-controller.grpc.nodeport.enabled={'true' if mode == 'nodeport' else 'false'}",
         "--set",
         f"jumpstarter-controller.grpc.nodeport.port={grpc_port}",
         "--set",

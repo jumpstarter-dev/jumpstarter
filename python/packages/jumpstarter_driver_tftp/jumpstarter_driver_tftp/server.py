@@ -292,7 +292,7 @@ class TftpReadTransfer(TftpTransfer):
                         success = await self._send_with_retries(packet)
                         if not success:
                             self.logger.error(
-                                f"Failed to send final empty block {self.block_num} " f"to {self.client_addr}"
+                                f"Failed to send final empty block {self.block_num} to {self.client_addr}"
                             )
                             break
                         self.logger.info(f"Transfer complete to {self.client_addr}, final block {self.block_num}")
