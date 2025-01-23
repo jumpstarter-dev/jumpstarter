@@ -1,0 +1,41 @@
+name: Regenerate uv.lock on merge conflict
+on:
+  pull_request:
+
+jobs:
+  regenerate-lockfile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+      - name: Regenerate uv.lock
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if git merge-tree "origin/$BASE_REF" "origin/$HEAD_REF"; then
+            echo "No merge conflict detected"
+          else
+            echo "Merge conflict detected, regenerating uv.lock"
+            if ! uv lock; then
+              echo "Failed to regenerate uv.lock"
+              exit 1
+            fi
+            git config user.name  github-actions
+            git config user.email github-actions@github.com
+            git commit -a -m "regenerate uv.lock"
+            if git merge-tree "origin/$BASE_REF" "HEAD"; then
+              echo "Merge conflict resolved, pushing"
+              git push origin HEAD:"$HEAD_REF"
+            else
+              echo "Merge conflict unresolved, not pushing"
+            fi
+          fi
