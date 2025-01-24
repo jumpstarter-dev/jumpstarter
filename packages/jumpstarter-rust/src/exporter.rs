@@ -255,7 +255,7 @@ impl Session {
                         .unwrap(),
                 );
                 let instance = device.get_item(3).unwrap();
-                dbg!(&uuid, device.get_item(2).unwrap());
+                // dbg!(&uuid, device.get_item(2).unwrap());
                 mapping.insert(uuid, instance.unbind());
             }
             Self {
@@ -553,10 +553,10 @@ impl RouterService for SessionExecutor {
                 )
             }) {
                 let res = v.await;
-                dbg!("receive from python result", &res);
+                //dbg!("receive from python result", &res);
                 if let Ok(f) = res {
                     let data = Python::with_gil(|py| f.extract::<Vec<u8>>(py).unwrap());
-                    dbg!("received frame from python", &data);
+                   // dbg!("received frame from python", &data);
                     tx1.send(Ok(StreamResponse {
                         payload: data,
                         frame_type: FrameType::Data.into(),
@@ -568,8 +568,7 @@ impl RouterService for SessionExecutor {
                         payload: vec![],
                         frame_type: FrameType::Goaway.into(),
                     }))
-                    .await
-                    .unwrap();
+                    .await;
                     println!("done receiving from python");
                     break;
                 }
@@ -582,7 +581,7 @@ impl RouterService for SessionExecutor {
         tokio::spawn(async move {
             let mut request = request.into_inner();
             while let Some(frame) = request.next().await {
-                dbg!("sending frame to python", &frame);
+                // dbg!("sending frame to python", &frame);
                 let frame = frame.unwrap();
                 match frame.frame_type() {
                     FrameType::Data => {
@@ -596,7 +595,7 @@ impl RouterService for SessionExecutor {
                             )
                         }) {
                             let res = v.await;
-                            dbg!("send to python result", &res);
+                            // dbg!("send to python result", &res);
                             if res.is_err() {
                                 break;
                             }
