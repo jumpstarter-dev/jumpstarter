@@ -571,11 +571,12 @@ impl RouterService for SessionExecutor {
                 match frame.frame_type() {
                     FrameType::Data => {
                         if let Ok(v) = Python::with_gil(|py| {
+                            let payload = PyBytes::new(py, &frame.payload);
                             pyo3_async_runtimes::into_future_with_locals(
                                 &locals,
                                 generator2
                                     .bind(py)
-                                    .call_method1("send", (frame.payload,))
+                                    .call_method1("send", (payload,))
                                     .unwrap(),
                             )
                         }) {
