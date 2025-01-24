@@ -14,7 +14,9 @@ from jumpstarter_protocol import jumpstarter_pb2_grpc
 @asynccontextmanager
 async def client_from_path(path: str, portal: BlockingPortal, allow: list[str], unsafe: bool):
     async with grpc.aio.secure_channel(
-        f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+        f"unix://{path}",
+        grpc.local_channel_credentials(grpc.LocalConnectionType.UDS),
+        options=(("grpc.default_authority", "localhost"),),
     ) as channel:
         yield await client_from_channel(channel, portal, allow, unsafe)
 

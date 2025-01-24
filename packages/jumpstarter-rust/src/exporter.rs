@@ -275,7 +275,7 @@ impl Session {
     ) {
         self.root_device.call_method0(py, "close").unwrap();
     }
-    fn serve_unix<'a>(&self, py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
+    fn serve_unix_rust<'a>(&self, py: Python<'a>, path: String) -> PyResult<Bound<'a, PyAny>> {
         let locals = pyo3_async_runtimes::TaskLocals::with_running_loop(py)?.copy_context(py)?;
         let session = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {

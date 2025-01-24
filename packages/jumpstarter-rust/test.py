@@ -13,7 +13,7 @@ async def main():
     with Session(root_device=root_device) as session:
         with TemporarySocket() as path:
             print(path)
-            await session.serve_unix(str(path))
+            await session.serve_unix_rust(str(path))
 
 
 asyncio.run(main())
