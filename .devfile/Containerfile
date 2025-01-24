@@ -13,7 +13,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uvx /bin/uvx
 
 USER root
 
-RUN dnf -y install make git python3.12 libusbx python3-pyusb golang podman && dnf clean all
+RUN dnf -y install make git python3.12 python3.12-devel libusbx python3-pyusb golang podman gcc && dnf clean all
 
 USER 10001
 
