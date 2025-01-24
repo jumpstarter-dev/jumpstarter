@@ -1,0 +1,24 @@
+[package]
+name = "jumpstarter-rust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "jumpstarter_rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+prost = "0.13.4"
+prost-types = "0.13.4"
+pyo3 = { version = "0.23.3", features = ["py-clone"] }
+pyo3-async-runtimes = { version = "0.23.0", features = ["attributes", "tokio", "tokio-runtime"] }
+tempfile = "3.15.0"
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
+tokio-stream = "0.1.17"
+tonic = "0.12.3"
+tonic-reflection = "0.12.3"
+uuid = { version = "1.12.1", features = ["v4"] }
+
+[build-dependencies]
+tonic-build = "0.12.3"
