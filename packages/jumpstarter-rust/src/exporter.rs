@@ -3,11 +3,12 @@ use pyo3::{
     types::{IntoPyDict, PyDict, PyList, PyTuple},
 };
 use pyo3_async_runtimes::TaskLocals;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, pin::Pin, sync::Arc};
 use tokio::{net::UnixListener, sync::mpsc};
 use tokio_stream::{
     wrappers::{ReceiverStream, UnixListenerStream},
-    Stream,
+    Stream, StreamExt,
 };
 use tonic::{transport::Server, Request, Response, Status, Streaming};
 use uuid::Uuid;
@@ -450,6 +451,42 @@ impl ExporterService for SessionExecutor {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "kind")]
+#[serde(rename_all = "lowercase")]
+enum StreamRequestMetadata {
+    Driver { uuid: Uuid, method: String },
+    Resource { uuid: Uuid },
+}
+
+impl<'py> IntoPyObject<'py> for StreamRequestMetadata {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(match self {
+            StreamRequestMetadata::Driver { uuid, method } => {
+                let args = PyDict::new(py);
+                args.set_item("kind", "driver")?;
+                args.set_item("uuid", uuid.to_string())?;
+                args.set_item("method", method)?;
+                py.import("jumpstarter.common.streams")?
+                    .getattr("DriverStreamRequest")?
+                    .call((), Some(&args))?
+            }
+            StreamRequestMetadata::Resource { uuid } => {
+                let args = PyDict::new(py);
+                args.set_item("uuid", uuid.to_string())?;
+                args.set_item("kind", "resource")?;
+                py.import("jumpstarter.common.streams")?
+                    .getattr("ResourceStreamRequest")?
+                    .call((), Some(&args))?
+            }
+        })
+    }
+}
+
 #[tonic::async_trait]
 impl RouterService for SessionExecutor {
     type StreamStream = StreamStream;
@@ -458,10 +495,56 @@ impl RouterService for SessionExecutor {
         &self,
         request: Request<Streaming<StreamRequest>>,
     ) -> Result<Response<Self::StreamStream>, Status> {
-        dbg!(request.metadata());
+        let metadata: StreamRequestMetadata =
+            serde_json::from_str(request.metadata().get("request").unwrap().to_str().unwrap())
+                .unwrap();
+
+        let uuid = match metadata {
+            StreamRequestMetadata::Driver { uuid, .. } => uuid,
+            StreamRequestMetadata::Resource { uuid, .. } => uuid,
+        };
+
+        dbg!("mmmmmmmmmmmmmmmmmmmmmmmmmm", &metadata);
+
+        let generator = Python::with_gil(|py| {
+            self.session
+                .mapping
+                .get(&uuid)
+                .unwrap()
+                .bind(py)
+                .call_method1("Stream", (metadata, ""))
+                .unwrap()
+                .unbind()
+        });
+
         /*
-         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
-         logger.debug("Streaming(%s)", request)
+        """
+         :meta private:
+         """
+         match request:
+             case DriverStreamRequest(method=driver_method):
+                 method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
+
+                 async with method() as stream:
+                     yield stream
+
+             case ResourceStreamRequest():
+                 remote, resource = create_memory_stream()
+
+                 resource_uuid = uuid4()
+
+                 self.resources[resource_uuid] = resource
+
+                 async with MetadataStream(
+                     stream=remote,
+                     metadata=ResourceMetadata.model_construct(
+                         resource=ClientStreamResource(uuid=resource_uuid)
+                     ).model_dump(mode="json", round_trip=True),
+                 ) as stream:
+                     yield stream
+
+          */
+        /*
          async with self[request.uuid].Stream(request, context) as stream:
              metadata = []
              with suppress(TypedAttributeLookupError):
@@ -475,6 +558,21 @@ impl RouterService for SessionExecutor {
                      await event.wait()
         */
 
-        todo!()
+        let (tx, rx) = mpsc::channel(128);
+
+        tokio::spawn(async move {
+            let mut request = request.into_inner();
+            while let Some(frame) = request.next().await {
+                let frame = frame.unwrap();
+                tx.send(Ok(StreamResponse {
+                    payload: frame.payload,
+                    frame_type: frame.frame_type,
+                }))
+                .await
+                .unwrap();
+            }
+        });
+
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 }
