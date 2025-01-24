@@ -217,41 +217,32 @@ impl Session {
         uuid: Option<Py<PyAny>>,
         labels: HashMap<String, String>,
         root_device: Py<PyAny>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let mut mapping = HashMap::new();
         Python::with_gil(|py| {
             let uuid = if let Some(uuid) = uuid {
-                Uuid::from_bytes(
-                    uuid.getattr(py, "bytes")
-                        .unwrap()
-                        .extract::<[u8; 16]>(py)
-                        .unwrap(),
-                )
+                Uuid::from_bytes(uuid.getattr(py, "bytes")?.extract::<[u8; 16]>(py)?)
             } else {
                 Uuid::new_v4()
             };
-            let devices = root_device.call_method0(py, "enumerate").unwrap();
-            let devices: &Bound<'_, PyList> = devices.downcast_bound(py).unwrap();
+            let devices = root_device.call_method0(py, "enumerate")?;
+            let devices: &Bound<'_, PyList> = devices.downcast_bound(py)?;
             for device in devices {
                 let uuid = Uuid::from_bytes(
                     device
-                        .get_item(0)
-                        .unwrap()
-                        .getattr("bytes")
-                        .unwrap()
-                        .extract::<[u8; 16]>()
-                        .unwrap(),
+                        .get_item(0)?
+                        .getattr("bytes")?
+                        .extract::<[u8; 16]>()?,
                 );
-                let instance = device.get_item(3).unwrap();
-                // dbg!(&uuid, device.get_item(2).unwrap());
+                let instance = device.get_item(3)?;
                 mapping.insert(uuid, instance.unbind());
             }
-            Self {
+            Ok(Self {
                 uuid,
                 labels,
                 root_device,
                 mapping,
-            }
+            })
         })
     }
     fn __enter__(slf: Py<Self>, py: Python) -> PyResult<Py<Self>> {
