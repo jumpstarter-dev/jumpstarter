@@ -1,6 +1,9 @@
+import logging
+from typing import Optional
+
 import asyncclick as click
 from jumpstarter.common.utils import env
-from jumpstarter_cli_common import AliasedGroup, version
+from jumpstarter_cli_common import AliasedGroup, opt_log_level, version
 
 from .client_config import create_client_config, delete_client_config, list_client_configs, use_client_config
 from .client_shell import client_shell
@@ -8,8 +11,13 @@ from .lease import lease
 
 
 @click.group(cls=AliasedGroup)
-def client():
+@opt_log_level
+def client(log_level: Optional[str]):
     """Jumpstarter client CLI tool"""
+    if log_level:
+        logging.basicConfig(level=log_level.upper())
+    else:
+        logging.basicConfig(level=logging.INFO)
 
 
 def j():
