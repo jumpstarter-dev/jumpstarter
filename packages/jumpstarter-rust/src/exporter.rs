@@ -198,7 +198,7 @@ impl<'py> IntoPyObject<'py> for protobuf::Value {
     }
 }
 
-#[pyclass]
+#[pyclass(subclass)]
 #[derive(Clone)]
 pub struct Session {
     pub uuid: Uuid,
