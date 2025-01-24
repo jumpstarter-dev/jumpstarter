@@ -82,6 +82,18 @@ class DutlinkConfig:
 
 
 @dataclass(kw_only=True)
+class DutlinkSerial(DutlinkConfig, PySerial):
+    url: str | None = field(init=False, default=None)
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        self.url = self.tty
+
+        super(PySerial, self).__post_init__()
+
+
+@dataclass(kw_only=True)
 class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
     last_action: str | None = field(default=None)
 
@@ -259,4 +271,4 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
                 self.children["power"].off()
         else:
             # otherwise look up the tty console provided by dutlink
-            self.children["console"] = PySerial(url=self.tty, baudrate=self.baudrate)
+            self.children["console"] = DutlinkSerial(serial=self.serial, baudrate=self.baudrate)
