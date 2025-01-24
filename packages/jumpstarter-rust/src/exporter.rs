@@ -4,7 +4,7 @@ use pyo3::{
 };
 use pyo3_async_runtimes::TaskLocals;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 use tokio::{net::UnixListener, sync::mpsc};
 use tokio_stream::{
     wrappers::{ReceiverStream, UnixListenerStream},
@@ -20,9 +20,9 @@ use crate::{
         v1::{
             exporter_service_server::{ExporterService, ExporterServiceServer},
             router_service_server::{RouterService, RouterServiceServer},
-            DriverCallRequest, DriverCallResponse, DriverInstanceReport, GetReportResponse,
-            LogStreamResponse, ResetRequest, ResetResponse, StreamRequest, StreamResponse,
-            StreamingDriverCallRequest, StreamingDriverCallResponse,
+            DriverCallRequest, DriverCallResponse, DriverInstanceReport, FrameType,
+            GetReportResponse, LogStreamResponse, ResetRequest, ResetResponse, StreamRequest,
+            StreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
         },
     },
 };
@@ -487,6 +487,23 @@ impl<'py> IntoPyObject<'py> for StreamRequestMetadata {
     }
 }
 
+impl<'py> IntoPyObject<'py> for StreamRequest {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let args = PyDict::new(py);
+        args.set_item("frame_type", self.frame_type)?;
+        args.set_item("payload", self.payload)?;
+        Ok(py
+            .import("jumpstarter_protocol")?
+            .getattr("router_pb2")?
+            .getattr("StreamRequest")?
+            .call((), Some(&args))?)
+    }
+}
+
 #[tonic::async_trait]
 impl RouterService for SessionExecutor {
     type StreamStream = StreamStream;
@@ -504,73 +521,112 @@ impl RouterService for SessionExecutor {
             StreamRequestMetadata::Resource { uuid, .. } => uuid,
         };
 
-        dbg!("mmmmmmmmmmmmmmmmmmmmmmmmmm", &metadata);
-
         let generator = Python::with_gil(|py| {
-            self.session
+            let g = self
+                .session
                 .mapping
                 .get(&uuid)
                 .unwrap()
                 .bind(py)
                 .call_method1("Stream", (metadata, ""))
-                .unwrap()
-                .unbind()
-        });
+                .unwrap();
 
-        /*
-        """
-         :meta private:
-         """
-         match request:
-             case DriverStreamRequest(method=driver_method):
-                 method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
-
-                 async with method() as stream:
-                     yield stream
-
-             case ResourceStreamRequest():
-                 remote, resource = create_memory_stream()
-
-                 resource_uuid = uuid4()
-
-                 self.resources[resource_uuid] = resource
-
-                 async with MetadataStream(
-                     stream=remote,
-                     metadata=ResourceMetadata.model_construct(
-                         resource=ClientStreamResource(uuid=resource_uuid)
-                     ).model_dump(mode="json", round_trip=True),
-                 ) as stream:
-                     yield stream
-
-          */
-        /*
-         async with self[request.uuid].Stream(request, context) as stream:
-             metadata = []
-             with suppress(TypedAttributeLookupError):
-                 metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
-             await context.send_initial_metadata(metadata)
-
-             async with RouterStream(context=context) as remote:
-                 async with forward_stream(remote, stream):
-                     event = Event()
-                     context.add_done_callback(lambda _: event.set())
-                     await event.wait()
-        */
+            pyo3_async_runtimes::into_future_with_locals(
+                &self.locals,
+                g.call_method0("__aenter__").unwrap(),
+            )
+        })
+        .unwrap()
+        .await
+        .unwrap();
 
         let (tx, rx) = mpsc::channel(128);
 
+        let locals = Python::with_gil(|py| self.locals.clone_ref(py));
+        let generator1 = Python::with_gil(|_| generator.clone());
+        let tx1 = tx.clone();
+        tokio::spawn(async move {
+            while let Ok(v) = Python::with_gil(|py| {
+                pyo3_async_runtimes::into_future_with_locals(
+                    &locals,
+                    generator1.bind(py).call_method0("receive").unwrap(),
+                )
+            }) {
+                let res = v.await;
+                dbg!("receive from python result", &res);
+                if let Ok(f) = res {
+                    let data = Python::with_gil(|py| f.extract::<Vec<u8>>(py).unwrap());
+                    dbg!("received frame from python", &data);
+                    tx1.send(Ok(StreamResponse {
+                        payload: data,
+                        frame_type: FrameType::Data.into(),
+                    }))
+                    .await
+                    .unwrap();
+                } else {
+                    tx1.send(Ok(StreamResponse {
+                        payload: vec![],
+                        frame_type: FrameType::Goaway.into(),
+                    }))
+                    .await
+                    .unwrap();
+                    println!("done receiving from python");
+                    break;
+                }
+            }
+        });
+
+        let locals = Python::with_gil(|py| self.locals.clone_ref(py));
+        let generator2 = Python::with_gil(|_| generator.clone());
+        let tx2 = tx.clone();
         tokio::spawn(async move {
             let mut request = request.into_inner();
             while let Some(frame) = request.next().await {
+                dbg!("sending frame to python", &frame);
                 let frame = frame.unwrap();
-                tx.send(Ok(StreamResponse {
-                    payload: frame.payload,
-                    frame_type: frame.frame_type,
-                }))
-                .await
-                .unwrap();
+                match frame.frame_type() {
+                    FrameType::Data => {
+                        if let Ok(v) = Python::with_gil(|py| {
+                            pyo3_async_runtimes::into_future_with_locals(
+                                &locals,
+                                generator2
+                                    .bind(py)
+                                    .call_method1("send", (frame.payload,))
+                                    .unwrap(),
+                            )
+                        }) {
+                            let res = v.await;
+                            dbg!("send to python result", &res);
+                            if res.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    _ => {
+                        break;
+                    }
+                }
             }
+            println!("done with sending to python");
+            // Python::with_gil(|py| {
+            //     pyo3_async_runtimes::into_future_with_locals(
+            //         &locals,
+            //         generator2
+            //             .bind(py)
+            //             .call_method1(
+            //                 "send",
+            //                 (StreamRequest {
+            //                     payload: vec![],
+            //                     frame_type: FrameType::Goaway.into(),
+            //                 },),
+            //             )
+            //             .unwrap(),
+            //     )
+            // })
+            // .unwrap()
+            // .await
+            // .unwrap();
+            drop(tx2);
         });
 
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))

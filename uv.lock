@@ -1440,6 +1440,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-rust"
+version = "0.1.0"
 source = { editable = "packages/jumpstarter-rust" }
 dependencies = [
     { name = "jumpstarter-protocol" },
