@@ -18,7 +18,7 @@ use crate::{
         self,
         v1::{
             exporter_service_server::{ExporterService, ExporterServiceServer},
-            router_service_server::RouterService,
+            router_service_server::{RouterService, RouterServiceServer},
             DriverCallRequest, DriverCallResponse, DriverInstanceReport, GetReportResponse,
             LogStreamResponse, ResetRequest, ResetResponse, StreamRequest, StreamResponse,
             StreamingDriverCallRequest, StreamingDriverCallResponse,
@@ -283,6 +283,10 @@ impl Session {
         let session = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let uds = UnixListenerStream::new(UnixListener::bind(path).unwrap());
+            let executor = SessionExecutor {
+                session: Arc::new(session),
+                locals: Arc::new(locals),
+            };
             Server::builder()
                 .add_service(
                     tonic_reflection::server::Builder::configure()
@@ -290,33 +294,9 @@ impl Session {
                         .build_v1alpha()
                         .unwrap(),
                 )
-                .add_service(ExporterServiceServer::new(SessionExecutor {
-                    session: Arc::new(session),
-                    locals: Arc::new(locals),
-                }))
+                .add_service(ExporterServiceServer::new(executor.clone()))
+                .add_service(RouterServiceServer::new(executor.clone()))
                 .serve_with_incoming(uds)
-                .await
-                .unwrap();
-            Ok(())
-        })
-    }
-    fn serve_tcp<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let locals = pyo3_async_runtimes::TaskLocals::with_running_loop(py)?.copy_context(py)?;
-        let session = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let addr = "127.0.0.1:50051".parse().unwrap();
-            Server::builder()
-                .add_service(
-                    tonic_reflection::server::Builder::configure()
-                        .register_encoded_file_descriptor_set(jumpstarter::v1::FILE_DESCRIPTOR_SET)
-                        .build_v1alpha()
-                        .unwrap(),
-                )
-                .add_service(ExporterServiceServer::new(SessionExecutor {
-                    session: Arc::new(session),
-                    locals: Arc::new(locals),
-                }))
-                .serve(addr)
                 .await
                 .unwrap();
             Ok(())
