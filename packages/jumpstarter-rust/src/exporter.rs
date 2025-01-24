@@ -3,7 +3,7 @@ use pyo3::{
     types::{IntoPyDict, PyDict, PyList, PyTuple},
 };
 use pyo3_async_runtimes::TaskLocals;
-use std::{collections::HashMap, pin::Pin};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 use tokio::{net::UnixListener, sync::mpsc};
 use tokio_stream::{
     wrappers::{ReceiverStream, UnixListenerStream},
@@ -209,9 +209,10 @@ pub struct Session {
     mapping: HashMap<Uuid, Py<PyAny>>,
 }
 
+#[derive(Clone)]
 pub struct SessionExecutor {
-    session: Session,
-    locals: TaskLocals,
+    session: Arc<Session>,
+    locals: Arc<TaskLocals>,
 }
 
 type StreamingDriverCallStream =
@@ -290,8 +291,8 @@ impl Session {
                         .unwrap(),
                 )
                 .add_service(ExporterServiceServer::new(SessionExecutor {
-                    session,
-                    locals,
+                    session: Arc::new(session),
+                    locals: Arc::new(locals),
                 }))
                 .serve_with_incoming(uds)
                 .await
@@ -312,8 +313,8 @@ impl Session {
                         .unwrap(),
                 )
                 .add_service(ExporterServiceServer::new(SessionExecutor {
-                    session,
-                    locals,
+                    session: Arc::new(session),
+                    locals: Arc::new(locals),
                 }))
                 .serve(addr)
                 .await
@@ -477,6 +478,23 @@ impl RouterService for SessionExecutor {
         &self,
         request: Request<Streaming<StreamRequest>>,
     ) -> Result<Response<Self::StreamStream>, Status> {
+        dbg!(request.metadata());
+        /*
+         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
+         logger.debug("Streaming(%s)", request)
+         async with self[request.uuid].Stream(request, context) as stream:
+             metadata = []
+             with suppress(TypedAttributeLookupError):
+                 metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
+             await context.send_initial_metadata(metadata)
+
+             async with RouterStream(context=context) as remote:
+                 async with forward_stream(remote, stream):
+                     event = Event()
+                     context.add_done_callback(lambda _: event.set())
+                     await event.wait()
+        */
+
         todo!()
     }
 }
