@@ -37,7 +37,8 @@ impl<'py> IntoPyObject<'py> for DriverCallRequest {
         args.set_item("method", self.method)?;
         args.set_item("args", self.args)?;
         Ok(py
-            .import("jumpstarter.v1.jumpstarter_pb2")?
+            .import("jumpstarter_protocol")?
+            .getattr("jumpstarter_pb2")?
             .getattr("DriverCallRequest")?
             .call((), Some(&args))?)
     }
@@ -54,7 +55,8 @@ impl<'py> IntoPyObject<'py> for StreamingDriverCallRequest {
         args.set_item("method", self.method)?;
         args.set_item("args", self.args)?;
         Ok(py
-            .import("jumpstarter.v1.jumpstarter_pb2")?
+            .import("jumpstarter_protocol")?
+            .getattr("jumpstarter_pb2")?
             .getattr("DriverCallRequest")?
             .call((), Some(&args))?)
     }

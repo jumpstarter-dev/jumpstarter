@@ -734,6 +734,7 @@ wheels = [
 
 [[package]]
 name = "jumpstarter"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter" }
 dependencies = [
     { name = "aiohttp" },
@@ -782,6 +783,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-cli" }
 dependencies = [
     { name = "jumpstarter-cli-admin" },
@@ -814,6 +816,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-admin"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-cli-admin" }
 dependencies = [
     { name = "jumpstarter-cli-common" },
@@ -844,6 +847,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-client"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-cli-client" }
 dependencies = [
     { name = "jumpstarter-cli-common" },
@@ -870,6 +874,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-common"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-cli-common" }
 dependencies = [
     { name = "asyncclick" },
@@ -900,6 +905,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-cli-exporter"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-cli-exporter" }
 dependencies = [
     { name = "asyncclick" },
@@ -930,6 +936,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-can"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-can" }
 dependencies = [
     { name = "can-isotp" },
@@ -958,6 +965,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-composite"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-composite" }
 dependencies = [
     { name = "asyncclick" },
@@ -986,6 +994,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-dutlink"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-dutlink" }
 dependencies = [
     { name = "asyncclick" },
@@ -1060,6 +1069,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-network"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-network" }
 dependencies = [
     { name = "fabric" },
@@ -1092,6 +1102,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-opendal"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-opendal" }
 dependencies = [
     { name = "asyncclick" },
@@ -1120,6 +1131,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-power"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-power" }
 dependencies = [
     { name = "asyncclick" },
@@ -1150,6 +1162,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-pyserial"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-pyserial" }
 dependencies = [
     { name = "asyncclick" },
@@ -1180,6 +1193,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-raspberrypi"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-raspberrypi" }
 dependencies = [
     { name = "gpiozero" },
@@ -1206,6 +1220,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-sdwire"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-sdwire" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1273,6 +1288,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-driver-ustreamer"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-driver-ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1333,6 +1349,7 @@ requires-dist = [
 
 [[package]]
 name = "jumpstarter-imagehash"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-imagehash" }
 dependencies = [
     { name = "imagehash" },
@@ -1359,6 +1376,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-kubernetes"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-kubernetes" }
 dependencies = [
     { name = "jumpstarter" },
@@ -1391,6 +1409,7 @@ dev = [
 
 [[package]]
 name = "jumpstarter-protocol"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-protocol" }
 dependencies = [
     { name = "grpcio" },
@@ -1422,9 +1441,16 @@ dev = [
 [[package]]
 name = "jumpstarter-rust"
 source = { editable = "packages/jumpstarter-rust" }
+dependencies = [
+    { name = "jumpstarter-protocol" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "jumpstarter-protocol", editable = "packages/jumpstarter-protocol" }]
 
 [[package]]
 name = "jumpstarter-testing"
+version = "0.5.1.dev133+gdf899cc.d20250124"
 source = { editable = "packages/jumpstarter-testing" }
 dependencies = [
     { name = "jumpstarter" },
