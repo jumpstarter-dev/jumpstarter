@@ -1,6 +1,6 @@
 use pyo3::{
     prelude::*,
-    types::{IntoPyDict, PyDict, PyList, PyTuple},
+    types::{IntoPyDict, PyBytes, PyDict, PyList, PyTuple},
 };
 use pyo3_async_runtimes::TaskLocals;
 use serde::{Deserialize, Serialize};
@@ -538,8 +538,10 @@ impl RouterService for SessionExecutor {
                 let res = v.await;
                 //dbg!("receive from python result", &res);
                 if let Ok(f) = res {
-                    let data = Python::with_gil(|py| f.extract::<Vec<u8>>(py).unwrap());
-                   // dbg!("received frame from python", &data);
+                    let data = Python::with_gil(|py| {
+                        f.downcast_bound::<PyBytes>(py).unwrap().as_bytes().to_vec()
+                    });
+                    // dbg!("received frame from python", &data);
                     tx1.send(Ok(StreamResponse {
                         payload: data,
                         frame_type: FrameType::Data.into(),
