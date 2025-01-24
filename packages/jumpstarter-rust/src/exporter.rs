@@ -4,7 +4,7 @@ use pyo3::{
 };
 use pyo3_async_runtimes::TaskLocals;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 use tokio::{net::UnixListener, sync::mpsc};
 use tokio_stream::{
     wrappers::{ReceiverStream, UnixListenerStream},
@@ -67,99 +67,90 @@ fn convert_struct_message<'py>(
     value: &protobuf::Struct,
     message: &Bound<'py, PyAny>,
     path: String,
-) {
-    message.call_method0("Clear").unwrap();
+) -> PyResult<()> {
+    message.call_method0("Clear")?;
     for (key, v) in &value.fields {
         convert_value_message(
             &v,
-            &message.getattr("fields").unwrap().get_item(&key).unwrap(),
+            &message.getattr("fields")?.get_item(&key)?,
             format!("{0}.{1}", &path, &key),
-        );
+        )?;
     }
+    Ok(())
 }
 
 fn convert_list_message<'py>(
     value: &protobuf::ListValue,
     message: &Bound<'py, PyAny>,
     path: String,
-) {
-    message.call_method1("ClearField", ("values",)).unwrap();
+) -> PyResult<()> {
+    message.call_method1("ClearField", ("values",))?;
     for (index, item) in value.values.iter().enumerate() {
         convert_value_message(
             item,
-            &message
-                .getattr("values")
-                .unwrap()
-                .call_method0("add")
-                .unwrap(),
+            &message.getattr("values")?.call_method0("add")?,
             format!("{0}[{1}]", &path, &index),
-        );
+        )?;
     }
+    Ok(())
 }
 
-fn convert_value_message<'py>(value: &protobuf::Value, message: &Bound<'py, PyAny>, path: String) {
+fn convert_value_message<'py>(
+    value: &protobuf::Value,
+    message: &Bound<'py, PyAny>,
+    path: String,
+) -> PyResult<()> {
     match &value.kind {
         Some(Kind::NullValue(_)) => {
-            message.setattr("null_value", 0).unwrap();
+            message.setattr("null_value", 0)?;
         }
         Some(Kind::BoolValue(v)) => {
-            message.setattr("bool_value", v).unwrap();
+            message.setattr("bool_value", v)?;
         }
         Some(Kind::StringValue(v)) => {
-            message.setattr("string_value", v).unwrap();
+            message.setattr("string_value", v)?;
         }
         Some(Kind::NumberValue(v)) => {
-            message.setattr("number_value", v).unwrap();
+            message.setattr("number_value", v)?;
         }
         Some(Kind::StructValue(v)) => {
-            convert_struct_message(v, &message.getattr("struct_value").unwrap(), path);
+            convert_struct_message(v, &message.getattr("struct_value")?, path)?;
         }
         Some(Kind::ListValue(v)) => {
-            convert_list_message(v, &message.getattr("list_value").unwrap(), path);
+            convert_list_message(v, &message.getattr("list_value")?, path)?;
         }
         None => {}
     }
+    Ok(())
 }
 
 impl<'py> FromPyObject<'py> for protobuf::Value {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let kind = ob
-            .call_method1("WhichOneof", ("kind",))
-            .unwrap()
-            .extract::<Option<String>>()
-            .unwrap();
+            .call_method1("WhichOneof", ("kind",))?
+            .extract::<Option<String>>()?;
         match kind.as_deref() {
             None | Some("null_value") => Ok(Self {
                 kind: Some(Kind::NullValue(0)),
             }),
             Some("number_value") => Ok(Self {
                 kind: Some(Kind::NumberValue(
-                    ob.getattr("number_value")
-                        .unwrap()
-                        .extract::<f64>()
-                        .unwrap(),
+                    ob.getattr("number_value")?.extract::<f64>()?,
                 )),
             }),
             Some("bool_value") => Ok(Self {
                 kind: Some(Kind::BoolValue(
-                    ob.getattr("bool_value").unwrap().extract::<bool>().unwrap(),
+                    ob.getattr("bool_value")?.extract::<bool>()?,
                 )),
             }),
             Some("string_value") => Ok(Self {
                 kind: Some(Kind::StringValue(
-                    ob.getattr("string_value")
-                        .unwrap()
-                        .extract::<String>()
-                        .unwrap(),
+                    ob.getattr("string_value")?.extract::<String>()?,
                 )),
             }),
             Some("list_value") => unimplemented!(),
             Some("struct_value") => {
-                let dict = ob
-                    .getattr("struct_value")
-                    .unwrap()
-                    .getattr("fields")
-                    .unwrap();
+                let dict = ob.getattr("struct_value")?.getattr("fields")?;
                 Ok(Self {
                     kind: Some(Kind::StructValue(protobuf::Struct {
                         fields: dict
@@ -186,17 +177,14 @@ impl<'py> FromPyObject<'py> for protobuf::Value {
 impl<'py> IntoPyObject<'py> for protobuf::Value {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
-    type Error = std::convert::Infallible;
+    type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let value = py
-            .import("google.protobuf.struct_pb2")
-            .unwrap()
-            .getattr("Value")
-            .unwrap()
-            .call0()
-            .unwrap();
-        convert_value_message(&self, &value, "".to_string());
+            .import("google.protobuf.struct_pb2")?
+            .getattr("Value")?
+            .call0()?;
+        convert_value_message(&self, &value, "".to_string())?;
         Ok(value)
     }
 }
