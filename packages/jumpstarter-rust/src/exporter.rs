@@ -487,23 +487,6 @@ impl<'py> IntoPyObject<'py> for StreamRequestMetadata {
     }
 }
 
-impl<'py> IntoPyObject<'py> for StreamRequest {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let args = PyDict::new(py);
-        args.set_item("frame_type", self.frame_type)?;
-        args.set_item("payload", self.payload)?;
-        Ok(py
-            .import("jumpstarter_protocol")?
-            .getattr("router_pb2")?
-            .getattr("StreamRequest")?
-            .call((), Some(&args))?)
-    }
-}
-
 #[tonic::async_trait]
 impl RouterService for SessionExecutor {
     type StreamStream = StreamStream;
