@@ -11,15 +11,13 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
+  "pytest>=8.3.2",
     "jumpstarter",
-    "pytest>=8.3.2",
-    "jumpstarter_imagehash",
-    "jumpstarter_driver_dutlink",
+    "jumpstarter-testing",
+    "jumpstarter-imagehash",
+    "jumpstarter-driver-network",
+    "jumpstarter-driver-dutlink"
 ]
-
-[tool.uv.sources]
-jumpstarter-imagehash = { workspace = true }
-jumpstarter-driver-dutlink = { workspace = true }
 
 [tool.pytest.ini_options]
 addopts = "-s --ignore examples/pytest/test_on_rpi4.py"
