@@ -65,7 +65,7 @@ Example:
 
 .. code-block:: bash
 
-    $ JMP_LEASE=$(jmp client lease request -l label match)
+    $ JMP_LEASE=$(jmp lease request -l label match)
     $ jmp shell
     $$ j --help
     $$ exit
