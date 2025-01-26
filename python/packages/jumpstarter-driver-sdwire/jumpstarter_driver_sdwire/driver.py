@@ -8,9 +8,8 @@ import usb.core
 import usb.util
 from anyio import fail_after, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
-from jumpstarter_driver_opendal.driver import StorageMuxInterface
-
 from jumpstarter.driver import Driver, export
+from jumpstarter_driver_opendal.driver import StorageMuxInterface
 
 
 @dataclass(kw_only=True)

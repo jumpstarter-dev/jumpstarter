@@ -2,9 +2,8 @@ import io
 import logging
 from base64 import b64decode
 
-from PIL import Image
-
 from jumpstarter.client import DriverClient
+from PIL import Image
 
 from .common import UStreamerState
 

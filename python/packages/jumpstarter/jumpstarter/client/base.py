@@ -8,10 +8,9 @@ from contextlib import contextmanager
 from dataclasses import field
 
 from anyio.from_thread import BlockingPortal
+from jumpstarter.streams import BlockingStream
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
-
-from jumpstarter.streams import BlockingStream
 
 from .core import AsyncDriverClient
 

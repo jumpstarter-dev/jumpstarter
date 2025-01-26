@@ -10,7 +10,6 @@ from anyio import (
     create_memory_object_stream,
 )
 from anyio.streams.stapled import StapledObjectStream
-
 from jumpstarter.driver import Driver, exportstream
 
 logger = logging.getLogger(__name__)

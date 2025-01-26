@@ -4,9 +4,8 @@ from dataclasses import dataclass, field
 
 from anyio.abc import ObjectStream
 from anyio.to_thread import run_sync
-from serial import Serial, serial_for_url
-
 from jumpstarter.driver import Driver, exportstream
+from serial import Serial, serial_for_url
 
 log = logging.getLogger(__name__)
 

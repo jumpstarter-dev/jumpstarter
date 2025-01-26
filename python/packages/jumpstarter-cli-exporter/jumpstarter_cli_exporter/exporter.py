@@ -3,7 +3,6 @@ import traceback
 from pathlib import Path
 
 import asyncclick as click
-
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 

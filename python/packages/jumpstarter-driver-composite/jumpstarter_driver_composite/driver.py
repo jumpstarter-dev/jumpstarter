@@ -1,6 +1,5 @@
-from pydantic.dataclasses import dataclass
-
 from jumpstarter.driver import Driver
+from pydantic.dataclasses import dataclass
 
 
 class CompositeInterface:

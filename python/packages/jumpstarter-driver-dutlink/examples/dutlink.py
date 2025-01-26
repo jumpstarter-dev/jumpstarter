@@ -3,9 +3,8 @@ import sys
 import time
 
 import asyncclick as click
-from jumpstarter_driver_network.adapters import PexpectAdapter
-
 from jumpstarter.common.utils import env
+from jumpstarter_driver_network.adapters import PexpectAdapter
 
 # initialize client from exporter config
 # from jumpstarter.common import MetadataFilter
