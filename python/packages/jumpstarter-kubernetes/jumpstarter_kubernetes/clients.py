@@ -4,8 +4,9 @@ import logging
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
+
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 
 from .util import AbstractAsyncCustomObjectApi
 

@@ -11,12 +11,13 @@ import usb.core
 import usb.util
 from anyio import fail_after, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
-from jumpstarter.driver import Driver, export
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_opendal.driver import StorageMuxInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
 from serial.serialutil import SerialException
+
+from jumpstarter.driver import Driver, export
 
 log = logging.getLogger(__name__)
 

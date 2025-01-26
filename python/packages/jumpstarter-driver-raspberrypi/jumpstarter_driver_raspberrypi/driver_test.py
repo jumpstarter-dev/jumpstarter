@@ -2,8 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from gpiozero import Device
 from gpiozero.pins.mock import MockFactory
-from jumpstarter.common.utils import serve
 
+from jumpstarter.common.utils import serve
 from jumpstarter_driver_raspberrypi.driver import DigitalInput, DigitalOutput
 
 Device.pin_factory = MockFactory()

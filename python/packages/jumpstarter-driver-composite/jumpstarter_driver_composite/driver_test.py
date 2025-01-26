@@ -1,5 +1,6 @@
-from jumpstarter.common.utils import serve
 from jumpstarter_driver_power.driver import MockPower
+
+from jumpstarter.common.utils import serve
 
 from .driver import Composite
 

@@ -5,6 +5,7 @@ from shutil import which
 
 import pytest
 from anyio.from_thread import start_blocking_portal
+
 from jumpstarter.common import TemporaryTcpListener, TemporaryUnixListener
 from jumpstarter.common.utils import serve
 

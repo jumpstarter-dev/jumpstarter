@@ -5,12 +5,13 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from pydantic import ValidationError
+
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
 )
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
-from pydantic import ValidationError
 
 
 def test_client_ensure_exists_makes_dir(monkeypatch: pytest.MonkeyPatch):

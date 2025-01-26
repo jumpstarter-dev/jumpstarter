@@ -7,10 +7,11 @@ from typing import Any, ClassVar, Literal, Optional, Self
 import grpc
 import yaml
 from anyio.from_thread import start_blocking_portal
+from pydantic import BaseModel, Field
+
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
-from pydantic import BaseModel, Field
 
 from .tls import TLSConfigV1Alpha1
 

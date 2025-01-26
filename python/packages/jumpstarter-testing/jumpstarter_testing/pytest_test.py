@@ -1,7 +1,8 @@
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
-from jumpstarter.exporter import Session
 from jumpstarter_driver_power.driver import MockPower
 from pytest import Pytester
+
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
+from jumpstarter.exporter import Session
 
 
 def test_env(pytester: Pytester, monkeypatch):

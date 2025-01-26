@@ -5,8 +5,9 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 
 import pytest
-from jumpstarter.common.utils import serve
 from opendal import Operator
+
+from jumpstarter.common.utils import serve
 
 from .driver import MockStorageMux
 
