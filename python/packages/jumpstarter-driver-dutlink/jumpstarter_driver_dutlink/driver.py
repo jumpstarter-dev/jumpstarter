@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 @dataclass(kw_only=True)
 class DutlinkConfig:
     serial: str | None = field(default=None)
+    timeout_s: int = field(default=20)  # 20 seconds, power control sequences can block USB for a long time
 
     dev: usb.core.Device = field(init=False)
     itf: usb.core.Interface = field(init=False)
@@ -52,6 +53,7 @@ class DutlinkConfig:
                 if not self.tty:
                     raise RuntimeError(f"no console found for the dutlink board with serial {serial}")
 
+                self.dev.default_timeout = self.timeout_s * 1000
                 return
 
         raise FileNotFoundError("failed to find dutlink device")
@@ -227,7 +229,6 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
 @dataclass(kw_only=True)
 class Dutlink(DutlinkConfig, CompositeInterface, Driver):
     alternate_console: str | None = field(default=None)
-    timeout_s: int = field(default=20)  # 20 seconds, power control sequences can block USB for a long time
     storage_device: str
     baudrate: int = field(default=115200)
 
@@ -252,10 +253,9 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
     def __post_init__(self):
         super().__post_init__()
 
-        self.dev.default_timeout = self.timeout_s * 1000
-
-        self.children["power"] = DutlinkPower(serial=self.serial)
-        self.children["storage"] = DutlinkStorageMux(serial=self.serial, storage_device=self.storage_device)
+        self.children["power"] = DutlinkPower(serial=self.serial, timeout_s=self.timeout_s)
+        self.children["storage"] = DutlinkStorageMux(serial=self.serial, storage_device=self.storage_device,
+                                                     timeout_s=self.timeout_s)
 
         # if an alternate serial port has been requested, use it
         if self.alternate_console is not None:
