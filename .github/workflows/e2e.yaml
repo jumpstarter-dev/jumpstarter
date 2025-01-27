@@ -11,7 +11,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: NickCao/jumpstarter-e2e
+      - uses: jumpstarter-dev/jumpstarter-e2e@main
         with:
           controller-ref: main
           jumpstarter-ref: ${{ github.ref }}
