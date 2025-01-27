@@ -16,7 +16,6 @@ IP=$("${SCRIPT_DIR}"/get_ext_ip.sh)
 kubectl config use-context kind-jumpstarter
 
 HELM_SETS=""
-
 if [ "${INGRESS_ENABLED}" == "true" ]; then
     echo -e "${GREEN}Deploying nginx ingress in kind ...${NC}"
 
@@ -52,6 +51,12 @@ fi
 HELM_SETS="${HELM_SETS} --set global.baseDomain=${BASEDOMAIN}"
 HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT}"
 HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT}"
+
+
+IMAGE_REPO=$(echo ${IMG} | cut -d: -f1)
+IMAGE_TAG=$(echo ${IMG} | cut -d: -f2)
+HELM_SETS="${HELM_SETS} --set jumpstarter-controller.image=${IMAGE_REPO}"
+HELM_SETS="${HELM_SETS} --set jumpstarter-controller.tag=${IMAGE_TAG}"
 
 # Function to save images to kind, with workaround for github CI and other environment issues
 # In github CI, kind gets confused and tries to pull the image from docker instead
@@ -112,7 +117,6 @@ for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
         fi
     done
 done
-
 
 
 echo -e "${GREEN}Jumpstarter controller deployed successfully!${NC}"

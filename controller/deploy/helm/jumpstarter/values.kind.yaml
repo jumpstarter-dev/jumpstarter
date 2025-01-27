@@ -4,7 +4,7 @@ global:
     enabled: false
 
 jumpstarter-controller:
-  image: quay.io/jumpstarter-dev/jumpstarter-controller
-  tag: latest
+  # image: quay.io/jumpstarter-dev/jumpstarter-controller
+  # tag: latest
   grpc:
     mode: "ingress"
