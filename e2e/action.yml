@@ -11,7 +11,7 @@ runs:
     - name: Install jumpstarter
       shell: bash
       run: |
-        uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git"
+        uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-cli"
     - name: Checkout jumpstarter controller
       uses: actions/checkout@v4
       with:
