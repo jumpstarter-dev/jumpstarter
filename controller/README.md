@@ -15,7 +15,7 @@
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-make ko-push IMG=<some-registry>/jumpstarter-controller:tag
+make docker-push IMG=<some-registry>/jumpstarter-controller:tag
 ```
 
 **NOTE:** This image ought to be published in the personal registry you specified.
