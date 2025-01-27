@@ -75,9 +75,7 @@ class DutlinkConfig:
 
         if direction == usb.ENDPOINT_IN:
             str_value = bytes(res).decode("utf-8")
-            self.logger.debug(
-                "ctrl_transfer result: %s",
-            )
+            self.logger.debug("ctrl_transfer result: %s", str_value)
             return str_value
 
 
