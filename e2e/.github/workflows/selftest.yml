@@ -2,8 +2,11 @@ name: selftest
 on:
   - push
 jobs:
+  strategy:
+    matrix:
+      runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./
