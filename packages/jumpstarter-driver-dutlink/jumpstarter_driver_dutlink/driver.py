@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import time
 from collections.abc import AsyncGenerator
@@ -19,8 +18,6 @@ from serial.serialutil import SerialException
 
 from jumpstarter.driver import Driver, export
 
-log = logging.getLogger(__name__)
-
 
 @dataclass(kw_only=True)
 class DutlinkConfig:
@@ -35,7 +32,7 @@ class DutlinkConfig:
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:
-                log.debug(f"found dutlink board with serial {serial}")
+                self.logger.debug(f"found dutlink board with serial {serial}")
 
                 self.serial = serial
                 self.dev = dev
@@ -78,9 +75,7 @@ class DutlinkConfig:
 
         if direction == usb.ENDPOINT_IN:
             str_value = bytes(res).decode("utf-8")
-            log.debug(
-                "ctrl_transfer result: %s",
-            )
+            self.logger.debug("ctrl_transfer result: %s", str_value)
             return str_value
 
 
@@ -101,7 +96,7 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
     last_action: str | None = field(default=None)
 
     def control(self, action):
-        log.debug(f"power control: {action}")
+        self.logger.debug(f"power control: {action}")
         if self.last_action == action:
             return
 
@@ -160,7 +155,7 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
     storage_device: str
 
     def control(self, action):
-        log.debug(f"storage control: {action}")
+        self.logger.debug(f"storage control: {action}")
         return super().control(
             usb.ENDPOINT_OUT,
             0x02,
@@ -190,9 +185,9 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
     async def wait_for_storage_device(self):
         with fail_after(20):
             while True:
-                log.debug(f"waiting for storage device {self.storage_device}")
+                self.logger.debug(f"waiting for storage device {self.storage_device}")
                 if os.path.exists(self.storage_device):
-                    log.debug(f"storage device {self.storage_device} is ready")
+                    self.logger.debug(f"storage device {self.storage_device} is ready")
                     # https://stackoverflow.com/a/2774125
                     fd = os.open(self.storage_device, os.O_WRONLY)
                     try:
@@ -213,7 +208,7 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
                 async for chunk in res:
                     await stream.send(chunk)
                     if total_bytes > next_print:
-                        log.debug(f"{self.storage_device} written {total_bytes / (1024 * 1024)} MB")
+                        self.logger.debug(f"{self.storage_device} written {total_bytes / (1024 * 1024)} MB")
                         next_print += 50 * 1024 * 1024
                     total_bytes += len(chunk)
 
@@ -255,15 +250,16 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
         super().__post_init__()
 
         self.children["power"] = DutlinkPower(serial=self.serial, timeout_s=self.timeout_s)
-        self.children["storage"] = DutlinkStorageMux(serial=self.serial, storage_device=self.storage_device,
-                                                     timeout_s=self.timeout_s)
+        self.children["storage"] = DutlinkStorageMux(
+            serial=self.serial, storage_device=self.storage_device, timeout_s=self.timeout_s
+        )
 
         # if an alternate serial port has been requested, use it
         if self.alternate_console is not None:
             try:
                 self.children["console"] = PySerial(url=self.alternate_console, baudrate=self.baudrate)
             except SerialException:
-                log.info(
+                self.logger.info(
                     f"failed to open alternate console {self.alternate_console} but trying to power on the target once"
                 )
                 self.children["power"].on()

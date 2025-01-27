@@ -1,4 +1,3 @@
-import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
@@ -7,8 +6,6 @@ from anyio.to_thread import run_sync
 from serial import Serial, serial_for_url
 
 from jumpstarter.driver import Driver, exportstream
-
-log = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -46,8 +43,8 @@ class PySerial(Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        log.info("Connecting to %s, baudrate: %d", self.url, self.baudrate)
+        self.logger.info("Connecting to %s, baudrate: %d", self.url, self.baudrate)
         device = await run_sync(serial_for_url, self.url, self.baudrate)
         async with AsyncSerial(device=device) as stream:
             yield stream
-        log.info("Disconnected from %s", self.url)
+        self.logger.info("Disconnected from %s", self.url)
