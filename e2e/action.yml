@@ -66,6 +66,7 @@ runs:
         uv venv
         uv pip install \
           ./jumpstarter/packages/jumpstarter-cli \
+          ./jumpstarter/packages/jumpstarter-driver-composite \
           ./jumpstarter/packages/jumpstarter-driver-power \
           ./jumpstarter/packages/jumpstarter-driver-opendal
     - name: Run jumpstarter
