@@ -3,10 +3,7 @@ on:
   - push
 jobs:
   test:
-    strategy:
-      matrix:
-        runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./
