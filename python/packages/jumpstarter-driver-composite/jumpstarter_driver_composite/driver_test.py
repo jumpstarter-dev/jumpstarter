@@ -1,7 +1,7 @@
-from jumpstarter.common.utils import serve
 from jumpstarter_driver_power.driver import MockPower
 
 from .driver import Composite
+from jumpstarter.common.utils import serve
 
 
 def test_drivers_composite():

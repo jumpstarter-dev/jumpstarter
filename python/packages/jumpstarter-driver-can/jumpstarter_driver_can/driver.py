@@ -4,11 +4,11 @@ from uuid import UUID, uuid4
 
 import can
 import isotp
-from jumpstarter.driver import Driver, export
 from pydantic import ConfigDict, validate_call
 from pydantic.dataclasses import dataclass
 
 from .common import CanMessage, IsoTpAddress, IsoTpAsymmetricAddress, IsoTpMessage, IsoTpParams
+from jumpstarter.driver import Driver, export
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))

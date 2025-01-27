@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlunparse
 
-from jumpstarter.streams import forward_stream
-
 from ..streams import WebsocketServerStream
 from .portforward import PortforwardAdapter
+from jumpstarter.streams import forward_stream
 
 
 @dataclass(kw_only=True)

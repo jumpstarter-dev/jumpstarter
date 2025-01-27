@@ -6,10 +6,11 @@ from threading import Semaphore
 import can
 import isotp
 import pytest
-from jumpstarter.common.utils import serve
 
 from jumpstarter_driver_can.common import IsoTpParams
 from jumpstarter_driver_can.driver import Can, IsoTpPython, IsoTpSocket
+
+from jumpstarter.common.utils import serve
 
 
 def test_client_can_send_recv(request):

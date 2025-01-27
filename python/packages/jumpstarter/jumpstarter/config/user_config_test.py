@@ -3,6 +3,7 @@ import tempfile
 from unittest.mock import patch
 
 import pytest
+
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,

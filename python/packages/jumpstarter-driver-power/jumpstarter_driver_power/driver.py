@@ -1,9 +1,8 @@
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Generator
 
-from jumpstarter.driver import Driver, export
-
 from .common import PowerReading
+from jumpstarter.driver import Driver, export
 
 
 class PowerInterface(metaclass=ABCMeta):

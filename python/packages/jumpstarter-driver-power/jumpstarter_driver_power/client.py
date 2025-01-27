@@ -1,9 +1,9 @@
 from collections.abc import Generator
 
 import asyncclick as click
-from jumpstarter.client import DriverClient
 
 from .common import PowerReading
+from jumpstarter.client import DriverClient
 
 
 class PowerClient(DriverClient):

@@ -3,10 +3,10 @@ import base64
 from dataclasses import dataclass
 from typing import Literal
 
-from jumpstarter.config import ExporterConfigV1Alpha1
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from .util import AbstractAsyncCustomObjectApi
+from jumpstarter.config import ExporterConfigV1Alpha1
 
 CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10

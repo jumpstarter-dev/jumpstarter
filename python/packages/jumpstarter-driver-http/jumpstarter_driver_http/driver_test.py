@@ -6,9 +6,9 @@ import aiohttp
 import anyio
 import pytest
 from anyio import create_memory_object_stream
-from jumpstarter.common.resources import ClientStreamResource
 
 from .driver import HttpServer
+from jumpstarter.common.resources import ClientStreamResource
 
 
 @pytest.fixture

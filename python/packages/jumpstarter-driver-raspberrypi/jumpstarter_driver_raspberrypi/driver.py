@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from gpiozero import DigitalInputDevice, DigitalOutputDevice, InputDevice
+
 from jumpstarter.driver import Driver, export
 
 

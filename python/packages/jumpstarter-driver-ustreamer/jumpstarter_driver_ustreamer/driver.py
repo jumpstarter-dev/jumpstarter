@@ -10,9 +10,9 @@ from tempfile import TemporaryDirectory
 
 from aiohttp import ClientSession, UnixConnector
 from anyio import connect_unix
-from jumpstarter.driver import Driver, export, exportstream
 
 from .common import UStreamerState
+from jumpstarter.driver import Driver, export, exportstream
 
 log = logging.getLogger(__name__)
 

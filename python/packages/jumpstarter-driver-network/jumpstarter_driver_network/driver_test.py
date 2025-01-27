@@ -5,11 +5,11 @@ from shutil import which
 
 import pytest
 from anyio.from_thread import start_blocking_portal
-from jumpstarter.common import TemporaryTcpListener, TemporaryUnixListener
-from jumpstarter.common.utils import serve
 
 from .adapters import PortforwardAdapter
 from .driver import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
+from jumpstarter.common import TemporaryTcpListener, TemporaryUnixListener
+from jumpstarter.common.utils import serve
 
 
 def test_echo_network():

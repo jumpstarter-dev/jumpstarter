@@ -2,12 +2,12 @@ import logging
 from typing import Optional
 
 import asyncclick as click
-from jumpstarter.common.utils import env
 from jumpstarter_cli_common import AliasedGroup, opt_log_level, version
 
 from .client_config import create_client_config, delete_client_config, list_client_configs, use_client_config
 from .client_shell import client_shell
 from .lease import lease
+from jumpstarter.common.utils import env
 
 
 @click.group(cls=AliasedGroup)

@@ -7,13 +7,14 @@ import grpc
 import pytest
 from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
+from jumpstarter_driver_power.driver import MockPower
+
 from jumpstarter.client import Lease
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter import Exporter, Session
-from jumpstarter_driver_power.driver import MockPower
 
 pytestmark = pytest.mark.anyio
 

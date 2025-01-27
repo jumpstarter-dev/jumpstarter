@@ -1,7 +1,6 @@
-from jumpstarter.common.utils import serve
-
 from .common import PowerReading
 from .driver import MockPower, SyncMockPower
+from jumpstarter.common.utils import serve
 
 
 def test_client_mock_power():

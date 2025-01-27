@@ -6,14 +6,14 @@ from typing import ClassVar, Literal, Optional, Self
 import grpc
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
-from jumpstarter.common import MetadataFilter
-from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from pydantic import BaseModel, Field, ValidationError
 
 from .common import CONFIG_PATH
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_TOKEN
 from .tls import TLSConfigV1Alpha1
+from jumpstarter.common import MetadataFilter
+from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 
 
 def _allow_from_env():
