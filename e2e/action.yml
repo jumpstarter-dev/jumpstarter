@@ -14,6 +14,12 @@ runs:
         repository: jumpstarter-dev/jumpstarter-controller
         ref: main # TODO: parameterize
         path: controller
+    - name: Checkout jumpstarter
+      uses: actions/checkout@v4
+      with:
+        repository: jumpstarter-dev/jumpstarter
+        ref: main # TODO: parameterize
+        path: jumpstarter
     - name: Deploy jumpstarter controller
       shell: bash
       run: |
@@ -59,9 +65,9 @@ runs:
       run: |
         uv venv
         uv pip install \
-          "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-cli" \
-          "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-driver-power" \
-          "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-driver-opendal"
+          ./jumpstarter/packages/jumpstarter-cli \
+          ./jumpstarter/packages/jumpstarter-driver-power \
+          ./jumpstarter/packages/jumpstarter-driver-opendal
     - name: Run jumpstarter
       shell: bash
       run: |
