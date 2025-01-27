@@ -9,7 +9,7 @@ jobs:
   e2e-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: jumpstarter-dev/jumpstarter-e2e
+      - uses: jumpstarter-dev/jumpstarter-e2e@main
         with:
           controller-ref: ${{ github.ref }}
           jumpstarter-ref: main
