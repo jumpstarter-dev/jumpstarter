@@ -1,11 +1,6 @@
 name: End-to-end tests
 on:
   workflow_dispatch:
-    inputs:
-      rev:
-        required: true
-        default: ""
-        type: string
   pull_request:
     branches:
       - main
@@ -14,78 +9,7 @@ jobs:
   e2e-tests:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: jumpstarter-dev/jumpstarter-e2e
         with:
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v2
-
-      - name: Install python
-        run: uv python install 3.12
-
-      - name: Install jumpstarter
-        run: |
-          if [ -z "${{ inputs.rev }}" ]; then
-            REV="main"
-          else
-            REV="${{ inputs.rev }}"
-          fi
-          uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git@$REV"
-
-      - name: Run make deploy
-        run: make deploy
-
-      - name: Create client
-        run: |
-          mkdir -p ~/.config/jumpstarter/clients
-          go run ./cmd/jmpctl/main.go client create test-client-1 > ~/.config/jumpstarter/clients/test-client-1.yaml
-          cat <<EOF >> ~/.config/jumpstarter/clients/test-client-1.yaml
-          drivers:
-            allow: []
-            unsafe: True
-          EOF
-
-      - name: Create exporter
-        run: |
-          sudo mkdir -p /etc/jumpstarter/exporters
-          sudo chown $USER /etc/jumpstarter/exporters
-
-          go run ./cmd/jmpctl/main.go exporter create test-exporter-1 > /etc/jumpstarter/exporters/test-exporter-1.yaml
-          cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-1.yaml
-          export:
-            power:
-              type: jumpstarter.drivers.power.driver.MockPower
-          EOF
-          kubectl -n default patch exporters.jumpstarter.dev test-exporter-1 \
-            --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi4"}}}'
-
-          go run ./cmd/jmpctl/main.go exporter create test-exporter-2 > /etc/jumpstarter/exporters/test-exporter-2.yaml
-          cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-2.yaml
-          export:
-            storage:
-              type: jumpstarter.drivers.storage.driver.MockStorageMux
-          EOF
-          kubectl -n default patch exporters.jumpstarter.dev test-exporter-2 \
-            --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi5"}}}'
-
-      - name: Run jumpstarter
-        run: |
-          export JUMPSTARTER_GRPC_INSECURE=1
-
-          jmp list
-          jmp-exporter list
-
-          jmp-exporter run test-exporter-1 &
-          jmp-exporter run test-exporter-2 &
-
-          sleep 5
-
-          jmp shell test-client-1 --label example.com/board rpi4 <<EOF
-          j power
-          EOF
-
-          jmp shell test-client-1 --label example.com/board rpi5 <<EOF
-          j storage
-          EOF
+          controller-ref: ${{ github.ref }}
+          jumpstarter-ref: main
