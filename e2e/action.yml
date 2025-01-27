@@ -26,7 +26,8 @@ runs:
       shell: bash
       run: |
         mkdir -p ~/.config/jumpstarter/clients
-        go run ./cmd/jmpctl/main.go client create test-client-1 > ~/.config/jumpstarter/clients/test-client-1.yaml
+        go run ./controller/cmd/jmpctl/main.go \
+          client create test-client-1 > ~/.config/jumpstarter/clients/test-client-1.yaml
         cat <<EOF >> ~/.config/jumpstarter/clients/test-client-1.yaml
         drivers:
           allow: []
@@ -38,7 +39,8 @@ runs:
         sudo mkdir -p /etc/jumpstarter/exporters
         sudo chown $USER /etc/jumpstarter/exporters
 
-        go run ./cmd/jmpctl/main.go exporter create test-exporter-1 > /etc/jumpstarter/exporters/test-exporter-1.yaml
+        go run ./controller/cmd/jmpctl/main.go \
+          exporter create test-exporter-1 > /etc/jumpstarter/exporters/test-exporter-1.yaml
         cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-1.yaml
         export:
           power:
@@ -47,7 +49,8 @@ runs:
         kubectl -n default patch exporters.jumpstarter.dev test-exporter-1 \
           --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi4"}}}'
 
-        go run ./cmd/jmpctl/main.go exporter create test-exporter-2 > /etc/jumpstarter/exporters/test-exporter-2.yaml
+        go run ./controller/cmd/jmpctl/main.go \
+          exporter create test-exporter-2 > /etc/jumpstarter/exporters/test-exporter-2.yaml
         cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-2.yaml
         export:
           storage:
