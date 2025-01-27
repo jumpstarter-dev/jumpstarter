@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Any
 
 import imagehash
-from jumpstarter.client import DriverClient
 from PIL import Image
+
+from jumpstarter.client import DriverClient
 
 log = logging.getLogger("imagehash")
 

@@ -5,10 +5,10 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 
 import pytest
-from jumpstarter.common.utils import serve
 from opendal import Operator
 
 from .driver import MockStorageMux
+from jumpstarter.common.utils import serve
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):

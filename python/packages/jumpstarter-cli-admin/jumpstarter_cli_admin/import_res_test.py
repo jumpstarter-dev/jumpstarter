@@ -3,17 +3,17 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from asyncclick.testing import CliRunner
-from jumpstarter.config import (
-    ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Drivers,
-    ExporterConfigV1Alpha1,
-)
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
 )
 
 from .import_res import import_res
+from jumpstarter.config import (
+    ClientConfigV1Alpha1,
+    ClientConfigV1Alpha1Drivers,
+    ExporterConfigV1Alpha1,
+)
 
 # Generate a random client name
 CLIENT_NAME = uuid.uuid4().hex

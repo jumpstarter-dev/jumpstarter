@@ -1,11 +1,6 @@
 from typing import Optional
 
 import asyncclick as click
-from jumpstarter.config import (
-    ClientConfigV1Alpha1,
-    UserConfigV1Alpha1,
-)
-from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter_cli_common import (
     opt_context,
     opt_kubeconfig,
@@ -19,6 +14,11 @@ from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,
 )
+from jumpstarter.config import (
+    ClientConfigV1Alpha1,
+    UserConfigV1Alpha1,
+)
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 
 @click.group("import")

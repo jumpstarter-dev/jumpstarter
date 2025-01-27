@@ -1,8 +1,9 @@
 import pytest
 import usb
-from jumpstarter.common.utils import serve
 
 from jumpstarter_driver_sdwire.driver import SDWire
+
+from jumpstarter.common.utils import serve
 
 
 def test_drivers_sdwire():

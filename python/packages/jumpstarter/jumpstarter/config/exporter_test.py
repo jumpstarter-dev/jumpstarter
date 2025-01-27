@@ -3,11 +3,11 @@ from pathlib import Path
 import pytest
 from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
-from jumpstarter.common import MetadataFilter
 
 from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 from .tls import TLSConfigV1Alpha1
+from jumpstarter.common import MetadataFilter
 
 pytestmark = pytest.mark.anyio
 

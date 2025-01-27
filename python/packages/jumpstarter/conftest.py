@@ -14,13 +14,14 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jumpstarter.streams import RouterStream, forward_stream
 from jumpstarter_protocol import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     kubernetes_pb2,
     router_pb2_grpc,
 )
+
+from jumpstarter.streams import RouterStream, forward_stream
 
 
 @dataclass(kw_only=True)

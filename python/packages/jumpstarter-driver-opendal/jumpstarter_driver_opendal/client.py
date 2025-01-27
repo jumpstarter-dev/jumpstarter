@@ -1,10 +1,10 @@
 from pathlib import Path
 
 import asyncclick as click
-from jumpstarter.client import DriverClient
 from opendal import Operator
 
 from .adapter import OpendalAdapter
+from jumpstarter.client import DriverClient
 
 
 class StorageMuxClient(DriverClient):

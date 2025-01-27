@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Optional
 
 from anyio.streams.file import FileWriteStream
-from jumpstarter.driver import Driver, export
 
 from jumpstarter_driver_tftp.server import TftpServer
+
+from jumpstarter.driver import Driver, export
 
 logger = logging.getLogger(__name__)
 
