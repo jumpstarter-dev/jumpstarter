@@ -46,6 +46,10 @@ line-length = 120
 exclude = ["packages/jumpstarter-protocol"]
 extend-select = ["I", "C", "E", "F", "W", "B"]
 
+[tool.ruff.lint.isort]
+known-local-folder = ["packages", "examples", "jumpstarter"]
+
+
 [tool.typos.default]
 locale = "en-us"
 
