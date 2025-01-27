@@ -8,10 +8,6 @@ runs:
       shell: bash
       run: |
         uv python install 3.12
-    - name: Install jumpstarter
-      shell: bash
-      run: |
-        uv tool install "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-cli"
     - name: Checkout jumpstarter controller
       uses: actions/checkout@v4
       with:
@@ -58,23 +54,33 @@ runs:
         EOF
         kubectl -n default patch exporters.jumpstarter.dev test-exporter-2 \
           --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi5"}}}'
+    - name: Install jumpstarter
+      shell: bash
+      run: |
+        uv venv
+        uv pip install \
+          "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-cli" \
+          "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-driver-power" \
+          "git+https://github.com/jumpstarter-dev/jumpstarter.git#subdirectory=packages/jumpstarter-driver-opendal"
     - name: Run jumpstarter
       shell: bash
       run: |
+        . .venv/bin/activate
+
         export JUMPSTARTER_GRPC_INSECURE=1
 
-        jmp list
-        jmp-exporter list
+        jmp client list-configs
+        jmp exporter list-configs
 
-        jmp-exporter run test-exporter-1 &
-        jmp-exporter run test-exporter-2 &
+        jmp exporter run test-exporter-1 &
+        jmp exporter run test-exporter-2 &
 
         sleep 5
 
-        jmp shell test-client-1 --label example.com/board rpi4 <<EOF
+        jmp client shell test-client-1 --label example.com/board rpi4 <<EOF
         j power
         EOF
 
-        jmp shell test-client-1 --label example.com/board rpi5 <<EOF
+        jmp client shell test-client-1 --label example.com/board rpi5 <<EOF
         j storage
         EOF
