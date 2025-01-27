@@ -37,7 +37,7 @@ members = [
 dev = [
     { name = "esbonio", specifier = ">=0.16.5" },
     { name = "pre-commit", specifier = ">=3.8.0" },
-    { name = "ruff", specifier = ">=0.9.2" },
+    { name = "ruff", specifier = "==0.9.2" },
     { name = "typos", specifier = ">=1.23.6" },
 ]
 docs = [
@@ -1040,7 +1040,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -1056,7 +1055,6 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "ruff", specifier = ">=0.7.1" },
 ]
 
 [[package]]

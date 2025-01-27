@@ -47,31 +47,32 @@ def lease_release(name, lease, all_leases):
             raise ValueError("no lease specified")
         config.release_lease(lease)
 
+
 @lease.command("request")
 @click.option("-l", "--label", "labels", type=(str, str), multiple=True)
 @click.argument("name", type=str, default="")
 def lease_request(name, labels):
     """Request an exporter lease from the jumpstarter controller.
 
-The result of this command will be a lease ID that can be used to
-connect to the remote exporter.
+    The result of this command will be a lease ID that can be used to
+    connect to the remote exporter.
 
-This is useful for multi-step workflows where you want to hold a lease
-for a specific exporter while performing multiple operations, or for
-CI environments where one step will request the lease and other steps
-will perform operations on the leased exporter.
+    This is useful for multi-step workflows where you want to hold a lease
+    for a specific exporter while performing multiple operations, or for
+    CI environments where one step will request the lease and other steps
+    will perform operations on the leased exporter.
 
-Example:
+    Example:
 
-.. code-block:: bash
+    .. code-block:: bash
 
-    $ JMP_LEASE=$(jmp lease request -l label match)
-    $ jmp shell
-    $$ j --help
-    $$ exit
-    $ jmp lease release -l "${JMP_LEASE}"
+        $ JMP_LEASE=$(jmp lease request -l label match)
+        $ jmp shell
+        $$ j --help
+        $$ exit
+        $ jmp lease release -l "${JMP_LEASE}"
 
-"""
+    """
     try:
         if name:
             config = ClientConfigV1Alpha1.load(name)
