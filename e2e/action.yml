@@ -1,4 +1,11 @@
 name: 'Jumpstarter end-to-end testing'
+inputs:
+  controller-ref:
+    description: 'jumpstarter-dev/jumpstarter-controller git ref'
+    required: true
+  jumpstarter-ref:
+    description: 'jumpstarter-dev/jumpstarter git ref'
+    required: true
 runs:
   using: "composite"
   steps:
@@ -12,13 +19,13 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: jumpstarter-dev/jumpstarter-controller
-        ref: main # TODO: parameterize
+        ref: ${{ inputs.controller-ref }}
         path: controller
     - name: Checkout jumpstarter
       uses: actions/checkout@v4
       with:
         repository: jumpstarter-dev/jumpstarter
-        ref: main # TODO: parameterize
+        ref: ${{ inputs.jumpstarter-ref }}
         path: jumpstarter
     - name: Deploy jumpstarter controller
       shell: bash
