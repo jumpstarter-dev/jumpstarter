@@ -3,6 +3,7 @@ set -eo pipefail
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 KIND=${KIND:-bin/kind-v0.23.0}
+GRPCURL=${GRPCURL:-bin/grpcurl-v1.9.2}
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 INGRESS_ENABLED=${INGRESS_ENABLED:-false}
 
@@ -108,7 +109,7 @@ echo -e "${GREEN}Waiting for grpc endpoints to be ready:${NC}"
 for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
     RETRIES=30
     echo -e "${GREEN} * Checking ${ep} ... ${NC}"
-    while ! podman run docker.io/fullstorydev/grpcurl -insecure ${ep} list; do
+    while ! ${GRPCURL} -insecure ${ep} list; do
         sleep 2
         RETRIES=$((RETRIES-1))
         if [ ${RETRIES} -eq 0 ]; then

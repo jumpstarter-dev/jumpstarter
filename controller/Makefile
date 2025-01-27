@@ -121,7 +121,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: ko-build cluster
+deploy: ko-build cluster grpcurl
 	./hack/deploy_with_helm.sh
 
 .PHONY: deploy-exporters
