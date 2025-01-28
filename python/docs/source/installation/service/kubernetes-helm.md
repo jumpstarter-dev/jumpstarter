@@ -2,9 +2,7 @@
 
 The Jumpstarter service can be installed on a Kubernetes cluster using Helm.
 
-```{warning}
-This configuration hasn't been fully tested, please report any issues you may find.
-```
+## Install with Helm
 
 ```{note}
 Please note that `global.baseDomain` is used to create the host names for the services,

@@ -1,9 +1,12 @@
 # Setup a Local Exporter
 
-This guide walks you through the process of using Jumpstarter with a local exporter (the client and the exporter running on the same host)
+This guide walks you through the process of using Jumpstarter with a local
+exporter (i.e. the client and the exporter running on the same host).
 
-## Create Exporter Configuration
-Create a text file with the following content
+## Create an Exporter Config
+
+Create a text file with the following content:
+
 ```yaml
 # /etc/jumpstarter/exporters/demo.yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -16,23 +19,30 @@ endpoint: ""
 token: ""
 # mock drivers for demo purpose
 export:
-    storage:
-        type: jumpstarter.drivers.storage.driver.MockStorageMux
-    power:
-        type: jumpstarter.drivers.power.driver.MockPower
+  storage:
+    type: jumpstarter.drivers.storage.driver.MockStorageMux
+  power:
+    type: jumpstarter.drivers.power.driver.MockPower
 ```
-Once the exporter configuration is ready it should be placed at `/etc/jumpstarter/exporters/demo.yaml`.
+Once the exporter configuration is ready it should be placed at
+`/etc/jumpstarter/exporters/demo.yaml`.
 
 ## Enter Exporter Shell
-Now we can run the following command to enter the "Exporter Shell", inside which we can interact with the local exporter with Jumpstarter client.
+
+Now we can run the following command to enter the "Exporter Shell", inside
+which we can interact with the local exporter with Jumpstarter client.
+
 ```shell
-$ jmp-exporter shell demo
+$ jmp exporter shell demo
 ```
 
-## Use j Command
-The `j` command is available in the exporter shell for controlling the exporter with shell commands.
+## Use the `j` Command
+
+The `j` command is available in the exporter shell for controlling the exporter
+with shell commands.
+
 ```shell
-# running inside exporter shell
+# Running inside exporter shell
 $ j
 Usage: j [OPTIONS] COMMAND [ARGS]...
 

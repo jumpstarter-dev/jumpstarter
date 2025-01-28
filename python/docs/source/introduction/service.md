@@ -2,7 +2,7 @@
 
 When building a lab with many devices under test, it quickly becomes difficult
 to keep track of devices, schedule access for automated tests, and perform routine
-tasks such as batch updates.
+maintenance such as batch updates.
 
 Jumpstarter provides a [Cloud Native](https://www.cncf.io/) service that can
 be installed in any [Kubernetes](https://kubernetes.io/) cluster to manage
@@ -42,5 +42,5 @@ exported interfaces via the client.
 
 Once a lease is established, all traffic between the client and the exporter
 flows through a router instance. While there may only be one controller,
-the router can be scaled to handle traffic from many clients/exporters
-simultaneously.
+the router can be scaled with multiple instance handle traffic between many
+clients and exporters simultaneously.
