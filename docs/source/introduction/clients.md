@@ -10,7 +10,7 @@ The Python client can be used either as a library through a testing tool such as
 
 Jumpstarter supports two types of client configurations: local and remote.
 
-### Local
+### Local Clients
 
 When using Jumpstarter in *local-only* mode, you can use the local
 client functionality to directly access your hardware. The local client will
@@ -20,10 +20,10 @@ exporter instance running in the background.
 You can get started with a local client by following the
 [Setup a Local Client](../getting-started/setup-local-client.md) guide.
 
-### Remote
+### Remote Clients
 
 When using Jumpstarter in *distributed* mode, the client must be configured to
-connect to an instance of the Jumpstarter Service that can authenticate clients
+connect to an instance of the Jumpstarter Service that can authenticate
 and tunnel requests to the appropriate exporter instance.
 
 The following parameters are required to setup a remote client:

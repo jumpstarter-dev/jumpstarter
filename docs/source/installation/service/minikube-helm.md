@@ -24,6 +24,44 @@ First, we must start a local minikube cluster with the correct features enabled 
 minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 ```
 
+### Install Jumpstarter with the CLI
+
+To simplify the installation in your Kubernetes cluster, the Jumpstarter CLI
+provides the `jmp admin install` command to automatically run Helm with the
+correct arguments.
+
+```{tip}
+If you do not have Helm installed, please [install the latest release](https://helm.sh/docs/intro/install/).
+```
+
+```
+# Install Jumpstarter with default options
+$ jmp admin install --ip $(minikube ip)
+
+# Options provided by the Jumpstarter CLI
+$ jmp admin install --help
+Usage: jmp admin install [OPTIONS]
+
+  Install the Jumpstarter service in a Kubernetes cluster
+
+Options:
+  --helm TEXT                 Path or name of a helm executable
+  --name TEXT                 The name of the chart installation
+  -c, --chart TEXT            The URL of a Jumpstarter helm chart to install
+  -n, --namespace TEXT        Namespace to install Jumpstarter components in
+  -i, --ip TEXT               IP address of your host machine
+  -b, --basedomain TEXT       Base domain of the Jumpstarter service
+  -g, --grpc-endpoint TEXT    The gRPC endpoint to use for the Jumpstarter API
+  -r, --router-endpoint TEXT  The gRPC endpoint to use for the router
+  --nodeport                  Use Nodeport routing (recommended)
+  --ingress                   Use a Kubernetes ingress
+  --route                     Use an OpenShift route
+  -v, --version TEXT          The version of the service to install
+  --kubeconfig FILENAME       path to the kubeconfig file
+  --context TEXT              Kubernetes context to use
+  --help                      Show this message and exit.
+```
+
 ### Install Jumpstarter with Helm
 
 ```{tip}

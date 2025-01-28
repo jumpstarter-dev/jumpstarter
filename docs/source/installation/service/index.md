@@ -1,11 +1,11 @@
 # Service
 
 To manage your Jumpstarter lab from Kubernetes, the Jumpstarter Service must
-be installed in your Kubernetes cluster.
+be installed in your cluster.
 
 ## Prerequisites
 
-- A *Kubernetes* or *OpenShift* cluster.
+- A *Kubernetes* cluster.
 - [Kubectl](https://www.downloadkubernetes.com/)
 - [Helm](https://helm.sh/docs/intro/install/)
 
