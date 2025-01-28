@@ -121,7 +121,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: ko-build cluster
+deploy: ko-build cluster grpcurl
 	./hack/deploy_with_helm.sh
 
 .PHONY: deploy-exporters
@@ -152,6 +152,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 KIND = $(LOCALBIN)/kind-$(KIND_VERSION)
 KO = $(LOCALBIN)/ko-$(KO_VERSION)
+GRPCURL = $(LOCALBIN)/grpcurl-$(GRPCURL_VERSION)
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.1
@@ -160,6 +161,7 @@ ENVTEST_VERSION ?= release-0.18
 GOLANGCI_LINT_VERSION ?= v1.61.0
 KIND_VERSION ?= v0.23.0
 KO_VERSION ?= v0.17.0
+GRPCURL_VERSION ?= v1.9.2
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -185,6 +187,11 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 ko: $(KO) ## Download ko locally if necessary.
 $(KO): $(LOCALBIN)
 	$(call go-install-tool,$(KO),github.com/google/ko,$(KO_VERSION))
+
+.PHONY: grpcurl
+grpcurl: $(GRPCURL) ## Download grpcurl locally if necessary.
+$(GRPCURL): $(LOCALBIN)
+	$(call go-install-tool,$(GRPCURL),github.com/fullstorydev/grpcurl/cmd/grpcurl,$(GRPCURL_VERSION))
 
 .PHONY: helm-lint
 helm-lint:
