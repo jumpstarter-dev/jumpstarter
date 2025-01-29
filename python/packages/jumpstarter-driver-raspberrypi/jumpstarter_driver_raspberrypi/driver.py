@@ -15,7 +15,8 @@ class DigitalOutput(Driver):
         return "jumpstarter_driver_raspberrypi.client.DigitalOutputClient"
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
         # Initialize as InputDevice first
         self.device = InputDevice(pin=self.pin)
 
@@ -49,7 +50,8 @@ class DigitalInput(Driver):
         return "jumpstarter_driver_raspberrypi.client.DigitalInputClient"
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
         self.device = DigitalInputDevice(pin=self.pin)
 
     @export

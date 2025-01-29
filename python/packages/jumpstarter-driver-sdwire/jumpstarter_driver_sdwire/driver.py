@@ -22,7 +22,9 @@ class SDWire(StorageMuxInterface, Driver):
     storage_device: str | None = field(default=None)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         for dev in usb.core.find(idVendor=0x04E8, idProduct=0x6001, find_all=True):
             if self.storage_device is None:
                 context = pyudev.Context()

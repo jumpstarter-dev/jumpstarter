@@ -29,6 +29,9 @@ class DutlinkConfig:
     tty: str | None = field(init=False, default=None)
 
     def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         for dev in usb.core.find(idVendor=0x2B23, idProduct=0x1012, find_all=True):
             serial = usb.util.get_string(dev, dev.iSerialNumber)
             if serial == self.serial or self.serial is None:
@@ -84,11 +87,10 @@ class DutlinkSerial(DutlinkConfig, PySerial):
     url: str | None = field(init=False, default=None)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
 
         self.url = self.tty
-
-        super(PySerial, self).__post_init__()
 
 
 @dataclass(kw_only=True)
@@ -247,7 +249,8 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
     """
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
 
         self.children["power"] = DutlinkPower(serial=self.serial, timeout_s=self.timeout_s)
         self.children["storage"] = DutlinkStorageMux(
