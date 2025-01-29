@@ -1,3 +1,5 @@
+import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -6,6 +8,7 @@ from opendal import Operator
 
 from jumpstarter.client import DriverClient
 
+logger = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class TftpServerClient(DriverClient):
@@ -46,37 +49,30 @@ class TftpServerClient(DriverClient):
         return self.call("list_files")
 
     def put_file(self, operator: Operator, path: str):
-        """
-        Upload a file to the TFTP server using an OpenDAL operator
-
-        Args:
-            operator (Operator): OpenDAL operator for accessing the source storage
-            path (str): Path to the file in the source storage system
-
-        Returns:
-            str: Name of the uploaded file
-        """
         filename = Path(path).name
+        client_checksum = self._compute_checksum(operator, path)
+
+        if self.call("check_file_checksum", filename, client_checksum):
+            logger.info(f"Skipping upload of identical file: {filename}")
+            return filename
+
         with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
-            return self.call("put_file", filename, handle)
+            return self.call("put_file", filename, handle, client_checksum)
 
     def put_local_file(self, filepath: str):
-        """
-        Upload a file from the local filesystem to the TFTP server
-        Note: this doesn't use TFTP to upload.
-
-        Args:
-            filepath (str): Path to the local file to upload
-
-        Returns:
-            str: Name of the uploaded file
-
-        Example:
-            >>> client.put_local_file("/path/to/local/file.txt")
-        """
         absolute = Path(filepath).resolve()
-        with OpendalAdapter(client=self, operator=Operator("fs", root="/"), path=str(absolute), mode="rb") as handle:
-            return self.call("put_file", absolute.name, handle)
+        filename = absolute.name
+
+        operator = Operator("fs", root="/")
+        client_checksum = self._compute_checksum(operator, str(absolute))
+
+        if self.call("check_file_checksum", filename, client_checksum):
+            logger.info(f"Skipping upload of identical file: {filename}")
+            return filename
+
+        logger.info(f"checksum: {client_checksum}")
+        with OpendalAdapter(client=self, operator=operator, path=str(absolute), mode="rb") as handle:
+            return self.call("put_file", filename, handle, client_checksum)
 
     def delete_file(self, filename: str):
         """
@@ -108,3 +104,10 @@ class TftpServerClient(DriverClient):
             int: The port number (default is 69)
         """
         return self.call("get_port")
+
+    def _compute_checksum(self, operator: Operator, path: str) -> str:
+        hasher = hashlib.sha256()
+        with operator.open(path, "rb") as f:
+            while chunk := f.read(8192):
+                hasher.update(chunk)
+        return hasher.hexdigest()

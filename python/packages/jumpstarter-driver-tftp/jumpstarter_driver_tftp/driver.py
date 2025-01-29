@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 import os
 import socket
@@ -52,15 +53,18 @@ class Tftp(Driver):
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default_factory=get_default_ip)
     port: int = 69
+    checksum_suffix: str = ".sha256"
     server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: Optional[threading.Thread] = field(init=False, default=None)
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
     _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
+    _checksums: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         super().__post_init__()
         os.makedirs(self.root_dir, exist_ok=True)
+        self._initialize_checksums()
 
     @classmethod
     def client(cls) -> str:
@@ -145,11 +149,11 @@ class Tftp(Driver):
         return os.listdir(self.root_dir)
 
     @export
-    async def put_file(self, filename: str, src_stream):
-        """Handle file upload using streaming"""
-        try:
-            file_path = os.path.join(self.root_dir, filename)
+    async def put_file(self, filename: str, src_stream, client_checksum: str):
+        """Only called when we know we need to upload"""
+        file_path = os.path.join(self.root_dir, filename)
 
+        try:
             if not Path(file_path).resolve().is_relative_to(Path(self.root_dir).resolve()):
                 raise TftpError("Invalid target path")
 
@@ -158,19 +162,46 @@ class Tftp(Driver):
                     async for chunk in src:
                         await dst.send(chunk)
 
+            self._checksums[filename] = client_checksum
+            self._write_checksum_file(filename, client_checksum)
             return filename
-
         except Exception as e:
             raise TftpError(f"Failed to upload file: {str(e)}") from e
 
+
     @export
     def delete_file(self, filename: str):
+        """Delete file and its checksum file"""
+        file_path = os.path.join(self.root_dir, filename)
+        checksum_path = self._get_checksum_path(filename)
+
+        if not os.path.exists(file_path):
+            raise FileNotFound(f"File {filename} not found")
+
         try:
-            os.remove(os.path.join(self.root_dir, filename))
-        except FileNotFoundError as err:
-            raise FileNotFound(f"File {filename} not found") from err
+            os.remove(file_path)
+            if os.path.exists(checksum_path):
+                os.remove(checksum_path)
+            self._checksums.pop(filename, None)
         except Exception as e:
             raise TftpError(f"Failed to delete {filename}") from e
+
+    @export
+    def check_file_checksum(self, filename: str, client_checksum: str) -> bool:
+        """Check if file exists with matching checksum"""
+        file_path = os.path.join(self.root_dir, filename)
+        if not os.path.exists(file_path):
+            return False
+
+        current_checksum = self._compute_checksum(file_path)
+        stored_checksum = self._read_checksum_file(filename)
+
+        if stored_checksum != current_checksum:
+            self._write_checksum_file(filename, current_checksum)
+            self._checksums[filename] = current_checksum
+
+        logger.debug(f"Client checksum: {client_checksum}, server checksum: {current_checksum}")
+        return current_checksum == client_checksum
 
     @export
     def get_host(self) -> str:
@@ -184,3 +215,45 @@ class Tftp(Driver):
         if self.server_thread is not None:
             self.stop()
         super().close()
+
+    def _get_checksum_path(self, filename: str) -> str:
+        return os.path.join(self.root_dir, f"{filename}{self.checksum_suffix}")
+
+    def _read_checksum_file(self, filename: str) -> Optional[str]:
+        try:
+            checksum_path = self._get_checksum_path(filename)
+            if os.path.exists(checksum_path):
+                with open(checksum_path, 'r') as f:
+                    return f.read().strip()
+        except Exception as e:
+            logger.warning(f"Failed to read checksum file for {filename}: {e}")
+        return None
+
+    def _write_checksum_file(self, filename: str, checksum: str):
+        """Write checksum to the checksum file"""
+        try:
+            checksum_path = self._get_checksum_path(filename)
+            with open(checksum_path, 'w') as f:
+                f.write(f"{checksum}\n")
+        except Exception as e:
+            logger.error(f"Failed to write checksum file for {filename}: {e}")
+
+    def _compute_checksum(self, path: str) -> str:
+        hasher = hashlib.sha256()
+        with open(path, "rb") as f:
+            while chunk := f.read(8192):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def _initialize_checksums(self):
+        self._checksums.clear()
+        for filename in os.listdir(self.root_dir):
+            if filename.endswith(self.checksum_suffix):
+                continue
+            file_path = os.path.join(self.root_dir, filename)
+            if os.path.isfile(file_path):
+                stored_checksum = self._read_checksum_file(filename)
+                current_checksum = self._compute_checksum(file_path)
+                if stored_checksum != current_checksum:
+                    self._write_checksum_file(filename, current_checksum)
+                self._checksums[filename] = current_checksum
