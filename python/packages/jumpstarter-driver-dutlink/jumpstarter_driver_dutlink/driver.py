@@ -83,14 +83,17 @@ class DutlinkConfig:
 
 
 @dataclass(kw_only=True)
-class DutlinkSerial(DutlinkConfig, PySerial):
-    url: str | None = field(init=False, default=None)
-
+class DutlinkSerialConfig(DutlinkConfig, Driver):
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
         self.url = self.tty
+
+
+@dataclass(kw_only=True)
+class DutlinkSerial(PySerial, DutlinkSerialConfig):
+    url: str | None = field(init=False, default=None)
 
 
 @dataclass(kw_only=True)
