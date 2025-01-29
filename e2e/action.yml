@@ -31,42 +31,6 @@ runs:
       shell: bash
       run: |
         make -C controller deploy
-    - name: Create client
-      shell: bash
-      run: |
-        mkdir -p ~/.config/jumpstarter/clients
-        (cd ./controller && go run ./cmd/jmpctl/main.go \
-          client create test-client-1 > ~/.config/jumpstarter/clients/test-client-1.yaml)
-        cat <<EOF >> ~/.config/jumpstarter/clients/test-client-1.yaml
-        drivers:
-          allow: []
-          unsafe: True
-        EOF
-    - name: Create exporter
-      shell: bash
-      run: |
-        sudo mkdir -p /etc/jumpstarter/exporters
-        sudo chown $USER /etc/jumpstarter/exporters
-
-        (cd ./controller && go run ./cmd/jmpctl/main.go \
-          exporter create test-exporter-1 > /etc/jumpstarter/exporters/test-exporter-1.yaml)
-        cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-1.yaml
-        export:
-          power:
-            type: jumpstarter_driver_power.driver.MockPower
-        EOF
-        kubectl -n default patch exporters.jumpstarter.dev test-exporter-1 \
-          --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi4"}}}'
-
-        (cd ./controller && go run ./cmd/jmpctl/main.go \
-          exporter create test-exporter-2 > /etc/jumpstarter/exporters/test-exporter-2.yaml)
-        cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-2.yaml
-        export:
-          storage:
-            type: jumpstarter_driver_opendal.driver.MockStorageMux
-        EOF
-        kubectl -n default patch exporters.jumpstarter.dev test-exporter-2 \
-          --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi5"}}}'
     - name: Install jumpstarter
       shell: bash
       run: |
@@ -82,6 +46,28 @@ runs:
         . .venv/bin/activate
 
         export JUMPSTARTER_GRPC_INSECURE=1
+
+        jmp admin create client   test-client-1   --save --unsafe
+        jmp admin create exporter test-exporter-1 --save
+        jmp admin create exporter test-exporter-2 --save
+
+        cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-1.yaml
+        export:
+          power:
+            type: jumpstarter_driver_power.driver.MockPower
+        EOF
+
+        kubectl -n default patch exporters.jumpstarter.dev test-exporter-1 \
+          --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi4"}}}'
+
+        cat <<EOF >> /etc/jumpstarter/exporters/test-exporter-2.yaml
+        export:
+          storage:
+            type: jumpstarter_driver_opendal.driver.MockStorageMux
+        EOF
+
+        kubectl -n default patch exporters.jumpstarter.dev test-exporter-2 \
+          --type=merge --patch '{"metadata":{"labels":{"example.com/board":"rpi5"}}}'
 
         jmp client list-configs
         jmp exporter list-configs
