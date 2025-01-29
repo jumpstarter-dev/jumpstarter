@@ -1,10 +1,9 @@
 from time import sleep
 
-import pytest
+from jumpstarter_driver_network.adapters import PexpectAdapter
 
 from jumpstarter_driver_dutlink.driver import Dutlink, DutlinkPower, DutlinkSerial, DutlinkStorageMux
 
-from jumpstarter.client.adapters import PexpectAdapter
 from jumpstarter.common.utils import serve
 
 STORAGE_DEVICE = "/dev/null"  # MANUAL: replace with path to block device
@@ -36,40 +35,28 @@ def serial_test(serial):
 
 
 def test_drivers_dutlink_power():
-    try:
-        instance = DutlinkPower()
-    except Exception:
-        pytest.skip("dutlink not available")
+    instance = DutlinkPower()
 
     with serve(instance) as client:
         power_test(client)
 
 
 def test_drivers_dutlink_storage_mux():
-    try:
-        instance = DutlinkStorageMux(storage_device=STORAGE_DEVICE)
-    except Exception:
-        pytest.skip("dutlink not available")
+    instance = DutlinkStorageMux(storage_device=STORAGE_DEVICE)
 
     with serve(instance) as client:
         storage_test(client)
 
 
 def test_drivers_dutlink_serial():
-    try:
-        instance = DutlinkSerial()  # MANUAL: connect tx to rx
-    except Exception:
-        pytest.skip("dutlink not available")
+    instance = DutlinkSerial()  # MANUAL: connect tx to rx
 
     with serve(instance) as client:
         serial_test(client)
 
 
 def test_drivers_dutlink():
-    try:
-        instance = Dutlink(storage_device=STORAGE_DEVICE)
-    except FileNotFoundError:
-        pytest.skip("dutlink not available")
+    instance = Dutlink(storage_device=STORAGE_DEVICE)
 
     with serve(instance) as client:
         power_test(client.power)
