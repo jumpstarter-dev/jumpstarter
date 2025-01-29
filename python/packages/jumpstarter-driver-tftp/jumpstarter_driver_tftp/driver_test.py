@@ -12,6 +12,7 @@ from anyio import create_memory_object_stream
 from jumpstarter_driver_tftp.driver import (
     FileNotFound,
     Tftp,
+    TftpError,
 )
 
 from jumpstarter.common.resources import ClientStreamResource
@@ -152,3 +153,14 @@ async def _upload_file(server, filename: str, data: bytes, client_checksum: Opti
         await server.put_file(filename, resource_handle, client_checksum)
 
     return server._compute_checksum(os.path.join(server.root_dir, filename))
+
+@pytest.mark.anyio
+async def test_tftp_path_traversal_attempt(server):
+    malicious_filename = "../../evil.txt"
+
+    resource_uuid = uuid4()
+    server.resources[resource_uuid] = None
+    resource_handle = ClientStreamResource(uuid=resource_uuid).model_dump(mode="json")
+
+    with pytest.raises(TftpError, match="Invalid target path"):
+        await server.put_file(malicious_filename, resource_handle, "checksum")
