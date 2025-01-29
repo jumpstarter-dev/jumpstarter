@@ -3,6 +3,18 @@
 This guide walks you through the process of using Jumpstarter with a local
 exporter (i.e. the client and the exporter running on the same host).
 
+## Prerequisites
+
+Make sure the following packages are installed in your Python environment:
+- `jumpstarter-cli` - The core Jumpstarter CLI.
+- `jumpstarter-driver-opendal` - The OpenDAL storage driver.
+- `jumpstarter-driver-power` - The base power driver.
+
+```{tip}
+Both of these driver packages provide mock implementations, this makes it easier
+to debug the connection between an exporter and client without hardware.
+```
+
 ## Create an Exporter Config
 
 First, we must create an exporter config to define the "shape" of the exporter
@@ -10,16 +22,11 @@ that we are going to test locally. This config is identical to a regular exporte
 config, however, the `endpoint` and `token` fields may be left empty as we do
 not need to connect to the controller service.
 
-Make sure the following driver packages are installed in your Python environment:
-- `jumpstarter-driver-opendal`
-- `jumpstarter-driver-power`
-
-```{tip}
-Both of these driver packages provide mock implementations, this makes it easier
-to debug the connection between an exporter and client without hardware.
-```
-
 Create a text file in `/etc/jumpstarter/exporters` with the following content:
+
+```{note}
+The name of this file is used when referring to the exporter in later steps.
+```
 
 ```yaml
 # /etc/jumpstarter/exporters/demo.yaml
@@ -39,23 +46,19 @@ export:
     type: jumpstarter_driver_power.driver.MockPower
 ```
 
-```{note}
-The name of this file is used when referring to the exporter in later steps.
-```
-
-## Span an Exporter Shell
+## Spawn an Exporter Shell
 
 To interact locally with the exporter we created above, we can use the
 "exporter shell" functionality within the `jmp` CLI. When a shell is spawned,
-a local exporter instance is run interactively, allowing you to interact with
-it through the client CLI.
+a local exporter instance is run in the background while the shell session is
+running.
 
 ```shell
 # Spawn a new exporter shell for "demo"
 $ jmp exporter shell demo
 ```
 
-## Interact with the Exporter Shell
+### Interact with the Exporter Shell
 
 If the drivers specified in the exporter config provide a CLI interface, it will
 be available though the magic `j` command within the exporter shell.
@@ -63,6 +66,7 @@ be available though the magic `j` command within the exporter shell.
 ```shell
 # Enter the shell
 $ jmp exporter shell demo
+
 # Running inside exporter shell
 $ j
 Usage: j [OPTIONS] COMMAND [ARGS]...
@@ -75,23 +79,25 @@ Options:
 Commands:
   power    Generic power
   storage  Generic storage mux
+
 # Simulate turning on the power
 $ j power on
 ok
+
 # Exit the shell
 $ exit
 ```
 
-## Use the Python API in a Shell
+### Use the Python API in a Shell
 
 As the shell exposes the local exporter via environment variables, we can run
-any command or Python script that interact with the exporter.
+any command or Python script that interacts with a client/exporter.
 
 This allows us to use the Python API directly without having to interact with
 the CLI. This is often useful for more complex scripts or if a specific driver
-doesn't provide a CLI.
+doesn't provide a client CLI.
 
-### Running a Python Script
+#### Running a Python Script
 
 The easiest way to interact with the exporter is to run a quick Python script
 directly from the command line. This comes in handy when no CLI is available.
@@ -110,7 +116,7 @@ ok
 $ exit
 ```
 
-### Running a Python File
+#### Running a Python File
 
 For more complex use cases, a Python file can also be run directly from within
 the shell.
@@ -146,10 +152,11 @@ $ python ./demo.py
 $ exit
 ```
 
-### Running `pytest` in the Shell
+#### Running `pytest` in the Shell
 
-If you are running multiple test cases, it may make sense to run a `pytest` test
-instead.
+If you are running multiple test cases, it may make sense to run a `pytest`
+suite instead. Jumpstarter provides a built-in testing library called
+`jumpstarter_testing` which provides the `JumpstarterTest` fixture.
 
 ```python
 # mytest.py
@@ -172,7 +179,7 @@ $ pytest ./mytest.py
 $ exit
 ```
 
-## Exiting the Exporter Shell
+### Exiting the Exporter Shell
 
 Once you are done with the exporter, simply exit the exporter shell and the
 local exporter will be terminated.
