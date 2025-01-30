@@ -14,16 +14,23 @@ from jumpstarter.common.utils import serve
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
     with serve(MockStorageMux()) as client:
         with TemporaryDirectory() as tempdir:
+            # original file on the client to be pushed to the exporter
             original = Path(tempdir) / "original"
+            # new file read back from the exporter to the client
             readback = Path(tempdir) / "readback"
 
-            # absolute path
+            # test accessing files with absolute path
+
+            # fill the original file with random bytes
             original.write_bytes(randbytes(1024 * 1024 * 10))
+            # write the file to the storage on the exporter
             client.write_local_file(str(original))
+            # read the storage on the exporter to a local file
             client.read_local_file(str(readback))
+            # ensure the contents are equal
             assert original.read_bytes() == readback.read_bytes()
 
-            # relative path
+            # test accessing files with relative path
             with monkeypatch.context() as m:
                 m.chdir(tempdir)
 
@@ -39,6 +46,7 @@ def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_drivers_mock_storage_mux_http():
+    # dummy HTTP server returning static test content
     class StaticHandler(BaseHTTPRequestHandler):
         def do_HEAD(self):
             self.send_response(200)
@@ -52,11 +60,13 @@ def test_drivers_mock_storage_mux_http():
             self.wfile.write(b"testcontent" * 1000)
 
     with serve(MockStorageMux()) as client:
+        # start the HTTP server
         server = HTTPServer(("127.0.0.1", 8080), StaticHandler)
         server_thread = Thread(target=server.serve_forever)
         server_thread.daemon = True
         server_thread.start()
 
+        # write a remote file from the http server to the exporter
         fs = Operator("http", endpoint="http://127.0.0.1:8080")
         client.write_file(fs, "test")
 
