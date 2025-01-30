@@ -1,4 +1,4 @@
-package service
+package authentication
 
 import (
 	"context"
@@ -7,7 +7,27 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
 )
+
+var _ = ContextAuthenticator(&BearerTokenAuthenticator{})
+
+type BearerTokenAuthenticator struct {
+	auth authenticator.Token
+}
+
+func NewBearerTokenAuthenticator(auth authenticator.Token) *BearerTokenAuthenticator {
+	return &BearerTokenAuthenticator{auth: auth}
+}
+
+func (b *BearerTokenAuthenticator) AuthenticateContext(ctx context.Context) (*authenticator.Response, bool, error) {
+	token, err := BearerTokenFromContext(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return b.auth.AuthenticateToken(ctx, token)
+}
 
 func BearerTokenFromContext(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)

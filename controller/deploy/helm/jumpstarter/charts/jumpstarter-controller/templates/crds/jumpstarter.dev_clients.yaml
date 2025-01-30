@@ -38,6 +38,9 @@ spec:
             type: object
           spec:
             description: ClientSpec defines the desired state of Identity
+            properties:
+              username:
+                type: string
             type: object
           status:
             description: ClientStatus defines the observed state of Identity

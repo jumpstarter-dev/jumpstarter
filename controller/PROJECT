@@ -28,4 +28,11 @@ resources:
   domain: jumpstarter.dev
   kind: Lease
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: jumpstarter.dev
+  kind: ExporterAccessPolicy
+  path: github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1
+  version: v1alpha1
 version: "3"

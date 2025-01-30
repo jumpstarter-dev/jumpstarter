@@ -21,6 +21,7 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -335,9 +336,13 @@ func reconcileLease(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) re
 		Scheme: k8sClient.Scheme(),
 	}
 
+	signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+	Expect(err).NotTo(HaveOccurred())
+
 	exporterReconciler := &ExporterReconciler{
 		Client: k8sClient,
 		Scheme: k8sClient.Scheme(),
+		Signer: signer,
 	}
 
 	res, err := leaseReconciler.Reconcile(ctx, reconcile.Request{

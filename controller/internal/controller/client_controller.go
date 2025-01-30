@@ -30,12 +30,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 )
 
 // ClientReconciler reconciles a Client object
 type ClientReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Signer *oidc.Signer
 }
 
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients,verbs=get;list;watch;create;update;patch;delete
@@ -111,12 +114,7 @@ func (r *ClientReconciler) reconcileStatusEndpoint(
 }
 
 func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client) (*corev1.Secret, error) {
-	token, err := SignObjectToken(
-		"https://jumpstarter.dev/controller",
-		[]string{"https://jumpstarter.dev/controller"},
-		client,
-		r.Scheme,
-	)
+	token, err := r.Signer.Token(authorization.ClientAuthorizedUsername(client, r.Signer.Prefix()))
 	if err != nil {
 		return nil, err
 	}

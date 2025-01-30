@@ -17,12 +17,16 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"encoding/pem"
 	"flag"
+	"net"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,7 +40,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
 	// +kubebuilder:scaffold:imports
 )
@@ -50,7 +58,9 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(jumpstarterdevv1alpha1.AddToScheme(scheme))
+
 	// +kubebuilder:scaffold:scheme
+	apiserverinstall.Install(scheme)
 }
 
 func main() {
@@ -125,9 +135,46 @@ func main() {
 		os.Exit(1)
 	}
 
+	oidcCert, err := service.NewSelfSignedCertificate("jumpstarter oidc", []string{"localhost"}, []net.IP{})
+	if err != nil {
+		setupLog.Error(err, "unable to generate certificate for internal oidc provider")
+		os.Exit(1)
+	}
+
+	oidcSigner, err := oidc.NewSignerFromSeed(
+		[]byte(os.Getenv("CONTROLLER_KEY")),
+		"https://localhost:8085",
+		"jumpstarter",
+		"internal:",
+	)
+	if err != nil {
+		setupLog.Error(err, "unable to create internal oidc signer")
+		os.Exit(1)
+	}
+
+	authenticator, err := config.LoadConfiguration(
+		context.Background(),
+		mgr.GetAPIReader(),
+		mgr.GetScheme(),
+		client.ObjectKey{
+			Namespace: os.Getenv("NAMESPACE"),
+			Name:      "jumpstarter-controller",
+		},
+		oidcSigner,
+		string(pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: oidcCert.Certificate[0],
+		})),
+	)
+	if err != nil {
+		setupLog.Error(err, "unable to load configuration")
+		os.Exit(1)
+	}
+
 	if err = (&controller.ExporterReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Signer: oidcSigner,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Exporter")
 		os.Exit(1)
@@ -135,6 +182,7 @@ func main() {
 	if err = (&controller.ClientReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Signer: oidcSigner,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Identity")
 		os.Exit(1)
@@ -157,6 +205,13 @@ func main() {
 	if err = (&service.ControllerService{
 		Client: watchClient,
 		Scheme: mgr.GetScheme(),
+		Authn:  authentication.NewBearerTokenAuthenticator(authenticator),
+		Authz:  authorization.NewBasicAuthorizer(watchClient, oidcSigner.Prefix()),
+		Attr: authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
+			NamespaceKey: "jumpstarter-namespace",
+			ResourceKey:  "jumpstarter-kind",
+			NameKey:      "jumpstarter-name",
+		}),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)
@@ -167,6 +222,14 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Router")
+		os.Exit(1)
+	}
+
+	if err = (&service.OIDCService{
+		Signer: oidcSigner,
+		Cert:   oidcCert,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create service", "service", "Dashboard")
 		os.Exit(1)
 	}
 

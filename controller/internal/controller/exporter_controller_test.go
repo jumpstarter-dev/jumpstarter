@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 )
 
 var _ = Describe("Exporter Controller", func() {
@@ -78,12 +79,16 @@ var _ = Describe("Exporter Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+			Expect(err).NotTo(HaveOccurred())
+
 			controllerReconciler := &ExporterReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
+				Signer: signer,
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())

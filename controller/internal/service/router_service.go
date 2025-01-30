@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -49,7 +50,7 @@ type streamContext struct {
 }
 
 func (s *RouterService) authenticate(ctx context.Context) (string, error) {
-	token, err := BearerTokenFromContext(ctx)
+	token, err := authentication.BearerTokenFromContext(ctx)
 	if err != nil {
 		return "", err
 	}

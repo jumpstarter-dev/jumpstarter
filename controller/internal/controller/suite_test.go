@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -121,12 +122,16 @@ func createExporters(ctx context.Context, exporters ...*jumpstarterdevv1alpha1.E
 			Namespace: "default", // TODO(user):Modify as needed
 		}
 
+		signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+		Expect(err).NotTo(HaveOccurred())
+
 		controllerReconciler := &ExporterReconciler{
 			Client: k8sClient,
 			Scheme: k8sClient.Scheme(),
+			Signer: signer,
 		}
 
-		_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 			NamespacedName: typeNamespacedName,
 		})
 		Expect(err).NotTo(HaveOccurred())

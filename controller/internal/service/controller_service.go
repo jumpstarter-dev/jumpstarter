@@ -26,6 +26,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -44,6 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apiserver/pkg/authorization/authorizer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -57,35 +61,28 @@ type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
 	Client       client.WithWatch
 	Scheme       *runtime.Scheme
+	Authn        authentication.ContextAuthenticator
+	Authz        authorizer.Authorizer
+	Attr         authorization.ContextAttributesGetter
 	listenQueues sync.Map
 }
 
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
-	token, err := BearerTokenFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return controller.VerifyObjectToken[jumpstarterdevv1alpha1.Client](
+	return oidc.VerifyClientObjectToken(
 		ctx,
-		token,
-		"https://jumpstarter.dev/controller",
-		"https://jumpstarter.dev/controller",
+		s.Authn,
+		s.Authz,
+		s.Attr,
 		s.Client,
 	)
 }
 
 func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
-	token, err := BearerTokenFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return controller.VerifyObjectToken[jumpstarterdevv1alpha1.Exporter](
+	return oidc.VerifyExporterObjectToken(
 		ctx,
-		token,
-		"https://jumpstarter.dev/controller",
-		"https://jumpstarter.dev/controller",
+		s.Authn,
+		s.Authz,
+		s.Attr,
 		s.Client,
 	)
 }
@@ -207,9 +204,11 @@ func (s *ControllerService) ListExporters(
 	ctx context.Context,
 	req *pb.ListExportersRequest,
 ) (*pb.ListExportersResponse, error) {
-	// FIXME: authenticate client
-
 	logger := log.FromContext(ctx)
+
+	if _, err := s.authenticateClient(ctx); err != nil {
+		return nil, err
+	}
 
 	var exporters jumpstarterdevv1alpha1.ExporterList
 
