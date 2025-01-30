@@ -13,6 +13,10 @@ from jumpstarter.common.resources import PresignedRequestResource
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class AsyncFileStream(ObjectStream[bytes]):
+    """
+    wrapper type for opendal.AsyncFile to make it compatible with anyio streams
+    """
+
     file: AsyncFile
 
     async def send(self, item: bytes):
@@ -42,21 +46,22 @@ class AsyncFileStream(ObjectStream[bytes]):
 
 @dataclass(kw_only=True)
 class OpendalAdapter(ClientAdapter):
-    operator: Operator
-    path: str
-    mode: Literal["rb", "wb"] = "rb"
+    operator: Operator  # opendal.Operator for the storage backend
+    path: str  # file path in storage backend relative to the storage root
+    mode: Literal["rb", "wb"] = "rb"  # binary read or binary write mode
 
     async def __aenter__(self):
+        # if the access mode is binary read, and the storage backend supports presigned read requests
         if self.mode == "rb" and self.operator.capability().presign_read:
+            # create presigned url for the specified file with a 60 second expiration
             presigned = await self.operator.to_async_operator().presign_read(self.path, expire_second=60)
             return PresignedRequestResource(
                 headers=presigned.headers, url=presigned.url, method=presigned.method
             ).model_dump(mode="json")
+        # otherwise stream the file content from the client to the exporter
         else:
             file = await self.operator.to_async_operator().open(self.path, self.mode)
-
             self.resource = self.client.resource_async(AsyncFileStream(file=file))
-
             return await self.resource.__aenter__()
 
     async def __aexit__(self, exc_type, exc_value, traceback):
