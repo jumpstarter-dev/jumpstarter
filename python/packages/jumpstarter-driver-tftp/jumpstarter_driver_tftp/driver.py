@@ -11,6 +11,7 @@ from anyio.streams.file import FileWriteStream
 
 from jumpstarter_driver_tftp.server import TftpServer
 
+from . import CHUNK_SIZE
 from jumpstarter.driver import Driver, export
 
 
@@ -37,7 +38,7 @@ class Tftp(Driver):
     """TFTP Server driver for Jumpstarter"""
 
     root_dir: str = "/var/lib/tftpboot"
-    host: str = field(default=None)
+    host: str = field(default='')
     port: int = 69
     checksum_suffix: str = ".sha256"
     server: Optional["TftpServer"] = field(init=False, default=None)
@@ -50,7 +51,7 @@ class Tftp(Driver):
     def __post_init__(self):
         super().__post_init__()
         os.makedirs(self.root_dir, exist_ok=True)
-        if self.host is None:
+        if self.host == '':
             self.host = self.get_default_ip()
 
     def get_default_ip(self):
@@ -147,7 +148,7 @@ class Tftp(Driver):
 
     @export
     async def put_file(self, filename: str, src_stream, client_checksum: str):
-        """Only called when we know we need to upload"""
+        """Compute and store checksum at write time"""
         file_path = os.path.join(self.root_dir, filename)
 
         try:
@@ -159,8 +160,9 @@ class Tftp(Driver):
                     async for chunk in src:
                         await dst.send(chunk)
 
-            self._checksums[filename] = client_checksum
-            self._write_checksum_file(filename, client_checksum)
+            current_checksum = self._compute_checksum(file_path)
+            self._checksums[filename] = current_checksum
+            self._write_checksum_file(filename, current_checksum)
             return filename
         except Exception as e:
             raise TftpError(f"Failed to upload file: {str(e)}") from e
@@ -185,19 +187,20 @@ class Tftp(Driver):
 
     @export
     def check_file_checksum(self, filename: str, client_checksum: str) -> bool:
-        """Check if file exists with matching checksum"""
+        """
+        check if the checksum of the file matches the client checksum
+        """
+
         file_path = os.path.join(self.root_dir, filename)
         if not os.path.exists(file_path):
             return False
 
         current_checksum = self._compute_checksum(file_path)
-        stored_checksum = self._read_checksum_file(filename)
 
-        if stored_checksum != current_checksum:
-            self._write_checksum_file(filename, current_checksum)
-            self._checksums[filename] = current_checksum
+        self._checksums[filename] = current_checksum
+        self._write_checksum_file(filename, current_checksum)
 
-        logger.debug(f"Client checksum: {client_checksum}, server checksum: {current_checksum}")
+        self.logger.debug(f"Client checksum: {client_checksum}, server checksum: {current_checksum}")
         return current_checksum == client_checksum
 
     @export
@@ -223,7 +226,7 @@ class Tftp(Driver):
                 with open(checksum_path, 'r') as f:
                     return f.read().strip()
         except Exception as e:
-            logger.warning(f"Failed to read checksum file for {filename}: {e}")
+            self.logger.warning(f"Failed to read checksum file for {filename}: {e}")
         return None
 
     def _write_checksum_file(self, filename: str, checksum: str):
@@ -233,24 +236,11 @@ class Tftp(Driver):
             with open(checksum_path, 'w') as f:
                 f.write(f"{checksum}\n")
         except Exception as e:
-            logger.error(f"Failed to write checksum file for {filename}: {e}")
+            self.logger.error(f"Failed to write checksum file for {filename}: {e}")
 
     def _compute_checksum(self, path: str) -> str:
         hasher = hashlib.sha256()
         with open(path, "rb") as f:
-            while chunk := f.read(8192):
+            while chunk := f.read(CHUNK_SIZE):
                 hasher.update(chunk)
         return hasher.hexdigest()
-
-    def _initialize_checksums(self):
-        self._checksums.clear()
-        for filename in os.listdir(self.root_dir):
-            if filename.endswith(self.checksum_suffix):
-                continue
-            file_path = os.path.join(self.root_dir, filename)
-            if os.path.isfile(file_path):
-                stored_checksum = self._read_checksum_file(filename)
-                current_checksum = self._compute_checksum(file_path)
-                if stored_checksum != current_checksum:
-                    self._write_checksum_file(filename, current_checksum)
-                self._checksums[filename] = current_checksum
