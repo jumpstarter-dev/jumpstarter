@@ -17,21 +17,15 @@ from jumpstarter.driver import Driver, export
 
 class TftpError(Exception):
     """Base exception for TFTP server errors"""
-
     pass
-
 
 class ServerNotRunning(TftpError):
     """Server is not running"""
-
     pass
-
 
 class FileNotFound(TftpError):
     """File not found"""
-
     pass
-
 
 @dataclass(kw_only=True)
 class Tftp(Driver):
@@ -40,13 +34,11 @@ class Tftp(Driver):
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default='')
     port: int = 69
-    checksum_suffix: str = ".sha256"
     server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: Optional[threading.Thread] = field(init=False, default=None)
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
     _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
-    _checksums: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         super().__post_init__()
@@ -73,10 +65,7 @@ class Tftp(Driver):
         asyncio.set_event_loop(self._loop)
         self.server = TftpServer(host=self.host, port=self.port, root_dir=self.root_dir)
         try:
-            # Signal that the loop is ready
             self._loop_ready.set()
-
-            # Run the server until shutdown is requested
             self._loop.run_until_complete(self._run_server())
         except Exception as e:
             self.logger.error(f"Error running TFTP server: {e}")
@@ -86,7 +75,6 @@ class Tftp(Driver):
                 self._loop.close()
             except Exception as e:
                 self.logger.error(f"Error during event loop cleanup: {e}")
-
             self._loop = None
             self.logger.info("TFTP server thread completed")
 
@@ -111,11 +99,9 @@ class Tftp(Driver):
             self.logger.warning("TFTP server is already running")
             return
 
-        # Clear any previous shutdown state
         self._shutdown_event.clear()
         self._loop_ready.clear()
 
-        # Start the server thread
         self.server_thread = threading.Thread(target=self._start_server, daemon=True)
         self.server_thread.start()
 
@@ -133,7 +119,6 @@ class Tftp(Driver):
             return
 
         self.logger.info("Initiating TFTP server shutdown")
-
         self._shutdown_event.set()
         self.server_thread.join(timeout=10)
         if self.server_thread.is_alive():
@@ -148,7 +133,6 @@ class Tftp(Driver):
 
     @export
     async def put_file(self, filename: str, src_stream, client_checksum: str):
-        """Compute and store checksum at write time"""
         file_path = os.path.join(self.root_dir, filename)
 
         try:
@@ -160,47 +144,37 @@ class Tftp(Driver):
                     async for chunk in src:
                         await dst.send(chunk)
 
-            current_checksum = self._compute_checksum(file_path)
-            self._checksums[filename] = current_checksum
-            self._write_checksum_file(filename, current_checksum)
             return filename
         except Exception as e:
             raise TftpError(f"Failed to upload file: {str(e)}") from e
 
-
     @export
     def delete_file(self, filename: str):
-        """Delete file and its checksum file"""
         file_path = os.path.join(self.root_dir, filename)
-        checksum_path = self._get_checksum_path(filename)
 
         if not os.path.exists(file_path):
             raise FileNotFound(f"File {filename} not found")
 
         try:
             os.remove(file_path)
-            if os.path.exists(checksum_path):
-                os.remove(checksum_path)
-            self._checksums.pop(filename, None)
+            return filename
         except Exception as e:
             raise TftpError(f"Failed to delete {filename}") from e
 
     @export
     def check_file_checksum(self, filename: str, client_checksum: str) -> bool:
-        """
-        check if the checksum of the file matches the client checksum
-        """
-
         file_path = os.path.join(self.root_dir, filename)
+        self.logger.debug(f"checking checksum for file: {filename}")
+        self.logger.debug(f"file path: {file_path}")
+
         if not os.path.exists(file_path):
+            self.logger.debug(f"File {filename} does not exist")
             return False
 
         current_checksum = self._compute_checksum(file_path)
+        self.logger.debug(f"Computed checksum: {current_checksum}")
+        self.logger.debug(f"Client checksum: {client_checksum}")
 
-        self._checksums[filename] = current_checksum
-        self._write_checksum_file(filename, current_checksum)
-
-        self.logger.debug(f"Client checksum: {client_checksum}, server checksum: {current_checksum}")
         return current_checksum == client_checksum
 
     @export
@@ -215,28 +189,6 @@ class Tftp(Driver):
         if self.server_thread is not None:
             self.stop()
         super().close()
-
-    def _get_checksum_path(self, filename: str) -> str:
-        return os.path.join(self.root_dir, f"{filename}{self.checksum_suffix}")
-
-    def _read_checksum_file(self, filename: str) -> Optional[str]:
-        try:
-            checksum_path = self._get_checksum_path(filename)
-            if os.path.exists(checksum_path):
-                with open(checksum_path, 'r') as f:
-                    return f.read().strip()
-        except Exception as e:
-            self.logger.warning(f"Failed to read checksum file for {filename}: {e}")
-        return None
-
-    def _write_checksum_file(self, filename: str, checksum: str):
-        """Write checksum to the checksum file"""
-        try:
-            checksum_path = self._get_checksum_path(filename)
-            with open(checksum_path, 'w') as f:
-                f.write(f"{checksum}\n")
-        except Exception as e:
-            self.logger.error(f"Failed to write checksum file for {filename}: {e}")
 
     def _compute_checksum(self, path: str) -> str:
         hasher = hashlib.sha256()
