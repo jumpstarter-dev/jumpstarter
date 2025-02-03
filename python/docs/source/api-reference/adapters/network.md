@@ -75,6 +75,8 @@ with NovncAdapter(client.tcp_port) as url:
 
 Interact with a remote TCP port as if it's a serial console
 
+See [pexpect](https://pexpect.readthedocs.io/en/stable/api/fdpexpect.html) for API documentation
+
 ```{testcode}
 with PexpectAdapter(client.tcp_port) as expect:
     expect.expect("localhost login:")
@@ -84,6 +86,8 @@ with PexpectAdapter(client.tcp_port) as expect:
 ```
 
 Connect to a remote TCP port with the fabric SSH client
+
+See [fabric](https://docs.fabfile.org/en/latest/api/connection.html#fabric.connection.Connection) for API documentation
 
 ```{testcode}
 with FabricAdapter(client=client.tcp_port, connect_kwargs={"password": "secret"}) as conn:
