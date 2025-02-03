@@ -12,6 +12,11 @@ Network adapters are for transforming network connections exposed by drivers
     :members:
 ```
 
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_network.adapters.NovncAdapter
+    :members:
+```
+
 ## Examples
 ```yaml
 export:
@@ -48,4 +53,12 @@ with UnixPortforwardAdapter(client.unix_socket) as addr:
 # e.g. forward a remote Unix domain socket to a local TCP port
 with TcpPortforwardAdapter(client.unix_socket) as addr:
     print(addr[0], addr[1]) # 127.0.0.1 38406
+```
+
+Connect to a remote TCP port with a web-based VNC client
+
+```{testcode}
+with NovncAdapter(client.tcp_port) as url:
+    print(url) # https://novnc.com/noVNC/vnc.html?autoconnect=1&reconnect=1&host=127.0.0.1&port=36459
+               # open the url in browser to access the VNC client
 ```
