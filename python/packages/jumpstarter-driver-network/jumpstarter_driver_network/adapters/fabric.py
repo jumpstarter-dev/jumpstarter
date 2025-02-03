@@ -4,11 +4,11 @@ from typing import Any
 from fabric.config import Config
 from fabric.connection import Connection
 
-from .portforward import PortforwardAdapter
+from .portforward import TcpPortforwardAdapter
 
 
 @dataclass(kw_only=True)
-class FabricAdapter(PortforwardAdapter):
+class FabricAdapter(TcpPortforwardAdapter):
     user: str | None = None
     config: Config | None = None
     forward_agent: bool | None = None
