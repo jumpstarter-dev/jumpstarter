@@ -6,4 +6,5 @@ This section provides details on the Jumpstarter core API and contrib drivers.
 drivers.md
 adapters.md
 drivers/index.md
+adapters/index.md
 ```
