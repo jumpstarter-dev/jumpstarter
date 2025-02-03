@@ -22,6 +22,11 @@ Network adapters are for transforming network connections exposed by drivers
     :members:
 ```
 
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_network.adapters.FabricAdapter
+    :members:
+```
+
 ## Examples
 ```yaml
 export:
@@ -76,4 +81,11 @@ with PexpectAdapter(client.tcp_port) as expect:
     expect.send("root\n")
     expect.expect("Password:")
     expect.send("secret\n")
+```
+
+Connect to a remote TCP port with the fabric SSH client
+
+```{testcode}
+with FabricAdapter(client=client.tcp_port, connect_kwargs={"password": "secret"}) as conn:
+    conn.run("uname")
 ```
