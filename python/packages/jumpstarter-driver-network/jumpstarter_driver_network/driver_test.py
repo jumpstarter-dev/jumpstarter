@@ -6,7 +6,7 @@ from shutil import which
 import pytest
 from anyio.from_thread import start_blocking_portal
 
-from .adapters import PortforwardAdapter
+from .adapters import TcpPortforwardAdapter, UnixPortforwardAdapter
 from .driver import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
 from jumpstarter.common import TemporaryTcpListener, TemporaryUnixListener
 from jumpstarter.common.utils import serve
@@ -41,9 +41,20 @@ def test_tcp_network_portforward():
     with start_blocking_portal() as portal:
         with portal.wrap_async_context_manager(TemporaryTcpListener(echo_handler, local_host="127.0.0.1")) as inner:
             with serve(TcpNetwork(host=inner[0], port=inner[1])) as client:
-                with PortforwardAdapter(client=client) as addr:
+                with TcpPortforwardAdapter(client=client) as addr:
                     stream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     stream.connect(addr)
+                    stream.send(b"hello")
+                    assert stream.recv(5) == b"hello"
+
+
+def test_unix_network_portforward():
+    with start_blocking_portal() as portal:
+        with portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as inner:
+            with serve(UnixNetwork(path=inner)) as client:
+                with UnixPortforwardAdapter(client=client) as addr:
+                    stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    stream.connect(str(addr))
                     stream.send(b"hello")
                     assert stream.recv(5) == b"hello"
 
@@ -90,7 +101,7 @@ def test_tcp_network_performance():
             stderr=subprocess.DEVNULL,
         )
 
-        with PortforwardAdapter(client=client) as addr:
+        with TcpPortforwardAdapter(client=client) as addr:
             subprocess.run(
                 [
                     "iperf3",

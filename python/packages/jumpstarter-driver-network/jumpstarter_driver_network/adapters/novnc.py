@@ -2,12 +2,12 @@ from dataclasses import dataclass
 from urllib.parse import urlencode, urlunparse
 
 from ..streams import WebsocketServerStream
-from .portforward import PortforwardAdapter
+from .portforward import TcpPortforwardAdapter
 from jumpstarter.streams import forward_stream
 
 
 @dataclass(kw_only=True)
-class NovncAdapter(PortforwardAdapter):
+class NovncAdapter(TcpPortforwardAdapter):
     async def __aenter__(self):
         addr = await super().__aenter__()
         return urlunparse(
