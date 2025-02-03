@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import socket
 import threading
@@ -10,33 +11,28 @@ from anyio.streams.file import FileWriteStream
 
 from jumpstarter_driver_tftp.server import TftpServer
 
+from . import CHUNK_SIZE
 from jumpstarter.driver import Driver, export
 
 
 class TftpError(Exception):
     """Base exception for TFTP server errors"""
-
     pass
-
 
 class ServerNotRunning(TftpError):
     """Server is not running"""
-
     pass
-
 
 class FileNotFound(TftpError):
     """File not found"""
-
     pass
-
 
 @dataclass(kw_only=True)
 class Tftp(Driver):
     """TFTP Server driver for Jumpstarter"""
 
     root_dir: str = "/var/lib/tftpboot"
-    host: str = field(default=None)
+    host: str = field(default='')
     port: int = 69
     server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: Optional[threading.Thread] = field(init=False, default=None)
@@ -45,9 +41,11 @@ class Tftp(Driver):
     _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         os.makedirs(self.root_dir, exist_ok=True)
-        if self.host is None:
+        if self.host == '':
             self.host = self.get_default_ip()
 
     def get_default_ip(self):
@@ -69,10 +67,7 @@ class Tftp(Driver):
         asyncio.set_event_loop(self._loop)
         self.server = TftpServer(host=self.host, port=self.port, root_dir=self.root_dir)
         try:
-            # Signal that the loop is ready
             self._loop_ready.set()
-
-            # Run the server until shutdown is requested
             self._loop.run_until_complete(self._run_server())
         except Exception as e:
             self.logger.error(f"Error running TFTP server: {e}")
@@ -82,7 +77,6 @@ class Tftp(Driver):
                 self._loop.close()
             except Exception as e:
                 self.logger.error(f"Error during event loop cleanup: {e}")
-
             self._loop = None
             self.logger.info("TFTP server thread completed")
 
@@ -107,11 +101,9 @@ class Tftp(Driver):
             self.logger.warning("TFTP server is already running")
             return
 
-        # Clear any previous shutdown state
         self._shutdown_event.clear()
         self._loop_ready.clear()
 
-        # Start the server thread
         self.server_thread = threading.Thread(target=self._start_server, daemon=True)
         self.server_thread.start()
 
@@ -129,7 +121,6 @@ class Tftp(Driver):
             return
 
         self.logger.info("Initiating TFTP server shutdown")
-
         self._shutdown_event.set()
         self.server_thread.join(timeout=10)
         if self.server_thread.is_alive():
@@ -143,11 +134,10 @@ class Tftp(Driver):
         return os.listdir(self.root_dir)
 
     @export
-    async def put_file(self, filename: str, src_stream):
-        """Handle file upload using streaming"""
-        try:
-            file_path = os.path.join(self.root_dir, filename)
+    async def put_file(self, filename: str, src_stream, client_checksum: str):
+        file_path = os.path.join(self.root_dir, filename)
 
+        try:
             if not Path(file_path).resolve().is_relative_to(Path(self.root_dir).resolve()):
                 raise TftpError("Invalid target path")
 
@@ -157,18 +147,37 @@ class Tftp(Driver):
                         await dst.send(chunk)
 
             return filename
-
         except Exception as e:
             raise TftpError(f"Failed to upload file: {str(e)}") from e
 
     @export
     def delete_file(self, filename: str):
+        file_path = os.path.join(self.root_dir, filename)
+
+        if not os.path.exists(file_path):
+            raise FileNotFound(f"File {filename} not found")
+
         try:
-            os.remove(os.path.join(self.root_dir, filename))
-        except FileNotFoundError as err:
-            raise FileNotFound(f"File {filename} not found") from err
+            os.remove(file_path)
+            return filename
         except Exception as e:
             raise TftpError(f"Failed to delete {filename}") from e
+
+    @export
+    def check_file_checksum(self, filename: str, client_checksum: str) -> bool:
+        file_path = os.path.join(self.root_dir, filename)
+        self.logger.debug(f"checking checksum for file: {filename}")
+        self.logger.debug(f"file path: {file_path}")
+
+        if not os.path.exists(file_path):
+            self.logger.debug(f"File {filename} does not exist")
+            return False
+
+        current_checksum = self._compute_checksum(file_path)
+        self.logger.debug(f"Computed checksum: {current_checksum}")
+        self.logger.debug(f"Client checksum: {client_checksum}")
+
+        return current_checksum == client_checksum
 
     @export
     def get_host(self) -> str:
@@ -182,3 +191,10 @@ class Tftp(Driver):
         if self.server_thread is not None:
             self.stop()
         super().close()
+
+    def _compute_checksum(self, path: str) -> str:
+        hasher = hashlib.sha256()
+        with open(path, "rb") as f:
+            while chunk := f.read(CHUNK_SIZE):
+                hasher.update(chunk)
+        return hasher.hexdigest()
