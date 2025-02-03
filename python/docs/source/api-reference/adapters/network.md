@@ -17,6 +17,11 @@ Network adapters are for transforming network connections exposed by drivers
     :members:
 ```
 
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_network.adapters.PexpectAdapter
+    :members:
+```
+
 ## Examples
 ```yaml
 export:
@@ -61,4 +66,14 @@ Connect to a remote TCP port with a web-based VNC client
 with NovncAdapter(client.tcp_port) as url:
     print(url) # https://novnc.com/noVNC/vnc.html?autoconnect=1&reconnect=1&host=127.0.0.1&port=36459
                # open the url in browser to access the VNC client
+```
+
+Interact with a remote TCP port as if it's a serial console
+
+```{testcode}
+with PexpectAdapter(client.tcp_port) as expect:
+    expect.expect("localhost login:")
+    expect.send("root\n")
+    expect.expect("Password:")
+    expect.send("secret\n")
 ```
