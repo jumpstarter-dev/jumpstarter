@@ -10,7 +10,8 @@ class ${DRIVER_CLASS}(Driver):
     some_other_config: int = 69
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
         # some initialization here.
 
     @classmethod
