@@ -33,11 +33,12 @@ class CanClient(DriverClient, can.BusABC):
     """
 
     def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         self._periodic_tasks: List[_SelfRemovingCyclicTask] = []
         self._filters = None
         self._is_shutdown: bool = False
-
-        super().__post_init__()
 
     @property
     @validate_call(validate_return=True)

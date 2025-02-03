@@ -41,7 +41,9 @@ class Tftp(Driver):
     _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         os.makedirs(self.root_dir, exist_ok=True)
         if self.host == '':
             self.host = self.get_default_ip()

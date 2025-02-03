@@ -33,7 +33,9 @@ class PySerial(Driver):
     baudrate: int = field(default=115200)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         self.device = serial_for_url(self.url, baudrate=self.baudrate)
 
     @classmethod

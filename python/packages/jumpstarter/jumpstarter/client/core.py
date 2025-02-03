@@ -45,7 +45,8 @@ class AsyncDriverClient(
     logger: logging.Logger = field(init=False)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
         self.logger = logging.getLogger(self.__class__.__name__)

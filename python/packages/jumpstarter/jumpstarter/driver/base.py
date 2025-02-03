@@ -60,7 +60,9 @@ class Driver(
     logger: logging.Logger = field(init=False)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(self.log_level)
 
