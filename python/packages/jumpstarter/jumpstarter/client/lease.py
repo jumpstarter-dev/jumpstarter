@@ -31,6 +31,9 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
 
     def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.manager = self.portal.wrap_async_context_manager(self)
 

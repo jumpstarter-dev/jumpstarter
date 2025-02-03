@@ -1,4 +1,3 @@
-import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,8 +9,6 @@ from anyio.streams.file import FileWriteStream
 
 from jumpstarter.driver import Driver, export
 
-logger = logging.getLogger(__name__)
-
 
 class HttpServerError(Exception):
     """Base exception for HTTP server errors"""
@@ -21,38 +18,39 @@ class FileWriteError(HttpServerError):
     """Exception raised when file writing fails"""
 
 
-def get_default_ip():
-    try:
-        import socket
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
-        return "0.0.0.0"
-
-
 @dataclass(kw_only=True)
 class HttpServer(Driver):
     """HTTP Server driver for Jumpstarter"""
 
     root_dir: str = "/var/www"
-    host: str = field(default_factory=get_default_ip)
+    host: str = field(default=None)
     port: int = 8080
     app: web.Application = field(init=False, default_factory=web.Application)
     runner: Optional[web.AppRunner] = field(init=False, default=None)
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         os.makedirs(self.root_dir, exist_ok=True)
         self.app.router.add_routes(
             [
                 web.get("/{filename}", self.get_file),
             ]
         )
+        if self.host is None:
+            self.host = self.get_default_ip()
+
+    def get_default_ip(self):
+        try:
+            import socket
+
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+        except Exception:
+            self.logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
+            return "0.0.0.0"
 
     @classmethod
     def client(cls) -> str:
@@ -86,11 +84,11 @@ class HttpServer(Driver):
                     async for chunk in src:
                         await dst.send(chunk)
 
-            logger.info(f"File '{filename}' written to '{file_path}'")
+            self.logger.info(f"File '{filename}' written to '{file_path}'")
             return f"{self.get_url()}/{filename}"
 
         except Exception as e:
-            logger.error(f"Failed to upload file '{filename}': {e}")
+            self.logger.error(f"Failed to upload file '{filename}': {e}")
             raise FileWriteError(f"Failed to upload file '{filename}': {e}") from e
 
     @export
@@ -112,10 +110,10 @@ class HttpServer(Driver):
             raise HttpServerError(f"File '{filename}' does not exist.")
         try:
             file_path.unlink()
-            logger.info(f"File '{filename}' has been deleted.")
+            self.logger.info(f"File '{filename}' has been deleted.")
             return filename
         except Exception as e:
-            logger.error(f"Failed to delete file '{filename}': {e}")
+            self.logger.error(f"Failed to delete file '{filename}': {e}")
             raise HttpServerError(f"Failed to delete file '{filename}': {e}") from e
 
     async def get_file(self, request) -> web.FileResponse:
@@ -134,9 +132,9 @@ class HttpServer(Driver):
         filename = request.match_info["filename"]
         file_path = os.path.join(self.root_dir, filename)
         if not os.path.isfile(file_path):
-            logger.warning(f"File not found: {file_path}")
+            self.logger.warning(f"File not found: {file_path}")
             raise web.HTTPNotFound(text=f"File '{filename}' not found.")
-        logger.info(f"Serving file: {file_path}")
+        self.logger.info(f"Serving file: {file_path}")
         return web.FileResponse(file_path)
 
     @export
@@ -155,7 +153,7 @@ class HttpServer(Driver):
             files = [f for f in files if os.path.isfile(os.path.join(self.root_dir, f))]
             return files
         except Exception as e:
-            logger.error(f"Failed to list files: {e}")
+            self.logger.error(f"Failed to list files: {e}")
             raise HttpServerError(f"Failed to list files: {e}") from e
 
     @export
@@ -167,7 +165,7 @@ class HttpServer(Driver):
             HttpServerError: If the server fails to start.
         """
         if self.runner is not None:
-            logger.warning("HTTP server is already running.")
+            self.logger.warning("HTTP server is already running.")
             return
 
         self.runner = web.AppRunner(self.app)
@@ -176,7 +174,7 @@ class HttpServer(Driver):
 
         site = web.TCPSite(self.runner, self.host, self.port)
         await site.start()
-        logger.info(f"HTTP server started at http://{self.host}:{self.port}")
+        self.logger.info(f"HTTP server started at http://{self.host}:{self.port}")
 
     @export
     async def stop(self):
@@ -187,11 +185,11 @@ class HttpServer(Driver):
             HttpServerError: If the server fails to stop.
         """
         if self.runner is None:
-            logger.warning("HTTP server is not running.")
+            self.logger.warning("HTTP server is not running.")
             return
 
         await self.runner.cleanup()
-        logger.info("HTTP server stopped.")
+        self.logger.info("HTTP server stopped.")
         self.runner = None
 
     @export
@@ -230,7 +228,7 @@ class HttpServer(Driver):
                 if anyio.get_current_task():
                     anyio.from_thread.run(self._async_cleanup)
             except Exception as e:
-                logger.warning(f"HTTP server cleanup failed synchronously: {e}")
+                self.logger.warning(f"HTTP server cleanup failed synchronously: {e}")
             self.runner = None
         super().close()
 
@@ -239,6 +237,6 @@ class HttpServer(Driver):
             if self.runner:
                 await self.runner.shutdown()
                 await self.runner.cleanup()
-                logger.info("HTTP server cleanup completed asynchronously.")
+                self.logger.info("HTTP server cleanup completed asynchronously.")
         except Exception as e:
-            logger.error(f"HTTP server cleanup failed asynchronously: {e}")
+            self.logger.error(f"HTTP server cleanup failed asynchronously: {e}")

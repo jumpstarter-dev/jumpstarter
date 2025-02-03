@@ -32,12 +32,11 @@ raw-options = { 'root' = '../../'}
 Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
 
-# [tool.pytest.ini_options]
-# #addopts = "--cov --cov-report=html --cov-report=xml"
-# log_cli = true
-# log_cli_level = "INFO"
-# # testpaths = ["src"]
-# asyncio_mode = "auto"
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_tftp"]
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

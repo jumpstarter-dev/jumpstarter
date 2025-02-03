@@ -2,8 +2,9 @@
 Base classes for drivers and driver clients
 """
 
+import logging
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from grpc import StatusCode
 from grpc.aio import AioRpcError, Channel
@@ -40,10 +41,16 @@ class AsyncDriverClient(
 
     channel: Channel
 
+    log_level: str = "INFO"
+    logger: logging.Logger = field(init=False)
+
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
         jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
         router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.setLevel(self.log_level)
 
     async def call_async(self, method, *args):
         """Make DriverCall by method name and arguments"""

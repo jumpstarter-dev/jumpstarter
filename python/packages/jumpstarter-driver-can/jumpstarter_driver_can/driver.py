@@ -45,7 +45,9 @@ class Can(Driver):
         return "jumpstarter_driver_can.client.CanClient"
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         self.bus = can.Bus(channel=self.channel, interface=self.interface)
 
     @export
@@ -195,7 +197,9 @@ class IsoTpPython(Driver):
         return "jumpstarter_driver_can.client.IsoTpClient"
 
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         self.bus = can.Bus(channel=self.channel, interface=self.interface)
         self.notifier = can.Notifier(self.bus, [])
         self.stack = isotp.NotifierBasedCanStack(

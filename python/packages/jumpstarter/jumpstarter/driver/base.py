@@ -4,6 +4,7 @@ Base classes for drivers and driver clients
 
 from __future__ import annotations
 
+import logging
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import field
@@ -55,8 +56,15 @@ class Driver(
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
     """Dict of client side resources"""
 
+    log_level: str = "INFO"
+    logger: logging.Logger = field(init=False)
+
     def __post_init__(self):
-        super().__post_init__()
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.setLevel(self.log_level)
 
     def close(self):
         for child in self.children.values():
