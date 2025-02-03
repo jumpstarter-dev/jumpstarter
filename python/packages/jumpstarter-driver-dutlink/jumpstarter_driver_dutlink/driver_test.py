@@ -1,42 +1,64 @@
-import pytest
-import usb
+from time import sleep
+
 from jumpstarter_driver_network.adapters import PexpectAdapter
 
-from jumpstarter_driver_dutlink.driver import Dutlink
+from jumpstarter_driver_dutlink.driver import Dutlink, DutlinkPower, DutlinkSerial, DutlinkStorageMux
 
 from jumpstarter.common.utils import serve
 
+STORAGE_DEVICE = "/dev/null"  # MANUAL: replace with path to block device
 
-def test_drivers_dutlink():
-    try:
-        instance = Dutlink(
-            storage_device="/dev/null",
-        )
-    except FileNotFoundError:
-        pytest.skip("dutlink not available")
-    except usb.core.USBError:
-        pytest.skip("USB not available")
-    except usb.core.NoBackendError:
-        pytest.skip("No USB backend")
+
+def power_test(power):
+    power.on()  # MANUAL: led DUT_ON should be turned on
+    sleep(1)
+    assert next(power.read()).current != 0
+    power.off()  # MANUAL: led DUT_ON should be turned off
+
+
+def storage_test(storage):
+    storage.write_local_file("/dev/null")
+
+
+def serial_test(serial):
+    with PexpectAdapter(client=serial) as expect:
+        expect.send("\x02" * 5)
+
+        expect.send("about\r\n")
+        expect.expect("Jumpstarter test-harness")
+
+        expect.send("console\r\n")
+        expect.expect("Entering console mode")
+
+        expect.send("hello")
+        expect.expect("hello")
+
+
+def test_drivers_dutlink_power():
+    instance = DutlinkPower()
 
     with serve(instance) as client:
-        with PexpectAdapter(client=client.console) as expect:
-            expect.send("\x02" * 5)
+        power_test(client)
 
-            expect.send("about\r\n")
-            expect.expect("Jumpstarter test-harness")
 
-            expect.send("console\r\n")
-            expect.expect("Entering console mode")
+def test_drivers_dutlink_storage_mux():
+    instance = DutlinkStorageMux(storage_device=STORAGE_DEVICE)
 
-            client.power.off()
+    with serve(instance) as client:
+        storage_test(client)
 
-            client.storage.write_local_file("/dev/null")
-            client.storage.dut()
 
-            client.power.on()
+def test_drivers_dutlink_serial():
+    instance = DutlinkSerial()  # MANUAL: connect tx to rx
 
-            expect.send("\x02" * 5)
-            expect.expect("Exiting console mode")
+    with serve(instance) as client:
+        serial_test(client)
 
-            client.power.off()
+
+def test_drivers_dutlink():
+    instance = Dutlink(storage_device=STORAGE_DEVICE)
+
+    with serve(instance) as client:
+        power_test(client.power)
+        storage_test(client.storage)
+        serial_test(client.console)
