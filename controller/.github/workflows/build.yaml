@@ -39,7 +39,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          make ko-push IMG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }},latest
+          make docker-buildx IMG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
 
   publish-helm-charts-containers:
     needs: build-and-push-image
