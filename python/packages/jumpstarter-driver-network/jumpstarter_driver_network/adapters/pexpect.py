@@ -3,11 +3,11 @@ from dataclasses import dataclass
 
 from pexpect.fdpexpect import fdspawn
 
-from .portforward import PortforwardAdapter
+from .portforward import TcpPortforwardAdapter
 
 
 @dataclass(kw_only=True)
-class PexpectAdapter(PortforwardAdapter):
+class PexpectAdapter(TcpPortforwardAdapter):
     async def __aenter__(self):
         addr = await super().__aenter__()
 
