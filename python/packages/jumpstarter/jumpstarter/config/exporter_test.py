@@ -40,6 +40,7 @@ async def test_exporter_serve(mock_controller):
 
     client = ClientConfigV1Alpha1(
         name="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint=mock_controller,
         token="dummy-client-token",
         drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),

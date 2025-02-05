@@ -18,14 +18,40 @@ async def test_client(tmp_config_path):
     # create client non-interactively
     result = await runner.invoke(
         client,
-        ["create-config", "test1", "--endpoint", "example.com:443", "--token", "dummy", "--allow", "jumpstarter.*"],
+        [
+            "create-config",
+            "test1",
+            "--namespace",
+            "default",
+            "--name",
+            "test1",
+            "--endpoint",
+            "example.com:443",
+            "--token",
+            "dummy",
+            "--allow",
+            "jumpstarter.*",
+        ],
     )
     assert result.exit_code == 0
 
     # create duplicate client
     result = await runner.invoke(
         client,
-        ["create-config", "test1", "--endpoint", "example.com:443", "--token", "dummy", "--allow", "jumpstarter.*"],
+        [
+            "create-config",
+            "test1",
+            "--namespace",
+            "default",
+            "--name",
+            "test1",
+            "--endpoint",
+            "example.com:443",
+            "--token",
+            "dummy",
+            "--allow",
+            "jumpstarter.*",
+        ],
     )
     assert result.exit_code != 0
 
@@ -33,7 +59,7 @@ async def test_client(tmp_config_path):
     result = await runner.invoke(
         client,
         ["create-config", "test2"],
-        input="example.org:443\ndummytoken\njumpstarter.*,com.example.*\n",
+        input="default\ntest2\nexample.org:443\ndummytoken\njumpstarter.*,com.example.*\n",
     )
     assert result.exit_code == 0
 

@@ -3,16 +3,28 @@ from typing import Optional
 import asyncclick as click
 from jumpstarter_cli_common import make_table
 
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, UserConfigV1Alpha1
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta, UserConfigV1Alpha1
 
 
 @click.command("create-config", short_help="Create a client config.")
-@click.argument("name")
+@click.argument("alias")
 @click.option(
     "-o",
     "--out",
     type=click.Path(dir_okay=False, resolve_path=True, writable=True),
     help="Specify an output file for the client config.",
+)
+@click.option(
+    "--namespace",
+    type=str,
+    help="Enter the Jumpstarter client namespace.",
+    prompt="Enter a valid Jumpstarter client nespace",
+)
+@click.option(
+    "--name",
+    type=str,
+    help="Enter the Jumpstarter client name.",
+    prompt="Enter a valid Jumpstarter client name",
 )
 @click.option(
     "-e",
@@ -39,6 +51,8 @@ from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 )
 @click.option("--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).")
 def create_client_config(
+    alias: str,
+    namespace: str,
     name: str,
     endpoint: str,
     token: str,
@@ -47,11 +61,12 @@ def create_client_config(
     out: Optional[str],
 ):
     """Create a Jumpstarter client configuration."""
-    if out is None and ClientConfigV1Alpha1.exists(name):
-        raise click.ClickException(f"A client with the name '{name}' already exists.")
+    if out is None and ClientConfigV1Alpha1.exists(alias):
+        raise click.ClickException(f"A client with the name '{alias}' already exists.")
 
     config = ClientConfigV1Alpha1(
-        name=name,
+        name=alias,
+        metadata=ObjectMeta(namespace=namespace, name=name),
         endpoint=endpoint,
         token=token,
         drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe),

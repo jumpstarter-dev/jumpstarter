@@ -24,12 +24,14 @@ DRIVER_NAME = "jumpstarter.Testing"
 # Create a test client config
 UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
     name=CLIENT_NAME,
+    metadata=ObjectMeta(namespace="default", name=CLIENT_NAME),
     endpoint=CLIENT_ENDPOINT,
     token=CLIENT_TOKEN,
     drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
 )
 CLIENT_CONFIG = ClientConfigV1Alpha1(
     name=CLIENT_NAME,
+    metadata=ObjectMeta(namespace="default", name=CLIENT_NAME),
     endpoint=CLIENT_ENDPOINT,
     token=CLIENT_TOKEN,
     drivers=ClientConfigV1Alpha1Drivers(allow=[DRIVER_NAME], unsafe=False),
