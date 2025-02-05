@@ -13,6 +13,7 @@ from jumpstarter.config import (
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
     ExporterConfigV1Alpha1,
+    ObjectMeta,
 )
 
 # Generate a random client name
@@ -85,6 +86,7 @@ EXPORTER_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJ
 # Create a test exporter config
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     alias=EXPORTER_NAME,
+    metadata=ObjectMeta(namespace="default", name=EXPORTER_NAME),
     endpoint=EXPORTER_ENDPOINT,
     token=EXPORTER_TOKEN,
 )

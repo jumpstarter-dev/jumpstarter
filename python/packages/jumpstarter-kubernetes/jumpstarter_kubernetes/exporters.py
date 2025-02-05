@@ -6,7 +6,7 @@ from typing import Literal
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from .util import AbstractAsyncCustomObjectApi
-from jumpstarter.config import ExporterConfigV1Alpha1
+from jumpstarter.config import ExporterConfigV1Alpha1, ObjectMeta
 
 CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10
@@ -110,7 +110,16 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
         secret = await self.core_api.read_namespaced_secret(exporter.status.credential.name, self.namespace)
         endpoint = exporter.status.endpoint
         token = base64.b64decode(secret.data["token"]).decode("utf8")
-        return ExporterConfigV1Alpha1(alias=name, endpoint=endpoint, token=token, export={})
+        return ExporterConfigV1Alpha1(
+            alias=name,
+            metadata=ObjectMeta(
+                namespace=exporter.metadata.namespace,
+                name=exporter.metadata.name,
+            ),
+            endpoint=endpoint,
+            token=token,
+            export={},
+        )
 
     async def delete_exporter(self, name: str):
         """Delete an exporter object"""
