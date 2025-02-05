@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .common import CONFIG_PATH, ObjectMeta
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
+from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
@@ -52,7 +53,7 @@ class ClientConfigV1Alpha1(BaseModel):
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
             ssl_channel_credentials(self.endpoint, self.tls),
-            grpc.access_token_call_credentials(self.token),
+            call_credentials("client", self.metadata, self.token),
         )
 
         return aio_secure_channel(self.endpoint, credentials)
