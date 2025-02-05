@@ -119,7 +119,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         def channel_factory():
             credentials = grpc.composite_channel_credentials(
                 ssl_channel_credentials(self.endpoint, self.tls),
-                call_credentials("exporter", self.metadata, self.token),
+                call_credentials("Exporter", self.metadata, self.token),
             )
             return aio_secure_channel(self.endpoint, credentials)
 

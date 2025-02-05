@@ -53,7 +53,7 @@ class ClientConfigV1Alpha1(BaseModel):
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
             ssl_channel_credentials(self.endpoint, self.tls),
-            call_credentials("client", self.metadata, self.token),
+            call_credentials("Client", self.metadata, self.token),
         )
 
         return aio_secure_channel(self.endpoint, credentials)
