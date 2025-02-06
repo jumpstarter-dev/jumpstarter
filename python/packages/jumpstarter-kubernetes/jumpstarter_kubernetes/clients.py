@@ -7,7 +7,7 @@ from typing import Literal, Optional
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from .util import AbstractAsyncCustomObjectApi
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,10 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         token = base64.b64decode(secret.data["token"]).decode("utf8")
         return ClientConfigV1Alpha1(
             name=name,
+            metadata=ObjectMeta(
+                namespace=client.metadata.namespace,
+                name=client.metadata.name,
+            ),
             endpoint=endpoint,
             token=token,
             drivers=ClientConfigV1Alpha1Drivers(allow=allow, unsafe=unsafe),

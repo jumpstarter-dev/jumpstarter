@@ -9,6 +9,8 @@ import yaml
 from anyio.from_thread import start_blocking_portal
 from pydantic import BaseModel, Field
 
+from .common import ObjectMeta
+from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
@@ -35,6 +37,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = "jumpstarter.dev/v1alpha1"
     kind: Literal["ExporterConfig"] = "ExporterConfig"
+    metadata: ObjectMeta
 
     endpoint: str
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
@@ -116,7 +119,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         def channel_factory():
             credentials = grpc.composite_channel_credentials(
                 ssl_channel_credentials(self.endpoint, self.tls),
-                grpc.access_token_call_credentials(self.token),
+                call_credentials("Exporter", self.metadata, self.token),
             )
             return aio_secure_channel(self.endpoint, credentials)
 

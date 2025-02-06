@@ -5,6 +5,7 @@ from anyio import create_task_group
 from anyio.from_thread import start_blocking_portal
 
 from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from .common import ObjectMeta
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common import MetadataFilter
@@ -16,6 +17,7 @@ async def test_exporter_serve(mock_controller):
     exporter = ExporterConfigV1Alpha1(
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
+        metadata=ObjectMeta(namespace="default", name="test"),
         endpoint=mock_controller,
         token="dummy-exporter-token",
         export={
@@ -38,6 +40,7 @@ async def test_exporter_serve(mock_controller):
 
     client = ClientConfigV1Alpha1(
         name="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint=mock_controller,
         token="dummy-client-token",
         drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
@@ -63,6 +66,9 @@ def test_exporter_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     text = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: default
+  name: test
 tls:
   ca: "cacertificatedata"
   insecure: true
@@ -101,6 +107,7 @@ export:
         alias="test",
         apiVersion="jumpstarter.dev/v1alpha1",
         kind="ExporterConfig",
+        metadata=ObjectMeta(namespace="default", name="test"),
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         tls=TLSConfigV1Alpha1(ca="cacertificatedata", insecure=True),

@@ -9,8 +9,9 @@ from anyio.from_thread import BlockingPortal, start_blocking_portal
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from pydantic import BaseModel, Field, ValidationError
 
-from .common import CONFIG_PATH
-from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_TOKEN
+from .common import CONFIG_PATH, ObjectMeta
+from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
+from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
@@ -41,6 +42,8 @@ class ClientConfigV1Alpha1(BaseModel):
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
 
+    metadata: ObjectMeta
+
     endpoint: str
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
@@ -50,7 +53,7 @@ class ClientConfigV1Alpha1(BaseModel):
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
             ssl_channel_credentials(self.endpoint, self.tls),
-            grpc.access_token_call_credentials(self.token),
+            call_credentials("Client", self.metadata, self.token),
         )
 
         return aio_secure_channel(self.endpoint, credentials)
@@ -141,6 +144,10 @@ class ClientConfigV1Alpha1(BaseModel):
     def from_env(cls):
         allow, unsafe = _allow_from_env()
         return cls(
+            metadata=ObjectMeta(
+                namespace=os.environ.get(JMP_NAMESPACE),
+                name=os.environ.get(JMP_NAME),
+            ),
             endpoint=os.environ.get(JMP_ENDPOINT),
             token=os.environ.get(JMP_TOKEN),
             drivers=ClientConfigV1Alpha1Drivers(

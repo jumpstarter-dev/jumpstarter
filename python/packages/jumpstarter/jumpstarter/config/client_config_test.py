@@ -7,11 +7,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from jumpstarter.config import (
-    ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Drivers,
-)
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
+from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
 
 
 def test_client_ensure_exists_makes_dir(monkeypatch: pytest.MonkeyPatch):
@@ -22,12 +19,16 @@ def test_client_ensure_exists_makes_dir(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_client_config_try_from_env(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv(JMP_NAMESPACE, "default")
+    monkeypatch.setenv(JMP_NAME, "testclient")
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
     monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfigV1Alpha1.try_from_env()
     assert config.name == "default"
+    assert config.metadata.namespace == "default"
+    assert config.metadata.name == "testclient"
     assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     assert config.endpoint == "jumpstarter.my-lab.com:1443"
     assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
@@ -40,12 +41,16 @@ def test_client_config_try_from_env_not_set():
 
 
 def test_client_config_from_env(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv(JMP_NAMESPACE, "default")
+    monkeypatch.setenv(JMP_NAME, "testclient")
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
     monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
+    assert config.metadata.namespace == "default"
+    assert config.metadata.name == "testclient"
     assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     assert config.endpoint == "jumpstarter.my-lab.com:1443"
     assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
@@ -53,12 +58,16 @@ def test_client_config_from_env(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_client_config_from_env_allow_unsafe(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv(JMP_NAMESPACE, "default")
+    monkeypatch.setenv(JMP_NAME, "testclient")
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
     monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "UNSAFE")
 
     config = ClientConfigV1Alpha1.from_env()
     assert config.name == "default"
+    assert config.metadata.namespace == "default"
+    assert config.metadata.name == "testclient"
     assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     assert config.endpoint == "jumpstarter.my-lab.com:1443"
     assert config.drivers.allow == []
@@ -67,6 +76,8 @@ def test_client_config_from_env_allow_unsafe(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.parametrize("missing_field", [JMP_TOKEN, JMP_ENDPOINT])
 def test_client_config_from_env_missing_field_raises(monkeypatch: pytest.MonkeyPatch, missing_field):
+    monkeypatch.setenv(JMP_NAMESPACE, "default")
+    monkeypatch.setenv(JMP_NAME, "testclient")
     monkeypatch.setenv(JMP_TOKEN, "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz")
     monkeypatch.setenv(JMP_ENDPOINT, "jumpstarter.my-lab.com:1443")
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
@@ -80,6 +91,9 @@ def test_client_config_from_env_missing_field_raises(monkeypatch: pytest.MonkeyP
 def test_client_config_from_file():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
+metadata:
+  namespace: default
+  name: testclient
 endpoint: jumpstarter.my-lab.com:1443
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 drivers:
@@ -92,6 +106,8 @@ drivers:
         f.close()
         config = ClientConfigV1Alpha1.from_file(f.name)
         assert config.name == f.name.split("/")[-1]
+        assert config.metadata.namespace == "default"
+        assert config.metadata.name == "testclient"
         assert config.endpoint == "jumpstarter.my-lab.com:1443"
         assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
         assert config.drivers.allow == ["jumpstarter.drivers.*", "vendorpackage.*"]
@@ -160,6 +176,7 @@ def test_client_config_load():
                 "from_file",
                 return_value=ClientConfigV1Alpha1(
                     name="another",
+                    metadata=ObjectMeta(namespace="default", name="another"),
                     endpoint="abc",
                     token="123",
                     drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
@@ -180,6 +197,9 @@ def test_client_config_load_not_found_raises():
 def test_client_config_save(monkeypatch: pytest.MonkeyPatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
+metadata:
+  namespace: default
+  name: testclient
 endpoint: jumpstarter.my-lab.com:1443
 tls:
   ca: ''
@@ -193,6 +213,7 @@ drivers:
 """
     config = ClientConfigV1Alpha1(
         name="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
@@ -211,6 +232,9 @@ drivers:
 def test_client_config_save_explicit_path():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
+metadata:
+  namespace: default
+  name: testclient
 endpoint: jumpstarter.my-lab.com:1443
 tls:
   ca: ''
@@ -224,6 +248,7 @@ drivers:
 """
     config = ClientConfigV1Alpha1(
         name="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
@@ -240,6 +265,9 @@ drivers:
 def test_client_config_save_unsafe_drivers():
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
+metadata:
+  namespace: default
+  name: testclient
 endpoint: jumpstarter.my-lab.com:1443
 tls:
   ca: ''
@@ -251,6 +279,7 @@ drivers:
 """
     config = ClientConfigV1Alpha1(
         name="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
@@ -275,6 +304,9 @@ def test_client_config_exists():
 def test_client_config_list(monkeypatch: pytest.MonkeyPatch):
     CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
+metadata:
+  namespace: default
+  name: testclient
 endpoint: jumpstarter.my-lab.com:1443
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 drivers:
