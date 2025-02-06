@@ -36,7 +36,7 @@ class ClientConfigV1Alpha1Drivers(BaseModel):
 class ClientConfigV1Alpha1(BaseModel):
     CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
 
-    name: str = Field(default="default", exclude=True)
+    alias: str = Field(default="default", exclude=True)
     path: Path | None = Field(default=None, exclude=True)
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
@@ -124,7 +124,7 @@ class ClientConfigV1Alpha1(BaseModel):
     def from_file(cls, path: os.PathLike):
         with open(path) as f:
             v = cls.model_validate(yaml.safe_load(f))
-            v.name = os.path.basename(path).split(".")[0]
+            v.alias = os.path.basename(path).split(".")[0]
             v.path = Path(path)
             return v
 
@@ -157,14 +157,14 @@ class ClientConfigV1Alpha1(BaseModel):
         )
 
     @classmethod
-    def _get_path(cls, name: str) -> Path:
-        """Get the regular path of a client config given a name."""
-        return (cls.CLIENT_CONFIGS_PATH / name).with_suffix(".yaml")
+    def _get_path(cls, alias: str) -> Path:
+        """Get the regular path of a client config given an alias."""
+        return (cls.CLIENT_CONFIGS_PATH / alias).with_suffix(".yaml")
 
     @classmethod
-    def load(cls, name: str) -> Self:
-        """Load a client config by name."""
-        path = cls._get_path(name)
+    def load(cls, alias: str) -> Self:
+        """Load a client config by alias."""
+        path = cls._get_path(alias)
         if path.exists() is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
         return cls.from_file(path)
@@ -176,7 +176,7 @@ class ClientConfigV1Alpha1(BaseModel):
         if path is None:
             cls.ensure_exists()
             # Set the config path before saving
-            config.path = cls._get_path(config.name)
+            config.path = cls._get_path(config.alias)
         else:
             config.path = Path(path)
         with config.path.open(mode="w") as f:
@@ -187,9 +187,9 @@ class ClientConfigV1Alpha1(BaseModel):
         return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
 
     @classmethod
-    def exists(cls, name: str) -> bool:
-        """Check if a client config exists by name."""
-        return cls._get_path(name).exists()
+    def exists(cls, alias: str) -> bool:
+        """Check if a client config exists by alias."""
+        return cls._get_path(alias).exists()
 
     @classmethod
     def list(cls) -> list[Self]:
@@ -209,9 +209,9 @@ class ClientConfigV1Alpha1(BaseModel):
         return list(map(make_config, files))
 
     @classmethod
-    def delete(cls, name: str):
-        """Delete a client config by name."""
-        path = cls._get_path(name)
+    def delete(cls, alias: str):
+        """Delete a client config by alias."""
+        path = cls._get_path(alias)
         if path.exists() is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
         path.unlink()
