@@ -1,0 +1,29 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: exporter
+  namespace: default
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      port: "1"
+
+  power2:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      serial: "YK25838"
+      port: "2"
+
+  power3:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      port: "3"
+
+  all:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      port: "all"
+
