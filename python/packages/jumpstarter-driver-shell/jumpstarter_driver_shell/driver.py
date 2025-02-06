@@ -62,10 +62,23 @@ class Shell(Driver):
         # so that we don't lose existing environment variables.
         combined_env = os.environ.copy()
         if env_vars:
+            # Validate environment variable names
+            for key in env_vars:
+                if not isinstance(key, str) or not key.isidentifier():
+                    raise ValueError(f"Invalid environment variable name: {key}")
             combined_env.update(env_vars)
 
         if not isinstance(script, str) or not script.strip():
             raise ValueError("Shell script must be a non-empty string")
+
+        # Validate arguments
+        for arg in args:
+            if not isinstance(arg, str):
+                raise ValueError(f"All arguments must be strings, got {type(arg)}")
+
+        # Validate working directory if set
+        if self.cwd and not os.path.isdir(self.cwd):
+            raise ValueError(f"Working directory does not exist: {self.cwd}")
 
         cmd = self.shell + [script, method] + list(args)
 
