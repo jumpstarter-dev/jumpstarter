@@ -89,7 +89,7 @@ MyHarness # Custom composite driver for the entire target device harness
 The `jumpstarter_driver_composite` package provides the base `Composite` and
 `CompositeClient` classes that can be used to build custom composite drivers.
 
-A composite driver can also be used to orchestrate multiple interfaces to preform
+A composite driver can also be used to orchestrate multiple interfaces to perform
 a specific task such as flashing a system image or entering a debug mode. While
-the driver may internally preform a complex task, a simple, user-friendly interface
+the driver may internally perform a complex task, a simple, user-friendly interface
 can be provided to the driver clients.
