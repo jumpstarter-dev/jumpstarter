@@ -18,7 +18,7 @@ automatically use any drivers that are registered without the need for an
 exporter instance running in the background.
 
 You can get started with a local client by following the
-[Setup a Local Client](../getting-started/setup-local-client.md) guide.
+[Setup a Local Client](../getting-started/setup-local-exporter.md) guide.
 
 ### Remote Clients
 
@@ -36,7 +36,7 @@ with the Jumpstarter Service.
 ```
 
 You can get started with a remove client by following the
-[Setup a Remote Client](../getting-started/setup-remote-client.md) guide.
+[Setup a Remote Client](../getting-started/setup-exporter-client.md) guide.
 
 We will discuss how remote clients connect to exporters in the next section
 on the [Jumpstarter Service](./service.md).
