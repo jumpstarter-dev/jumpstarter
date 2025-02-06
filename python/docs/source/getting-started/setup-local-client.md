@@ -8,6 +8,9 @@ Create a text file with the following content
 # /etc/jumpstarter/exporters/demo.yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
 # endpoint and token are intentionally left empty
 endpoint: ""
 token: ""
