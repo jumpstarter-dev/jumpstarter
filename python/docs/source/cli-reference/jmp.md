@@ -1,7 +1,7 @@
 # jmp
 
 ```{eval-rst}
-.. click:: jumpstarter.cli.client:client
+.. click:: jumpstarter_cli_client:client
    :prog: jmp
    :nested: full
 ```
