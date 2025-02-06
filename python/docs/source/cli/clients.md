@@ -32,6 +32,9 @@ file named `john.yaml`:
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: john
 endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
 token: <<token>>
 tls:

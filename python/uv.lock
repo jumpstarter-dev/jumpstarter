@@ -22,6 +22,7 @@ members = [
     "jumpstarter-driver-shell",
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-ustreamer",
+    "jumpstarter-driver-yepkit",
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
     "jumpstarter-imagehash",
@@ -1320,6 +1321,37 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-yepkit"
+version = "0.1.0"
+source = { editable = "packages/jumpstarter-driver-yepkit" }
+dependencies = [
+    { name = "anyio" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-power" },
+    { name = "pyusb" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "pyusb", specifier = ">=1.2.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]

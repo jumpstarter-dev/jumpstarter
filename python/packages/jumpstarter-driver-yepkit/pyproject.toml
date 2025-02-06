@@ -1,0 +1,40 @@
+[project]
+name = "jumpstarter-driver-yepkit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.6.2.post1",
+    "pyusb>=1.2.1",
+    "jumpstarter_driver_power",
+    "jumpstarter",
+]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_yepkit"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]

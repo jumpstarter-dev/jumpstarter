@@ -14,16 +14,16 @@ To create a new driver scaffold, you can use the `create_driver.sh` script in th
 
 From the root directory of the project, run the following command:
 ```shell
-$ ./contrib/__templates__/create_driver.sh shell Shell "Miguel Angel Ajo" miguelangel@ajo.es
+$ ./__templates__/create_driver.sh yepkit Ykush "Miguel Angel Ajo" "miguelangel@ajo.es"
 
-Creating: contrib/drivers/shell/jumpstarter_driver_shell/__init__.py
-Creating: contrib/drivers/shell/jumpstarter_driver_shell/client.py
-Creating: contrib/drivers/shell/jumpstarter_driver_shell/driver_test.py
-Creating: contrib/drivers/shell/jumpstarter_driver_shell/driver.py
-Creating: contrib/drivers/shell/.gitignore
-Creating: contrib/drivers/shell/pyproject.toml
-Creating: contrib/drivers/shell/README.md
-Creating: contrib/drivers/shell/examples/exporter.yaml
+Creating: packages/jumpstarter_driver_yepkit/jumpstarter_driver_yepkit/__init__.py
+Creating: packages/jumpstarter_driver_yepkit/jumpstarter_driver_yepkit/client.py
+Creating: packages/jumpstarter_driver_yepkit/jumpstarter_driver_yepkit/driver_test.py
+Creating: packages/jumpstarter_driver_yepkit/jumpstarter_driver_yepkit/driver.py
+Creating: packages/jumpstarter_driver_yepkit/.gitignore
+Creating: packages/jumpstarter_driver_yepkit/pyproject.toml
+Creating: packages/jumpstarter_driver_yepkit/README.md
+Creating: packages/jumpstarter_driver_yepkit/examples/exporter.yaml
 
 $ make sync
 uv sync --all-packages --all-extras
