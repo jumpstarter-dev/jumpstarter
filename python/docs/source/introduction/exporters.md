@@ -24,6 +24,9 @@ Here is an example Exporter config file:
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
 export:

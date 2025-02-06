@@ -1,6 +1,9 @@
 # /etc/jumpstarter/exporters/dutlink.yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
 endpoint: ""
 token: ""
 export:

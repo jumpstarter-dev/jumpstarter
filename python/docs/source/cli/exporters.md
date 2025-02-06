@@ -24,6 +24,9 @@ This creates an exporter named `my-exporter` and produces a YAML configuration f
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: my-exporter
 endpoint: grpc.jumpstarter.example.com:443
 token: <<token>>
 
@@ -40,6 +43,9 @@ will provide a few mock interfaces to play with:
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
 endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
 token: <<token>>
 tls:

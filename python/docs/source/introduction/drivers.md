@@ -26,6 +26,9 @@ Here is an example exporter config that loads a driver:
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
 export:
