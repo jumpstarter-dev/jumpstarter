@@ -24,7 +24,7 @@ USER root
 # switch to python 3.12 as the default
 RUN rm -rf /usr/bin/python && ln -s /usr/bin/python3.12 /usr/bin/python
 
-RUN dnf -y install make git python3.12 python3.12 libusbx python3-pyusb python3.12-pip golang && dnf clean all
+RUN dnf -y install make git python3.12 python3.12-devel libusbx python3-pyusb python3.12-pip golang gcc && dnf clean all
 
 USER 10001
 
