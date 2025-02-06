@@ -49,7 +49,7 @@ the base class will attempt to:
 3. Request a lease based on the `filter_labels` provided in the test class.
 
 ```{eval-rst}
-.. autoclass:: jumpstarter.testing.pytest.JumpstarterTest
+.. autoclass:: jumpstarter_testing.pytest.JumpstarterTest
     :members:
 ```
 

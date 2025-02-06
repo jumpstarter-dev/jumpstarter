@@ -60,7 +60,7 @@ endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 drivers:
   # Wildcards are supported
-  allow: ["jumpstarter.drivers.*", "vendorpackage.*"]
+  allow: ["jumpstarter_drivers_*", "vendorpackage.*"]
 ```
 
 - `endpoint` - The gRPC endpoint of the Jumpstarter controller server.
@@ -151,14 +151,14 @@ endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 export:
   power:
-    type: "jumpstarter.drivers.power.PduPower"
+    type: "jumpstarter_driver_power.driver.PduPower"
     config:
       host: "192.168.1.111"
       port: 1234
       username: "admin"
       password: "secret"
   serial:
-    type: "jumpstarter.drivers.pyserial.driver.PySerial"
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
     config:
       url: "/dev/ttyUSB0"
       baudrate: 115200
