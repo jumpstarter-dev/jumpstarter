@@ -12,7 +12,7 @@ from .common import CONFIG_PATH
 
 def _serialize_current_client(v: ClientConfigV1Alpha1 | None) -> str | None:
     if v:
-        return v.name
+        return v.alias
     else:
         return None
 

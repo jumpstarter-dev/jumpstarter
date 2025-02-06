@@ -32,7 +32,7 @@ config:
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
+            alias="testclient",
             metadata=ObjectMeta(namespace="default", name="testclient"),
             endpoint="abc",
             token="123",
@@ -45,7 +45,7 @@ config:
             monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", f.name)
             config = UserConfigV1Alpha1.load()
             mock_load.assert_called_once_with("testclient")
-            assert config.config.current_client.name == "testclient"
+            assert config.config.current_client.alias == "testclient"
             os.unlink(f.name)
 
 
@@ -194,7 +194,7 @@ config:
         config = UserConfigV1Alpha1(
             config=UserConfigV1Alpha1Config(
                 current_client=ClientConfigV1Alpha1(
-                    name="testclient",
+                    alias="testclient",
                     metadata=ObjectMeta(namespace="default", name="testclient"),
                     endpoint="abc",
                     token="123",
@@ -235,7 +235,7 @@ config:
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
+            alias="testclient",
             metadata=ObjectMeta(namespace="default", name="testclient"),
             endpoint="abc",
             token="123",
@@ -247,7 +247,7 @@ config:
             config = UserConfigV1Alpha1(
                 config=UserConfigV1Alpha1Config(
                     current_client=ClientConfigV1Alpha1(
-                        name="another",
+                        alias="another",
                         metadata=ObjectMeta(namespace="default", name="testclient"),
                         endpoint="abc",
                         token="123",
@@ -260,7 +260,7 @@ config:
                 value = loaded.read()
                 assert value == USER_CONFIG
                 mock_load.assert_called_once_with("testclient")
-            assert config.config.current_client.name == "testclient"
+            assert config.config.current_client.alias == "testclient"
             os.unlink(f.name)
 
 
@@ -275,7 +275,7 @@ config:
         config = UserConfigV1Alpha1(
             config=UserConfigV1Alpha1Config(
                 current_client=ClientConfigV1Alpha1(
-                    name="another",
+                    alias="another",
                     metadata=ObjectMeta(namespace="default", name="testclient"),
                     endpoint="abc",
                     token="123",

@@ -38,7 +38,7 @@ CLIENT_OBJECT = V1Alpha1Client(
 )
 
 UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
-    name=CLIENT_NAME,
+    alias=CLIENT_NAME,
     metadata=ObjectMeta(namespace="default", name=CLIENT_NAME),
     endpoint=CLIENT_ENDPOINT,
     token=CLIENT_TOKEN,
@@ -46,7 +46,7 @@ UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
 )
 
 CLIENT_CONFIG = ClientConfigV1Alpha1(
-    name=CLIENT_NAME,
+    alias=CLIENT_NAME,
     metadata=ObjectMeta(namespace="default", name=CLIENT_NAME),
     endpoint=CLIENT_ENDPOINT,
     token=CLIENT_TOKEN,

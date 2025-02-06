@@ -43,4 +43,4 @@ build:
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs test test-jumpstarter test-packages build clean-test clean-docs clean-venv clean-build
+.PHONY: sync docs test test-packages build clean-test clean-docs clean-venv clean-build

@@ -54,7 +54,7 @@ async def delete_client(
             if ClientConfigV1Alpha1.exists(name) and (delete or click.confirm("Delete client configuration?")):
                 # If this is the default, clear default
                 user_config = UserConfigV1Alpha1.load_or_create()
-                if user_config.config.current_client is not None and user_config.config.current_client.name == name:
+                if user_config.config.current_client is not None and user_config.config.current_client.alias == name:
                     user_config.config.current_client = None
                     UserConfigV1Alpha1.save(user_config)
                 # Delete the client config
