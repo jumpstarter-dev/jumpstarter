@@ -1,4 +1,4 @@
-# Container package
+# Running in a Container
 
 For interacting with the Jumpstarter service without installing the Python
 packages locally, you can create an alias to run the `jmp` client in a container.
@@ -17,18 +17,19 @@ $ alias jmp='podman run --rm -it -e JUMPSTARTER_GRPC_INSECURE=1 \
 Then you can try:
 
 ```bash
-$ jmp list
+$ jmp client list-configs
 CURRENT   NAME      ENDPOINT                         PATH
 *         default   grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/default.yaml
-          kirkb     grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/kirkb.yaml
+          test      grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/test.yaml
 ```
 
-## Hardware Access for exporters
+## Hardware Access for Exporters
 
-If you need access to your hardware, i.e. because you are running the `exporter`
-or you are following the `local workflow` (without a distributed service), you need
-to mount access to devices into the container, provide host network access,
-and run the container in privileged mode, this probably needs to be run as **root**.
+If you need access to your hardware, i.e. because you are running the `jmp exporter`
+or you are following the [local-only workflow](../introduction/how-it-works.md#local-only)
+(i.e. without a distributed service), you need to mount access to devices into
+the container, provide host network access, and run the container in privileged
+mode, this probably needs to be run as **root**.
 
 
 ```{code-block} bash

@@ -4,12 +4,12 @@ Jumpstarter uses a modular driver model to build abstractions around the hardwar
 interfaces used to interact with a target device.
 
 An [Exporter](./exporters.md) uses Drivers to "export" the hardware interfaces
-from the host machine to the clients via gRPC. Drivers can be thought of as a
-simplified API for an interface or device type.
+from a host machine to the clients via [gRPC](https://grpc.io/).
+Drivers can be thought of as a simplified API for an interface or device type.
 
 Each driver consists of two components:
-- A driver class that implements the "backend" functionality of the driver.
-- A client class (optional) that provides a Python and CLI "frontend" for the driver.
+- An exporter-side module that implements the "backend" functionality of the driver.
+- A client that provides a Python interface and optionally a CLI "frontend" for the driver.
 
 While Jumpstarter comes with drivers for many basic interfaces, custom drivers
 can also be developed for specialized hardware/interfaces or to provide
@@ -21,7 +21,7 @@ Drivers are configured using a YAML Exporter config file, which specifies
 the drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
-Here is an example exporter config that loads a driver:
+Here is an example exporter config that loads a custom driver called `jumpstarter_driver_dutlink`:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -32,12 +32,14 @@ metadata:
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
 export:
-  # a DUTLink interface to the DUT
+  # The name to register the driver instance as
   dutlink:
+    # A fully-qualified Python module
     type: jumpstarter_driver_dutlink.driver.Dutlink
+    # Configuration parameters passed to the driver implementation
     config:
       storage_device: "/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_5B4C0AB025C0-0:0"
-  # using the DUTLink power interface individually
+  # Another driver instance for this device
   power:
     type: jumpstarter_driver_dutlink.driver.DutlinkPower
     config:
@@ -64,17 +66,18 @@ TCP port forwarding and CAN bus emulation.
 
 ## Composite Drivers
 
-In Jumpstarter, drivers are organized in a tree structure which allows for
-the development of hierarchical relationships between interfaces and their
-associated devices.
+In Jumpstarter, drivers are organized in a tree structure which allows for the
+representation of complex device trees that may be found in your environment.
 
-Multiple drivers can be combined to create a Composite Driver with additional
-device-specific functionality for your use case.
+For example, your team may use a custom test harness that connects to the host
+via USB, but provides multiple hardware interfaces through a built-in USB hub.
+Jumpstarter allows you to create a custom Composite Driver that provides a unified
+interface to access all the interfaces provided by your harness.
 
 Here is an example of a driver tree with two custom composite drivers:
 
 ```
-MyDevice # Custom composite driver for the entire target device
+MyHarness # Custom composite driver for the entire target device harness
 ├─ TcpNetwork # TCP Network driver to tunnel port 8000
 ├─ MyPower # Custom power driver to control device power
 ├─ SDWire # SD Wire storage emulator to enable re-flash on demand
@@ -83,10 +86,10 @@ MyDevice # Custom composite driver for the entire target device
    └─ PySerial # Serial debugger with PySerial
 ```
 
-Creating a composite driver can automate common tasks related to your specific
-hardware configuration such as flashing a system image or entering a debug mode.
+The `jumpstarter_driver_composite` package provides the base `Composite` and
+`CompositeClient` classes that can be used to build custom composite drivers.
 
-For example, you may want to develop a composite driver that enables a test script
-to perform a complex action that requires multiple other driver interfaces with
-a single method invocation.
-
+A composite driver can also be used to orchestrate multiple interfaces to perform
+a specific task such as flashing a system image or entering a debug mode. While
+the driver may internally perform a complex task, a simple, user-friendly interface
+can be provided to the driver clients.
