@@ -13,6 +13,9 @@ serve-docs:
 clean-docs:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs clean
 
+doctest:
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
+
 test-%: packages/%
 	uv run --isolated --directory $< pytest
 
