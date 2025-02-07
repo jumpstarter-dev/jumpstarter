@@ -24,6 +24,7 @@ jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-protocol = { workspace = true }
 jumpstarter-testing = { workspace = true }
+sphinx-click = { git = "https://github.com/NickCao/sphinx-click" }
 
 [dependency-groups]
 docs = [
@@ -36,7 +37,12 @@ docs = [
     "sphinx-click>=6.0.0",
     "sphinx-substitution-extensions>=2024.10.17",
 ]
-dev = ["ruff==0.9.2", "typos>=1.23.6", "pre-commit>=3.8.0", "esbonio>=0.16.5"]
+dev = [
+    "ruff==0.9.2",
+    "typos>=1.23.6",
+    "pre-commit>=3.8.0",
+    "esbonio>=0.16.5",
+]
 
 [tool.ruff]
 exclude = ["packages/jumpstarter-protocol"]
