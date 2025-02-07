@@ -47,14 +47,22 @@ session.close()
 Using a simple BlockingStream with a context manager
 ```{testcode}
 with pyserialclient.stream() as stream:
-    stream.write(b"Hello, world!")
-    data = stream.read(13)
+    stream.send(b"Hello, world!")
+    data = stream.receive()
 ```
 
 Using a simple BlockingStream without a context manager
 ```{testcode}
 stream = pyserialclient.open_stream()
-stream.write(b"Hello, world!")
-data = stream.read(13)
-stream.close()
+stream.send(b"Hello, world!")
+data = stream.receive()
+```
+
+```{testsetup} *
+from jumpstarter_driver_pyserial.driver import PySerial
+from jumpstarter.common.utils import serve
+
+instance = serve(PySerial(url="loop://"))
+
+pyserialclient = instance.__enter__()
 ```
