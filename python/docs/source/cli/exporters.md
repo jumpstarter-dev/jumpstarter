@@ -53,11 +53,11 @@ tls:
     insecure: True
 export:
     storage:
-        type: jumpstarter.drivers.storage.driver.MockStorageMux
+        type: jumpstarter_driver_opendal.driver.MockStorageMux
     power:
-        type: jumpstarter.drivers.power.driver.MockPower
+        type: jumpstarter_driver_power.driver.MockPower
     echonet:
-        type: jumpstarter.drivers.network.driver.EchoNetwork
+        type: jumpstarter_driver_network.driver.EchoNetwork
     can:
         type: jumpstarter_driver_can.driver.Can
         config:

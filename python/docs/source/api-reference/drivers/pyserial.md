@@ -1,6 +1,6 @@
 # PySerial
 
-**driver**: `jumpstarter.drivers.pyserial.driver.PySerial`
+**driver**: `jumpstarter_driver_pyserial.driver.PySerial`
 
 The methods of this client are dynamic, and they are generated from
 the `methods` field of the exporter driver configuration.
@@ -9,7 +9,7 @@ the `methods` field of the exporter driver configuration.
 ```yaml
 export:
   my_serial:
-    type: "jumpstarter.drivers.pyserial.driver.PySerial"
+    type: ""jumpstarter_driver_pyserial.driver.PySerial"
     config:
       url: "/dev/ttyUSB0"
       baudrate: 115200
@@ -24,7 +24,7 @@ export:
 
 ## PySerialClient API
 ```{eval-rst}
-.. autoclass:: jumpstarter.drivers.pyserial.client.PySerialClient
+.. autoclass:: "jumpstarter_driver_pyserial.client.PySerialClient
     :members: pexpect, open, stream, open_stream, close
 ```
 
