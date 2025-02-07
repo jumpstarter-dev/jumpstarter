@@ -107,3 +107,7 @@ instance = serve(Composite(children={"tcp_port": EchoNetwork(), "unix_socket": E
 
 client = instance.__enter__()
 ```
+
+```{testcleanup} *
+instance.__exit__(None, None, None)
+```
