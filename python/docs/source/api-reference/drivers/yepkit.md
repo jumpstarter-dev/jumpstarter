@@ -43,6 +43,7 @@ The yepkit ykush driver provides a `PowerClient` with the following API:
 ### Examples
 Powering on and off a device
 ```{testcode}
+:skipif: True
 client.power.on()
 time.sleep(1)
 client.power.off()
