@@ -5,6 +5,6 @@ driven by the jumpstarter exporter. This driver takes a video device and
 exposes both snapshot and streaming interfaces.
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_ustreamer.client.UStreamerClient
+.. autoclass:: jumpstarter_driver_ustreamer.client.UStreamerClient()
     :members:
 ```

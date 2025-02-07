@@ -8,6 +8,6 @@ The SDWire driver implements the `StorageMuxClient` class, which is a generic
 storage class.
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxClient
+.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxClient()
     :members:
 ```

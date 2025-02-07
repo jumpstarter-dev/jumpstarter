@@ -24,7 +24,7 @@ export:
 
 ## PySerialClient API
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_pyserial.client.PySerialClient
+.. autoclass:: jumpstarter_driver_pyserial.client.PySerialClient()
     :members: pexpect, open, stream, open_stream, close
 ```
 
