@@ -41,7 +41,7 @@ Using expect without a context manager
 session = pyserialclient.open()
 session.sendline("Hello, world!")
 session.expect("Hello, world!")
-session.close()
+pyserialclient.close()
 ```
 
 Using a simple BlockingStream with a context manager
@@ -65,4 +65,8 @@ from jumpstarter.common.utils import serve
 instance = serve(PySerial(url="loop://"))
 
 pyserialclient = instance.__enter__()
+```
+
+```{testcleanup} *
+instance.__exit__(None, None, None)
 ```
