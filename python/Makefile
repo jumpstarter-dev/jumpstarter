@@ -36,7 +36,7 @@ clean-test:
 sync:
 	uv sync --all-packages --all-extras
 
-test: test-packages
+test: test-packages doctest
 
 generate:
 	buf generate
