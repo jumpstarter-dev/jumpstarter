@@ -29,7 +29,15 @@ class FileNotFound(TftpError):
 
 @dataclass(kw_only=True)
 class Tftp(Driver):
-    """TFTP Server driver for Jumpstarter"""
+    """TFTP Server driver for Jumpstarter
+
+    This driver implements a TFTP read-only server.
+
+    Attributes:
+        root_dir (str): Root directory for the TFTP server. Defaults to "/var/lib/tftpboot"
+        host (str): IP address to bind the server to. If empty, will use the default route interface
+        port (int): Port number to listen on. Defaults to 69 (standard TFTP port)
+    """
 
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default='')
@@ -97,6 +105,14 @@ class Tftp(Driver):
 
     @export
     def start(self):
+        """Start the TFTP server.
+
+        The server will start listening for incoming TFTP requests on the configured
+        host and port. If the server is already running, a warning will be logged.
+
+        Raises:
+            TftpError: If the server fails to start or times out during initialization
+        """
         if self.server_thread is not None and self.server_thread.is_alive():
             self.logger.warning("TFTP server is already running")
             return
@@ -116,6 +132,11 @@ class Tftp(Driver):
 
     @export
     def stop(self):
+        """Stop the TFTP server.
+
+        Initiates a graceful shutdown of the server and waits for all active transfers
+        to complete. If the server is not running, a warning will be logged.
+        """
         if self.server_thread is None or not self.server_thread.is_alive():
             self.logger.warning("stop called - TFTP server is not running")
             return
@@ -131,10 +152,28 @@ class Tftp(Driver):
 
     @export
     def list_files(self) -> list[str]:
+        """List all files available in the TFTP server root directory.
+
+        Returns:
+            list[str]: A list of filenames present in the root directory
+        """
         return os.listdir(self.root_dir)
 
     @export
     async def put_file(self, filename: str, src_stream, client_checksum: str):
+        """Upload a file to the TFTP server.
+
+        Args:
+            filename (str): Name of the file to create
+            src_stream: Source stream to read the file data from
+            client_checksum (str): SHA256 checksum of the file for verification
+
+        Returns:
+            str: The filename that was uploaded
+
+        Raises:
+            TftpError: If the file upload fails or path validation fails
+        """
         file_path = os.path.join(self.root_dir, filename)
 
         try:
@@ -152,6 +191,18 @@ class Tftp(Driver):
 
     @export
     def delete_file(self, filename: str):
+        """Delete a file from the TFTP server.
+
+        Args:
+            filename (str): Name of the file to delete
+
+        Returns:
+            str: The filename that was deleted
+
+        Raises:
+            FileNotFound: If the specified file does not exist
+            TftpError: If the deletion operation fails
+        """
         file_path = os.path.join(self.root_dir, filename)
 
         if not os.path.exists(file_path):
@@ -165,6 +216,15 @@ class Tftp(Driver):
 
     @export
     def check_file_checksum(self, filename: str, client_checksum: str) -> bool:
+        """Check if a file matches the expected checksum.
+
+        Args:
+            filename (str): Name of the file to check
+            client_checksum (str): Expected SHA256 checksum
+
+        Returns:
+            bool: True if the file exists and matches the checksum, False otherwise
+        """
         file_path = os.path.join(self.root_dir, filename)
         self.logger.debug(f"checking checksum for file: {filename}")
         self.logger.debug(f"file path: {file_path}")
@@ -181,10 +241,20 @@ class Tftp(Driver):
 
     @export
     def get_host(self) -> str:
+        """Get the host address the server is bound to.
+
+        Returns:
+            str: The IP address or hostname
+        """
         return self.host
 
     @export
     def get_port(self) -> int:
+        """Get the port number the server is listening on.
+
+        Returns:
+            int: The port number
+        """
         return self.port
 
     def close(self):
