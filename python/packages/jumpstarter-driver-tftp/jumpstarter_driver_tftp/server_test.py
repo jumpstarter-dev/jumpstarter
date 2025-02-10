@@ -13,11 +13,7 @@ async def tftp_server():
         test_file_path = Path(temp_dir) / "test.txt"
         test_file_path.write_text("Hello, TFTP!")
 
-        server = TftpServer(
-            host="127.0.0.1",
-            port=0,
-            root_dir=temp_dir
-        )
+        server = TftpServer(host="127.0.0.1", port=0, root_dir=temp_dir)
         server_task = asyncio.create_task(server.start())
 
         for _ in range(10):
@@ -42,13 +38,12 @@ async def tftp_server():
                 except asyncio.CancelledError:
                     pass
 
+
 async def create_test_client(server_port):
     loop = asyncio.get_running_loop()
-    transport, protocol = await loop.create_datagram_endpoint(
-        asyncio.DatagramProtocol,
-        remote_addr=('127.0.0.1', 0)
-    )
+    transport, protocol = await loop.create_datagram_endpoint(asyncio.DatagramProtocol, remote_addr=("127.0.0.1", 0))
     return transport, protocol
+
 
 @pytest.mark.asyncio
 async def test_server_startup_and_shutdown(tftp_server):
@@ -64,6 +59,7 @@ async def test_server_startup_and_shutdown(tftp_server):
 
     assert True
 
+
 @pytest.mark.asyncio
 async def test_read_request_for_existing_file(tftp_server):
     """Test reading an existing file from the server."""
@@ -76,9 +72,9 @@ async def test_read_request_for_existing_file(tftp_server):
         transport, _ = await create_test_client(server.port)
 
         rrq_packet = (
-            Opcode.RRQ.to_bytes(2, 'big') +
-            b'test.txt\x00' +  # filename
-            b'octet\x00'      # mode
+            Opcode.RRQ.to_bytes(2, "big")
+            + b"test.txt\x00"  # filename
+            + b"octet\x00"  # mode
         )
 
         transport.sendto(rrq_packet)
@@ -91,6 +87,7 @@ async def test_read_request_for_existing_file(tftp_server):
         await server.shutdown()
         await server_task
 
+
 @pytest.mark.asyncio
 async def test_read_request_for_nonexistent_file(tftp_server):
     """Test reading a non-existent file returns appropriate error."""
@@ -101,11 +98,7 @@ async def test_read_request_for_nonexistent_file(tftp_server):
     try:
         transport, protocol = await create_test_client(server.port)
 
-        rrq_packet = (
-            Opcode.RRQ.to_bytes(2, 'big') +
-            b'nonexistent.txt\x00' +
-            b'octet\x00'
-        )
+        rrq_packet = Opcode.RRQ.to_bytes(2, "big") + b"nonexistent.txt\x00" + b"octet\x00"
 
         transport.sendto(rrq_packet)
         assert server.transport is not None
@@ -115,20 +108,16 @@ async def test_read_request_for_nonexistent_file(tftp_server):
         await server.shutdown()
         await server_task
 
+
 @pytest.mark.asyncio
 async def test_write_request_rejection(tftp_server):
     """Test that write requests are properly rejected (server is read-only)."""
     server, temp_dir, server_port = tftp_server
     server_task = asyncio.create_task(server.start())
 
-
     try:
         transport, _ = await create_test_client(server.port)
-        wrq_packet = (
-            Opcode.WRQ.to_bytes(2, 'big') +
-            b'test.txt\x00' +
-            b'octet\x00'
-        )
+        wrq_packet = Opcode.WRQ.to_bytes(2, "big") + b"test.txt\x00" + b"octet\x00"
 
         transport.sendto(wrq_packet)
 
@@ -139,6 +128,7 @@ async def test_write_request_rejection(tftp_server):
         await server.shutdown()
         await server_task
 
+
 @pytest.mark.asyncio
 async def test_invalid_packet_handling(tftp_server):
     server, temp_dir, server_port = tftp_server
@@ -147,7 +137,7 @@ async def test_invalid_packet_handling(tftp_server):
 
     try:
         transport, _ = await create_test_client(server.port)
-        transport.sendto(b'\x00\x01')
+        transport.sendto(b"\x00\x01")
 
         assert server.transport is not None
 
@@ -155,6 +145,7 @@ async def test_invalid_packet_handling(tftp_server):
         transport.close()
         await server.shutdown()
         await server_task
+
 
 @pytest.mark.asyncio
 async def test_path_traversal_prevention(tftp_server):
@@ -167,11 +158,7 @@ async def test_path_traversal_prevention(tftp_server):
     try:
         transport, _ = await create_test_client(server.port)
 
-        rrq_packet = (
-            Opcode.RRQ.to_bytes(2, 'big') +
-            b'../../../etc/passwd\x00' +
-            b'octet\x00'
-        )
+        rrq_packet = Opcode.RRQ.to_bytes(2, "big") + b"../../../etc/passwd\x00" + b"octet\x00"
 
         transport.sendto(rrq_packet)
 
@@ -181,6 +168,7 @@ async def test_path_traversal_prevention(tftp_server):
         transport.close()
         await server.shutdown()
         await server_task
+
 
 @pytest.mark.asyncio
 async def test_options_negotiation(tftp_server):
@@ -194,13 +182,13 @@ async def test_options_negotiation(tftp_server):
 
         # RRQ with options
         rrq_packet = (
-            Opcode.RRQ.to_bytes(2, 'big') +
-            b'test.txt\x00' +
-            b'octet\x00' +
-            b'blksize\x00' +
-            b'1024\x00' +
-            b'timeout\x00' +
-            b'3\x00'
+            Opcode.RRQ.to_bytes(2, "big")
+            + b"test.txt\x00"
+            + b"octet\x00"
+            + b"blksize\x00"
+            + b"1024\x00"
+            + b"timeout\x00"
+            + b"3\x00"
         )
 
         transport.sendto(rrq_packet)
@@ -211,6 +199,7 @@ async def test_options_negotiation(tftp_server):
         transport.close()
         await server.shutdown()
         await server_task
+
 
 @pytest.mark.asyncio
 async def test_retry_mechanism(tftp_server):
@@ -234,29 +223,21 @@ async def test_retry_mechanism(tftp_server):
 
     try:
         loop = asyncio.get_running_loop()
-        transport, protocol = await loop.create_datagram_endpoint(
-            lambda: TestProtocol(),
-            local_addr=('127.0.0.1', 0)
-        )
+        transport, protocol = await loop.create_datagram_endpoint(lambda: TestProtocol(), local_addr=("127.0.0.1", 0))
 
         assert transport is not None, "Failed to create transport"
 
-        rrq_packet = (
-            Opcode.RRQ.to_bytes(2, 'big') +
-            b'test.txt\x00' +
-            b'octet\x00'
-        )
+        rrq_packet = Opcode.RRQ.to_bytes(2, "big") + b"test.txt\x00" + b"octet\x00"
 
-        transport.sendto(rrq_packet, ('127.0.0.1', server_port))
+        transport.sendto(rrq_packet, ("127.0.0.1", server_port))
 
         await asyncio.sleep(server.timeout * 2)
 
-        data_packets = [p for p in protocol.received_packets
-                       if p[0:2] == Opcode.DATA.to_bytes(2, 'big')]
+        data_packets = [p for p in protocol.received_packets if p[0:2] == Opcode.DATA.to_bytes(2, "big")]
 
         assert len(data_packets) > 1, "Server should have retried sending DATA packet"
 
-        block_numbers = {int.from_bytes(p[2:4], 'big') for p in data_packets}
+        block_numbers = {int.from_bytes(p[2:4], "big") for p in data_packets}
         assert len(block_numbers) == 1, "All retried packets should be for the same block"
         assert 1 in block_numbers, "First block number should be 1"
 
@@ -278,13 +259,13 @@ async def test_invalid_options_handling(tftp_server):
         transport, _ = await create_test_client(server.port)
 
         rrq_packet = (
-            Opcode.RRQ.to_bytes(2, 'big') +
-            b'test.txt\x00' +
-            b'octet\x00' +
-            b'blksize\x00' +
-            b'invalid\x00' +
-            b'timeout\x00' +
-            b'999999\x00'
+            Opcode.RRQ.to_bytes(2, "big")
+            + b"test.txt\x00"
+            + b"octet\x00"
+            + b"blksize\x00"
+            + b"invalid\x00"
+            + b"timeout\x00"
+            + b"999999\x00"
         )
 
         transport.sendto(rrq_packet)

@@ -17,15 +17,21 @@ from jumpstarter.driver import Driver, export
 
 class TftpError(Exception):
     """Base exception for TFTP server errors"""
+
     pass
+
 
 class ServerNotRunning(TftpError):
     """Server is not running"""
+
     pass
+
 
 class FileNotFound(TftpError):
     """File not found"""
+
     pass
+
 
 @dataclass(kw_only=True)
 class Tftp(Driver):
@@ -40,7 +46,7 @@ class Tftp(Driver):
     """
 
     root_dir: str = "/var/lib/tftpboot"
-    host: str = field(default='')
+    host: str = field(default="")
     port: int = 69
     server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: Optional[threading.Thread] = field(init=False, default=None)
@@ -53,7 +59,7 @@ class Tftp(Driver):
             super().__post_init__()
 
         os.makedirs(self.root_dir, exist_ok=True)
-        if self.host == '':
+        if self.host == "":
             self.host = self.get_default_ip()
 
     def get_default_ip(self):
