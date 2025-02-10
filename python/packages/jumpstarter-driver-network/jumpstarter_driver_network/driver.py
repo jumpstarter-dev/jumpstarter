@@ -54,9 +54,18 @@ class TcpNetwork(NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class UdpNetwork(NetworkInterface, Driver):
-    """
+    '''
     UdpNetwork is a driver for connecting to UDP sockets
-    """
+
+    >>> config = f"""
+    ... type: jumpstarter_driver_network.driver.UdpNetwork
+    ... config:
+    ...   host: 127.0.0.1
+    ...   port: 41336
+    ... """
+    >>> with run(config) as udp:
+    ...     pass
+    '''
 
     host: str
     port: int
@@ -71,9 +80,17 @@ class UdpNetwork(NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class UnixNetwork(NetworkInterface, Driver):
-    """
+    '''
     UnixNetwork is a driver for connecting to Unix domain sockets
-    """
+
+    >>> config = f"""
+    ... type: jumpstarter_driver_network.driver.UnixNetwork
+    ... config:
+    ...   path: /tmp/example.sock
+    ... """
+    >>> with run(config) as unix:
+    ...     pass
+    '''
 
     path: str
 

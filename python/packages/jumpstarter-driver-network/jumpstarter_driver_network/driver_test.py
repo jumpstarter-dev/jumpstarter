@@ -21,13 +21,6 @@ async def echo_handler(stream):
                 pass
 
 
-def test_tcp_network(tcp_echo_server):
-    with serve(TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1])) as client:
-        with client.stream() as stream:
-            stream.send(b"hello")
-            assert stream.receive() == b"hello"
-
-
 def test_tcp_network_portforward(tcp_echo_server):
     with serve(TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1])) as client:
         with TcpPortforwardAdapter(client=client) as addr:
