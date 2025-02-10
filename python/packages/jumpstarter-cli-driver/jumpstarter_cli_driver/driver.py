@@ -6,8 +6,8 @@ from jumpstarter_cli_common import make_table
 
 @click.command("list")
 async def list_drivers():
-    click.echo(
-        make_table(
-            ["NAME", "TYPE"], [{"NAME": e.name, "TYPE": e.value} for e in entry_points(group="jumpstarter.drivers")]
-        )
-    )
+    drivers = list(entry_points(group="jumpstarter.drivers"))
+    if not drivers:
+        click.echo("No drivers found.")
+    else:
+        click.echo(make_table(["NAME", "TYPE"], [{"NAME": e.name, "TYPE": e.value.replace(":", ".")} for e in drivers]))
