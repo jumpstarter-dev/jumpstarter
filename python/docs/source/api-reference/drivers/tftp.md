@@ -26,7 +26,7 @@ export:
 ## TftpServerClient API
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_tftp.client.TftpServerClient
+.. autoclass:: jumpstarter_driver_tftp.client.TftpServerClient()
    :members:
    :show-inheritance:
 ```
