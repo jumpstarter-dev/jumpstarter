@@ -65,4 +65,4 @@ omit = ["conftest.py", "test_*.py", "*_test.py", "*_pb2.py", "*_pb2_grpc.py"]
 skip_empty = true
 
 [tool.pytest.ini_options]
-addopts = "--capture=no --doctest-modules --cov --cov-report=html --cov-report=xml --cov-append "
+addopts = "--capture=no --doctest-modules --cov --cov-report=html --cov-report=xml"
