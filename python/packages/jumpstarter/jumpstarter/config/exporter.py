@@ -34,6 +34,10 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
         with open(path) as f:
             return cls.model_validate(yaml.safe_load(f))
 
+    @classmethod
+    def from_str(cls, config: str) -> ExporterConfigV1Alpha1DriverInstance:
+        return cls.model_validate(yaml.safe_load(config))
+
 
 class ExporterConfigV1Alpha1(BaseModel):
     BASE_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")

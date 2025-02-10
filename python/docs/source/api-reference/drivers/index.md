@@ -8,6 +8,7 @@ Drivers packages from the [drivers](https://github.com/jumpstarter-dev/jumpstart
 
 ```{toctree}
 can.md
+network.md
 pyserial.md
 sdwire.md
 tftp.md
