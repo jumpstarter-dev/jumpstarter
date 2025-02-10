@@ -164,10 +164,10 @@ from jumpstarter_testing.pytest import JumpstarterTest
 
 class MyTest(JumpstarterTest):
     def test_power_on(self, client):
-        assert client.power.on() == "ok"
+        client.power.on()
 
     def test_power_off(self, client):
-        assert client.power.off() == "ok"
+        client.power.off()
 ```
 
 ```shell

@@ -6,6 +6,7 @@ from jumpstarter_testing.pytest import JumpstarterTest
 
 log = logging.getLogger(__name__)
 
+
 class TestResource(JumpstarterTest):
     filter_labels = {"board": "rpi4"}
 
