@@ -62,6 +62,15 @@ class UnixNetwork(NetworkInterface, Driver):
 
 
 class EchoNetwork(NetworkInterface, Driver):
+    """
+    EchoNetwork is a mock driver implementing the NetworkInterface
+
+    >>> with serve(EchoNetwork()) as echo:
+    ...     with echo.stream() as conn:
+    ...         conn.send(b"hello")
+    ...         assert conn.receive() == b"hello"
+    """
+
     @exportstream
     @asynccontextmanager
     async def connect(self):

@@ -7,16 +7,9 @@ import pytest
 from anyio.from_thread import start_blocking_portal
 
 from .adapters import TcpPortforwardAdapter, UnixPortforwardAdapter
-from .driver import EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
+from .driver import TcpNetwork, UdpNetwork, UnixNetwork
 from jumpstarter.common import TemporaryTcpListener, TemporaryUnixListener
 from jumpstarter.common.utils import serve
-
-
-def test_echo_network():
-    with serve(EchoNetwork()) as client:
-        with client.stream() as stream:
-            stream.send(b"hello")
-            assert stream.receive() == b"hello"
 
 
 async def echo_handler(stream):
