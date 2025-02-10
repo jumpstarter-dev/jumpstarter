@@ -122,12 +122,12 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
         self.off()
 
     @export
-    def on(self):
-        return self.control("on")
+    def on(self) -> None:
+        self.control("on")
 
     @export
-    def off(self):
-        return self.control("off")
+    def off(self) -> None:
+        self.control("off")
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:

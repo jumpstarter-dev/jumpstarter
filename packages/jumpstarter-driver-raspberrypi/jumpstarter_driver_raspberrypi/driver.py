@@ -26,14 +26,14 @@ class DigitalOutput(Driver):
         super().close()
 
     @export
-    def off(self):
+    def off(self) -> None:
         if not isinstance(self.device, DigitalOutputDevice):
             self.device.close()
             self.device = DigitalOutputDevice(pin=self.pin, initial_value=None)
         self.device.off()
 
     @export
-    def on(self):
+    def on(self) -> None:
         if not isinstance(self.device, DigitalOutputDevice):
             self.device.close()
             self.device = DigitalOutputDevice(pin=self.pin, initial_value=None)

@@ -49,7 +49,7 @@ async def test_router(mock_controller, monkeypatch):
                     monkeypatch.setattr(lease, "handle_async", handle_async)
 
                     async with lease.connect_async() as client:
-                        assert await client.call_async("on") == "ok"
+                        await client.call_async("on")
                 tg.cancel_scope.cancel()
 
 
@@ -97,12 +97,12 @@ async def test_controller(mock_controller):
                     unsafe=True,
                 ) as lease:
                     async with lease.connect_async() as client:
-                        assert await client.call_async("on") == "ok"
+                        await client.call_async("on")
                         # test concurrent connections
                         async with lease.connect_async() as client2:
-                            assert await client2.call_async("on") == "ok"
+                            await client2.call_async("on")
 
                     async with lease.connect_async() as client:
-                        assert await client.call_async("on") == "ok"
+                        await client.call_async("on")
 
             tg.cancel_scope.cancel()

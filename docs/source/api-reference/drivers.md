@@ -19,16 +19,9 @@ This project is still evolving, so these docs may be incomplete or out-of-date.
 ```
 
 ## Example
-```{testsetup} *
-import jumpstarter.common.importlib
-
-def import_class(class_path, allow, unsafe):
-    return globals()["ExampleClient"]
-
-jumpstarter.common.importlib.import_class = import_class
-```
-
 ```{testcode}
+from sys import modules
+from types import SimpleNamespace
 from anyio import connect_tcp, sleep
 from contextlib import asynccontextmanager
 from collections.abc import Generator
@@ -73,6 +66,8 @@ class ExampleClient(DriverClient):
 
     def echo_generator(self, message) -> Generator[str, None, None]:
         yield from self.streamingcall("echo_generator", message)
+
+modules["example"] = SimpleNamespace(ExampleClient=ExampleClient)
 
 with serve(ExampleDriver()) as client:
     print(client.echo("hello"))

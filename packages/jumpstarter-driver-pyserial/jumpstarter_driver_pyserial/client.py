@@ -25,6 +25,10 @@ class PySerialClient(DriverClient):
         self._context_manager = self.pexpect()
         return self._context_manager.__enter__()
 
+    def close(self):
+        if hasattr(self, "_context_manager"):
+            self._context_manager.__exit__(None, None, None)
+
     @contextmanager
     def pexpect(self):
         """

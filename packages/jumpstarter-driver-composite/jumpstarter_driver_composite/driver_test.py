@@ -1,23 +1,22 @@
 
-from jumpstarter_driver_composite.driver import Composite
+from jumpstarter_driver_power.driver import MockPower
 
-from jumpstarter.driver import Driver
+from .driver import Composite
+from jumpstarter.common.utils import serve
 
 
-def test_composite_basic():
-    class SimpleDriver(Driver):
-        @classmethod
-        def client(cls) -> str:
-            return "test.client.SimpleClient"
-
-    child1 = SimpleDriver()
-    child2 = SimpleDriver()
-
-    composite = Composite(children={
-        "child1": child1,
-        "child2": child2
-    })
-
-    assert len(composite.children) == 2
-    assert composite.children["child1"] == child1
-    assert composite.children["child2"] == child2
+def test_drivers_composite():
+    with serve(
+        Composite(
+            children={
+                "power0": MockPower(),
+                "composite1": Composite(
+                    children={
+                        "power1": MockPower(),
+                    },
+                ),
+            },
+        )
+    ) as client:
+        client.power0.on()
+        client.composite1.power1.on()

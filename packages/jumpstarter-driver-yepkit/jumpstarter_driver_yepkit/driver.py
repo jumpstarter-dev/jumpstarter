@@ -11,25 +11,11 @@ from jumpstarter.driver import Driver, export
 VID = 0x04D8
 PID = 0xF2F7
 
-PORT_UP_COMMANDS = {
-    '1': 0x11,
-    '2': 0x12,
-    '3': 0x13,
-    'all': 0x1A
-}
+PORT_UP_COMMANDS = {"1": 0x11, "2": 0x12, "3": 0x13, "all": 0x1A}
 
-PORT_DOWN_COMMANDS = {
-    '1': 0x01,
-    '2': 0x02,
-    '3': 0x03,
-    'all': 0x0A
-}
+PORT_DOWN_COMMANDS = {"1": 0x01, "2": 0x02, "3": 0x03, "all": 0x0A}
 
-PORT_STATUS_COMMANDS = {
-    '1': 0x21,
-    '2': 0x22,
-    '3': 0x23
-}
+PORT_STATUS_COMMANDS = {"1": 0x21, "2": 0x22, "3": 0x23}
 
 VALID_DEFAULTS = ["on", "off", "keep"]
 
@@ -37,9 +23,11 @@ VALID_DEFAULTS = ["on", "off", "keep"]
 _USB_DEVS = {}
 _USB_DEVS_LOCK = threading.Lock()  # Lock for synchronizing access, we don't do multithread, but just in case..
 
+
 @dataclass(kw_only=True)
 class Ykush(PowerInterface, Driver):
-    """ driver for Yepkit Ykush USB Hub with Power control """
+    """driver for Yepkit Ykush USB Hub with Power control"""
+
     serial: str | None = field(default=None)
     default: str = "off"
     port: str = "all"
@@ -52,12 +40,10 @@ class Ykush(PowerInterface, Driver):
 
         keys = PORT_UP_COMMANDS.keys()
         if self.port not in keys:
-            raise ValueError(
-                f"The ykush driver port must be any of the following values: {keys}")
+            raise ValueError(f"The ykush driver port must be any of the following values: {keys}")
 
         if self.default not in VALID_DEFAULTS:
-            raise ValueError(
-                f"The ykush driver default must be any of the following values: {VALID_DEFAULTS}")
+            raise ValueError(f"The ykush driver default must be any of the following values: {VALID_DEFAULTS}")
 
         with _USB_DEVS_LOCK:
             # another instance already claimed this device?
@@ -75,8 +61,7 @@ class Ykush(PowerInterface, Driver):
                 if serial == self.serial or self.serial is None:
                     _USB_DEVS[serial] = dev
                     if self.serial is None:
-                        self.logger.warning(
-                            f"No serial number provided for ykush, using the first one found: {serial}")
+                        self.logger.warning(f"No serial number provided for ykush, using the first one found: {serial}")
                     self.serial = serial
                     self.dev = dev
                     return
@@ -86,7 +71,7 @@ class Ykush(PowerInterface, Driver):
     def _send_cmd(self, cmd, report_size=64):
         out_ep, in_ep = self._get_endpoints(self.dev)
         out_buf = [0x00] * report_size
-        out_buf[0] = cmd    # YKUSH command
+        out_buf[0] = cmd  # YKUSH command
 
         # Write to the OUT endpoint
         out_ep.write(out_buf)
@@ -103,15 +88,11 @@ class Ykush(PowerInterface, Driver):
         interface = cfg[(0, 0)]
 
         out_endpoint = usb.util.find_descriptor(
-            interface,
-            custom_match=lambda e: \
-                usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT
+            interface, custom_match=lambda e: usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT
         )
 
         in_endpoint = usb.util.find_descriptor(
-            interface,
-            custom_match=lambda e: \
-                usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN
+            interface, custom_match=lambda e: usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN
         )
 
         if not out_endpoint or not in_endpoint:
@@ -127,18 +108,16 @@ class Ykush(PowerInterface, Driver):
             self.off()
 
     @export
-    def on(self):
+    def on(self) -> None:
         self.logger.info(f"Power ON for Ykush {self.serial} on port {self.port}")
         cmd = PORT_UP_COMMANDS.get(self.port)
         _ = self._send_cmd(cmd)
-        return
 
     @export
-    def off(self):
+    def off(self) -> None:
         self.logger.info(f"Power OFF for Ykush {self.serial} on port {self.port}")
         cmd = PORT_DOWN_COMMANDS.get(self.port)
         _ = self._send_cmd(cmd)
-        return
 
     @export
     def read(self) -> AsyncGenerator[PowerReading, None]:

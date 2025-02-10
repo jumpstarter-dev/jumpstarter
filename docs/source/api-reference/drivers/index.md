@@ -11,6 +11,6 @@ can.md
 pyserial.md
 sdwire.md
 snmp.md
+tftp.md
 ustreamer.md
 yepkit.md
-```

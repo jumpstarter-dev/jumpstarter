@@ -8,10 +8,10 @@ from jumpstarter.client import DriverClient
 
 
 class PowerClient(DriverClient):
-    def on(self):
+    def on(self) -> None:
         self.call("on")
 
-    def off(self):
+    def off(self) -> None:
         self.call("off")
 
     def cycle(self, wait: int = 2):
@@ -37,13 +37,11 @@ class PowerClient(DriverClient):
         def on():
             """Power on"""
             self.on()
-            click.echo("Powered on")
 
         @base.command()
         def off():
             """Power off"""
             self.off()
-            click.echo("Powered off")
 
         @base.command()
         @click.option('--wait', '-w', default=2, help='Wait time in seconds between off and on')
