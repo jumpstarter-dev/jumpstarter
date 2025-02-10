@@ -15,6 +15,9 @@ dependencies = [
     "pyudev>=0.24.3",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+SDWire = "jumpstarter_driver_sdwire.driver:SDWire"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",

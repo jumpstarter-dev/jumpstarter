@@ -15,6 +15,9 @@ dependencies = [
     "asyncclick>=8.1.7.2"
 ]
 
+[project.entry-points."jumpstarter.adapters"]
+Opendal = "jumpstarter_driver_opendal.adapters:OpendalAdapter"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",

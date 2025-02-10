@@ -16,6 +16,11 @@ dependencies = [
     "can-isotp>=2.0.6",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+Can = "jumpstarter_driver_can.driver:Can"
+IsoTpPython = "jumpstarter_driver_can.driver:IsoTpPython"
+IsoTpSocket = "jumpstarter_driver_can.driver:IsoTpSocket"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",
