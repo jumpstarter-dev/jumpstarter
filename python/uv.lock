@@ -1195,6 +1195,8 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "types-pexpect" },
+    { name = "types-pyserial" },
 ]
 
 [package.metadata]
@@ -1209,6 +1211,8 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
+    { name = "types-pyserial", specifier = ">=3.5.0.20250130" },
 ]
 
 [[package]]
@@ -2644,6 +2648,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b3/73/57efab729506a8d4b89814f1e356ec8f3369de0ed4fd7e7616974d09646d/trio-0.28.0.tar.gz", hash = "sha256:4e547896fe9e8a5658e54e4c7c5fa1db748cbbbaa7c965e7d40505b928c73c05", size = 580318 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b4/04/9954a59e1fb6732f5436225c9af963811d7b24ea62a8bf96991f2cb8c26e/trio-0.28.0-py3-none-any.whl", hash = "sha256:56d58977acc1635735a96581ec70513cc781b8b6decd299c487d3be2a721cd94", size = 486317 },
+]
+
+[[package]]
+name = "types-pexpect"
+version = "4.9.0.20241208"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/8b/2ac0c1db88bdc441d21477f151a074b1789aa3a4deac571b079a097bd987/types_pexpect-4.9.0.20241208.tar.gz", hash = "sha256:bbca0d0819947a719989a5cfe83641d9212bef893e2f0a7a01e47926bc82401d", size = 13222 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/c6/14c23e04bae6a83e051da86c1670684e59acadab333a8497384aa201defd/types_pexpect-4.9.0.20241208-py3-none-any.whl", hash = "sha256:1928f478528454f0fea3495c16cf1ee2e67fca5c9fe97d60b868ac48c1fd5633", size = 17085 },
+]
+
+[[package]]
+name = "types-pyserial"
+version = "3.5.0.20250130"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/09/26350878b1f0e537e21b9493b4499c887785a29425a3e831efc50fe14a9a/types_pyserial-3.5.0.20250130.tar.gz", hash = "sha256:bc23c799bf27ff5105ee6b7cb973d47ba1f222ad8f0a4223c0b0a979bd671f3e", size = 19325 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/a1/75e2ab241987f678fe3ec19ee35145fad23140613c594820f0523259c86a/types_pyserial-3.5.0.20250130-py3-none-any.whl", hash = "sha256:cd5dccb65fe83e2741853aaf45caabeecfcd4c5d050107b5e56f586b3d0f46cd", size = 25041 },
 ]
 
 [[package]]
