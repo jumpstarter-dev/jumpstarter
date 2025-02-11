@@ -55,7 +55,6 @@ clean: clean-docs clean-venv clean-build clean-test
 
 .PHONY: sync docs test test-packages build clean-test clean-docs clean-venv clean-build \
 	mypy-jumpstarter \
-	mypy-jumpstarter-cli \
 	mypy-jumpstarter-cli-admin \
 	mypy-jumpstarter-cli-client \
 	mypy-jumpstarter-driver-can \
@@ -66,5 +65,4 @@ clean: clean-docs clean-venv clean-build clean-test
 	mypy-jumpstarter-driver-tftp \
 	mypy-jumpstarter-driver-yepkit \
 	mypy-jumpstarter-kubernetes \
-	mypy-jumpstarter-protocol \
-	mypy-jumpstarter-testing
+	mypy-jumpstarter-protocol
