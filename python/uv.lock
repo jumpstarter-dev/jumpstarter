@@ -1105,6 +1105,8 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "types-paramiko" },
+    { name = "types-pexpect" },
     { name = "websocket-client" },
 ]
 
@@ -1120,6 +1122,8 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "types-paramiko", specifier = ">=3.5.0.20240928" },
+    { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
     { name = "websocket-client", specifier = ">=1.8.0" },
 ]
 
@@ -2648,6 +2652,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b3/73/57efab729506a8d4b89814f1e356ec8f3369de0ed4fd7e7616974d09646d/trio-0.28.0.tar.gz", hash = "sha256:4e547896fe9e8a5658e54e4c7c5fa1db748cbbbaa7c965e7d40505b928c73c05", size = 580318 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b4/04/9954a59e1fb6732f5436225c9af963811d7b24ea62a8bf96991f2cb8c26e/trio-0.28.0-py3-none-any.whl", hash = "sha256:56d58977acc1635735a96581ec70513cc781b8b6decd299c487d3be2a721cd94", size = 486317 },
+]
+
+[[package]]
+name = "types-paramiko"
+version = "3.5.0.20240928"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ae/00/733b05fa97328becc7606301d9ae4c7ec7ec9e92324b8420208e397f3ac7/types-paramiko-3.5.0.20240928.tar.gz", hash = "sha256:79dd9b2ee510b76a3b60d8ac1f3f348c45fcecf01347ca79e14db726bbfc442d", size = 23213 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/e5/afb514829e7184e7518a62c014dc364f7a9d47f9112ff26c63835cbf0de5/types_paramiko-3.5.0.20240928-py3-none-any.whl", hash = "sha256:cda0aff4905fe8efe4b5448331a80e943d42a796bd4beb77a3eed3485bc96a85", size = 34016 },
 ]
 
 [[package]]
