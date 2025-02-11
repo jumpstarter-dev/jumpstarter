@@ -229,7 +229,7 @@ func main() {
 		Signer: oidcSigner,
 		Cert:   oidcCert,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create service", "service", "Dashboard")
+		setupLog.Error(err, "unable to create service", "service", "OIDC")
 		os.Exit(1)
 	}
 
