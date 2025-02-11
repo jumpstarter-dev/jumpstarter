@@ -19,6 +19,9 @@ doctest:
 test-%: packages/%
 	uv run --isolated --directory $< pytest
 
+mypy-%: packages/%
+	uv run --isolated --directory $< mypy .
+
 test-packages: $(addprefix test-,$(PKG_TARGETS))
 
 clean-venv:
