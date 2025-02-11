@@ -24,6 +24,8 @@ mypy-%: packages/%
 
 test-packages: $(addprefix test-,$(PKG_TARGETS))
 
+mypy-packages: $(addprefix mypy-,$(PKG_TARGETS))
+
 clean-venv:
 	-rm -rf ./.venv
 	-find . -type d -name __pycache__ -exec rm -r {} \+
@@ -40,6 +42,8 @@ sync:
 	uv sync --all-packages --all-extras
 
 test: test-packages doctest
+
+mypy: mypy-packages
 
 generate:
 	buf generate
