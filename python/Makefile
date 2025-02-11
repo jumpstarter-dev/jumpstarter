@@ -60,7 +60,6 @@ clean: clean-docs clean-venv clean-build clean-test
 	mypy-jumpstarter-cli-client \
 	mypy-jumpstarter-driver-can \
 	mypy-jumpstarter-driver-dutlink \
-	mypy-jumpstarter-driver-http \
 	mypy-jumpstarter-driver-network \
 	mypy-jumpstarter-driver-raspberrypi \
 	mypy-jumpstarter-driver-sdwire \

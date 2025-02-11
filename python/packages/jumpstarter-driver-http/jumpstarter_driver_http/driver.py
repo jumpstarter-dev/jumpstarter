@@ -23,7 +23,7 @@ class HttpServer(Driver):
     """HTTP Server driver for Jumpstarter"""
 
     root_dir: str = "/var/www"
-    host: str = field(default=None)
+    host: str | None = field(default=None)
     port: int = 8080
     app: web.Application = field(init=False, default_factory=web.Application)
     runner: Optional[web.AppRunner] = field(init=False, default=None)
@@ -203,7 +203,7 @@ class HttpServer(Driver):
         return f"http://{self.host}:{self.port}"
 
     @export
-    def get_host(self) -> str:
+    def get_host(self) -> str | None:
         """
         Get the host IP address of the HTTP server.
 
