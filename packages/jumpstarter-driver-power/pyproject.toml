@@ -15,6 +15,9 @@ dependencies = [
     "asyncclick>=8.1.7.2"
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+MockPower = "jumpstarter_driver_power.driver:MockPower"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",

@@ -22,6 +22,12 @@ dependencies = [
     "asyncclick>=8.1.7.2"
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+Dutlink = "jumpstarter_driver_dutlink.driver:Dutlink"
+DutlinkSerial = "jumpstarter_driver_dutlink.driver:DutlinkSerial"
+DutlinkStorageMux = "jumpstarter_driver_dutlink.driver:DutlinkStorageMux"
+DutlinkPower = "jumpstarter_driver_dutlink.driver:DutlinkPower"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",

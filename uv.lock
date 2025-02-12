@@ -8,6 +8,7 @@ members = [
     "jumpstarter-cli-admin",
     "jumpstarter-cli-client",
     "jumpstarter-cli-common",
+    "jumpstarter-cli-driver",
     "jumpstarter-cli-exporter",
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
@@ -787,6 +788,7 @@ source = { editable = "packages/jumpstarter-cli" }
 dependencies = [
     { name = "jumpstarter-cli-admin" },
     { name = "jumpstarter-cli-client" },
+    { name = "jumpstarter-cli-driver" },
     { name = "jumpstarter-cli-exporter" },
 ]
 
@@ -802,6 +804,7 @@ dev = [
 requires-dist = [
     { name = "jumpstarter-cli-admin", editable = "packages/jumpstarter-cli-admin" },
     { name = "jumpstarter-cli-client", editable = "packages/jumpstarter-cli-client" },
+    { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
     { name = "jumpstarter-cli-exporter", editable = "packages/jumpstarter-cli-exporter" },
 ]
 
@@ -889,6 +892,36 @@ dev = [
 requires-dist = [
     { name = "asyncclick", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-cli-driver"
+source = { editable = "packages/jumpstarter-cli-driver" }
+dependencies = [
+    { name = "asyncclick" },
+    { name = "jumpstarter-cli-common" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
 ]
 
 [package.metadata.requires-dev]

@@ -15,6 +15,10 @@ dependencies = [
     "gpiozero>=2.0.1",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+DigitalInput = "jumpstarter_driver_raspberrypi.driver:DigitalInput"
+DigitalOutput = "jumpstarter_driver_raspberrypi.driver:DigitalOutput"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",
