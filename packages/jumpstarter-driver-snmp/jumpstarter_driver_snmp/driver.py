@@ -16,22 +16,28 @@ class AuthProtocol(str, Enum):
     MD5 = "MD5"
     SHA = "SHA"
 
+
 class PrivProtocol(str, Enum):
     NONE = "NONE"
     DES = "DES"
     AES = "AES"
 
+
 class PowerState(IntEnum):
     OFF = 0
     ON = 1
 
+
 class SNMPError(Exception):
     """Base exception for SNMP errors"""
+
     pass
+
 
 @dataclass(kw_only=True)
 class SNMPServer(Driver):
     """SNMP Power Control Driver"""
+
     host: str = field()
     user: str = field()
     port: int = field(default=161)
@@ -53,7 +59,7 @@ class SNMPServer(Driver):
         except socket.gaierror as e:
             raise SNMPError(f"Failed to resolve hostname {self.host}: {e}") from e
 
-        self.full_oid = tuple(int(x) for x in self.oid.split('.')) + (self.plug,)
+        self.full_oid = tuple(int(x) for x in self.oid.split(".")) + (self.plug,)
 
     def _setup_snmp(self):
         snmp_engine = engine.SnmpEngine()
@@ -66,7 +72,7 @@ class SNMPServer(Driver):
 
         PRIV_PROTOCOLS = {
             PrivProtocol.NONE: config.USM_PRIV_NONE,
-            PrivProtocol.DES: config. USM_PRIV_CBC56_DES,
+            PrivProtocol.DES: config.USM_PRIV_CBC56_DES,
             PrivProtocol.AES: config.USM_PRIV_CFB128_AES,
         }
 
@@ -81,37 +87,17 @@ class SNMPServer(Driver):
             security_level = "authPriv"
 
         if security_level == "noAuthNoPriv":
-            config.add_v3_user(
-                snmp_engine,
-                self.user
-            )
+            config.add_v3_user(snmp_engine, self.user)
         elif security_level == "authNoPriv":
             if not self.auth_key:
                 raise SNMPError("Authentication key required when auth_protocol is specified")
-            config.add_v3_user(
-                snmp_engine,
-                self.user,
-                auth_protocol,
-                self.auth_key
-            )
+            config.add_v3_user(snmp_engine, self.user, auth_protocol, self.auth_key)
         else:
             if not self.auth_key or not self.priv_key:
                 raise SNMPError("Both auth_key and priv_key required for authenticated privacy")
-            config.add_v3_user(
-                snmp_engine,
-                self.user,
-                auth_protocol,
-                self.auth_key,
-                priv_protocol,
-                self.priv_key
-            )
+            config.add_v3_user(snmp_engine, self.user, auth_protocol, self.auth_key, priv_protocol, self.priv_key)
 
-        config.add_target_parameters(
-            snmp_engine,
-            "my-creds",
-            self.user,
-            security_level
-        )
+        config.add_target_parameters(snmp_engine, "my-creds", self.user, security_level)
 
         config.add_target_address(
             snmp_engine,
@@ -122,11 +108,7 @@ class SNMPServer(Driver):
             timeout=int(self.timeout * 100),
         )
 
-        config.add_transport(
-            snmp_engine,
-            udp.DOMAIN_NAME,
-            udp.UdpAsyncioTransport().open_client_mode()
-        )
+        config.add_transport(snmp_engine, udp.DOMAIN_NAME, udp.UdpAsyncioTransport().open_client_mode())
 
         return snmp_engine
 
@@ -137,8 +119,7 @@ class SNMPServer(Driver):
     def _snmp_set(self, state: PowerState):
         result = {"success": False, "error": None}
 
-        def callback(snmpEngine, sendRequestHandle, errorIndication,
-                    errorStatus, errorIndex, varBinds, cbCtx):
+        def callback(snmpEngine, sendRequestHandle, errorIndication, errorStatus, errorIndex, varBinds, cbCtx):
             self.logger.debug(f"Callback {errorIndication} {errorStatus} {errorIndex} {varBinds}")
             if errorIndication:
                 self.logger.error(f"SNMP error: {errorIndication}")
@@ -162,9 +143,9 @@ class SNMPServer(Driver):
             try:
                 asyncio.get_running_loop()
             except RuntimeError:
-              loop = asyncio.new_event_loop()
-              asyncio.set_event_loop(loop)
-              created_loop = True
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                created_loop = True
 
             snmp_engine = self._setup_snmp()
 
