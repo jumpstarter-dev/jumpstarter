@@ -7,7 +7,7 @@ from shutil import which
 import pytest
 from anyio.from_thread import start_blocking_portal
 
-from .adapters import TcpPortforwardAdapter, UnixPortforwardAdapter
+from .adapters import DbusAdapter, TcpPortforwardAdapter, UnixPortforwardAdapter
 from .driver import DbusNetwork, EchoNetwork, TcpNetwork, UdpNetwork, UnixNetwork
 from jumpstarter.common import TemporaryTcpListener, TemporaryUnixListener
 from jumpstarter.common.utils import serve
@@ -129,10 +129,9 @@ def test_tcp_network_performance():
 def test_dbus_network_system(monkeypatch):
     with serve(DbusNetwork(kind="system")) as client:
         assert client.kind == "system"
-        with TcpPortforwardAdapter(client=client) as addr:
+        with DbusAdapter(client=client):
             subprocess.run(
                 ["busctl", "list", "--system", "--no-pager"],
-                env=os.environ | {"DBUS_SYSTEM_BUS_ADDRESS": f"tcp:host={addr[0]},port={addr[1]}"},
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -147,10 +146,9 @@ def test_dbus_network_system(monkeypatch):
 def test_dbus_network_session(monkeypatch):
     with serve(DbusNetwork(kind="session")) as client:
         assert client.kind == "session"
-        with TcpPortforwardAdapter(client=client) as addr:
+        with DbusAdapter(client=client):
             subprocess.run(
                 ["busctl", "list", "--user", "--no-pager"],
-                env=os.environ | {"DBUS_SESSION_BUS_ADDRESS": f"tcp:host={addr[0]},port={addr[1]}"},
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
