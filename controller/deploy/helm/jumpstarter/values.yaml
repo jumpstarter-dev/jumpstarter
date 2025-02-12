@@ -30,6 +30,7 @@ global:
 ## @param jumpstarter-controller.imagePullPolicy Image pull policy for the controller.
 
 ## @param jumpstarter-controller.namespace Namespace where the controller will be deployed, defaults to global.namespace.
+## @param jumpstarter-controller.authenticationConfig Configuration for OIDC authentication, see https://kubernetes.io/docs/reference/access-authn-authz/authentication/#using-authentication-configuration for documentation
 
 ## @section Ingress And Route parameters
 ## @descriptionStart This section contains parameters for the Ingress and Route configurations.
@@ -64,6 +65,34 @@ jumpstarter-controller:
     imagePullPolicy: IfNotPresent
 
     namespace: ""
+
+    authenticationConfig: |
+      apiVersion: jumpstarter.dev/v1alpha1
+      kind: AuthenticationConfiguration
+      # jwt:
+      # - issuer:
+      #     url: https://10.239.206.8:5556/dex
+      #     audiences:
+      #     - jumpstarter
+      #     audienceMatchPolicy: MatchAny
+      #     certificateAuthority: |
+      #       -----BEGIN CERTIFICATE-----
+      #       MIIB/DCCAYKgAwIBAgIIcpC2uS+SjEIwCgYIKoZIzj0EAwMwIDEeMBwGA1UEAxMV
+      #       bWluaWNhIHJvb3QgY2EgNzI5MGI2MCAXDTI1MDIwMzE5MzMyNVoYDzIxMjUwMjAz
+      #       MTkzMzI1WjAgMR4wHAYDVQQDExVtaW5pY2Egcm9vdCBjYSA3MjkwYjYwdjAQBgcq
+      #       hkjOPQIBBgUrgQQAIgNiAAQzezKJ4My35HPeoJvvzTjhS2uJMBYrYfrs5csxZjiy
+      #       q8ORrHM539XhWlA6sVZODhzcF2KL4mC9xKz/yIrsws+LKsIWNHGGmIPEKFYnHBGw
+      #       VBGeARvhpzZP/9frJXAN/8ejgYYwgYMwDgYDVR0PAQH/BAQDAgKEMB0GA1UdJQQW
+      #       MBQGCCsGAQUFBwMBBggrBgEFBQcDAjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1Ud
+      #       DgQWBBSZRBCUuP3ta2xsfjnWIjvgvz4fojAfBgNVHSMEGDAWgBSZRBCUuP3ta2xs
+      #       fjnWIjvgvz4fojAKBggqhkjOPQQDAwNoADBlAjADql5Ks5wh181iUa1ZBnx4XOVe
+      #       l0l7I+mwlwJSPmkZHxruWZTx7gQU4tfDCr+UuzUCMQC2aDXRb17cphipK4gzbExv
+      #       EDLExjhHAqMPrKDmT0jHIi7Bbos38/1tyZ/IoKjLnv0=
+      #       -----END CERTIFICATE-----
+      #   claimMappings:
+      #     username:
+      #       claim: "sub"
+      #       prefix: ""
 
     grpc:
       hostname: ""
