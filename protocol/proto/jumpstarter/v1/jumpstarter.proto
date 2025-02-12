@@ -38,14 +38,6 @@ service ControllerService {
   // audit events are used to track the exporter's activity
   rpc AuditStream(stream AuditStreamRequest) returns (google.protobuf.Empty);
 
-  // List exporters
-  // Returns all exporters matching filter
-  rpc ListExporters(ListExportersRequest) returns (ListExportersResponse);
-
-  // Get exporter
-  // Get information of the exporter of the given uuid
-  rpc GetExporter(GetExporterRequest) returns (GetExporterResponse);
-
   // Get Lease
   rpc GetLease(GetLeaseRequest) returns (GetLeaseResponse);
   // Request Lease
@@ -167,22 +159,6 @@ message LogStreamResponse {
 
 message ResetRequest {}
 message ResetResponse {}
-
-message ListExportersRequest {
-  map<string, string> labels = 1;
-}
-
-message ListExportersResponse {
-  repeated GetReportResponse exporters = 1;
-}
-
-message GetExporterRequest {
-  string uuid = 1;
-}
-
-message GetExporterResponse {
-  GetReportResponse exporter = 1;
-}
 
 message GetLeaseRequest {
   string name = 1;
