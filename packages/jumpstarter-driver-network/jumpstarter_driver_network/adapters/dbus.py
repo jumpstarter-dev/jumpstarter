@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from os import getenv, putenv, unsetenv
+from os import environ, getenv
 
 from .portforward import TcpPortforwardAdapter
 
@@ -18,11 +18,11 @@ class DbusAdapter(TcpPortforwardAdapter):
             case _:
                 raise ValueError(f"invalid bus type: {self.client.kind}")
         self.oldenv = getenv(self.varname)
-        putenv(self.varname, f"tcp:host={addr[0]},port={addr[1]}")
+        environ[self.varname] = f"tcp:host={addr[0]},port={addr[1]}"
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         await super().__aexit__(exc_type, exc_value, traceback)
         if self.oldenv is None:
-            unsetenv(self.varname)
+            del environ[self.varname]
         else:
-            putenv(self.varname, self.oldenv)
+            environ[self.varname] = self.oldenv
