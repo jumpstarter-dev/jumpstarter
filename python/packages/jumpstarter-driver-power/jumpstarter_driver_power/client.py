@@ -1,3 +1,4 @@
+import time
 from collections.abc import Generator
 
 import asyncclick as click
@@ -12,6 +13,15 @@ class PowerClient(DriverClient):
 
     def off(self) -> None:
         self.call("off")
+
+    def cycle(self, wait: int = 2):
+        """Power cycle the device"""
+        self.logger.info("Starting power cycle sequence")
+        self.off()
+        self.logger.info(f"Waiting {wait} seconds...")
+        time.sleep(wait)
+        self.on()
+        self.logger.info("Power cycle sequence complete")
 
     def read(self) -> Generator[PowerReading, None, None]:
         for v in self.streamingcall("read"):
@@ -33,4 +43,10 @@ class PowerClient(DriverClient):
             """Power off"""
             self.off()
 
+        @base.command()
+        @click.option('--wait', '-w', default=2, help='Wait time in seconds between off and on')
+        def cycle(wait):
+            """Power cycle"""
+            click.echo(f"Power cycling with {wait} seconds wait time...")
+            self.cycle(wait)
         return base
