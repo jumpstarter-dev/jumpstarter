@@ -105,10 +105,8 @@ class FileServerClient(DriverClient):
                 self.logger.info(f"Skipping upload of identical file: {filename}")
                 return filename
 
-        if "client_checksum" in self.call("put_file").__code__.co_varnames:
-            return self.call("put_file", filename, src_stream, checksum)
+        return self.call("put_file", *(filename, src_stream))
 
-        return self.call("put_file", filename, src_stream)
 
     def put_file_from_source(self, source: str):
         """
