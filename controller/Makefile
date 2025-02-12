@@ -159,7 +159,7 @@ deploy-exporters: cli
 
 .PHONY: lint-helm
 lint-helm:
-	helm lint deploy/helm/jumpstarter --set jumpstarter-controller.controllerSecret=abcd --set jumpstarter-controller.routerSecret=abcd
+	helm lint deploy/helm/jumpstarter
 
 
 .PHONY: undeploy
@@ -214,10 +214,6 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 grpcurl: $(GRPCURL) ## Download grpcurl locally if necessary.
 $(GRPCURL): $(LOCALBIN)
 	$(call go-install-tool,$(GRPCURL),github.com/fullstorydev/grpcurl/cmd/grpcurl,$(GRPCURL_VERSION))
-
-.PHONY: helm-lint
-helm-lint:
-	helm lint ./deploy/helm/jumpstarter/
 
 .PHONY: kind
 kind: $(KIND)
