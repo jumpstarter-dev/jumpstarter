@@ -41,26 +41,11 @@ export:
 
 ### Methods
 
-#### on()
-Turn power on for the configured outlet.
-
-Returns:
-- str: Confirmation message
-
-#### off()
-Turn power off for the configured outlet.
-
-Returns:
-- str: Confirmation message
-
-#### cycle(wait: int = 2)
-Power cycle the device with a configurable wait period between off and on states.
-
-Parameters:
-- wait: Time to wait in seconds between power off and power on
-
-Returns:
-- str: Confirmation message
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_snmp.client.SNMPServerClient()
+   :members:
+   :show-inheritance:
+```
 
 ## Examples
 
