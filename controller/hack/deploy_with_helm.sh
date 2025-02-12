@@ -107,7 +107,7 @@ kubectl config set-context --current --namespace=jumpstarter-lab
 
 echo -e "${GREEN}Waiting for grpc endpoints to be ready:${NC}"
 for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
-    RETRIES=30
+    RETRIES=60
     echo -e "${GREEN} * Checking ${ep} ... ${NC}"
     while ! ${GRPCURL} -insecure ${ep} list; do
         sleep 2

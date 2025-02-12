@@ -159,7 +159,7 @@ deploy-exporters: cli
 
 .PHONY: lint-helm
 lint-helm:
-	helm lint deploy/helm/jumpstarter --set jumpstarter-controller.controllerSecret=abcd --set jumpstarter-controller.routerSecret=abcd
+	helm lint deploy/helm/jumpstarter
 
 
 .PHONY: undeploy
