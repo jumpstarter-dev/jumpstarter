@@ -19,7 +19,12 @@ doctest:
 test-%: packages/%
 	uv run --isolated --directory $< pytest
 
+mypy-%: packages/%
+	uv run --isolated --directory $< mypy .
+
 test-packages: $(addprefix test-,$(PKG_TARGETS))
+
+mypy-packages: $(addprefix mypy-,$(PKG_TARGETS))
 
 clean-venv:
 	-rm -rf ./.venv
@@ -38,6 +43,8 @@ sync:
 
 test: test-packages doctest
 
+mypy: mypy-packages
+
 generate:
 	buf generate
 
@@ -46,4 +53,16 @@ build:
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs test test-packages build clean-test clean-docs clean-venv clean-build
+.PHONY: sync docs test test-packages build clean-test clean-docs clean-venv clean-build \
+	mypy-jumpstarter \
+	mypy-jumpstarter-cli-admin \
+	mypy-jumpstarter-cli-client \
+	mypy-jumpstarter-driver-can \
+	mypy-jumpstarter-driver-dutlink \
+	mypy-jumpstarter-driver-network \
+	mypy-jumpstarter-driver-raspberrypi \
+	mypy-jumpstarter-driver-sdwire \
+	mypy-jumpstarter-driver-tftp \
+	mypy-jumpstarter-driver-yepkit \
+	mypy-jumpstarter-kubernetes \
+	mypy-jumpstarter-protocol

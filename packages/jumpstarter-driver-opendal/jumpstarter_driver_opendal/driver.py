@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
 
 from anyio.streams.file import FileReadStream, FileWriteStream
 
@@ -30,7 +30,7 @@ class StorageMuxInterface(metaclass=ABCMeta):
 
 @dataclass
 class MockStorageMux(StorageMuxInterface, Driver):
-    file: NamedTemporaryFile = field(default_factory=NamedTemporaryFile)
+    file: _TemporaryFileWrapper = field(default_factory=NamedTemporaryFile)
 
     @export
     async def host(self):

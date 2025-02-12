@@ -25,6 +25,22 @@ class NetworkInterface(metaclass=ABCMeta):
 
 @dataclass(kw_only=True)
 class TcpNetwork(NetworkInterface, Driver):
+    '''
+    TcpNetwork is a driver for connecting to TCP sockets
+
+    >>> addr = getfixture("tcp_echo_server") # start a tcp echo server
+    >>> config = f"""
+    ... type: jumpstarter_driver_network.driver.TcpNetwork
+    ... config:
+    ...   host: {addr[0]} # 127.0.0.1
+    ...   port: {addr[1]} # random port
+    ... """
+    >>> with run(config) as tcp:
+    ...     with tcp.stream() as conn:
+    ...         conn.send(b"hello")
+    ...         assert conn.receive() == b"hello"
+    '''
+
     host: str
     port: int
 
@@ -38,6 +54,19 @@ class TcpNetwork(NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class UdpNetwork(NetworkInterface, Driver):
+    '''
+    UdpNetwork is a driver for connecting to UDP sockets
+
+    >>> config = f"""
+    ... type: jumpstarter_driver_network.driver.UdpNetwork
+    ... config:
+    ...   host: 127.0.0.1
+    ...   port: 41336
+    ... """
+    >>> with run(config) as udp:
+    ...     pass
+    '''
+
     host: str
     port: int
 
@@ -51,6 +80,18 @@ class UdpNetwork(NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class UnixNetwork(NetworkInterface, Driver):
+    '''
+    UnixNetwork is a driver for connecting to Unix domain sockets
+
+    >>> config = f"""
+    ... type: jumpstarter_driver_network.driver.UnixNetwork
+    ... config:
+    ...   path: /tmp/example.sock
+    ... """
+    >>> with run(config) as unix:
+    ...     pass
+    '''
+
     path: str
 
     @exportstream
@@ -62,6 +103,18 @@ class UnixNetwork(NetworkInterface, Driver):
 
 
 class EchoNetwork(NetworkInterface, Driver):
+    '''
+    EchoNetwork is a mock driver implementing the NetworkInterface
+
+    >>> config = """
+    ... type: jumpstarter_driver_network.driver.EchoNetwork
+    ... """
+    >>> with run(config) as echo:
+    ...     with echo.stream() as conn:
+    ...         conn.send(b"hello")
+    ...         assert conn.receive() == b"hello"
+    '''
+
     @exportstream
     @asynccontextmanager
     async def connect(self):

@@ -33,7 +33,7 @@ class Can(Driver):
     """
     The CAN bus instance used for communication.
     """
-    bus: can.Bus = field(init=False)
+    bus: can.BusABC = field(init=False)
 
     """
     A dict of cyclic send tasks to run.
@@ -100,6 +100,7 @@ class Can(Driver):
         """
         if value:
             self.bus.state = value
+            return None
         else:
             return self.bus.state
 
@@ -180,7 +181,7 @@ class IsoTpPython(Driver):
     """
     The CAN bus instance used for communication.
     """
-    bus: can.Bus = field(init=False)
+    bus: can.BusABC = field(init=False)
 
     """
     The CAN bus notifier instance used to receive messages.

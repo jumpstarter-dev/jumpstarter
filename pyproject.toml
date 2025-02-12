@@ -44,6 +44,7 @@ dev = [
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
+    "mypy>=1.15.0",
 ]
 
 [tool.ruff]
@@ -66,4 +67,4 @@ omit = ["conftest.py", "test_*.py", "*_test.py", "*_pb2.py", "*_pb2_grpc.py"]
 skip_empty = true
 
 [tool.pytest.ini_options]
-addopts = "--capture=no --cov --cov-report=html --cov-report=xml --cov-append"
+addopts = "--capture=no --doctest-modules --cov --cov-report=html --cov-report=xml"

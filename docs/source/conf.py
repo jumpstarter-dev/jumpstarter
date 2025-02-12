@@ -49,3 +49,5 @@ myst_substitutions = {
     "version": "0.5.0",
     "controller_version": "0.5.0",
 }
+
+doctest_test_doctest_blocks = ""
