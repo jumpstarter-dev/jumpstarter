@@ -9,7 +9,6 @@
 package jumpstarterv1
 
 import (
-	_ "github.com/jumpstarter-dev/jumpstarter-controller/google/api"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"

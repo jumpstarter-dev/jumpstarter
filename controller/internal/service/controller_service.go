@@ -45,7 +45,6 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
@@ -60,6 +59,7 @@ import (
 
 // ControlerService exposes a gRPC service
 type ControllerService struct {
+	pb.UnimplementedClientServiceServer
 	pb.UnimplementedControllerServiceServer
 	Client       client.WithWatch
 	Scheme       *runtime.Scheme
@@ -216,58 +216,6 @@ func (s *ControllerService) Unregister(
 	logger.Info("exporter unregistered, updated as unavailable")
 
 	return &pb.UnregisterResponse{}, nil
-}
-
-func (s *ControllerService) ListExporters(
-	ctx context.Context,
-	req *pb.ListExportersRequest,
-) (*pb.ListExportersResponse, error) {
-	logger := log.FromContext(ctx)
-
-	if _, err := s.authenticateClient(ctx); err != nil {
-		return nil, err
-	}
-
-	var exporters jumpstarterdevv1alpha1.ExporterList
-
-	selector := labels.Everything()
-
-	for k, v := range req.GetLabels() {
-		requirement, err := labels.NewRequirement(k, selection.Equals, []string{v})
-		if err != nil {
-			logger.Error(err, "unable to create label requirement")
-			return nil, status.Errorf(codes.Internal, "unable to create label requirement")
-		}
-		selector = selector.Add(*requirement)
-	}
-
-	if err := s.Client.List(ctx, &exporters, &client.ListOptions{
-		LabelSelector: selector,
-	}); err != nil {
-		logger.Error(err, "unable to list exporters")
-		return nil, status.Errorf(codes.Internal, "unable to list exporters")
-	}
-
-	results := make([]*pb.GetReportResponse, len(exporters.Items))
-
-	for i, exporter := range exporters.Items {
-		reports := []*pb.DriverInstanceReport{}
-		for _, device := range exporter.Status.Devices {
-			reports = append(reports, &pb.DriverInstanceReport{
-				Uuid:       device.Uuid,
-				ParentUuid: device.ParentUuid,
-				Labels:     device.Labels,
-			})
-		}
-		results[i] = &pb.GetReportResponse{
-			Labels:  exporter.GetLabels(),
-			Reports: reports,
-		}
-	}
-
-	return &pb.ListExportersResponse{
-		Exporters: results,
-	}, nil
 }
 
 func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerService_ListenServer) error {
@@ -696,6 +644,74 @@ func (s *ControllerService) ListLeases(
 	}, nil
 }
 
+func (s *ControllerService) GetExporter(
+	ctx context.Context,
+	req *pb.GetExporterRequest,
+) (*pb.Exporter, error) {
+	_, err := s.authenticateClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	namespace, name, err := ParseExporterIdentifier(req.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := s.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &exporter); err != nil {
+		return nil, err
+	}
+
+	return &pb.Exporter{
+		Name:   req.Name,
+		Labels: exporter.Labels,
+	}, nil
+}
+
+func (s *ControllerService) ListExporters(
+	ctx context.Context,
+	req *pb.ListExportersRequest,
+) (*pb.ListExportersResponse, error) {
+	_, err := s.authenticateClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	namespace, err := ParseNamespaceIdentifier(req.Parent)
+	if err != nil {
+		return nil, err
+	}
+
+	selector, err := labels.Parse(req.Filter)
+	if err != nil {
+		return nil, err
+	}
+
+	var exporters jumpstarterdevv1alpha1.ExporterList
+	if err := s.Client.List(ctx, &exporters, &client.ListOptions{
+		Namespace:     namespace,
+		LabelSelector: selector,
+		Limit:         int64(req.PageSize),
+		Continue:      req.PageToken,
+	}); err != nil {
+		return nil, err
+	}
+
+	var results []*pb.Exporter
+	for _, exporter := range exporters.Items {
+		results = append(results, &pb.Exporter{
+			Name:   UnparseExporterIdentifier(exporter.Namespace, exporter.Name),
+			Labels: exporter.Labels,
+		})
+	}
+
+	return &pb.ListExportersResponse{
+		Exporters:     results,
+		NextPageToken: exporters.Continue,
+	}, nil
+}
+
 func (s *ControllerService) Start(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
@@ -731,6 +747,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	)
 
 	pb.RegisterControllerServiceServer(server, s)
+	pb.RegisterClientServiceServer(server, s)
 
 	// Register reflection service on gRPC server.
 	reflection.Register(server)
