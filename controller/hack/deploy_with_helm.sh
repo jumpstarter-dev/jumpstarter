@@ -113,7 +113,7 @@ for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
         sleep 2
         RETRIES=$((RETRIES-1))
         if [ ${RETRIES} -eq 0 ]; then
-            echo -e "${GREEN} * ${ep} not ready after 60s, exiting ... ${NC}"
+            echo -e "${GREEN} * ${ep} not ready after 120s, exiting ... ${NC}"
             exit 1
         fi
     done
