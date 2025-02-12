@@ -17,4 +17,5 @@ snmp.md
 tftp.md
 ustreamer.md
 yepkit.md
+dbus.md
 ```

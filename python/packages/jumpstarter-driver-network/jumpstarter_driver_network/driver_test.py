@@ -1,3 +1,4 @@
+import os
 import socket
 import subprocess
 import sys
@@ -7,7 +8,7 @@ import pytest
 from anyio.from_thread import start_blocking_portal
 
 from .adapters import TcpPortforwardAdapter, UnixPortforwardAdapter
-from .driver import TcpNetwork, UdpNetwork, UnixNetwork
+from .driver import DbusNetwork, TcpNetwork, UdpNetwork, UnixNetwork
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.utils import serve
 
@@ -100,3 +101,43 @@ def test_tcp_network_performance():
             )
 
         server.terminate()
+
+
+@pytest.mark.skipif(
+    os.getenv("DBUS_SYSTEM_BUS_ADDRESS") is None and not os.path.exists("/run/dbus/system_bus_socket"),
+    reason="dbus system bus not available",
+)
+@pytest.mark.skipif(which("busctl") is None, reason="busctl not available")
+def test_dbus_network_system(monkeypatch):
+    with serve(DbusNetwork(kind="system")) as client:
+        assert client.kind == "system"
+        oldvar = os.getenv("DBUS_SYSTEM_BUS_ADDRESS")
+        with client:
+            assert oldvar != os.getenv("DBUS_SYSTEM_BUS_ADDRESS")
+            subprocess.run(
+                ["busctl", "list", "--system", "--no-pager"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        assert oldvar == os.getenv("DBUS_SYSTEM_BUS_ADDRESS")
+
+
+@pytest.mark.skipif(
+    os.getenv("DBUS_SESSION_BUS_ADDRESS") is None and not os.path.exists(f"/run/user/{os.getuid()}/bus"),
+    reason="dbus session bus not available",
+)
+@pytest.mark.skipif(which("busctl") is None, reason="busctl not available")
+def test_dbus_network_session(monkeypatch):
+    with serve(DbusNetwork(kind="session")) as client:
+        assert client.kind == "session"
+        oldvar = os.getenv("DBUS_SESSION_BUS_ADDRESS")
+        with client:
+            assert oldvar != os.getenv("DBUS_SESSION_BUS_ADDRESS")
+            subprocess.run(
+                ["busctl", "list", "--user", "--no-pager"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        assert oldvar == os.getenv("DBUS_SESSION_BUS_ADDRESS")
