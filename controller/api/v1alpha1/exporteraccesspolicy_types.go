@@ -17,47 +17,56 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// ClientSpec defines the desired state of Identity
-type ClientSpec struct {
-	Username *string `json:"username,omitempty"`
+type From struct {
+	ClientSelector metav1.LabelSelector `json:"clientSelector,omitempty"`
 }
 
-// ClientStatus defines the observed state of Identity
-type ClientStatus struct {
+type Policy struct {
+	Priority        int              `json:"priority,omitempty"`
+	From            []From           `json:"from,omitempty"`
+	MaximumDuration *metav1.Duration `json:"maximumDuration,omitempty"`
+	SpotAccess      bool             `json:"spotAccess,omitempty"`
+}
+
+// ExporterAccessPolicySpec defines the desired state of ExporterAccessPolicy.
+type ExporterAccessPolicySpec struct {
+	ExporterSelector metav1.LabelSelector `json:"exporterSelector,omitempty"`
+	Policies         []Policy             `json:"policies,omitempty"`
+}
+
+// ExporterAccessPolicyStatus defines the observed state of ExporterAccessPolicy.
+type ExporterAccessPolicyStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
-	Endpoint   string                       `json:"endpoint,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// Client is the Schema for the identities API
-type Client struct {
+// ExporterAccessPolicy is the Schema for the exporteraccesspolicies API.
+type ExporterAccessPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ClientSpec   `json:"spec,omitempty"`
-	Status ClientStatus `json:"status,omitempty"`
+	Spec   ExporterAccessPolicySpec   `json:"spec,omitempty"`
+	Status ExporterAccessPolicyStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// ClientList contains a list of Identity
-type ClientList struct {
+// ExporterAccessPolicyList contains a list of ExporterAccessPolicy.
+type ExporterAccessPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Client `json:"items"`
+	Items           []ExporterAccessPolicy `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Client{}, &ClientList{})
+	SchemeBuilder.Register(&ExporterAccessPolicy{}, &ExporterAccessPolicyList{})
 }

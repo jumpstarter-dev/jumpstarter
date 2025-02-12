@@ -29,17 +29,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 )
 
 // ExporterReconciler reconciles a Exporter object
 type ExporterReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Signer *oidc.Signer
 }
 
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/finalizers,verbs=update
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -150,12 +154,7 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 }
 
 func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.Exporter) (*corev1.Secret, error) {
-	token, err := SignObjectToken(
-		"https://jumpstarter.dev/controller",
-		[]string{"https://jumpstarter.dev/controller"},
-		exporter,
-		r.Scheme,
-	)
+	token, err := r.Signer.Token(authorization.ExporterAuthorizedUsername(exporter, r.Signer.Prefix()))
 	if err != nil {
 		return nil, err
 	}

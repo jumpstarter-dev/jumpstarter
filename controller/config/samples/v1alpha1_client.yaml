@@ -4,5 +4,6 @@ metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
     app.kubernetes.io/managed-by: kustomize
+    client-type: developer
   name: client-sample
 spec: {}

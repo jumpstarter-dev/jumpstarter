@@ -46,3 +46,11 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - exporteraccesspolicies
+  verbs:
+  - get
+  - list
+  - watch
