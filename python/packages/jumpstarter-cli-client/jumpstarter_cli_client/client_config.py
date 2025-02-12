@@ -65,7 +65,7 @@ def create_client_config(
         raise click.ClickException(f"A client with the name '{alias}' already exists.")
 
     config = ClientConfigV1Alpha1(
-        name=alias,
+        alias=alias,
         metadata=ObjectMeta(namespace=namespace, name=name),
         endpoint=endpoint,
         token=token,
@@ -85,12 +85,12 @@ def set_next_client(name: str):
     if (
         user_config is not None
         and user_config.config.current_client is not None
-        and user_config.config.current_client.name == name
+        and user_config.config.current_client.alias == name
     ):
         for c in ClientConfigV1Alpha1.list():
-            if c.name != name:
+            if c.alias != name:
                 # Use the next available client config
-                user_config.use_client(c.name)
+                user_config.use_client(c.alias)
                 return
         # Otherwise, set client to none
         user_config.use_client(None)
@@ -110,7 +110,7 @@ def list_client_configs():
     current_name = None
     if UserConfigV1Alpha1.exists():
         current_client = UserConfigV1Alpha1.load().config.current_client
-        current_name = current_client.name if current_client is not None else None
+        current_name = current_client.alias if current_client is not None else None
 
     configs = ClientConfigV1Alpha1.list()
 
@@ -118,8 +118,8 @@ def list_client_configs():
 
     def make_row(c: ClientConfigV1Alpha1):
         return {
-            "CURRENT": "*" if current_name == c.name else "",
-            "NAME": c.name,
+            "CURRENT": "*" if current_name == c.alias else "",
+            "NAME": c.alias,
             "ENDPOINT": c.endpoint,
             "PATH": str(c.path),
         }

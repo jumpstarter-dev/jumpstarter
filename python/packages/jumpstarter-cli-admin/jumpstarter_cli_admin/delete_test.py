@@ -29,7 +29,7 @@ CLIENT_ENDPOINT = "grpc://example.com:443"
 CLIENT_TOKEN = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 
 CLIENT_CONFIG = ClientConfigV1Alpha1(
-    name=CLIENT_NAME,
+    alias=CLIENT_NAME,
     metadata=ObjectMeta(namespace="default", name=CLIENT_NAME),
     endpoint=CLIENT_ENDPOINT,
     token=CLIENT_TOKEN,

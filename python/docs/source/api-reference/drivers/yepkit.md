@@ -36,13 +36,14 @@ export:
 The yepkit ykush driver provides a `PowerClient` with the following API:
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_power.client.PowerClient
+.. autoclass:: jumpstarter_driver_power.client.PowerClient()
     :members: on, off
 ```
 
 ### Examples
 Powering on and off a device
 ```{testcode}
+:skipif: True
 client.power.on()
 time.sleep(1)
 client.power.off()

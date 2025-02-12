@@ -22,6 +22,7 @@ and the configuration required.
 Here is an example Exporter config file:
 
 ```yaml
+# /etc/jumpstarter/exporters/myexporter.yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 metadata:
@@ -40,8 +41,14 @@ export:
 ## Running an Exporter
 
 To run an Exporter on a host system, you must have Python {{requires_python}} installed
-and the required driver packages installed locally.
+and the driver packages specified in the config installed in your current Python
+environment.
 
-Exporters can be run in a privileged container or as a systemd daemon. It is
+```bash
+# Run the exporter myexporter in your local terminal
+$ jmp exporter run myexporter
+```
+
+Exporters can also be run in a privileged container or as a systemd daemon. It is
 recommended to run the Exporter service in the background with auto-restart
-in case something goes wrong.
+in case something goes wrong and it needs to be restarted.

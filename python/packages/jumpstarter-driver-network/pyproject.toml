@@ -16,6 +16,18 @@ dependencies = [
     "wsproto>=1.2.0"
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+TcpNetwork = "jumpstarter_driver_network.driver:TcpNetwork"
+UdpNetwork = "jumpstarter_driver_network.driver:UdpNetwork"
+UnixNetwork = "jumpstarter_driver_network.driver:UnixNetwork"
+EchoNetwork = "jumpstarter_driver_network.driver:EchoNetwork"
+
+[project.entry-points."jumpstarter.adapters"]
+TcpPortforward = "jumpstarter_driver_network.adapters:TcpPortforwardAdapter"
+UnixPortforward = "jumpstarter_driver_network.adapters:UnixPortforwardAdapter"
+Pexpect = "jumpstarter_driver_network.adapters:PexpectAdapter"
+Novnc = "jumpstarter_driver_network.adapters:NovncAdapter"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",

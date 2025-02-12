@@ -38,9 +38,9 @@ depending on your hardware development needs.
 ### Local-Only
 
 When using Jumpstarter locally, you can easily develop drivers, write automated
-tests, and control your hardware from your development machine
+tests, and control your hardware directly from your development machine.
 
-The *local-only mode* is useful when working directly with hardware on your desk
+The *local-only mode* is useful when working with hardware on your desk
 that you have unlimited access to.
 
 ![local mode](how-it-works-local.svg)

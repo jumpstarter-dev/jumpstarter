@@ -12,7 +12,7 @@ def test_env(pytester: Pytester, monkeypatch):
 
         class TestSample(JumpstarterTest):
             def test_simple(self, client):
-                assert client.on() == "ok"
+                client.on()
     """
     )
 

@@ -7,6 +7,7 @@ jumpstarter-cli = { workspace = true }
 jumpstarter-cli-admin = { workspace = true }
 jumpstarter-cli-client = { workspace = true }
 jumpstarter-cli-common = { workspace = true }
+jumpstarter-cli-driver = { workspace = true }
 jumpstarter-cli-exporter = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
@@ -19,11 +20,13 @@ jumpstarter-driver-power = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }
 jumpstarter-driver-sdwire = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
+jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-protocol = { workspace = true }
 jumpstarter-testing = { workspace = true }
+sphinx-click = { git = "https://github.com/NickCao/sphinx-click" }
 
 [dependency-groups]
 docs = [
@@ -36,7 +39,12 @@ docs = [
     "sphinx-click>=6.0.0",
     "sphinx-substitution-extensions>=2024.10.17",
 ]
-dev = ["ruff==0.9.2", "typos>=1.23.6", "pre-commit>=3.8.0", "esbonio>=0.16.5"]
+dev = [
+    "ruff==0.9.2",
+    "typos>=1.23.6",
+    "pre-commit>=3.8.0",
+    "esbonio>=0.16.5",
+]
 
 [tool.ruff]
 exclude = ["packages/jumpstarter-protocol"]

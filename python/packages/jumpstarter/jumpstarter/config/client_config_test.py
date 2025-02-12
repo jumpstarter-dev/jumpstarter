@@ -26,7 +26,7 @@ def test_client_config_try_from_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfigV1Alpha1.try_from_env()
-    assert config.name == "default"
+    assert config.alias == "default"
     assert config.metadata.namespace == "default"
     assert config.metadata.name == "testclient"
     assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
@@ -48,7 +48,7 @@ def test_client_config_from_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "jumpstarter.drivers.*,vendorpackage.*")
 
     config = ClientConfigV1Alpha1.from_env()
-    assert config.name == "default"
+    assert config.alias == "default"
     assert config.metadata.namespace == "default"
     assert config.metadata.name == "testclient"
     assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
@@ -65,7 +65,7 @@ def test_client_config_from_env_allow_unsafe(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv(JMP_DRIVERS_ALLOW, "UNSAFE")
 
     config = ClientConfigV1Alpha1.from_env()
-    assert config.name == "default"
+    assert config.alias == "default"
     assert config.metadata.namespace == "default"
     assert config.metadata.name == "testclient"
     assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
@@ -105,7 +105,7 @@ drivers:
         f.write(CLIENT_CONFIG)
         f.close()
         config = ClientConfigV1Alpha1.from_file(f.name)
-        assert config.name == f.name.split("/")[-1]
+        assert config.alias == f.name.split("/")[-1]
         assert config.metadata.namespace == "default"
         assert config.metadata.name == "testclient"
         assert config.endpoint == "jumpstarter.my-lab.com:1443"
@@ -175,7 +175,7 @@ def test_client_config_load():
                 ClientConfigV1Alpha1,
                 "from_file",
                 return_value=ClientConfigV1Alpha1(
-                    name="another",
+                    alias="another",
                     metadata=ObjectMeta(namespace="default", name="another"),
                     endpoint="abc",
                     token="123",
@@ -183,7 +183,7 @@ def test_client_config_load():
                 ),
             ) as from_file_mock:
                 value = ClientConfigV1Alpha1.load("another")
-                assert value.name == "another"
+                assert value.alias == "another"
                 get_path_mock.assert_called_once_with("another")
                 from_file_mock.assert_called_once_with(Path(f.name))
                 os.unlink(f.name)
@@ -212,7 +212,7 @@ drivers:
   unsafe: false
 """
     config = ClientConfigV1Alpha1(
-        name="testclient",
+        alias="testclient",
         metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
@@ -247,7 +247,7 @@ drivers:
   unsafe: false
 """
     config = ClientConfigV1Alpha1(
-        name="testclient",
+        alias="testclient",
         metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
@@ -278,7 +278,7 @@ drivers:
   unsafe: true
 """
     config = ClientConfigV1Alpha1(
-        name="testclient",
+        alias="testclient",
         metadata=ObjectMeta(namespace="default", name="testclient"),
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
@@ -322,7 +322,7 @@ drivers:
         monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path(d))
         configs = ClientConfigV1Alpha1.list()
         assert len(configs) == 1
-        assert configs[0].name == "testclient"
+        assert configs[0].alias == "testclient"
 
 
 def test_client_config_list_none(monkeypatch: pytest.MonkeyPatch):

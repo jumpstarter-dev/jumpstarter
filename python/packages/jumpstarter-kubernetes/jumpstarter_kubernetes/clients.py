@@ -104,7 +104,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         endpoint = client.status.endpoint
         token = base64.b64decode(secret.data["token"]).decode("utf8")
         return ClientConfigV1Alpha1(
-            name=name,
+            alias=name,
             metadata=ObjectMeta(
                 namespace=client.metadata.namespace,
                 name=client.metadata.name,

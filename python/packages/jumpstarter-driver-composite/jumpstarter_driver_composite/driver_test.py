@@ -1,3 +1,4 @@
+
 from jumpstarter_driver_power.driver import MockPower
 
 from .driver import Composite
@@ -17,5 +18,5 @@ def test_drivers_composite():
             },
         )
     ) as client:
-        assert client.power0.on() == "ok"
-        assert client.composite1.power1.on() == "ok"
+        client.power0.on()
+        client.composite1.power1.on()

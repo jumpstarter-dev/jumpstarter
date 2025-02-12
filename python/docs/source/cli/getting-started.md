@@ -1,26 +1,21 @@
 # Getting Started
 
-Jumpstarter provides the following command line tools:
+To simplify the management and operation of Jumpstarter, we provide several command-line tools for different use cases. These CLI tools can also be installed together through the `jmpstarter-cli` package and accessed using the `jmp` command for simplicity.
 
-An **admin CLI** tool called `jmpctl`, which is useful for the administration of exporters and
-clients in the distributed service. Installation instructions can be found [here](../installation/service-cli.md).
+Each tool can also be installed separately for users who want to reduce the dependencies on their developer machine or an embedded exporter with limited available resources.
 
-A **client CLI** called `jmp`, you can use it to interact with your connected
-hardware, request leases, write tests, and develop custom drivers for your hardware.
+## Admin CLI `jmp-admin`
 
-A **exporter CLI** called `jmp-exporter`, you can use it to manage local exporter
-configurations, and run transient or persistent exporter instances.
+The `jmp-admin` or `jmp admin` CLI allows administration of exporters and clients
+in a Kubernetes cluster. To use this CLI, you must have a valid `kubeconfig` and
+access to the cluter/namespace where the Jumpstarter controller resides.
 
-The `jmp` and `jmp-exporter` CLI tools are available as part of the `jumpstarter` Python package.
-You can learn how to install this package [here](../installation/python-package.md),
-but it is also available as a container image
-```{code-block}
-:substitutions:
-quay.io/jumpstarter-dev/jumpstarter:{{version}}
-```
+## Client CLI `jmp-client`
 
-To check if you have the client CLI installed, run:
+The `jmp-client` or `jmp client` CLI allows interaction with Jumpstarter clients
+and the management of client configs.
 
-```bash
-$ jmp version
-```
+## Exporter CLI `jmp-exporter`
+
+The `jmp-exporter` or `jmp exporter` CLI allows you to run Jumpstarter exporters
+and management of exporter configs.

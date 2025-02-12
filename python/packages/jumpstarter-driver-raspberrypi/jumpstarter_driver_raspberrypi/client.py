@@ -5,10 +5,10 @@ from jumpstarter.client import DriverClient
 
 @dataclass(kw_only=True)
 class DigitalOutputClient(DriverClient):
-    def off(self):
+    def off(self) -> None:
         self.call("off")
 
-    def on(self):
+    def on(self) -> None:
         self.call("on")
 
 
