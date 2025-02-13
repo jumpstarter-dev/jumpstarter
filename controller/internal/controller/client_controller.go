@@ -73,15 +73,29 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	return ctrl.Result{}, nil
 }
+func (r *ClientReconciler) clientSecretExists(ctx context.Context, client *jumpstarterdevv1alpha1.Client) bool {
+	// NOTE: this could deserve some level of optimization/caching in the future
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, kclient.ObjectKey{
+		Namespace: client.Namespace,
+		Name:      client.Status.Credential.Name,
+	}, secret)
 
+	return err == nil
+}
 func (r *ClientReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	client *jumpstarterdevv1alpha1.Client,
 ) error {
 	logger := log.FromContext(ctx)
 
-	if client.Status.Credential == nil {
-		logger.Info("reconcileStatusCredential: creating credential for client")
+	if client.Status.Credential == nil || !r.clientSecretExists(ctx, client) {
+		if client.Status.Credential != nil {
+			// TODO: Send an alert notification to cluster
+			logger.Info("the client secret has	 ceased to exist, will be recreated", "client", client.Name)
+		} else {
+			logger.Info("reconcileStatusCredential: creating credential for client")
+		}
 		secret, err := r.secretForClient(client)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)

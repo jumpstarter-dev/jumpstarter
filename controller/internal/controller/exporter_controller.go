@@ -86,14 +86,30 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
+func (r *ExporterReconciler) exporterSecretExists(ctx context.Context, exporter *jumpstarterdevv1alpha1.Exporter) bool {
+	// NOTE: this could deserve some level of optimization/caching in the future
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{
+		Namespace: exporter.Namespace,
+		Name:      exporter.Status.Credential.Name,
+	}, secret)
+
+	return err == nil
+}
+
 func (r *ExporterReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
 	logger := log.FromContext(ctx)
 
-	if exporter.Status.Credential == nil {
-		logger.Info("reconcileStatusCredential: creating credential for exporter")
+	if exporter.Status.Credential == nil || !r.exporterSecretExists(ctx, exporter) {
+		if exporter.Status.Credential != nil {
+			// TODO: Send an alert notification to cluster
+			logger.Info("the exporter secret has ceased to exist, will be recreated", "exporter", exporter.Name)
+		} else {
+			logger.Info("reconcileStatusCredential: creating credential for exporter")
+		}
 		secret, err := r.secretForExporter(exporter)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
@@ -105,7 +121,6 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 			Name: secret.Name,
 		}
 	}
-
 	return nil
 }
 
