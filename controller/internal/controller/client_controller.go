@@ -78,6 +78,8 @@ func (r *ClientReconciler) clientSecretExists(
 	ctx context.Context,
 	client *jumpstarterdevv1alpha1.Client,
 ) (bool, error) {
+	logger := log.FromContext(ctx)
+
 	if client.Status.Credential == nil {
 		return false, nil
 	}
@@ -87,8 +89,17 @@ func (r *ClientReconciler) clientSecretExists(
 		Namespace: client.Namespace,
 		Name:      client.Status.Credential.Name,
 	}, secret)
+	if err != nil {
+		return false, kclient.IgnoreNotFound(err)
+	}
 
-	return err == nil, kclient.IgnoreNotFound(err)
+	token, ok := secret.Data["token"]
+	if !ok || r.Signer.Verify(string(token)) != nil {
+		logger.Info("reconcileStatusCredential: the client secret is invalid", "client", client.Name)
+		return false, r.Delete(ctx, secret)
+	}
+
+	return true, nil
 }
 
 func (r *ClientReconciler) reconcileStatusCredential(
