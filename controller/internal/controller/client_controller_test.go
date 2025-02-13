@@ -95,5 +95,36 @@ var _ = Describe("Identity Controller", func() {
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
+
+		It("should reconcile a missing token secret", func() {
+			By("recreating the secret")
+			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+			Expect(err).NotTo(HaveOccurred())
+
+			controllerReconciler := &ClientReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+				Signer: signer,
+			}
+
+			// point the client to a non-existing secret
+			client := &jumpstarterdevv1alpha1.Client{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, client)).To(Succeed())
+
+			client.Status.Credential = &corev1.LocalObjectReference{Name: "non-existing-secret"}
+			Expect(k8sClient.Status().Update(ctx, client)).To(Succeed())
+
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the secret was created")
+			secret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: "default",
+				Name:      resourceName + "-client",
+			}, secret)).To(Succeed())
+		})
 	})
 })
