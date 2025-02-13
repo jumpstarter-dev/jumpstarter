@@ -73,7 +73,14 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	return ctrl.Result{}, nil
 }
-func (r *ClientReconciler) clientSecretExists(ctx context.Context, client *jumpstarterdevv1alpha1.Client) bool {
+
+func (r *ClientReconciler) clientSecretExists(
+	ctx context.Context,
+	client *jumpstarterdevv1alpha1.Client,
+) (bool, error) {
+	if client.Status.Credential == nil {
+		return false, nil
+	}
 	// NOTE: this could deserve some level of optimization/caching in the future
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, kclient.ObjectKey{
@@ -81,18 +88,25 @@ func (r *ClientReconciler) clientSecretExists(ctx context.Context, client *jumps
 		Name:      client.Status.Credential.Name,
 	}, secret)
 
-	return err == nil
+	return err == nil, kclient.IgnoreNotFound(err)
 }
+
 func (r *ClientReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	client *jumpstarterdevv1alpha1.Client,
 ) error {
 	logger := log.FromContext(ctx)
 
-	if client.Status.Credential == nil || !r.clientSecretExists(ctx, client) {
+	exists, err := r.clientSecretExists(ctx, client)
+	if err != nil {
+		logger.Info("reconcileStatusCredential: the client secret's existence cannot be checked", "client", client.Name)
+		return err
+	}
+
+	if !exists {
 		if client.Status.Credential != nil {
 			// TODO: Send an alert notification to cluster
-			logger.Info("the client secret has	 ceased to exist, will be recreated", "client", client.Name)
+			logger.Info("reconcileStatusCredential: the client secret has ceased to exist, will be recreated", "client", client.Name)
 		} else {
 			logger.Info("reconcileStatusCredential: creating credential for client")
 		}
