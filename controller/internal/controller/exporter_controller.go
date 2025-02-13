@@ -209,7 +209,7 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		},
 	}
 	// enable garbage collection on the created resource
-	if err := controllerutil.SetOwnerReference(exporter, secret, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
 		return nil, fmt.Errorf("secretForExporter, error setting owner reference: %w", err)
 	}
 	return secret, nil
@@ -220,5 +220,6 @@ func (r *ExporterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Exporter{}).
 		Owns(&jumpstarterdevv1alpha1.Lease{}).
+		Owns(&corev1.Secret{}).
 		Complete(r)
 }

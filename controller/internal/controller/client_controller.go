@@ -169,7 +169,7 @@ func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client
 		},
 	}
 	// enable garbage collection on the created resource
-	if err := controllerutil.SetOwnerReference(client, secret, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(client, secret, r.Scheme); err != nil {
 		return nil, fmt.Errorf("secretForClient, error setting owner reference: %w", err)
 	}
 	return secret, nil
@@ -179,5 +179,6 @@ func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client
 func (r *ClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Client{}).
+		Owns(&corev1.Secret{}).
 		Complete(r)
 }
