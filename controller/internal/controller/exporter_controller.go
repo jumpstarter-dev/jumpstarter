@@ -86,7 +86,13 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *ExporterReconciler) exporterSecretExists(ctx context.Context, exporter *jumpstarterdevv1alpha1.Exporter) bool {
+func (r *ExporterReconciler) exporterSecretExists(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (bool, error) {
+	if exporter.Status.Credential == nil {
+		return false, nil
+	}
 	// NOTE: this could deserve some level of optimization/caching in the future
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, client.ObjectKey{
@@ -94,7 +100,7 @@ func (r *ExporterReconciler) exporterSecretExists(ctx context.Context, exporter 
 		Name:      exporter.Status.Credential.Name,
 	}, secret)
 
-	return err == nil
+	return err == nil, client.IgnoreNotFound(err)
 }
 
 func (r *ExporterReconciler) reconcileStatusCredential(
@@ -103,7 +109,13 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 ) error {
 	logger := log.FromContext(ctx)
 
-	if exporter.Status.Credential == nil || !r.exporterSecretExists(ctx, exporter) {
+	exists, err := r.exporterSecretExists(ctx, exporter)
+	if err != nil {
+		logger.Info("reconcileStatusCredential: the exporter secret's existence cannot be checked", "exporter", exporter.Name)
+		return err
+	}
+
+	if !exists {
 		if exporter.Status.Credential != nil {
 			// TODO: Send an alert notification to cluster
 			logger.Info("the exporter secret has ceased to exist, will be recreated", "exporter", exporter.Name)
