@@ -90,6 +90,19 @@ func (k *Signer) Register(group gin.IRoutes) {
 	})
 }
 
+func (k *Signer) Verify(token string) error {
+	_, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+		return &k.privatekey.PublicKey, nil
+	},
+		jwt.WithValidMethods([]string{
+			jwt.SigningMethodES256.Alg(),
+		}),
+		jwt.WithIssuer(k.issuer),
+		jwt.WithAudience(k.audience),
+	)
+	return err
+}
+
 func (k *Signer) Token(
 	subject string,
 ) (string, error) {

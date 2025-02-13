@@ -90,6 +90,8 @@ func (r *ExporterReconciler) exporterSecretExists(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (bool, error) {
+	logger := log.FromContext(ctx)
+
 	if exporter.Status.Credential == nil {
 		return false, nil
 	}
@@ -99,8 +101,18 @@ func (r *ExporterReconciler) exporterSecretExists(
 		Namespace: exporter.Namespace,
 		Name:      exporter.Status.Credential.Name,
 	}, secret)
+	if err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
 
-	return err == nil, client.IgnoreNotFound(err)
+	token, ok := secret.Data["token"]
+
+	if !ok || r.Signer.Verify(string(token)) != nil {
+		logger.Info("reconcileStatusCredential: the exporter secret is invalid", "exporter", exporter.Name)
+		return false, r.Delete(ctx, secret)
+	}
+
+	return true, nil
 }
 
 func (r *ExporterReconciler) reconcileStatusCredential(
@@ -118,7 +130,7 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 	if !exists {
 		if exporter.Status.Credential != nil {
 			// TODO: Send an alert notification to cluster
-			logger.Info("the exporter secret has ceased to exist, will be recreated", "exporter", exporter.Name)
+			logger.Info("reconcileStatusCredential: the exporter secret has ceased to exist, will be recreated", "exporter", exporter.Name)
 		} else {
 			logger.Info("reconcileStatusCredential: creating credential for exporter")
 		}
@@ -197,7 +209,7 @@ func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.
 		},
 	}
 	// enable garbage collection on the created resource
-	if err := controllerutil.SetOwnerReference(exporter, secret, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
 		return nil, fmt.Errorf("secretForExporter, error setting owner reference: %w", err)
 	}
 	return secret, nil
@@ -208,5 +220,6 @@ func (r *ExporterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Exporter{}).
 		Owns(&jumpstarterdevv1alpha1.Lease{}).
+		Owns(&corev1.Secret{}).
 		Complete(r)
 }

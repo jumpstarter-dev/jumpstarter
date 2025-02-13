@@ -78,6 +78,8 @@ func (r *ClientReconciler) clientSecretExists(
 	ctx context.Context,
 	client *jumpstarterdevv1alpha1.Client,
 ) (bool, error) {
+	logger := log.FromContext(ctx)
+
 	if client.Status.Credential == nil {
 		return false, nil
 	}
@@ -87,8 +89,17 @@ func (r *ClientReconciler) clientSecretExists(
 		Namespace: client.Namespace,
 		Name:      client.Status.Credential.Name,
 	}, secret)
+	if err != nil {
+		return false, kclient.IgnoreNotFound(err)
+	}
 
-	return err == nil, kclient.IgnoreNotFound(err)
+	token, ok := secret.Data["token"]
+	if !ok || r.Signer.Verify(string(token)) != nil {
+		logger.Info("reconcileStatusCredential: the client secret is invalid", "client", client.Name)
+		return false, r.Delete(ctx, secret)
+	}
+
+	return true, nil
 }
 
 func (r *ClientReconciler) reconcileStatusCredential(
@@ -158,7 +169,7 @@ func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client
 		},
 	}
 	// enable garbage collection on the created resource
-	if err := controllerutil.SetOwnerReference(client, secret, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(client, secret, r.Scheme); err != nil {
 		return nil, fmt.Errorf("secretForClient, error setting owner reference: %w", err)
 	}
 	return secret, nil
@@ -168,5 +179,6 @@ func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client
 func (r *ClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Client{}).
+		Owns(&corev1.Secret{}).
 		Complete(r)
 }
