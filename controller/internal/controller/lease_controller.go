@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
@@ -39,6 +40,17 @@ import (
 type LeaseReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+}
+
+// ApprovedExporter represents an exporter that has been approved for leasing,
+// along with its associated policy and any existing lease.
+type ApprovedExporter struct {
+	// Exporter is the approved exporter
+	Exporter jumpstarterdevv1alpha1.Exporter
+	// ExistingLease is a pointer to any existing lease for this exporter, or nil if none exists
+	ExistingLease *jumpstarterdevv1alpha1.Lease
+	// Policy represents the access policy that approved this exporter
+	Policy jumpstarterdevv1alpha1.Policy
 }
 
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases,verbs=get;list;watch;create;update;patch;delete
@@ -116,51 +128,30 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 	result *ctrl.Result,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
-	logger := log.FromContext(ctx)
 
 	now := time.Now()
 	if !lease.Status.Ended {
-		if lease.Spec.Release {
-			logger.Info("reconcileStatusEndTime: force releasing lease")
-			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-				Status:             metav1.ConditionFalse,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: now,
-				},
-				Reason: "Released",
-			})
+		// if lease has status condition unsatisfiable or invalid, we mark it as ended to avoid reprocessing
+		if meta.IsStatusConditionTrue(lease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)) ||
+			meta.IsStatusConditionTrue(lease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeInvalid)) {
 			lease.Status.Ended = true
-			lease.Status.EndTime = &metav1.Time{
-				Time: now,
-			}
+			lease.Status.EndTime = &metav1.Time{Time: now}
+			return nil
+		} else if lease.Spec.Release {
+			lease.Release(ctx)
 			return nil
 		} else if lease.Status.BeginTime != nil {
 			expiration := lease.Status.BeginTime.Add(lease.Spec.Duration.Duration)
 			if expiration.Before(now) {
-				logger.Info("reconcileStatusEndTime: lease expired")
-				meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-					Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-					Status:             metav1.ConditionFalse,
-					ObservedGeneration: lease.Generation,
-					LastTransitionTime: metav1.Time{
-						Time: time.Now(),
-					},
-					Reason: "Expired",
-				})
-				lease.Status.Ended = true
-				lease.Status.EndTime = &metav1.Time{
-					Time: now,
-				}
+				lease.Expire(ctx)
 				return nil
 			} else {
 				result.RequeueAfter = expiration.Sub(now)
 				return nil
 			}
 		}
-	}
 
+	}
 	return nil
 }
 
@@ -173,16 +164,8 @@ func (r *LeaseReconciler) reconcileStatusBeginTime(
 
 	now := time.Now()
 	if lease.Status.BeginTime == nil && lease.Status.ExporterRef != nil {
-		logger.Info("reconcileStatusBeginTime: updating begin time")
-		meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-			Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: lease.Generation,
-			LastTransitionTime: metav1.Time{
-				Time: now,
-			},
-			Reason: "Ready",
-		})
+		logger.Info("Updating begin time for lease", "lease", lease.Name, "exporter", lease.GetExporterName(), "client", lease.GetClientName())
+		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
 		lease.Status.BeginTime = &metav1.Time{
 			Time: now,
 		}
@@ -199,158 +182,97 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 ) error {
 	logger := log.FromContext(ctx)
 
+	// Do not attempt to reconcile if the lease is already ended/invalid/etc
+	if lease.Status.Ended {
+		return nil
+	}
+
 	if lease.Status.ExporterRef == nil {
-		logger.Info("reconcileStatusExporterRef: looking for matching exporter")
+		logger.Info("Looking for a matching exporter for lease", "lease", lease.Name, "client", lease.GetClientName(), "selector", lease.Spec.Selector)
 
-		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
+		selector, err := lease.GetExporterSelector()
 		if err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to create selector from label selector: %w", err)
-		}
-
-		// List all Exporter matching selector
-		var matchingExporters jumpstarterdevv1alpha1.ExporterList
-		if err := r.List(
-			ctx,
-			&matchingExporters,
-			client.InNamespace(lease.Namespace),
-			client.MatchingLabelsSelector{Selector: selector},
-		); err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to list exporters matching selector: %w", err)
-		}
-
-		// Filter out offline exporters
-		onlineExporters := slices.DeleteFunc(
-			matchingExporters.Items,
-			func(exporter jumpstarterdevv1alpha1.Exporter) bool {
-				return !(true &&
-					meta.IsStatusConditionTrue(
-						exporter.Status.Conditions,
-						string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-					) &&
-					meta.IsStatusConditionTrue(
-						exporter.Status.Conditions,
-						string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-					))
-			},
-		)
-
-		// No matching exporter online, lease unsatisfiable
-		if len(onlineExporters) == 0 {
-			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "NoExporter",
-			})
+			return fmt.Errorf("reconcileStatusExporterRef: failed to get exporter selector: %w", err)
+		} else if selector.Empty() {
+			lease.SetStatusInvalid("InvalidSelector", "The selector for the lease is empty, a selector is required")
 			return nil
 		}
 
-		var leases jumpstarterdevv1alpha1.LeaseList
-		if err := r.List(
-			ctx,
-			&leases,
-			client.InNamespace(lease.Namespace),
-			MatchingActiveLeases(),
-		); err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to list active leases: %w", err)
+		// List all Exporter matching selector
+		matchingExporters, err := r.ListMatchingExporters(ctx, lease, selector)
+		if err != nil {
+			return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
 		}
 
-		availableExporters := slices.DeleteFunc(onlineExporters, func(exporter jumpstarterdevv1alpha1.Exporter) bool {
-			for _, existingLease := range leases.Items {
-				// if the lease is referencing the current exporter
-				if existingLease.Status.ExporterRef != nil && existingLease.Status.ExporterRef.Name == exporter.Name {
-					return true
-				}
-			}
-			return false
-		})
+		// Filter out offline exporters
+		onlineExporters := filterOutOfflineExporters(matchingExporters.Items)
 
-		var approvedExporters []struct {
-			Exporter jumpstarterdevv1alpha1.Exporter
-			Policy   jumpstarterdevv1alpha1.Policy
+		// No matching exporter online, lease unsatisfiable
+		if len(onlineExporters) == 0 {
+			lease.SetStatusUnsatisfiable(
+				"NoExporter",
+				"There are no online exporter matching the selector, but there are %d matching offline exporters",
+				len(matchingExporters.Items))
+			return nil
 		}
 
-		var policies jumpstarterdevv1alpha1.ExporterAccessPolicyList
-		if err := r.List(ctx, &policies,
-			client.InNamespace(lease.Namespace),
-		); err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to list exporter access policies: %w", err)
-		}
-
-		if len(policies.Items) == 0 {
-			for _, exporter := range availableExporters {
-				approvedExporters = append(approvedExporters, struct {
-					Exporter jumpstarterdevv1alpha1.Exporter
-					Policy   jumpstarterdevv1alpha1.Policy
-				}{
-					Exporter: exporter,
-					Policy: jumpstarterdevv1alpha1.Policy{
-						Priority:   0,
-						SpotAccess: false,
-					},
-				})
-			}
-		} else {
-			var jclient jumpstarterdevv1alpha1.Client
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: lease.Namespace,
-				Name:      lease.Spec.ClientRef.Name,
-			}, &jclient); err != nil {
-				return fmt.Errorf("reconcileStatusExporterRef: failed to get client: %w", err)
-			}
-
-			for _, exporter := range availableExporters {
-				for _, policy := range policies.Items {
-					exporterSelector, err := metav1.LabelSelectorAsSelector(&policy.Spec.ExporterSelector)
-					if err != nil {
-						return fmt.Errorf("reconcileStatusExporterRef: failed to convert exporter selector: %w", err)
-					}
-					if exporterSelector.Matches(labels.Set(exporter.Labels)) {
-						for _, p := range policy.Spec.Policies {
-							for _, from := range p.From {
-								clientSelector, err := metav1.LabelSelectorAsSelector(&from.ClientSelector)
-								if err != nil {
-									return fmt.Errorf("reconcileStatusExporterRef: failed to convert client selector: %w", err)
-								}
-								if clientSelector.Matches(labels.Set(jclient.Labels)) {
-									if p.MaximumDuration != nil {
-										if lease.Spec.Duration.Duration > p.MaximumDuration.Duration {
-											continue
-										}
-									}
-									approvedExporters = append(approvedExporters, struct {
-										Exporter jumpstarterdevv1alpha1.Exporter
-										Policy   jumpstarterdevv1alpha1.Policy
-									}{
-										Exporter: exporter,
-										Policy:   p,
-									})
-								}
-							}
-						}
-					}
-				}
-			}
+		approvedExporters, err := r.attachMatchingPolicies(ctx, lease, onlineExporters)
+		if err != nil {
+			return fmt.Errorf("reconcileStatusExporterRef: failed to handle policy approval: %w", err)
 		}
 
 		if len(approvedExporters) == 0 {
-			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
-				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: lease.Generation,
-				LastTransitionTime: metav1.Time{
-					Time: time.Now(),
-				},
-				Reason: "NotAvailable",
-			})
+			lease.SetStatusUnsatisfiable(
+				"NoAccess",
+				"While there are %d online exporters matching the selector, none of them are approved by any policy for your client",
+				len(onlineExporters))
+			return nil
+		}
+		// Filter out exporters that are already leased
+		activeLeases, err := r.ListActiveLeases(ctx, lease.Namespace)
+		if err != nil {
+			return fmt.Errorf("reconcileStatusExporterRef: failed to list active leases: %w", err)
+		}
+
+		approvedExporters = attachExistingLeases(approvedExporters, activeLeases.Items)
+		orderedExporters := orderApprovedExporters(approvedExporters)
+
+		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
+			lease.SetStatusUnsatisfiable("SpotAccess",
+				"The only possible exporters are under spot access (i.e. %s), but spot access is still not implemented",
+				orderedExporters[0].Exporter.Name)
+			return nil
+		}
+
+		availableExporters := filterOutLeasedExporters(orderedExporters)
+		if len(availableExporters) == 0 {
+			lease.SetStatusPending("NotAvailable",
+				"There are %d approved exporters, but all of them are already leased",
+				len(approvedExporters))
 			result.RequeueAfter = time.Second
 			return nil
 		}
 
-		selected := approvedExporters[0]
+		// TODO: here there's room for improvement, i.e. we could have multiple
+		// clients trying to lease the same exporters, we should look at priorities
+		// and spot access to decide which client gets the exporter, this probably means
+		// that we will need to construct a lease scheduler with the view of all leases
+		// and exporters in the system, and (maybe) a priority queue for the leases.
+
+		// For now, we just select the best available exporter without considering other
+		// ongoing lease requests
+
+		selected := availableExporters[0]
+
+		if selected.ExistingLease != nil {
+			// TODO: Implement eviction of spot access leases
+			lease.SetStatusPending("NotAvailable",
+				"Exporter %s is already leased by another client under spot access, but spot access eviction still not implemented",
+				selected.Exporter.Name)
+			result.RequeueAfter = time.Second
+			return nil
+		}
+
 		lease.Status.Priority = selected.Policy.Priority
 		lease.Status.SpotAccess = selected.Policy.SpotAccess
 		lease.Status.ExporterRef = &corev1.LocalObjectReference{
@@ -360,6 +282,201 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 	}
 
 	return nil
+}
+
+// attachMatchingPolicies attaches the matching policies to the list of online exporters
+// if the exporter matches the policy and the client matches the policy's client selector
+// the exporter is approved for leasing
+func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, onlineExporters []jumpstarterdevv1alpha1.Exporter) ([]ApprovedExporter, error) {
+	var approvedExporters []ApprovedExporter
+
+	var policies jumpstarterdevv1alpha1.ExporterAccessPolicyList
+	if err := r.List(ctx, &policies,
+		client.InNamespace(lease.Namespace),
+	); err != nil {
+		return nil, fmt.Errorf("reconcileStatusExporterRef: failed to list exporter access policies: %w", err)
+	}
+
+	// If there are no policies, we just approve all online exporters
+	if len(policies.Items) == 0 {
+		for _, exporter := range onlineExporters {
+			approvedExporters = append(approvedExporters, ApprovedExporter{
+				Exporter: exporter,
+				Policy: jumpstarterdevv1alpha1.Policy{
+					Priority:   0,
+					SpotAccess: false,
+				},
+			})
+		}
+		return approvedExporters, nil
+	}
+	// If policies exist: get the client to obtain the metadata necessary for policy matching
+	var jclient jumpstarterdevv1alpha1.Client
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: lease.Namespace,
+		Name:      lease.Spec.ClientRef.Name,
+	}, &jclient); err != nil {
+		return nil, fmt.Errorf("reconcileStatusExporterRef: failed to get client: %w", err)
+	}
+
+	for _, exporter := range onlineExporters {
+		for _, policy := range policies.Items {
+			exporterSelector, err := metav1.LabelSelectorAsSelector(&policy.Spec.ExporterSelector)
+			if err != nil {
+				return nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert exporter selector: %w", err)
+			}
+			if exporterSelector.Matches(labels.Set(exporter.Labels)) {
+				for _, p := range policy.Spec.Policies {
+					for _, from := range p.From {
+						clientSelector, err := metav1.LabelSelectorAsSelector(&from.ClientSelector)
+						if err != nil {
+							return nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert client selector: %w", err)
+						}
+						if clientSelector.Matches(labels.Set(jclient.Labels)) {
+							if p.MaximumDuration != nil {
+								if lease.Spec.Duration.Duration > p.MaximumDuration.Duration {
+									// TODO: we probably should keep this on the list of approved exporters
+									// but mark as excessive duration so we can report it on the status
+									// of lease if no other options exist
+									continue
+								}
+							}
+							approvedExporters = append(approvedExporters, ApprovedExporter{
+								Exporter: exporter,
+								Policy:   p,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+	return approvedExporters, nil
+}
+
+// ListMatchingExporters returns a list of exporters that match the selector of the lease
+func (r *LeaseReconciler) ListMatchingExporters(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease,
+	selector labels.Selector) (*jumpstarterdevv1alpha1.ExporterList, error) {
+
+	var matchingExporters jumpstarterdevv1alpha1.ExporterList
+	if err := r.List(
+		ctx,
+		&matchingExporters,
+		client.InNamespace(lease.Namespace),
+		client.MatchingLabelsSelector{Selector: selector},
+	); err != nil {
+		return nil, fmt.Errorf("ListMatchingExporters: failed to list exporters matching selector: %w", err)
+	}
+	return &matchingExporters, nil
+}
+
+// ListActiveLeases returns a list of active leases in the namespace
+func (r *LeaseReconciler) ListActiveLeases(ctx context.Context, namespace string) (*jumpstarterdevv1alpha1.LeaseList, error) {
+	var activeLeases jumpstarterdevv1alpha1.LeaseList
+	if err := r.List(
+		ctx,
+		&activeLeases,
+		client.InNamespace(namespace),
+		MatchingActiveLeases(),
+	); err != nil {
+		return nil, err
+	}
+	return &activeLeases, nil
+}
+
+// attachExistingLeases attaches the existing leases to the approved exporter list
+// if the activeLeases slice contains a lease that references the exporter in the
+// approved exporter list
+func attachExistingLeases(exporters []ApprovedExporter, activeLeases []jumpstarterdevv1alpha1.Lease) []ApprovedExporter {
+	for i, exporter := range exporters {
+		for _, existingLease := range activeLeases {
+			if existingLease.Status.ExporterRef != nil &&
+				existingLease.Status.ExporterRef.Name == exporter.Exporter.Name {
+				exporters[i].ExistingLease = &existingLease
+			}
+		}
+	}
+	return exporters
+}
+
+// orderAvailableExporters orders the exporters in the following order
+// 1. Not being leased
+// 2. Not accessible under spot access
+// 3. Highest priority
+// 4. Alphabetically by exporter name
+
+func orderApprovedExporters(exporters []ApprovedExporter) []ApprovedExporter {
+	// Order by lease status, priority, spot access, and name
+
+	cmpFunc := func(a, b ApprovedExporter) int {
+		// If one of the exporters has an existing lease, we want to prioritize the one that doesn't
+		if a.ExistingLease != nil && b.ExistingLease == nil {
+			return 1
+		} else if a.ExistingLease == nil && b.ExistingLease != nil {
+			return -1
+		}
+
+		// We want spot access policies to be later on the returned array
+		if a.Policy.SpotAccess != b.Policy.SpotAccess {
+			if a.Policy.SpotAccess {
+				return 1
+			}
+			return -1
+		}
+
+		// We want the highest priority to be first
+		if a.Policy.Priority != b.Policy.Priority {
+			return b.Policy.Priority - a.Policy.Priority
+		}
+
+		// If the priority is the same, we want to sort by exporter name
+		return strings.Compare(a.Exporter.Name, b.Exporter.Name)
+	}
+
+	slices.SortFunc(exporters, cmpFunc)
+
+	return exporters
+}
+
+// filterOutLeasedExporters filters out the exporters that are already leased
+func filterOutLeasedExporters(exporters []ApprovedExporter) []ApprovedExporter {
+	// Exclude exporter that are already leased and non-takeable
+	return slices.DeleteFunc(exporters, func(ae ApprovedExporter) bool {
+		existingLease := ae.ExistingLease
+		if existingLease == nil {
+			return false
+		}
+
+		weHaveNonSpotAccess := !ae.Policy.SpotAccess
+
+		// There is an existing lease, but, if it's spot access we can take it
+		if weHaveNonSpotAccess && ae.ExistingLease.Status.SpotAccess {
+			return false
+		}
+
+		// ok, there is an existing lease, and it's not spot access, we can't take it
+		return true
+	})
+
+}
+
+// filterOutOfflineExporters filters out the exporters that are not online
+func filterOutOfflineExporters(matchingExporters []jumpstarterdevv1alpha1.Exporter) []jumpstarterdevv1alpha1.Exporter {
+	onlineExporters := slices.DeleteFunc(
+		matchingExporters,
+		func(exporter jumpstarterdevv1alpha1.Exporter) bool {
+			return !(true &&
+				meta.IsStatusConditionTrue(
+					exporter.Status.Conditions,
+					string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+				) &&
+				meta.IsStatusConditionTrue(
+					exporter.Status.Conditions,
+					string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+				))
+		},
+	)
+	return onlineExporters
 }
 
 // SetupWithManager sets up the controller with the Manager.
