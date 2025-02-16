@@ -20,6 +20,8 @@ dependencies = [
 dev = [
     "pytest>=8.3.2",
     "pytest-cov>=5.0.0",
+    "types-pexpect>=4.9.0.20241208",
+    "types-pyserial>=3.5.0.20250130",
 ]
 
 [tool.hatch.metadata.hooks.vcs.urls]

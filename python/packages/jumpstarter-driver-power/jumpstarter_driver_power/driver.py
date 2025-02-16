@@ -21,6 +21,19 @@ class PowerInterface(metaclass=ABCMeta):
 
 
 class MockPower(PowerInterface, Driver):
+    """
+    MockPower is a mock driver implementing the PowerInterface
+
+    >>> with serve(MockPower()) as power:
+    ...     power.on()
+    ...     power.off()
+    ...
+    ...     assert list(power.read()) == [
+    ...         PowerReading(voltage=0.0, current=0.0),
+    ...         PowerReading(voltage=5.0, current=2.0),
+    ...     ]
+    """
+
     @export
     async def on(self) -> None:
         pass
@@ -36,6 +49,19 @@ class MockPower(PowerInterface, Driver):
 
 
 class SyncMockPower(PowerInterface, Driver):
+    """
+    SyncMockPower is a mock driver implementing the PowerInterface
+
+    >>> with serve(SyncMockPower()) as power:
+    ...     power.on()
+    ...     power.off()
+    ...
+    ...     assert list(power.read()) == [
+    ...         PowerReading(voltage=0.0, current=0.0),
+    ...         PowerReading(voltage=5.0, current=2.0),
+    ...     ]
+    """
+
     @export
     def on(self) -> None:
         pass
