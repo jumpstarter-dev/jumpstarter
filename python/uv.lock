@@ -20,6 +20,7 @@ members = [
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-raspberrypi",
     "jumpstarter-driver-sdwire",
+    "jumpstarter-driver-shell",
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-ustreamer",
     "jumpstarter-driver-yepkit",
@@ -1273,6 +1274,35 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-shell"
+version = "0.1.0"
+source = { editable = "packages/jumpstarter-driver-shell" }
+dependencies = [
+    { name = "anyio" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "ruff", specifier = ">=0.7.1" },
 ]
 
 [[package]]
