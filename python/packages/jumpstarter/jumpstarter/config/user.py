@@ -20,7 +20,10 @@ def _serialize_current_client(v: ClientConfigV1Alpha1 | None) -> str | None:
 def _validate_current_client(v: str | ClientConfigV1Alpha1 | None) -> ClientConfigV1Alpha1 | None:
     match v:
         case str():
-            return ClientConfigV1Alpha1.load(v)
+            try:
+                return ClientConfigV1Alpha1.load(v)
+            except FileNotFoundError:
+                return None
         case ClientConfigV1Alpha1():
             return v
         case None:
