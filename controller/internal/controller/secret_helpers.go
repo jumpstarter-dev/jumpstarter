@@ -20,18 +20,18 @@ func ensureSecret(
 	signer *oidc.Signer,
 	username string,
 ) (*corev1.Secret, error) {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithName("ensureSecret")
 	var secret corev1.Secret
 	if err := kclient.Get(ctx, key, &secret); err != nil {
 		if !errors.IsNotFound(err) {
-			logger.Error(err, "ensureSecret: failed to get secret")
+			logger.Error(err, "failed to get secret")
 			return nil, err
 		}
 		// Secret not present
-		logger.Info("ensureSecret: secret not present, creating")
+		logger.Info("secret not present, creating")
 		token, err := signer.Token(username)
 		if err != nil {
-			logger.Info("ensureSecret: failed to sign token")
+			logger.Info("failed to sign token")
 			return nil, err
 		}
 		secret = corev1.Secret{
@@ -45,7 +45,7 @@ func ensureSecret(
 			},
 		}
 		if err = kclient.Create(ctx, &secret); err != nil {
-			logger.Error(err, "ensureSecret: failed to create secret")
+			logger.Error(err, "failed to create secret")
 			return nil, err
 		}
 		return &secret, nil
@@ -53,18 +53,18 @@ func ensureSecret(
 		token, ok := secret.Data[TokenKey]
 		if !ok || signer.UnsafeValidate(string(token)) != nil {
 			// Secret present but invalid
-			logger.Info("ensureSecret: secret present but invalid, updating")
+			logger.Info("secret present but invalid, updating")
 			original := client.MergeFrom(secret.DeepCopy())
 			token, err := signer.Token(username)
 			if err != nil {
-				logger.Info("ensureSecret: failed to sign token")
+				logger.Info("failed to sign token")
 				return nil, err
 			}
 			secret.Data = map[string][]byte{
 				TokenKey: []byte(token),
 			}
 			if err = kclient.Patch(ctx, &secret, original); err != nil {
-				logger.Error(err, "ensureSecret: failed to update secret")
+				logger.Error(err, "failed to update secret")
 				return nil, err
 			}
 			return &secret, nil
