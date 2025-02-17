@@ -139,10 +139,20 @@ class FileServerClient(DriverClient):
 
     def put_file(self, filename: str, src_stream, checksum: str | None = None):
         """
-        Upload a file to the server using a streamed source.
-        """
-        return self.call("put_file", *(filename, src_stream))
+        Upload a file to the server
 
+        Args:
+            filename: Name to save the file as
+            src_stream: Source stream to read data from
+            checksum: Optional SHA256 checksum for verification
+        """
+        if checksum is not None:
+            try:
+                return self.call("put_file", filename, src_stream, checksum)
+            except (TypeError, ValueError):
+                self.logger.debug("Server does not support checksum verification, falling back to basic upload")
+
+        return self.call("put_file", filename, src_stream)
 
     def put_file_from_source(self, source: str, checksum: str | None = None):
       """
