@@ -18,6 +18,8 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 )
 
+const tokenPlaceholder string = "placeholder for external OIDC provider access token"
+
 type Signer struct {
 	privatekey *ecdsa.PrivateKey
 	issuer     string
@@ -90,7 +92,10 @@ func (k *Signer) Register(group gin.IRoutes) {
 	})
 }
 
-func (k *Signer) Verify(token string) error {
+func (k *Signer) UnsafeValidate(token string) error {
+	if token == tokenPlaceholder {
+		return nil
+	}
 	_, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
 		return &k.privatekey.PublicKey, nil
 	},
@@ -104,14 +109,14 @@ func (k *Signer) Verify(token string) error {
 }
 
 func (k *Signer) Token(
-	subject string,
+	username string,
 ) (string, error) {
-	if !strings.HasPrefix(subject, k.prefix) {
-		return "placeholder for external OIDC provider access token", nil
+	if !strings.HasPrefix(username, k.prefix) {
+		return tokenPlaceholder, nil
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
 		Issuer:    k.issuer,
-		Subject:   strings.TrimPrefix(subject, k.prefix),
+		Subject:   strings.TrimPrefix(username, k.prefix),
 		Audience:  []string{k.audience},
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)), // FIXME: rotate keys on expiration

@@ -13,7 +13,7 @@ type BasicAuthorizer struct {
 	prefix string
 }
 
-func NewBasicAuthorizer(reader client.Reader, prefix string) *BasicAuthorizer {
+func NewBasicAuthorizer(reader client.Reader, prefix string) authorizer.Authorizer {
 	return &BasicAuthorizer{reader: reader, prefix: prefix}
 }
 
@@ -30,7 +30,7 @@ func (b *BasicAuthorizer) Authorize(
 		}, &e); err != nil {
 			return authorizer.DecisionDeny, "failed to get exporter", err
 		}
-		if ExporterAuthorizedUsername(&e, b.prefix) == attributes.GetUser().GetName() {
+		if e.Username(b.prefix) == attributes.GetUser().GetName() {
 			return authorizer.DecisionAllow, "", nil
 		} else {
 			return authorizer.DecisionDeny, "", nil
@@ -43,7 +43,7 @@ func (b *BasicAuthorizer) Authorize(
 		}, &c); err != nil {
 			return authorizer.DecisionDeny, "failed to get client", err
 		}
-		if ClientAuthorizedUsername(&c, b.prefix) == attributes.GetUser().GetName() {
+		if c.Username(b.prefix) == attributes.GetUser().GetName() {
 			return authorizer.DecisionAllow, "", nil
 		} else {
 			return authorizer.DecisionDeny, "", nil
@@ -52,21 +52,3 @@ func (b *BasicAuthorizer) Authorize(
 		return authorizer.DecisionDeny, "invalid object kind", nil
 	}
 }
-
-func ClientAuthorizedUsername(c *jumpstarterdevv1alpha1.Client, prefix string) string {
-	if c.Spec.Username == nil {
-		return prefix + "client:" + c.Namespace + ":" + c.Name + ":" + string(c.UID)
-	} else {
-		return *c.Spec.Username
-	}
-}
-
-func ExporterAuthorizedUsername(e *jumpstarterdevv1alpha1.Exporter, prefix string) string {
-	if e.Spec.Username == nil {
-		return prefix + "exporter:" + e.Namespace + ":" + e.Name + ":" + string(e.UID)
-	} else {
-		return *e.Spec.Username
-	}
-}
-
-var _ = authorizer.Authorizer(&BasicAuthorizer{})
