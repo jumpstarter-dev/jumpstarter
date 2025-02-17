@@ -31,7 +31,7 @@ func ensureSecret(
 		logger.Info("secret not present, creating")
 		token, err := signer.Token(username)
 		if err != nil {
-			logger.Info("failed to sign token")
+			logger.Error(err, "failed to sign token")
 			return nil, err
 		}
 		secret = corev1.Secret{
@@ -57,7 +57,7 @@ func ensureSecret(
 			original := client.MergeFrom(secret.DeepCopy())
 			token, err := signer.Token(username)
 			if err != nil {
-				logger.Info("failed to sign token")
+				logger.Error(err, "failed to sign token")
 				return nil, err
 			}
 			secret.Data = map[string][]byte{
