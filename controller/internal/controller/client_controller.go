@@ -30,7 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 )
 
@@ -94,7 +93,7 @@ func (r *ClientReconciler) clientSecretExists(
 	}
 
 	token, ok := secret.Data["token"]
-	if !ok || r.Signer.Verify(string(token)) != nil {
+	if !ok || r.Signer.UnsafeValidate(string(token)) != nil {
 		logger.Info("reconcileStatusCredential: the client secret is invalid", "client", client.Name)
 		return false, r.Delete(ctx, secret)
 	}
