@@ -1,3 +1,4 @@
+import hashlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,6 +10,8 @@ from anyio.streams.file import FileWriteStream
 
 from jumpstarter.driver import Driver, export
 
+# 4MiB
+CHUNK_SIZE = 4 * 1024 * 1024
 
 class HttpServerError(Exception):
     """Base exception for HTTP server errors"""
@@ -221,6 +224,36 @@ class HttpServer(Driver):
             int: Port number.
         """
         return self.port
+
+    @export
+    def check_file_checksum(self, filename: str, client_checksum: str) -> bool:
+        """Check if a file matches the expected checksum.
+
+        Args:
+            filename (str): Name of the file to check
+            client_checksum (str): Expected SHA256 checksum
+
+        Returns:
+            bool: True if the file exists and matches the checksum, False otherwise
+        """
+        file_path = os.path.join(self.root_dir, filename)
+
+        if not os.path.exists(file_path):
+            self.logger.debug(f"File {filename} does not exist")
+            return False
+
+        current_checksum = self._compute_checksum(file_path)
+        self.logger.debug(f"Computed checksum: {current_checksum}")
+        self.logger.debug(f"Client checksum: {client_checksum}")
+
+        return current_checksum == client_checksum
+
+    def _compute_checksum(self, path: str) -> str:
+        hasher = hashlib.sha256()
+        with open(path, "rb") as f:
+            while chunk := f.read(CHUNK_SIZE):
+                hasher.update(chunk)
+        return hasher.hexdigest()
 
     def close(self):
         if self.runner:

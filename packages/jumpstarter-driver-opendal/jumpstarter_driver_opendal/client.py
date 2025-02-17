@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -73,6 +74,8 @@ class StorageMuxClient(DriverClient):
 
         return base
 
+CHUNK_SIZE = 4 * 1024 * 1024
+
 class FileServerClient(DriverClient):
     """Base client for file server implementations (HTTP, TFTP, etc)"""
 
@@ -88,54 +91,103 @@ class FileServerClient(DriverClient):
         """List files in the server root directory"""
         return self.call("list_files")
 
+    def compute_checksum(self, filepath: str | Path) -> str:
+        """
+        Compute SHA256 checksum of a local file
+
+        Args:
+            filepath: Path to the file to checksum
+
+        Returns:
+            str: Hex digest of SHA256 hash
+        """
+        hasher = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            while chunk := f.read(CHUNK_SIZE):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def compute_opendal_checksum(self, operator: Operator, path: str) -> str:
+        """
+        Compute SHA256 checksum of a file from an OpenDAL operator
+
+        Args:
+            operator: OpenDAL operator to read from
+            path: Path within the operator's storage
+
+        Returns:
+            str: Hex digest of SHA256 hash
+        """
+        hasher = hashlib.sha256()
+        with operator.open(path, "rb") as f:
+            while chunk := f.read(CHUNK_SIZE):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def check_file_checksum(self, filename: str, expected_checksum: str) -> bool:
+        """
+        Check if a server-side file matches an expected checksum
+
+        Args:
+            filename: Name of file to check
+            expected_checksum: Expected SHA256 checksum
+
+        Returns:
+            bool: True if checksums match, False otherwise
+        """
+        return self.call("check_file_checksum", filename, expected_checksum)
+
     def put_file(self, filename: str, src_stream, checksum: str | None = None):
         """
         Upload a file to the server using a streamed source.
-
-        Args:
-            filename (str): Name to save the file as on the server
-            src_stream: Stream/source to read the file data from
-            checksum (str, optional): File checksum for verification (if supported)
-
-        Returns:
-            str: Result of the upload operation (implementation specific)
         """
-        if hasattr(self, "check_file_checksum") and checksum:
-            if self.call("check_file_checksum", filename, checksum):
-                self.logger.info(f"Skipping upload of identical file: {filename}")
-                return filename
-
         return self.call("put_file", *(filename, src_stream))
 
 
-    def put_file_from_source(self, source: str):
-        """
-        Upload a file from either a local path or URL to the server.
+    def put_file_from_source(self, source: str, checksum: str | None = None):
+      """
+      Upload a file from either a local path or URL to the server.
 
-        Args:
-            source (str): Local file path or URL (http/https) to upload
+      Args:
+          source (str): Local file path or URL to upload
+          checksum (str, optional): SHA256 checksum of the file. If not provided,
+              will be computed for local files only.
+      """
+      self.logger.info(f"Starting upload from source: {source}")
 
-        Returns:
-            str: Result of the upload operation (implementation specific)
-        """
-        if source.startswith(('http://', 'https://')):
-            parsed_url = urlparse(source)
-            operator = Operator(
-                'http',
-                root='/',
-                endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}"
-            )
-            filename = parsed_url.path.split('/')[-1]
-            path = parsed_url.path
-            if path.startswith('/'):
-                path = path[1:]
-        else:
-            operator = Operator('fs', root='/')
-            path = str(Path(source).resolve())
-            filename = Path(path).name
+      if source.startswith(('http://', 'https://')):
+          parsed_url = urlparse(source)
+          operator = Operator(
+              'http',
+              root='/',
+              endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}"
+          )
+          filename = parsed_url.path.split('/')[-1]
+          path = parsed_url.path
+          if path.startswith('/'):
+              path = path[1:]
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
-            return self.put_file(filename, handle)
+          if checksum is None:
+              self.logger.warning("No checksum provided for remote file - skipping verification")
+      else:
+          operator = Operator('fs', root='/')
+          path = str(Path(source).resolve())
+          filename = Path(path).name
+
+          if checksum is None:
+              self.logger.info(f"Computing checksum for local file: {filename}")
+              checksum = self.compute_checksum(source)
+
+      if checksum and self.check_file_checksum(filename, checksum):
+          self.logger.info(f"Skipping upload of identical file: {filename}")
+          return filename
+
+      self.logger.info(f"Opening adapter for {filename}")
+      with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
+          self.logger.info(f"Putting file {filename}")
+          result = self.put_file(filename, handle, checksum)
+          self.logger.info(f"Completed upload of {filename}")
+          return result
 
     def delete_file(self, filename: str) -> str:
         """Delete a file from the server"""
