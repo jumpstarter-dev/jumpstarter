@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,65 +72,24 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-func (r *ClientReconciler) clientSecretExists(
-	ctx context.Context,
-	client *jumpstarterdevv1alpha1.Client,
-) (bool, error) {
-	logger := log.FromContext(ctx)
-
-	if client.Status.Credential == nil {
-		return false, nil
-	}
-	// NOTE: this could deserve some level of optimization/caching in the future
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, kclient.ObjectKey{
-		Namespace: client.Namespace,
-		Name:      client.Status.Credential.Name,
-	}, secret)
-	if err != nil {
-		return false, kclient.IgnoreNotFound(err)
-	}
-
-	token, ok := secret.Data["token"]
-	if !ok || r.Signer.UnsafeValidate(string(token)) != nil {
-		logger.Info("reconcileStatusCredential: the client secret is invalid", "client", client.Name)
-		return false, r.Delete(ctx, secret)
-	}
-
-	return true, nil
-}
-
 func (r *ClientReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	client *jumpstarterdevv1alpha1.Client,
 ) error {
-	logger := log.FromContext(ctx)
-
-	exists, err := r.clientSecretExists(ctx, client)
+	secret, err := ensureSecret(ctx, kclient.ObjectKey{
+		Name:      client.Name + "-client",
+		Namespace: client.Namespace,
+	}, r.Client, r.Signer, client.Username(r.Signer.Prefix()))
 	if err != nil {
-		logger.Info("reconcileStatusCredential: the client secret's existence cannot be checked", "client", client.Name)
-		return err
+		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
 	}
-
-	if !exists {
-		if client.Status.Credential != nil {
-			// TODO: Send an alert notification to cluster
-			logger.Info("reconcileStatusCredential: the client secret has ceased to exist, will be recreated", "client", client.Name)
-		} else {
-			logger.Info("reconcileStatusCredential: creating credential for client")
-		}
-		secret, err := r.secretForClient(client)
-		if err != nil {
-			return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
-		}
-		if err := r.Create(ctx, secret); err != nil {
-			return fmt.Errorf("reconcileStatusCredential: failed to create credential for client: %w", err)
-		}
-		client.Status.Credential = &corev1.LocalObjectReference{
-			Name: secret.Name,
-		}
+	// enable garbage collection on the created resource
+	if err := controllerutil.SetControllerReference(client, secret, r.Scheme); err != nil {
+		return fmt.Errorf("reconcileStatusCredential: error setting owner reference: %w", err)
 	}
-
+	client.Status.Credential = &corev1.LocalObjectReference{
+		Name: secret.Name,
+	}
 	return nil
 }
 
@@ -149,29 +107,6 @@ func (r *ClientReconciler) reconcileStatusEndpoint(
 	}
 
 	return nil
-}
-
-func (r *ClientReconciler) secretForClient(client *jumpstarterdevv1alpha1.Client) (*corev1.Secret, error) {
-	token, err := r.Signer.Token(client.Username(r.Signer.Prefix()))
-	if err != nil {
-		return nil, err
-	}
-
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      client.Name + "-client",
-			Namespace: client.Namespace,
-		},
-		Type: corev1.SecretTypeOpaque,
-		StringData: map[string]string{
-			"token": token,
-		},
-	}
-	// enable garbage collection on the created resource
-	if err := controllerutil.SetControllerReference(client, secret, r.Scheme); err != nil {
-		return nil, fmt.Errorf("secretForClient, error setting owner reference: %w", err)
-	}
-	return secret, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
