@@ -63,6 +63,25 @@ var _ = Describe("Lease Controller", func() {
 		deleteLeases(ctx, "lease1", "lease2", "lease3")
 	})
 
+	When("trying to lease with an empty selector", func() {
+		It("should fail right away", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Selector.MatchLabels = nil
+
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeInvalid),
+			)).To(BeTrue())
+		})
+	})
+
 	When("trying to lease an available exporter", func() {
 		It("should acquire lease right away", func() {
 			lease := leaseDutA2Sec.DeepCopy()
@@ -391,3 +410,141 @@ func deleteLeases(ctx context.Context, leases ...string) {
 		_ = k8sClient.Delete(ctx, leaseObj)
 	}
 }
+
+var _ = Describe("orderApprovedExporters", func() {
+	When("approved exporters are under a lease", func() {
+		It("should put them last", func() {
+			approvedExporters := []ApprovedExporter{
+				{
+					Policy:        jumpstarterdevv1alpha1.Policy{Priority: 0, SpotAccess: false},
+					Exporter:      *testExporter1DutA,
+					ExistingLease: &jumpstarterdevv1alpha1.Lease{},
+				},
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 0, SpotAccess: false},
+					Exporter: *testExporter2DutA,
+				},
+			}
+			ordered := orderApprovedExporters(approvedExporters)
+			Expect(ordered[0].Exporter.Name).To(Equal(testExporter2DutA.Name))
+			Expect(ordered[0].ExistingLease).To(BeNil())
+			Expect(ordered[1].Exporter.Name).To(Equal(testExporter1DutA.Name))
+			Expect(ordered[1].ExistingLease).NotTo(BeNil())
+		})
+	})
+
+	When("some approved exporters are accessible in spot mode", func() {
+		It("should put them last", func() {
+			approvedExporters := []ApprovedExporter{
+				{
+					Policy:        jumpstarterdevv1alpha1.Policy{Priority: 0, SpotAccess: true},
+					Exporter:      *testExporter1DutA,
+					ExistingLease: &jumpstarterdevv1alpha1.Lease{},
+				},
+				{
+					Policy:        jumpstarterdevv1alpha1.Policy{Priority: 0, SpotAccess: false},
+					Exporter:      *testExporter2DutA,
+					ExistingLease: &jumpstarterdevv1alpha1.Lease{},
+				},
+			}
+			ordered := orderApprovedExporters(approvedExporters)
+			Expect(ordered[0].Exporter.Name).To(Equal(testExporter2DutA.Name))
+			Expect(ordered[0].Policy.SpotAccess).To(BeFalse())
+			Expect(ordered[1].Exporter.Name).To(Equal(testExporter1DutA.Name))
+			Expect(ordered[1].Policy.SpotAccess).To(BeTrue())
+		})
+	})
+
+	When("some approved exporters have different policy priorities", func() {
+		It("should order them by priority", func() {
+			approvedExporters := []ApprovedExporter{
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 5, SpotAccess: false},
+					Exporter: *testExporter1DutA,
+				},
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 10, SpotAccess: false},
+					Exporter: *testExporter2DutA,
+				},
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 100, SpotAccess: false},
+					Exporter: *testExporter2DutA,
+				},
+			}
+			ordered := orderApprovedExporters(approvedExporters)
+			Expect(ordered[0].Policy.Priority).To(Equal(int(100)))
+			Expect(ordered[1].Policy.Priority).To(Equal(int(10)))
+			Expect(ordered[2].Policy.Priority).To(Equal(int(5)))
+
+		})
+	})
+
+	When("some approved exporters have same policy priorities and no other traits", func() {
+		It("should order them by name", func() {
+			approvedExporters := []ApprovedExporter{
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 5, SpotAccess: false},
+					Exporter: *testExporter2DutA,
+				},
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 5, SpotAccess: false},
+					Exporter: *testExporter1DutA,
+				},
+			}
+			ordered := orderApprovedExporters(approvedExporters)
+
+			Expect(ordered[0].Exporter.Name).To(Equal(testExporter1DutA.Name))
+			Expect(ordered[1].Exporter.Name).To(Equal(testExporter2DutA.Name))
+		})
+	})
+
+	When("mixed priorities, spot access, lease status are in the list", func() {
+		It("should order them properly", func() {
+			approvedExporters := []ApprovedExporter{
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 5, SpotAccess: false},
+					Exporter: *testExporter2DutA,
+				},
+				{
+					Policy:        jumpstarterdevv1alpha1.Policy{Priority: 100, SpotAccess: true},
+					Exporter:      *testExporter2DutA,
+					ExistingLease: &jumpstarterdevv1alpha1.Lease{},
+				},
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 10, SpotAccess: false},
+					Exporter: *testExporter1DutA,
+				},
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 5, SpotAccess: false},
+					Exporter: *testExporter1DutA,
+				},
+				{
+					Policy:   jumpstarterdevv1alpha1.Policy{Priority: 10, SpotAccess: true},
+					Exporter: *testExporter2DutA,
+				},
+			}
+
+			ordered := orderApprovedExporters(approvedExporters)
+			Expect(ordered[0].Policy.Priority).To(Equal(int(10)))
+			Expect(ordered[0].Policy.SpotAccess).To(BeFalse())
+			Expect(ordered[0].Exporter.Name).To(Equal(testExporter1DutA.Name))
+
+			Expect(ordered[1].Policy.Priority).To(Equal(int(5)))
+			Expect(ordered[1].Policy.SpotAccess).To(BeFalse())
+			Expect(ordered[1].Exporter.Name).To(Equal(testExporter1DutA.Name))
+
+			Expect(ordered[2].Policy.Priority).To(Equal(int(5)))
+			Expect(ordered[2].Policy.SpotAccess).To(BeFalse())
+			Expect(ordered[2].Exporter.Name).To(Equal(testExporter2DutA.Name))
+
+			Expect(ordered[3].Policy.Priority).To(Equal(int(10)))
+			Expect(ordered[3].Policy.SpotAccess).To(BeTrue())
+			Expect(ordered[3].Exporter.Name).To(Equal(testExporter2DutA.Name))
+
+			Expect(ordered[4].Policy.Priority).To(Equal(int(100)))
+			Expect(ordered[4].Policy.SpotAccess).To(BeTrue())
+			Expect(ordered[4].Exporter.Name).To(Equal(testExporter2DutA.Name))
+
+		})
+	})
+})

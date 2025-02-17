@@ -52,6 +52,7 @@ const (
 	LeaseConditionTypePending       LeaseConditionType = "Pending"
 	LeaseConditionTypeReady         LeaseConditionType = "Ready"
 	LeaseConditionTypeUnsatisfiable LeaseConditionType = "Unsatisfiable"
+	LeaseConditionTypeInvalid       LeaseConditionType = "Invalid"
 )
 
 type LeaseLabel string
