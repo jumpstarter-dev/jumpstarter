@@ -193,7 +193,7 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 }
 
 func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.Exporter) (*corev1.Secret, error) {
-	token, err := r.Signer.Token(authorization.ExporterAuthorizedUsername(exporter, r.Signer.Prefix()))
+	token, err := r.Signer.Token(exporter.Username(r.Signer.Prefix()))
 	if err != nil {
 		return nil, err
 	}

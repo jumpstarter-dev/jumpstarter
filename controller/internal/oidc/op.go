@@ -104,14 +104,14 @@ func (k *Signer) Verify(token string) error {
 }
 
 func (k *Signer) Token(
-	subject string,
+	username string,
 ) (string, error) {
-	if !strings.HasPrefix(subject, k.prefix) {
+	if !strings.HasPrefix(username, k.prefix) {
 		return "placeholder for external OIDC provider access token", nil
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
 		Issuer:    k.issuer,
-		Subject:   strings.TrimPrefix(subject, k.prefix),
+		Subject:   strings.TrimPrefix(username, k.prefix),
 		Audience:  []string{k.audience},
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)), // FIXME: rotate keys on expiration
