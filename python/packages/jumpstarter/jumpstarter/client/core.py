@@ -52,6 +52,12 @@ class AsyncDriverClient(
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(self.log_level)
 
+        # add default handler
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+            self.logger.addHandler(handler)
+
     async def call_async(self, method, *args):
         """Make DriverCall by method name and arguments"""
 
