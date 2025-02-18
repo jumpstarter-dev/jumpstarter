@@ -126,5 +126,44 @@ var _ = Describe("Identity Controller", func() {
 				Name:      resourceName + "-client",
 			}, secret)).To(Succeed())
 		})
+
+		It("should reconcile an invalid token secret", func() {
+			By("recreating the secret")
+			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+			Expect(err).NotTo(HaveOccurred())
+
+			controllerReconciler := &ClientReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+				Signer: signer,
+			}
+
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// modify the secret to something invalid
+			secret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: "default",
+				Name:      resourceName + "-client",
+			}, secret)).To(Succeed())
+			secret.Data[TokenKey] = []byte("invalid")
+			Expect(k8sClient.Update(ctx, secret)).To(Succeed())
+
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the secret was updated")
+			secret = &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: "default",
+				Name:      resourceName + "-client",
+			}, secret)).To(Succeed())
+			Expect(secret.Data[TokenKey]).NotTo(Equal([]byte("invalid")))
+		})
 	})
 })

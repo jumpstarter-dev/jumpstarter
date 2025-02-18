@@ -2,8 +2,8 @@
 set -eo pipefail
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
-KIND=${KIND:-bin/kind-v0.23.0}
-GRPCURL=${GRPCURL:-bin/grpcurl-v1.9.2}
+KIND=${KIND:-bin/kind}
+GRPCURL=${GRPCURL:-bin/grpcurl}
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 INGRESS_ENABLED=${INGRESS_ENABLED:-false}
 
