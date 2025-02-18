@@ -1,12 +1,12 @@
 # Manage Clients
 
-The `jmpctl` admin CLI can be used to manage your client configurations
+The `jmp admin` admin CLI can be used to manage your client configurations
 on the distributed service.
 
 ## Creating a Client
 
 If you have configured [a Jumpstarter service](../introduction/service.md)
-and you have a kubeconfig, the `jmpctl` CLI will attempt to use
+and you have a kubeconfig, the [`jmp admin` CLI](./reference/jmp-admin.md#jmp-admin-create-client) will attempt to use
 your current credentials to provision the client automatically, and produce
 a client configuration file.
 
@@ -18,12 +18,7 @@ You can also use the following options to specify kubeconfig and context to use:
 To create a new client and its associated config, run the following command:
 
 ```bash
-$ jmpctl client create john --namespace jumpstarter-lab > john.yaml
-$ cat >> john.yaml <<EOF
-drivers:
-  allow: []
-  unsafe: True
-EOF
+$ jmp admin create client john --namespace jumpstarter-lab --unsafe -o john.yaml
 ```
 
 This creates a client named `john` and outputs the configuration to a YAML
@@ -39,14 +34,14 @@ endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
 token: <<token>>
 tls:
   ca: ''
-  insecure: True
+  insecure: False
 drivers:
   allow: []
   unsafe: True
 ```
 
-In addition we have included a `drivers` section in the configuration file, which
-allows you to specify a list of allowed driver packages and enable unsafe mode (allow any driver).
+We use the `--unsafe` setting that configures the `drivers` section to allow
+any driver packages on the client.
 
 ```{warning}
 This section can be important if you don't trust the exporter's configuration, since every
@@ -59,9 +54,6 @@ to use for the connection, or to disable TLS verification if your system is usin
 self-signed certificates.
 
 ### Manual Provisioning
-
-If you do not have `jmpctl` installed or don't have direct access to the cluster,
-a client can also be provisioned manually on a different machine.
 
 1. Apply the YAML to your cluster:
 
@@ -87,10 +79,10 @@ a client can also be provisioned manually on a different machine.
 
 3. Those details can be installed as a secret on CI, or passed down to the final user.
 
-    Then the user can create the client performing:
+    Then the user can create the client using the [jmp client](./reference/jmp-client.md#jmp-client-create-config) CLI:
 
     ```bash
-    $ jmp create my-client
+    $ jmp client create-config my-client
     Enter a valid Jumpstarter service endpoint: devl.jumpstarter.dev
     Enter a Jumpstarter auth token (hidden): ***
     Enter a comma-separated list of allowed driver packages (optional):

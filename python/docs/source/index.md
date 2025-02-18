@@ -17,10 +17,8 @@ installation/index.md
 getting-started/index.md
 cli/index.md
 config.md
-drivers.md
 architecture.md
 glossary.md
-cli-reference/index.md
 api-reference/index.md
 ```
 

@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-yepkit"
-version = "0.1.0"
+dynamic = ["version", "urls"]
 description = "Add your description here"
 readme = "README.md"
 authors = [
@@ -13,6 +13,10 @@ dependencies = [
     "jumpstarter_driver_power",
     "jumpstarter",
 ]
+
+[project.entry-points."jumpstarter.drivers"]
+Ykush = "jumpstarter_driver_yepkit.driver:Ykush"
+
 
 [tool.hatch.version]
 source = "vcs"

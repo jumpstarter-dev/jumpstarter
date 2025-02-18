@@ -1,13 +1,13 @@
 # Manage Exporters
 
-The `jmpctl` admin CLI can be used to manage your exporter configurations
+The `jmp admin` admin CLI can be used to manage your exporter configurations
 on the distributed service.
 
 ## Creating a exporter
 
 If you have configured [a Jumpstarter service](../introduction/service.md)
-and you have a kubeconfig, the `jmpctl` CLI will attempt to use
-your current credentials to provision the client automatically, and produce
+and you have a kubeconfig, the [`jmp admin` CLI](./reference/jmp-admin.md#jmp-admin-create-exporter)
+will attempt to use your current credentials to provision the client automatically, and produce
 a base exporter configuration file.
 
 To connect a target device to Jumpstarter, an exporter instance must be registered.
@@ -17,7 +17,7 @@ the Kubernetes cluster where the `jumpstarter-controller` service is hosted.
 
 ```bash
 # Create the exporter instance
-$ jmpctl exporter create my-exporter --namespace jumpstarter-lab > my-exporter.yaml
+$ jmp admin create exporter my-exporter --namespace jumpstarter-lab -o my-exporter.yaml
 ```
 
 This creates an exporter named `my-exporter` and produces a YAML configuration file `my-exporter.yaml`:

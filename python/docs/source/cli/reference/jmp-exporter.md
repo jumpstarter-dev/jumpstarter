@@ -1,4 +1,4 @@
-# jmp-exporter
+# exporter
 
 ```{eval-rst}
 .. click:: jumpstarter_cli_exporter:exporter

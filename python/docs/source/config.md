@@ -8,8 +8,8 @@ Jumpstarter can be configured as either a client, an exporter, or both depending
 on your use case and deployment strategy.
 
 By default, a local client and exporter session are automatically initialized when
-running test scripts through `jmp start` or the `jmp shell` commands. This allows
-for easy testing of new drivers, client libraries, or verifying that tests work
+running test scripts through `jmp exporter shell` command.
+This allows for easy testing of new drivers, client libraries, or verifying that tests work
 on your local bench.
 
 When interacting with remote exporters in a CLI or CI environment, multiple clients
@@ -37,12 +37,6 @@ config:
   current-client: default
 ```
 
-## System Configuration
-
-Jumpstarter stores system configs in the `/etc/jumpstarter` directory.
-This configuration directory is primarily used by the exporters
-`/etc/jumpstarter/exporters` as they often run as daemon services on the host system.
-
 ## Clients
 
 Client configurations are stored in the Jumpstarter user configuration directory
@@ -56,6 +50,12 @@ the client name, access token, and any configuration parameters.
 
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
+metadata:
+  name: myclient
+  namespace: jumpstarter-lab
+tls:
+  insecure: false
+  ca: ""
 endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 drivers:
@@ -68,8 +68,11 @@ drivers:
 - `drivers` - Driver client library configuration.
   - `allow` - A list of allowed driver namespaces to automatically load.
   - `unsafe: true` - Should all drivers be allowed to load?
+- `tls`
+  - `insecure` - Set to `true` to disable TLS verification of the gRPC endpoint.
+  - `ca` - Path to a custom CA certificate file to use for TLS verification.
 
-### Multiple Clients
+## Multiple Clients
 
 Multiple client configs can be added to the `~/.config/jumpstarter/clients` directory
 manually or by using the Jumpstarter CLI.
@@ -78,45 +81,44 @@ Similar to kubectl, Jumpstarter allows you to switch between different client
 configurations using the CLI tool. A `default` client is automatically configured
 when installing the Jumpstarter Helm chart with `jmp install`.
 
-### Creating a client in the distributed service
+## Creating a client in the distributed service
 
-To create a new client in the distributed service you must use the `jmpctl` command,
+To create a new client in the distributed service you must use the `jmp admin create` subcommand,
 please follow the instructions in the [Jumpstarter service CLI](./cli/clients.md).
 
-### Importing a client created by the administrator
+## Importing a client created by the administrator
 
 Importing a new client is as simple as copying the administrator provided yaml
 file to `~/.config/jumpstarter/clients/`, alternatively if we have the token
-and endpoint the `jmp create <name>` command can be used to create
+and endpoint the `jmp client create <name>` command can be used to create
 the config file.
 
-To switch between different client configs, use the `jmp use <name>` command:
+To switch between different client configs, use the `jmp client use-config <name>` command:
 
 ```bash
-$ jmp use another
+$ jmp client use-config another
 Using client config '/home/jdoe/.config/jumpstarter/clients/another.yaml'
 ```
 
-All client configurations can be listed with `jmp list`:
+All client configurations can be listed with `jmp client list-configs`:
 
 ```bash
-$ jmp list
+$ jmp client list-configs
 CURRENT   NAME       ENDPOINT                       PATH
 *         default    jumpstarter1.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/default.yaml
           myclient   jumpstarter2.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/myclient.yaml
           another    jumpstarter3.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/another.yaml
 ```
 
-Clients can also be removed using `jmp delete <name>`:
+Clients can also be removed using `jmp client delete-config <name>`:
 
 ```bash
-$ jmp delete myclient
+$ jmp client delete-config myclient
 Deleted client config '/home/jdoe/.config/jumpstarter/clients/myclient.yaml'
 ```
 
 
-
-### Client Environment Variables
+## Client Environment Variables
 
 The client configuration may also be provided by environment variables which may
 be useful in CI or when writing a script that uses Jumpstarter.
@@ -124,12 +126,20 @@ be useful in CI or when writing a script that uses Jumpstarter.
 - `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification.
 - `JMP_CLIENT_CONFIG` - A path to a client configuration YAML file to use.
 - `JMP_CLIENT` - The name of a registered client config to use.
+- `JMP_NAMESPACE` - The namespace in the jumpstarter-controller to use, like `metadata.namespace`.
+- `JMP_NAME` - The client/exporter name in the jumpstarter-controller to use, like `metadata.name`.
 - `JMP_ENDPOINT` - The gRPC endpoint of the Jumpstarter controller server
 (overrides the config value).
 - `JMP_TOKEN` - A client auth token generated by the controller
 (overrides the config value).
 - `JMP_DRIVERS_ALLOW` - A comma-separated list of allowed driver namespaces
 to automatically load. Can be set to `UNSAFE` to allow unsafe loading of drivers.
+
+## System Configuration
+
+Jumpstarter stores system configs in the `/etc/jumpstarter` directory.
+This configuration directory is primarily used by the exporters
+`/etc/jumpstarter/exporters` as they often run as daemon services on the host system.
 
 ## Exporters
 
@@ -147,6 +157,12 @@ of built-in drivers and any additional driver packages registered by the user.
 
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Exporter
+metadata:
+  name: myexporter
+  namespace: jumpstarter-lab
+tls:
+  insecure: false
+  ca: ""
 endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
 export:
@@ -168,23 +184,27 @@ export:
       hello: "world"
 ```
 
+- `metadata` - Name/namespace information for the jumsptarter controller to identify the exporter along the token.
 - `endpoint` - The gRPC endpoint of the Jumpstarter controller server.
 - `token` - An exporter auth token generated by the controller.
 - `export` - Exporter driver configuration.
+- `tls`
+  - `insecure` - Set to `true` to disable TLS verification of the gRPC endpoint.
+  - `ca` - Path to a custom CA certificate file to use for TLS verification.
 
 ### Exporter CLI Commands
 
 ### Creating a exporter in the distributed service
 
-To create a new exporter in the distributed service you must use the `jmpctl` command,
+To create a new exporter in the distributed service you must use the `jmp admin create` command,
 please follow the instructions in the [Jumpstarter service CLI](./cli/exporters.md).
 
 ### Creating a exporter configuration file
 To create a new exporter configuration file from a know endpoint and
-token the `jmp-exporter create <name>` command can be used.
+token the `jmp exporter create <name>` command can be used.
 
 ```bash
-$ jmp-exporter create myexporter
+$ jmp exporter create myexporter
 Endpoint: grpc.jumpstarter.my.domain.com
 Token: <<token>>
 ```
@@ -192,29 +212,29 @@ Token: <<token>>
 To use a specific config when starting the exporter:
 
 ```bash
-$ jmp-exporter run my-exporter
+$ jmp exporter run my-exporter
 Using exporter config '/etc/jumpstarter/exporters/another/exporter.yaml'
 ```
 
 The path to a config can also be provided:
 
 ```bash
-jmp-exporter run -c /etc/jumpstarter/exporters/another/exporter.yaml
+jmp exporter run -c /etc/jumpstarter/exporters/another/exporter.yaml
 ```
 
-All exporter configurations can be listed with `jmp-exporter list`:
+All exporter configurations can be listed with `jmp exporter list`:
 
 ```bash
-$ jmp-exporter list
+$ jmp exporter list
 ALIAS             PATH
 test-exporter-2   /etc/jumpstarter/exporters/test-exporter-2.yaml
 my-exporter       /etc/jumpstarter/exporters/my-exporter.yaml
 ```
 
-Exporers can also be removed using `jmp-exporter delete <name>`:
+Exporers can also be removed using `jmp exporter delete <name>`:
 
 ```bash
-$ jmp-exporter delete myexporter
+$ jmp exporter delete myexporter
 Deleted exporter config '/etc/jumpstarter/exporters/myexporter.yaml'
 ```
 
@@ -229,6 +249,9 @@ to use.
 (overrides the config value).
 - `JMP_TOKEN` - An exporter auth token generated by the controller
 (overrides the config value).
+- `JMP_NAMESPACE` - The namespace in the jumpstarter-controller to use, like `metadata.namespace`.
+- `JMP_NAME` - The client/exporter name in the jumpstarter-controller to use, like `metadata.name`.
+
 
 ## Running an Exporter
 
@@ -242,8 +265,7 @@ To run the exporter container on a test runner using Podman:
 
 ```{code-block} bash
 :substitutions:
-$ sudo podman run --rm -ti --name my-exporter --net=host  --privileged \
-                -e JUMPSTARTER_GRPC_INSECURE=1 \
+$ sudo podman run --rm -ti --name my-exporter --net=host --privileged \
                 -v /run/udev:/run/udev -v /dev:/dev -v /etc/jumpstarter:/etc/jumpstarter \
                 quay.io/jumpstarter-dev/jumpstarter:{{version}} \
                 jmp-exporter run my-exporter
@@ -273,14 +295,17 @@ Description=My exporter
 
 [Container]
 ContainerName=my-exporter
-Environment=JUMPSTARTER_GRPC_INSECURE=1
-Exec=jmp-exporter run my-exporter
+Exec=/jumpstarter/bin/jmp exporter run my-exporter
 Image=quay.io/jumpstarter-dev/jumpstarter:{{version}}
 Network=host
 PodmanArgs=--privileged
 Volume=/run/udev:/run/udev
 Volume=/dev:/dev
 Volume=/etc/jumpstarter:/etc/jumpstarter
+
+[Service]
+Restart=always
+StartLimitBurst=0
 
 [Install]
 WantedBy=multi-user.target default.target
@@ -289,5 +314,6 @@ WantedBy=multi-user.target default.target
 Then enable and start the service:
 
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl enable --now my-exporter
 ```
