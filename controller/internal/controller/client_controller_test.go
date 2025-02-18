@@ -79,7 +79,7 @@ var _ = Describe("Identity Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy")
 			Expect(err).NotTo(HaveOccurred())
 
 			controllerReconciler := &ClientReconciler{
@@ -98,7 +98,7 @@ var _ = Describe("Identity Controller", func() {
 
 		It("should reconcile a missing token secret", func() {
 			By("recreating the secret")
-			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy")
 			Expect(err).NotTo(HaveOccurred())
 
 			controllerReconciler := &ClientReconciler{
@@ -129,7 +129,7 @@ var _ = Describe("Identity Controller", func() {
 
 		It("should reconcile an invalid token secret", func() {
 			By("recreating the secret")
-			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+			signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy")
 			Expect(err).NotTo(HaveOccurred())
 
 			controllerReconciler := &ClientReconciler{

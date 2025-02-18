@@ -34,6 +34,7 @@ func LoadConfiguration(
 		scheme,
 		[]byte(rawAuthenticationConfiguration),
 		signer,
+		"internal:", // TODO: read this from configuration
 		certificateAuthority,
 	)
 	if err != nil {

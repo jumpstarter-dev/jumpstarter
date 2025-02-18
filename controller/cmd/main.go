@@ -145,7 +145,6 @@ func main() {
 		[]byte(os.Getenv("CONTROLLER_KEY")),
 		"https://localhost:8085",
 		"jumpstarter",
-		"internal:",
 	)
 	if err != nil {
 		setupLog.Error(err, "unable to create internal oidc signer")
@@ -206,7 +205,7 @@ func main() {
 		Client: watchClient,
 		Scheme: mgr.GetScheme(),
 		Authn:  authentication.NewBearerTokenAuthenticator(authenticator),
-		Authz:  authorization.NewBasicAuthorizer(watchClient, oidcSigner.Prefix()),
+		Authz:  authorization.NewBasicAuthorizer(watchClient, "internal:"),
 		Attr: authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
 			NamespaceKey: "jumpstarter-namespace",
 			ResourceKey:  "jumpstarter-kind",

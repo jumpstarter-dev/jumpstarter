@@ -12,7 +12,6 @@ import (
 	tokenunion "k8s.io/apiserver/pkg/authentication/token/union"
 	"k8s.io/apiserver/pkg/server/dynamiccertificates"
 	"k8s.io/apiserver/plugin/pkg/authenticator/token/oidc"
-	"k8s.io/utils/ptr"
 )
 
 func LoadAuthenticationConfiguration(
@@ -20,6 +19,7 @@ func LoadAuthenticationConfiguration(
 	scheme *runtime.Scheme,
 	configuration []byte,
 	signer *Signer,
+	prefix string,
 	certificateAuthority string,
 ) (authenticator.Token, error) {
 	var authenticationConfiguration jumpstarterdevv1alpha1.AuthenticationConfiguration
@@ -41,7 +41,7 @@ func LoadAuthenticationConfiguration(
 		ClaimMappings: apiserverv1beta1.ClaimMappings{
 			Username: apiserverv1beta1.PrefixedClaimOrExpression{
 				Claim:  "sub",
-				Prefix: ptr.To(signer.Prefix()),
+				Prefix: &prefix,
 			},
 		},
 	})

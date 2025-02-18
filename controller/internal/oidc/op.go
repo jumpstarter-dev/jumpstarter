@@ -21,19 +21,17 @@ type Signer struct {
 	privatekey *ecdsa.PrivateKey
 	issuer     string
 	audience   string
-	prefix     string
 }
 
-func NewSigner(privateKey *ecdsa.PrivateKey, issuer, audience, prefix string) *Signer {
+func NewSigner(privateKey *ecdsa.PrivateKey, issuer, audience string) *Signer {
 	return &Signer{
 		privatekey: privateKey,
 		issuer:     issuer,
 		audience:   audience,
-		prefix:     prefix,
 	}
 }
 
-func NewSignerFromSeed(seed []byte, issuer, audience, prefix string) (*Signer, error) {
+func NewSignerFromSeed(seed []byte, issuer, audience string) (*Signer, error) {
 	hash := sha256.Sum256(seed)
 	source := rand.NewSource(int64(binary.BigEndian.Uint64(hash[:8])))
 	reader := rand.New(source)
@@ -41,7 +39,7 @@ func NewSignerFromSeed(seed []byte, issuer, audience, prefix string) (*Signer, e
 	if err != nil {
 		return nil, err
 	}
-	return NewSigner(key, issuer, audience, prefix), nil
+	return NewSigner(key, issuer, audience), nil
 }
 
 func (k *Signer) Issuer() string {
@@ -50,10 +48,6 @@ func (k *Signer) Issuer() string {
 
 func (k *Signer) Audience() string {
 	return k.audience
-}
-
-func (k *Signer) Prefix() string {
-	return k.prefix
 }
 
 func (k *Signer) ID() string {

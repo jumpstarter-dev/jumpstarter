@@ -355,7 +355,7 @@ func reconcileLease(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) re
 		Scheme: k8sClient.Scheme(),
 	}
 
-	signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+	signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy")
 	Expect(err).NotTo(HaveOccurred())
 
 	exporterReconciler := &ExporterReconciler{

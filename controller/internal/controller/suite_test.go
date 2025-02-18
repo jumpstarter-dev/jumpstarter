@@ -122,7 +122,7 @@ func createExporters(ctx context.Context, exporters ...*jumpstarterdevv1alpha1.E
 			Namespace: "default", // TODO(user):Modify as needed
 		}
 
-		signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy", "dummy:")
+		signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy")
 		Expect(err).NotTo(HaveOccurred())
 
 		controllerReconciler := &ExporterReconciler{
