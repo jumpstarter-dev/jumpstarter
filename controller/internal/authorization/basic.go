@@ -2,6 +2,7 @@ package authorization
 
 import (
 	"context"
+	"slices"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -30,7 +31,7 @@ func (b *BasicAuthorizer) Authorize(
 		}, &e); err != nil {
 			return authorizer.DecisionDeny, "failed to get exporter", err
 		}
-		if e.Username(b.prefix) == attributes.GetUser().GetName() {
+		if slices.Contains(e.Usernames(b.prefix), attributes.GetUser().GetName()) {
 			return authorizer.DecisionAllow, "", nil
 		} else {
 			return authorizer.DecisionDeny, "", nil
@@ -43,7 +44,7 @@ func (b *BasicAuthorizer) Authorize(
 		}, &c); err != nil {
 			return authorizer.DecisionDeny, "failed to get client", err
 		}
-		if c.Username(b.prefix) == attributes.GetUser().GetName() {
+		if slices.Contains(c.Usernames(b.prefix), attributes.GetUser().GetName()) {
 			return authorizer.DecisionAllow, "", nil
 		} else {
 			return authorizer.DecisionDeny, "", nil

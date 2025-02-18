@@ -18,7 +18,7 @@ func ensureSecret(
 	key client.ObjectKey,
 	kclient client.Client,
 	signer *oidc.Signer,
-	username string,
+	subject string,
 ) (*corev1.Secret, error) {
 	logger := log.FromContext(ctx).WithName("ensureSecret")
 	var secret corev1.Secret
@@ -29,7 +29,7 @@ func ensureSecret(
 		}
 		// Secret not present
 		logger.Info("secret not present, creating")
-		token, err := signer.Token(username)
+		token, err := signer.Token(subject)
 		if err != nil {
 			logger.Error(err, "failed to sign token")
 			return nil, err
@@ -51,11 +51,11 @@ func ensureSecret(
 		return &secret, nil
 	} else {
 		token, ok := secret.Data[TokenKey]
-		if !ok || signer.UnsafeValidate(string(token)) != nil {
+		if !ok || signer.Validate(string(token)) != nil {
 			// Secret present but invalid
 			logger.Info("secret present but invalid, updating")
 			original := client.MergeFrom(secret.DeepCopy())
-			token, err := signer.Token(username)
+			token, err := signer.Token(subject)
 			if err != nil {
 				logger.Error(err, "failed to sign token")
 				return nil, err
