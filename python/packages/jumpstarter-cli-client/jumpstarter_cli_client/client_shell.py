@@ -23,4 +23,4 @@ def client_shell(name: str, labels, lease_name):
 
     with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
         with lease.serve_unix() as path:
-            launch_shell(path, config.drivers.allow, config.drivers.unsafe)
+            launch_shell(path, "remote", config.drivers.allow, config.drivers.unsafe)

@@ -65,7 +65,21 @@ def env():
             yield client
 
 
-def launch_shell(host: str, allow: list[str], unsafe: bool):
+ANSI_GRAY = "\\[\\e[90m\\]"
+ANSI_YELLOW = "\\[\\e[93m\\]"
+ANSI_WHITE = "\\[\\e[97m\\]"
+ANSI_RESET = "\\[\\e[0m\\]"
+PROMPT_CWD = "\\W"
+
+def launch_shell(host: str, context: str, allow: list[str], unsafe: bool):
+    """Launch a shell with a custom prompt indicating the exporter type.
+
+    Args:
+        host: The jumpstarter host path
+        context: The context of the shell ("local" or "remote")
+        allow: List of allowed drivers
+        unsafe: Whether to allow drivers outside of the allow list
+    """
     process = Popen(
         [os.environ.get("SHELL", "bash")],
         stdin=sys.stdin,
@@ -75,6 +89,7 @@ def launch_shell(host: str, allow: list[str], unsafe: bool):
         | {
             JUMPSTARTER_HOST: host,
             JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
-        },
+            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
+        }
     )
     process.wait()
