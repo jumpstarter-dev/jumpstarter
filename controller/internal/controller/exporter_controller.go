@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -85,64 +84,23 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *ExporterReconciler) exporterSecretExists(
-	ctx context.Context,
-	exporter *jumpstarterdevv1alpha1.Exporter,
-) (bool, error) {
-	logger := log.FromContext(ctx)
-
-	if exporter.Status.Credential == nil {
-		return false, nil
-	}
-	// NOTE: this could deserve some level of optimization/caching in the future
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, client.ObjectKey{
-		Namespace: exporter.Namespace,
-		Name:      exporter.Status.Credential.Name,
-	}, secret)
-	if err != nil {
-		return false, client.IgnoreNotFound(err)
-	}
-
-	token, ok := secret.Data["token"]
-
-	if !ok || r.Signer.UnsafeValidate(string(token)) != nil {
-		logger.Info("reconcileStatusCredential: the exporter secret is invalid", "exporter", exporter.Name)
-		return false, r.Delete(ctx, secret)
-	}
-
-	return true, nil
-}
-
 func (r *ExporterReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
-	logger := log.FromContext(ctx)
-
-	exists, err := r.exporterSecretExists(ctx, exporter)
+	secret, err := ensureSecret(ctx, client.ObjectKey{
+		Name:      exporter.Name + "-exporter",
+		Namespace: exporter.Namespace,
+	}, r.Client, r.Signer, exporter.Username(r.Signer.Prefix()))
 	if err != nil {
-		logger.Info("reconcileStatusCredential: the exporter secret's existence cannot be checked", "exporter", exporter.Name)
-		return err
+		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
 	}
-
-	if !exists {
-		if exporter.Status.Credential != nil {
-			// TODO: Send an alert notification to cluster
-			logger.Info("reconcileStatusCredential: the exporter secret has ceased to exist, will be recreated", "exporter", exporter.Name)
-		} else {
-			logger.Info("reconcileStatusCredential: creating credential for exporter")
-		}
-		secret, err := r.secretForExporter(exporter)
-		if err != nil {
-			return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
-		}
-		if err := r.Create(ctx, secret); err != nil {
-			return fmt.Errorf("reconcileStatusCredential: failed to create credential for exporter: %w", err)
-		}
-		exporter.Status.Credential = &corev1.LocalObjectReference{
-			Name: secret.Name,
-		}
+	// enable garbage collection on the created resource
+	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
+		return fmt.Errorf("reconcileStatusCredential: error setting owner reference: %w", err)
+	}
+	exporter.Status.Credential = &corev1.LocalObjectReference{
+		Name: secret.Name,
 	}
 	return nil
 }
@@ -189,29 +147,6 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 	}
 
 	return nil
-}
-
-func (r *ExporterReconciler) secretForExporter(exporter *jumpstarterdevv1alpha1.Exporter) (*corev1.Secret, error) {
-	token, err := r.Signer.Token(exporter.Username(r.Signer.Prefix()))
-	if err != nil {
-		return nil, err
-	}
-
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      exporter.Name + "-exporter",
-			Namespace: exporter.Namespace,
-		},
-		Type: corev1.SecretTypeOpaque,
-		StringData: map[string]string{
-			"token": token,
-		},
-	}
-	// enable garbage collection on the created resource
-	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
-		return nil, fmt.Errorf("secretForExporter, error setting owner reference: %w", err)
-	}
-	return secret, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
