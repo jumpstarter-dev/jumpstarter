@@ -171,3 +171,7 @@ block-beta
 
 style hardware fill:#888,stroke:#333,stroke-width:4px
 ```
+
+```{toctree}
+drivers.md
+```

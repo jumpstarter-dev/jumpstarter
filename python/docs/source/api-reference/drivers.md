@@ -1,4 +1,4 @@
-# Driver API Reference
+# Base Driver classes
 
 ```{warning}
 This project is still evolving, so these docs may be incomplete or out-of-date.
