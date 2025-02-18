@@ -11,6 +11,10 @@ requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
     "asyncclick>=8.1.7.2",
+    "authlib>=1.4.1",
+    "truststore>=0.10.1",
+    "joserfc>=1.0.3",
+    "yarl>=1.18.3",
 ]
 
 [dependency-groups]
