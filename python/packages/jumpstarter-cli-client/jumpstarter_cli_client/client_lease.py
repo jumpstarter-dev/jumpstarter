@@ -1,5 +1,6 @@
 import asyncclick as click
 from jumpstarter_cli_common import AliasedGroup
+from jumpstarter_cli_common.exceptions import handle_exceptions
 
 from jumpstarter.common import MetadataFilter
 from jumpstarter.config import (
@@ -8,14 +9,15 @@ from jumpstarter.config import (
 )
 
 
-@click.group(cls=AliasedGroup, short_help="")
-def lease():
+@click.group(name="lease", cls=AliasedGroup, short_help="")
+def client_lease():
     """Manage leases held by the current client"""
     pass
 
 
-@lease.command("list")
+@client_lease.command("list")
 @click.argument("name", type=str, default="")
+@handle_exceptions
 def lease_list(name):
     if name:
         config = ClientConfigV1Alpha1.load(name)
@@ -28,30 +30,34 @@ def lease_list(name):
         print(lease)
 
 
-@lease.command("release")
+@client_lease.command("release")
 @click.argument("name", type=str, default="")
 @click.option("-l", "--lease", "lease", type=str, default="")
 @click.option("--all", "all_leases", is_flag=True)
+@handle_exceptions
 def lease_release(name, lease, all_leases):
     if name:
         config = ClientConfigV1Alpha1.load(name)
     else:
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
-        raise ValueError("no client specified")
+        raise click.BadParameter("no client specified, and no default client set:" +
+                                 "specify a client name, or use jmp client use-config ", param_hint="name")
 
     if all_leases:
         for lease in config.list_leases():
             config.release_lease(lease)
     else:
         if not lease:
-            raise ValueError("no lease specified")
+            raise click.BadParameter("no lease specified, provide one or use --all to release all leases",
+                                    param_hint="lease")
         config.release_lease(lease)
 
 
-@lease.command("request")
+@client_lease.command("request")
 @click.option("-l", "--label", "labels", type=(str, str), multiple=True)
 @click.argument("name", type=str, default="")
+@handle_exceptions
 def lease_request(name, labels):
     """Request an exporter lease from the jumpstarter controller.
 
@@ -74,16 +80,13 @@ def lease_request(name, labels):
         $ jmp lease release -l "${JMP_LEASE}"
 
     """
-    try:
-        if name:
-            config = ClientConfigV1Alpha1.load(name)
-        else:
-            config = UserConfigV1Alpha1.load_or_create().config.current_client
-        if not config:
-            raise ValueError("No client specified")
-        lease = config.request_lease(metadata_filter=MetadataFilter(labels=dict(labels)))
-        print(lease.name)
-    except ValueError as e:
-        raise click.ClickException(str(e)) from e
-    except Exception as e:
-        raise e
+    if name:
+        config = ClientConfigV1Alpha1.load(name)
+    else:
+        config = UserConfigV1Alpha1.load_or_create().config.current_client
+    if not config:
+        raise click.BadParameter("no client specified, and no default client set:" +
+                                 "specify a client name, or use jmp client use-config ", param_hint="name")
+    lease = config.request_lease(metadata_filter=MetadataFilter(labels=dict(labels)))
+    print(lease.name)
+

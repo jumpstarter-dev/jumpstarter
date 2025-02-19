@@ -14,7 +14,8 @@ from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_NAME, JMP_NAMES
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common import MetadataFilter
-from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
+from jumpstarter.common.exceptions import FileNotFoundError
+from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials, translate_grpc_exceptions
 
 
 def _allow_from_env():
@@ -89,15 +90,18 @@ class ClientConfigV1Alpha1(BaseModel):
             unsafe=self.drivers.unsafe,
             tls_config=self.tls,
         )
-        return await lease.request_async()
+        with translate_grpc_exceptions():
+            return await lease.request_async()
 
     async def list_leases_async(self):
         controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
-        return (await controller.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
+        with translate_grpc_exceptions():
+            return (await controller.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
 
     async def release_lease_async(self, name):
         controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
-        await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
+        with translate_grpc_exceptions():
+            await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
 
     @asynccontextmanager
     async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal):

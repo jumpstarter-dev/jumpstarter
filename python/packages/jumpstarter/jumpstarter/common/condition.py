@@ -12,6 +12,15 @@ def condition_present_and_equal(
                 return condition.status == status
     return False
 
+def condition_message(
+    conditions: list[kubernetes_pb2.Condition], condition_type: str, reason: str | None = None
+) -> str | None:
+    for condition in conditions:
+        if condition.type == condition_type:
+            if reason is None or condition.reason == reason:
+                return condition.message
+    return None
+
 
 def condition_true(conditions: list[kubernetes_pb2.Condition], condition_type: str) -> bool:
     return condition_present_and_equal(conditions, condition_type, "True")
