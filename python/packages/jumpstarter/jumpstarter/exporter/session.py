@@ -14,17 +14,13 @@ from jumpstarter_protocol import (
     router_pb2_grpc,
 )
 
+from .logging import LogHandler
 from jumpstarter.common import Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.driver import Driver
 from jumpstarter.streams import MetadataStreamAttributes, RouterStream, forward_stream
 
 logger = logging.getLogger(__name__)
-
-
-class LogQueue(deque):
-    def put_nowait(self, item):
-        self.append(item)
 
 
 @dataclass(kw_only=True)
@@ -37,7 +33,7 @@ class Session(
     root_device: Driver
     mapping: dict[UUID, Driver]
 
-    _logging_queue: LogQueue = field(init=False)
+    _logging_queue: deque = field(init=False)
     _logging_handler: QueueHandler = field(init=False)
 
     def __enter__(self):
@@ -55,8 +51,8 @@ class Session(
         self.root_device = root_device
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
-        self._logging_queue = LogQueue(maxlen=32)
-        self._logging_handler = QueueHandler(self._logging_queue)
+        self._logging_queue = deque(maxlen=32)
+        self._logging_handler = LogHandler(self._logging_queue)
 
     @asynccontextmanager
     async def serve_port_async(self, port):
@@ -128,8 +124,5 @@ class Session(
                 entry = self._logging_queue.popleft()
             except IndexError:
                 await sleep(0.5)
-            yield jumpstarter_pb2.LogStreamResponse(
-                uuid="",
-                severity="",
-                message=entry.message,
-            )
+
+            yield entry
