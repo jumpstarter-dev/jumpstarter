@@ -73,4 +73,3 @@ jobs:
       - name: Push helm charts
         run: |
           helm push jumpstarter-*.tgz oci://${{ env.QUAY_ORG }}/helm
-          helm push jumpstarter-*.tgz oci://${{ env.QUAY_ORG }}/helm --version 0-latest
