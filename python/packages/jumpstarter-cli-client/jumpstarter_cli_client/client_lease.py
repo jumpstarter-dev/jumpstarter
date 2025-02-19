@@ -42,7 +42,7 @@ def lease_release(name, lease, all_leases):
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
         raise click.BadParameter(
-            "no client specified, and no default client set:" + "specify a client name, or use jmp client use-config ",
+            "no client specified, and no default client set: specify a client name, or use jmp client use-config ",
             param_hint="name",
         )
 
@@ -89,7 +89,7 @@ def lease_request(name, labels):
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
         raise click.BadParameter(
-            "no client specified, and no default client set:" + "specify a client name, or use jmp client use-config ",
+            "no client specified, and no default client set: specify a client name, or use jmp client use-config ",
             param_hint="name",
         )
     lease = config.request_lease(metadata_filter=MetadataFilter(labels=dict(labels)))
