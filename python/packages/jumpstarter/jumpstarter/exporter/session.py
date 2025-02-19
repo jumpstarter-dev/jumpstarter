@@ -36,13 +36,13 @@ class Session(
     _logging_handler: QueueHandler = field(init=False)
 
     def __enter__(self):
-        logger.addHandler(self._logging_handler)
+        logging.getLogger().addHandler(self._logging_handler)
         self.root_device.reset()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.root_device.close()
-        logger.removeHandler(self._logging_handler)
+        logging.getLogger().removeHandler(self._logging_handler)
 
     def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)
