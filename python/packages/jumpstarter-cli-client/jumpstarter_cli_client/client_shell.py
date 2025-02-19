@@ -1,3 +1,5 @@
+import sys
+
 import asyncclick as click
 
 from jumpstarter.common import MetadataFilter
@@ -21,6 +23,9 @@ def client_shell(name: str, labels, lease_name):
     if not config:
         raise ValueError("no client specified")
 
+    exit_code = 0
     with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
         with lease.serve_unix() as path:
-            launch_shell(path, "remote", config.drivers.allow, config.drivers.unsafe)
+            exit_code = launch_shell(path, "remote", config.drivers.allow, config.drivers.unsafe)
+
+    sys.exit(exit_code)
