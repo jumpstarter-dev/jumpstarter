@@ -42,7 +42,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     async def _create(self):
         duration = duration_pb2.Duration()
         duration.FromSeconds(self.timeout)
-        duration_str = f"{duration.seconds}s"
+        duration_str = str(duration.ToTimedelta())
 
         logger.debug("Creating lease request for labels %s for %s", self.metadata_filter.labels, duration_str)
         with translate_grpc_exceptions():
@@ -100,14 +100,18 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
                 # lease unsatisfiable
                 if condition_true(result.conditions, "Unsatisfiable"):
                     message = condition_message(result.conditions, "Unsatisfiable")
-                    logger.debug("Lease %s cannot be satisfied: %s", self.name,
-                                 condition_message(result.conditions, "Unsatisfiable"))
+                    logger.debug(
+                        "Lease %s cannot be satisfied: %s",
+                        self.name,
+                        condition_message(result.conditions, "Unsatisfiable"),
+                    )
                     raise LeaseError(f"the lease cannot be satisfied: {message}")
 
                 # lease not pending
                 if condition_false(result.conditions, "Pending"):
                     raise LeaseError(
-                        f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either")
+                        f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either"
+                    )
 
                 # lease released
                 if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
