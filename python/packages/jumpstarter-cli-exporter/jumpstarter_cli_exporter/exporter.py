@@ -57,4 +57,4 @@ def exporter_shell(alias, config_path):
 
     with config.serve_unix() as path:
         # SAFETY: the exporter config is local thus considered trusted
-        launch_shell(path, allow=[], unsafe=True)
+        launch_shell(path, "local", allow=[], unsafe=True)
