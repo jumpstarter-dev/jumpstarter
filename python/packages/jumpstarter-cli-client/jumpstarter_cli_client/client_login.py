@@ -1,6 +1,8 @@
 import asyncclick as click
+from jumpstarter_cli_common.exceptions import async_handle_exceptions
 from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_client_id
 
+from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta, UserConfigV1Alpha1
 
 
@@ -43,6 +45,7 @@ from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
     "--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).", default=None
 )
 @opt_client_id
+@async_handle_exceptions
 async def client_login(  # noqa: C901
     alias: str,
     endpoint: str,
