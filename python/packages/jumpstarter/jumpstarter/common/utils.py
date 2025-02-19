@@ -71,6 +71,7 @@ ANSI_WHITE = "\\[\\e[97m\\]"
 ANSI_RESET = "\\[\\e[0m\\]"
 PROMPT_CWD = "\\W"
 
+
 def launch_shell(host: str, context: str, allow: list[str], unsafe: bool) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -90,6 +91,6 @@ def launch_shell(host: str, context: str, allow: list[str], unsafe: bool) -> int
             JUMPSTARTER_HOST: host,
             JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
             "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
-        }
+        },
     )
     return process.wait()

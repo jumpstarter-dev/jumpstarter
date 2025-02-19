@@ -41,16 +41,19 @@ def lease_release(name, lease, all_leases):
     else:
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
-        raise click.BadParameter("no client specified, and no default client set:" +
-                                 "specify a client name, or use jmp client use-config ", param_hint="name")
+        raise click.BadParameter(
+            "no client specified, and no default client set: specify a client name, or use jmp client use-config ",
+            param_hint="name",
+        )
 
     if all_leases:
         for lease in config.list_leases():
             config.release_lease(lease)
     else:
         if not lease:
-            raise click.BadParameter("no lease specified, provide one or use --all to release all leases",
-                                    param_hint="lease")
+            raise click.BadParameter(
+                "no lease specified, provide one or use --all to release all leases", param_hint="lease"
+            )
         config.release_lease(lease)
 
 
@@ -85,8 +88,9 @@ def lease_request(name, labels):
     else:
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
-        raise click.BadParameter("no client specified, and no default client set:" +
-                                 "specify a client name, or use jmp client use-config ", param_hint="name")
+        raise click.BadParameter(
+            "no client specified, and no default client set: specify a client name, or use jmp client use-config ",
+            param_hint="name",
+        )
     lease = config.request_lease(metadata_filter=MetadataFilter(labels=dict(labels)))
     print(lease.name)
-

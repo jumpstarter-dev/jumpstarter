@@ -14,6 +14,7 @@ class ShellClient(DriverClient):
     on the driver, and if it is, it will call it and get the results
     in the form of (stdout, stderr, returncode).
     """
+
     def _check_method_exists(self, method):
         if self._methods is None:
             self._methods = self.call("get_methods")

@@ -1,4 +1,3 @@
-
 from jumpstarter_driver_power.driver import MockPower
 
 from .driver import Composite
