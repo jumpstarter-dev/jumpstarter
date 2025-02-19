@@ -8,9 +8,11 @@ from google.protobuf import duration_pb2
 from grpc.aio import Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
 
+from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
 from jumpstarter.common import MetadataFilter, TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
+from jumpstarter.common.grpc import translate_grpc_exceptions
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 
@@ -43,17 +45,26 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         duration_str = f"{duration.seconds}s"
 
         logger.debug("Creating lease request for labels %s for %s", self.metadata_filter.labels, duration_str)
-        self.name = (
-            await self.controller.RequestLease(
-                jumpstarter_pb2.RequestLeaseRequest(
-                    duration=duration,
-                    selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
+        with translate_grpc_exceptions():
+            self.name = (
+                await self.controller.RequestLease(
+                    jumpstarter_pb2.RequestLeaseRequest(
+                        duration=duration,
+                        selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
+                    )
                 )
-            )
-        ).name
+            ).name
         logger.info("Created lease request for labels %s for %s", self.metadata_filter.labels, duration_str)
 
     def request(self):
+        """Request a lease, or verifies a lease which was already created.
+
+        :return: lease
+        :rtype: Lease
+        :raises LeaseError: if lease is unsatisfiable
+        :raises LeaseError: if lease is not pending
+        :raises TimeoutError: if lease is not ready after timeout
+        """
         return self.portal.call(self.request_async)
 
     async def request_async(self):
@@ -61,8 +72,8 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
 
         :return: lease
         :rtype: Lease
-        :raises ValueError: if lease is unsatisfiable
-        :raises ValueError: if lease is not pending
+        :raises LeaseError: if lease is unsatisfiable
+        :raises LeaseError: if lease is not pending
         :raises TimeoutError: if lease is not ready after timeout
         """
         if self.name:
@@ -79,26 +90,28 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         with fail_after(300):  # TODO: configurable timeout
             while True:
                 logger.debug("Polling Lease %s", self.name)
-                result = await self.controller.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.name))
+                with translate_grpc_exceptions():
+                    result = await self.controller.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.name))
 
                 # lease ready
                 if condition_true(result.conditions, "Ready"):
-                    logger.info("Lease %s acquired", self.name)
+                    logger.debug("Lease %s acquired", self.name)
                     return self
                 # lease unsatisfiable
                 if condition_true(result.conditions, "Unsatisfiable"):
-                    logger.error("Lease %s cannot be satisfied: %s", self.name,
+                    message = condition_message(result.conditions, "Unsatisfiable")
+                    logger.debug("Lease %s cannot be satisfied: %s", self.name,
                                  condition_message(result.conditions, "Unsatisfiable"))
-                    raise ValueError("lease unsatisfiable")
+                    raise LeaseError(f"the lease cannot be satisfied: {message}")
+
                 # lease not pending
                 if condition_false(result.conditions, "Pending"):
-                    logger.Error("Lease %s is not in pending, but it isn't in Ready or Unsatisfiable state either",
-                                 self.name)
-                    raise ValueError("lease not pending")
+                    raise LeaseError(
+                        f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either")
+
                 # lease released
                 if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
-                    logger.error("The lease %s was released", self.name)
-                    raise ValueError("lease released")
+                    raise LeaseError(f"lease {self.name} released")
 
                 await sleep(1)
 
