@@ -100,14 +100,18 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
                 # lease unsatisfiable
                 if condition_true(result.conditions, "Unsatisfiable"):
                     message = condition_message(result.conditions, "Unsatisfiable")
-                    logger.debug("Lease %s cannot be satisfied: %s", self.name,
-                                 condition_message(result.conditions, "Unsatisfiable"))
+                    logger.debug(
+                        "Lease %s cannot be satisfied: %s",
+                        self.name,
+                        condition_message(result.conditions, "Unsatisfiable"),
+                    )
                     raise LeaseError(f"the lease cannot be satisfied: {message}")
 
                 # lease not pending
                 if condition_false(result.conditions, "Pending"):
                     raise LeaseError(
-                        f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either")
+                        f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either"
+                    )
 
                 # lease released
                 if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):

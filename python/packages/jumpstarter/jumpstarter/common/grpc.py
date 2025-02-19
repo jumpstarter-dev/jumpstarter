@@ -23,7 +23,7 @@ def ssl_channel_credentials(target: str, tls_config):
             root_certificates = ssl.get_server_certificate((parsed.hostname, port))
             return grpc.ssl_channel_credentials(root_certificates=root_certificates.encode())
         except socket.gaierror as e:
-            raise ConnectionError(f"Failed resolving {parsed.hostname}") from  e
+            raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
         except ConnectionRefusedError as e:
             raise ConnectionError(f"Failed connecting to {parsed.hostname}:{port}") from e
 
@@ -37,6 +37,7 @@ def ssl_channel_credentials(target: str, tls_config):
 def aio_secure_channel(target: str, credentials: grpc.ChannelCredentials):
     return grpc.aio.secure_channel(target, credentials, options=(("grpc.lb_policy_name", "round_robin"),))
 
+
 def configure_grpc_env():
     # disable informative logs by default, i.e.:
     # WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
@@ -45,6 +46,7 @@ def configure_grpc_env():
         os.environ["GRPC_VERBOSITY"] = "ERROR"
     if os.environ.get("GLOG_minloglevel") is None:
         os.environ["GLOG_minloglevel"] = "2"
+
 
 @contextmanager
 def translate_grpc_exceptions():

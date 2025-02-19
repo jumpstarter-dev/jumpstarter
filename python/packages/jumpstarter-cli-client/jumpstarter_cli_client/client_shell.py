@@ -23,9 +23,10 @@ def client_shell(name: str, labels, lease_name):
     else:
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
-       raise click.BadParameter("no client specified, and no default client set:" +
-                                 "specify a client name, or use jmp client use-config ", param_hint="name")
-
+        raise click.BadParameter(
+            "no client specified, and no default client set:" + "specify a client name, or use jmp client use-config ",
+            param_hint="name",
+        )
 
     exit_code = 0
     with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
