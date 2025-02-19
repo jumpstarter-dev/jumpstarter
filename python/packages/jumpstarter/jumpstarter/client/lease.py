@@ -42,7 +42,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     async def _create(self):
         duration = duration_pb2.Duration()
         duration.FromSeconds(self.timeout)
-        duration_str = f"{duration.seconds}s"
+        duration_str = str(duration.ToTimedelta())
 
         logger.debug("Creating lease request for labels %s for %s", self.metadata_filter.labels, duration_str)
         with translate_grpc_exceptions():
