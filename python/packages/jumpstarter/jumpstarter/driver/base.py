@@ -201,11 +201,7 @@ class Driver(
                 match method:
                     case "GET":
                         async with aiohttp.request(
-                            method,
-                            url,
-                            headers=headers,
-                            raise_for_status=True,
-                            timeout=client_timeout
+                            method, url, headers=headers, raise_for_status=True, timeout=client_timeout
                         ) as resp:
                             async with AiohttpStreamReaderStream(reader=resp.content) as stream:
                                 yield stream

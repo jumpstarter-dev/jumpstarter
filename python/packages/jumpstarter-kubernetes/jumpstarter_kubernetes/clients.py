@@ -55,7 +55,9 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             else V1Alpha1ClientStatus(credential=None, endpoint=""),
         )
 
-    async def create_client(self, name: str, oidc_username: str | None = None) -> V1Alpha1Client:
+    async def create_client(
+        self, name: str, labels: dict[str, str] | None = None, oidc_username: str | None = None
+    ) -> V1Alpha1Client:
         """Create a client object in the cluster async"""
         # Create the namespaced client object
         await self.api.create_namespaced_custom_object(
@@ -66,7 +68,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             body={
                 "apiVersion": "jumpstarter.dev/v1alpha1",
                 "kind": "Client",
-                "metadata": {"name": name},
+                "metadata": {"name": name} | {"labels": labels} if labels is not None else {},
                 "spec": {"username": oidc_username} if oidc_username is not None else {},
             },
         )

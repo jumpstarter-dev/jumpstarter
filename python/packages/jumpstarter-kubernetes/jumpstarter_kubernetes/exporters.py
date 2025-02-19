@@ -76,7 +76,9 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
         )
         return ExportersV1Alpha1Api._deserialize(result)
 
-    async def create_exporter(self, name: str, oidc_username: str | None = None) -> V1Alpha1Exporter:
+    async def create_exporter(
+        self, name: str, labels: dict[str, str] | None = None, oidc_username: str | None = None
+    ) -> V1Alpha1Exporter:
         """Create an exporter in the cluster"""
         # Create the namespaced exporter object
         await self.api.create_namespaced_custom_object(
@@ -87,7 +89,7 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
             body={
                 "apiVersion": "jumpstarter.dev/v1alpha1",
                 "kind": "Exporter",
-                "metadata": {"name": name},
+                "metadata": {"name": name} | {"labels": labels} if labels is not None else {},
                 "spec": {"username": oidc_username} if oidc_username is not None else {},
             },
         )
