@@ -35,7 +35,7 @@ class HttpServer(Driver):
         os.makedirs(self.root_dir, exist_ok=True)
         self.app.router.add_routes(
             [
-                web.get("/{filename}", self.get_file),
+                web.static("/", self.root_dir),
             ]
         )
         if self.host is None:
@@ -115,27 +115,6 @@ class HttpServer(Driver):
         except Exception as e:
             self.logger.error(f"Failed to delete file '{filename}': {e}")
             raise HttpServerError(f"Failed to delete file '{filename}': {e}") from e
-
-    async def get_file(self, request) -> web.FileResponse:
-        """
-        Retrieve a file from the HTTP server.
-
-        Args:
-            request: aiohttp request object.
-
-        Returns:
-            web.FileResponse: HTTP response containing the requested file.
-
-        Raises:
-            web.HTTPNotFound: If the requested file does not exist.
-        """
-        filename = request.match_info["filename"]
-        file_path = os.path.join(self.root_dir, filename)
-        if not os.path.isfile(file_path):
-            self.logger.warning(f"File not found: {file_path}")
-            raise web.HTTPNotFound(text=f"File '{filename}' not found.")
-        self.logger.info(f"Serving file: {file_path}")
-        return web.FileResponse(file_path)
 
     @export
     def list_files(self) -> list[str]:
