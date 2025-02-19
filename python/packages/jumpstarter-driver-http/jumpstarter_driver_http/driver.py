@@ -25,6 +25,7 @@ class HttpServer(Driver):
     root_dir: str = "/var/www"
     host: str | None = field(default=None)
     port: int = 8080
+    timeout: int = field(default=600)
     app: web.Application = field(init=False, default_factory=web.Application)
     runner: Optional[web.AppRunner] = field(init=False, default=None)
 
@@ -80,7 +81,7 @@ class HttpServer(Driver):
                 raise HttpServerError("Invalid target path")
 
             async with await FileWriteStream.from_path(file_path) as dst:
-                async with self.resource(src_stream) as src:
+                async with self.resource(src_stream, timeout=self.timeout) as src:
                     async for chunk in src:
                         await dst.send(chunk)
 
