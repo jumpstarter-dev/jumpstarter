@@ -44,9 +44,10 @@ class PowerClient(DriverClient):
             self.off()
 
         @base.command()
-        @click.option('--wait', '-w', default=2, help='Wait time in seconds between off and on')
+        @click.option("--wait", "-w", default=2, help="Wait time in seconds between off and on")
         def cycle(wait):
             """Power cycle"""
             click.echo(f"Power cycling with {wait} seconds wait time...")
             self.cycle(wait)
+
         return base

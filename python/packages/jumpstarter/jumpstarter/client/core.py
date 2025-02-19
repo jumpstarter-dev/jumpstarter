@@ -55,7 +55,7 @@ class AsyncDriverClient(
         # add default handler
         if not self.logger.handlers:
             handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+            handler.setFormatter(logging.Formatter("%(name)s - %(levelname)s - %(message)s"))
             self.logger.addHandler(handler)
 
     async def call_async(self, method, *args):
