@@ -1,8 +1,8 @@
 import logging
+from collections import deque
 from contextlib import AbstractContextManager, asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
 from logging.handlers import QueueHandler
-from queue import Empty, Queue
 from uuid import UUID
 
 import grpc
@@ -22,6 +22,11 @@ from jumpstarter.streams import MetadataStreamAttributes, RouterStream, forward_
 logger = logging.getLogger(__name__)
 
 
+class LogQueue(deque):
+    def put_nowait(self, item):
+        self.append(item)
+
+
 @dataclass(kw_only=True)
 class Session(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
@@ -32,7 +37,7 @@ class Session(
     root_device: Driver
     mapping: dict[UUID, Driver]
 
-    _logging_queue: Queue = field(init=False)
+    _logging_queue: LogQueue = field(init=False)
     _logging_handler: QueueHandler = field(init=False)
 
     def __enter__(self):
@@ -50,7 +55,7 @@ class Session(
         self.root_device = root_device
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
-        self._logging_queue = Queue(maxsize=512)
+        self._logging_queue = LogQueue(maxlen=32)
         self._logging_handler = QueueHandler(self._logging_queue)
 
     @asynccontextmanager
@@ -120,8 +125,8 @@ class Session(
     async def LogStream(self, request, context):
         while True:
             try:
-                entry = self._logging_queue.get_nowait()
-            except Empty:
+                entry = self._logging_queue.popleft()
+            except IndexError:
                 await sleep(0.5)
             yield jumpstarter_pb2.LogStreamResponse(
                 uuid="",
