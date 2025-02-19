@@ -121,8 +121,6 @@ class Session(
     async def LogStream(self, request, context):
         while True:
             try:
-                entry = self._logging_queue.popleft()
+                yield self._logging_queue.popleft()
             except IndexError:
                 await sleep(0.5)
-
-            yield entry

@@ -131,11 +131,14 @@ class AsyncDriverClient(
                     mode="json"
                 )
 
+    def __log(self, level: int, msg: str):
+        self.logger.log(level, msg)
+
     @asynccontextmanager
     async def log_stream_async(self):
         async def log_stream():
             async for response in self.LogStream(empty_pb2.Empty()):
-                self.logger.log(logging.getLevelName(response.severity), response.message)
+                self.__log(logging.getLevelName(response.severity), response.message)
 
         async with create_task_group() as tg:
             tg.start_soon(log_stream)
