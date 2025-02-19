@@ -19,6 +19,8 @@ from .k8s import (
 )
 from jumpstarter.config import ClientConfigV1Alpha1, ExporterConfigV1Alpha1, UserConfigV1Alpha1
 
+opt_oidc_username = click.option("--oidc-username", "oidc_username", type=str, default=None, help="OIDC username")
+
 
 @click.group(cls=AliasedGroup)
 @opt_log_level
@@ -57,6 +59,7 @@ def create(log_level: Optional[str]):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_oidc_username
 async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -66,12 +69,13 @@ async def create_client(
     allow: Optional[str],
     unsafe: bool,
     out: Optional[str],
+    oidc_username: str | None,
 ):
     """Create a client object in the Kubernetes cluster"""
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             click.echo(f"Creating client '{name}' in namespace '{namespace}'")
-            await api.create_client(name)
+            await api.create_client(name, oidc_username)
             # Save the client config
             if save or out is not None or click.confirm("Save client configuration?"):
                 click.echo("Fetching client credentials from cluster")
@@ -117,6 +121,7 @@ async def create_client(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_oidc_username
 async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -124,12 +129,13 @@ async def create_exporter(
     namespace: str,
     save: bool,
     out: Optional[str],
+    oidc_username: str | None,
 ):
     """Create an exporter object in the Kubernetes cluster"""
     try:
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
-            await api.create_exporter(name)
+            await api.create_exporter(name, oidc_username)
             # Save the client config
             if save or out is not None or click.confirm("Save exporter configuration?"):
                 click.echo("Fetching exporter credentials from cluster")
