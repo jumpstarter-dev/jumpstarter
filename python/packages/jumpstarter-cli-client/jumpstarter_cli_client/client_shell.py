@@ -1,3 +1,5 @@
+import sys
+
 import asyncclick as click
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
@@ -25,6 +27,9 @@ def client_shell(name: str, labels, lease_name):
                                  "specify a client name, or use jmp client use-config ", param_hint="name")
 
 
+    exit_code = 0
     with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
         with lease.serve_unix() as path:
-            launch_shell(path, "remote", config.drivers.allow, config.drivers.unsafe)
+            exit_code = launch_shell(path, "remote", config.drivers.allow, config.drivers.unsafe)
+
+    sys.exit(exit_code)
