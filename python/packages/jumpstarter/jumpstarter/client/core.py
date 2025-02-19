@@ -6,6 +6,8 @@ import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
+from anyio import create_task_group
+from google.protobuf import empty_pb2
 from grpc import StatusCode
 from grpc.aio import AioRpcError, Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
@@ -128,3 +130,16 @@ class AsyncDriverClient(
                 yield ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata)).resource.model_dump(
                     mode="json"
                 )
+
+    @asynccontextmanager
+    async def log_stream_async(self):
+        async def log_stream():
+            async for response in self.LogStream(empty_pb2.Empty()):
+                self.logger.info(response.message)
+
+        async with create_task_group() as tg:
+            tg.start_soon(log_stream)
+            try:
+                yield
+            finally:
+                tg.cancel_scope.cancel()
