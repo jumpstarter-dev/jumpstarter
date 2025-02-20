@@ -3,28 +3,23 @@
 Network adapters are for transforming network connections exposed by drivers
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_network.adapters.TcpPortforwardAdapter
-    :members:
+.. autofunction:: jumpstarter_driver_network.adapters.TcpPortforwardAdapter
 ```
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_network.adapters.UnixPortforwardAdapter
-    :members:
+.. autofunction:: jumpstarter_driver_network.adapters.UnixPortforwardAdapter
 ```
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_network.adapters.NovncAdapter
-    :members:
+.. autofunction:: jumpstarter_driver_network.adapters.NovncAdapter
 ```
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_network.adapters.PexpectAdapter
-    :members:
+.. autofunction:: jumpstarter_driver_network.adapters.PexpectAdapter
 ```
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_network.adapters.FabricAdapter
-    :members:
+.. autofunction:: jumpstarter_driver_network.adapters.FabricAdapter
 ```
 
 ## Examples

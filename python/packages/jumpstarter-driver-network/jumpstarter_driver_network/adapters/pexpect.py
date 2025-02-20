@@ -1,22 +1,19 @@
 import socket
-from dataclasses import dataclass
+from contextlib import contextmanager
 
 from pexpect.fdpexpect import fdspawn
 
 from .portforward import TcpPortforwardAdapter
+from jumpstarter.client import DriverClient
 
 
-@dataclass(kw_only=True)
-class PexpectAdapter(TcpPortforwardAdapter):
-    async def __aenter__(self):
-        addr = await super().__aenter__()
+@contextmanager
+def PexpectAdapter(*, client: DriverClient, method: str = "connect"):
+    with TcpPortforwardAdapter(client=client, method=method) as addr:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(addr)
 
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect(addr)
-
-        return fdspawn(self.socket)
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        self.socket.close()
-
-        await super().__aexit__(exc_type, exc_value, traceback)
+        try:
+            yield fdspawn(sock)
+        finally:
+            sock.close()
