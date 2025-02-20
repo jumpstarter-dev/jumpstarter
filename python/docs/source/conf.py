@@ -36,8 +36,8 @@ mermaid_version = "10.9.1"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "furo"
-# html_static_path = ["_static"]
-html_extra_path = ["extra"]
+
+# html_extra_path = ["extra"]
 html_title = "Jumpstarter Docs"
 
 myst_heading_anchors = 3
@@ -51,3 +51,18 @@ myst_substitutions = {
 }
 
 doctest_test_doctest_blocks = ""
+
+html_js_files = ["js/version_array.js", "js/versions.js"]
+html_static_path = ["_static"]
+html_css_files = ['css/versions.css',]
+html_sidebars = {
+    "**": [
+        "sidebar/brand.html",
+        "sidebar/search.html",
+        "sidebar/scroll-start.html",
+        "sidebar/navigation.html",
+        "sidebar/ethical-ads.html",
+        "sidebar/scroll-end.html",
+        "sidebar/versions.html",
+    ]
+}
