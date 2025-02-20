@@ -76,7 +76,7 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
         )
         return ExportersV1Alpha1Api._deserialize(result)
 
-    async def create_exporter(self, name: str) -> V1Alpha1Exporter:
+    async def create_exporter(self, name: str, oidc_username: str | None = None) -> V1Alpha1Exporter:
         """Create an exporter in the cluster"""
         # Create the namespaced exporter object
         await self.api.create_namespaced_custom_object(
@@ -84,7 +84,12 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
             group="jumpstarter.dev",
             plural="exporters",
             version="v1alpha1",
-            body={"apiVersion": "jumpstarter.dev/v1alpha1", "kind": "Exporter", "metadata": {"name": name}},
+            body={
+                "apiVersion": "jumpstarter.dev/v1alpha1",
+                "kind": "Exporter",
+                "metadata": {"name": name},
+                "spec": {"username": oidc_username} if oidc_username is not None else {},
+            },
         )
         # Wait for the credentials to become available
         # NOTE: Watch is not working here with the Python kubernetes library
