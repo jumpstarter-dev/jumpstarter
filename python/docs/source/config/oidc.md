@@ -21,9 +21,9 @@ jwt:
     - jumpstarter-cli
   claimMappings:
     # use user ID prefixed with "keycloak:" as username
-    # e.g. keycloak:5526dac2-f0e9-44ba-9625-fa2f80905e38
+    # e.g. keycloak:example-user
     username:
-      claim: sub
+      claim: preferred_username
       prefix: "keycloak:"
 ```
 
@@ -32,13 +32,13 @@ Then proceed to create clients and exporters with the `jmp admin create` command
 ```shell
 # for clients
 kubectl -n <namespace> patch clients.jumpstarter.dev <client name> \
-  --type=merge --patch '{"spec":{"username":"keycloak:72fc9bb3-42ff-4ee9-91e1-ac856760b073"}}'
+  --type=merge --patch '{"spec":{"username":"keycloak:developer-1"}}'
 # for exporters
 kubectl -n <namespace> patch exporters.jumpstarter.dev <exporter name> \
-  --type=merge --patch '{"spec":{"username":"keycloak:49368ba9-afde-4a90-ba01-fd1000fe3caf"}}'
+  --type=merge --patch '{"spec":{"username":"keycloak:lab-admin-1"}}'
 ```
 
-You can find the user ID on the User details page of keycloak, be sure to prefix it with "keycloak:".
+Be sure to prefix usernames with "keycloak:", as previously configured.
 
 Finally, instruct the users to login with the following commands
 
