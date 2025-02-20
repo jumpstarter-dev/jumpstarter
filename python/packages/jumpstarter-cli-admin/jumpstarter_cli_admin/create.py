@@ -6,6 +6,7 @@ from jumpstarter_cli_common import (
     AliasedGroup,
     opt_context,
     opt_kubeconfig,
+    opt_labels,
     opt_log_level,
     opt_namespace,
 )
@@ -57,6 +58,7 @@ def create(log_level: Optional[str]):
     default=None,
 )
 @opt_namespace
+@opt_labels
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
@@ -65,6 +67,7 @@ async def create_client(
     kubeconfig: Optional[str],
     context: Optional[str],
     namespace: str,
+    labels: list[(str, str)],
     save: bool,
     allow: Optional[str],
     unsafe: bool,
@@ -75,7 +78,7 @@ async def create_client(
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             click.echo(f"Creating client '{name}' in namespace '{namespace}'")
-            await api.create_client(name, oidc_username)
+            await api.create_client(name, dict(labels), oidc_username)
             # Save the client config
             if save or out is not None or click.confirm("Save client configuration?"):
                 click.echo("Fetching client credentials from cluster")
@@ -119,6 +122,7 @@ async def create_client(
     default=None,
 )
 @opt_namespace
+@opt_labels
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
@@ -127,6 +131,7 @@ async def create_exporter(
     kubeconfig: Optional[str],
     context: Optional[str],
     namespace: str,
+    labels: list[(str, str)],
     save: bool,
     out: Optional[str],
     oidc_username: str | None,
@@ -135,7 +140,7 @@ async def create_exporter(
     try:
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
-            await api.create_exporter(name, oidc_username)
+            await api.create_exporter(name, dict(labels), oidc_username)
             # Save the client config
             if save or out is not None or click.confirm("Save exporter configuration?"):
                 click.echo("Fetching exporter credentials from cluster")
