@@ -187,7 +187,7 @@ class Driver(
         )
 
     @asynccontextmanager
-    async def resource(self, handle: str):
+    async def resource(self, handle: str, timeout: int = 300):
         handle = TypeAdapter(Resource).validate_python(handle)
         match handle:
             case ClientStreamResource(uuid=uuid):
@@ -197,15 +197,18 @@ class Driver(
                     finally:
                         del self.resources[uuid]
             case PresignedRequestResource(headers=headers, url=url, method=method):
+                client_timeout = aiohttp.ClientTimeout(total=timeout)
                 match method:
                     case "GET":
-                        async with aiohttp.request(method, url, headers=headers, raise_for_status=True) as resp:
+                        async with aiohttp.request(
+                            method, url, headers=headers, raise_for_status=True, timeout=client_timeout
+                        ) as resp:
                             async with AiohttpStreamReaderStream(reader=resp.content) as stream:
                                 yield stream
                     case "PUT":
                         remote, stream = create_memory_stream()
                         async with aiohttp.request(
-                            method, url, headers=headers, raise_for_status=True, data=remote
+                            method, url, headers=headers, raise_for_status=True, data=remote, timeout=client_timeout
                         ) as resp:
                             async with stream:
                                 yield stream

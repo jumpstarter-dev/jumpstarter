@@ -1,10 +1,12 @@
 import logging
+from collections import deque
 from contextlib import AbstractContextManager, asynccontextmanager, contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from logging.handlers import QueueHandler
 from uuid import UUID
 
 import grpc
-from anyio import Event, TypedAttributeLookupError
+from anyio import Event, TypedAttributeLookupError, sleep
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -12,6 +14,7 @@ from jumpstarter_protocol import (
     router_pb2_grpc,
 )
 
+from .logging import LogHandler
 from jumpstarter.common import Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.driver import Driver
@@ -30,18 +33,26 @@ class Session(
     root_device: Driver
     mapping: dict[UUID, Driver]
 
+    _logging_queue: deque = field(init=False)
+    _logging_handler: QueueHandler = field(init=False)
+
     def __enter__(self):
+        logging.getLogger().addHandler(self._logging_handler)
         self.root_device.reset()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.root_device.close()
+        logging.getLogger().removeHandler(self._logging_handler)
 
     def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
+
+        self._logging_queue = deque(maxlen=32)
+        self._logging_handler = LogHandler(self._logging_queue)
 
     @asynccontextmanager
     async def serve_port_async(self, port):
@@ -106,3 +117,10 @@ class Session(
                     event = Event()
                     context.add_done_callback(lambda _: event.set())
                     await event.wait()
+
+    async def LogStream(self, request, context):
+        while True:
+            try:
+                yield self._logging_queue.popleft()
+            except IndexError:
+                await sleep(0.5)

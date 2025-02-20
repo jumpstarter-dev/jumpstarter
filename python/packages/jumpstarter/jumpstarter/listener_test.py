@@ -10,6 +10,7 @@ from anyio.from_thread import start_blocking_portal
 from jumpstarter_driver_power.driver import MockPower
 
 from jumpstarter.client import Lease
+from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.streams import connect_router_stream
@@ -56,7 +57,7 @@ async def test_router(mock_controller, monkeypatch):
 @pytest.mark.xfail(raises=Exception)
 async def test_unsatisfiable(mock_controller):
     with start_blocking_portal() as portal:
-        with pytest.raises(ValueError):
+        with pytest.raises(LeaseError):
             async with Lease(
                 channel=aio_secure_channel(
                     mock_controller,

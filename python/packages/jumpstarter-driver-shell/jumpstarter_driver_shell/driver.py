@@ -38,9 +38,9 @@ class Shell(Driver):
             if result.returncode != 0:
                 self.logger.info(f"{method} return code: {result.returncode}")
             if result.stderr != "":
-                self.logger.debug(f"{method} stderr:\n{result.stderr.rstrip("\n")}")
+                self.logger.debug(f"{method} stderr:\n{result.stderr.rstrip('\n')}")
             if result.stdout != "":
-                self.logger.debug(f"{method} stdout:\n{result.stdout.rstrip("\n")}")
+                self.logger.debug(f"{method} stdout:\n{result.stdout.rstrip('\n')}")
             return result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired as e:
             self.logger.error(f"Timeout expired while running {method}: {e}")
@@ -86,9 +86,9 @@ class Shell(Driver):
         result = subprocess.run(
             cmd,
             capture_output=True,  # Captures stdout and stderr
-            text=True,            # Returns stdout/stderr as strings (not bytes)
-            env=combined_env,     # Pass our merged environment
-            cwd=self.cwd,         # Run in the working directory (if set)
+            text=True,  # Returns stdout/stderr as strings (not bytes)
+            env=combined_env,  # Pass our merged environment
+            cwd=self.cwd,  # Run in the working directory (if set)
             timeout=self.timeout,
         )
 

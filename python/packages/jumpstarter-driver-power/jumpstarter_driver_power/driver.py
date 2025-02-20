@@ -36,11 +36,11 @@ class MockPower(PowerInterface, Driver):
 
     @export
     async def on(self) -> None:
-        pass
+        self.logger.info("power on")
 
     @export
     async def off(self) -> None:
-        pass
+        self.logger.info("power off")
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
@@ -64,11 +64,11 @@ class SyncMockPower(PowerInterface, Driver):
 
     @export
     def on(self) -> None:
-        pass
+        self.logger.info("power on")
 
     @export
     def off(self) -> None:
-        pass
+        self.logger.info("power off")
 
     @export
     def read(self) -> Generator[PowerReading, None]:
