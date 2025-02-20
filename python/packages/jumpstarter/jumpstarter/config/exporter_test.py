@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
@@ -51,10 +52,15 @@ async def test_exporter_serve(mock_controller):
         tg.start_soon(exporter.serve)
 
         with start_blocking_portal() as portal:
-            async with client.lease_async(metadata_filter=MetadataFilter(), lease_name=None, portal=portal) as lease:
-                async with lease.connect_async() as client:
-                    await client.power.call_async("on")
-                    assert hasattr(client.nested, "tcp")
+            async with client.lease_async(
+                metadata_filter=MetadataFilter(),
+                lease_name=None,
+                portal=portal,
+            ) as lease:
+                with ExitStack() as stack:
+                    async with lease.connect_async(stack) as client:
+                        await client.power.call_async("on")
+                        assert hasattr(client.nested, "tcp")
 
         tg.cancel_scope.cancel()
 

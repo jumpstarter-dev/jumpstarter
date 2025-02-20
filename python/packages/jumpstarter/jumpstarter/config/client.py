@@ -77,7 +77,11 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             portal.call(self.release_lease_async, name)
 
-    async def request_lease_async(self, metadata_filter: MetadataFilter, portal: BlockingPortal):
+    async def request_lease_async(
+        self,
+        metadata_filter: MetadataFilter,
+        portal: BlockingPortal,
+    ):
         # dynamically import to avoid circular imports
         from jumpstarter.client import Lease
 
@@ -104,7 +108,12 @@ class ClientConfigV1Alpha1(BaseModel):
             await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
 
     @asynccontextmanager
-    async def lease_async(self, metadata_filter: MetadataFilter, lease_name: str | None, portal: BlockingPortal):
+    async def lease_async(
+        self,
+        metadata_filter: MetadataFilter,
+        lease_name: str | None,
+        portal: BlockingPortal,
+    ):
         from jumpstarter.client import Lease
 
         # if no lease_name provided, check if it is set in the environment

@@ -1,5 +1,5 @@
 from collections import OrderedDict, defaultdict
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from graphlib import TopologicalSorter
 from uuid import UUID
 
@@ -13,16 +13,17 @@ from jumpstarter.common.importlib import import_class
 
 
 @asynccontextmanager
-async def client_from_path(path: str, portal: BlockingPortal, allow: list[str], unsafe: bool):
+async def client_from_path(path: str, portal: BlockingPortal, stack: ExitStack, allow: list[str], unsafe: bool):
     async with grpc.aio.secure_channel(
         f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
     ) as channel:
-        yield await client_from_channel(channel, portal, allow, unsafe)
+        yield await client_from_channel(channel, portal, stack, allow, unsafe)
 
 
 async def client_from_channel(
     channel: grpc.aio.Channel,
     portal: BlockingPortal,
+    stack: ExitStack,
     allow: list[str],
     unsafe: bool,
 ) -> DriverClient:
@@ -49,6 +50,7 @@ async def client_from_channel(
             labels=report.labels,
             channel=channel,
             portal=portal,
+            stack=stack.enter_context(ExitStack()),
             children={reports[k].labels["jumpstarter.dev/name"]: clients[k] for k in topo[uuid]},
         )
 

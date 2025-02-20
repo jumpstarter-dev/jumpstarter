@@ -1,6 +1,7 @@
 # These tests are flaky
 # https://github.com/grpc/grpc/issues/25364
 
+from contextlib import ExitStack
 from uuid import uuid4
 
 import grpc
@@ -47,10 +48,10 @@ async def test_router(mock_controller, monkeypatch):
                         unsafe=True,
                     )
 
-                    monkeypatch.setattr(lease, "handle_async", handle_async)
-
-                    async with lease.connect_async() as client:
-                        await client.call_async("on")
+                    with ExitStack() as stack:
+                        monkeypatch.setattr(lease, "handle_async", handle_async)
+                        async with lease.connect_async(stack) as client:
+                            await client.call_async("on")
                 tg.cancel_scope.cancel()
 
 
@@ -97,13 +98,14 @@ async def test_controller(mock_controller):
                     allow=[],
                     unsafe=True,
                 ) as lease:
-                    async with lease.connect_async() as client:
-                        await client.call_async("on")
-                        # test concurrent connections
-                        async with lease.connect_async() as client2:
-                            await client2.call_async("on")
+                    with ExitStack() as stack:
+                        async with lease.connect_async(stack) as client:
+                            await client.call_async("on")
+                            # test concurrent connections
+                            async with lease.connect_async(stack) as client2:
+                                await client2.call_async("on")
 
-                    async with lease.connect_async() as client:
-                        await client.call_async("on")
+                        async with lease.connect_async(stack) as client:
+                            await client.call_async("on")
 
             tg.cancel_scope.cancel()
