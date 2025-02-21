@@ -1,0 +1,9 @@
+FROM quay.io/jumpstarter-dev/jumpstarter-devspace:latest
+
+USER root
+RUN dnf install -y gcc systemd-devel gdb
+USER 10001
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="$PATH:$HOME/.cargo/bin"
+RUN ~/.cargo/bin/rustup target add thumbv8m.main-none-eabihf
+RUN ~/.cargo/bin/cargo install --locked probe-rs-tools
