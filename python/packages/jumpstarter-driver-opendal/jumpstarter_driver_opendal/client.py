@@ -7,6 +7,11 @@ from .adapter import OpendalAdapter
 from jumpstarter.client import DriverClient
 
 
+class OpendalClient(DriverClient):
+    def create_dir(self, /, path):
+        self.call("create_dir", path)
+
+
 class StorageMuxClient(DriverClient):
     def host(self):
         """Connect storage to host"""

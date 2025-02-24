@@ -7,8 +7,13 @@ from threading import Thread
 import pytest
 from opendal import Operator
 
-from .driver import MockStorageMux
+from .driver import MockStorageMux, Opendal
 from jumpstarter.common.utils import serve
+
+
+def test_drivers_opendal(tmp_path):
+    with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
+        client.create_dir("test_dir/")
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
