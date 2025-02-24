@@ -1,17 +1,12 @@
-from contextlib import AbstractAsyncContextManager, AbstractContextManager
-from dataclasses import dataclass
-
-from jumpstarter.client import DriverClient
+from contextlib import contextmanager
+from functools import wraps
 
 
-@dataclass(kw_only=True)
-class ClientAdapter(AbstractContextManager, AbstractAsyncContextManager):
-    client: DriverClient
+def blocking(f):
+    @wraps(f)
+    @contextmanager
+    def wrapper(*args, **kwargs):
+        with kwargs["client"].portal.wrap_async_context_manager(f(*args, **kwargs)) as res:
+            yield res
 
-    def __enter__(self):
-        self.manager = self.client.portal.wrap_async_context_manager(self)
-
-        return self.manager.__enter__()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.manager.__exit__(exc_type, exc_value, traceback)
+    return wrapper

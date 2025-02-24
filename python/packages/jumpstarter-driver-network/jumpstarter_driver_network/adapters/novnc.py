@@ -1,16 +1,25 @@
-from dataclasses import dataclass
+from contextlib import asynccontextmanager
 from urllib.parse import urlencode, urlunparse
 
 from ..streams import WebsocketServerStream
-from .portforward import TcpPortforwardAdapter
+from jumpstarter.client import DriverClient
+from jumpstarter.client.adapters import blocking
+from jumpstarter.common import TemporaryTcpListener
 from jumpstarter.streams import forward_stream
 
 
-@dataclass(kw_only=True)
-class NovncAdapter(TcpPortforwardAdapter):
-    async def __aenter__(self):
-        addr = await super().__aenter__()
-        return urlunparse(
+@blocking
+@asynccontextmanager
+async def NovncAdapter(*, client: DriverClient, method: str = "connect"):
+    async def handler(conn):
+        async with conn:
+            async with client.stream_async(method) as stream:
+                async with WebsocketServerStream(stream=stream) as stream:
+                    async with forward_stream(conn, stream):
+                        pass
+
+    async with TemporaryTcpListener(handler) as addr:
+        yield urlunparse(
             (
                 "https",
                 "novnc.com",
@@ -20,10 +29,3 @@ class NovncAdapter(TcpPortforwardAdapter):
                 "",
             )
         )
-
-    async def handler(self, conn):
-        async with conn:
-            async with self.client.stream_async(self.method) as stream:
-                async with WebsocketServerStream(stream=stream) as stream:
-                    async with forward_stream(conn, stream):
-                        pass

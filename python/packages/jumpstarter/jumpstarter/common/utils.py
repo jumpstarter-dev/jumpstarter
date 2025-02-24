@@ -1,6 +1,6 @@
 import os
 import sys
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from subprocess import Popen
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
@@ -13,27 +13,32 @@ from jumpstarter.exporter import Session
 
 
 @asynccontextmanager
-async def serve_async(root_device: Driver, portal: BlockingPortal):
+async def serve_async(root_device: Driver, portal: BlockingPortal, stack: ExitStack):
     with Session(root_device=root_device) as session:
         async with session.serve_unix_async() as path:
             # SAFETY: the root_device instance is constructed locally thus considered trusted
-            async with client_from_path(path, portal, allow=[], unsafe=True) as client:
-                yield client
-                if hasattr(client, "close"):
-                    client.close()
+            async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
+                try:
+                    yield client
+                finally:
+                    if hasattr(client, "close"):
+                        client.close()
 
 
 @contextmanager
 def serve(root_device: Driver):
     with start_blocking_portal() as portal:
-        with portal.wrap_async_context_manager(serve_async(root_device, portal)) as client:
-            yield client
-            if hasattr(client, "close"):
-                client.close()
+        with ExitStack() as stack:
+            with portal.wrap_async_context_manager(serve_async(root_device, portal, stack)) as client:
+                try:
+                    yield client
+                finally:
+                    if hasattr(client, "close"):
+                        client.close()
 
 
 @asynccontextmanager
-async def env_async(portal):
+async def env_async(portal, stack):
     """Provide a client for an existing JUMPSTARTER_HOST environment variable.
 
     Async version of env()
@@ -47,10 +52,12 @@ async def env_async(portal):
 
     allow, unsafe = _allow_from_env()
 
-    async with client_from_path(host, portal, allow=allow, unsafe=unsafe) as client:
-        yield client
-        if hasattr(client, "close"):
-            client.close()
+    async with client_from_path(host, portal, stack, allow=allow, unsafe=unsafe) as client:
+        try:
+            yield client
+        finally:
+            if hasattr(client, "close"):
+                client.close()
 
 
 @contextmanager
@@ -61,8 +68,9 @@ def env():
     to either a local exporter or a remote one.
     """
     with start_blocking_portal() as portal:
-        with portal.wrap_async_context_manager(env_async(portal)) as client:
-            yield client
+        with ExitStack() as stack:
+            with portal.wrap_async_context_manager(env_async(portal, stack)) as client:
+                yield client
 
 
 ANSI_GRAY = "\\[\\e[90m\\]"

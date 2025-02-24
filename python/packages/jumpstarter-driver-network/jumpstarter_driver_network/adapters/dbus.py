@@ -1,28 +1,31 @@
-from dataclasses import dataclass
+from contextlib import contextmanager
 from os import environ, getenv
 
 from .portforward import TcpPortforwardAdapter
+from jumpstarter.client import DriverClient
 
 
-@dataclass(kw_only=True)
-class DbusAdapter(TcpPortforwardAdapter):
-    async def __aenter__(self):
-        addr = await super().__aenter__()
-        match self.client.kind:
-            case "system":
-                self.varname = "DBUS_SYSTEM_BUS_ADDRESS"
-                pass
-            case "session":
-                self.varname = "DBUS_SESSION_BUS_ADDRESS"
-                pass
-            case _:
-                raise ValueError(f"invalid bus type: {self.client.kind}")
-        self.oldenv = getenv(self.varname)
-        environ[self.varname] = f"tcp:host={addr[0]},port={addr[1]}"
+@contextmanager
+def DbusAdapter(*, client: DriverClient):
+    match client.kind:
+        case "system":
+            varname = "DBUS_SYSTEM_BUS_ADDRESS"
+            pass
+        case "session":
+            varname = "DBUS_SESSION_BUS_ADDRESS"
+            pass
+        case _:
+            raise ValueError(f"invalid bus type: {client.kind}")
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        await super().__aexit__(exc_type, exc_value, traceback)
-        if self.oldenv is None:
-            del environ[self.varname]
-        else:
-            environ[self.varname] = self.oldenv
+    oldenv = getenv(varname)
+
+    with TcpPortforwardAdapter(client=client) as addr:
+        environ[varname] = f"tcp:host={addr[0]},port={addr[1]}"
+
+        try:
+            yield
+        finally:
+            if oldenv is None:
+                del environ[varname]
+            else:
+                environ[varname] = oldenv

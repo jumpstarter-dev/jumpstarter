@@ -4,7 +4,7 @@ Base classes for drivers and driver clients
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import field
 
 from anyio.from_thread import BlockingPortal
@@ -31,6 +31,7 @@ class DriverClient(AsyncDriverClient):
     children: dict[str, DriverClient] = field(default_factory=dict)
 
     portal: BlockingPortal
+    stack: ExitStack
 
     def call(self, method, *args):
         """
@@ -86,16 +87,13 @@ class DriverClient(AsyncDriverClient):
         :return: blocking stream session object.
         :rtype: BlockingStream
         """
-        self._context_manager = self.stream()
-        return self._context_manager.__enter__()
+        return self.stack.enter_context(self.stream())
 
     def close(self):
         """
         Close the open stream session without a context manager.
         """
-        if hasattr(self, "_context_manager"):
-            self._context_manager.__exit__(None, None, None)
-            del self._context_manager
+        self.stack.close()
 
     def __del__(self):
         self.close()

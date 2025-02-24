@@ -27,7 +27,7 @@ async def TemporaryUnixListener(handler):
 
 @asynccontextmanager
 async def TemporaryTcpListener(
-    handler, local_host=None, local_port=0, family=AddressFamily.AF_UNSPEC, backlog=65536, reuse_port=False
+    handler, local_host="127.0.0.1", local_port=0, family=AddressFamily.AF_UNSPEC, backlog=65536, reuse_port=True
 ):
     async with await create_tcp_listener(
         local_host=local_host,
