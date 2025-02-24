@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
 
@@ -61,11 +62,15 @@ class Opendal(Driver):
     async def exists(self, /, path) -> bool:
         return await self._operator.exists(path)
 
-    async def list(self, /, path):
-        pass
+    @export
+    async def list(self, /, path) -> AsyncGenerator[str, None]:
+        async for entry in await self._operator.list(path):
+            yield entry.path
 
-    async def scan(self, /, path):
-        pass
+    @export
+    async def scan(self, /, path) -> AsyncGenerator[str, None]:
+        async for entry in await self._operator.scan(path):
+            yield entry.path
 
     async def presign_stat(self, /, path, expire_second):
         pass

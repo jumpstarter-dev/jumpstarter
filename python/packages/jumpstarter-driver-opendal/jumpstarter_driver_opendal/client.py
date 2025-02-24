@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from pathlib import Path
 
 import asyncclick as click
@@ -25,6 +26,12 @@ class OpendalClient(DriverClient):
 
     def exists(self, /, path) -> bool:
         return self.call("exists", path)
+
+    def list(self, /, path) -> Generator[str, None, None]:
+        yield from self.streamingcall("list", path)
+
+    def scan(self, /, path) -> Generator[str, None, None]:
+        yield from self.streamingcall("scan", path)
 
 
 class StorageMuxClient(DriverClient):

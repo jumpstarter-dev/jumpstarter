@@ -14,7 +14,14 @@ from jumpstarter.common.utils import serve
 def test_drivers_opendal(tmp_path):
     with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
         client.create_dir("test_dir/")
+        client.create_dir("demo_dir/nest_dir/")
+
         assert client.exists("test_dir/")
+        assert client.exists("demo_dir/nest_dir/")
+
+        assert sorted(client.list("/")) == ["/", "demo_dir/", "test_dir/"]
+        assert sorted(client.scan("/")) == ["/", "demo_dir/", "demo_dir/nest_dir/", "test_dir/"]
+
         client.remove_all("test_dir/")
         assert not client.exists("test_dir/")
 
