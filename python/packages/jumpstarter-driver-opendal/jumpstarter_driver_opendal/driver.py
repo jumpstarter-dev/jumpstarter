@@ -2,12 +2,14 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
+from typing import Any
 from uuid import UUID, uuid4
 
 from anyio.streams.file import FileReadStream, FileWriteStream
 from opendal import AsyncFile, AsyncOperator
 from pydantic import validate_call
 
+from .adapter import AsyncFileStream
 from .common import Capability, Metadata, PresignedRequest
 from jumpstarter.driver import Driver, export
 
@@ -40,11 +42,21 @@ class Opendal(Driver):
 
         return uuid
 
-    async def read(self, /, path):
-        pass
+    @export
+    @validate_call(validate_return=True)
+    async def file_read(self, /, fd: UUID, dst: Any) -> None:
+        async with self.resource(dst) as res:
+            stream = AsyncFileStream(file=self._fds[fd])
+            async for chunk in stream:
+                await res.send(chunk)
 
-    async def write(self, /, path, bs, **kwargs):
-        pass
+    @export
+    @validate_call(validate_return=True)
+    async def file_write(self, /, fd: UUID, src: Any) -> None:
+        async with self.resource(src) as res:
+            stream = AsyncFileStream(file=self._fds[fd])
+            async for chunk in res:
+                await stream.send(chunk)
 
     @export
     @validate_call(validate_return=True)

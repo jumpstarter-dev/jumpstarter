@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 from uuid import UUID
 
 import asyncclick as click
@@ -20,11 +19,19 @@ class OpendalFile:
     client: OpendalClient
     fd: UUID
 
-    def read(self, size: Optional[int] = None) -> bytes:
-        pass
+    def write(self, handle):
+        return self.client.call("file_write", self.fd, handle)
 
-    def write(self, bs: bytes) -> None:
-        pass
+    def read(self, handle):
+        return self.client.call("file_read", self.fd, handle)
+
+    def write_file(self, operator: Operator, path: str):
+        with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
+            return self.write(handle)
+
+    def read_file(self, operator: Operator, path: str):
+        with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
+            return self.read(handle)
 
     @validate_call(validate_return=True)
     def seek(self, pos: int, whence: int = 0) -> int:
