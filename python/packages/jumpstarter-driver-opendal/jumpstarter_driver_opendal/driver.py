@@ -1,7 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
-from typing import Optional
 
 from anyio.streams.file import FileReadStream, FileWriteStream
 from opendal import AsyncOperator, Capability
@@ -38,24 +37,29 @@ class Opendal(Driver):
     async def stat(self, /, path):
         pass
 
+    @export
     async def copy(self, /, source, target):
-        pass
+        await self._operator.copy(source, target)
 
+    @export
     async def rename(self, /, source, target):
-        pass
+        await self._operator.rename(source, target)
 
+    @export
     async def remove_all(self, /, path):
-        pass
+        await self._operator.remove_all(path)
 
     @export
     async def create_dir(self, /, path):
         await self._operator.create_dir(path)
 
+    @export
     async def delete(self, /, path):
-        pass
+        await self._operator.delete(path)
 
-    async def exists(self, /, path):
-        pass
+    @export
+    async def exists(self, /, path) -> bool:
+        return await self._operator.exists(path)
 
     async def list(self, /, path):
         pass

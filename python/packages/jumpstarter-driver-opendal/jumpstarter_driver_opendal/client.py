@@ -8,8 +8,23 @@ from jumpstarter.client import DriverClient
 
 
 class OpendalClient(DriverClient):
+    def copy(self, /, source, target):
+        self.call("copy", source, target)
+
+    def rename(self, /, source, target):
+        self.call("rename", source, target)
+
+    def remove_all(self, /, path):
+        self.call("remove_all", path)
+
     def create_dir(self, /, path):
         self.call("create_dir", path)
+
+    def delete(self, /, path):
+        self.call("delete", path)
+
+    def exists(self, /, path) -> bool:
+        return self.call("exists", path)
 
 
 class StorageMuxClient(DriverClient):

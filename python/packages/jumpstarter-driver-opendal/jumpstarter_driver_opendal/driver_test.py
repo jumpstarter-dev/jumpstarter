@@ -14,6 +14,9 @@ from jumpstarter.common.utils import serve
 def test_drivers_opendal(tmp_path):
     with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
         client.create_dir("test_dir/")
+        assert client.exists("test_dir/")
+        client.remove_all("test_dir/")
+        assert not client.exists("test_dir/")
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
