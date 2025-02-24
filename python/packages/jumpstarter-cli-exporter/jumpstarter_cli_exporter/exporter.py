@@ -3,6 +3,7 @@ import traceback
 from pathlib import Path
 
 import asyncclick as click
+from jumpstarter_cli_common.exceptions import handle_exceptions
 
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -29,6 +30,7 @@ async def _serve_with_exc_handling(exporter):
 @click.command("run")
 @arg_alias
 @opt_config_path
+@handle_exceptions
 async def run_exporter(alias, config_path):
     """Run an exporter locally."""
     try:
@@ -45,6 +47,7 @@ async def run_exporter(alias, config_path):
 @click.command("shell")
 @arg_alias
 @opt_config_path
+@handle_exceptions
 def exporter_shell(alias, config_path):
     """Spawns a shell connecting to a transient exporter"""
     try:
