@@ -36,6 +36,17 @@ def test_drivers_opendal(tmp_path):
         test_file.close()
         assert test_file.closed
 
+        (tmp_path / "test_dir" / "test_file").write_text("hello", encoding="utf-8")
+
+        test_file = client.open("test_dir/test_file", "rb")
+        assert not test_file.closed
+        assert test_file.readable()
+        assert test_file.seekable()
+        assert not test_file.writable()
+
+        assert test_file.tell() == 0
+        assert test_file.seek(2) == 2
+
         client.remove_all("test_dir/")
         assert not client.exists("test_dir/")
 

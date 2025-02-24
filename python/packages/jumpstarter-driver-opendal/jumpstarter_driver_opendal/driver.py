@@ -48,6 +48,16 @@ class Opendal(Driver):
 
     @export
     @validate_call(validate_return=True)
+    async def file_seek(self, /, fd: UUID, pos: int, whence: int = 0) -> int:
+        return await self._fds[fd].seek(pos, whence)
+
+    @export
+    @validate_call(validate_return=True)
+    async def file_tell(self, /, fd: UUID) -> int:
+        return await self._fds[fd].tell()
+
+    @export
+    @validate_call(validate_return=True)
     async def file_close(self, /, fd: UUID) -> None:
         await self._fds[fd].close()
 

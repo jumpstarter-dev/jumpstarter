@@ -26,25 +26,32 @@ class OpendalFile:
     def write(self, bs: bytes) -> None:
         pass
 
+    @validate_call(validate_return=True)
     def seek(self, pos: int, whence: int = 0) -> int:
-        pass
+        return self.client.call("file_seek", self.fd, pos, whence)
 
+    @validate_call(validate_return=True)
     def tell(self) -> int:
-        pass
+        return self.client.call("file_tell", self.fd)
 
+    @validate_call(validate_return=True)
     def close(self) -> None:
         return self.client.call("file_close", self.fd)
 
     @property
+    @validate_call(validate_return=True)
     def closed(self) -> bool:
         return self.client.call("file_closed", self.fd)
 
+    @validate_call(validate_return=True)
     def readable(self) -> bool:
         return self.client.call("file_readable", self.fd)
 
+    @validate_call(validate_return=True)
     def seekable(self) -> bool:
         return self.client.call("file_seekable", self.fd)
 
+    @validate_call(validate_return=True)
     def writable(self) -> bool:
         return self.client.call("file_writable", self.fd)
 
