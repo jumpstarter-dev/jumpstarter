@@ -6,7 +6,7 @@ from opendal import Operator
 from pydantic import validate_call
 
 from .adapter import OpendalAdapter
-from .common import PresignedRequest
+from .common import PresignedRequest, Capability
 from jumpstarter.client import DriverClient
 
 
@@ -46,6 +46,10 @@ class OpendalClient(DriverClient):
     @validate_call(validate_return=True)
     def presign_write(self, /, path: str, expire_second: int) -> PresignedRequest:
         return self.call("presign_write", path, expire_second)
+
+    @validate_call(validate_return=True)
+    def capability(self, /) -> Capability:
+        return self.call("capability")
 
 
 class StorageMuxClient(DriverClient):

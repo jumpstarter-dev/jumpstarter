@@ -14,6 +14,8 @@ from jumpstarter.common.utils import serve
 
 def test_drivers_opendal(tmp_path):
     with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
+        assert not client.capability().presign
+
         client.create_dir("test_dir/")
         client.create_dir("demo_dir/nest_dir/")
 

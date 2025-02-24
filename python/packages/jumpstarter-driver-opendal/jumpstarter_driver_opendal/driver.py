@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
 
 from anyio.streams.file import FileReadStream, FileWriteStream
-from opendal import AsyncOperator, Capability
+from opendal import AsyncOperator
 from pydantic import validate_call
 
-from .common import PresignedRequest
+from .common import Capability, PresignedRequest
 from jumpstarter.driver import Driver, export
 
 
@@ -95,8 +95,10 @@ class Opendal(Driver):
             await self._operator.presign_write(path, expire_second), from_attributes=True
         )
 
+    @export
+    @validate_call(validate_return=True)
     async def capability(self, /) -> Capability:
-        pass
+        return Capability.model_validate(self._operator.capability(), from_attributes=True)
 
 
 class StorageMuxInterface(metaclass=ABCMeta):
