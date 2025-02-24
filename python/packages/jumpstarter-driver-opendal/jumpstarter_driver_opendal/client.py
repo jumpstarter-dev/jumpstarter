@@ -6,11 +6,15 @@ from opendal import Operator
 from pydantic import validate_call
 
 from .adapter import OpendalAdapter
-from .common import PresignedRequest, Capability
+from .common import Capability, Metadata, PresignedRequest
 from jumpstarter.client import DriverClient
 
 
 class OpendalClient(DriverClient):
+    @validate_call(validate_return=True)
+    def stat(self, /, path: str) -> Metadata:
+        return self.call("stat", path)
+
     def copy(self, /, source, target):
         self.call("copy", source, target)
 

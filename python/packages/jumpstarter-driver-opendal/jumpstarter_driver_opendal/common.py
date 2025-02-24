@@ -1,8 +1,38 @@
 # Reference: https://github.com/apache/opendal/blob/main/bindings/python/python/opendal/__init__.pyi
 
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel
+import opendal
+from pydantic import BaseModel, model_validator
+
+
+class EntryMode(BaseModel):
+    entry_is_file: bool
+    entry_is_dir: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate(cls, data: Any):
+        match data:
+            case opendal.EntryMode():
+                return {"entry_is_file": data.is_file(), "entry_is_dir": data.is_dir()}
+            case _:
+                return data
+
+    def is_file(self) -> bool:
+        return self._is_file
+
+    def is_dir(self) -> bool:
+        return self._is_dir
+
+
+class Metadata(BaseModel):
+    content_disposition: Optional[str]
+    content_length: int
+    content_md5: Optional[str]
+    content_type: Optional[str]
+    etag: Optional[str]
+    mode: EntryMode
 
 
 class PresignedRequest(BaseModel):

@@ -7,7 +7,7 @@ from anyio.streams.file import FileReadStream, FileWriteStream
 from opendal import AsyncOperator
 from pydantic import validate_call
 
-from .common import Capability, PresignedRequest
+from .common import Capability, Metadata, PresignedRequest
 from jumpstarter.driver import Driver, export
 
 
@@ -37,8 +37,9 @@ class Opendal(Driver):
     async def write(self, /, path, bs, **kwargs):
         pass
 
-    async def stat(self, /, path):
-        pass
+    @export
+    async def stat(self, /, path) -> Metadata:
+        return Metadata.model_validate(await self._operator.stat(path), from_attributes=True)
 
     @export
     async def copy(self, /, source, target):

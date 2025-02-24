@@ -22,6 +22,8 @@ def test_drivers_opendal(tmp_path):
         assert client.exists("test_dir/")
         assert client.exists("demo_dir/nest_dir/")
 
+        assert client.stat("test_dir/").mode.is_dir
+
         assert sorted(client.list("/")) == ["/", "demo_dir/", "test_dir/"]
         assert sorted(client.scan("/")) == ["/", "demo_dir/", "demo_dir/nest_dir/", "test_dir/"]
 
