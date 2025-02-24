@@ -10,6 +10,7 @@ Drivers packages from the [drivers](https://github.com/jumpstarter-dev/jumpstart
 :maxdepth: 2
 can.md
 network.md
+probe-rs.md
 pyserial.md
 sdwire.md
 shell.md
