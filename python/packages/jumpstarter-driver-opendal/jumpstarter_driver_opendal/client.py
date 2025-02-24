@@ -39,15 +39,12 @@ class OpendalFile:
     def closed(self) -> bool:
         return self.client.call("file_closed", self.fd)
 
-    @property
     def readable(self) -> bool:
         return self.client.call("file_readable", self.fd)
 
-    @property
     def seekable(self) -> bool:
         return self.client.call("file_seekable", self.fd)
 
-    @property
     def writable(self) -> bool:
         return self.client.call("file_writable", self.fd)
 

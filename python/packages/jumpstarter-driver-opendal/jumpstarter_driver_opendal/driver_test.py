@@ -29,9 +29,9 @@ def test_drivers_opendal(tmp_path):
 
         test_file = client.open("test_dir/test_file", "wb")
         assert not test_file.closed
-        assert not test_file.readable
-        assert not test_file.seekable
-        assert test_file.writable
+        assert not test_file.readable()
+        assert not test_file.seekable()
+        assert test_file.writable()
 
         test_file.close()
         assert test_file.closed
