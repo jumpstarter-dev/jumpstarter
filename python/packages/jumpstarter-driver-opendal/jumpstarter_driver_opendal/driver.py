@@ -38,40 +38,47 @@ class Opendal(Driver):
         pass
 
     @export
-    async def stat(self, /, path) -> Metadata:
+    @validate_call(validate_return=True)
+    async def stat(self, /, path: str) -> Metadata:
         return Metadata.model_validate(await self._operator.stat(path), from_attributes=True)
 
     @export
-    async def copy(self, /, source, target):
+    @validate_call(validate_return=True)
+    async def copy(self, /, source: str, target: str):
         await self._operator.copy(source, target)
 
     @export
-    async def rename(self, /, source, target):
+    @validate_call(validate_return=True)
+    async def rename(self, /, source: str, target: str):
         await self._operator.rename(source, target)
 
     @export
-    async def remove_all(self, /, path):
+    @validate_call(validate_return=True)
+    async def remove_all(self, /, path: str):
         await self._operator.remove_all(path)
 
     @export
-    async def create_dir(self, /, path):
+    @validate_call(validate_return=True)
+    async def create_dir(self, /, path: str):
         await self._operator.create_dir(path)
 
     @export
-    async def delete(self, /, path):
+    @validate_call(validate_return=True)
+    async def delete(self, /, path: str):
         await self._operator.delete(path)
 
     @export
-    async def exists(self, /, path) -> bool:
+    @validate_call(validate_return=True)
+    async def exists(self, /, path: str) -> bool:
         return await self._operator.exists(path)
 
     @export
-    async def list(self, /, path) -> AsyncGenerator[str, None]:
+    async def list(self, /, path: str) -> AsyncGenerator[str, None]:
         async for entry in await self._operator.list(path):
             yield entry.path
 
     @export
-    async def scan(self, /, path) -> AsyncGenerator[str, None]:
+    async def scan(self, /, path: str) -> AsyncGenerator[str, None]:
         async for entry in await self._operator.scan(path):
             yield entry.path
 

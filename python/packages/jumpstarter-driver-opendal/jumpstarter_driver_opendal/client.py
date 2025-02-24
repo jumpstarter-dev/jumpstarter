@@ -15,22 +15,28 @@ class OpendalClient(DriverClient):
     def stat(self, /, path: str) -> Metadata:
         return self.call("stat", path)
 
-    def copy(self, /, source, target):
+    @validate_call(validate_return=True)
+    def copy(self, /, source: str, target: str):
         self.call("copy", source, target)
 
-    def rename(self, /, source, target):
+    @validate_call(validate_return=True)
+    def rename(self, /, source: str, target: str):
         self.call("rename", source, target)
 
-    def remove_all(self, /, path):
+    @validate_call(validate_return=True)
+    def remove_all(self, /, path: str):
         self.call("remove_all", path)
 
-    def create_dir(self, /, path):
+    @validate_call(validate_return=True)
+    def create_dir(self, /, path: str):
         self.call("create_dir", path)
 
-    def delete(self, /, path):
+    @validate_call(validate_return=True)
+    def delete(self, /, path: str):
         self.call("delete", path)
 
-    def exists(self, /, path) -> bool:
+    @validate_call(validate_return=True)
+    def exists(self, /, path: str) -> bool:
         return self.call("exists", path)
 
     def list(self, /, path) -> Generator[str, None, None]:
