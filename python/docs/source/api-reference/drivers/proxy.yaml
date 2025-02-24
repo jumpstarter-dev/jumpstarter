@@ -1,0 +1,11 @@
+children:
+  proxy:
+    type: "jumpstarter_driver_composite.driver.Proxy"
+    config:
+      path: [foo, bar, power] # full path of the underlying driver
+  foo:
+    children:
+      bar:
+        children:
+          power:
+            type: "jumpstarter_driver_power.driver.MockPower"

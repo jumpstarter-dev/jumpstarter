@@ -18,4 +18,5 @@ tftp.md
 ustreamer.md
 yepkit.md
 dbus.md
+proxy.md
 ```
