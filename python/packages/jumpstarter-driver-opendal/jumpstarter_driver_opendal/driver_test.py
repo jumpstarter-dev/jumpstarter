@@ -54,6 +54,14 @@ def test_drivers_opendal(tmp_path):
         test_file.close()
         assert test_file.closed
 
+        client.copy("test_dir/test_file", "test_dir/copy_file")
+        client.rename("test_dir/copy_file", "test_dir/rename_file")
+        assert not client.exists("test_dir/copy_file")
+        assert client.exists("test_dir/rename_file")
+
+        client.delete("test_dir/rename_file")
+        assert not client.exists("test_dir/rename_file")
+
         client.remove_all("test_dir/")
         assert not client.exists("test_dir/")
 
