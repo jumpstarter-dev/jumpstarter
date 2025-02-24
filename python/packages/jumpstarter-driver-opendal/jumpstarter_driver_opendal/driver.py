@@ -5,7 +5,9 @@ from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
 
 from anyio.streams.file import FileReadStream, FileWriteStream
 from opendal import AsyncOperator, Capability
+from pydantic import validate_call
 
+from .common import PresignedRequest
 from jumpstarter.driver import Driver, export
 
 
@@ -72,14 +74,26 @@ class Opendal(Driver):
         async for entry in await self._operator.scan(path):
             yield entry.path
 
-    async def presign_stat(self, /, path, expire_second):
-        pass
+    @export
+    @validate_call(validate_return=True)
+    async def presign_stat(self, /, path: str, expire_second: int) -> PresignedRequest:
+        return PresignedRequest.model_validate(
+            await self._operator.presign_stat(path, expire_second), from_attributes=True
+        )
 
-    async def presign_read(self, /, path, expire_second):
-        pass
+    @export
+    @validate_call(validate_return=True)
+    async def presign_read(self, /, path: str, expire_second: int) -> PresignedRequest:
+        return PresignedRequest.model_validate(
+            await self._operator.presign_read(path, expire_second), from_attributes=True
+        )
 
-    async def presign_write(self, /, path, expire_second):
-        pass
+    @export
+    @validate_call(validate_return=True)
+    async def presign_write(self, /, path: str, expire_second: int) -> PresignedRequest:
+        return PresignedRequest.model_validate(
+            await self._operator.presign_write(path, expire_second), from_attributes=True
+        )
 
     async def capability(self, /) -> Capability:
         pass

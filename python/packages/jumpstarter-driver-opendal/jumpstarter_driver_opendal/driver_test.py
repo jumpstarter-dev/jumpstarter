@@ -7,6 +7,7 @@ from threading import Thread
 import pytest
 from opendal import Operator
 
+from .common import PresignedRequest
 from .driver import MockStorageMux, Opendal
 from jumpstarter.common.utils import serve
 
@@ -24,6 +25,14 @@ def test_drivers_opendal(tmp_path):
 
         client.remove_all("test_dir/")
         assert not client.exists("test_dir/")
+
+    with serve(Opendal(scheme="http", kwargs={"endpoint": "http://invalid.invalid"})) as client:
+        assert client.presign_read("test", 100) == PresignedRequest(
+            url="http://invalid.invalid/test", method="GET", headers={}
+        )
+        assert client.presign_stat("test", 100) == PresignedRequest(
+            url="http://invalid.invalid/test", method="HEAD", headers={}
+        )
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
