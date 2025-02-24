@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+from uuid import UUID
 
 import asyncclick as click
 from opendal import Operator
@@ -10,7 +15,47 @@ from .common import Capability, Metadata, PresignedRequest
 from jumpstarter.client import DriverClient
 
 
+@dataclass(kw_only=True)
+class OpendalFile:
+    client: OpendalClient
+    fd: UUID
+
+    def read(self, size: Optional[int] = None) -> bytes:
+        pass
+
+    def write(self, bs: bytes) -> None:
+        pass
+
+    def seek(self, pos: int, whence: int = 0) -> int:
+        pass
+
+    def tell(self) -> int:
+        pass
+
+    def close(self) -> None:
+        return self.client.call("file_close", self.fd)
+
+    @property
+    def closed(self) -> bool:
+        return self.client.call("file_closed", self.fd)
+
+    @property
+    def readable(self) -> bool:
+        return self.client.call("file_readable", self.fd)
+
+    @property
+    def seekable(self) -> bool:
+        return self.client.call("file_seekable", self.fd)
+
+    @property
+    def writable(self) -> bool:
+        return self.client.call("file_writable", self.fd)
+
+
 class OpendalClient(DriverClient):
+    def open(self, /, path: str, mode: str) -> OpendalFile:
+        return OpendalFile(client=self, fd=self.call("open", path, mode))
+
     @validate_call(validate_return=True)
     def stat(self, /, path: str) -> Metadata:
         return self.call("stat", path)

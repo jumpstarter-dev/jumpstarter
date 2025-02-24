@@ -2,9 +2,10 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
+from uuid import UUID, uuid4
 
 from anyio.streams.file import FileReadStream, FileWriteStream
-from opendal import AsyncOperator
+from opendal import AsyncFile, AsyncOperator
 from pydantic import validate_call
 
 from .common import Capability, Metadata, PresignedRequest
@@ -17,6 +18,7 @@ class Opendal(Driver):
     kwargs: dict[str, str]
 
     _operator: AsyncOperator = field(init=False)
+    _fds: dict[UUID, AsyncFile] = field(init=False, default_factory=dict)
 
     @classmethod
     def client(cls) -> str:
@@ -28,14 +30,46 @@ class Opendal(Driver):
 
         self._operator = AsyncOperator(self.scheme, **self.kwargs)
 
-    async def open(self, /, path, mode):
-        pass
+    @export
+    @validate_call(validate_return=True)
+    async def open(self, /, path: str, mode: str) -> UUID:
+        file = await self._operator.open(path, mode)
+        uuid = uuid4()
+
+        self._fds[uuid] = file
+
+        return uuid
 
     async def read(self, /, path):
         pass
 
     async def write(self, /, path, bs, **kwargs):
         pass
+
+    @export
+    @validate_call(validate_return=True)
+    async def file_close(self, /, fd: UUID) -> None:
+        await self._fds[fd].close()
+
+    @export
+    @validate_call(validate_return=True)
+    async def file_closed(self, /, fd: UUID) -> bool:
+        return await self._fds[fd].closed
+
+    @export
+    @validate_call(validate_return=True)
+    async def file_readable(self, /, fd: UUID) -> bool:
+        return await self._fds[fd].readable()
+
+    @export
+    @validate_call(validate_return=True)
+    async def file_seekable(self, /, fd: UUID) -> bool:
+        return await self._fds[fd].seekable()
+
+    @export
+    @validate_call(validate_return=True)
+    async def file_writable(self, /, fd: UUID) -> bool:
+        return await self._fds[fd].writable()
 
     @export
     @validate_call(validate_return=True)

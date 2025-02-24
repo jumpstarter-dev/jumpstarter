@@ -27,6 +27,15 @@ def test_drivers_opendal(tmp_path):
         assert sorted(client.list("/")) == ["/", "demo_dir/", "test_dir/"]
         assert sorted(client.scan("/")) == ["/", "demo_dir/", "demo_dir/nest_dir/", "test_dir/"]
 
+        test_file = client.open("test_dir/test_file", "wb")
+        assert not test_file.closed
+        assert not test_file.readable
+        assert not test_file.seekable
+        assert test_file.writable
+
+        test_file.close()
+        assert test_file.closed
+
         client.remove_all("test_dir/")
         assert not client.exists("test_dir/")
 
