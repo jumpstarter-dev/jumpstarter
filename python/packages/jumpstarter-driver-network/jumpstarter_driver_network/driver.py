@@ -1,6 +1,8 @@
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from os import getenv, getuid
+from typing import ClassVar, Literal
 
 from anyio import (
     connect_tcp,
@@ -100,6 +102,76 @@ class UnixNetwork(NetworkInterface, Driver):
         self.logger.debug("Connecting UDS path=%s", self.path)
         async with await connect_unix(path=self.path) as stream:
             yield stream
+
+
+@dataclass(kw_only=True)
+class DbusNetwork(NetworkInterface, Driver):
+    kind: Literal["system", "session"]
+
+    scheme: str | None = field(init=False, default=None)
+    args: dict[str, str] = field(init=False, default_factory=dict)
+
+    KIND_LABEL: ClassVar[str] = "jumpstarter.dev/dbusnetwork/kind"
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_network.client.DbusNetworkClient"
+
+    def extra_labels(self):
+        return {self.KIND_LABEL: self.kind}
+
+    def __post_init__(self):  # noqa: C901
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        match self.kind:
+            case "system":
+                bus = getenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/run/dbus/system_bus_socket")
+            case "session":
+                bus = getenv("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{getuid()}/bus")
+            case _:
+                raise ValueError(f"invalid bus type: {self.kind}")
+
+        self.scheme, sep, rem = bus.partition(":")
+        if not sep:
+            raise ValueError(f"invalid bus addr: {bus}")
+
+        for part in rem.split(","):
+            key, sep, value = part.partition("=")
+            if not sep:
+                raise ValueError(f"invalid bus addr: {bus}, missing separator in arguments")
+            self.args[key] = value
+
+        match self.scheme:
+            case "unix":
+                if "path" not in self.args:
+                    raise ValueError(f"invalid bus addr: {bus}, missing path argument")
+            case "tcp":
+                if "host" not in self.args:
+                    raise ValueError(f"invalid bus addr: {bus}, missing host argument")
+                if "port" not in self.args:
+                    raise ValueError(f"invalid bus addr: {bus}, missing port argument")
+
+                try:
+                    port = int(self.args["port"])
+                except ValueError as e:
+                    raise ValueError(f"invalid bus addr: {bus}, invalid port argument") from e
+                self.args["port"] = port
+            case _:
+                raise ValueError(f"invalid bus scheme: {self.scheme}")
+
+    @exportstream
+    @asynccontextmanager
+    async def connect(self):
+        match self.scheme:
+            case "unix":
+                self.logger.debug("Connecting UDS path=%s", self.args["path"])
+                async with await connect_unix(path=self.args["path"]) as stream:
+                    yield stream
+            case "tcp":
+                self.logger.debug("Connecting TCP host=%s port=%d", self.args["host"], self.args["port"])
+                async with await connect_tcp(remote_host=self.args["host"], remote_port=self.args["port"]) as stream:
+                    yield stream
 
 
 class EchoNetwork(NetworkInterface, Driver):

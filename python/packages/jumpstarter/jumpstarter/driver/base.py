@@ -81,6 +81,9 @@ class Driver(
         Return full import path of the corresponding driver client class
         """
 
+    def extra_labels(self) -> dict[str, str]:
+        return {}
+
     async def DriverCall(self, request, context):
         """
         :meta private:
@@ -171,6 +174,7 @@ class Driver(
             uuid=str(self.uuid),
             parent_uuid=str(parent.uuid) if parent else None,
             labels=self.labels
+            | self.extra_labels()
             | ({"jumpstarter.dev/client": self.client()})
             | ({"jumpstarter.dev/name": name} if name else {}),
         )

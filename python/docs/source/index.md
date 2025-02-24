@@ -16,7 +16,7 @@ introduction/index.md
 installation/index.md
 getting-started/index.md
 cli/index.md
-config.md
+config/index.md
 architecture.md
 glossary.md
 api-reference/index.md

@@ -1,5 +1,11 @@
 import logging
-from contextlib import AbstractAsyncContextManager, AbstractContextManager, asynccontextmanager, contextmanager
+from contextlib import (
+    AbstractAsyncContextManager,
+    AbstractContextManager,
+    ExitStack,
+    asynccontextmanager,
+    contextmanager,
+)
 from dataclasses import dataclass, field
 
 from anyio import fail_after, sleep
@@ -147,15 +153,16 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
             yield path
 
     @asynccontextmanager
-    async def connect_async(self):
+    async def connect_async(self, stack):
         async with self.serve_unix_async() as path:
-            async with client_from_path(path, self.portal, allow=self.allow, unsafe=self.unsafe) as client:
+            async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as client:
                 yield client
 
     @contextmanager
     def connect(self):
-        with self.portal.wrap_async_context_manager(self.connect_async()) as client:
-            yield client
+        with ExitStack() as stack:
+            with self.portal.wrap_async_context_manager(self.connect_async(stack)) as client:
+                yield client
 
     @contextmanager
     def serve_unix(self):
