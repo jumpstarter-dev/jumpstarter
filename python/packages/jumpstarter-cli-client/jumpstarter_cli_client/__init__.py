@@ -23,7 +23,7 @@ def client(log_level: Optional[str]):
 
 def j():
     with env() as client:
-        client.cli()(standalone_mode=False)
+        client.cli()(standalone_mode=True)
 
 
 client.add_command(create_client_config)
