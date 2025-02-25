@@ -7,7 +7,7 @@ from uuid import UUID
 
 import asyncclick as click
 from opendal import Operator
-from pydantic import validate_call
+from pydantic import ConfigDict, validate_call
 
 from .adapter import OpendalAdapter
 from .common import Capability, Metadata, PresignedRequest
@@ -29,6 +29,7 @@ class OpendalFile:
     def __read(self, handle):
         return self.client.call("file_read", self.fd, handle)
 
+    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def write(self, path: str, operator: Operator | None = None):
         """
         Write into remote file with content from local file
@@ -39,6 +40,7 @@ class OpendalFile:
         with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
             return self.__write(handle)
 
+    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def read(self, path: str, operator: Operator | None = None):
         """
         Read content from remote file into local file
@@ -111,6 +113,7 @@ class OpendalFile:
 
 
 class OpendalClient(DriverClient):
+    @validate_call
     def open(self, /, path: str, mode: str) -> OpendalFile:
         """
         Open a file-like reader for the given path
@@ -173,13 +176,15 @@ class OpendalClient(DriverClient):
         """
         return self.call("exists", path)
 
-    def list(self, /, path) -> Generator[str, None, None]:
+    @validate_call
+    def list(self, /, path: str) -> Generator[str, None, None]:
         """
         List files and directories under given path
         """
         yield from self.streamingcall("list", path)
 
-    def scan(self, /, path) -> Generator[str, None, None]:
+    @validate_call
+    def scan(self, /, path: str) -> Generator[str, None, None]:
         """
         List files and directories under given path recursively
         """
