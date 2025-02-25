@@ -32,6 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v1
@@ -58,12 +61,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build the documentation
-        run: uv run --all-extras make docs
+        run: make docs-all
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs/build/html
+          path: ./docs/build_all
 
   # Deployment job
   deploy:
