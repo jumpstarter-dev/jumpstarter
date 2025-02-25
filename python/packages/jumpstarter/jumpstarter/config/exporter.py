@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from .common import ObjectMeta
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
+from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
@@ -21,6 +22,18 @@ class ExporterConfigV1Alpha1DriverInstance(BaseModel):
     type: str = Field(default="jumpstarter_driver_composite.driver.Composite")
     children: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
+    ref: str | None = Field(default=None)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.ref:
+            if self.type != "jumpstarter_driver_composite.driver.Composite":
+                raise ConfigurationError("when using ref, type must not be specified")
+            if len(self.config.keys()) != 0:
+                raise ConfigurationError("when using ref, config must not be specified")
+
+            self.type = "jumpstarter_driver_composite.driver.Proxy"
+            self.config = { "path": self.ref }
 
     def instantiate(self) -> Driver:
         children = {name: child.instantiate() for name, child in self.children.items()}

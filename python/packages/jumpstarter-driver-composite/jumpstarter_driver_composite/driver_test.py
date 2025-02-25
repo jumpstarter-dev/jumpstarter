@@ -8,8 +8,9 @@ def test_drivers_composite():
     with serve(
         Composite(
             children={
-                "proxy0": Proxy(path=["composite1", "power1"]),
-                "proxy1": Proxy(path=["composite1"]),
+                "proxy0": Proxy(path="composite1.power1"),
+                "proxy1": Proxy(path="composite1"),
+                "refproxy": Composite(ref="composite1"),
                 "power0": MockPower(),
                 "composite1": Composite(
                     children={
@@ -23,3 +24,4 @@ def test_drivers_composite():
         client.composite1.power1.on()
         client.proxy0.on()
         client.proxy1.power1.on()
+        client.refproxy.on()

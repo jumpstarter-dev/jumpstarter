@@ -1,6 +1,10 @@
 # Proxy driver
 
-The Proxy driver is not a real driver, but for creating "proxies" or aliases of other drivers to present a desired view of the tree of devices to the client.
+The Proxy driver is not a real driver, but for creating "proxies" or aliases of
+other drivers to present a desired view of the tree of devices to the client.
+
+It's also useful when several drivers need configured access to a common
+resource, like a serial port or a network connection.
 
 ## Driver configuration
 
@@ -12,7 +16,8 @@ The Proxy driver is not a real driver, but for creating "proxies" or aliases of 
 
 ```{doctest}
 >>> root.foo.bar.power.on() # instead of
->>> root.proxy.on() # you can do
+>>> root.proxy.on()         # you can do
+>>> root.refproxy.on()      # and same for the refproxy
 ```
 
 ```{testsetup} *

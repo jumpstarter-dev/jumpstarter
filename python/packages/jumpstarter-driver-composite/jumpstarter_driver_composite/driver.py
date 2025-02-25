@@ -19,7 +19,7 @@ class Composite(CompositeInterface, Driver):
 
 @dataclass(kw_only=True)
 class Proxy(Driver):
-    path: list[str]
+    path: str
 
     @classmethod
     def client(cls) -> str:
@@ -27,7 +27,10 @@ class Proxy(Driver):
 
     def __target(self, root, name):
         try:
-            return reduce(lambda instance, name: instance.children[name], self.path, root)
+            path = self.path.split(".")
+            if not path:
+                raise ConfigurationError(f"Proxy driver {name} has empty path")
+            return reduce(lambda instance, name: instance.children[name], path, root)
         except KeyError:
             raise ConfigurationError(
                 f"Proxy driver {name} references nonexistent driver {'.'.join(self.path)}"
