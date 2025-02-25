@@ -31,42 +31,37 @@ export:
 ## Examples
 Using expect with a context manager
 ```{testcode}
-with pyserialclient.pexpect() as session:
-    session.sendline("Hello, world!")
-    session.expect("Hello, world!")
+>>> with pyserial.pexpect() as session:
+...     session.sendline("Hello, world!")
+...     session.expect("Hello, world!")
+14
+0
+
 ```
 
 Using expect without a context manager
 ```{testcode}
-session = pyserialclient.open()
-session.sendline("Hello, world!")
-session.expect("Hello, world!")
-pyserialclient.close()
+>>> session = pyserial.open()
+>>> session.sendline("Hello, world!")
+14
+>>> session.expect("Hello, world!")
+0
+>>> pyserial.close()
+
 ```
 
 Using a simple BlockingStream with a context manager
 ```{testcode}
-with pyserialclient.stream() as stream:
-    stream.send(b"Hello, world!")
-    data = stream.receive()
+>>> with pyserial.stream() as stream:
+...     stream.send(b"Hello, world!")
+...     data = stream.receive()
+
 ```
 
 Using a simple BlockingStream without a context manager
 ```{testcode}
-stream = pyserialclient.open_stream()
-stream.send(b"Hello, world!")
-data = stream.receive()
-```
+>>> stream = pyserial.open_stream()
+>>> stream.send(b"Hello, world!")
+>>> data = stream.receive()
 
-```{testsetup} *
-from jumpstarter_driver_pyserial.driver import PySerial
-from jumpstarter.common.utils import serve
-
-instance = serve(PySerial(url="loop://"))
-
-pyserialclient = instance.__enter__()
-```
-
-```{testcleanup} *
-instance.__exit__(None, None, None)
 ```

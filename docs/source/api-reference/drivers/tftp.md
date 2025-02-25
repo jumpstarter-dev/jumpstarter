@@ -68,22 +68,5 @@ export:
 ...     assert "test.txt" in files
 ...
 ...     tftp.stop()
-```
 
-```{testsetup} *
-import tempfile
-import os
-from jumpstarter_driver_tftp.driver import Tftp
-from jumpstarter.common.utils import serve
-
-# Create a persistent temp dir that won't be removed by the example
-TEST_DIR = tempfile.mkdtemp(prefix='tftp-test-')
-instance = serve(Tftp(root_dir=TEST_DIR, host="127.0.0.1"))
-client = instance.__enter__()
-```
-
-```{testcleanup} *
-instance.__exit__(None, None, None)
-import shutil
-shutil.rmtree(TEST_DIR, ignore_errors=True)
 ```

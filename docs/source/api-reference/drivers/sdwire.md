@@ -17,6 +17,7 @@ exporter host.
 Traceback (most recent call last):
 ...
 FileNotFoundError: failed to find sd-wire device
+
 ```
 
 ## Client API

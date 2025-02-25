@@ -20,7 +20,7 @@ clean-docs:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs clean
 
 doctest:
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
+	uv run --isolated --all-packages --group docs --directory docs pytest --doctest-glob="*.md"
 
 test-%: packages/%
 	uv run --isolated --directory $< pytest

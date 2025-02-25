@@ -17,6 +17,7 @@ exposes both snapshot and streaming interfaces.
 Traceback (most recent call last):
 ...
 io.UnsupportedOperation: fileno
+
 ```
 
 ## Client API
