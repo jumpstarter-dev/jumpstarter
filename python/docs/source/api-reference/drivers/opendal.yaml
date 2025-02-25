@@ -1,0 +1,5 @@
+type: "jumpstarter_driver_opendal.driver.Opendal"
+config:
+  scheme: "fs"
+  kwargs:
+    root: "/tmp/jumpstarter"
