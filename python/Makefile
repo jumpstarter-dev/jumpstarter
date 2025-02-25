@@ -7,6 +7,12 @@ default: build
 docs:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs html
 
+docs-all:
+	./docs/make-all-versions.sh
+
+serve-all:
+	python3 -m http.server 8000 --bind 127.0.0.1 -d ./docs/build_all
+
 serve-docs:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve HOST="$(DOC_LISTEN)"
 
@@ -53,7 +59,7 @@ build:
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs test test-packages build clean-test clean-docs clean-venv clean-build \
+.PHONY: sync docs docs-all serve-all test test-packages build clean-test clean-docs clean-venv clean-build \
 	mypy-jumpstarter \
 	mypy-jumpstarter-cli-admin \
 	mypy-jumpstarter-cli-client \

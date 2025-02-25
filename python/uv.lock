@@ -18,6 +18,7 @@ members = [
     "jumpstarter-driver-network",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-power",
+    "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-raspberrypi",
     "jumpstarter-driver-sdwire",
@@ -1275,6 +1276,36 @@ dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "trio", specifier = ">=0.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-probe-rs"
+source = { editable = "packages/jumpstarter-driver-probe-rs" }
+dependencies = [
+    { name = "anyio" },
+    { name = "asyncclick" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-opendal" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
