@@ -120,7 +120,6 @@ export:
         export={
             "power": ExporterConfigV1Alpha1DriverInstance(
                 type="jumpstarter_driver_power.driver.PduPower",
-                children={},  # missing children defaults to empty
                 config={
                     "host": "192.168.1.111",
                     "port": 1234,
@@ -132,14 +131,12 @@ export:
             ),
             "serial": ExporterConfigV1Alpha1DriverInstance(
                 type="jumpstarter_driver_pyserial.driver.Pyserial",
-                children={},
                 config={
                     "port": "/dev/ttyUSB0",
                     "baudrate": 115200,
                 },
             ),
             "nested": ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_composite.driver.Composite",
                 children={
                     "custom": ExporterConfigV1Alpha1DriverInstance(
                         type="vendorpackage.CustomDriver",
@@ -149,7 +146,6 @@ export:
                         },
                     )
                 },
-                config={},  # missing config defaults to empty
             ),
         },
         config={},

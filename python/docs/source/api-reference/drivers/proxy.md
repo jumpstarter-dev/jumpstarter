@@ -17,7 +17,6 @@ resource, like a serial port or a network connection.
 ```{doctest}
 >>> root.foo.bar.power.on() # instead of
 >>> root.proxy.on()         # you can do
->>> root.refproxy.on()      # and same for the refproxy
 ```
 
 ```{testsetup} *

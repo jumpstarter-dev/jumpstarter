@@ -21,7 +21,8 @@ def test_drivers_probe_rs():
         assert client.reset() == "ok"
         assert client.erase() == "ok"
         assert client.download_file("/dev/null") == "ok"
-        assert client.read(32, 0xf000, 4) == [0xDEADBEEF, 0xCAFEBABE, 0xCAFE0000, 0xDEAD0000]
+        assert client.read(32, 0xF000, 4) == [0xDEADBEEF, 0xCAFEBABE, 0xCAFE0000, 0xDEAD0000]
+
 
 def test_drivers_probe_rs_errors():
     instance = ProbeRs()
@@ -30,4 +31,3 @@ def test_drivers_probe_rs_errors():
     with serve(instance) as client:
         assert client.info() == ""  # Error case
         assert client.reset() == ""  # Error case
-

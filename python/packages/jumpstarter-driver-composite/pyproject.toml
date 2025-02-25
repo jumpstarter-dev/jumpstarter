@@ -16,6 +16,7 @@ dependencies = [
 
 [project.entry-points."jumpstarter.drivers"]
 Composite = "jumpstarter_driver_composite.driver:Composite"
+Proxy = "jumpstarter_driver_composite.driver:Proxy"
 
 [dependency-groups]
 dev = [
