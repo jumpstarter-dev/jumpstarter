@@ -34,7 +34,7 @@ def test_drivers_opendal(tmp_path):
         assert test_file.writable()
 
         (tmp_path / "src").write_text("hello")
-        test_file.write_file(operator=Operator("fs", root=str(tmp_path)), path="src")
+        test_file.write(str(tmp_path / "src"))
 
         test_file.close()
         assert test_file.closed
@@ -48,8 +48,10 @@ def test_drivers_opendal(tmp_path):
         assert test_file.tell() == 0
         assert test_file.seek(2) == 2
 
-        test_file.read_file(operator=Operator("fs", root=str(tmp_path)), path="dst")
+        test_file.read(str(tmp_path / "dst"))
         assert (tmp_path / "dst").read_text() == "llo"
+
+        assert client.stat("dst").content_length == 3
 
         test_file.close()
         assert test_file.closed

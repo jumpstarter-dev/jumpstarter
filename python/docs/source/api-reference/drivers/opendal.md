@@ -20,4 +20,27 @@ Opendal(...)
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_opendal.client.OpendalClient()
     :members:
+
+.. autoclass:: jumpstarter_driver_opendal.client.OpendalFile()
+    :members:
+
+.. autoclass:: jumpstarter_driver_opendal.common.Metadata()
+    :members:
+    :undoc-members:
+    :exclude-members: model_config
+
+.. autoclass:: jumpstarter_driver_opendal.common.EntryMode()
+    :members:
+    :undoc-members:
+    :exclude-members: model_config
+
+.. autoclass:: jumpstarter_driver_opendal.common.PresignedRequest()
+    :members:
+    :undoc-members:
+    :exclude-members: model_config
+
+.. autoclass:: jumpstarter_driver_opendal.common.Capability()
+    :members:
+    :undoc-members:
+    :exclude-members: model_config
 ```

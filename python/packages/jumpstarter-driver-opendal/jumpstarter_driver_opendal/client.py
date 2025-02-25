@@ -16,50 +16,97 @@ from jumpstarter.client import DriverClient
 
 @dataclass(kw_only=True)
 class OpendalFile:
+    """
+    A file-like object representing a remote file
+    """
+
     client: OpendalClient
     fd: UUID
 
-    def write(self, handle):
+    def __write(self, handle):
         return self.client.call("file_write", self.fd, handle)
 
-    def read(self, handle):
+    def __read(self, handle):
         return self.client.call("file_read", self.fd, handle)
 
-    def write_file(self, operator: Operator, path: str):
-        with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
-            return self.write(handle)
+    def write(self, path: str, operator: Operator | None = None):
+        """
+        Write into remote file with content from local file
+        """
+        if operator is None:
+            operator = Operator("fs", root="/")
 
-    def read_file(self, operator: Operator, path: str):
+        with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
+            return self.__write(handle)
+
+    def read(self, path: str, operator: Operator | None = None):
+        """
+        Read content from remote file into local file
+        """
+        if operator is None:
+            operator = Operator("fs", root="/")
+
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
-            return self.read(handle)
+            return self.__read(handle)
 
     @validate_call(validate_return=True)
     def seek(self, pos: int, whence: int = 0) -> int:
+        """
+        Change the cursor position to the given byte offset.
+        Offset is interpreted relative to the position indicated by whence.
+        The default value for whence is SEEK_SET. Values for whence are:
+
+            SEEK_SET or 0 – start of the file (the default); offset should be zero or positive
+
+            SEEK_CUR or 1 – current cursor position; offset may be negative
+
+            SEEK_END or 2 – end of the file; offset is usually negative
+
+        Return the new cursor position
+        """
         return self.client.call("file_seek", self.fd, pos, whence)
 
     @validate_call(validate_return=True)
     def tell(self) -> int:
+        """
+        Return the current cursor position
+        """
         return self.client.call("file_tell", self.fd)
 
     @validate_call(validate_return=True)
     def close(self) -> None:
+        """
+        Close the file
+        """
         return self.client.call("file_close", self.fd)
 
     @property
     @validate_call(validate_return=True)
     def closed(self) -> bool:
+        """
+        Check if the file is closed
+        """
         return self.client.call("file_closed", self.fd)
 
     @validate_call(validate_return=True)
     def readable(self) -> bool:
+        """
+        Check if the file is readable
+        """
         return self.client.call("file_readable", self.fd)
 
     @validate_call(validate_return=True)
     def seekable(self) -> bool:
+        """
+        Check if the file is seekable
+        """
         return self.client.call("file_seekable", self.fd)
 
     @validate_call(validate_return=True)
     def writable(self) -> bool:
+        """
+        Check if the file is writable
+        """
         return self.client.call("file_writable", self.fd)
 
 

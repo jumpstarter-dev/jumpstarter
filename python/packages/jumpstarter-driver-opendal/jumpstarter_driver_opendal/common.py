@@ -12,7 +12,7 @@ class EntryMode(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def validate(cls, data: Any):
+    def __validate(cls, data: Any):
         match data:
             case opendal.EntryMode():
                 return {"entry_is_file": data.is_file(), "entry_is_dir": data.is_dir()}
