@@ -65,56 +65,105 @@ class OpendalFile:
 
 class OpendalClient(DriverClient):
     def open(self, /, path: str, mode: str) -> OpendalFile:
+        """
+        Open a file-like reader for the given path
+        """
         return OpendalFile(client=self, fd=self.call("open", path, mode))
 
     @validate_call(validate_return=True)
     def stat(self, /, path: str) -> Metadata:
+        """
+        Get current path's metadata
+        """
         return self.call("stat", path)
 
     @validate_call(validate_return=True)
     def copy(self, /, source: str, target: str):
+        """
+        Copy source to target
+        """
         self.call("copy", source, target)
 
     @validate_call(validate_return=True)
     def rename(self, /, source: str, target: str):
+        """
+        Rename source to target
+        """
         self.call("rename", source, target)
 
     @validate_call(validate_return=True)
     def remove_all(self, /, path: str):
+        """
+        Remove all file under path
+        """
         self.call("remove_all", path)
 
     @validate_call(validate_return=True)
     def create_dir(self, /, path: str):
+        """
+        Create a dir at given path
+
+        To indicate that a path is a directory, it is compulsory to include a trailing / in the path.
+
+        Create on existing dir will succeed.
+        Create dir is always recursive, works like mkdir -p.
+        """
         self.call("create_dir", path)
 
     @validate_call(validate_return=True)
     def delete(self, /, path: str):
+        """
+        Delete given path
+
+        Delete not existing error won't return errors
+        """
         self.call("delete", path)
 
     @validate_call(validate_return=True)
     def exists(self, /, path: str) -> bool:
+        """
+        Check if given path exists
+        """
         return self.call("exists", path)
 
     def list(self, /, path) -> Generator[str, None, None]:
+        """
+        List files and directories under given path
+        """
         yield from self.streamingcall("list", path)
 
     def scan(self, /, path) -> Generator[str, None, None]:
+        """
+        List files and directories under given path recursively
+        """
         yield from self.streamingcall("scan", path)
 
     @validate_call(validate_return=True)
     def presign_stat(self, /, path: str, expire_second: int) -> PresignedRequest:
+        """
+        Presign an operation for stat (HEAD) which expires after expire_second seconds
+        """
         return self.call("presign_stat", path, expire_second)
 
     @validate_call(validate_return=True)
     def presign_read(self, /, path: str, expire_second: int) -> PresignedRequest:
+        """
+        Presign an operation for read (GET) which expires after expire_second seconds
+        """
         return self.call("presign_read", path, expire_second)
 
     @validate_call(validate_return=True)
     def presign_write(self, /, path: str, expire_second: int) -> PresignedRequest:
+        """
+        Presign an operation for write (PUT) which expires after expire_second seconds
+        """
         return self.call("presign_write", path, expire_second)
 
     @validate_call(validate_return=True)
     def capability(self, /) -> Capability:
+        """
+        Get capabilities of the underlying storage
+        """
         return self.call("capability")
 
 
