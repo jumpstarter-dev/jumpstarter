@@ -164,12 +164,16 @@ class Driver(
                 ) as stream:
                     yield stream
 
-    def report(self, *, parent=None, name=None):
+    def report(self, *, root=None, parent=None, name=None):
         """
         Create DriverInstanceReport
 
         :meta private:
         """
+
+        if root is None:
+            root = self
+
         return jumpstarter_pb2.DriverInstanceReport(
             uuid=str(self.uuid),
             parent_uuid=str(parent.uuid) if parent else None,
@@ -179,15 +183,17 @@ class Driver(
             | ({"jumpstarter.dev/name": name} if name else {}),
         )
 
-    def enumerate(self, *, parent=None, name=None):
+    def enumerate(self, *, root=None, parent=None, name=None):
         """
         Get list of self and child devices
 
         :meta private:
         """
+        if root is None:
+            root = self
 
         return [(self.uuid, parent, name, self)] + list(
-            chain(*[child.enumerate(parent=self, name=cname) for (cname, child) in self.children.items()])
+            chain(*[child.enumerate(root=root, parent=self, name=cname) for (cname, child) in self.children.items()])
         )
 
     @asynccontextmanager

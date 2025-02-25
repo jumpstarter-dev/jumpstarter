@@ -28,32 +28,36 @@ async def client_from_channel(
     unsafe: bool,
 ) -> DriverClient:
     topo = defaultdict(list)
+    last_seen = {}
     reports = {}
     clients = OrderedDict()
 
     response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
 
-    for report in response.reports:
-        topo[report.uuid] = []
+    for index, report in enumerate(response.reports):
+        topo[index] = []
+
+        last_seen[report.uuid] = index
 
         if report.parent_uuid != "":
-            topo[report.parent_uuid].append(report.uuid)
+            parent_index = last_seen[report.parent_uuid]
+            topo[parent_index].append(index)
 
-        reports[report.uuid] = report
+        reports[index] = report
 
-    for uuid in TopologicalSorter(topo).static_order():
-        report = reports[uuid]
+    for index in TopologicalSorter(topo).static_order():
+        report = reports[index]
 
         client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
         client = client_class(
-            uuid=UUID(uuid),
+            uuid=UUID(report.uuid),
             labels=report.labels,
             channel=channel,
             portal=portal,
             stack=stack.enter_context(ExitStack()),
-            children={reports[k].labels["jumpstarter.dev/name"]: clients[k] for k in topo[uuid]},
+            children={reports[k].labels["jumpstarter.dev/name"]: clients[k] for k in topo[index]},
         )
 
-        clients[uuid] = client
+        clients[index] = client
 
     return clients.popitem(last=True)[1]
