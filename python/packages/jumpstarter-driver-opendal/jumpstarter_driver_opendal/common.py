@@ -1,9 +1,11 @@
 # Reference: https://github.com/apache/opendal/blob/main/bindings/python/python/opendal/__init__.pyi
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import opendal
 from pydantic import BaseModel, model_validator
+
+Mode = Literal["rb", "wb"]
 
 
 class EntryMode(BaseModel):

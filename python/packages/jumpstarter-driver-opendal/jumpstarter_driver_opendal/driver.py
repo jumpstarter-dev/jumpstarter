@@ -10,7 +10,7 @@ from opendal import AsyncFile, AsyncOperator
 from pydantic import validate_call
 
 from .adapter import AsyncFileStream
-from .common import Capability, Metadata, PresignedRequest
+from .common import Capability, Metadata, Mode, PresignedRequest
 from jumpstarter.driver import Driver, export
 
 
@@ -34,7 +34,7 @@ class Opendal(Driver):
 
     @export
     @validate_call(validate_return=True)
-    async def open(self, /, path: str, mode: str) -> UUID:
+    async def open(self, /, path: str, mode: Mode) -> UUID:
         file = await self._operator.open(path, mode)
         uuid = uuid4()
 

@@ -10,7 +10,7 @@ from opendal import Operator
 from pydantic import ConfigDict, validate_call
 
 from .adapter import OpendalAdapter
-from .common import Capability, Metadata, PresignedRequest
+from .common import Capability, Metadata, Mode, PresignedRequest
 from jumpstarter.client import DriverClient
 
 
@@ -114,7 +114,7 @@ class OpendalFile:
 
 class OpendalClient(DriverClient):
     @validate_call
-    def open(self, /, path: str, mode: str) -> OpendalFile:
+    def open(self, /, path: str, mode: Mode) -> OpendalFile:
         """
         Open a file-like reader for the given path
         """
