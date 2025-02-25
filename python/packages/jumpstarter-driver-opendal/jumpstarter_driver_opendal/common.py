@@ -38,9 +38,31 @@ class Metadata(BaseModel):
 
 
 class PresignedRequest(BaseModel):
+    """
+    Presigned HTTP request
+
+    Allows you to delegate access to a specific file in your storage backend
+    without sharing access credentials
+    """
+
     url: str
+    """
+    HTTP request URL
+    """
     method: str
+    """
+    HTTP method
+
+        GET: download file
+
+        PUT: upload file
+
+        DELETE: delete file
+    """
     headers: dict[str, str]
+    """
+    Additional HTTP headers to send with the request
+    """
 
 
 class Capability(BaseModel):
