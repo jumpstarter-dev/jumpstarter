@@ -34,7 +34,7 @@ def test_drivers_opendal(tmp_path):
         assert test_file.writable()
 
         (tmp_path / "src").write_text("hello")
-        test_file.write(str(tmp_path / "src"))
+        test_file.write(tmp_path / "src")
 
         test_file.close()
         assert test_file.closed
@@ -54,7 +54,7 @@ def test_drivers_opendal(tmp_path):
             == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         )
 
-        test_file.read(str(tmp_path / "dst"))
+        test_file.read(tmp_path / "dst")
         assert (tmp_path / "dst").read_text() == "llo"
 
         assert client.stat("dst").content_length == 3
