@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from opendal import Operator
 
 from jumpstarter_driver_tftp.server import Opcode, TftpServer
 
@@ -13,7 +14,7 @@ async def tftp_server():
         test_file_path = Path(temp_dir) / "test.txt"
         test_file_path.write_text("Hello, TFTP!")
 
-        server = TftpServer(host="127.0.0.1", port=0, root_dir=temp_dir)
+        server = TftpServer(host="127.0.0.1", port=0, operator=Operator("fs", root=str(temp_dir)))
         server_task = asyncio.create_task(server.start())
 
         for _ in range(10):
