@@ -3,7 +3,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID, uuid4
 
 from anyio.streams.file import FileReadStream, FileWriteStream
@@ -11,7 +11,7 @@ from opendal import AsyncFile, AsyncOperator
 from pydantic import validate_call
 
 from .adapter import AsyncFileStream
-from .common import Capability, Metadata, Mode, PresignedRequest
+from .common import Capability, HashAlgo, Metadata, Mode, PresignedRequest
 from jumpstarter.driver import Driver, export
 
 
@@ -101,7 +101,7 @@ class Opendal(Driver):
 
     @export
     @validate_call(validate_return=True)
-    async def hash(self, /, path: str, algo: Literal["md5", "sha256"] = "sha256") -> str:
+    async def hash(self, /, path: str, algo: HashAlgo = "sha256") -> str:
         match algo:
             case "md5":
                 m = hashlib.md5()

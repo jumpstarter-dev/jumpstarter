@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 from uuid import UUID
 
 import asyncclick as click
@@ -11,7 +10,7 @@ from opendal import Operator
 from pydantic import ConfigDict, validate_call
 
 from .adapter import OpendalAdapter
-from .common import Capability, Metadata, Mode, PresignedRequest
+from .common import Capability, HashAlgo, Metadata, Mode, PresignedRequest
 from jumpstarter.client import DriverClient
 
 
@@ -129,7 +128,7 @@ class OpendalClient(DriverClient):
         return self.call("stat", path)
 
     @validate_call(validate_return=True)
-    def hash(self, /, path: str, algo: Literal["md5", "sha256"] = "sha256") -> str:
+    def hash(self, /, path: str, algo: HashAlgo = "sha256") -> str:
         """
         Get current path's hash
         """

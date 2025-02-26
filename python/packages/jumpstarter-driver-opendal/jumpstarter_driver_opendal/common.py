@@ -6,6 +6,7 @@ import opendal
 from pydantic import BaseModel, model_validator
 
 Mode = Literal["rb", "wb"]
+HashAlgo = Literal["md5", "sha256"]
 
 
 class EntryMode(BaseModel):
