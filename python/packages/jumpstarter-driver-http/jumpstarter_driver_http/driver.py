@@ -1,11 +1,10 @@
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
 import anyio
 from aiohttp import web
-from anyio.streams.file import FileWriteStream
+from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter.driver import Driver, export
 
@@ -34,6 +33,8 @@ class HttpServer(Driver):
             super().__post_init__()
 
         os.makedirs(self.root_dir, exist_ok=True)
+
+        self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
         self.app.router.add_routes(
             [
                 web.static("/", self.root_dir),
@@ -57,84 +58,6 @@ class HttpServer(Driver):
     def client(cls) -> str:
         """Return the import path of the corresponding client"""
         return "jumpstarter_driver_http.client.HttpServerClient"
-
-    @export
-    async def put_file(self, filename: str, src_stream) -> str:
-        """
-        Upload a file to the HTTP server.
-
-        Args:
-            filename (str): Name of the file to upload.
-            src_stream: Stream of file content.
-
-        Returns:
-            str: Name of the uploaded file.
-
-        Raises:
-            HttpServerError: If the target path is invalid.
-            FileWriteError: If the file upload fails.
-        """
-        try:
-            file_path = os.path.join(self.root_dir, filename)
-
-            if not Path(file_path).resolve().is_relative_to(Path(self.root_dir).resolve()):
-                raise HttpServerError("Invalid target path")
-
-            async with await FileWriteStream.from_path(file_path) as dst:
-                async with self.resource(src_stream, timeout=self.timeout) as src:
-                    async for chunk in src:
-                        await dst.send(chunk)
-
-            self.logger.info(f"File '{filename}' written to '{file_path}'")
-            return f"{self.get_url()}/{filename}"
-
-        except Exception as e:
-            self.logger.error(f"Failed to upload file '{filename}': {e}")
-            raise FileWriteError(f"Failed to upload file '{filename}': {e}") from e
-
-    @export
-    async def delete_file(self, filename: str) -> str:
-        """
-        Delete a file from the HTTP server.
-
-        Args:
-            filename (str): Name of the file to delete.
-
-        Returns:
-            str: Name of the deleted file.
-
-        Raises:
-            HttpServerError: If the file does not exist or deletion fails.
-        """
-        file_path = Path(self.root_dir) / filename
-        if not file_path.exists():
-            raise HttpServerError(f"File '{filename}' does not exist.")
-        try:
-            file_path.unlink()
-            self.logger.info(f"File '{filename}' has been deleted.")
-            return filename
-        except Exception as e:
-            self.logger.error(f"Failed to delete file '{filename}': {e}")
-            raise HttpServerError(f"Failed to delete file '{filename}': {e}") from e
-
-    @export
-    def list_files(self) -> list[str]:
-        """
-        List all files in the root directory.
-
-        Returns:
-            list[str]: List of filenames in the root directory.
-
-        Raises:
-            HttpServerError: If listing files fails.
-        """
-        try:
-            files = os.listdir(self.root_dir)
-            files = [f for f in files if os.path.isfile(os.path.join(self.root_dir, f))]
-            return files
-        except Exception as e:
-            self.logger.error(f"Failed to list files: {e}")
-            raise HttpServerError(f"Failed to list files: {e}") from e
 
     @export
     async def start(self):

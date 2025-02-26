@@ -1151,6 +1151,7 @@ source = { editable = "packages/jumpstarter-driver-http" }
 dependencies = [
     { name = "anyio" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal" },
 ]
 
@@ -1165,6 +1166,7 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.6.2.post1" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
 ]
 
