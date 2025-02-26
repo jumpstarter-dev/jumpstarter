@@ -11,6 +11,7 @@ Drivers packages from the [drivers](https://github.com/jumpstarter-dev/jumpstart
 can.md
 dbus.md
 network.md
+opendal.md
 proxy.md
 probe-rs.md
 pyserial.md

@@ -7,8 +7,73 @@ from threading import Thread
 import pytest
 from opendal import Operator
 
-from .driver import MockStorageMux
+from .common import PresignedRequest
+from .driver import MockStorageMux, Opendal
 from jumpstarter.common.utils import serve
+
+
+def test_drivers_opendal(tmp_path):
+    with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
+        assert not client.capability().presign
+
+        client.create_dir("test_dir/")
+        client.create_dir("demo_dir/nest_dir/")
+
+        assert client.exists("test_dir/")
+        assert client.exists("demo_dir/nest_dir/")
+
+        assert client.stat("test_dir/").mode.is_dir
+
+        assert sorted(client.list("/")) == ["/", "demo_dir/", "test_dir/"]
+        assert sorted(client.scan("/")) == ["/", "demo_dir/", "demo_dir/nest_dir/", "test_dir/"]
+
+        test_file = client.open("test_dir/test_file", "wb")
+        assert not test_file.closed
+        assert not test_file.readable()
+        assert not test_file.seekable()
+        assert test_file.writable()
+
+        (tmp_path / "src").write_text("hello")
+        test_file.write(str(tmp_path / "src"))
+
+        test_file.close()
+        assert test_file.closed
+
+        test_file = client.open("test_dir/test_file", "rb")
+        assert not test_file.closed
+        assert test_file.readable()
+        assert test_file.seekable()
+        assert not test_file.writable()
+
+        assert test_file.tell() == 0
+        assert test_file.seek(2) == 2
+
+        test_file.read(str(tmp_path / "dst"))
+        assert (tmp_path / "dst").read_text() == "llo"
+
+        assert client.stat("dst").content_length == 3
+
+        test_file.close()
+        assert test_file.closed
+
+        client.copy("test_dir/test_file", "test_dir/copy_file")
+        client.rename("test_dir/copy_file", "test_dir/rename_file")
+        assert not client.exists("test_dir/copy_file")
+        assert client.exists("test_dir/rename_file")
+
+        client.delete("test_dir/rename_file")
+        assert not client.exists("test_dir/rename_file")
+
+        client.remove_all("test_dir/")
+        assert not client.exists("test_dir/")
+
+    with serve(Opendal(scheme="http", kwargs={"endpoint": "http://invalid.invalid"})) as client:
+        assert client.presign_read("test", 100) == PresignedRequest(
+            url="http://invalid.invalid/test", method="GET", headers={}
+        )
+        assert client.presign_stat("test", 100) == PresignedRequest(
+            url="http://invalid.invalid/test", method="HEAD", headers={}
+        )
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):

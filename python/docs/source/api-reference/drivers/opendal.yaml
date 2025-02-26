@@ -1,0 +1,7 @@
+type: "jumpstarter_driver_opendal.driver.Opendal"
+config:
+  # See https://docs.rs/opendal/latest/opendal/services/index.html
+  # for list of supported services and their configuration parameters
+  scheme: "fs"
+  kwargs:
+    root: "/tmp/jumpstarter"
