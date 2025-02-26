@@ -31,13 +31,30 @@ metadata:
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
 export:
-  # a DUTLink interface to the DUT
-  dutlink:
-    type: jumpstarter_driver_dutlink.driver.Dutlink
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
     config:
-      storage_device: "/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_5B4C0AB025C0-0:0"
+      serial: "YK25838"
+      port: "1"
+  serial:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+  storage:
+  type: "jumpstarter_driver_sdwire.driver.SDWire"
+    config:
+      serial: "sdw-00001"
+      storage_device: "/dev/disk/by-path/..."
+  custom:
+    type: "vendorpackage.CustomDriver"
+    config:
+      hello: "world"
+  reference:
+    ref: "power" # reference to another driver, this uses the Proxy driver
 ```
 
+see the [ExporterConfig](../api-reference/exporters/exporterconfig.md) for more details.
 ## Running an Exporter
 
 To run an Exporter on a host system, you must have Python {{requires_python}} installed

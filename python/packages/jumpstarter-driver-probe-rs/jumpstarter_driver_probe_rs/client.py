@@ -59,7 +59,7 @@ class ProbeRsClient(DriverClient):
         data_strs = self.call("read", f"b{int(width)}", "0x%x" % int(address), "%d" % words)
         return [int(data, 16) for data in data_strs]
 
-    def cli(self): # noqa: C901
+    def cli(self):  # noqa: C901
         @click.group
         def base():
             """probe-rs client"""

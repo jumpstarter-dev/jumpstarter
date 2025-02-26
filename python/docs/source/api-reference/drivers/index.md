@@ -9,7 +9,9 @@ Drivers packages from the [drivers](https://github.com/jumpstarter-dev/jumpstart
 ```{toctree}
 :maxdepth: 2
 can.md
+dbus.md
 network.md
+proxy.md
 probe-rs.md
 pyserial.md
 sdwire.md
@@ -18,6 +20,4 @@ snmp.md
 tftp.md
 ustreamer.md
 yepkit.md
-dbus.md
-proxy.md
 ```

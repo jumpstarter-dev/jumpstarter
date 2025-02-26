@@ -1,8 +1,6 @@
 children:
   proxy:
-    type: "jumpstarter_driver_composite.driver.Proxy"
-    config:
-      path: [foo, bar, power] # full path of the underlying driver
+    ref: "foo.bar.power"
   foo:
     children:
       bar:

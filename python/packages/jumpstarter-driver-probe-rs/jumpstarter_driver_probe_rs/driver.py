@@ -65,7 +65,6 @@ class ProbeRs(Driver):
             capture_output=True,  # Captures stdout and stderr
             text=True,  # Returns stdout/stderr as strings (not bytes)
             env=self.env_from_cfg(),
-
         )
 
         if result.returncode != 0:

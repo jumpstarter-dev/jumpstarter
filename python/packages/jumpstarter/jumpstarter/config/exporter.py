@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal, Optional, Self
 import grpc
 import yaml
 from anyio.from_thread import start_blocking_portal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 
 from .common import ObjectMeta
 from .grpc import call_credentials
@@ -17,17 +17,44 @@ from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 
 
-class ExporterConfigV1Alpha1DriverInstance(BaseModel):
-    type: str = Field(default="jumpstarter_driver_composite.driver.Composite")
+class ExporterConfigV1Alpha1DriverInstanceProxy(BaseModel):
+    ref: str
+
+
+class ExporterConfigV1Alpha1DriverInstanceComposite(BaseModel):
     children: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+
+
+class ExporterConfigV1Alpha1DriverInstanceBase(BaseModel):
+    type: str
     config: dict[str, Any] = Field(default_factory=dict)
 
+
+class ExporterConfigV1Alpha1DriverInstance(RootModel):
+    root: (
+        ExporterConfigV1Alpha1DriverInstanceBase
+        | ExporterConfigV1Alpha1DriverInstanceComposite
+        | ExporterConfigV1Alpha1DriverInstanceProxy
+    )
+
     def instantiate(self) -> Driver:
-        children = {name: child.instantiate() for name, child in self.children.items()}
+        match self.root:
+            case ExporterConfigV1Alpha1DriverInstanceBase():
+                driver_class = import_class(self.root.type, [], True)
 
-        driver_class = import_class(self.type, [], True)
+                return driver_class(**self.root.config)
 
-        return driver_class(children=children, **self.config)
+            case ExporterConfigV1Alpha1DriverInstanceComposite():
+                from jumpstarter_driver_composite.driver import Composite
+
+                children = {name: child.instantiate() for name, child in self.root.children.items()}
+
+                return Composite(children=children)
+
+            case ExporterConfigV1Alpha1DriverInstanceProxy():
+                from jumpstarter_driver_composite.driver import Proxy
+
+                return Proxy(ref=self.root.ref)
 
     @classmethod
     def from_path(cls, path: str) -> ExporterConfigV1Alpha1DriverInstance:

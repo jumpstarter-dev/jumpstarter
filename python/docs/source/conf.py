@@ -54,7 +54,9 @@ doctest_test_doctest_blocks = ""
 
 html_js_files = ["js/version_array.js", "js/versions.js"]
 html_static_path = ["_static"]
-html_css_files = ['css/versions.css',]
+html_css_files = [
+    "css/versions.css",
+]
 html_sidebars = {
     "**": [
         "sidebar/brand.html",
