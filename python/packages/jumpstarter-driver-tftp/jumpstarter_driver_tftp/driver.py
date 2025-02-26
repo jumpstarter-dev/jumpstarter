@@ -1,17 +1,14 @@
 import asyncio
-import hashlib
 import os
 import socket
 import threading
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
-from anyio.streams.file import FileWriteStream
+from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter_driver_tftp.server import TftpServer
 
-from . import CHUNK_SIZE
 from jumpstarter.driver import Driver, export
 
 
@@ -23,12 +20,6 @@ class TftpError(Exception):
 
 class ServerNotRunning(TftpError):
     """Server is not running"""
-
-    pass
-
-
-class FileNotFound(TftpError):
-    """File not found"""
 
     pass
 
@@ -59,6 +50,9 @@ class Tftp(Driver):
             super().__post_init__()
 
         os.makedirs(self.root_dir, exist_ok=True)
+
+        self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
+
         if self.host == "":
             self.host = self.get_default_ip()
 
@@ -157,95 +151,6 @@ class Tftp(Driver):
             self.server_thread = None
 
     @export
-    def list_files(self) -> list[str]:
-        """List all files available in the TFTP server root directory.
-
-        Returns:
-            list[str]: A list of filenames present in the root directory
-        """
-        return os.listdir(self.root_dir)
-
-    @export
-    async def put_file(self, filename: str, src_stream, client_checksum: str):
-        """Upload a file to the TFTP server.
-
-        Args:
-            filename (str): Name of the file to create
-            src_stream: Source stream to read the file data from
-            client_checksum (str): SHA256 checksum of the file for verification
-
-        Returns:
-            str: The filename that was uploaded
-
-        Raises:
-            TftpError: If the file upload fails or path validation fails
-        """
-        file_path = os.path.join(self.root_dir, filename)
-
-        try:
-            if not Path(file_path).resolve().is_relative_to(Path(self.root_dir).resolve()):
-                raise TftpError("Invalid target path")
-
-            async with await FileWriteStream.from_path(file_path) as dst:
-                async with self.resource(src_stream) as src:
-                    async for chunk in src:
-                        await dst.send(chunk)
-
-            return filename
-        except Exception as e:
-            raise TftpError(f"Failed to upload file: {str(e)}") from e
-
-    @export
-    def delete_file(self, filename: str):
-        """Delete a file from the TFTP server.
-
-        Args:
-            filename (str): Name of the file to delete
-
-        Returns:
-            str: The filename that was deleted
-
-        Raises:
-            FileNotFound: If the specified file does not exist
-            TftpError: If the deletion operation fails
-        """
-        file_path = os.path.join(self.root_dir, filename)
-
-        if not os.path.exists(file_path):
-            raise FileNotFound(f"File {filename} not found")
-
-        try:
-            os.remove(file_path)
-            return filename
-        except Exception as e:
-            raise TftpError(f"Failed to delete {filename}") from e
-
-    @export
-    def check_file_checksum(self, filename: str, client_checksum: str) -> bool:
-        """Check if a file matches the expected checksum.
-
-        Args:
-            filename (str): Name of the file to check
-            client_checksum (str): Expected SHA256 checksum
-
-        Returns:
-            bool: True if the file exists and matches the checksum, False otherwise
-        """
-        file_path = os.path.join(self.root_dir, filename)
-        self.logger.debug(f"checking checksum for file: {filename}")
-        self.logger.debug(f"file path: {file_path}")
-
-        if not os.path.exists(file_path):
-            self.logger.debug(f"File {filename} does not exist")
-            return False
-
-        current_checksum = self._compute_checksum(file_path)
-        self.logger.debug(f"Computed checksum: {current_checksum}")
-        self.logger.debug(f"Client checksum: {client_checksum}")
-
-        return current_checksum == client_checksum
-
-    @export
     def get_host(self) -> str:
         """Get the host address the server is bound to.
 
@@ -267,10 +172,3 @@ class Tftp(Driver):
         if self.server_thread is not None:
             self.stop()
         super().close()
-
-    def _compute_checksum(self, path: str) -> str:
-        hasher = hashlib.sha256()
-        with open(path, "rb") as f:
-            while chunk := f.read(CHUNK_SIZE):
-                hasher.update(chunk)
-        return hasher.hexdigest()
