@@ -48,6 +48,12 @@ def test_drivers_opendal(tmp_path):
         assert test_file.tell() == 0
         assert test_file.seek(2) == 2
 
+        assert client.hash("test_dir/test_file", "md5") == "5d41402abc4b2a76b9719d911017c592"
+        assert (
+            client.hash("test_dir/test_file", "sha256")
+            == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
+
         test_file.read(str(tmp_path / "dst"))
         assert (tmp_path / "dst").read_text() == "llo"
 

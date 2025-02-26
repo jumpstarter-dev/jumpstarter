@@ -1,8 +1,9 @@
+import hashlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from anyio.streams.file import FileReadStream, FileWriteStream
@@ -97,6 +98,23 @@ class Opendal(Driver):
     @validate_call(validate_return=True)
     async def stat(self, /, path: str) -> Metadata:
         return Metadata.model_validate(await self._operator.stat(path), from_attributes=True)
+
+    @export
+    @validate_call(validate_return=True)
+    async def hash(self, /, path: str, algo: Literal["md5", "sha256"] = "sha256") -> str:
+        match algo:
+            case "md5":
+                m = hashlib.md5()
+            case "sha256":
+                m = hashlib.sha256()
+        async with await self._operator.open(path, "rb") as f:
+            while True:
+                data = await f.read(size=65536)
+                if len(data) == 0:
+                    break
+                m.update(data)
+
+        return m.hexdigest()
 
     @export
     @validate_call(validate_return=True)

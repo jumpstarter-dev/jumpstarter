@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 import asyncclick as click
@@ -126,6 +127,13 @@ class OpendalClient(DriverClient):
         Get current path's metadata
         """
         return self.call("stat", path)
+
+    @validate_call(validate_return=True)
+    def hash(self, /, path: str, algo: Literal["md5", "sha256"] = "sha256") -> str:
+        """
+        Get current path's hash
+        """
+        return self.call("hash", path, algo)
 
     @validate_call(validate_return=True)
     def copy(self, /, source: str, target: str):
