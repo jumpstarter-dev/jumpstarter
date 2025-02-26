@@ -41,10 +41,6 @@ export:
 .. autoclass:: jumpstarter_driver_tftp.driver.ServerNotRunning
    :members:
    :show-inheritance:
-
-.. autoclass:: jumpstarter_driver_tftp.driver.FileNotFound
-   :members:
-   :show-inheritance:
 ```
 
 ## Examples
@@ -53,6 +49,7 @@ export:
 >>> import tempfile
 >>> import os
 >>> from jumpstarter_driver_tftp.driver import Tftp
+>>> from jumpstarter.common.utils import serve
 >>> with tempfile.TemporaryDirectory() as tmp_dir:
 ...     # Create a test file
 ...     test_file = os.path.join(tmp_dir, "test.txt")
@@ -60,30 +57,12 @@ export:
 ...         _ = f.write("hello")
 ...
 ...     # Start TFTP server
-...     tftp = Tftp(root_dir=tmp_dir, host="127.0.0.1", port=6969)
-...     tftp.start()
+...     with serve(Tftp(root_dir=tmp_dir, host="127.0.0.1", port=6969)) as tftp:
+...         tftp.start()
 ...
-...     # List files
-...     files = tftp.list_files()
-...     assert "test.txt" in files
+...         # List files
+...         files = list(tftp.storage.list("/"))
+...         assert "test.txt" in files
 ...
-...     tftp.stop()
-```
-
-```{testsetup} *
-import tempfile
-import os
-from jumpstarter_driver_tftp.driver import Tftp
-from jumpstarter.common.utils import serve
-
-# Create a persistent temp dir that won't be removed by the example
-TEST_DIR = tempfile.mkdtemp(prefix='tftp-test-')
-instance = serve(Tftp(root_dir=TEST_DIR, host="127.0.0.1"))
-client = instance.__enter__()
-```
-
-```{testcleanup} *
-instance.__exit__(None, None, None)
-import shutil
-shutil.rmtree(TEST_DIR, ignore_errors=True)
+...         tftp.stop()
 ```
