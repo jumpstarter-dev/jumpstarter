@@ -1,9 +1,14 @@
 # Reference: https://github.com/apache/opendal/blob/main/bindings/python/python/opendal/__init__.pyi
+import warnings
 from os import PathLike
 from typing import Any, Literal, Optional
 
 import opendal
 from pydantic import BaseModel, model_validator
+
+warnings.filterwarnings(
+    "ignore", 'Field name "copy" in "Capability" shadows an attribute in parent "BaseModel"', UserWarning
+)
 
 Mode = Literal["rb", "wb"]
 HashAlgo = Literal["md5", "sha256"]
