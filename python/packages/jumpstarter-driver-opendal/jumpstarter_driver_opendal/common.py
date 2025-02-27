@@ -24,10 +24,10 @@ class EntryMode(BaseModel):
                 return data
 
     def is_file(self) -> bool:
-        return self._is_file
+        return self.entry_is_file
 
     def is_dir(self) -> bool:
-        return self._is_dir
+        return self.entry_is_dir
 
 
 class Metadata(BaseModel):

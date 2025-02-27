@@ -13,11 +13,9 @@ The Opendal driver is a driver for interacting with storages attached to the exp
 ```{doctest}
 >>> from tempfile import NamedTemporaryFile
 >>> opendal.create_dir("test/directory/")
->>> remote_file = opendal.open("test/directory/file", "wb")
->>> with NamedTemporaryFile() as local_file:
-...     assert local_file.write(b"hello") == 5
-...     remote_file.write(local_file.name)
->>> remote_file.close()
+>>> opendal.write_bytes("test/directory/file", b"hello")
+>>> assert opendal.hash("test/directory/file", "md5") == "5d41402abc4b2a76b9719d911017c592"
+>>> opendal.remove_all("test/")
 ```
 
 ```{testsetup} *

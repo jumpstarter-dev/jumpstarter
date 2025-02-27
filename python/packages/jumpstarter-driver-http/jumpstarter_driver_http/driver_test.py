@@ -1,14 +1,8 @@
-import os
-import uuid
-from tempfile import TemporaryDirectory
-
 import aiohttp
-import anyio
 import pytest
-from anyio import create_memory_object_stream
 
 from .driver import HttpServer
-from jumpstarter.common.resources import ClientStreamResource
+from jumpstarter.common.utils import serve
 
 
 @pytest.fixture
@@ -17,44 +11,27 @@ def anyio_backend():
 
 
 @pytest.fixture
-def temp_dir():
-    with TemporaryDirectory() as tmpdir:
-        yield tmpdir
-
-
-@pytest.fixture
-async def server(temp_dir):
-    server = HttpServer(root_dir=temp_dir)
-    await server.start()
-    try:
-        yield server
-    finally:
-        await server.stop()
+def http(tmp_path):
+    with serve(HttpServer(root_dir=str(tmp_path))) as client:
+        client.start()
+        try:
+            yield client
+        finally:
+            client.stop()
 
 
 @pytest.mark.anyio
-async def test_http_server(server):
+async def test_http_server(http, tmp_path):
     filename = "test.txt"
     test_content = b"test content"
 
-    send_stream, receive_stream = create_memory_object_stream(max_buffer_size=1024)
+    (tmp_path / "src").write_bytes(test_content)
 
-    resource_uuid = uuid.uuid4()
-    server.resources[resource_uuid] = receive_stream
+    uploaded_url = http.put_file(filename, tmp_path / "src")
 
-    resource_handle = ClientStreamResource(uuid=resource_uuid).model_dump(mode="json")
+    print(http.storage.stat(filename))
 
-    async def send_data():
-        await send_stream.send(test_content)
-        await send_stream.aclose()
-
-    async with anyio.create_task_group() as tg:
-        tg.start_soon(send_data)
-
-        uploaded_url = await server.put_file(filename, resource_handle)
-        assert uploaded_url == f"{server.get_url()}/{filename}"
-
-    files = server.list_files()
+    files = list(http.storage.list("/"))
     assert filename in files
 
     async with aiohttp.ClientSession() as session:
@@ -63,20 +40,19 @@ async def test_http_server(server):
             retrieved_content = await response.read()
             assert retrieved_content == test_content
 
-    deleted_filename = await server.delete_file(filename)
-    assert deleted_filename == filename
+    http.storage.delete(filename)
 
-    files_after_deletion = server.list_files()
+    files_after_deletion = list(http.storage.list("/"))
     assert filename not in files_after_deletion
 
 
-def test_http_server_host_config(temp_dir):
+def test_http_server_host_config(tmp_path):
     custom_host = "192.168.1.1"
-    server = HttpServer(root_dir=temp_dir, host=custom_host)
+    server = HttpServer(root_dir=str(tmp_path), host=custom_host)
     assert server.get_host() == custom_host
 
 
-def test_http_server_root_directory_creation(temp_dir):
-    new_dir = os.path.join(temp_dir, "new_http_root")
-    _ = HttpServer(root_dir=new_dir)
-    assert os.path.exists(new_dir)
+def test_http_server_root_directory_creation(tmp_path):
+    new_dir = tmp_path / "new_http_root"
+    _ = HttpServer(root_dir=str(new_dir))
+    assert new_dir.exists()

@@ -1,17 +1,41 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from contextlib import closing
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
 import asyncclick as click
+from anyio import EndOfStream
+from anyio.abc import ObjectStream
 from opendal import Operator
 from pydantic import ConfigDict, validate_call
 
 from .adapter import OpendalAdapter
 from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
 from jumpstarter.client import DriverClient
+
+
+@dataclass(kw_only=True)
+class BytesIOStream(ObjectStream[bytes]):
+    buf: BytesIO
+
+    async def send(self, item: bytes):
+        self.buf.write(item)
+
+    async def receive(self) -> bytes:
+        item = self.buf.read(65535)
+        if len(item) == 0:
+            raise EndOfStream
+        return item
+
+    async def send_eof(self):
+        pass
+
+    async def aclose(self):
+        pass
 
 
 @dataclass(kw_only=True)
@@ -29,27 +53,45 @@ class OpendalFile:
     def __read(self, handle):
         return self.client.call("file_read", self.fd, handle)
 
+    def __fs_operator_for_path(self, path: PathBuf) -> (PathBuf, Operator):
+        return Path(path).resolve(), Operator("fs", root="/")
+
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
-    def write(self, path: PathBuf, operator: Operator | None = None):
+    def write_from_path(self, path: PathBuf, operator: Operator | None = None):
         """
         Write into remote file with content from local file
         """
         if operator is None:
-            operator = Operator("fs", root="/")
+            path, operator = self.__fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
             return self.__write(handle)
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
-    def read(self, path: PathBuf, operator: Operator | None = None):
+    def read_into_path(self, path: PathBuf, operator: Operator | None = None):
         """
         Read content from remote file into local file
         """
         if operator is None:
-            operator = Operator("fs", root="/")
+            path, operator = self.__fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
             return self.__read(handle)
+
+    @validate_call(validate_return=True)
+    def write_bytes(self, data: bytes) -> None:
+        buf = BytesIO(data)
+        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
+            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
+                self.__write(handle)
+
+    @validate_call(validate_return=True)
+    def read_bytes(self) -> bytes:
+        buf = BytesIO()
+        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
+            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
+                self.__read(handle)
+        return buf.getvalue()
 
     @validate_call(validate_return=True)
     def seek(self, pos: int, whence: int = 0) -> int:
@@ -113,6 +155,26 @@ class OpendalFile:
 
 
 class OpendalClient(DriverClient):
+    @validate_call(validate_return=True)
+    def write_bytes(self, /, path: PathBuf, data: bytes) -> None:
+        with closing(self.open(path, "wb")) as f:
+            f.write_bytes(data)
+
+    @validate_call(validate_return=True)
+    def read_bytes(self, /, path: PathBuf) -> bytes:
+        with closing(self.open(path, "rb")) as f:
+            return f.read_bytes()
+
+    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
+    def write_from_path(self, dst: PathBuf, src: PathBuf, operator: Operator | None = None) -> None:
+        with closing(self.open(dst, "wb")) as f:
+            f.write_from_path(src, operator)
+
+    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
+    def read_into_path(self, src: PathBuf, dst: PathBuf, operator: Operator | None = None) -> None:
+        with closing(self.open(src, "rb")) as f:
+            f.read_into_path(dst, operator)
+
     @validate_call
     def open(self, /, path: PathBuf, mode: Mode) -> OpendalFile:
         """
