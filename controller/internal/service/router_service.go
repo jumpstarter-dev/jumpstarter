@@ -122,7 +122,10 @@ func (s *RouterService) Start(ctx context.Context) error {
 		return err
 	}
 
-	server := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
+	server := grpc.NewServer(
+		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
+		KeepaliveEnforcementPolicy(),
+	)
 
 	pb.RegisterRouterServiceServer(server, s)
 

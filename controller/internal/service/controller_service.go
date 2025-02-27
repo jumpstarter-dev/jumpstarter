@@ -709,21 +709,26 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return err
 	}
 
-	server := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)), grpc.UnaryInterceptor(func(
-		gctx context.Context,
-		req any,
-		_ *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (resp any, err error) {
-		return handler(logContext(gctx), req)
-	}), grpc.StreamInterceptor(func(
-		srv any,
-		ss grpc.ServerStream,
-		_ *grpc.StreamServerInfo,
-		handler grpc.StreamHandler,
-	) error {
-		return handler(srv, &wrappedStream{ServerStream: ss})
-	}))
+	server := grpc.NewServer(
+		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
+		KeepaliveEnforcementPolicy(),
+		grpc.UnaryInterceptor(func(
+			gctx context.Context,
+			req any,
+			_ *grpc.UnaryServerInfo,
+			handler grpc.UnaryHandler,
+		) (resp any, err error) {
+			return handler(logContext(gctx), req)
+		}),
+		grpc.StreamInterceptor(func(
+			srv any,
+			ss grpc.ServerStream,
+			_ *grpc.StreamServerInfo,
+			handler grpc.StreamHandler,
+		) error {
+			return handler(srv, &wrappedStream{ServerStream: ss})
+		}),
+	)
 
 	pb.RegisterControllerServiceServer(server, s)
 
