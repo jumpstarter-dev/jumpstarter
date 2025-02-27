@@ -4,7 +4,7 @@ from os import PathLike
 from typing import Any, Literal, Optional
 
 import opendal
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 warnings.filterwarnings(
     "ignore", 'Field name "copy" in "Capability" shadows an attribute in parent "BaseModel"', UserWarning
@@ -16,15 +16,18 @@ PathBuf = str | PathLike
 
 
 class EntryMode(BaseModel):
-    entry_is_file: bool
-    entry_is_dir: bool
+    entry_is_file: bool = Field(serialization_alias="is_file")
+    entry_is_dir: bool = Field(serialization_alias="is_dir")
 
     @model_validator(mode="before")
     @classmethod
     def __validate(cls, data: Any):
         match data:
             case opendal.EntryMode():
-                return {"entry_is_file": data.is_file(), "entry_is_dir": data.is_dir()}
+                return EntryMode(
+                    entry_is_file=data.is_file(),
+                    entry_is_dir=data.is_dir(),
+                )
             case _:
                 return data
 

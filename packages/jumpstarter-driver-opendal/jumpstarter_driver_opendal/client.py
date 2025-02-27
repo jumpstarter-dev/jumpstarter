@@ -416,7 +416,7 @@ class OpendalClient(DriverClient):
         @base.command
         @arg_path
         def stat(path):
-            click.echo(self.stat(path).model_dump_json(indent=2))
+            click.echo(self.stat(path).model_dump_json(indent=2, by_alias=True))
 
         @base.command
         @arg_path
