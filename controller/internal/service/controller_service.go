@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
@@ -33,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -45,7 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/uuid"
+	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -65,6 +67,22 @@ type ControllerService struct {
 	Authz        authorizer.Authorizer
 	Attr         authorization.ContextAttributesGetter
 	listenQueues sync.Map
+}
+
+type wrappedStream struct {
+	grpc.ServerStream
+}
+
+func logContext(ctx context.Context) context.Context {
+	p, ok := peer.FromContext(ctx)
+	if ok {
+		return log.IntoContext(ctx, log.FromContext(ctx, "peer", p.Addr))
+	}
+	return ctx
+}
+
+func (w *wrappedStream) Context() context.Context {
+	return logContext(w.ServerStream.Context())
 }
 
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
@@ -313,6 +331,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
+		logger.Error(err, "unable to authenticate exporter")
 		return err
 	}
 
@@ -448,7 +467,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	stream := uuid.NewUUID()
+	stream := k8suuid.NewUUID()
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "https://jumpstarter.dev/stream",
@@ -457,7 +476,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 30)),
 		NotBefore: jwt.NewNumericDate(time.Now()),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ID:        string(uuid.NewUUID()),
+		ID:        string(k8suuid.NewUUID()),
 	}).SignedString([]byte(os.Getenv("ROUTER_KEY")))
 
 	if err != nil {
@@ -585,10 +604,15 @@ func (s *ControllerService) RequestLease(
 		}
 	}
 
+	leaseName, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+
 	var lease jumpstarterdevv1alpha1.Lease = jumpstarterdevv1alpha1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: client.Namespace,
-			Name:      string(uuid.NewUUID()), // TODO: human readable name
+			Name:      leaseName.String(),
 		},
 		Spec: jumpstarterdevv1alpha1.LeaseSpec{
 			ClientRef: corev1.LocalObjectReference{
@@ -685,7 +709,21 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return err
 	}
 
-	server := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
+	server := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)), grpc.UnaryInterceptor(func(
+		gctx context.Context,
+		req any,
+		_ *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (resp any, err error) {
+		return handler(logContext(gctx), req)
+	}), grpc.StreamInterceptor(func(
+		srv any,
+		ss grpc.ServerStream,
+		_ *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
+		return handler(srv, &wrappedStream{ServerStream: ss})
+	}))
 
 	pb.RegisterControllerServiceServer(server, s)
 
