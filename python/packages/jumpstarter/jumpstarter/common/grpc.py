@@ -35,8 +35,12 @@ def ssl_channel_credentials(target: str, tls_config):
 
 
 def aio_secure_channel(target: str, credentials: grpc.ChannelCredentials):
-    return grpc.aio.secure_channel(target, credentials, options=(("grpc.lb_policy_name", "round_robin"),))
-
+    return grpc.aio.secure_channel(target, credentials, options=(
+        ("grpc.lb_policy_name", "round_robin"),
+        ("grpc.keepalive_time_ms", 350000),
+        ("grpc.keepalive_timeout_ms", 5000),
+        ("grpc.http2.max_pings_without_data", 5),
+        ("grpc.keepalive_permit_without_calls", 1)))
 
 def configure_grpc_env():
     # disable informative logs by default, i.e.:
