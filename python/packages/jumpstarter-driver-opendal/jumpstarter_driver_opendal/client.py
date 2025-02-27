@@ -157,21 +157,49 @@ class OpendalFile:
 class OpendalClient(DriverClient):
     @validate_call(validate_return=True)
     def write_bytes(self, /, path: PathBuf, data: bytes) -> None:
+        """
+        Write data into path
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        """
         with closing(self.open(path, "wb")) as f:
             f.write_bytes(data)
 
     @validate_call(validate_return=True)
     def read_bytes(self, /, path: PathBuf) -> bytes:
+        """
+        Read data from path
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.read_bytes("file.txt")
+        b'content'
+        """
         with closing(self.open(path, "rb")) as f:
             return f.read_bytes()
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def write_from_path(self, dst: PathBuf, src: PathBuf, operator: Operator | None = None) -> None:
+        """
+        Write data from src into dst
+
+        >>> _ = (tmp / "src").write_bytes(b"content")
+        >>> opendal.write_from_path("file.txt", tmp / "src")
+        >>> opendal.read_bytes("file.txt")
+        b'content'
+        """
         with closing(self.open(dst, "wb")) as f:
             f.write_from_path(src, operator)
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def read_into_path(self, src: PathBuf, dst: PathBuf, operator: Operator | None = None) -> None:
+        """
+        Read data into dst from src
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.read_into_path("file.txt", tmp / "dst")
+        >>> (tmp / "dst").read_bytes()
+        b'content'
+        """
         with closing(self.open(src, "rb")) as f:
             f.read_into_path(dst, operator)
 
@@ -179,6 +207,10 @@ class OpendalClient(DriverClient):
     def open(self, /, path: PathBuf, mode: Mode) -> OpendalFile:
         """
         Open a file-like reader for the given path
+
+        >>> file = opendal.open("file.txt", "wb")
+        >>> file.write_bytes(b"content")
+        >>> file.close()
         """
         return OpendalFile(client=self, fd=self.call("open", path, mode))
 
@@ -186,6 +218,10 @@ class OpendalClient(DriverClient):
     def stat(self, /, path: PathBuf) -> Metadata:
         """
         Get current path's metadata
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.stat("file.txt").mode.is_file()
+        True
         """
         return self.call("stat", path)
 
@@ -193,6 +229,10 @@ class OpendalClient(DriverClient):
     def hash(self, /, path: PathBuf, algo: HashAlgo = "sha256") -> str:
         """
         Get current path's hash
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.hash("file.txt")
+        'ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73'
         """
         return self.call("hash", path, algo)
 
@@ -200,6 +240,11 @@ class OpendalClient(DriverClient):
     def copy(self, /, source: PathBuf, target: PathBuf):
         """
         Copy source to target
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.copy("file.txt", "copy.txt")
+        >>> opendal.exists("copy.txt")
+        True
         """
         self.call("copy", source, target)
 
@@ -207,6 +252,13 @@ class OpendalClient(DriverClient):
     def rename(self, /, source: PathBuf, target: PathBuf):
         """
         Rename source to target
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.rename("file.txt", "rename.txt")
+        >>> opendal.exists("file.txt")
+        False
+        >>> opendal.exists("rename.txt")
+        True
         """
         self.call("rename", source, target)
 
@@ -214,6 +266,11 @@ class OpendalClient(DriverClient):
     def remove_all(self, /, path: PathBuf):
         """
         Remove all file under path
+
+        >>> opendal.write_bytes("dir/file.txt", b"content")
+        >>> opendal.remove_all("dir/")
+        >>> opendal.exists("dir/file.txt")
+        False
         """
         self.call("remove_all", path)
 
@@ -226,6 +283,10 @@ class OpendalClient(DriverClient):
 
         Create on existing dir will succeed.
         Create dir is always recursive, works like mkdir -p.
+
+        >>> opendal.create_dir("a/b/c/")
+        >>> opendal.exists("a/b/c/")
+        True
         """
         self.call("create_dir", path)
 
@@ -235,6 +296,13 @@ class OpendalClient(DriverClient):
         Delete given path
 
         Delete not existing error won't return errors
+
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.exists("file.txt")
+        True
+        >>> opendal.delete("file.txt")
+        >>> opendal.exists("file.txt")
+        False
         """
         self.call("delete", path)
 
@@ -242,6 +310,12 @@ class OpendalClient(DriverClient):
     def exists(self, /, path: PathBuf) -> bool:
         """
         Check if given path exists
+
+        >>> opendal.exists("file.txt")
+        False
+        >>> opendal.write_bytes("file.txt", b"content")
+        >>> opendal.exists("file.txt")
+        True
         """
         return self.call("exists", path)
 
@@ -249,6 +323,11 @@ class OpendalClient(DriverClient):
     def list(self, /, path: PathBuf) -> Generator[str, None, None]:
         """
         List files and directories under given path
+
+        >>> opendal.write_bytes("dir/file.txt", b"content")
+        >>> opendal.write_bytes("dir/another.txt", b"content")
+        >>> sorted(opendal.list("dir/"))
+        ['dir/', 'dir/another.txt', 'dir/file.txt']
         """
         yield from self.streamingcall("list", path)
 
@@ -256,6 +335,11 @@ class OpendalClient(DriverClient):
     def scan(self, /, path: PathBuf) -> Generator[str, None, None]:
         """
         List files and directories under given path recursively
+
+        >>> opendal.write_bytes("dir/a/file.txt", b"content")
+        >>> opendal.write_bytes("dir/b/another.txt", b"content")
+        >>> sorted(opendal.scan("dir/"))
+        ['dir/', 'dir/a/', 'dir/a/file.txt', 'dir/b/', 'dir/b/another.txt']
         """
         yield from self.streamingcall("scan", path)
 
@@ -284,6 +368,12 @@ class OpendalClient(DriverClient):
     def capability(self, /) -> Capability:
         """
         Get capabilities of the underlying storage
+
+        >>> cap = opendal.capability()
+        >>> cap.copy
+        True
+        >>> cap.presign_read
+        False
         """
         return self.call("capability")
 
