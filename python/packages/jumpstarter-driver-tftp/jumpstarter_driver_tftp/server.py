@@ -33,7 +33,14 @@ class TftpServer:
     """
 
     def __init__(
-        self, host: str, port: int, operator: Operator, block_size: int = 512, timeout: float = 5.0, retries: int = 3
+        self,
+        host: str,
+        port: int,
+        operator: Operator,
+        block_size: int = 512,
+        timeout: float = 5.0,
+        retries: int = 3,
+        logger: logging.Logger | None = None,
     ):
         self.host = host
         self.port = port
@@ -45,7 +52,12 @@ class TftpServer:
         self.shutdown_event = asyncio.Event()
         self.transport: Optional[asyncio.DatagramTransport] = None
         self.protocol: Optional["TftpServerProtocol"] = None
-        self.logger = logging.getLogger(self.__class__.__name__)
+
+        if logger is not None:
+            self.logger = logger.getChild(self.__class__.__name__)
+        else:
+            self.logger = logging.getLogger(self.__class__.__name__)
+
         self.ready_event = asyncio.Event()
 
     @property
@@ -108,7 +120,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
     def __init__(self, server: TftpServer):
         self.server = server
         self.transport: Optional[asyncio.DatagramTransport] = None
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = server.logger.getChild(self.__class__.__name__)
 
     def connection_made(self, transport: asyncio.DatagramTransport):
         self.transport = transport
@@ -333,7 +345,7 @@ class TftpTransfer:
         self.transport: Optional[asyncio.DatagramTransport] = None
         self.protocol: Optional["TftpTransferProtocol"] = None
         self.cleanup_task: Optional[asyncio.Task] = None
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = server.logger.getChild(self.__class__.__name__)
 
     async def start(self):
         """Start the transfer."""
@@ -529,7 +541,7 @@ class TftpTransferProtocol(asyncio.DatagramProtocol):
 
     def __init__(self, transfer: TftpReadTransfer):
         self.transfer = transfer
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = transfer.logger.getChild(self.__class__.__name__)
 
     def connection_made(self, transport: asyncio.DatagramTransport):
         self.transfer.transport = transport
