@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
@@ -46,7 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/uuid"
+	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -466,7 +467,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	stream := uuid.NewUUID()
+	stream := k8suuid.NewUUID()
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "https://jumpstarter.dev/stream",
@@ -475,7 +476,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 30)),
 		NotBefore: jwt.NewNumericDate(time.Now()),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ID:        string(uuid.NewUUID()),
+		ID:        string(k8suuid.NewUUID()),
 	}).SignedString([]byte(os.Getenv("ROUTER_KEY")))
 
 	if err != nil {
@@ -603,10 +604,15 @@ func (s *ControllerService) RequestLease(
 		}
 	}
 
+	leaseName, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+
 	var lease jumpstarterdevv1alpha1.Lease = jumpstarterdevv1alpha1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: client.Namespace,
-			Name:      string(uuid.NewUUID()), // TODO: human readable name
+			Name:      leaseName.String(),
 		},
 		Spec: jumpstarterdevv1alpha1.LeaseSpec{
 			ClientRef: corev1.LocalObjectReference{
