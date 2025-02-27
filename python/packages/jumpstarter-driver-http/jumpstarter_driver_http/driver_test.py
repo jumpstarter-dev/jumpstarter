@@ -25,9 +25,7 @@ async def test_http_server(http, tmp_path):
     filename = "test.txt"
     test_content = b"test content"
 
-    file = http.storage.open(filename, "wb")
-    file.write_bytes(test_content)
-    file.close()
+    http.storage.write_bytes(filename, test_content)
 
     print(http.storage.stat(filename))
 
