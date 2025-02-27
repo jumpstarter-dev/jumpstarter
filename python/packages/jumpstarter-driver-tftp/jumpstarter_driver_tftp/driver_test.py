@@ -24,9 +24,7 @@ async def test_tftp_file_operations(tftp, tmp_path):
     filename = "test.txt"
     test_data = b"Hello"
 
-    file = tftp.storage.open(filename, "wb")
-    file.write_bytes(test_data)
-    file.close()
+    tftp.storage.write_bytes(filename, test_data)
 
     files = list(tftp.storage.list("/"))
     assert filename in files
