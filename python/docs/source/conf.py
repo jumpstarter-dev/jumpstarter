@@ -9,11 +9,17 @@
 import os
 import sys
 
+import requests
+
 sys.path.insert(0, os.path.abspath("../.."))
 
 project = "jumpstarter"
 copyright = "2024, Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
 author = "Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
+
+controller_version = requests.get(
+    "https://quay.io/api/v1/repository/jumpstarter-dev/helm/jumpstarter/tag/", params={"limit": 1}
+).json()["tags"][0]["name"]
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -47,7 +53,7 @@ myst_enable_extensions = [
 myst_substitutions = {
     "requires_python": ">=3.11",
     "version": "latest",
-    "controller_version": "0-latest",
+    "controller_version": controller_version,
 }
 
 doctest_test_doctest_blocks = ""
