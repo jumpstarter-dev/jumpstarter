@@ -21,14 +21,11 @@ def tftp(tmp_path):
 
 @pytest.mark.anyio
 async def test_tftp_file_operations(tftp, tmp_path):
-    local_filename = "test_src.txt"
     filename = "test.txt"
     test_data = b"Hello"
 
-    (tmp_path / local_filename).write_bytes(test_data)
-
     file = tftp.storage.open(filename, "wb")
-    file.write(str(tmp_path / local_filename))
+    file.write_bytes(test_data)
     file.close()
 
     files = list(tftp.storage.list("/"))
