@@ -33,6 +33,10 @@ func (s *OIDCService) Start(ctx context.Context) error {
 	return r.RunListener(tlslis)
 }
 
+func (s *OIDCService) NeedLeaderElection() bool {
+	return false
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (s *OIDCService) SetupWithManager(mgr ctrl.Manager) error {
 	return mgr.Add(s)

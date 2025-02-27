@@ -72,6 +72,10 @@ func (s *DashboardService) Start(ctx context.Context) error {
 	return r.Run(":8084")
 }
 
+func (s *DashboardService) NeedLeaderElection() bool {
+	return false
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (s *DashboardService) SetupWithManager(mgr ctrl.Manager) error {
 	return mgr.Add(s)
