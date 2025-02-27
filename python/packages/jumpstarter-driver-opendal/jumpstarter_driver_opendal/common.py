@@ -1,11 +1,13 @@
 # Reference: https://github.com/apache/opendal/blob/main/bindings/python/python/opendal/__init__.pyi
-
+from os import PathLike
 from typing import Any, Literal, Optional
 
 import opendal
 from pydantic import BaseModel, model_validator
 
 Mode = Literal["rb", "wb"]
+HashAlgo = Literal["md5", "sha256"]
+PathBuf = str | PathLike
 
 
 class EntryMode(BaseModel):

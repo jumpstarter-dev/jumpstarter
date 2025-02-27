@@ -10,7 +10,7 @@ from opendal import Operator
 from pydantic import ConfigDict, validate_call
 
 from .adapter import OpendalAdapter
-from .common import Capability, Metadata, Mode, PresignedRequest
+from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
 from jumpstarter.client import DriverClient
 
 
@@ -30,7 +30,7 @@ class OpendalFile:
         return self.client.call("file_read", self.fd, handle)
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
-    def write(self, path: str, operator: Operator | None = None):
+    def write(self, path: PathBuf, operator: Operator | None = None):
         """
         Write into remote file with content from local file
         """
@@ -41,7 +41,7 @@ class OpendalFile:
             return self.__write(handle)
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
-    def read(self, path: str, operator: Operator | None = None):
+    def read(self, path: PathBuf, operator: Operator | None = None):
         """
         Read content from remote file into local file
         """
@@ -114,42 +114,49 @@ class OpendalFile:
 
 class OpendalClient(DriverClient):
     @validate_call
-    def open(self, /, path: str, mode: Mode) -> OpendalFile:
+    def open(self, /, path: PathBuf, mode: Mode) -> OpendalFile:
         """
         Open a file-like reader for the given path
         """
         return OpendalFile(client=self, fd=self.call("open", path, mode))
 
     @validate_call(validate_return=True)
-    def stat(self, /, path: str) -> Metadata:
+    def stat(self, /, path: PathBuf) -> Metadata:
         """
         Get current path's metadata
         """
         return self.call("stat", path)
 
     @validate_call(validate_return=True)
-    def copy(self, /, source: str, target: str):
+    def hash(self, /, path: PathBuf, algo: HashAlgo = "sha256") -> str:
+        """
+        Get current path's hash
+        """
+        return self.call("hash", path, algo)
+
+    @validate_call(validate_return=True)
+    def copy(self, /, source: PathBuf, target: PathBuf):
         """
         Copy source to target
         """
         self.call("copy", source, target)
 
     @validate_call(validate_return=True)
-    def rename(self, /, source: str, target: str):
+    def rename(self, /, source: PathBuf, target: PathBuf):
         """
         Rename source to target
         """
         self.call("rename", source, target)
 
     @validate_call(validate_return=True)
-    def remove_all(self, /, path: str):
+    def remove_all(self, /, path: PathBuf):
         """
         Remove all file under path
         """
         self.call("remove_all", path)
 
     @validate_call(validate_return=True)
-    def create_dir(self, /, path: str):
+    def create_dir(self, /, path: PathBuf):
         """
         Create a dir at given path
 
@@ -161,7 +168,7 @@ class OpendalClient(DriverClient):
         self.call("create_dir", path)
 
     @validate_call(validate_return=True)
-    def delete(self, /, path: str):
+    def delete(self, /, path: PathBuf):
         """
         Delete given path
 
@@ -170,42 +177,42 @@ class OpendalClient(DriverClient):
         self.call("delete", path)
 
     @validate_call(validate_return=True)
-    def exists(self, /, path: str) -> bool:
+    def exists(self, /, path: PathBuf) -> bool:
         """
         Check if given path exists
         """
         return self.call("exists", path)
 
     @validate_call
-    def list(self, /, path: str) -> Generator[str, None, None]:
+    def list(self, /, path: PathBuf) -> Generator[str, None, None]:
         """
         List files and directories under given path
         """
         yield from self.streamingcall("list", path)
 
     @validate_call
-    def scan(self, /, path: str) -> Generator[str, None, None]:
+    def scan(self, /, path: PathBuf) -> Generator[str, None, None]:
         """
         List files and directories under given path recursively
         """
         yield from self.streamingcall("scan", path)
 
     @validate_call(validate_return=True)
-    def presign_stat(self, /, path: str, expire_second: int) -> PresignedRequest:
+    def presign_stat(self, /, path: PathBuf, expire_second: int) -> PresignedRequest:
         """
         Presign an operation for stat (HEAD) which expires after expire_second seconds
         """
         return self.call("presign_stat", path, expire_second)
 
     @validate_call(validate_return=True)
-    def presign_read(self, /, path: str, expire_second: int) -> PresignedRequest:
+    def presign_read(self, /, path: PathBuf, expire_second: int) -> PresignedRequest:
         """
         Presign an operation for read (GET) which expires after expire_second seconds
         """
         return self.call("presign_read", path, expire_second)
 
     @validate_call(validate_return=True)
-    def presign_write(self, /, path: str, expire_second: int) -> PresignedRequest:
+    def presign_write(self, /, path: PathBuf, expire_second: int) -> PresignedRequest:
         """
         Presign an operation for write (PUT) which expires after expire_second seconds
         """

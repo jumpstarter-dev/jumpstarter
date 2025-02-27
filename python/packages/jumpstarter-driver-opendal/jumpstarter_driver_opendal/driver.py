@@ -1,3 +1,4 @@
+import hashlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from opendal import AsyncFile, AsyncOperator
 from pydantic import validate_call
 
 from .adapter import AsyncFileStream
-from .common import Capability, Metadata, Mode, PresignedRequest
+from .common import Capability, HashAlgo, Metadata, Mode, PresignedRequest
 from jumpstarter.driver import Driver, export
 
 
@@ -97,6 +98,23 @@ class Opendal(Driver):
     @validate_call(validate_return=True)
     async def stat(self, /, path: str) -> Metadata:
         return Metadata.model_validate(await self._operator.stat(path), from_attributes=True)
+
+    @export
+    @validate_call(validate_return=True)
+    async def hash(self, /, path: str, algo: HashAlgo = "sha256") -> str:
+        match algo:
+            case "md5":
+                m = hashlib.md5()
+            case "sha256":
+                m = hashlib.sha256()
+        async with await self._operator.open(path, "rb") as f:
+            while True:
+                data = await f.read(size=65536)
+                if len(data) == 0:
+                    break
+                m.update(data)
+
+        return m.hexdigest()
 
     @export
     @validate_call(validate_return=True)

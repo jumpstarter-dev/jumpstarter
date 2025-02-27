@@ -10,8 +10,8 @@ requires-python = ">=3.12"
 dependencies = [
     "anyio>=4.6.2.post1",
     "jumpstarter",
-    "jumpstarter-driver-opendal",
-    "aiofiles>=24.1.0"
+    "jumpstarter-driver-composite",
+    "jumpstarter-driver-opendal"
 ]
 
 [dependency-groups]

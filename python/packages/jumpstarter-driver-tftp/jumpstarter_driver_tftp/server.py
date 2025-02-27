@@ -1,11 +1,10 @@
 import asyncio
 import logging
-import os
 import pathlib
 from enum import IntEnum
 from typing import Optional, Set, Tuple
 
-import aiofiles
+from opendal import Operator
 
 
 class Opcode(IntEnum):
@@ -34,11 +33,11 @@ class TftpServer:
     """
 
     def __init__(
-        self, host: str, port: int, root_dir: str, block_size: int = 512, timeout: float = 5.0, retries: int = 3
+        self, host: str, port: int, operator: Operator, block_size: int = 512, timeout: float = 5.0, retries: int = 3
     ):
         self.host = host
         self.port = port
-        self.root_dir = pathlib.Path(os.path.abspath(root_dir))
+        self.operator = operator
         self.block_size = block_size
         self.timeout = timeout
         self.retries = retries
@@ -219,21 +218,20 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             return False
         return True
 
-    def _resolve_and_validate_path(self, filename: str, addr: Tuple[str, int]) -> Optional[pathlib.Path]:
-        requested_path = self.server.root_dir / filename
-        resolved_path = requested_path.resolve()
-
-        if not resolved_path.is_file():
-            self.logger.error(f"File not found: {resolved_path}")
+    def _resolve_and_validate_path(self, filename: str, addr: Tuple[str, int]) -> Optional[str]:
+        try:
+            stat = self.server.operator.stat(filename)
+        except FileNotFoundError:
+            self.logger.error(f"File not found: {filename}")
             self._send_error(addr, TftpErrorCode.FILE_NOT_FOUND, "File not found")
             return None
 
-        if not is_subpath(resolved_path, self.server.root_dir):
-            self.logger.error(f"Access violation: {resolved_path} is outside root directory")
-            self._send_error(addr, TftpErrorCode.ACCESS_VIOLATION, "Access denied")
+        if not stat.mode.is_file:
+            self.logger.error(f"File not found: {filename}")
+            self._send_error(addr, TftpErrorCode.FILE_NOT_FOUND, "File not found")
             return None
 
-        return resolved_path
+        return filename
 
     def _negotiate_block_size(self, requested_blksize: Optional[str]) -> int:
         if requested_blksize is None:
@@ -289,7 +287,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
         return negotiated, blksize, timeout
 
     async def _start_transfer(
-        self, filepath: pathlib.Path, addr: Tuple[str, int], blksize: int, timeout: float, negotiated_options: dict
+        self, filepath: str, addr: Tuple[str, int], blksize: int, timeout: float, negotiated_options: dict
     ):
         transfer = TftpReadTransfer(
             server=self.server,
@@ -354,7 +352,7 @@ class TftpReadTransfer(TftpTransfer):
     def __init__(
         self,
         server: TftpServer,
-        filepath: pathlib.Path,
+        filepath: str,
         client_addr: Tuple[str, int],
         block_size: int,
         timeout: float,
@@ -377,7 +375,7 @@ class TftpReadTransfer(TftpTransfer):
         self.current_packet: Optional[bytes] = None
 
     async def start(self):
-        self.logger.info(f"Starting read transfer of '{self.filepath.name}' to {self.client_addr}")
+        self.logger.info(f"Starting read transfer of '{self.filepath}' to {self.client_addr}")
 
         if not await self._initialize_transfer():
             return
@@ -415,13 +413,13 @@ class TftpReadTransfer(TftpTransfer):
         return True
 
     async def _perform_transfer(self):
-        async with aiofiles.open(self.filepath, "rb") as f:
+        async with await self.server.operator.to_async_operator().open(self.filepath, "rb") as f:
             while True:
                 if self.server.shutdown_event.is_set():
                     self.logger.info(f"Server shutdown detected, stopping transfer to {self.client_addr}")
                     break
 
-                data = await f.read(self.block_size)
+                data = await f.read(size=self.block_size)
                 if not await self._handle_data_block(data):
                     break
 
