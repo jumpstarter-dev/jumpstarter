@@ -48,6 +48,7 @@ docs = [
     { name = "esbonio", specifier = ">=0.16.4" },
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "myst-parser", specifier = ">=4.0.0" },
+    { name = "requests", specifier = ">=2.32.3" },
     { name = "sphinx", specifier = "<8.1.0" },
     { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
     { name = "sphinx-click", git = "https://github.com/NickCao/sphinx-click" },
