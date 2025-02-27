@@ -226,7 +226,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             self._send_error(addr, TftpErrorCode.FILE_NOT_FOUND, "File not found")
             return None
 
-        if not stat.mode.is_file:
+        if not stat.mode.is_file():
             self.logger.error(f"File not found: {filename}")
             self._send_error(addr, TftpErrorCode.FILE_NOT_FOUND, "File not found")
             return None
