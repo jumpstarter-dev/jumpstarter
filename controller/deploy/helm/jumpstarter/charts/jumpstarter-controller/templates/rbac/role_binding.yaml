@@ -3,12 +3,12 @@ kind: ClusterRoleBinding
 metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
-  name: manager-rolebinding
+  name: jumpstarter-manager-rolebinding
   
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: manager-role
+  name: jumpstarter-manager-role
 subjects:
 - kind: ServiceAccount
   name: controller-manager
