@@ -72,6 +72,3 @@ skip_empty = true
 
 [tool.pytest.ini_options]
 addopts = "--capture=no --doctest-modules --cov --cov-report=html --cov-report=xml"
-filterwarnings = [
-    'ignore:Field name "copy" in "Capability" shadows an attribute in parent "BaseModel":UserWarning',
-]

@@ -377,6 +377,122 @@ class OpendalClient(DriverClient):
         """
         return self.call("capability")
 
+    def cli(self):  # noqa: C901
+        arg_path = click.argument("path", type=click.Path())
+        arg_source = click.argument("source", type=click.Path())
+        arg_target = click.argument("target", type=click.Path())
+        arg_src = click.argument("src", type=click.Path())
+        arg_dst = click.argument("dst", type=click.Path())
+        opt_expire_second = click.option("--expire-second", type=int, required=True)
+
+        @click.group
+        def base():
+            """Opendal Storage"""
+
+        @base.command
+        @arg_path
+        def write_bytes(path):
+            data = click.get_binary_stream("stdin").read()
+            self.write_bytes(path, data)
+
+        @base.command
+        @arg_path
+        def read_bytes(path):
+            data = self.read_bytes(path)
+            click.echo(data, nl=False)
+
+        @base.command
+        @arg_dst
+        @arg_src
+        def write_from_path(dst, src):
+            self.write_from_path(dst, src)
+
+        @base.command
+        @arg_src
+        @arg_dst
+        def read_into_path(src, dst):
+            self.read_into_path(src, dst)
+
+        @base.command
+        @arg_path
+        def stat(path):
+            click.echo(self.stat(path).model_dump_json(indent=2))
+
+        @base.command
+        @arg_path
+        @click.option("--algo", type=click.Choice(["md5", "sha256"]))
+        def hash(path, algo):
+            click.echo(self.hash(path, algo))
+
+        @base.command
+        @arg_source
+        @arg_target
+        def copy(source, target):
+            self.copy(source, target)
+
+        @base.command
+        @arg_source
+        @arg_target
+        def rename(source, target):
+            self.rename(source, target)
+
+        @base.command
+        @arg_path
+        def remove_all(path):
+            self.remove_all(path)
+
+        @base.command
+        @arg_path
+        def create_dir(path):
+            self.create_dir(path)
+
+        @base.command
+        @arg_path
+        def delete(path):
+            self.delete(path)
+
+        @base.command
+        @arg_path
+        def exists(path):
+            if not self.exists(path):
+                raise click.ClickException(f"path {path} does not exist")
+
+        @base.command
+        @arg_path
+        def list(path):
+            for entry in self.list(path):
+                click.echo(entry)
+
+        @base.command
+        @arg_path
+        def scan(path):
+            for entry in self.scan(path):
+                click.echo(entry)
+
+        @base.command
+        @arg_path
+        @opt_expire_second
+        def presign_stat(path, expire_second):
+            click.echo(self.presign_stat(path, expire_second).model_dump_json(indent=2))
+
+        @base.command
+        @arg_path
+        @opt_expire_second
+        def presign_read(path, expire_second):
+            click.echo(self.presign_read(path, expire_second).model_dump_json(indent=2))
+
+        @base.command
+        @arg_path
+        @opt_expire_second
+        def presign_write(path, expire_second):
+            click.echo(self.presign_write(path, expire_second).model_dump_json(indent=2))
+
+        @base.command
+        def capability():
+            click.echo(self.capability().model_dump_json(indent=2))
+
+        return base
+
 
 class StorageMuxClient(DriverClient):
     def host(self):
