@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from contextlib import closing
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -151,6 +152,16 @@ class OpendalFile:
 
 
 class OpendalClient(DriverClient):
+    @validate_call(validate_return=True)
+    def write_bytes(self, /, path: PathBuf, data: bytes) -> None:
+        with closing(self.open(path, "wb")) as f:
+            f.write_bytes(data)
+
+    @validate_call(validate_return=True)
+    def read_bytes(self, /, path: PathBuf) -> bytes:
+        with closing(self.open(path, "rb")) as f:
+            return f.read_bytes()
+
     @validate_call
     def open(self, /, path: PathBuf, mode: Mode) -> OpendalFile:
         """
