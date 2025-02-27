@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 import asyncclick as click
+from anyio import EndOfStream
 from anyio.abc import ObjectStream
 from opendal import Operator
 from pydantic import ConfigDict, validate_call
@@ -24,7 +25,10 @@ class BytesIOStream(ObjectStream[bytes]):
         self.buf.write(item)
 
     async def receive(self) -> bytes:
-        return self.buf.read(size=65535)
+        item = self.buf.read(65535)
+        if len(item) == 0:
+            raise EndOfStream
+        return item
 
     async def send_eof(self):
         pass
@@ -73,15 +77,15 @@ class OpendalFile:
     @validate_call(validate_return=True)
     def write_bytes(self, data: bytes):
         buf = BytesIO(data)
-        async with BytesIOStream(buf=buf) as stream:
-            async with self.resource_async(stream) as handle:
+        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
+            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
                 return self.__write(handle)
 
     @validate_call(validate_return=True)
     def read_bytes(self) -> bytes:
         buf = BytesIO()
-        async with BytesIOStream(buf=buf) as stream:
-            async with self.resource_async(stream) as handle:
+        with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
+            with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
                 return self.__read(handle)
         return buf.getvalue()
 
