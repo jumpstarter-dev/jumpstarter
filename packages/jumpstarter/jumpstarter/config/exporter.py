@@ -22,7 +22,11 @@ class ExporterConfigV1Alpha1DriverInstanceProxy(BaseModel):
 
 
 class ExporterConfigV1Alpha1DriverInstanceComposite(BaseModel):
-    children: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+    children: dict[str, ExporterConfigV1Alpha1DriverInstance]
+
+
+class ExporterConfigV1Alpha1DriverInstanceCompositeSimplified(RootModel):
+    root: dict[str, ExporterConfigV1Alpha1DriverInstance]
 
 
 class ExporterConfigV1Alpha1DriverInstanceBase(BaseModel):
@@ -34,6 +38,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
     root: (
         ExporterConfigV1Alpha1DriverInstanceBase
         | ExporterConfigV1Alpha1DriverInstanceComposite
+        | ExporterConfigV1Alpha1DriverInstanceCompositeSimplified
         | ExporterConfigV1Alpha1DriverInstanceProxy
     )
 
@@ -48,6 +53,13 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                 from jumpstarter_driver_composite.driver import Composite
 
                 children = {name: child.instantiate() for name, child in self.root.children.items()}
+
+                return Composite(children=children)
+
+            case ExporterConfigV1Alpha1DriverInstanceCompositeSimplified():
+                from jumpstarter_driver_composite.driver import Composite
+
+                children = {name: child.instantiate() for name, child in self.root.root.items()}
 
                 return Composite(children=children)
 
@@ -79,7 +91,9 @@ class ExporterConfigV1Alpha1(BaseModel):
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
 
-    export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+    export: ExporterConfigV1Alpha1DriverInstance = Field(
+        default_factory=lambda: ExporterConfigV1Alpha1DriverInstance({})
+    )
 
     path: Path | None = Field(default=None, exclude=True)
 
@@ -137,7 +151,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         from jumpstarter.exporter import Session
 
         with Session(
-            root_device=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate(),
+            root_device=self.export.instantiate(),
         ) as session:
             async with session.serve_unix_async() as path:
                 yield path
@@ -161,7 +175,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
         async with Exporter(
             channel_factory=channel_factory,
-            device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
+            device_factory=self.export.instantiate,
             tls=self.tls,
         ) as exporter:
             await exporter.serve()
