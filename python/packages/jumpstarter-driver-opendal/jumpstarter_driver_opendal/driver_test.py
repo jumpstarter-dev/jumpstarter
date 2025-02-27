@@ -1,3 +1,5 @@
+import hashlib
+import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from random import randbytes
@@ -12,70 +14,125 @@ from .driver import MockStorageMux, Opendal
 from jumpstarter.common.utils import serve
 
 
-def test_drivers_opendal(tmp_path):
+@pytest.fixture(scope="function")
+def opendal(tmp_path):
     with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
-        assert not client.capability().presign
+        yield client
 
-        client.create_dir("test_dir/")
-        client.create_dir("demo_dir/nest_dir/")
 
-        assert client.exists("test_dir/")
-        assert client.exists("demo_dir/nest_dir/")
+test_file = "test_file.txt"
+test_content = b"hello"
 
-        assert client.stat("test_dir/").mode.is_dir
 
-        assert sorted(client.list("/")) == ["/", "demo_dir/", "test_dir/"]
-        assert sorted(client.scan("/")) == ["/", "demo_dir/", "demo_dir/nest_dir/", "test_dir/"]
+def test_driver_opendal_read_write_bytes(opendal):
+    opendal.write_bytes(test_file, test_content)
 
-        test_file = client.open("test_dir/test_file", "wb")
-        assert not test_file.closed
-        assert not test_file.readable()
-        assert not test_file.seekable()
-        assert test_file.writable()
-        test_file.close()
-        assert test_file.closed
+    assert opendal.read_bytes(test_file) == test_content
+    assert opendal.hash(test_file, "md5") == hashlib.md5(test_content).hexdigest()
+    assert opendal.hash(test_file, "sha256") == hashlib.sha256(test_content).hexdigest()
 
-        (tmp_path / "src").write_text("hello")
-        client.write_from_path("test_dir/test_file", tmp_path / "src")
 
-        test_file = client.open("test_dir/test_file", "rb")
-        assert not test_file.closed
-        assert test_file.readable()
-        assert test_file.seekable()
-        assert not test_file.writable()
+def test_driver_opendal_read_write_path(opendal, tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
 
-        assert test_file.tell() == 0
-        assert test_file.seek(2) == 2
+    src.write_bytes(test_content)
 
-        assert client.hash("test_dir/test_file", "md5") == "5d41402abc4b2a76b9719d911017c592"
-        assert (
-            client.hash("test_dir/test_file", "sha256")
-            == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-        )
+    opendal.write_from_path(test_file, src)
+    opendal.read_into_path(test_file, dst)
 
-        test_file.read_into_path(tmp_path / "dst")
-        assert (tmp_path / "dst").read_text() == "llo"
+    assert dst.read_bytes() == test_content
 
-        assert client.stat("dst").content_length == 3
 
-        test_file.close()
-        assert test_file.closed
+def test_driver_opendal_seek_tell(opendal):
+    off = -3
+    pos = len(test_content) + off
 
-        client.copy("test_dir/test_file", "test_dir/copy_file")
-        client.rename("test_dir/copy_file", "test_dir/rename_file")
-        assert not client.exists("test_dir/copy_file")
-        assert client.exists("test_dir/rename_file")
+    assert pos >= 0
 
-        client.delete("test_dir/rename_file")
-        assert not client.exists("test_dir/rename_file")
+    opendal.write_bytes(test_file, test_content)
 
-        client.remove_all("test_dir/")
-        assert not client.exists("test_dir/")
+    file = opendal.open(test_file, "rb")
+    file.seek(off, os.SEEK_END)
 
+    assert file.tell() == pos
+    assert file.read_bytes() == test_content[off:]
+
+    file.close()
+
+
+def test_driver_opendal_file_property(opendal):
+    file = opendal.open(test_file, "wb")
+
+    assert not file.closed
+    assert not file.readable()
+    assert not file.seekable()
+    assert file.writable()
+
+    file.close()
+
+    assert file.closed
+
+    file = opendal.open(test_file, "rb")
+
+    assert not file.closed
+    assert file.readable()
+    assert file.seekable()
+    assert not file.writable()
+
+    file.close()
+
+    assert file.closed
+
+
+def test_driver_opendal_file_metadata(opendal):
+    opendal.write_bytes(test_file, test_content)
+
+    assert opendal.exists(test_file)
+    assert opendal.stat(test_file).mode.is_file()
+
+    opendal.copy(test_file, "copy_of_test_file")
+
+    assert opendal.exists("copy_of_test_file")
+
+    opendal.rename("copy_of_test_file", "renamed_copy_of_test_file")
+
+    assert not opendal.exists("copy_of_test_file")
+    assert opendal.exists("renamed_copy_of_test_file")
+
+    opendal.delete("renamed_copy_of_test_file")
+
+    assert not opendal.exists("renamed_copy_of_test_file")
+
+    opendal.create_dir("test_dir/")
+
+    assert opendal.exists("test_dir/")
+
+    assert opendal.stat("test_dir/").mode.is_dir()
+
+    opendal.remove_all("test_dir/")
+
+    assert not opendal.exists("test_dir/")
+
+
+def test_driver_opendal_file_list_scan(opendal):
+    opendal.create_dir("a/b/c/")
+    opendal.create_dir("d/e/")
+
+    assert sorted(opendal.list("/")) == ["/", "a/", "d/"]
+    assert sorted(opendal.scan("/")) == ["/", "a/", "a/b/", "a/b/c/", "d/", "d/e/"]
+
+
+def test_driver_opendal_presign(tmp_path):
     with serve(Opendal(scheme="http", kwargs={"endpoint": "http://invalid.invalid"})) as client:
+        capability = client.capability()
+
+        assert capability.presign_read
         assert client.presign_read("test", 100) == PresignedRequest(
             url="http://invalid.invalid/test", method="GET", headers={}
         )
+
+        assert capability.presign_stat
         assert client.presign_stat("test", 100) == PresignedRequest(
             url="http://invalid.invalid/test", method="HEAD", headers={}
         )

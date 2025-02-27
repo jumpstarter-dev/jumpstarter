@@ -53,11 +53,8 @@ class OpendalFile:
     def __read(self, handle):
         return self.client.call("file_read", self.fd, handle)
 
-    def __fs_operator_for_path(self, path: PathBuf) -> Operator:
-        if Path(path).is_absolute():
-            return Operator("fs", root="/")
-        else:
-            return Operator("fs", root=str(Path.cwd()))
+    def __fs_operator_for_path(self, path: PathBuf) -> (PathBuf, Operator):
+        return Path(path).resolve(), Operator("fs", root="/")
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def write_from_path(self, path: PathBuf, operator: Operator | None = None):
@@ -65,7 +62,7 @@ class OpendalFile:
         Write into remote file with content from local file
         """
         if operator is None:
-            operator = self.__fs_operator_for_path(path)
+            path, operator = self.__fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
             return self.__write(handle)
@@ -76,24 +73,24 @@ class OpendalFile:
         Read content from remote file into local file
         """
         if operator is None:
-            operator = self.__fs_operator_for_path(path)
+            path, operator = self.__fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
             return self.__read(handle)
 
     @validate_call(validate_return=True)
-    def write_bytes(self, data: bytes):
+    def write_bytes(self, data: bytes) -> None:
         buf = BytesIO(data)
         with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
             with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
-                return self.__write(handle)
+                self.__write(handle)
 
     @validate_call(validate_return=True)
     def read_bytes(self) -> bytes:
         buf = BytesIO()
         with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
             with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
-                return self.__read(handle)
+                self.__read(handle)
         return buf.getvalue()
 
     @validate_call(validate_return=True)
