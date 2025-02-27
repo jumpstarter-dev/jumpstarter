@@ -22,14 +22,11 @@ def http(tmp_path):
 
 @pytest.mark.anyio
 async def test_http_server(http, tmp_path):
-    local_filename = "test_src.txt"
     filename = "test.txt"
     test_content = b"test content"
 
-    (tmp_path / local_filename).write_bytes(test_content)
-
     file = http.storage.open(filename, "wb")
-    file.write(str(tmp_path / local_filename))
+    file.write_bytes(test_content)
     file.close()
 
     print(http.storage.stat(filename))
