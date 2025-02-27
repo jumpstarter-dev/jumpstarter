@@ -1153,6 +1153,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal" },
+    { name = "yarl" },
 ]
 
 [package.dev-dependencies]
@@ -1168,6 +1169,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "yarl", specifier = ">=1.18.3" },
 ]
 
 [package.metadata.requires-dev]

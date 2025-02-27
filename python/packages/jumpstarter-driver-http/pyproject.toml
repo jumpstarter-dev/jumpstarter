@@ -11,7 +11,8 @@ dependencies = [
     "anyio>=4.6.2.post1",
     "jumpstarter",
     "jumpstarter-driver-composite",
-    "jumpstarter-driver-opendal"
+    "jumpstarter-driver-opendal",
+    "yarl>=1.18.3",
 ]
 
 [tool.hatch.version]

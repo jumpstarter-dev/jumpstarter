@@ -25,11 +25,11 @@ async def test_http_server(http, tmp_path):
     filename = "test.txt"
     test_content = b"test content"
 
-    http.storage.write_bytes(filename, test_content)
+    (tmp_path / "src").write_bytes(test_content)
+
+    uploaded_url = http.put_file(filename, tmp_path / "src")
 
     print(http.storage.stat(filename))
-
-    uploaded_url = f"{http.get_url()}/{filename}"
 
     files = list(http.storage.list("/"))
     assert filename in files

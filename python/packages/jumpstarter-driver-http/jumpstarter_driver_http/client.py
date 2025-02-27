@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 from jumpstarter_driver_composite.client import CompositeClient
+from jumpstarter_driver_opendal.common import PathBuf
+from opendal import Operator
+from yarl import URL
 
 
 @dataclass(kw_only=True)
@@ -52,3 +55,19 @@ class HttpServerClient(CompositeClient):
             str: The base URL of the server
         """
         return self.call("get_url")
+
+    def put_file(self, dst: PathBuf, src: PathBuf, operator: Operator | None = None) -> str:
+        """
+        Upload a file to the HTTP server using a opendal operator as source.
+
+        Args:
+            dst (PathBuf): Name to save the file as on the server.
+            src (PathBuf): Name to read the file from opendal operator.
+            operator (Operator): opendal operator to read the file from, defaults to local fs.
+
+        Returns:
+            str: URL of the uploaded file
+        """
+        self.storage.write_from_path(dst, src, operator)
+
+        return str(URL(self.get_url()).joinpath(dst))
