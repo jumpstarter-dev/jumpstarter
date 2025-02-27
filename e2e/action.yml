@@ -96,7 +96,7 @@ runs:
         jmp exporter run test-exporter-oidc &
         jmp exporter run test-exporter-legacy &
 
-        sleep 5
+        sleep 15
 
         jmp client shell test-client-oidc --label example.com/board oidc <<EOF
         j power on
