@@ -2,16 +2,35 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
 import asyncclick as click
+from anyio.abc import ObjectStream
 from opendal import Operator
 from pydantic import ConfigDict, validate_call
 
 from .adapter import OpendalAdapter
 from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
 from jumpstarter.client import DriverClient
+
+
+@dataclass(kw_only=True)
+class BytesIOStream(ObjectStream[bytes]):
+    buf: BytesIO
+
+    async def send(self, item: bytes):
+        self.buf.write(item)
+
+    async def receive(self) -> bytes:
+        return self.buf.read(size=65535)
+
+    async def send_eof(self):
+        pass
+
+    async def aclose(self):
+        pass
 
 
 @dataclass(kw_only=True)
@@ -50,6 +69,21 @@ class OpendalFile:
 
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
             return self.__read(handle)
+
+    @validate_call(validate_return=True)
+    def write_bytes(self, data: bytes):
+        buf = BytesIO(data)
+        async with BytesIOStream(buf=buf) as stream:
+            async with self.resource_async(stream) as handle:
+                return self.__write(handle)
+
+    @validate_call(validate_return=True)
+    def read_bytes(self) -> bytes:
+        buf = BytesIO()
+        async with BytesIOStream(buf=buf) as stream:
+            async with self.resource_async(stream) as handle:
+                return self.__read(handle)
+        return buf.getvalue()
 
     @validate_call(validate_return=True)
     def seek(self, pos: int, whence: int = 0) -> int:
