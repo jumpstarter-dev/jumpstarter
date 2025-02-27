@@ -1,6 +1,9 @@
+import os
 from contextlib import contextmanager
 
 import pytest
+
+os.environ["TQDM_DISABLE"] = "1"
 
 try:
     from jumpstarter.common.utils import serve
