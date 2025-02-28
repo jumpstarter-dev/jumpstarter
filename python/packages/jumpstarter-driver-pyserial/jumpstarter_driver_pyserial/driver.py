@@ -36,7 +36,7 @@ class PySerial(Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
         if self.check_present:
-             serial_for_url(self.url, baudrate=self.baudrate)
+            serial_for_url(self.url, baudrate=self.baudrate)
 
     @classmethod
     def client(cls) -> str:

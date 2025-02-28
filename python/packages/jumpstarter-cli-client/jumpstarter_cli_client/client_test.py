@@ -2,17 +2,10 @@ import pytest
 from asyncclick.testing import CliRunner
 
 from . import client
-from jumpstarter.config import ClientConfigV1Alpha1, UserConfigV1Alpha1
-
-
-@pytest.fixture
-def tmp_config_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", tmp_path / "config.yaml")
-    monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", tmp_path / "clients")
 
 
 @pytest.mark.anyio
-async def test_client(tmp_config_path):
+async def test_client():
     runner = CliRunner()
 
     # create client non-interactively
