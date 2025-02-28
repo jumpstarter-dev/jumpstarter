@@ -1,0 +1,43 @@
+https:
+  enabled: true
+config:
+  issuer: https://dex.dex.svc.cluster.local:5556
+  web:
+    tlsCert: /etc/dex/tls/tls.crt
+    tlsKey: /etc/dex/tls/tls.key
+  storage:
+    type: kubernetes
+    config:
+      inCluster: true
+  staticClients:
+    - id: jumpstarter-cli
+      name: Jumpstarter CLI
+      public: true
+  oauth2:
+    responseTypes: ["code", "token", "id_token", "id_token token"]
+    passwordConnector: local
+  enablePasswordDB: true
+  staticPasswords:
+    - email: "test-client-oidc@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "test-client-oidc"
+      userID: "73bca0b9-9be6-4e73-a8fb-347c2ac23255"
+    - email: "test-exporter-oidc@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "test-exporter-oidc"
+      userID: "a4cb4de2-4467-4e5c-a42a-33be8783649d"
+volumes:
+  - name: tls
+    secret:
+      secretName: dex-tls
+volumeMounts:
+  - name: tls
+    mountPath: /etc/dex/tls
+service:
+  type: NodePort
+  ports:
+    http:
+      port: 5554
+    https:
+      port: 5556
+      nodePort: 32000

@@ -6,7 +6,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: ./
+        with:
+          path: e2e
+      - uses: ./e2e
         with:
           controller-ref: main
           jumpstarter-ref: main
