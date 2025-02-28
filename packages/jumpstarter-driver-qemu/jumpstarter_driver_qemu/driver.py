@@ -6,10 +6,13 @@ from subprocess import PIPE, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
 import yaml
+from anyio import fail_after, sleep
 from jumpstarter_driver_network.driver import UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import Opendal
 from jumpstarter_driver_pyserial.driver import PySerial
 from pydantic import validate_call
+from qemu.qmp import QMPClient
+from qemu.qmp.protocol import ConnectError, Runstate
 
 from jumpstarter.driver import Driver, export
 
@@ -49,6 +52,10 @@ class Qemu(Driver):
     def _vnc(self) -> str:
         return str(Path(self._tmp_dir.name) / "vnc")
 
+    @property
+    def _qmp(self) -> str:
+        return str(Path(self._tmp_dir.name) / "qmp")
+
     @cached_property
     def _cid(self) -> int:
         return randbits(32)
@@ -79,7 +86,7 @@ class Qemu(Driver):
         return self.password
 
     @export
-    def start(self):
+    async def start(self):
         root_dir = Path(self.root_dir)
         img_path = root_dir.joinpath(self.image)
         if not img_path.is_relative_to(root_dir):
@@ -119,6 +126,8 @@ class Qemu(Driver):
             "-nographic",
             "-accel",
             "kvm",
+            "-qmp",
+            f"unix:{self._qmp},server=on,wait=off",
             "-smp",
             str(self.smp),
             "-m",
@@ -138,6 +147,15 @@ class Qemu(Driver):
         ]
 
         self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+
+        qmp = QMPClient(self.hostname)
+
+        with fail_after(10):
+            while qmp.runstate != Runstate.RUNNING:
+                try:
+                    await qmp.connect(self._qmp)
+                except ConnectError:
+                    await sleep(0.5)
 
     @export
     def stop(self):

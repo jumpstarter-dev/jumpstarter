@@ -1,5 +1,4 @@
 import sys
-from time import sleep
 
 from opendal import Operator
 
@@ -25,7 +24,6 @@ def test_driver_qemu(tmp_path):
 
         qemu.start()
 
-        sleep(3)
         with qemu.console.pexpect() as p:
             p.logfile = sys.stdout.buffer
             p.expect_exact(f"{hostname} login:", timeout=60)

@@ -17,6 +17,7 @@ dependencies = [
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-pyserial",
     "pyyaml>=6.0.2",
+    "qemu-qmp>=0.0.3",
 ]
 
 [dependency-groups]
