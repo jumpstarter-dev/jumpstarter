@@ -84,23 +84,6 @@ class Qemu(Driver):
             )
         )
 
-        Popen(
-            [
-                "genisoimage",
-                "-output",
-                str(cidata / "cidata.iso"),
-                "-volid",
-                "cidata",
-                "-joliet",
-                "-rock",
-                str(cidata / "meta-data"),
-                str(cidata / "user-data"),
-            ],
-            stdin=PIPE,
-            stdout=PIPE,
-            stderr=PIPE,
-        ).wait()
-
         cmdline = [
             "qemu-system-x86_64",
             "-nographic",
@@ -112,8 +95,10 @@ class Qemu(Driver):
             self.mem,
             "-hda",
             str(img_path),
-            "-drive",
-            f"driver=raw,file={cidata / 'cidata.iso'},if=virtio",
+            "-blockdev",
+            f"driver=vvfat,node-name=cidata,read-only=on,dir={cidata},label=CIDATA",
+            "-device",
+            "virtio-blk-pci,drive=cidata",
             "-serial",
             f"pty:{self.pty}",
         ]
