@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +59,11 @@ class ProbeRsClient(DriverClient):
 
         data_strs = self.call("read", f"b{int(width)}", "0x%x" % int(address), "%d" % words)
         return [int(data, 16) for data in data_strs]
+
+    @contextmanager
+    def gdb(self):
+        with self.stream(method="gdb") as stream:
+            yield stream
 
     def cli(self):  # noqa: C901
         @click.group

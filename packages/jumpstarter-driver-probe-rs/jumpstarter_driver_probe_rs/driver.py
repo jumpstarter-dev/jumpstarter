@@ -1,11 +1,14 @@
+from anyio import open_process
+from anyio.streams.text import TextReceiveStream
 import os
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from contextlib import asynccontextmanager
 
 from anyio.streams.file import FileWriteStream
 
-from jumpstarter.driver import Driver, export
+from jumpstarter.driver import Driver, export, exportstream
 
 
 @dataclass(kw_only=True)
@@ -39,6 +42,14 @@ class ProbeRs(Driver):
     def erase(self) -> str:
         return self._run_cmd(["erase"])
 
+    @exportstream
+    @asynccontextmanager
+    async def gdb(self):
+        self.logger.info("Starting gdb")
+        async with await open_process(command=self._get_cmd("gdb"),
+                                      env=self.env_from_cfg()) as process:
+            yield TextReceiveStream(process.stdout)
+
     @export
     async def download(self, src: str):
         with TemporaryFilename() as filename:
@@ -57,8 +68,11 @@ class ProbeRs(Driver):
         parts = res.split(" ")
         return parts
 
+    def _get_cmd(self, cmd):
+        return [self.probe_rs_path or "probe-rs", *cmd]
+
     def _run_cmd(self, cmd):
-        cmd = [self.probe_rs_path or "probe-rs", *cmd]
+        cmd = self._get_cmd(cmd)
         self.logger.debug("Running command: %s", cmd)
         result = subprocess.run(
             cmd,
