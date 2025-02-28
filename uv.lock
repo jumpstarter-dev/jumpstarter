@@ -21,6 +21,7 @@ members = [
     "jumpstarter-driver-power",
     "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
+    "jumpstarter-driver-qemu",
     "jumpstarter-driver-raspberrypi",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-shell",
@@ -1337,6 +1338,34 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
     { name = "types-pyserial", specifier = ">=3.5.0.20250130" },
+]
+
+[[package]]
+name = "jumpstarter-driver-qemu"
+source = { editable = "packages/jumpstarter-driver-qemu" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-opendal" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
 [[package]]
