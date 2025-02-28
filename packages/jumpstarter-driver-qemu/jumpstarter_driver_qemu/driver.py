@@ -133,7 +133,7 @@ class Qemu(Driver):
             "-m",
             self.mem,
             "-serial",
-            f"pty:{self._pty}",
+            "pty",
             "-vnc",
             f"unix:{self._vnc}",
         ]
@@ -148,6 +148,10 @@ class Qemu(Driver):
                     await qmp.connect(self._qmp)
                 except ConnectError:
                     await sleep(0.5)
+
+        chardevs = await qmp.execute("query-chardev")
+        pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
+        Path(self._pty).symlink_to(pty)
 
         blockdevs = [
             {
