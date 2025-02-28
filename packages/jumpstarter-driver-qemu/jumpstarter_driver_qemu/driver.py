@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from subprocess import PIPE, Popen, TimeoutExpired
+from tempfile import TemporaryDirectory
 
 from jumpstarter_driver_opendal.driver import Opendal
 from jumpstarter_driver_pyserial.driver import PySerial
@@ -17,6 +18,8 @@ class Qemu(Driver):
     root_dir: str = "/var/qemu"
     image: str = "default.qcow2"
 
+    _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_qemu.client.QemuClient"
@@ -26,7 +29,11 @@ class Qemu(Driver):
             super().__post_init__()
 
         self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
-        self.children["console"] = PySerial(url="socket://127.0.0.1:4444", check_present=False)
+        self.children["console"] = PySerial(url=self.pty, check_present=False)
+
+    @property
+    def pty(self) -> str:
+        return str(Path(self._tmp_dir.name) / "pty")
 
     @export
     @validate_call(validate_return=True)
@@ -57,7 +64,7 @@ class Qemu(Driver):
             "-hda",
             str(img_path),
             "-serial",
-            "tcp:127.0.0.1:4444,server=on,wait=off",
+            f"pty:{self.pty}",
         ]
 
         self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)
