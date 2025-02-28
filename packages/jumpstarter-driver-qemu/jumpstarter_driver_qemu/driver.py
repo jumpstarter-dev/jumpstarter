@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
+from secrets import randbits
 from subprocess import PIPE, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
@@ -41,6 +43,10 @@ class Qemu(Driver):
     @property
     def _vnc(self) -> str:
         return str(Path(self._tmp_dir.name) / "vnc")
+
+    @cached_property
+    def _cid(self) -> int:
+        return randbits(32)
 
     @export
     @validate_call(validate_return=True)
@@ -109,6 +115,8 @@ class Qemu(Driver):
             f"pty:{self._pty}",
             "-vnc",
             f"unix:{self._vnc}",
+            "-device",
+            f"vhost-vsock-pci,guest-cid={self._cid}",
         ]
 
         self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)
