@@ -44,3 +44,8 @@ def test_pexpect_context_pyserial():
         with client.pexpect() as pexpect:
             pexpect.sendline("hello")
             assert pexpect.expect("hello") == 0
+
+def test_can_open_not_present():
+    with serve(PySerial(url="/dev/doesNotExist", check_present=False)):
+        # we only verify that the context manager does not raise an exception
+        pass

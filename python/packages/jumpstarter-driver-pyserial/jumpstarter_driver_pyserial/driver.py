@@ -29,14 +29,14 @@ class AsyncSerial(ObjectStream):
 @dataclass(kw_only=True)
 class PySerial(Driver):
     url: str
-    device: Serial = field(init=False)
     baudrate: int = field(default=115200)
+    check_present: bool = field(default=True)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
-
-        self.device = serial_for_url(self.url, baudrate=self.baudrate)
+        if self.check_present:
+             serial_for_url(self.url, baudrate=self.baudrate)
 
     @classmethod
     def client(cls) -> str:
