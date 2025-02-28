@@ -90,6 +90,7 @@ class Qemu(Driver):
                             "name": "jumpstarter",
                             "passwd": password,
                             "lock_passwd": False,
+                            "sudo": "ALL=(ALL) NOPASSWD:ALL",
                         }
                     ]
                 }
