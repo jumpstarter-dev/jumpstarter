@@ -138,7 +138,7 @@ class Qemu(Driver):
             f"unix:{self._vnc}",
         ]
 
-        self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        self._process = Popen(cmdline, stdin=PIPE)
 
         qmp = QMPClient(self.hostname)
 
