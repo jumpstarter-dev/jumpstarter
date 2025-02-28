@@ -10,13 +10,13 @@ from jumpstarter.common.utils import serve
 
 def test_driver_qemu(tmp_path):
     with serve(Qemu(root_dir=str(tmp_path))) as qemu:
-        qemu.image = "alpine.qcow2"
-        assert qemu.image == "alpine.qcow2"
+        qemu.image = "fedora.qcow2"
+        assert qemu.image == "fedora.qcow2"
 
         qemu.storage.write_from_path(
             qemu.image,
-            "alpine/v3.21/releases/cloud/generic_alpine-3.21.2-x86_64-bios-cloudinit-r0.qcow2",
-            Operator("http", endpoint="https://dl-cdn.alpinelinux.org"),
+            "pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2",
+            Operator("http", endpoint="https://download.fedoraproject.org"),
         )
 
         qemu.start()
@@ -28,7 +28,12 @@ def test_driver_qemu(tmp_path):
             p.sendline("jumpstarter")
             p.expect_exact("Password:")
             p.sendline("password")
-            p.expect_exact("cloudimg:~$")
+            p.expect_exact("[jumpstarter@cloudimg ~]$")
+            p.sendline("sudo setenforce 0")
+
+        sleep(3)
+        with qemu.shell() as s:
+            print(s.run("uname -a"))
 
         with qemu.novnc() as _:
             pass

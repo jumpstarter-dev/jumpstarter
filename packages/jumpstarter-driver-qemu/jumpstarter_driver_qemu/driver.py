@@ -6,7 +6,7 @@ from subprocess import PIPE, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
 import yaml
-from jumpstarter_driver_network.driver import UnixNetwork
+from jumpstarter_driver_network.driver import UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import Opendal
 from jumpstarter_driver_pyserial.driver import PySerial
 from pydantic import validate_call
@@ -35,6 +35,7 @@ class Qemu(Driver):
         self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
         self.children["console"] = PySerial(url=self._pty, check_present=False)
         self.children["vnc"] = UnixNetwork(path=self._vnc)
+        self.children["ssh"] = VsockNetwork(cid=self._cid, port=22)
 
     @property
     def _pty(self) -> str:
@@ -85,6 +86,7 @@ class Qemu(Driver):
             "#cloud-config\n"
             + yaml.safe_dump(
                 {
+                    "ssh_pwauth": True,
                     "users": [
                         {
                             "name": "jumpstarter",
@@ -92,7 +94,7 @@ class Qemu(Driver):
                             "lock_passwd": False,
                             "sudo": "ALL=(ALL) NOPASSWD:ALL",
                         }
-                    ]
+                    ],
                 }
             )
         )
