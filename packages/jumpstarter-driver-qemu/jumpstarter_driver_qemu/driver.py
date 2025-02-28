@@ -132,18 +132,10 @@ class Qemu(Driver):
             str(self.smp),
             "-m",
             self.mem,
-            "-hda",
-            str(img_path),
-            "-blockdev",
-            f"driver=vvfat,node-name=cidata,read-only=on,dir={cidata},label=CIDATA",
-            "-device",
-            "virtio-blk-pci,drive=cidata",
             "-serial",
             f"pty:{self._pty}",
             "-vnc",
             f"unix:{self._vnc}",
-            "-device",
-            f"vhost-vsock-pci,guest-cid={self._cid}",
         ]
 
         self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)
@@ -156,6 +148,47 @@ class Qemu(Driver):
                     await qmp.connect(self._qmp)
                 except ConnectError:
                     await sleep(0.5)
+
+        blockdevs = [
+            {
+                "driver": "qcow2",
+                "node-name": "rootfs",
+                "file": {
+                    "driver": "file",
+                    "filename": str(img_path),
+                },
+            },
+            {
+                "driver": "vvfat",
+                "node-name": "cidata",
+                "read-only": True,
+                "dir": str(cidata),
+                "label": "CIDATA",
+            },
+        ]
+
+        for blockdev in blockdevs:
+            await qmp.execute("blockdev-add", blockdev)
+
+        devices = [
+            {
+                "driver": "virtio-blk-pci",
+                "drive": "rootfs",
+            },
+            {
+                "driver": "virtio-blk-pci",
+                "drive": "cidata",
+            },
+            {
+                "driver": "vhost-vsock-pci",
+                "guest-cid": self._cid,
+            },
+        ]
+
+        for device in devices:
+            await qmp.execute("device_add", device)
+
+        await qmp.execute("system_reset")
 
     @export
     def stop(self):
