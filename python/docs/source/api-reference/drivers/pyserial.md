@@ -20,6 +20,7 @@ export:
 |-----------|-------------|------|----------|---------|
 | url | The serial port to connect to, in [pyserial format](https://pyserial.readthedocs.io/en/latest/url_handlers.html)  | str | yes | |
 | baudrate | The baudrate to use for the serial connection | int | no | 115200 |
+| check_existing | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool | no | True |
 
 
 ## PySerialClient API
