@@ -19,6 +19,7 @@ jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 jumpstarter-driver-probe-rs = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }
+jumpstarter-driver-qemu = { workspace = true }
 jumpstarter-driver-sdwire = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }

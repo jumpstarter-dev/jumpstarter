@@ -1,4 +1,7 @@
+import ctypes
+import socket
 from abc import ABCMeta, abstractmethod
+from asyncio import get_running_loop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import getenv, getuid
@@ -10,6 +13,7 @@ from anyio import (
     create_connected_udp_socket,
     create_memory_object_stream,
 )
+from anyio._backends._asyncio import SocketStream, StreamProtocol
 from anyio.streams.stapled import StapledObjectStream
 
 from jumpstarter.driver import Driver, exportstream
@@ -102,6 +106,43 @@ class UnixNetwork(NetworkInterface, Driver):
         self.logger.debug("Connecting UDS path=%s", self.path)
         async with await connect_unix(path=self.path) as stream:
             yield stream
+
+
+@dataclass(kw_only=True)
+class VsockNetwork(NetworkInterface, Driver):
+    cid: int
+    port: int
+
+    AF_VSOCK: ClassVar[int] = 40
+
+    # https://man7.org/linux/man-pages/man7/vsock.7.html
+    class sockaddr_vm(ctypes.Structure):
+        _fields_ = [
+            ("svm_family", ctypes.c_ushort),
+            ("svm_reserved1", ctypes.c_ushort),
+            ("svm_port", ctypes.c_uint),
+            ("svm_cid", ctypes.c_uint),
+            ("svm_zero", ctypes.c_uint),
+        ]
+
+    @exportstream
+    @asynccontextmanager
+    async def connect(self):
+        self.logger.debug("Connecting Vsock cid=%d port=%d", self.cid, self.port)
+        with socket.socket(self.AF_VSOCK, socket.SOCK_STREAM) as sock:
+            libc = ctypes.CDLL("libc.so.6", use_errno=True)
+
+            addr = self.sockaddr_vm(self.AF_VSOCK, 0, self.port, self.cid, 0)
+
+            if libc.connect(sock.fileno(), ctypes.byref(addr), ctypes.sizeof(addr)) < 0:
+                raise OSError(ctypes.get_errno(), "vsock connect() failed")
+
+            transport, protocol = await get_running_loop().create_connection(
+                StreamProtocol,
+                sock=sock,
+            )
+
+            yield SocketStream(transport, protocol)
 
 
 @dataclass(kw_only=True)
