@@ -10,6 +10,10 @@ from jumpstarter.common.utils import serve
 
 def test_driver_qemu(tmp_path):
     with serve(Qemu(root_dir=str(tmp_path))) as qemu:
+        hostname = qemu.hostname
+        username = qemu.username
+        password = qemu.password
+
         qemu.image = "fedora.qcow2"
         assert qemu.image == "fedora.qcow2"
 
@@ -24,13 +28,13 @@ def test_driver_qemu(tmp_path):
         sleep(3)
         with qemu.console.pexpect() as p:
             p.logfile = sys.stdout.buffer
-            p.expect_exact("cloudimg login:", timeout=60)
-            p.sendline("jumpstarter")
+            p.expect_exact(f"{hostname} login:", timeout=60)
+            p.sendline(username)
             p.expect_exact("Password:")
-            p.sendline("password")
-            p.expect_exact("[jumpstarter@cloudimg ~]$")
+            p.sendline(password)
+            p.expect_exact(f"[{username}@{hostname} ~]$")
             p.sendline("sudo setenforce 0")
-            p.expect_exact("[jumpstarter@cloudimg ~]$")
+            p.expect_exact(f"[{username}@{hostname} ~]$")
 
         with qemu.shell() as s:
             assert s.run("uname -r").stdout.strip() == "6.11.4-301.fc41.x86_64"

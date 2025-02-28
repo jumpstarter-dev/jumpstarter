@@ -19,6 +19,10 @@ class Qemu(Driver):
     smp: int = 2
     mem: str = "512M"
 
+    hostname: str = "demo"
+    username: str = "jumpstarter"
+    password: str = "password"
+
     root_dir: str = "/var/qemu"
     image: str = "default.qcow2"
 
@@ -60,6 +64,21 @@ class Qemu(Driver):
         return self.image
 
     @export
+    @validate_call(validate_return=True)
+    def get_hostname(self) -> str:
+        return self.hostname
+
+    @export
+    @validate_call(validate_return=True)
+    def get_username(self) -> str:
+        return self.username
+
+    @export
+    @validate_call(validate_return=True)
+    def get_password(self) -> str:
+        return self.password
+
+    @export
     def start(self):
         root_dir = Path(self.root_dir)
         img_path = root_dir.joinpath(self.image)
@@ -73,7 +92,7 @@ class Qemu(Driver):
             yaml.safe_dump(
                 {
                     "instance-id": str(self.uuid),
-                    "local-hostname": "cloudimg",
+                    "local-hostname": self.hostname,
                 }
             )
         )
@@ -85,8 +104,8 @@ class Qemu(Driver):
                     "ssh_pwauth": True,
                     "users": [
                         {
-                            "name": "jumpstarter",
-                            "plain_text_passwd": "password",
+                            "name": self.username,
+                            "plain_text_passwd": self.password,
                             "lock_passwd": False,
                             "sudo": "ALL=(ALL) NOPASSWD:ALL",
                         }

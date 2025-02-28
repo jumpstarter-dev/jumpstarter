@@ -9,6 +9,18 @@ class QemuClient(CompositeClient):
     def image(self) -> str:
         return self.call("get_image")
 
+    @property
+    def hostname(self) -> str:
+        return self.call("get_hostname")
+
+    @property
+    def username(self) -> str:
+        return self.call("get_username")
+
+    @property
+    def password(self) -> str:
+        return self.call("get_password")
+
     @image.setter
     def image(self, path: str) -> None:
         self.call("set_image", path)
@@ -28,7 +40,7 @@ class QemuClient(CompositeClient):
     def shell(self):
         with FabricAdapter(
             client=self.ssh,
-            user="jumpstarter",
-            connect_kwargs={"password": "password"},
+            user=self.username,
+            connect_kwargs={"password": self.password},
         ) as conn:
             yield conn
