@@ -3,6 +3,7 @@ from pathlib import Path
 from subprocess import PIPE, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
+import yaml
 from jumpstarter_driver_opendal.driver import Opendal
 from jumpstarter_driver_pyserial.driver import PySerial
 from pydantic import validate_call
@@ -52,6 +53,54 @@ class Qemu(Driver):
         if not img_path.is_relative_to(root_dir):
             raise ValueError("path traversal")
 
+        cidata = Path(self._tmp_dir.name) / "cidata"
+        cidata.mkdir(exist_ok=True)
+
+        (cidata / "meta-data").write_text(
+            yaml.safe_dump(
+                {
+                    "instance-id": str(self.uuid),
+                    "local-hostname": "cloudimg",
+                }
+            )
+        )
+
+        password = (
+            "$6$5BRykMZzBQAi00r8$S943tfi67MGSjeJzSLXwezQ1OcUmoOsQgQJK5Acdb1dzA9AYqvg5DOWRraCOF5UCTbT9TACw9YQzJVl/7vw530"
+        )
+
+        (cidata / "user-data").write_text(
+            "#cloud-config\n"
+            + yaml.safe_dump(
+                {
+                    "users": [
+                        {
+                            "name": "jumpstarter",
+                            "passwd": password,
+                            "lock_passwd": False,
+                        }
+                    ]
+                }
+            )
+        )
+
+        Popen(
+            [
+                "genisoimage",
+                "-output",
+                str(cidata / "cidata.iso"),
+                "-volid",
+                "cidata",
+                "-joliet",
+                "-rock",
+                str(cidata / "meta-data"),
+                str(cidata / "user-data"),
+            ],
+            stdin=PIPE,
+            stdout=PIPE,
+            stderr=PIPE,
+        ).wait()
+
         cmdline = [
             "qemu-system-x86_64",
             "-nographic",
@@ -63,6 +112,8 @@ class Qemu(Driver):
             self.mem,
             "-hda",
             str(img_path),
+            "-drive",
+            f"driver=raw,file={cidata / 'cidata.iso'},if=virtio",
             "-serial",
             f"pty:{self.pty}",
         ]

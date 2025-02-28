@@ -15,7 +15,7 @@ def test_driver_qemu(tmp_path):
 
         qemu.storage.write_from_path(
             qemu.image,
-            "alpine/v3.21/releases/cloud/generic_alpine-3.21.2-x86_64-bios-tiny-r0.qcow2",
+            "alpine/v3.21/releases/cloud/generic_alpine-3.21.2-x86_64-bios-cloudinit-r0.qcow2",
             Operator("http", endpoint="https://dl-cdn.alpinelinux.org"),
         )
 
@@ -24,6 +24,10 @@ def test_driver_qemu(tmp_path):
         sleep(3)
         with qemu.console.pexpect() as p:
             p.logfile = sys.stdout.buffer
-            p.expect_exact("localhost login:", timeout=60)
+            p.expect_exact("cloudimg login:", timeout=60)
+            p.sendline("jumpstarter")
+            p.expect_exact("Password:")
+            p.sendline("password")
+            p.expect_exact("cloudimg:~$")
 
         qemu.stop()
