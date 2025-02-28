@@ -1,4 +1,7 @@
+from contextlib import contextmanager
+
 from jumpstarter_driver_composite.client import CompositeClient
+from jumpstarter_driver_network.adapters import NovncAdapter
 
 
 class QemuClient(CompositeClient):
@@ -15,3 +18,8 @@ class QemuClient(CompositeClient):
 
     def stop(self) -> None:
         self.call("stop")
+
+    @contextmanager
+    def novnc(self):
+        with NovncAdapter(client=self.vnc) as url:
+            yield url

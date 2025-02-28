@@ -4,6 +4,7 @@ from subprocess import PIPE, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
 import yaml
+from jumpstarter_driver_network.driver import UnixNetwork
 from jumpstarter_driver_opendal.driver import Opendal
 from jumpstarter_driver_pyserial.driver import PySerial
 from pydantic import validate_call
@@ -30,11 +31,16 @@ class Qemu(Driver):
             super().__post_init__()
 
         self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
-        self.children["console"] = PySerial(url=self.pty, check_present=False)
+        self.children["console"] = PySerial(url=self._pty, check_present=False)
+        self.children["vnc"] = UnixNetwork(path=self._vnc)
 
     @property
-    def pty(self) -> str:
+    def _pty(self) -> str:
         return str(Path(self._tmp_dir.name) / "pty")
+
+    @property
+    def _vnc(self) -> str:
+        return str(Path(self._tmp_dir.name) / "vnc")
 
     @export
     @validate_call(validate_return=True)
@@ -100,7 +106,9 @@ class Qemu(Driver):
             "-device",
             "virtio-blk-pci,drive=cidata",
             "-serial",
-            f"pty:{self.pty}",
+            f"pty:{self._pty}",
+            "-vnc",
+            f"unix:{self._vnc}",
         ]
 
         self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)

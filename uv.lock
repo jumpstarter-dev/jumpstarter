@@ -1346,6 +1346,7 @@ source = { editable = "packages/jumpstarter-driver-qemu" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal" },
     { name = "pyyaml" },
 ]
@@ -1360,6 +1361,7 @@ dev = [
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]

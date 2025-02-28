@@ -13,6 +13,7 @@ requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
     "jumpstarter-driver-composite",
+    "jumpstarter-driver-network",
     "jumpstarter-driver-opendal",
     "pyyaml>=6.0.2",
 ]
@@ -34,6 +35,7 @@ raw-options = { 'root' = '../../'}
 [tool.uv.sources]
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
+jumpstarter-driver-network = { workspace = true }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

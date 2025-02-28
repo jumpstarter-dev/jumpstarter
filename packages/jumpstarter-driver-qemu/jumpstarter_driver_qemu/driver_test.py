@@ -30,4 +30,7 @@ def test_driver_qemu(tmp_path):
             p.sendline("password")
             p.expect_exact("cloudimg:~$")
 
+        with qemu.novnc() as _:
+            pass
+
         qemu.stop()
