@@ -1,0 +1,9 @@
+FROM quay.io/jumpstarter-dev/jumpstarter:latest
+
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/probe-rs/probe-rs/releases/download/v0.27.0/probe-rs-tools-installer.sh | sh
+
+#RUN dnf install -y rustup gcc systemd-devel
+#RUN rustup-init -y
+#ENV PATH="$PATH:$HOME/.cargo/bin"
+#RUN ~/.cargo/bin/rustup target add thumbv8m.main-none-eabihf
+#RUN ~/.cargo/bin/cargo install --locked probe-rs-tools
