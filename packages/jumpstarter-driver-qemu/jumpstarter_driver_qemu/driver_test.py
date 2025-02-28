@@ -33,7 +33,7 @@ def test_driver_qemu(tmp_path):
 
         sleep(3)
         with qemu.shell() as s:
-            print(s.run("uname -a"))
+            assert s.run("uname -r").stdout.strip() == "6.11.4-301.fc41.x86_64"
 
         with qemu.novnc() as _:
             pass
