@@ -96,8 +96,8 @@ runs:
         jmp exporter run test-exporter-oidc &
         jmp exporter run test-exporter-legacy &
 
-        kubectl wait --for=condition=Registered exporters.jumpstarter.dev/test-exporter-oidc
-        kubectl wait --for=condition=Registered exporters.jumpstarter.dev/test-exporter-legacy
+        kubectl -n default wait --for=condition=Registered exporters.jumpstarter.dev/test-exporter-oidc
+        kubectl -n default wait --for=condition=Registered exporters.jumpstarter.dev/test-exporter-legacy
 
         jmp client shell test-client-oidc --label example.com/board oidc <<EOF
         j power on
