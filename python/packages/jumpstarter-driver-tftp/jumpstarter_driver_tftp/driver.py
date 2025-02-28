@@ -73,7 +73,12 @@ class Tftp(Driver):
     def _start_server(self):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        self.server = TftpServer(host=self.host, port=self.port, operator=self.children["storage"]._operator)
+        self.server = TftpServer(
+            host=self.host,
+            port=self.port,
+            operator=self.children["storage"]._operator,
+            logger=self.logger,
+        )
         try:
             self._loop_ready.set()
             self._loop.run_until_complete(self._run_server())

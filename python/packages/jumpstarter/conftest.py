@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from ipaddress import IPv4Address
@@ -176,7 +175,5 @@ async def mock_controller(tmp_path, monkeypatch):
     finally:
         await server.stop(grace=None)
 
-
-os.environ["TQDM_DISABLE"] = "1"
 
 pytest_plugins = ["pytester"]
