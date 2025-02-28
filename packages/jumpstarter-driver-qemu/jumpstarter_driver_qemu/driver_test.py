@@ -30,8 +30,8 @@ def test_driver_qemu(tmp_path):
             p.sendline("password")
             p.expect_exact("[jumpstarter@cloudimg ~]$")
             p.sendline("sudo setenforce 0")
+            p.expect_exact("[jumpstarter@cloudimg ~]$")
 
-        sleep(3)
         with qemu.shell() as s:
             assert s.run("uname -r").stdout.strip() == "6.11.4-301.fc41.x86_64"
 

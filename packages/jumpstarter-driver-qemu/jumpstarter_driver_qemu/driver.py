@@ -78,10 +78,6 @@ class Qemu(Driver):
             )
         )
 
-        password = (
-            "$6$5BRykMZzBQAi00r8$S943tfi67MGSjeJzSLXwezQ1OcUmoOsQgQJK5Acdb1dzA9AYqvg5DOWRraCOF5UCTbT9TACw9YQzJVl/7vw530"
-        )
-
         (cidata / "user-data").write_text(
             "#cloud-config\n"
             + yaml.safe_dump(
@@ -90,7 +86,7 @@ class Qemu(Driver):
                     "users": [
                         {
                             "name": "jumpstarter",
-                            "passwd": password,
+                            "plain_text_passwd": "password",
                             "lock_passwd": False,
                             "sudo": "ALL=(ALL) NOPASSWD:ALL",
                         }
