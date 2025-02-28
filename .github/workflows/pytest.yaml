@@ -29,6 +29,9 @@ jobs:
       - name: Install Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install Qemu
+        run: sudo apt-get install -y qemu-kvm
+
       - name: Fix permissions
         run: |
           sudo mkdir /etc/jumpstarter && \
