@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -48,19 +49,44 @@ class QemuPower(PowerInterface, Driver):
     parent: Qemu
 
     @export
-    async def on(self) -> None:
+    async def on(self) -> None:  # noqa: C901
         root = self.parent.validate_partition("root")
         ovmf_code = self.parent.validate_partition("OVMF_CODE.fd")
         ovmf_vars = self.parent.validate_partition("OVMF_VARS.fd")
 
+        cpu = self.parent.cpu
+
         cmdline = [
             f"qemu-system-{self.parent.arch}",
-            "-nographic",
             "-nodefaults",
-            "-accel",
-            "kvm",
+            "-nographic",
+        ]
+
+        if self.parent.arch == platform.machine() and os.access("/dev/kvm", os.R_OK | os.W_OK):
+            cmdline += [
+                "-accel",
+                "kvm",
+            ]
+
+            if cpu is None:
+                cpu = "host"
+
+        match self.parent.arch:
+            case "aarch64":
+                cmdline += ["-machine", "virt"]
+            case "x86_64":
+                cmdline += ["-machine", "q35"]
+
+        if cpu is None:
+            match self.parent.arch:
+                case "aarch64":
+                    cpu = "cortex-a57"
+                case "x86_64":
+                    cpu = "qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt"
+
+        cmdline += [
             "-cpu",
-            self.parent.cpu,
+            cpu,
             "-qmp",
             f"unix:{self.parent._qmp},server=on,wait=off",
             "-smp",
@@ -70,10 +96,20 @@ class QemuPower(PowerInterface, Driver):
             "-vnc",
             f"unix:{self.parent._vnc}",
             "-vga",
-            "virtio",
+            "none",
             "-serial",
             "pty",
+            "-netdev",
+            "user,id=eth0",
         ]
+
+        devices = [
+            "virtio-net-pci,netdev=eth0",
+            "virtio-gpu-pci",
+            "vhost-vsock-pci,guest-cid={}".format(self.parent._cid),
+        ]
+        for device in devices:
+            cmdline += ["-device", device]
 
         if ovmf_code.exists() and ovmf_vars.exists():
             cmdline += [
@@ -82,63 +118,6 @@ class QemuPower(PowerInterface, Driver):
                 "-drive",
                 f"file={ovmf_vars},if=pflash,format=raw,unit=1,snapshot=on,readonly=off",
             ]
-
-        self._cidata = self.parent.cidata()
-        self._process = Popen(cmdline, stdin=PIPE)
-
-        qmp = QMPClient(self.parent.hostname)
-
-        with fail_after(10):
-            while qmp.runstate != Runstate.RUNNING:
-                try:
-                    await qmp.connect(self.parent._qmp)
-                except ConnectError:
-                    await sleep(0.5)
-
-        pty = await qmp.execute(
-            "chardev-change",
-            {
-                "id": "serial0",
-                "backend": {
-                    "type": "pty",
-                    "data": {},
-                },
-            },
-        )
-
-        Path(self.parent._pty).symlink_to(pty["pty"])
-
-        blockdevs = [
-            {
-                "driver": "vvfat",
-                "node-name": "cidata",
-                "read-only": True,
-                "dir": self._cidata.name,
-                "label": "CIDATA",
-            },
-        ]
-
-        netdevs = [
-            {
-                "id": "eth0",
-                "type": "user",
-            }
-        ]
-
-        devices = [
-            {
-                "driver": "virtio-blk-pci",
-                "drive": "cidata",
-            },
-            {
-                "driver": "vhost-vsock-pci",
-                "guest-cid": self.parent._cid,
-            },
-            {
-                "driver": "virtio-net-pci",
-                "netdev": "eth0",
-            },
-        ]
 
         if root.exists():
             proc = await run_process(
@@ -159,32 +138,36 @@ class QemuPower(PowerInterface, Driver):
                 self.logger.warning("unable to detect image format, assuming raw")
                 image_driver = "raw"
 
-            blockdevs.append(
-                {
-                    "driver": image_driver,
-                    "node-name": "rootfs",
-                    "file": {
-                        "driver": "file",
-                        "filename": str(root),
-                    },
-                }
-            )
-            devices.append(
-                {
-                    "driver": "virtio-blk-pci",
-                    "drive": "rootfs",
-                    "bootindex": 1,
-                }
-            )
+            cmdline += [
+                "-blockdev",
+                f"driver={image_driver},node-name=rootfs,file.driver=file,file.filename={root}",
+                "-device",
+                "virtio-blk-pci,drive=rootfs,bootindex=1",
+            ]
 
-        for blockdev in blockdevs:
-            await qmp.execute("blockdev-add", blockdev)
+        self._cidata = self.parent.cidata()
 
-        for netdev in netdevs:
-            await qmp.execute("netdev_add", netdev)
+        cmdline += [
+            "-blockdev",
+            f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
+            "-device",
+            "virtio-blk-pci,drive=cidata",
+        ]
 
-        for device in devices:
-            await qmp.execute("device_add", device)
+        self._process = Popen(cmdline, stdin=PIPE)
+
+        qmp = QMPClient(self.parent.hostname)
+
+        with fail_after(10):
+            while qmp.runstate != Runstate.RUNNING:
+                try:
+                    await qmp.connect(self.parent._qmp)
+                except ConnectError:
+                    await sleep(0.5)
+
+        chardevs = await qmp.execute("query-chardev")
+        pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
+        Path(self.parent._pty).symlink_to(pty)
 
         await qmp.execute("system_reset")
 
@@ -211,8 +194,8 @@ class QemuPower(PowerInterface, Driver):
 
 @dataclass(kw_only=True)
 class Qemu(Driver):
-    arch: str = field(default_factory=lambda: platform.uname().machine)
-    cpu: str = "host"
+    arch: str = field(default_factory=platform.machine)
+    cpu: str | None = None
 
     smp: int = 2
     mem: str = "512M"
