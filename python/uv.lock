@@ -21,6 +21,7 @@ members = [
     "jumpstarter-driver-power",
     "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
+    "jumpstarter-driver-qemu",
     "jumpstarter-driver-raspberrypi",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-shell",
@@ -1340,6 +1341,44 @@ dev = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-qemu"
+source = { editable = "packages/jumpstarter-driver-qemu" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-pyserial" },
+    { name = "pyyaml" },
+    { name = "qemu-qmp" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "qemu-qmp", specifier = ">=0.0.3" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
 name = "jumpstarter-driver-raspberrypi"
 source = { editable = "packages/jumpstarter-driver-raspberrypi" }
 dependencies = [
@@ -2517,6 +2556,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fe/0f/25911a9f080464c59fab9027482f822b86bf0608957a5fcc6eaac85aa515/PyYAML-6.0.2-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:68ccc6023a3400877818152ad9a1033e3db8625d899c72eacb5a668902e4d652", size = 751597 },
     { url = "https://files.pythonhosted.org/packages/14/0d/e2c3b43bbce3cf6bd97c840b46088a3031085179e596d4929729d8d68270/PyYAML-6.0.2-cp313-cp313-win32.whl", hash = "sha256:bc2fa7c6b47d6bc618dd7fb02ef6fdedb1090ec036abab80d4681424b84c1183", size = 140527 },
     { url = "https://files.pythonhosted.org/packages/fa/de/02b54f42487e3d3c6efb3f89428677074ca7bf43aae402517bc7cca949f3/PyYAML-6.0.2-cp313-cp313-win_amd64.whl", hash = "sha256:8388ee1976c416731879ac16da0aff3f63b286ffdd57cdeb95f3f2e085687563", size = 156446 },
+]
+
+[[package]]
+name = "qemu-qmp"
+version = "0.0.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/6c/96c9c30e7bfef81de67ba82b569672c5c9547bcb895457bb24a5d3b8b28e/qemu.qmp-0.0.3.tar.gz", hash = "sha256:cbc88fbcc115ee943d84447d172c642da120220451416c2f621acf33df1e1010", size = 78802 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/80/85263c535be9f9de8104e567658b0879c063c3d9bde3a39a7d27beea00eb/qemu.qmp-0.0.3-py3-none-any.whl", hash = "sha256:9abf451e22c0964580135aef7e2b95c5da0bf63c692426da24fc38b56ff0ac8e", size = 71139 },
 ]
 
 [[package]]
