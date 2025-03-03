@@ -60,7 +60,7 @@ class QemuPower(PowerInterface, Driver):
             "-accel",
             "kvm",
             "-cpu",
-            "host",
+            self.parent.cpu,
             "-qmp",
             f"unix:{self.parent._qmp},server=on,wait=off",
             "-smp",
@@ -212,6 +212,8 @@ class QemuPower(PowerInterface, Driver):
 @dataclass(kw_only=True)
 class Qemu(Driver):
     arch: str = field(default_factory=lambda: platform.uname().machine)
+    cpu: str = "host"
+
     smp: int = 2
     mem: str = "512M"
 
