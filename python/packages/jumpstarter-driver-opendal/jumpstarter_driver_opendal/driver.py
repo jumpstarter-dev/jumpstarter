@@ -241,6 +241,12 @@ class StorageMuxInterface(metaclass=ABCMeta):
     async def read(self, dst: str): ...
 
 
+class StorageMuxFlasherInterface(StorageMuxInterface):
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_opendal.client.StorageMuxFlasherClient"
+
+
 @dataclass
 class MockStorageMux(StorageMuxInterface, Driver):
     file: _TemporaryFileWrapper = field(default_factory=NamedTemporaryFile)
@@ -270,3 +276,7 @@ class MockStorageMux(StorageMuxInterface, Driver):
             async with self.resource(dst) as res:
                 async for chunk in stream:
                     await res.send(chunk)
+
+@dataclass
+class MockStorageMuxFlasher(StorageMuxFlasherInterface, MockStorageMux):
+    pass

@@ -11,7 +11,7 @@ import usb.util
 from anyio import fail_after, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_composite.driver import CompositeInterface
-from jumpstarter_driver_opendal.driver import StorageMuxInterface
+from jumpstarter_driver_opendal.driver import StorageMuxFlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
 from serial.serialutil import SerialException
@@ -156,7 +156,7 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
 
 
 @dataclass(kw_only=True)
-class DutlinkStorageMux(DutlinkConfig, StorageMuxInterface, Driver):
+class DutlinkStorageMux(DutlinkConfig, StorageMuxFlasherInterface, Driver):
     storage_device: str
 
     def control(self, action):

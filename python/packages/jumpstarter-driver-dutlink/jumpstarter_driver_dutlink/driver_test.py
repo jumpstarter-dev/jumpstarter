@@ -17,7 +17,7 @@ def power_test(power):
 
 
 def storage_test(storage):
-    storage.write_local_file("/dev/null")
+    storage.flash("/dev/null")
 
 
 def serial_test(serial):

@@ -16,6 +16,7 @@ from pydantic import ConfigDict, validate_call
 from .adapter import OpendalAdapter
 from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
 from jumpstarter.client import DriverClient
+from jumpstarter.common.exceptions import ArgumentError
 
 
 @dataclass(kw_only=True)
@@ -524,6 +525,28 @@ class FlasherClient(DriverClient):
         with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
             return self.call("dump", handle, partition)
 
+    def cli(self):
+        @click.group
+        def base():
+            """Generic flasher interface"""
+            pass
+
+        @base.command()
+        @click.argument("file")
+        @click.option("--partition", type=str)
+        def flash(file, partition):
+            """Flash image to DUT from file"""
+            self.flash(file, partition=partition)
+
+        @base.command()
+        @click.argument("file")
+        @click.option("--partition", type=str)
+        def dump(file, partition):
+            """Dump image from DUT to file"""
+            self.dump(file, partition=partition)
+
+        return base
+
 
 class StorageMuxClient(DriverClient):
     def host(self):
@@ -562,11 +585,9 @@ class StorageMuxClient(DriverClient):
         absolute = Path(filepath).resolve()
         return self.read_file(operator=Operator("fs", root="/"), path=str(absolute))
 
-    def cli(self):
-        @click.group
-        def base():
-            """Generic storage mux"""
-            pass
+    def cli(self, base=None):
+        if base is None:
+            base = click.group(lambda: None)
 
         @base.command()
         def host():
@@ -589,3 +610,54 @@ class StorageMuxClient(DriverClient):
             self.write_local_file(file)
 
         return base
+
+class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
+    def flash(
+        self,
+        path: PathBuf,
+        *,
+        partition: str | None = None,
+        operator: Operator | None = None,
+    ):
+        """Flash image to DUT"""
+        if partition is not None:
+            raise ArgumentError(
+                f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+
+        self.host()
+
+        if operator is None:
+            path, operator = _fs_operator_for_path(path)
+
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
+            try:
+                return self.write(handle)
+            finally:
+                self.dut()
+
+    def dump(
+        self,
+        path: PathBuf,
+        *,
+        partition: str | None = None,
+        operator: Operator | None = None,
+    ):
+        """Dump image from DUT"""
+        if partition is not None:
+            raise ArgumentError(
+                f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+
+        self.call("host")
+
+        if operator is None:
+            path, operator = _fs_operator_for_path(path)
+
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
+            try:
+                return self.call("read", handle)
+            finally:
+                self.call("dut")
+
+    def cli(self):
+        top_cli = FlasherClient.cli(self)
+        return StorageMuxClient.cli(self, top_cli)
