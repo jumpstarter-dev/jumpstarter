@@ -5,12 +5,13 @@ from pathlib import Path
 from random import randbytes
 from tempfile import TemporaryDirectory
 from threading import Thread
+from unittest import mock
 
 import pytest
 from opendal import Operator
 
 from .common import PresignedRequest
-from .driver import MockFlasher, MockStorageMux, Opendal
+from .driver import MockFlasher, MockStorageMux, MockStorageMuxFlasher, Opendal
 from jumpstarter.common.utils import serve
 
 
@@ -148,6 +149,30 @@ def test_driver_flasher(tmp_path, partition):
 
         assert (tmp_path / "dump.img").read_bytes() == b"hello"
 
+def test_driver_mock_storage_mux_flasher(tmp_path):
+    with serve(MockStorageMuxFlasher()) as flasher:
+        (tmp_path / "disk.img").write_bytes(b"hello")
+
+        # mock the StorageMuxClient dut/host methods
+        with mock.patch.object(flasher, "call", side_effect=flasher.call) as mock_method:
+
+            flasher.flash(tmp_path / "disk.img")
+            # assert the mock had a call to "host", "write" and "dut"
+            assert mock_method.call_args_list == [
+                mock.call("host"),
+                mock.call("write", mock.ANY),
+                mock.call("dut"),
+            ]
+
+            mock_method.reset_mock()
+            flasher.dump(tmp_path / "dump.img")
+            assert mock_method.call_args_list == [
+                mock.call("host"),
+                mock.call("read", mock.ANY),
+                mock.call("dut"),
+            ]
+
+            assert (tmp_path / "dump.img").read_bytes() == b"hello"
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
     with serve(MockStorageMux()) as client:

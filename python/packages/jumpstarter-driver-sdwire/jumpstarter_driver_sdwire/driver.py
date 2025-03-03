@@ -8,13 +8,13 @@ import usb.core
 import usb.util
 from anyio import fail_after, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
-from jumpstarter_driver_opendal.driver import StorageMuxInterface
+from jumpstarter_driver_opendal.driver import StorageMuxFlasherInterface
 
 from jumpstarter.driver import Driver, export
 
 
 @dataclass(kw_only=True)
-class SDWire(StorageMuxInterface, Driver):
+class SDWire(StorageMuxFlasherInterface, Driver):
     serial: str | None = field(default=None)
     dev: usb.core.Device = field(init=False)
     itf: usb.core.Interface = field(init=False)
