@@ -82,12 +82,8 @@ done
 
 git checkout "${CURRENT_BRANCH}" -f
 
-# if current branch is main, we redirect to the latest release, not main
-if [[ $CURRENT_BRANCH == "main" ]]; then
-    REDIRECT=$(echo "${RELEASES_WITHOUT_CURRENT}" | tr ' ' '\n' | sort -V | tail -n 1)
-else
-    REDIRECT="${CURRENT_BRANCH}"
-fi
+# use the current branch as the default redirect
+REDIRECT="${CURRENT_BRANCH}"
 
 # if redirect has semver format, remove the leading 'v'
 if [[ $REDIRECT =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
@@ -98,10 +94,12 @@ fi
 cat <<EOF > docs/build_all/index.html
 <!DOCTYPE html>
 <html>
+    <title>Jumpstarter Documentation</title>
     <head>
         <meta http-equiv="refresh" content="0; url=./${REDIRECT}/" />
     </head>
     <body>
+        <p>Welcome to the jumpstarter documentation, you will be redirected to the latest version.</p>
         <p>If you are not redirected automatically, follow this <a href="./${REDIRECT}/">link</a>.</p>
     </body>
 </html>
