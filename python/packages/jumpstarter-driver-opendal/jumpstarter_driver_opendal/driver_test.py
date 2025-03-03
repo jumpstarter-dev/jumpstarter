@@ -10,7 +10,7 @@ import pytest
 from opendal import Operator
 
 from .common import PresignedRequest
-from .driver import MockStorageMux, Opendal
+from .driver import MockFlasher, MockStorageMux, Opendal
 from jumpstarter.common.utils import serve
 
 
@@ -136,6 +136,17 @@ def test_driver_opendal_presign(tmp_path):
         assert client.presign_stat("test", 100) == PresignedRequest(
             url="http://invalid.invalid/test", method="HEAD", headers={}
         )
+
+
+@pytest.mark.parametrize("partition", [None, "uboot"])
+def test_driver_flasher(tmp_path, partition):
+    with serve(MockFlasher()) as flasher:
+        (tmp_path / "disk.img").write_bytes(b"hello")
+
+        flasher.flash(tmp_path / "disk.img", partition=partition)
+        flasher.dump(tmp_path / "dump.img", partition=partition)
+
+        assert (tmp_path / "dump.img").read_bytes() == b"hello"
 
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):

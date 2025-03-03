@@ -38,6 +38,10 @@ class BytesIOStream(ObjectStream[bytes]):
         pass
 
 
+def _fs_operator_for_path(path: PathBuf) -> (PathBuf, Operator):
+    return Path(path).resolve(), Operator("fs", root="/")
+
+
 @dataclass(kw_only=True)
 class OpendalFile:
     """
@@ -53,16 +57,13 @@ class OpendalFile:
     def __read(self, handle):
         return self.client.call("file_read", self.fd, handle)
 
-    def __fs_operator_for_path(self, path: PathBuf) -> (PathBuf, Operator):
-        return Path(path).resolve(), Operator("fs", root="/")
-
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
     def write_from_path(self, path: PathBuf, operator: Operator | None = None):
         """
         Write into remote file with content from local file
         """
         if operator is None:
-            path, operator = self.__fs_operator_for_path(path)
+            path, operator = _fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
             return self.__write(handle)
@@ -73,7 +74,7 @@ class OpendalFile:
         Read content from remote file into local file
         """
         if operator is None:
-            path, operator = self.__fs_operator_for_path(path)
+            path, operator = _fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
             return self.__read(handle)
@@ -492,6 +493,36 @@ class OpendalClient(DriverClient):
             click.echo(self.capability().model_dump_json(indent=2))
 
         return base
+
+
+class FlasherClient(DriverClient):
+    def flash(
+        self,
+        path: PathBuf,
+        *,
+        partition: str | None = None,
+        operator: Operator | None = None,
+    ):
+        """Flash image to DUT"""
+        if operator is None:
+            path, operator = _fs_operator_for_path(path)
+
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
+            return self.call("flash", handle, partition)
+
+    def dump(
+        self,
+        path: PathBuf,
+        *,
+        partition: str | None = None,
+        operator: Operator | None = None,
+    ):
+        """Dump image from DUT"""
+        if operator is None:
+            path, operator = _fs_operator_for_path(path)
+
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
+            return self.call("dump", handle, partition)
 
 
 class StorageMuxClient(DriverClient):

@@ -2,7 +2,8 @@ import hashlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
+from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory, _TemporaryFileWrapper
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -181,6 +182,42 @@ class Opendal(Driver):
     @validate_call(validate_return=True)
     async def capability(self, /) -> Capability:
         return Capability.model_validate(self._operator.capability(), from_attributes=True)
+
+
+class FlasherInterface(metaclass=ABCMeta):
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_opendal.client.FlasherClient"
+
+    @abstractmethod
+    def flash(self, source, partition: str | None = None): ...
+
+    @abstractmethod
+    def dump(self, target, partition: str | None = None): ...
+
+
+@dataclass
+class MockFlasher(FlasherInterface, Driver):
+    _tempdir: TemporaryDirectory = field(default_factory=TemporaryDirectory)
+
+    def __path(self, partition: str | None = None) -> str:
+        if partition is None:
+            partition = "default"
+        return str(Path(self._tempdir.name) / partition)
+
+    @export
+    async def flash(self, source, partition: str | None = None):
+        async with await FileWriteStream.from_path(self.__path(partition)) as stream:
+            async with self.resource(source) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
+
+    @export
+    async def dump(self, target, partition: str | None = None):
+        async with await FileReadStream.from_path(self.__path(partition)) as stream:
+            async with self.resource(target) as res:
+                async for chunk in stream:
+                    await res.send(chunk)
 
 
 class StorageMuxInterface(metaclass=ABCMeta):
