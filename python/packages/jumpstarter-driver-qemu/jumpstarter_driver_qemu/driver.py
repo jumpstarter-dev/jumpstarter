@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import platform
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -53,7 +54,7 @@ class QemuPower(PowerInterface, Driver):
         ovmf_vars = self.parent.validate_partition("OVMF_VARS.fd")
 
         cmdline = [
-            "qemu-system-x86_64",
+            f"qemu-system-{self.parent.arch}",
             "-nographic",
             "-nodefaults",
             "-accel",
@@ -210,6 +211,7 @@ class QemuPower(PowerInterface, Driver):
 
 @dataclass(kw_only=True)
 class Qemu(Driver):
+    arch: str = field(default_factory=lambda: platform.uname().machine)
     smp: int = 2
     mem: str = "512M"
 
