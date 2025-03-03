@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 from secrets import randbits
-from subprocess import PIPE, Popen, TimeoutExpired
+from subprocess import PIPE, CalledProcessError, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
 import yaml
-from anyio import fail_after, sleep
+from anyio import fail_after, run_process, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import FlasherInterface
@@ -139,9 +140,27 @@ class QemuPower(PowerInterface, Driver):
         ]
 
         if root.exists():
+            proc = await run_process(
+                ["qemu-img", "info", "--output=json", str(root)],
+                stdout=PIPE,
+                stderr=PIPE,
+            )
+            try:
+                proc.check_returncode()
+                info = json.loads(proc.stdout)
+                image_format = info.get("format", "raw")
+                match image_format:
+                    case "raw" | "qcow2" | "qcow" | "vmdk":
+                        image_driver = image_format
+                    case _:
+                        raise ValueError(f"unsupported image format: {image_format}")
+            except CalledProcessError:
+                self.logger.warning("unable to detect image format, assuming raw")
+                image_driver = "raw"
+
             blockdevs.append(
                 {
-                    "driver": "qcow2",
+                    "driver": image_driver,
                     "node-name": "rootfs",
                     "file": {
                         "driver": "file",
