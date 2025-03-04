@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 60
     continue-on-error: false
     steps:
-      - uses: jumpstarter-dev/jumpstarter-e2e@oidc-login
+      - uses: jumpstarter-dev/jumpstarter-e2e@main
         with:
           controller-ref: main
           jumpstarter-ref: ${{ github.ref }}
