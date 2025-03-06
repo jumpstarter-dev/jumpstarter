@@ -15,6 +15,9 @@ from yarl import URL
 truststore.inject_into_ssl()
 
 opt_client_id = click.option("--client-id", "client_id", type=str, default="jumpstarter-cli", help="OIDC client id")
+opt_connector_id = click.option(
+    "--connector-id", "connector_id", type=str, help="OIDC token exchange connector id (Dex specific)"
+)
 
 
 @dataclass(kw_only=True)
