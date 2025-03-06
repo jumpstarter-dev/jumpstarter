@@ -26,6 +26,16 @@ config:
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-exporter-oidc"
       userID: "a4cb4de2-4467-4e5c-a42a-33be8783649d"
+  connectors:
+    - name: kubernetes
+      type: oidc
+      id: kubernetes
+      config:
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        insecureSkipVerify: true
+        userNameKey: sub
+        scopes:
+          - profile
 volumes:
   - name: tls
     secret:
