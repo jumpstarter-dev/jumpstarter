@@ -611,6 +611,7 @@ class StorageMuxClient(DriverClient):
 
         return base
 
+
 class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
     def flash(
         self,
@@ -621,8 +622,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
     ):
         """Flash image to DUT"""
         if partition is not None:
-            raise ArgumentError(
-                f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+            raise ArgumentError(f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
 
         self.host()
 
@@ -644,8 +644,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
     ):
         """Dump image from DUT"""
         if partition is not None:
-            raise ArgumentError(
-                f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+            raise ArgumentError(f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
 
         self.call("host")
 
