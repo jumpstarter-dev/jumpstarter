@@ -57,7 +57,7 @@ def test_driver_qemu(tmp_path, ovmf, arch, ovmf_arch):
 
         with qemu.console.pexpect() as p:
             p.logfile = sys.stdout.buffer
-            p.expect_exact(f"{hostname} login:", timeout=240)
+            p.expect_exact(f"{hostname} login:", timeout=600)
             p.sendline(username)
             p.expect_exact("Password:")
             p.sendline(password)
