@@ -34,6 +34,22 @@ class Config:
     def client(self, **kwargs):
         return OAuth2Session(client_id=self.client_id, scope=self.scope, **kwargs)
 
+    async def token_exchange_grant(self, token: str, **kwargs):
+        config = await self.configuration()
+
+        client = self.client()
+
+        return await run_sync(
+            lambda: client.fetch_token(
+                config["token_endpoint"],
+                grant_type="urn:ietf:params:oauth:grant-type:token-exchange",
+                requested_token_type="urn:ietf:params:oauth:token-type:access_token",
+                subject_token_type="urn:ietf:params:oauth:token-type:id_token",
+                subject_token=token,
+                **kwargs,
+            )
+        )
+
     async def password_grant(self, username: str, password: str):
         config = await self.configuration()
 
