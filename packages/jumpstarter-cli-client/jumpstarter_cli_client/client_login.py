@@ -1,6 +1,6 @@
 import asyncclick as click
 from jumpstarter_cli_common.exceptions import async_handle_exceptions
-from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_client_id
+from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_client_id, opt_connector_id
 
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta, UserConfigV1Alpha1
@@ -29,6 +29,7 @@ from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 )
 @click.option("--username", type=str, help="Enter the OIDC username.", default=None)
 @click.option("--password", type=str, help="Enter the OIDC password.", default=None)
+@click.option("--token", type=str, help="Enter the OIDC token.", default=None)
 @click.option(
     "--issuer",
     type=str,
@@ -45,6 +46,7 @@ from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
     "--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).", default=None
 )
 @opt_client_id
+@opt_connector_id
 @async_handle_exceptions
 async def client_login(  # noqa: C901
     alias: str,
@@ -53,8 +55,10 @@ async def client_login(  # noqa: C901
     name: str,
     username: str | None,
     password: str | None,
+    token: str | None,
     issuer: str,
     client_id: str,
+    connector_id: str | None,
     allow: str,
     unsafe: str,
 ):
@@ -96,7 +100,10 @@ async def client_login(  # noqa: C901
 
     oidc = Config(issuer=issuer, client_id=client_id)
 
-    if username is not None and password is not None:
+    if token is not None:
+        kwargs = {"connector_id": connector_id} if connector_id is not None else {}
+        tokens = await oidc.token_exchange_grant(token, **kwargs)
+    elif username is not None and password is not None:
         tokens = await oidc.password_grant(username, password)
     else:
         tokens = await oidc.authorization_code_grant()
