@@ -149,13 +149,13 @@ def test_driver_flasher(tmp_path, partition):
 
         assert (tmp_path / "dump.img").read_bytes() == b"hello"
 
+
 def test_driver_mock_storage_mux_flasher(tmp_path):
     with serve(MockStorageMuxFlasher()) as flasher:
         (tmp_path / "disk.img").write_bytes(b"hello")
 
         # mock the StorageMuxClient dut/host methods
         with mock.patch.object(flasher, "call", side_effect=flasher.call) as mock_method:
-
             flasher.flash(tmp_path / "disk.img")
             # assert the mock had a call to "host", "write" and "dut"
             assert mock_method.call_args_list == [
@@ -173,6 +173,7 @@ def test_driver_mock_storage_mux_flasher(tmp_path):
             ]
 
             assert (tmp_path / "dump.img").read_bytes() == b"hello"
+
 
 def test_drivers_mock_storage_mux_fs(monkeypatch: pytest.MonkeyPatch):
     with serve(MockStorageMux()) as client:
