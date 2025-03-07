@@ -141,6 +141,25 @@ jwt:
         prefix: "dex:"
 ```
 
+Then proceed to create clients and exporters with the `jmp admin create` commands, set their corresponding OIDC username with the `--oidc-username` flag, e.g. `jmp admin create exporter test-exporter --oidc-username dex:system:serviceaccount:default:test-service-account`. Just prefix the full service account name with "dex:", as previously configured.
+
+Finally, instruct the users to login with the following commands in pods configured with proper service accounts.
+
+```
+# for clients
+jmp client login <client alias> --endpoint <jumpstarter controller endpoint> \
+  --namespace <namespace> --name <client name> \
+  --issuer https://dex.dex.svc.cluster.local:5556 \
+  --connector-id kubernetes \
+  --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+
+# for exporters
+jmp exporter login <exporter alias> --endpoint <jumpstarter controller endpoint> \
+  --namespace <namespace> --name <exporter name> \
+  --issuer https://dex.dex.svc.cluster.local:5556 \
+  --connector-id kubernetes \
+  --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+```
 
 ## Reference
 ```yaml
