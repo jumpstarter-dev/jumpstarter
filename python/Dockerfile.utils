@@ -1,0 +1,4 @@
+FROM fedora:41
+RUN dnf install -y kubernetes-client easy-rsa && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf
