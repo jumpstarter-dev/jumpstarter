@@ -1,5 +1,6 @@
 import sys
 import tarfile
+from pathlib import Path
 
 import pytest
 import requests
@@ -35,10 +36,15 @@ def test_driver_qemu(tmp_path, ovmf, arch, ovmf_arch):
         username = qemu.username
         password = qemu.password
 
-        qemu.flasher.flash(
-            f"pub/fedora/linux/releases/41/Cloud/{arch}/images/Fedora-Cloud-Base-Generic-41-1.4.{arch}.qcow2",
-            operator=Operator("http", endpoint="https://download.fedoraproject.org"),
-        )
+        cached_image = Path(f"images/Fedora-Cloud-Base-Generic-41-1.4.{arch}.qcow2")
+
+        if cached_image.exists():
+            qemu.flasher.flash(cached_image.resolve())
+        else:
+            qemu.flasher.flash(
+                f"pub/fedora/linux/releases/41/Cloud/{arch}/images/Fedora-Cloud-Base-Generic-41-1.4.{arch}.qcow2",
+                operator=Operator("http", endpoint="https://download.fedoraproject.org"),
+            )
 
         qemu.flasher.flash(
             ovmf / ovmf_arch / "code.fd",
