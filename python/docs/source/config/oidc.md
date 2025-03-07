@@ -60,6 +60,24 @@ jmp exporter login <exporter alias> --endpoint <jumpstarter controller endpoint>
 # --username, --password and --token are also accepted by jmp exporter login
 ```
 
+### Dex (for authenticating with kubernetes Service Accounts)
+
+Initialize a self-signed CA and sign certificate for dex
+
+```shell
+easyrsa init-pki
+easyrsa --no-pass build-ca
+easyrsa --no-pass build-server-full dex.dex.svc.cluster.local
+
+# import certificate into secret
+kubectl create namespace dex
+kubectl -n dex create secret tls dex-tls \
+  --cert=pki/issued/dex.dex.svc.cluster.local.crt \
+  --key=pki/private/dex.dex.svc.cluster.local.key
+```
+
+
+
 ## Reference
 ```yaml
 #
