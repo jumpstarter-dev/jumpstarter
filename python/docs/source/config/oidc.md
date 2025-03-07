@@ -27,18 +27,7 @@ jwt:
       prefix: "keycloak:"
 ```
 
-Then proceed to create clients and exporters with the `jmp admin create` commands, newly created clients and exporters would still use the internal authenticator, after which kubectl can be used to modify them to accept OIDC authentication.
-
-```shell
-# for clients
-kubectl -n <namespace> patch clients.jumpstarter.dev <client name> \
-  --type=merge --patch '{"spec":{"username":"keycloak:developer-1"}}'
-# for exporters
-kubectl -n <namespace> patch exporters.jumpstarter.dev <exporter name> \
-  --type=merge --patch '{"spec":{"username":"keycloak:lab-admin-1"}}'
-```
-
-Be sure to prefix usernames with "keycloak:", as previously configured.
+Then proceed to create clients and exporters with the `jmp admin create` commands, set their corresponding OIDC username with the `--oidc-username` flag, e.g. `jmp admin create client test-client --oidc-username keycloak:developer-1`. Be sure to prefix usernames with "keycloak:", as previously configured.
 
 Finally, instruct the users to login with the following commands
 
@@ -58,6 +47,118 @@ jmp exporter login <exporter alias> --endpoint <jumpstarter controller endpoint>
   --namespace <namespace> --name <exporter name> \
   --issuer https://<keycloak domain>/realms/<realm name>
 # --username, --password and --token are also accepted by jmp exporter login
+```
+
+### Dex (for authenticating with kubernetes Service Accounts)
+
+Initialize a self-signed CA and sign certificate for dex
+
+```shell
+easyrsa init-pki
+easyrsa --no-pass build-ca
+easyrsa --no-pass build-server-full dex.dex.svc.cluster.local
+
+# import certificate into secret
+kubectl create namespace dex
+kubectl -n dex create secret tls dex-tls \
+  --cert=pki/issued/dex.dex.svc.cluster.local.crt \
+  --key=pki/private/dex.dex.svc.cluster.local.key
+```
+
+Install dex with helm
+
+```yaml
+# dex.values.yaml
+https:
+  enabled: true
+config:
+  issuer: https://dex.dex.svc.cluster.local:5556
+  web:
+    tlsCert: /etc/dex/tls/tls.crt
+    tlsKey: /etc/dex/tls/tls.key
+  storage:
+    type: kubernetes
+    config:
+      inCluster: true
+  staticClients:
+    - id: jumpstarter-cli
+      name: Jumpstarter CLI
+      public: true
+  connectors:
+    - name: kubernetes
+      type: oidc
+      id: kubernetes
+      config:
+        # kubectl get --raw /.well-known/openid-configuration | jq -r '.issuer'
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        rootCAs:
+          - /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        userNameKey: sub
+        scopes:
+          - profile
+volumes:
+  - name: tls
+    secret:
+      secretName: dex-tls
+volumeMounts:
+  - name: tls
+    mountPath: /etc/dex/tls
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: 5554
+    https:
+      port: 5556
+```
+
+```shell
+# Ensure OIDC discovery URLs do not require authentication
+kubectl create clusterrolebinding oidc-reviewer  \
+ --clusterrole=system:service-account-issuer-discovery \
+ --group=system:unauthenticated
+
+helm repo add dex https://charts.dexidp.io
+helm install --namespace dex --wait -f dex.values.yaml dex dex/dex
+```
+
+Configure Jumpstarter to trust dex by using the following snippet as `jumpstarter-controller.authenticationConfiguration` during Jumpstarter installation.
+
+```yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: AuthenticationConfiguration
+jwt:
+  - issuer:
+      url: https://dex.dex.svc.cluster.local:5556
+      audiences:
+      - jumpstarter-cli
+      audienceMatchPolicy: MatchAny
+      certificateAuthority: |
+        <content of pki/ca.crt>
+    claimMappings:
+      username:
+        claim: "name"
+        prefix: "dex:"
+```
+
+Then proceed to create clients and exporters with the `jmp admin create` commands, set their corresponding OIDC username with the `--oidc-username` flag, e.g. `jmp admin create exporter test-exporter --oidc-username dex:system:serviceaccount:default:test-service-account`. Just prefix the full service account name with "dex:", as previously configured.
+
+Finally, instruct the users to login with the following commands in pods configured with proper service accounts.
+
+```
+# for clients
+jmp client login <client alias> --endpoint <jumpstarter controller endpoint> \
+  --namespace <namespace> --name <client name> \
+  --issuer https://dex.dex.svc.cluster.local:5556 \
+  --connector-id kubernetes \
+  --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+
+# for exporters
+jmp exporter login <exporter alias> --endpoint <jumpstarter controller endpoint> \
+  --namespace <namespace> --name <exporter name> \
+  --issuer https://dex.dex.svc.cluster.local:5556 \
+  --connector-id kubernetes \
+  --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
 ```
 
 ## Reference
