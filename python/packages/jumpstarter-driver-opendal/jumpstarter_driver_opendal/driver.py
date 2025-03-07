@@ -277,6 +277,7 @@ class MockStorageMux(StorageMuxInterface, Driver):
                 async for chunk in stream:
                     await res.send(chunk)
 
+
 @dataclass
 class MockStorageMuxFlasher(StorageMuxFlasherInterface, MockStorageMux):
     pass
