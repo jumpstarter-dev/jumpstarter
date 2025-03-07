@@ -27,23 +27,44 @@ runs:
         repository: jumpstarter-dev/jumpstarter
         ref: ${{ inputs.jumpstarter-ref }}
         path: jumpstarter
-    - name: Deploy jumpstarter controller
+    - name: Deploy dex
       shell: bash
       run: |
-        cp "$GITHUB_ACTION_PATH"/values.kind.yaml ./controller/deploy/helm/jumpstarter/values.kind.yaml
+        go run github.com/cloudflare/cfssl/cmd/cfssl@latest gencert -initca "$GITHUB_ACTION_PATH"/ca-csr.json | \
+          go run github.com/cloudflare/cfssl/cmd/cfssljson@latest -bare ca -
+        go run github.com/cloudflare/cfssl/cmd/cfssl@latest gencert -ca=ca.pem -ca-key=ca-key.pem \
+          -config="$GITHUB_ACTION_PATH"/ca-config.json -profile=www "$GITHUB_ACTION_PATH"/dex-csr.json | \
+          go run github.com/cloudflare/cfssl/cmd/cfssljson@latest -bare server
+
         cp "$GITHUB_ACTION_PATH"/kind_cluster.yaml ./controller/hack/kind_cluster.yaml
-        make -C controller deploy
+        make -C controller cluster
+
+        kubectl create namespace dex
+        kubectl -n dex create secret tls dex-tls \
+          --cert=server.pem \
+          --key=server-key.pem
+
+        go run github.com/mikefarah/yq/v4@latest -i \
+          '.jumpstarter-controller.authenticationConfig = (.jumpstarter-controller.authenticationConfig | from_yaml | .jwt[0].issuer.certificateAuthority = load_str("ca.pem") | to_yaml)' \
+          "$GITHUB_ACTION_PATH"/values.kind.yaml
+
         # important!
         kubectl create clusterrolebinding oidc-reviewer  \
          --clusterrole=system:service-account-issuer-discovery \
          --group=system:unauthenticated
-    - name: Deploy dex
-      shell: bash
-      run: |
-        kubectl create namespace dex
-        kubectl apply -f "$GITHUB_ACTION_PATH"/dex.yaml
+
         helm repo add dex https://charts.dexidp.io
         helm install --namespace dex --wait -f "$GITHUB_ACTION_PATH"/dex.values.yaml dex dex/dex
+
+        sudo cp ca.pem /usr/local/share/ca-certificates/dex.crt
+        sudo update-ca-certificates
+
+        echo "127.0.0.1 dex.dex.svc.cluster.local" | sudo tee -a /etc/hosts
+    - name: Deploy jumpstarter controller
+      shell: bash
+      run: |
+        cp "$GITHUB_ACTION_PATH"/values.kind.yaml ./controller/deploy/helm/jumpstarter/values.kind.yaml
+        make -C controller deploy
     - name: Install jumpstarter
       shell: bash
       run: |
@@ -56,11 +77,6 @@ runs:
     - name: Run jumpstarter
       shell: bash
       run: |
-        sudo cp "$GITHUB_ACTION_PATH"/minica.pem /usr/local/share/ca-certificates/minica.crt
-        sudo update-ca-certificates
-
-        echo "127.0.0.1 dex.dex.svc.cluster.local" | sudo tee -a /etc/hosts
-
         ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
 
         sudo mkdir -p /etc/jumpstarter/exporters
