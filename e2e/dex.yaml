@@ -3,7 +3,7 @@ kind: Secret
 metadata:
   name: dex-tls
   namespace: dex
-type: Opaque
+type: kubernetes.io/tls
 stringData:
   tls.crt: |
     -----BEGIN CERTIFICATE-----
