@@ -36,7 +36,7 @@ def test_driver_qemu(tmp_path, ovmf, arch, ovmf_arch):
         username = qemu.username
         password = qemu.password
 
-        cached_image = Path(f"images/Fedora-Cloud-Base-Generic-41-1.4.{arch}.qcow2")
+        cached_image = Path(__file__).parent.parent / "images" / f"Fedora-Cloud-Base-Generic-41-1.4.{arch}.qcow2"
 
         if cached_image.exists():
             qemu.flasher.flash(cached_image.resolve())
