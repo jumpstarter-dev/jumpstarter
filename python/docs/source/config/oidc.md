@@ -76,7 +76,62 @@ kubectl -n dex create secret tls dex-tls \
   --key=pki/private/dex.dex.svc.cluster.local.key
 ```
 
+Install dex with helm
 
+```yaml
+# dex.values.yaml
+https:
+  enabled: true
+config:
+  issuer: https://dex.dex.svc.cluster.local:5556
+  web:
+    tlsCert: /etc/dex/tls/tls.crt
+    tlsKey: /etc/dex/tls/tls.key
+  storage:
+    type: kubernetes
+    config:
+      inCluster: true
+  staticClients:
+    - id: jumpstarter-cli
+      name: Jumpstarter CLI
+      public: true
+  connectors:
+    - name: kubernetes
+      type: oidc
+      id: kubernetes
+      config:
+        # kubectl get --raw /.well-known/openid-configuration | jq -r '.issuer'
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        rootCAs:
+          - /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        userNameKey: sub
+        scopes:
+          - profile
+volumes:
+  - name: tls
+    secret:
+      secretName: dex-tls
+volumeMounts:
+  - name: tls
+    mountPath: /etc/dex/tls
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: 5554
+    https:
+      port: 5556
+```
+
+```shell
+# Ensure OIDC discovery URLs do not require authentication
+kubectl create clusterrolebinding oidc-reviewer  \
+ --clusterrole=system:service-account-issuer-discovery \
+ --group=system:unauthenticated
+
+helm repo add dex https://charts.dexidp.io
+helm install --namespace dex --wait -f dex.values.yaml dex dex/dex
+```
 
 ## Reference
 ```yaml
