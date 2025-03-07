@@ -47,10 +47,17 @@ Finally, instruct the users to login with the following commands
 jmp client login <client alias> --endpoint <jumpstarter controller endpoint> \
   --namespace <namespace> --name <client name> \
   --issuer https://<keycloak domain>/realms/<realm name>
+# without additional options, the users would be directed to login with the web browser
+# or the username and password can be directly specified for non-interactive login
+  --username <username> --password <password>
+# or a token for machine to machine authentication, useful in CI environments
+  --token <token>
+
 # for exporters
 jmp exporter login <exporter alias> --endpoint <jumpstarter controller endpoint> \
   --namespace <namespace> --name <exporter name> \
   --issuer https://<keycloak domain>/realms/<realm name>
+# --username, --password and --token are also accepted by jmp exporter login
 ```
 
 ## Reference
