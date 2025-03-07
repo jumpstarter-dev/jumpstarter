@@ -31,6 +31,7 @@ config:
       type: oidc
       id: kubernetes
       config:
+        # kubectl get --raw /.well-known/openid-configuration | jq -r '.issuer'
         issuer: "https://kubernetes.default.svc.cluster.local"
         insecureSkipVerify: true
         userNameKey: sub
