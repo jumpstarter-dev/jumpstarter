@@ -27,18 +27,7 @@ jwt:
       prefix: "keycloak:"
 ```
 
-Then proceed to create clients and exporters with the `jmp admin create` commands, newly created clients and exporters would still use the internal authenticator, after which kubectl can be used to modify them to accept OIDC authentication.
-
-```shell
-# for clients
-kubectl -n <namespace> patch clients.jumpstarter.dev <client name> \
-  --type=merge --patch '{"spec":{"username":"keycloak:developer-1"}}'
-# for exporters
-kubectl -n <namespace> patch exporters.jumpstarter.dev <exporter name> \
-  --type=merge --patch '{"spec":{"username":"keycloak:lab-admin-1"}}'
-```
-
-Be sure to prefix usernames with "keycloak:", as previously configured.
+Then proceed to create clients and exporters with the `jmp admin create` commands, set their corresponding OIDC username with the `--oidc-username` flag, e.g. `jmp admin create client test-client --oidc-username keycloak:developer-1`. Be sure to prefix usernames with "keycloak:", as previously configured.
 
 Finally, instruct the users to login with the following commands
 
