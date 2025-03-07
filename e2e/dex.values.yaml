@@ -33,7 +33,8 @@ config:
       config:
         # kubectl get --raw /.well-known/openid-configuration | jq -r '.issuer'
         issuer: "https://kubernetes.default.svc.cluster.local"
-        insecureSkipVerify: true
+        rootCAs:
+          - /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
         userNameKey: sub
         scopes:
           - profile
