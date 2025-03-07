@@ -11,7 +11,12 @@ import (
 type AuthenticationConfiguration struct {
 	metav1.TypeMeta
 
-	JWT []apiserverv1beta1.JWTAuthenticator `json:"jwt"`
+	Internal Internal                            `json:"internal"`
+	JWT      []apiserverv1beta1.JWTAuthenticator `json:"jwt"`
+}
+
+type Internal struct {
+	Prefix string `json:"prefix"`
 }
 
 func init() {

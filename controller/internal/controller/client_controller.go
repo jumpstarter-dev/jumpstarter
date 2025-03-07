@@ -79,7 +79,7 @@ func (r *ClientReconciler) reconcileStatusCredential(
 	secret, err := ensureSecret(ctx, kclient.ObjectKey{
 		Name:      client.Name + "-client",
 		Namespace: client.Namespace,
-	}, r.Client, r.Signer, client.Username(r.Signer.Prefix()))
+	}, r.Client, r.Signer, client.InternalSubject())
 	if err != nil {
 		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
 	}

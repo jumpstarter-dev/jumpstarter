@@ -91,7 +91,7 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 	secret, err := ensureSecret(ctx, client.ObjectKey{
 		Name:      exporter.Name + "-exporter",
 		Namespace: exporter.Namespace,
-	}, r.Client, r.Signer, exporter.Username(r.Signer.Prefix()))
+	}, r.Client, r.Signer, exporter.InternalSubject())
 	if err != nil {
 		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
 	}

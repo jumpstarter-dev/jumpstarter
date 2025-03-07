@@ -2,10 +2,16 @@ package v1alpha1
 
 import "strings"
 
-func (e *Exporter) Username(prefix string) string {
+func (e *Exporter) InternalSubject() string {
+	return strings.Join([]string{"exporter", e.Namespace, e.Name, string(e.UID)}, ":")
+}
+
+func (e *Exporter) Usernames(prefix string) []string {
+	usernames := []string{prefix + e.InternalSubject()}
+
 	if e.Spec.Username != nil {
-		return *e.Spec.Username
-	} else {
-		return prefix + strings.Join([]string{"exporter", e.Namespace, e.Name, string(e.UID)}, ":")
+		usernames = append(usernames, *e.Spec.Username)
 	}
+
+	return usernames
 }

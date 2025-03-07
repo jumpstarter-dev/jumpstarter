@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"math/rand"
-	"strings"
 	"time"
 
 	"filippo.io/keygen"
@@ -18,25 +17,21 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 )
 
-const tokenPlaceholder string = "placeholder for external OIDC provider access token"
-
 type Signer struct {
 	privatekey *ecdsa.PrivateKey
 	issuer     string
 	audience   string
-	prefix     string
 }
 
-func NewSigner(privateKey *ecdsa.PrivateKey, issuer, audience, prefix string) *Signer {
+func NewSigner(privateKey *ecdsa.PrivateKey, issuer, audience string) *Signer {
 	return &Signer{
 		privatekey: privateKey,
 		issuer:     issuer,
 		audience:   audience,
-		prefix:     prefix,
 	}
 }
 
-func NewSignerFromSeed(seed []byte, issuer, audience, prefix string) (*Signer, error) {
+func NewSignerFromSeed(seed []byte, issuer, audience string) (*Signer, error) {
 	hash := sha256.Sum256(seed)
 	source := rand.NewSource(int64(binary.BigEndian.Uint64(hash[:8])))
 	reader := rand.New(source)
@@ -44,7 +39,7 @@ func NewSignerFromSeed(seed []byte, issuer, audience, prefix string) (*Signer, e
 	if err != nil {
 		return nil, err
 	}
-	return NewSigner(key, issuer, audience, prefix), nil
+	return NewSigner(key, issuer, audience), nil
 }
 
 func (k *Signer) Issuer() string {
@@ -53,10 +48,6 @@ func (k *Signer) Issuer() string {
 
 func (k *Signer) Audience() string {
 	return k.audience
-}
-
-func (k *Signer) Prefix() string {
-	return k.prefix
 }
 
 func (k *Signer) ID() string {
@@ -92,10 +83,7 @@ func (k *Signer) Register(group gin.IRoutes) {
 	})
 }
 
-func (k *Signer) UnsafeValidate(token string) error {
-	if token == tokenPlaceholder {
-		return nil
-	}
+func (k *Signer) Validate(token string) error {
 	_, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
 		return &k.privatekey.PublicKey, nil
 	},
@@ -109,14 +97,11 @@ func (k *Signer) UnsafeValidate(token string) error {
 }
 
 func (k *Signer) Token(
-	username string,
+	subject string,
 ) (string, error) {
-	if !strings.HasPrefix(username, k.prefix) {
-		return tokenPlaceholder, nil
-	}
 	return jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
 		Issuer:    k.issuer,
-		Subject:   strings.TrimPrefix(username, k.prefix),
+		Subject:   subject,
 		Audience:  []string{k.audience},
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)), // FIXME: rotate keys on expiration

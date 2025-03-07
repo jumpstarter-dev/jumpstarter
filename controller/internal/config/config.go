@@ -18,18 +18,18 @@ func LoadConfiguration(
 	key client.ObjectKey,
 	signer *oidc.Signer,
 	certificateAuthority string,
-) (authenticator.Token, error) {
+) (authenticator.Token, string, error) {
 	var configmap corev1.ConfigMap
 	if err := client.Get(ctx, key, &configmap); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
 	if !ok {
-		return nil, fmt.Errorf("LoadConfiguration: missing authentication section")
+		return nil, "", fmt.Errorf("LoadConfiguration: missing authentication section")
 	}
 
-	authenticator, err := oidc.LoadAuthenticationConfiguration(
+	authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
 		ctx,
 		scheme,
 		[]byte(rawAuthenticationConfiguration),
@@ -37,8 +37,8 @@ func LoadConfiguration(
 		certificateAuthority,
 	)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return authenticator, nil
+	return authenticator, prefix, nil
 }
