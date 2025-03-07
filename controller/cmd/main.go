@@ -151,7 +151,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	authenticator, err := config.LoadConfiguration(
+	authenticator, prefix, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -205,7 +205,7 @@ func main() {
 		Client: watchClient,
 		Scheme: mgr.GetScheme(),
 		Authn:  authentication.NewBearerTokenAuthenticator(authenticator),
-		Authz:  authorization.NewBasicAuthorizer(watchClient, "internal:"),
+		Authz:  authorization.NewBasicAuthorizer(watchClient, prefix),
 		Attr: authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
 			NamespaceKey: "jumpstarter-namespace",
 			ResourceKey:  "jumpstarter-kind",

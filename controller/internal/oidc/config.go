@@ -19,9 +19,8 @@ func LoadAuthenticationConfiguration(
 	scheme *runtime.Scheme,
 	configuration []byte,
 	signer *Signer,
-	prefix string,
 	certificateAuthority string,
-) (authenticator.Token, error) {
+) (authenticator.Token, string, error) {
 	var authenticationConfiguration jumpstarterdevv1alpha1.AuthenticationConfiguration
 	if err := runtime.DecodeInto(
 		serializer.NewCodecFactory(scheme, serializer.EnableStrict).
@@ -29,7 +28,11 @@ func LoadAuthenticationConfiguration(
 		configuration,
 		&authenticationConfiguration,
 	); err != nil {
-		return nil, err
+		return nil, "", err
+	}
+
+	if authenticationConfiguration.Internal.Prefix == "" {
+		authenticationConfiguration.Internal.Prefix = "internal:"
 	}
 
 	authenticationConfiguration.JWT = append(authenticationConfiguration.JWT, apiserverv1beta1.JWTAuthenticator{
@@ -41,16 +44,20 @@ func LoadAuthenticationConfiguration(
 		ClaimMappings: apiserverv1beta1.ClaimMappings{
 			Username: apiserverv1beta1.PrefixedClaimOrExpression{
 				Claim:  "sub",
-				Prefix: &prefix,
+				Prefix: &authenticationConfiguration.Internal.Prefix,
 			},
 		},
 	})
 
-	return newJWTAuthenticator(
+	authn, err := newJWTAuthenticator(
 		ctx,
 		scheme,
 		authenticationConfiguration,
 	)
+	if err != nil {
+		return nil, "", err
+	}
+	return authn, authenticationConfiguration.Internal.Prefix, nil
 }
 
 // Reference: https://github.com/kubernetes/kubernetes/blob/v1.32.1/pkg/kubeapiserver/authenticator/config.go#L244
