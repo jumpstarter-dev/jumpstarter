@@ -46,6 +46,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-arm qemu-system-x86
 
+      - name: Cache Fedora Cloud images
+        id: cache-fedora-cloud-images
+        uses: actions/cache@v4
+        with:
+          path: packages/jumpstarter-driver-qemu/images
+          key: fedora-cloud-41-1.4
+
+      - name: Download Fedora Cloud images
+        if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
+        run: |
+          for arch in aarch64 x86_64; do
+            curl -L --output "packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-41-1.4.${arch}.qcow2" \
+              "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-41-1.4.${arch}.qcow2"
+          done
+
       - name: Run pytest
         run: make test
 
