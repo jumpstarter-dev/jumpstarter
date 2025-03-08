@@ -1,35 +1,46 @@
 import pprint
-from dataclasses import dataclass
 from typing import Literal, Optional
 
+import yaml
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
+from pydantic import BaseModel, ConfigDict, Field
 
+from .serialize import SerializeV1Condition, SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 
 
-@dataclass(kw_only=True)
-class V1Alpha1LeaseStatus:
+class V1Alpha1LeaseStatus(BaseModel):
     begin_time: str
+    conditions: list[SerializeV1Condition]
     end_time: Optional[str]
     ended: bool
-    exporter: Optional[V1ObjectReference]
-    conditions: list[V1Condition]
+    exporter: Optional[SerializeV1ObjectReference]
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-@dataclass(kw_only=True)
-class V1Alpha1LeaseSpec:
-    client: V1ObjectReference
+class V1Alpha1LeaseSpec(BaseModel):
+    client: SerializeV1ObjectReference
     duration: Optional[str]
     selector: dict[str, str]
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-@dataclass(kw_only=True)
-class V1Alpha1Lease:
-    api_version: Literal["jumpstarter.dev/v1alpha1"]
-    kind: Literal["Lease"]
-    metadata: V1ObjectMeta
-    status: V1Alpha1LeaseStatus
+
+class V1Alpha1Lease(BaseModel):
+    api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
+    kind: Literal["Lease"] = Field(default="Lease")
+    metadata: SerializeV1ObjectMeta
     spec: V1Alpha1LeaseSpec
+    status: V1Alpha1LeaseStatus
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def dump_json(self):
+        return self.model_dump_json(indent=4, by_alias=True)
+
+    def dump_yaml(self):
+        return yaml.safe_dump(self.model_dump(by_alias=True), indent=2)
 
 
 class LeasesV1Alpha1Api(AbstractAsyncCustomObjectApi):

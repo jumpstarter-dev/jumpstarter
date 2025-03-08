@@ -1,11 +1,13 @@
 import asyncio
 import base64
 import logging
-from dataclasses import dataclass
 from typing import Literal, Optional
 
+import yaml
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
+from pydantic import BaseModel, ConfigDict, Field
 
+from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
 
@@ -15,18 +17,25 @@ CREATE_CLIENT_DELAY = 1
 CREATE_CLIENT_COUNT = 10
 
 
-@dataclass(kw_only=True)
-class V1Alpha1ClientStatus:
-    credential: Optional[V1ObjectReference] = None
+class V1Alpha1ClientStatus(BaseModel):
+    credential: Optional[SerializeV1ObjectReference] = None
     endpoint: str
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-@dataclass(kw_only=True)
-class V1Alpha1Client:
-    api_version: Literal["jumpstarter.dev/v1alpha1"]
-    kind: Literal["Client"]
-    metadata: V1ObjectMeta
-    status: V1Alpha1ClientStatus
+
+class V1Alpha1Client(BaseModel):
+    api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
+    kind: Literal["Client"] = Field(default="Client")
+    metadata: SerializeV1ObjectMeta
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def dump_json(self):
+        return self.model_dump_json(indent=4, by_alias=True)
+
+    def dump_yaml(self):
+        return yaml.safe_dump(self.model_dump(by_alias=True), indent=2)
 
 
 class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):

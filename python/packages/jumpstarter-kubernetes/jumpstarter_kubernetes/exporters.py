@@ -1,10 +1,12 @@
 import asyncio
 import base64
-from dataclasses import dataclass
 from typing import Literal
 
+import yaml
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
+from pydantic import BaseModel, ConfigDict, Field
 
+from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 from jumpstarter.config import ExporterConfigV1Alpha1, ObjectMeta
 
@@ -12,25 +14,32 @@ CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10
 
 
-@dataclass(kw_only=True)
-class V1Alpha1ExporterDevice:
+class V1Alpha1ExporterDevice(BaseModel):
     labels: dict[str, str]
     uuid: str
 
 
-@dataclass(kw_only=True)
-class V1Alpha1ExporterStatus:
-    credential: V1ObjectReference
-    endpoint: str
+class V1Alpha1ExporterStatus(BaseModel):
+    credential: SerializeV1ObjectReference
     devices: list[V1Alpha1ExporterDevice]
+    endpoint: str
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-@dataclass(kw_only=True)
-class V1Alpha1Exporter:
-    api_version: Literal["jumpstarter.dev/v1alpha1"]
-    kind: Literal["Exporter"]
-    metadata: V1ObjectMeta
+class V1Alpha1Exporter(BaseModel):
+    api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
+    kind: Literal["Exporter"] = Field(default="Exporter")
+    metadata: SerializeV1ObjectMeta
     status: V1Alpha1ExporterStatus
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def dump_json(self):
+        return self.model_dump_json(indent=4, by_alias=True)
+
+    def dump_yaml(self):
+        return yaml.safe_dump(self.model_dump(by_alias=True), indent=2)
 
 
 class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
