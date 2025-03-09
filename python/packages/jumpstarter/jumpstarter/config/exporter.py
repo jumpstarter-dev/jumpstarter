@@ -129,8 +129,10 @@ class ExporterConfigV1Alpha1(BaseModel):
         return config.path
 
     @classmethod
-    def delete(cls, alias: str):
-        cls._get_path(alias).unlink(missing_ok=True)
+    def delete(cls, alias: str) -> Path:
+        path = cls._get_path(alias)
+        path.unlink(missing_ok=True)
+        return path
 
     @asynccontextmanager
     async def serve_unix_async(self):

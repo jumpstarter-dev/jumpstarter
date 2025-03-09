@@ -223,12 +223,13 @@ class ClientConfigV1Alpha1(BaseModel):
         return list(map(make_config, files))
 
     @classmethod
-    def delete(cls, alias: str):
+    def delete(cls, alias: str) -> Path:
         """Delete a client config by alias."""
         path = cls._get_path(alias)
         if path.exists() is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
         path.unlink()
+        return path
 
 
 class ClientConfigListV1Alpha1(BaseModel):

@@ -1,5 +1,12 @@
 import asyncclick as click
-from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
+from jumpstarter_cli_common import (
+    OutputMode,
+    OutputType,
+    PathOutputType,
+    make_table,
+    opt_output_all,
+    opt_output_path_only,
+)
 
 from jumpstarter.config.exporter import ExporterConfigListV1Alpha1, ExporterConfigV1Alpha1, ObjectMeta
 
@@ -11,8 +18,9 @@ arg_alias = click.argument("alias", default="default")
 @click.option("--name", prompt=True)
 @click.option("--endpoint", prompt=True)
 @click.option("--token", prompt=True)
+@opt_output_path_only
 @arg_alias
-def create_exporter_config(alias, namespace, name, endpoint, token):
+def create_exporter_config(alias, namespace, name, endpoint, token, output: PathOutputType):
     """Create an exporter config."""
     try:
         ExporterConfigV1Alpha1.load(alias)
@@ -27,18 +35,24 @@ def create_exporter_config(alias, namespace, name, endpoint, token):
         endpoint=endpoint,
         token=token,
     )
-    ExporterConfigV1Alpha1.save(config)
+    path = ExporterConfigV1Alpha1.save(config)
+
+    if output == OutputMode.PATH:
+        click.echo(path)
 
 
 @click.command("delete-config")
 @arg_alias
-def delete_exporter_config(alias):
+@opt_output_path_only
+def delete_exporter_config(alias, output: PathOutputType):
     """Delete an exporter config."""
     try:
         ExporterConfigV1Alpha1.load(alias)
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
-    ExporterConfigV1Alpha1.delete(alias)
+    path = ExporterConfigV1Alpha1.delete(alias)
+    if output == OutputMode.PATH:
+        click.echo(path)
 
 
 @click.command("edit-config")

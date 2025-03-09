@@ -4,8 +4,10 @@ import asyncclick as click
 from jumpstarter_cli_common import (
     OutputMode,
     OutputType,
+    PathOutputType,
     make_table,
     opt_output_all,
+    opt_output_path_only,
 )
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
@@ -61,6 +63,7 @@ from jumpstarter.config import (
     default="",
 )
 @click.option("--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).")
+@opt_output_path_only
 @handle_exceptions
 def create_client_config(
     alias: str,
@@ -71,6 +74,7 @@ def create_client_config(
     allow: str,
     unsafe: bool,
     out: Optional[str],
+    output: PathOutputType,
 ):
     """Create a Jumpstarter client configuration."""
     if out is None and ClientConfigV1Alpha1.exists(alias):
@@ -83,13 +87,16 @@ def create_client_config(
         token=token,
         drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe),
     )
-    ClientConfigV1Alpha1.save(config, out)
+    path = ClientConfigV1Alpha1.save(config, out)
 
     # If this is the only client config, set it as default
     if out is None and len(ClientConfigV1Alpha1.list()) == 1:
         user_config = UserConfigV1Alpha1.load_or_create()
         user_config.config.current_client = config
         UserConfigV1Alpha1.save(user_config)
+
+    if output == OutputMode.PATH:
+        click.echo(path)
 
 
 def set_next_client(name: str):
@@ -110,11 +117,14 @@ def set_next_client(name: str):
 
 @click.command("delete-config", short_help="Delete a client config.")
 @click.argument("name", type=str)
+@opt_output_path_only
 @handle_exceptions
-def delete_client_config(name: str):
+def delete_client_config(name: str, output: PathOutputType):
     """Delete a Jumpstarter client configuration."""
     set_next_client(name)
-    ClientConfigV1Alpha1.delete(name)
+    path = ClientConfigV1Alpha1.delete(name)
+    if output == OutputMode.PATH:
+        click.echo(path)
 
 
 @click.command("list-configs", short_help="List available client configurations.")
@@ -153,8 +163,11 @@ def list_client_configs(output: OutputType):
 
 @click.command("use-config", short_help="Select the current client config.")
 @click.argument("name", type=str)
+@opt_output_path_only
 @handle_exceptions
-def use_client_config(name: str):
+def use_client_config(name: str, output: PathOutputType):
     """Select the current Jumpstarter client configuration to use."""
     user_config = UserConfigV1Alpha1.load_or_create()
-    user_config.use_client(name)
+    path = user_config.use_client(name)
+    if output == OutputMode.PATH:
+        click.echo(path)
