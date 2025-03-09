@@ -55,7 +55,14 @@ async def test_import_client(_load_kube_config_mock, get_client_config_mock: Asy
     save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, None)
     save_client_config_mock.reset_mock()
 
-    # Save with custom output
+    # Save with nointeractive
+    result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--nointeractive"])
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, None)
+    save_client_config_mock.reset_mock()
+
+    # Save with custom output file
     out = f"/tmp/{CLIENT_NAME}.yaml"
     result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--unsafe", "--out", out])
     assert result.exit_code == 0
