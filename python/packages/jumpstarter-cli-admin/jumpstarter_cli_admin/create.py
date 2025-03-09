@@ -11,7 +11,7 @@ from jumpstarter_cli_common import (
     opt_labels,
     opt_log_level,
     opt_namespace,
-    opt_output,
+    opt_output_all,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, V1Alpha1Client, V1Alpha1Exporter
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -41,6 +41,8 @@ def print_created_client(client: V1Alpha1Client, output: OutputMode, client_conf
         click.echo(client.dump_json())
     elif output == OutputMode.YAML:
         click.echo(client.dump_yaml())
+    elif output == OutputMode.NAME:
+        click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
     else:
         click.echo(f"Client configuration successfully saved to {client_config_path}")
 
@@ -73,7 +75,7 @@ def print_created_client(client: V1Alpha1Client, output: OutputMode, client_conf
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
-@opt_output
+@opt_output_all
 async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -126,6 +128,8 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputMode, expor
         click.echo(exporter.dump_json())
     elif output == OutputMode.YAML:
         click.echo(exporter.dump_yaml())
+    elif output == OutputMode.NAME:
+        click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
     else:
         click.echo(f"Exporter configuration successfully saved to {exporter_config_path}")
 
@@ -150,7 +154,7 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputMode, expor
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
-@opt_output
+@opt_output_all
 async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],

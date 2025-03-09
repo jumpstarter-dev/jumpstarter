@@ -29,6 +29,8 @@ def print_client(client: V1Alpha1Client, output: Optional[OutputMode]):
         click.echo(client.dump_json())
     elif output == OutputMode.YAML:
         click.echo(client.dump_yaml())
+    elif output == OutputMode.NAME:
+        click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
     else:
         click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
 
@@ -38,6 +40,9 @@ def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output:
         click.echo(clients.dump_json())
     elif output == OutputMode.YAML:
         click.echo(clients.dump_yaml())
+    elif output == OutputMode.NAME:
+        if len(clients.items) > 0:
+            click.echo(f"client.jumpstarter.dev/{clients.items[0].metadata.name}")
     elif len(clients.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     else:
@@ -83,6 +88,8 @@ def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: Optional[O
         click.echo(exporter.dump_json())
     elif output == OutputMode.YAML:
         click.echo(exporter.dump_yaml())
+    elif output == OutputMode.NAME:
+        click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
     elif devices:
         # Print the devices for the exporter
         click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
@@ -97,6 +104,9 @@ def print_exporters(
         click.echo(exporters.dump_json())
     elif output == OutputMode.YAML:
         click.echo(exporters.dump_yaml())
+    elif output == OutputMode.NAME:
+        if len(exporters.items) > 0:
+            click.echo(f"exporters.jumpstarter.dev/{exporters.items[0].metadata.name}")
     elif len(exporters.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     elif devices:
@@ -149,6 +159,8 @@ def print_lease(lease: V1Alpha1Lease, output: Optional[OutputMode]):
         click.echo(lease.dump_json())
     elif output == OutputMode.YAML:
         click.echo(lease.dump_yaml())
+    elif output == OutputMode.NAME:
+        click.echo(f"lease.jumpstarter.dev/{lease.metadata.name}")
     else:
         click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
 
@@ -158,6 +170,9 @@ def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: Op
         click.echo(leases.dump_json())
     elif output == OutputMode.YAML:
         click.echo(leases.dump_yaml())
+    elif output == OutputMode.NAME:
+        if len(leases.items) > 0:
+            click.echo(f"lease.jumpstarter.dev/{leases.items[0].metadata.name}")
     elif len(leases.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     else:

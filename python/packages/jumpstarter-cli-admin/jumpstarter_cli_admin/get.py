@@ -9,7 +9,7 @@ from jumpstarter_cli_common import (
     opt_kubeconfig,
     opt_log_level,
     opt_namespace,
-    opt_output,
+    opt_output_all,
 )
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
@@ -41,7 +41,7 @@ def get(log_level: Optional[str]):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-@opt_output
+@opt_output_all
 async def get_client(
     name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: Optional[OutputMode]
 ):
@@ -65,7 +65,7 @@ async def get_client(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-@opt_output
+@opt_output_all
 @click.option("-d", "--devices", is_flag=True, help="Display the devices hosted by the exporter(s)")
 async def get_exporter(
     name: Optional[str],
@@ -95,7 +95,7 @@ async def get_exporter(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-@opt_output
+@opt_output_all
 async def get_lease(
     name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: Optional[OutputMode]
 ):

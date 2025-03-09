@@ -25,15 +25,15 @@ class OutputMode(str):
     NAME = "name"
 
 
-opt_output = click.option(
+opt_output_all = click.option(
     "-o",
     "--output",
-    type=click.Choice([OutputMode.JSON, OutputMode.YAML]),
+    type=click.Choice([OutputMode.JSON, OutputMode.YAML, OutputMode.NAME]),
     default=None,
-    help="Output mode.",
+    help='Output mode. Use "-o name" for shorter output (resource/name).',
 )
 
-opt_output_name = click.option(
+opt_output_name_only = click.option(
     "-o",
     "--output",
     type=click.Choice([OutputMode.NAME]),
