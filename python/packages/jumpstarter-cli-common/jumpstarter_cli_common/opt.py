@@ -17,3 +17,7 @@ opt_context = click.option("--context", "context", type=str, default=None, help=
 opt_namespace = click.option("-n", "--namespace", type=str, help="Kubernetes namespace to use", default="default")
 
 opt_labels = click.option("-l", "--label", "labels", type=(str, str), multiple=True, help="Labels")
+
+opt_output = click.option(
+    "-o", "--output", type=click.Choice(["json", "yaml"]), default=None, help="Set the CLI output format"
+)

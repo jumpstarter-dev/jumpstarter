@@ -1,14 +1,14 @@
-from typing import Any, Literal
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
 
 
-class V1Alpha1List(BaseModel):
+class V1Alpha1List[T](BaseModel):
     """A generic list result type."""
 
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
-    items: list[Any]
+    items: list[T]
     kind: Literal["List"] = Field(default="List")
 
     def dump_json(self):

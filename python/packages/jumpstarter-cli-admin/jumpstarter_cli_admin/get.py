@@ -9,6 +9,7 @@ from jumpstarter_cli_common import (
     opt_kubeconfig,
     opt_log_level,
     opt_namespace,
+    opt_output,
     time_since,
 )
 from jumpstarter_kubernetes import (
@@ -18,6 +19,7 @@ from jumpstarter_kubernetes import (
     V1Alpha1Client,
     V1Alpha1Exporter,
     V1Alpha1Lease,
+    V1Alpha1List,
 )
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
@@ -44,9 +46,29 @@ CLIENT_COLUMNS = ["NAME", "ENDPOINT", "AGE"]
 def make_client_row(client: V1Alpha1Client):
     return {
         "NAME": client.metadata.name,
-        "ENDPOINT": client.status.endpoint,
+        "ENDPOINT": client.status.endpoint if client.status is not None else "",
         "AGE": time_since(client.metadata.creation_timestamp),
     }
+
+
+def print_client(client: V1Alpha1Client, output: str):
+    if output == "json":
+        click.echo(client.dump_json())
+    elif output == "yaml":
+        click.echo(client.dump_yaml())
+    else:
+        click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
+
+
+def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output: str):
+    if output == "json":
+        click.echo(clients.dump_json())
+    elif output == "yaml":
+        click.echo(clients.dump_yaml())
+    elif len(clients.items) == 0:
+        raise click.ClickException(f'No resources found in "{namespace}" namespace')
+    else:
+        click.echo(make_table(CLIENT_COLUMNS, list(map(make_client_row, clients.items))))
 
 
 @get.command("client")
@@ -54,22 +76,21 @@ def make_client_row(client: V1Alpha1Client):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-async def get_client(name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str):
+@opt_output
+async def get_client(
+    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: str
+):
     """Get the client objects in a Kubernetes cluster"""
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 # Get a single client in a namespace
                 client = await api.get_client(name)
-                click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
+                print_client(client, output)
             else:
                 # List clients in a namespace
                 clients = await api.list_clients()
-                if len(clients) == 0:
-                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
-                else:
-                    rows = list(map(make_client_row, clients))
-                    click.echo(make_table(CLIENT_COLUMNS, rows))
+                print_clients(clients)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -110,14 +131,42 @@ def get_device_rows(exporters: list[V1Alpha1Exporter]):
     return devices
 
 
+def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: str):
+    if output == "json":
+        click.echo(exporter.dump_json())
+    elif output == "yaml":
+        click.echo(exporter.dump_yaml())
+    elif devices:
+        # Print the devices for the exporter
+        click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
+    else:
+        click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
+
+
+def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, devices: bool, output: str):
+    if output == "json":
+        click.echo(exporters.dump_json())
+    elif output == "yaml":
+        click.echo(exporters.dump_yaml())
+    elif len(exporters.items) == 0:
+        raise click.ClickException(f'No resources found in "{namespace}" namespace')
+    elif devices:
+        # Print the devices for each exporter
+        rows = get_device_rows(exporters)
+        click.echo(make_table(DEVICE_COLUMNS, rows))
+    else:
+        click.echo(make_table(EXPORTER_COLUMNS, list(map(make_exporter_row, exporters.items))))
+
+
 @get.command("exporter")
 @click.argument("name", type=str, required=False, default=None)
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_output
 @click.option("-d", "--devices", is_flag=True, help="Display the devices hosted by the exporter(s)")
 async def get_exporter(
-    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, devices: bool
+    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, devices: bool, output: str
 ):
     """Get the exporter objects in a Kubernetes cluster"""
     try:
@@ -125,25 +174,11 @@ async def get_exporter(
             if name is not None:
                 # Get a single client in a namespace
                 exporter = await api.get_exporter(name)
-                if devices:
-                    # Print the devices for the exporter
-                    click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
-                else:
-                    # Print the exporter
-                    click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
+                print_exporter(exporter, devices, output)
             else:
                 # List clients in a namespace
                 exporters = await api.list_exporters()
-                if len(exporters) == 0:
-                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
-                elif devices:
-                    # Print the devices for each exporter
-                    rows = get_device_rows(exporters)
-                    click.echo(make_table(DEVICE_COLUMNS, rows))
-                else:
-                    # Print the exporters
-                    rows = list(map(make_exporter_row, exporters))
-                    click.echo(make_table(EXPORTER_COLUMNS, rows))
+                print_exporters(exporters, namespace, devices, output)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -187,29 +222,46 @@ def make_lease_row(lease: V1Alpha1Lease):
     }
 
 
+def print_lease(lease: V1Alpha1Lease, output: str):
+    if output == "json":
+        click.echo(lease.dump_json())
+    elif output == "yaml":
+        click.echo(lease.dump_yaml())
+    else:
+        click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
+
+
+def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: str):
+    if output == "json":
+        click.echo(leases.dump_json())
+    elif output == "yaml":
+        click.echo(leases.dump_yaml())
+    elif len(leases.items) == 0:
+        raise click.ClickException(f'No resources found in "{namespace}" namespace')
+    else:
+        click.echo(make_table(LEASE_COLUMNS, list(map(make_lease_row, leases.items))))
+
+
 @get.command("lease")
 @click.argument("name", type=str, required=False, default=None)
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-async def get_lease(name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str):
+@opt_output
+async def get_lease(
+    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: str
+):
     """Get the lease objects in a Kubernetes cluster"""
     try:
         async with LeasesV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 # Get a single lease in a namespace
                 lease = await api.get_lease(name)
-                # Print the lease
-                click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
+                print_lease(lease, output)
             else:
                 # List leases in a namespace
                 leases = await api.list_leases()
-                if len(leases) == 0:
-                    raise click.ClickException(f'No resources found in "{namespace}" namespace')
-                else:
-                    # Print the leases
-                    rows = list(map(make_lease_row, leases))
-                    click.echo(make_table(LEASE_COLUMNS, rows))
+                print_leases(leases, namespace, output)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

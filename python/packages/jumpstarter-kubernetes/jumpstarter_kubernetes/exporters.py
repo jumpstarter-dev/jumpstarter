@@ -6,6 +6,7 @@ import yaml
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import BaseModel, ConfigDict, Field
 
+from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 from jumpstarter.config import ExporterConfigV1Alpha1, ObjectMeta
@@ -71,12 +72,12 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
             ),
         )
 
-    async def list_exporters(self) -> list[V1Alpha1Exporter]:
+    async def list_exporters(self) -> V1Alpha1List[V1Alpha1Exporter]:
         """List the exporter objects in the cluster"""
         res = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="exporters", version="v1alpha1"
         )
-        return [ExportersV1Alpha1Api._deserialize(c) for c in res["items"]]
+        return V1Alpha1List(items=[ExportersV1Alpha1Api._deserialize(c) for c in res["items"]])
 
     async def get_exporter(self, name: str) -> V1Alpha1Exporter:
         """Get a single exporter object from the cluster"""

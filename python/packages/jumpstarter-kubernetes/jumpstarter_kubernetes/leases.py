@@ -5,6 +5,7 @@ import yaml
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
 from pydantic import BaseModel, ConfigDict, Field
 
+from .list import V1Alpha1List
 from .serialize import SerializeV1Condition, SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 
@@ -87,12 +88,12 @@ class LeasesV1Alpha1Api(AbstractAsyncCustomObjectApi):
             ),
         )
 
-    async def list_leases(self) -> list[V1Alpha1Lease]:
+    async def list_leases(self) -> V1Alpha1List[V1Alpha1Lease]:
         """List the lease objects in the cluster async"""
         res = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="leases", version="v1alpha1"
         )
-        return [LeasesV1Alpha1Api._deserialize(c) for c in res["items"]]
+        return V1Alpha1Lease(items=[LeasesV1Alpha1Api._deserialize(c) for c in res["items"]])
 
     async def get_lease(self, name: str) -> V1Alpha1Lease:
         """Get a single lease object from the cluster async"""

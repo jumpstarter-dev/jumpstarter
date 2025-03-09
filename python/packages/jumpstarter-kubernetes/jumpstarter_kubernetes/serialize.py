@@ -5,7 +5,8 @@ from pydantic import WrapSerializer
 
 
 def k8s_obj_to_dict(value: Any, handler, info) -> Dict[str, Any]:
-    return value.to_dict(serialize=True)
+    result = value.to_dict(serialize=True)
+    return {k: v for k, v in result.items() if v is not None}
 
 
 SerializeV1Condition = Annotated[V1Condition, WrapSerializer(k8s_obj_to_dict)]
