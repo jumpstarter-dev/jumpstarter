@@ -103,7 +103,7 @@ def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, d
         click.echo(exporters.dump_yaml())
     elif output == OutputMode.NAME:
         if len(exporters.items) > 0:
-            click.echo(f"exporters.jumpstarter.dev/{exporters.items[0].metadata.name}")
+            click.echo(f"exporter.jumpstarter.dev/{exporters.items[0].metadata.name}")
     elif len(exporters.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     elif devices:
