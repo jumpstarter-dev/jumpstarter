@@ -1,7 +1,12 @@
 from typing import Optional
 
 import asyncclick as click
-from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
+from jumpstarter_cli_common import (
+    OutputMode,
+    OutputType,
+    make_table,
+    opt_output_all,
+)
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 from jumpstarter.config import (
@@ -128,6 +133,9 @@ def list_client_configs(output: OutputType):
         click.echo(ClientConfigListV1Alpha1(current_config=current_name, items=configs).dump_json())
     elif output == OutputMode.YAML:
         click.echo(ClientConfigListV1Alpha1(current_config=current_name, items=configs).dump_yaml())
+    elif output == OutputMode.NAME:
+        if len(configs) > 0:
+            click.echo(configs[0].alias)
     else:
         columns = ["CURRENT", "NAME", "ENDPOINT", "PATH"]
 

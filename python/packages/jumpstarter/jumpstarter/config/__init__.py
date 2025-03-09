@@ -5,7 +5,7 @@ from .client import (
 )
 from .common import CONFIG_API_VERSION, CONFIG_PATH, ObjectMeta
 from .env import JMP_CLIENT_CONFIG, JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_TOKEN
-from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
+from .exporter import ExporterConfigListV1Alpha1, ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 from .user import UserConfigV1Alpha1, UserConfigV1Alpha1Config
 
 __all__ = [
@@ -22,6 +22,7 @@ __all__ = [
     "ClientConfigListV1Alpha1",
     "ClientConfigV1Alpha1",
     "ClientConfigV1Alpha1Drivers",
+    "ExporterConfigListV1Alpha1",
     "ExporterConfigV1Alpha1",
     "ExporterConfigV1Alpha1DriverInstance",
 ]

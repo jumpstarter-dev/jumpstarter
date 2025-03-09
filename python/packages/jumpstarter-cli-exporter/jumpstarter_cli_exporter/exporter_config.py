@@ -1,7 +1,7 @@
 import asyncclick as click
-from jumpstarter_cli_common import make_table
+from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
 
-from jumpstarter.config.exporter import ExporterConfigV1Alpha1, ObjectMeta
+from jumpstarter.config.exporter import ExporterConfigListV1Alpha1, ExporterConfigV1Alpha1, ObjectMeta
 
 arg_alias = click.argument("alias", default="default")
 
@@ -53,15 +53,25 @@ def edit_exporter_config(alias):
 
 
 @click.command("list-configs")
-def list_exporter_configs():
+@opt_output_all
+def list_exporter_configs(output: OutputType):
     """List exporter configs."""
     exporters = ExporterConfigV1Alpha1.list()
-    columns = ["ALIAS", "PATH"]
-    rows = [
-        {
-            "ALIAS": exporter.alias,
-            "PATH": str(exporter.path),
-        }
-        for exporter in exporters
-    ]
-    click.echo(make_table(columns, rows))
+
+    if output == OutputMode.JSON:
+        click.echo(ExporterConfigListV1Alpha1(items=exporters).dump_json())
+    elif output == OutputMode.YAML:
+        click.echo(ExporterConfigListV1Alpha1(items=exporters).dump_yaml())
+    elif output == OutputMode.NAME:
+        if len(exporters) > 0:
+            click.echo(exporters[0].alias)
+    else:
+        columns = ["ALIAS", "PATH"]
+        rows = [
+            {
+                "ALIAS": exporter.alias,
+                "PATH": str(exporter.path),
+            }
+            for exporter in exporters
+        ]
+        click.echo(make_table(columns, rows))
