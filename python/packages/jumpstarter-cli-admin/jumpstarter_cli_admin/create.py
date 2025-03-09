@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Optional
 
 import asyncclick as click
@@ -12,6 +11,7 @@ from jumpstarter_cli_common import (
     opt_labels,
     opt_log_level,
     opt_namespace,
+    opt_nointeractive,
     opt_output_all,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, V1Alpha1Client, V1Alpha1Exporter
@@ -37,15 +37,13 @@ def create(log_level: Optional[str]):
         logging.basicConfig(level=logging.INFO)
 
 
-def print_created_client(client: V1Alpha1Client, output: OutputType, client_config_path: Path):
+def print_created_client(client: V1Alpha1Client, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(client.dump_json())
     elif output == OutputMode.YAML:
         click.echo(client.dump_yaml())
     elif output == OutputMode.NAME:
         click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
-    else:
-        click.echo(f"Client configuration successfully saved to {client_config_path}")
 
 
 @create.command("client")
@@ -76,6 +74,7 @@ def print_created_client(client: V1Alpha1Client, output: OutputType, client_conf
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
+@opt_nointeractive
 @opt_output_all
 async def create_client(
     name: Optional[str],
@@ -88,6 +87,7 @@ async def create_client(
     unsafe: bool,
     out: Optional[str],
     oidc_username: str | None,
+    nointeractive: bool,
     output: OutputType,
 ):
     """Create a client object in the Kubernetes cluster"""
@@ -98,7 +98,7 @@ async def create_client(
                 click.echo(f"Creating client '{name}' in namespace '{namespace}'")
             created_client = await api.create_client(name, dict(labels), oidc_username)
             # Save the client config
-            if save or out is not None or click.confirm("Save client configuration?"):
+            if save or out is not None or nointeractive is False and click.confirm("Save client configuration?"):
                 if output is None:
                     click.echo("Fetching client credentials from cluster")
                 client_config = await api.get_client_config(name, allow=[], unsafe=unsafe)
@@ -117,22 +117,22 @@ async def create_client(
                     user_config = UserConfigV1Alpha1.load_or_create()
                     user_config.config.current_client = client_config
                     UserConfigV1Alpha1.save(user_config)
-                print_created_client(created_client, output, client_config.path)
+                if output is None:
+                    click.echo(f"Client configuration successfully saved to {client_config.path}")
+            print_created_client(created_client, output)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
 
 
-def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType, exporter_config_path: Path):
+def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(exporter.dump_json())
     elif output == OutputMode.YAML:
         click.echo(exporter.dump_yaml())
     elif output == OutputMode.NAME:
         click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
-    else:
-        click.echo(f"Exporter configuration successfully saved to {exporter_config_path}")
 
 
 @create.command("exporter")
@@ -155,6 +155,7 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType, expor
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
+@opt_nointeractive
 @opt_output_all
 async def create_exporter(
     name: Optional[str],
@@ -165,6 +166,7 @@ async def create_exporter(
     save: bool,
     out: Optional[str],
     oidc_username: str | None,
+    nointeractive: bool,
     output: OutputType,
 ):
     """Create an exporter object in the Kubernetes cluster"""
@@ -174,12 +176,14 @@ async def create_exporter(
                 click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
             created_exporter = await api.create_exporter(name, dict(labels), oidc_username)
             # Save the client config
-            if save or out is not None or click.confirm("Save exporter configuration?"):
+            if save or out is not None or nointeractive is False and click.confirm("Save exporter configuration?"):
                 if output is None:
                     click.echo("Fetching exporter credentials from cluster")
                 exporter_config = await api.get_exporter_config(name)
                 ExporterConfigV1Alpha1.save(exporter_config, out)
-                print_created_exporter(created_exporter, output, exporter_config.path)
+                if output is None:
+                    click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
+            print_created_exporter(created_exporter, output)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

@@ -25,6 +25,7 @@ class OutputMode(str):
     JSON = "json"
     YAML = "yaml"
     NAME = "name"
+    PATH = "path"
 
 
 OutputType = Optional[OutputMode]
@@ -45,4 +46,18 @@ opt_output_name_only = click.option(
     type=click.Choice([OutputMode.NAME]),
     default=None,
     help='Output mode. Use "-o name" for shorter output (resource/name).',
+)
+
+PathOutputType = Optional[Literal["path"]]
+
+opt_output_path_only = click.option(
+    "-o",
+    "--output",
+    type=click.Choice([OutputMode.PATH]),
+    default=None,
+    help='Output mode. Use "-o path" for shorter output (file/path).',
+)
+
+opt_nointeractive = click.option(
+    "--nointeractive", is_flag=True, default=False, help="Disable interactive prompts (for use in scripts)."
 )

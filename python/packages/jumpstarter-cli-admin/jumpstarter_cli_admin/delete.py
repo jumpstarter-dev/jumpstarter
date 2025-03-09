@@ -9,6 +9,7 @@ from jumpstarter_cli_common import (
     opt_kubeconfig,
     opt_log_level,
     opt_namespace,
+    opt_nointeractive,
     opt_output_name_only,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
@@ -45,6 +46,7 @@ def delete(log_level: Optional[str]):
 @opt_kubeconfig
 @opt_context
 @opt_output_name_only
+@opt_nointeractive
 async def delete_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -52,6 +54,7 @@ async def delete_client(
     namespace: str,
     delete: bool,
     output: NameOutputType,
+    nointeractive: bool,
 ):
     """Delete a client object in the Kubernetes cluster"""
     try:
@@ -62,7 +65,9 @@ async def delete_client(
             else:
                 click.echo(f"client.jumpstarter.dev/{name}")
             # Save the client config
-            if ClientConfigV1Alpha1.exists(name) and (delete or click.confirm("Delete client configuration?")):
+            if ClientConfigV1Alpha1.exists(name) and (
+                delete or nointeractive is False and click.confirm("Delete client configuration?")
+            ):
                 # If this is the default, clear default
                 user_config = UserConfigV1Alpha1.load_or_create()
                 if user_config.config.current_client is not None and user_config.config.current_client.alias == name:
@@ -90,6 +95,8 @@ async def delete_client(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_output_name_only
+@opt_nointeractive
 async def delete_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -97,6 +104,7 @@ async def delete_exporter(
     namespace: str,
     delete: bool,
     output: NameOutputType,
+    nointeractive: bool,
 ):
     """Delete an exporter object in the Kubernetes cluster"""
     try:
@@ -107,7 +115,9 @@ async def delete_exporter(
             else:
                 click.echo(f"exporter.jumpstarter.dev/{name}")
             # Save the exporter config
-            if ExporterConfigV1Alpha1.exists(name) and (delete or click.confirm("Delete exporter configuration?")):
+            if ExporterConfigV1Alpha1.exists(name) and (
+                delete or nointeractive is False and click.confirm("Delete exporter configuration?")
+            ):
                 # Delete the exporter config
                 ExporterConfigV1Alpha1.delete(name)
                 if output is None:
