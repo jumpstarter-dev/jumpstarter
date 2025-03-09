@@ -4,7 +4,7 @@ from typing import Optional
 import asyncclick as click
 from jumpstarter_cli_common import (
     AliasedGroup,
-    OutputType,
+    OutputMode,
     opt_context,
     opt_kubeconfig,
     opt_log_level,
@@ -43,7 +43,7 @@ def get(log_level: Optional[str]):
 @opt_context
 @opt_output
 async def get_client(
-    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: Optional[OutputType]
+    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: Optional[OutputMode]
 ):
     """Get the client objects in a Kubernetes cluster"""
     try:
@@ -73,7 +73,7 @@ async def get_exporter(
     context: Optional[str],
     namespace: str,
     devices: bool,
-    output: Optional[OutputType],
+    output: Optional[OutputMode],
 ):
     """Get the exporter objects in a Kubernetes cluster"""
     try:
@@ -97,7 +97,7 @@ async def get_exporter(
 @opt_context
 @opt_output
 async def get_lease(
-    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: Optional[OutputType]
+    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: Optional[OutputMode]
 ):
     """Get the lease objects in a Kubernetes cluster"""
     try:
