@@ -28,31 +28,16 @@ def test_exporter_dump_json():
     "apiVersion": "jumpstarter.dev/v1alpha1",
     "kind": "Exporter",
     "metadata": {
-        "annotations": null,
         "creationTimestamp": "2021-10-01T00:00:00Z",
-        "deletionGracePeriodSeconds": null,
-        "deletionTimestamp": null,
-        "finalizers": null,
-        "generateName": null,
         "generation": 1,
-        "labels": null,
-        "managedFields": null,
         "name": "test-exporter",
         "namespace": "default",
-        "ownerReferences": null,
         "resourceVersion": "1",
-        "selfLink": null,
         "uid": "7a25eb81-6443-47ec-a62f-50165bffede8"
     },
     "status": {
         "credential": {
-            "apiVersion": null,
-            "fieldPath": null,
-            "kind": null,
-            "name": "test-credential",
-            "namespace": null,
-            "resourceVersion": null,
-            "uid": null
+            "name": "test-credential"
         },
         "devices": [
             {
@@ -74,30 +59,15 @@ def test_exporter_dump_yaml():
         == """apiVersion: jumpstarter.dev/v1alpha1
 kind: Exporter
 metadata:
-  annotations: null
   creationTimestamp: '2021-10-01T00:00:00Z'
-  deletionGracePeriodSeconds: null
-  deletionTimestamp: null
-  finalizers: null
-  generateName: null
   generation: 1
-  labels: null
-  managedFields: null
   name: test-exporter
   namespace: default
-  ownerReferences: null
   resourceVersion: '1'
-  selfLink: null
   uid: 7a25eb81-6443-47ec-a62f-50165bffede8
 status:
   credential:
-    apiVersion: null
-    fieldPath: null
-    kind: null
     name: test-credential
-    namespace: null
-    resourceVersion: null
-    uid: null
   devices:
   - labels:
       test: label

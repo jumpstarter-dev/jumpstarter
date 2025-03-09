@@ -24,21 +24,16 @@ def test_client_dump_json():
     "apiVersion": "jumpstarter.dev/v1alpha1",
     "kind": "Client",
     "metadata": {
-        "annotations": null,
         "creationTimestamp": "2021-10-01T00:00:00Z",
-        "deletionGracePeriodSeconds": null,
-        "deletionTimestamp": null,
-        "finalizers": null,
-        "generateName": null,
         "generation": 1,
-        "labels": null,
-        "managedFields": null,
         "name": "test-client",
         "namespace": "default",
-        "ownerReferences": null,
         "resourceVersion": "1",
-        "selfLink": null,
         "uid": "7a25eb81-6443-47ec-a62f-50165bffede8"
+    },
+    "status": {
+        "credential": null,
+        "endpoint": "https://test-client"
     }
 }"""
     )
@@ -50,20 +45,14 @@ def test_client_dump_yaml():
         == """apiVersion: jumpstarter.dev/v1alpha1
 kind: Client
 metadata:
-  annotations: null
   creationTimestamp: '2021-10-01T00:00:00Z'
-  deletionGracePeriodSeconds: null
-  deletionTimestamp: null
-  finalizers: null
-  generateName: null
   generation: 1
-  labels: null
-  managedFields: null
   name: test-client
   namespace: default
-  ownerReferences: null
   resourceVersion: '1'
-  selfLink: null
   uid: 7a25eb81-6443-47ec-a62f-50165bffede8
+status:
+  credential: null
+  endpoint: https://test-client
 """
     )
