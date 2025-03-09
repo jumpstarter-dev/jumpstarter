@@ -8,7 +8,7 @@ from jumpstarter_kubernetes import (
     V1Alpha1Exporter,
     V1Alpha1ExporterStatus,
 )
-from kubernetes_asyncio.client.models import V1ObjectMeta
+from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from .delete import delete
 from jumpstarter.config import (
@@ -136,7 +136,9 @@ EXPORTER_OBJECT = V1Alpha1Exporter(
     api_version="jumpstarter.dev/v1alpha1",
     kind="Exporter",
     metadata=V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ExporterStatus(endpoint=EXPORTER_ENDPOINT, credential=None, devices=[]),
+    status=V1Alpha1ExporterStatus(
+        endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]
+    ),
 )
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     alias=EXPORTER_NAME,

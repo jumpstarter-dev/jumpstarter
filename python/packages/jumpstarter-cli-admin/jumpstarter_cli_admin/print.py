@@ -107,9 +107,7 @@ def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, d
     elif len(exporters.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     elif devices:
-        # Print the devices for each exporter
-        rows = get_device_rows(exporters)
-        click.echo(make_table(DEVICE_COLUMNS, rows))
+        click.echo(make_table(DEVICE_COLUMNS, get_device_rows(exporters.items)))
     else:
         click.echo(make_table(EXPORTER_COLUMNS, list(map(make_exporter_row, exporters.items))))
 
