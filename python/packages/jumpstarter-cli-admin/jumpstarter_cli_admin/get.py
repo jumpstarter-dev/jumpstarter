@@ -90,7 +90,7 @@ async def get_client(
             else:
                 # List clients in a namespace
                 clients = await api.list_clients()
-                print_clients(clients)
+                print_clients(clients, namespace, output)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
