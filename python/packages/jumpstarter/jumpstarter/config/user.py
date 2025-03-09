@@ -89,11 +89,14 @@ class UserConfigV1Alpha1(BaseModel):
             yaml.safe_dump(config.model_dump(mode="json", by_alias=True), f, sort_keys=False)
         return path
 
-    def use_client(self, name: Optional[str]) -> Path:
+    def use_client(self, name: Optional[str]) -> Path | None:
         """Updates the current client and saves the user config."""
         if name is not None:
             self.config.current_client = ClientConfigV1Alpha1.load(name)
         else:
             self.config.current_client = None
         self.save(self)
-        return self.config.current_client.path
+        if self.config.current_client is not None:
+            return self.config.current_client.path
+        else:
+            return None
