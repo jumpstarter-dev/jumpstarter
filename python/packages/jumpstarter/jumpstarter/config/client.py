@@ -7,7 +7,7 @@ import grpc
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .common import CONFIG_PATH, ObjectMeta
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
@@ -37,8 +37,8 @@ class ClientConfigV1Alpha1Drivers(BaseModel):
 class ClientConfigV1Alpha1(BaseModel):
     CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
 
-    alias: str = Field(default="default", exclude=True)
-    path: Path | None = Field(default=None, exclude=True)
+    alias: str = Field(default="default")
+    path: Path | None = Field(default=None)
 
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
@@ -193,12 +193,12 @@ class ClientConfigV1Alpha1(BaseModel):
         else:
             config.path = Path(path)
         with config.path.open(mode="w") as f:
-            yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
+            yaml.safe_dump(config.model_dump(mode="json", exclude={"path", "alias"}), f, sort_keys=False)
         return config.path
 
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
-        return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+        return yaml.safe_dump(config.model_dump(mode="json", exclude={"path", "alias"}), sort_keys=False)
 
     @classmethod
     def exists(cls, alias: str) -> bool:
@@ -229,3 +229,18 @@ class ClientConfigV1Alpha1(BaseModel):
         if path.exists() is False:
             raise FileNotFoundError(f"Client config '{path}' does not exist.")
         path.unlink()
+
+
+class ClientConfigListV1Alpha1(BaseModel):
+    api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
+    current_config: Optional[str] = Field(alias="currentConfig")
+    items: list[ClientConfigV1Alpha1]
+    kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
+
+    def dump_json(self):
+        return self.model_dump_json(indent=4, by_alias=True)
+
+    def dump_yaml(self):
+        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)

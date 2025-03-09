@@ -1,4 +1,5 @@
 from .client import (
+    ClientConfigListV1Alpha1,
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "ObjectMeta",
     "UserConfigV1Alpha1",
     "UserConfigV1Alpha1Config",
+    "ClientConfigListV1Alpha1",
     "ClientConfigV1Alpha1",
     "ClientConfigV1Alpha1Drivers",
     "ExporterConfigV1Alpha1",

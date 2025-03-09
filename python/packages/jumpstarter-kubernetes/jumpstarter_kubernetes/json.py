@@ -9,6 +9,6 @@ class JsonBaseModel(BaseModel):
         return self.model_dump_json(indent=4, by_alias=True)
 
     def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(by_alias=True), indent=2)
+        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
