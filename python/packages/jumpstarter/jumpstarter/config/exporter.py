@@ -117,7 +117,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None):
+    def save(cls, config: Self, path: Optional[str] = None) -> Path:
         # Set the config path before saving
         if path is None:
             config.path = cls._get_path(config.alias)
@@ -126,6 +126,7 @@ class ExporterConfigV1Alpha1(BaseModel):
             config.path = Path(path)
         with config.path.open(mode="w") as f:
             yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
+        return config.path
 
     @classmethod
     def delete(cls, alias: str):

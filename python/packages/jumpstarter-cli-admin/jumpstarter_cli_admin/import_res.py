@@ -76,16 +76,16 @@ async def import_client(
                 click.echo("Fetching client credentials from cluster")
             allow_drivers = allow.split(",") if allow is not None and len(allow) > 0 else []
             client_config = await api.get_client_config(name, allow=allow_drivers, unsafe=unsafe)
-            ClientConfigV1Alpha1.save(client_config, out)
+            config_path = ClientConfigV1Alpha1.save(client_config, out)
             # If this is the only client config, set it as default
             if out is None and len(ClientConfigV1Alpha1.list()) == 1:
                 user_config = UserConfigV1Alpha1.load_or_create()
                 user_config.config.current_client = client_config
                 UserConfigV1Alpha1.save(user_config)
             if output is None:
-                click.echo(f"Client configuration successfully saved to {client_config.path}")
+                click.echo(f"Client configuration successfully saved to {config_path}")
             else:
-                click.echo(client_config.path)
+                click.echo(config_path)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -125,11 +125,11 @@ async def import_exporter(
             if output is None:
                 click.echo("Fetching exporter credentials from cluster")
             exporter_config = await api.get_exporter_config(name)
-            ExporterConfigV1Alpha1.save(exporter_config, out)
+            config_path = ExporterConfigV1Alpha1.save(exporter_config, out)
             if output is None:
-                click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
+                click.echo(f"Exporter configuration successfully saved to {config_path}")
             else:
-                click.echo(exporter_config.path)
+                click.echo(config_path)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

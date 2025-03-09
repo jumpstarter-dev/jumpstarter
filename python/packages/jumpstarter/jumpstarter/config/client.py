@@ -183,7 +183,7 @@ class ClientConfigV1Alpha1(BaseModel):
         return cls.from_file(path)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[os.PathLike] = None):
+    def save(cls, config: Self, path: Optional[os.PathLike] = None) -> Path:
         """Saves a client config as YAML."""
         # Ensure the clients dir exists
         if path is None:
@@ -194,6 +194,7 @@ class ClientConfigV1Alpha1(BaseModel):
             config.path = Path(path)
         with config.path.open(mode="w") as f:
             yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
+        return config.path
 
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
