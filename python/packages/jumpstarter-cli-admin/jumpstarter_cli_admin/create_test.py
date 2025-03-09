@@ -34,8 +34,40 @@ CLIENT_OBJECT = V1Alpha1Client(
     api_version="jumpstarter.dev/v1alpha1",
     kind="Client",
     metadata=V1ObjectMeta(namespace="default", name=CLIENT_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ClientStatus(endpoint=CLIENT_ENDPOINT, credential=None),
+    status=V1Alpha1ClientStatus(
+        endpoint=CLIENT_ENDPOINT, credential=V1ObjectReference(name=f"{CLIENT_NAME}-credential")
+    ),
 )
+
+CLIENT_JSON = """{{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "kind": "Client",
+    "metadata": {{
+        "creationTimestamp": "2024-01-01T21:00:00Z",
+        "name": "{name}",
+        "namespace": "default"
+    }},
+    "status": {{
+        "credential": {{
+            "name": "{name}-credential"
+        }},
+        "endpoint": "{endpoint}"
+    }}
+}}
+""".format(name=CLIENT_NAME, endpoint=CLIENT_ENDPOINT)
+
+CLIENT_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+kind: Client
+metadata:
+  creationTimestamp: '2024-01-01T21:00:00Z'
+  name: {name}
+  namespace: default
+status:
+  credential:
+    name: {name}-credential
+  endpoint: {endpoint}
+
+""".format(name=CLIENT_NAME, endpoint=CLIENT_ENDPOINT)
 
 UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
     alias=CLIENT_NAME,
@@ -108,6 +140,34 @@ async def test_create_client(
     mock_save_client.assert_called_once_with(CLIENT_CONFIG, None)
     mock_save_client.reset_mock()
 
+    # Save with nointeractive
+    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive"])
+    assert result.exit_code == 0
+    assert "Creating client" in result.output
+    mock_save_client.assert_not_called()
+    mock_save_client.reset_mock()
+
+    # With JSON output
+    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == CLIENT_JSON
+    mock_save_client.assert_not_called()
+    mock_save_client.reset_mock()
+
+    # With YAML output
+    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == CLIENT_YAML
+    mock_save_client.assert_not_called()
+    mock_save_client.reset_mock()
+
+    # With name output
+    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == f"client.jumpstarter.dev/{CLIENT_NAME}\n"
+    mock_save_client.assert_not_called()
+    mock_save_client.reset_mock()
+
 
 # Generate a random exporter name
 EXPORTER_NAME = uuid.uuid4().hex
@@ -124,6 +184,39 @@ EXPORTER_OBJECT = V1Alpha1Exporter(
         endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]
     ),
 )
+
+EXPORTER_JSON = """{{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "kind": "Exporter",
+    "metadata": {{
+        "creationTimestamp": "2024-01-01T21:00:00Z",
+        "name": "{name}",
+        "namespace": "default"
+    }},
+    "status": {{
+        "credential": {{
+            "name": "{name}-credential"
+        }},
+        "devices": [],
+        "endpoint": "{endpoint}"
+    }}
+}}
+""".format(name=EXPORTER_NAME, endpoint=EXPORTER_ENDPOINT)
+
+EXPORTER_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  creationTimestamp: '2024-01-01T21:00:00Z'
+  name: {name}
+  namespace: default
+status:
+  credential:
+    name: {name}-credential
+  devices: []
+  endpoint: {endpoint}
+
+""".format(name=EXPORTER_NAME, endpoint=EXPORTER_ENDPOINT)
+
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     alias=EXPORTER_NAME,
     metadata=ObjectMeta(namespace="default", name=EXPORTER_NAME),
@@ -171,6 +264,34 @@ async def test_create_exporter(
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, out)
+    save_exporter_mock.reset_mock()
+
+    # Save with nointeractive
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive"])
+    assert result.exit_code == 0
+    assert "Creating exporter" in result.output
+    save_exporter_mock.assert_not_called()
+    save_exporter_mock.reset_mock()
+
+    # Save with JSON output
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == EXPORTER_JSON
+    save_exporter_mock.assert_not_called()
+    save_exporter_mock.reset_mock()
+
+    # Save with YAML output
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == EXPORTER_YAML
+    save_exporter_mock.assert_not_called()
+    save_exporter_mock.reset_mock()
+
+    # Save with name output
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == f"exporter.jumpstarter.dev/{EXPORTER_NAME}\n"
+    save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 
 
