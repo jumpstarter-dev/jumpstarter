@@ -1,71 +1,56 @@
-import pprint
 from typing import Literal, Optional
 
-import yaml
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
+from .json import JsonBaseModel
 from .list import V1Alpha1List
 from .serialize import SerializeV1Condition, SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 
 
-class V1Alpha1LeaseStatus(BaseModel):
-    begin_time: str
+class V1Alpha1LeaseStatus(JsonBaseModel):
+    begin_time: Optional[str] = Field(alias="beginTime")
     conditions: list[SerializeV1Condition]
-    end_time: Optional[str]
+    end_time: Optional[str] = Field(alias="endTime")
     ended: bool
     exporter: Optional[SerializeV1ObjectReference]
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-
-class V1Alpha1LeaseSpec(BaseModel):
+class V1Alpha1LeaseSpec(JsonBaseModel):
     client: SerializeV1ObjectReference
     duration: Optional[str]
     selector: dict[str, str]
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-
-class V1Alpha1Lease(BaseModel):
+class V1Alpha1Lease(JsonBaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     kind: Literal["Lease"] = Field(default="Lease")
     metadata: SerializeV1ObjectMeta
     spec: V1Alpha1LeaseSpec
     status: V1Alpha1LeaseStatus
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
-
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(by_alias=True), indent=2)
-
-
-class LeasesV1Alpha1Api(AbstractAsyncCustomObjectApi):
-    """Interact with the leases custom resource API"""
-
     @staticmethod
-    def _deserialize(result: dict) -> V1Alpha1Lease:
+    def from_dict(dict: dict):
         return V1Alpha1Lease(
-            api_version=result["apiVersion"],
-            kind=result["kind"],
+            api_version=dict["apiVersion"],
+            kind=dict["kind"],
             metadata=V1ObjectMeta(
-                creation_timestamp=result["metadata"]["creationTimestamp"],
-                generation=result["metadata"]["generation"],
-                name=result["metadata"]["name"],
-                namespace=result["metadata"]["namespace"],
-                resource_version=result["metadata"]["resourceVersion"],
-                uid=result["metadata"]["uid"],
+                creation_timestamp=dict["metadata"]["creationTimestamp"],
+                generation=dict["metadata"]["generation"],
+                labels=dict["metadata"]["labels"],
+                managed_fields=dict["metadata"]["managedFields"],
+                name=dict["metadata"]["name"],
+                namespace=dict["metadata"]["namespace"],
+                resource_version=dict["metadata"]["resourceVersion"],
+                uid=dict["metadata"]["uid"],
             ),
             status=V1Alpha1LeaseStatus(
-                begin_time=result["status"]["beginTime"] if "beginTime" in result["status"] else None,
-                end_time=result["status"]["endTime"] if "endTime" in result["status"] else None,
-                ended=result["status"]["ended"],
-                exporter=V1ObjectReference(name=result["status"]["exporterRef"]["name"])
-                if "exporterRef" in result["status"]
+                begin_time=dict["status"]["beginTime"] if "beginTime" in dict["status"] else None,
+                end_time=dict["status"]["endTime"] if "endTime" in dict["status"] else None,
+                ended=dict["status"]["ended"],
+                exporter=V1ObjectReference(name=dict["status"]["exporterRef"]["name"])
+                if "exporterRef" in dict["status"]
                 else None,
                 conditions=[
                     V1Condition(
@@ -76,29 +61,40 @@ class LeasesV1Alpha1Api(AbstractAsyncCustomObjectApi):
                         status=cond["status"],
                         type=cond["type"],
                     )
-                    for cond in result["status"]["conditions"]
+                    for cond in dict["status"]["conditions"]
                 ],
             ),
             spec=V1Alpha1LeaseSpec(
-                client=V1ObjectReference(name=result["spec"]["clientRef"]["name"])
-                if "clientRef" in result["spec"]
+                client=V1ObjectReference(name=dict["spec"]["clientRef"]["name"])
+                if "clientRef" in dict["spec"]
                 else None,
-                duration=result["spec"]["duration"] if "duration" in result["spec"] else None,
-                selector=result["spec"]["selector"],
+                duration=dict["spec"]["duration"] if "duration" in dict["spec"] else None,
+                selector=dict["spec"]["selector"],
             ),
         )
 
+
+class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
+    kind: Literal["LeaseList"] = Field(default="LeaseList")
+
+    @staticmethod
+    def from_dict(dict: dict):
+        return V1Alpha1LeaseList(items=[V1Alpha1Lease.from_dict(c) for c in dict["items"]])
+
+
+class LeasesV1Alpha1Api(AbstractAsyncCustomObjectApi):
+    """Interact with the leases custom resource API"""
+
     async def list_leases(self) -> V1Alpha1List[V1Alpha1Lease]:
         """List the lease objects in the cluster async"""
-        res = await self.api.list_namespaced_custom_object(
+        result = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="leases", version="v1alpha1"
         )
-        return V1Alpha1Lease(items=[LeasesV1Alpha1Api._deserialize(c) for c in res["items"]])
+        return V1Alpha1LeaseList.from_dict(result)
 
     async def get_lease(self, name: str) -> V1Alpha1Lease:
         """Get a single lease object from the cluster async"""
         result = await self.api.get_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="leases", version="v1alpha1", name=name
         )
-        pprint.pp(result)
-        return LeasesV1Alpha1Api._deserialize(result)
+        return V1Alpha1Lease.from_dict(result)
