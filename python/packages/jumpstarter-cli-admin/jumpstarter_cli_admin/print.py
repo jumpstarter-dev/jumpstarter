@@ -1,8 +1,7 @@
-from typing import Optional
-
 import asyncclick as click
 from jumpstarter_cli_common import (
     OutputMode,
+    OutputType,
     make_table,
     time_since,
 )
@@ -24,7 +23,7 @@ def make_client_row(client: V1Alpha1Client):
     }
 
 
-def print_client(client: V1Alpha1Client, output: Optional[OutputMode]):
+def print_client(client: V1Alpha1Client, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(client.dump_json())
     elif output == OutputMode.YAML:
@@ -35,7 +34,7 @@ def print_client(client: V1Alpha1Client, output: Optional[OutputMode]):
         click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
 
 
-def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output: Optional[OutputMode]):
+def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(clients.dump_json())
     elif output == OutputMode.YAML:
@@ -83,7 +82,7 @@ def get_device_rows(exporters: list[V1Alpha1Exporter]):
     return devices
 
 
-def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: Optional[OutputMode]):
+def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(exporter.dump_json())
     elif output == OutputMode.YAML:
@@ -97,9 +96,7 @@ def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: Optional[O
         click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
 
 
-def print_exporters(
-    exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, devices: bool, output: Optional[OutputMode]
-):
+def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, devices: bool, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(exporters.dump_json())
     elif output == OutputMode.YAML:
@@ -154,7 +151,7 @@ def make_lease_row(lease: V1Alpha1Lease):
     }
 
 
-def print_lease(lease: V1Alpha1Lease, output: Optional[OutputMode]):
+def print_lease(lease: V1Alpha1Lease, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(lease.dump_json())
     elif output == OutputMode.YAML:
@@ -165,7 +162,7 @@ def print_lease(lease: V1Alpha1Lease, output: Optional[OutputMode]):
         click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
 
 
-def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: Optional[OutputMode]):
+def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: OutputType):
     if output == OutputMode.JSON:
         click.echo(leases.dump_json())
     elif output == OutputMode.YAML:

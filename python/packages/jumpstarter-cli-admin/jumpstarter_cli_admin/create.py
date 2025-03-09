@@ -6,6 +6,7 @@ import asyncclick as click
 from jumpstarter_cli_common import (
     AliasedGroup,
     OutputMode,
+    OutputType,
     opt_context,
     opt_kubeconfig,
     opt_labels,
@@ -36,7 +37,7 @@ def create(log_level: Optional[str]):
         logging.basicConfig(level=logging.INFO)
 
 
-def print_created_client(client: V1Alpha1Client, output: OutputMode, client_config_path: Path):
+def print_created_client(client: V1Alpha1Client, output: OutputType, client_config_path: Path):
     if output == OutputMode.JSON:
         click.echo(client.dump_json())
     elif output == OutputMode.YAML:
@@ -87,7 +88,7 @@ async def create_client(
     unsafe: bool,
     out: Optional[str],
     oidc_username: str | None,
-    output: Optional[OutputMode],
+    output: OutputType,
 ):
     """Create a client object in the Kubernetes cluster"""
     try:
@@ -123,7 +124,7 @@ async def create_client(
         handle_k8s_config_exception(e)
 
 
-def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputMode, exporter_config_path: Path):
+def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType, exporter_config_path: Path):
     if output == OutputMode.JSON:
         click.echo(exporter.dump_json())
     elif output == OutputMode.YAML:
@@ -164,7 +165,7 @@ async def create_exporter(
     save: bool,
     out: Optional[str],
     oidc_username: str | None,
-    output: Optional[OutputMode],
+    output: OutputType,
 ):
     """Create an exporter object in the Kubernetes cluster"""
     try:

@@ -1,3 +1,5 @@
+from typing import Literal, Optional
+
 import asyncclick as click
 
 opt_log_level = click.option(
@@ -25,6 +27,8 @@ class OutputMode(str):
     NAME = "name"
 
 
+OutputType = Optional[OutputMode]
+
 opt_output_all = click.option(
     "-o",
     "--output",
@@ -32,6 +36,8 @@ opt_output_all = click.option(
     default=None,
     help='Output mode. Use "-o name" for shorter output (resource/name).',
 )
+
+NameOutputType = Optional[Literal["name"]]
 
 opt_output_name_only = click.option(
     "-o",
