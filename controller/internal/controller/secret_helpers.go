@@ -6,8 +6,11 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apisv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -17,8 +20,10 @@ func ensureSecret(
 	ctx context.Context,
 	key client.ObjectKey,
 	kclient client.Client,
+	scheme *runtime.Scheme,
 	signer *oidc.Signer,
 	subject string,
+	owner apisv1.Object,
 ) (*corev1.Secret, error) {
 	logger := log.FromContext(ctx).WithName("ensureSecret")
 	var secret corev1.Secret
@@ -44,17 +49,25 @@ func ensureSecret(
 				TokenKey: []byte(token),
 			},
 		}
+		if err := controllerutil.SetControllerReference(owner, &secret, scheme); err != nil {
+			logger.Error(err, "failed to set controller reference")
+			return nil, err
+		}
 		if err = kclient.Create(ctx, &secret); err != nil {
 			logger.Error(err, "failed to create secret")
 			return nil, err
 		}
 		return &secret, nil
 	} else {
+		original := client.MergeFrom(secret.DeepCopy())
+		if err := controllerutil.SetControllerReference(owner, &secret, scheme); err != nil {
+			logger.Error(err, "failed to set controller reference")
+			return nil, err
+		}
 		token, ok := secret.Data[TokenKey]
 		if !ok || signer.Validate(string(token)) != nil {
 			// Secret present but invalid
 			logger.Info("secret present but invalid, updating")
-			original := client.MergeFrom(secret.DeepCopy())
 			token, err := signer.Token(subject)
 			if err != nil {
 				logger.Error(err, "failed to sign token")
@@ -63,14 +76,11 @@ func ensureSecret(
 			secret.Data = map[string][]byte{
 				TokenKey: []byte(token),
 			}
-			if err = kclient.Patch(ctx, &secret, original); err != nil {
-				logger.Error(err, "failed to update secret")
-				return nil, err
-			}
-			return &secret, nil
-		} else {
-			// Secret present and valid
-			return &secret, nil
 		}
+		if err = kclient.Patch(ctx, &secret, original); err != nil {
+			logger.Error(err, "failed to update secret")
+			return nil, err
+		}
+		return &secret, nil
 	}
 }

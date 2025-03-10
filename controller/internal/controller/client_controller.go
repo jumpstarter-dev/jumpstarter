@@ -25,7 +25,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
@@ -79,13 +78,9 @@ func (r *ClientReconciler) reconcileStatusCredential(
 	secret, err := ensureSecret(ctx, kclient.ObjectKey{
 		Name:      client.Name + "-client",
 		Namespace: client.Namespace,
-	}, r.Client, r.Signer, client.InternalSubject())
+	}, r.Client, r.Scheme, r.Signer, client.InternalSubject(), client)
 	if err != nil {
 		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
-	}
-	// enable garbage collection on the created resource
-	if err := controllerutil.SetControllerReference(client, secret, r.Scheme); err != nil {
-		return fmt.Errorf("reconcileStatusCredential: error setting owner reference: %w", err)
 	}
 	client.Status.Credential = &corev1.LocalObjectReference{
 		Name: secret.Name,

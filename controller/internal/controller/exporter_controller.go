@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
@@ -42,7 +41,7 @@ type ExporterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -91,13 +90,9 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 	secret, err := ensureSecret(ctx, client.ObjectKey{
 		Name:      exporter.Name + "-exporter",
 		Namespace: exporter.Namespace,
-	}, r.Client, r.Signer, exporter.InternalSubject())
+	}, r.Client, r.Scheme, r.Signer, exporter.InternalSubject(), exporter)
 	if err != nil {
 		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
-	}
-	// enable garbage collection on the created resource
-	if err := controllerutil.SetControllerReference(exporter, secret, r.Scheme); err != nil {
-		return fmt.Errorf("reconcileStatusCredential: error setting owner reference: %w", err)
 	}
 	exporter.Status.Credential = &corev1.LocalObjectReference{
 		Name: secret.Name,
