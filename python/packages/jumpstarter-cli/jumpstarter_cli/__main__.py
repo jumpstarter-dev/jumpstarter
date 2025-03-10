@@ -1,4 +1,4 @@
-"""Allow running Jumpstarter through `python -m jumpstarter-cli`."""
+"""Allow running Jumpstarter through `python -m jumpstarter_cli`."""
 
 from . import jmp
 
