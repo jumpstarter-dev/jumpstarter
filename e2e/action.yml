@@ -106,3 +106,12 @@ runs:
         jmp client shell test-client-legacy --label example.com/board legacy <<EOF
         j power on
         EOF
+
+        kubectl -n default get secret test-client-oidc-client
+        kubectl -n default get secret test-exporter-oidc-exporter
+
+        jmp admin delete client   test-client-oidc -d
+        jmp admin delete exporter test-exporter-oidc -d
+
+        ! kubectl -n default get secret test-client-oidc-client
+        ! kubectl -n default get secret test-exporter-oidc-exporter
