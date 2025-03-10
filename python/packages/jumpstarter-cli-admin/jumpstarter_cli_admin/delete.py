@@ -4,10 +4,13 @@ from typing import Optional
 import asyncclick as click
 from jumpstarter_cli_common import (
     AliasedGroup,
+    NameOutputType,
     opt_context,
     opt_kubeconfig,
     opt_log_level,
     opt_namespace,
+    opt_nointeractive,
+    opt_output_name_only,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -42,16 +45,29 @@ def delete(log_level: Optional[str]):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_output_name_only
+@opt_nointeractive
 async def delete_client(
-    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, delete: bool
+    name: Optional[str],
+    kubeconfig: Optional[str],
+    context: Optional[str],
+    namespace: str,
+    delete: bool,
+    output: NameOutputType,
+    nointeractive: bool,
 ):
     """Delete a client object in the Kubernetes cluster"""
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_client(name)
-            click.echo(f"Deleted client '{name}' in namespace '{namespace}'")
+            if output is None:
+                click.echo(f"Deleted client '{name}' in namespace '{namespace}'")
+            else:
+                click.echo(f"client.jumpstarter.dev/{name}")
             # Save the client config
-            if ClientConfigV1Alpha1.exists(name) and (delete or click.confirm("Delete client configuration?")):
+            if ClientConfigV1Alpha1.exists(name) and (
+                delete or nointeractive is False and click.confirm("Delete client configuration?")
+            ):
                 # If this is the default, clear default
                 user_config = UserConfigV1Alpha1.load_or_create()
                 if user_config.config.current_client is not None and user_config.config.current_client.alias == name:
@@ -59,7 +75,8 @@ async def delete_client(
                     UserConfigV1Alpha1.save(user_config)
                 # Delete the client config
                 ClientConfigV1Alpha1.delete(name)
-                click.echo("Client configuration successfully deleted")
+                if output is None:
+                    click.echo("Client configuration successfully deleted")
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -78,19 +95,33 @@ async def delete_client(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_output_name_only
+@opt_nointeractive
 async def delete_exporter(
-    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, delete: bool
+    name: Optional[str],
+    kubeconfig: Optional[str],
+    context: Optional[str],
+    namespace: str,
+    delete: bool,
+    output: NameOutputType,
+    nointeractive: bool,
 ):
     """Delete an exporter object in the Kubernetes cluster"""
     try:
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_exporter(name)
-            click.echo(f"Deleted exporter '{name}' in namespace '{namespace}'")
+            if output is None:
+                click.echo(f"Deleted exporter '{name}' in namespace '{namespace}'")
+            else:
+                click.echo(f"exporter.jumpstarter.dev/{name}")
             # Save the exporter config
-            if ExporterConfigV1Alpha1.exists(name) and (delete or click.confirm("Delete exporter configuration?")):
+            if ExporterConfigV1Alpha1.exists(name) and (
+                delete or nointeractive is False and click.confirm("Delete exporter configuration?")
+            ):
                 # Delete the exporter config
                 ExporterConfigV1Alpha1.delete(name)
-                click.echo("Exporter configuration successfully deleted")
+                if output is None:
+                    click.echo("Exporter configuration successfully deleted")
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

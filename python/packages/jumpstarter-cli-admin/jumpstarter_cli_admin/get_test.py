@@ -7,11 +7,14 @@ from jumpstarter_kubernetes import (
     ExportersV1Alpha1Api,
     LeasesV1Alpha1Api,
     V1Alpha1Client,
+    V1Alpha1ClientList,
     V1Alpha1ClientStatus,
     V1Alpha1Exporter,
     V1Alpha1ExporterDevice,
+    V1Alpha1ExporterList,
     V1Alpha1ExporterStatus,
     V1Alpha1Lease,
+    V1Alpha1LeaseList,
     V1Alpha1LeaseSpec,
     V1Alpha1LeaseStatus,
 )
@@ -35,6 +38,46 @@ class MockResponse:
         return {}
 
 
+TEST_CLIENT = V1Alpha1Client(
+    api_version="jumpstarter.dev/v1alpha1",
+    kind="Client",
+    metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+    status=V1Alpha1ClientStatus(
+        endpoint="grpc://example.com:443", credential=V1ObjectReference(name="test-credential")
+    ),
+)
+
+TEST_CLIENT_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "kind": "Client",
+    "metadata": {
+        "creationTimestamp": "2024-01-01T21:00:00Z",
+        "name": "test",
+        "namespace": "testing"
+    },
+    "status": {
+        "credential": {
+            "name": "test-credential"
+        },
+        "endpoint": "grpc://example.com:443"
+    }
+}
+"""
+
+TEST_CLIENT_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+kind: Client
+metadata:
+  creationTimestamp: '2024-01-01T21:00:00Z'
+  name: test
+  namespace: testing
+status:
+  credential:
+    name: test-credential
+  endpoint: grpc://example.com:443
+
+"""
+
+
 @pytest.mark.anyio
 @patch.object(ClientsV1Alpha1Api, "get_client")
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")
@@ -42,16 +85,32 @@ async def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
     runner = CliRunner()
 
     # Get a single client
-    get_client_mock.return_value = V1Alpha1Client(
-        api_version="jumpstarter.dev/v1alpha1",
-        kind="Client",
-        metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-        status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
-    )
+    get_client_mock.return_value = TEST_CLIENT
     result = await runner.invoke(get, ["client", "test"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "grpc://example.com:443" in result.output
+    get_client_mock.reset_mock()
+
+    # Get a single client JSON output
+    get_client_mock.return_value = TEST_CLIENT
+    result = await runner.invoke(get, ["client", "test", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == TEST_CLIENT_JSON
+    get_client_mock.reset_mock()
+
+    # Get a single client YAML output
+    get_client_mock.return_value = TEST_CLIENT
+    result = await runner.invoke(get, ["client", "test", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == TEST_CLIENT_YAML
+    get_client_mock.reset_mock()
+
+    # Get a single client name output
+    get_client_mock.return_value = TEST_CLIENT
+    result = await runner.invoke(get, ["client", "test", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "client.jumpstarter.dev/test\n"
     get_client_mock.reset_mock()
 
     # No client found
@@ -65,6 +124,106 @@ async def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
     result = await runner.invoke(get, ["client", "hello"])
     assert result.exit_code == 1
     assert "NotFound" in result.output
+    get_client_mock.reset_mock()
+
+
+CLIENTS_LIST = V1Alpha1ClientList(
+    items=[
+        V1Alpha1Client(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Client",
+            metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ClientStatus(
+                endpoint="grpc://example.com:443", credential=V1ObjectReference(name="test-credential")
+            ),
+        ),
+        V1Alpha1Client(
+            api_version="jumpstarter.dev/v1alpha1",
+            kind="Client",
+            metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+            status=V1Alpha1ClientStatus(
+                endpoint="grpc://example.com:443", credential=V1ObjectReference(name="another-credential")
+            ),
+        ),
+    ]
+)
+
+CLIENTS_LIST_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "items": [
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Client",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "test",
+                "namespace": "testing"
+            },
+            "status": {
+                "credential": {
+                    "name": "test-credential"
+                },
+                "endpoint": "grpc://example.com:443"
+            }
+        },
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Client",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "another",
+                "namespace": "testing"
+            },
+            "status": {
+                "credential": {
+                    "name": "another-credential"
+                },
+                "endpoint": "grpc://example.com:443"
+            }
+        }
+    ],
+    "kind": "ClientList"
+}
+"""
+
+CLIENTS_LIST_EMPTY_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "items": [],
+    "kind": "ClientList"
+}
+"""
+
+CLIENTS_LIST_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+items:
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Client
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: test
+    namespace: testing
+  status:
+    credential:
+      name: test-credential
+    endpoint: grpc://example.com:443
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Client
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: another
+    namespace: testing
+  status:
+    credential:
+      name: another-credential
+    endpoint: grpc://example.com:443
+kind: ClientList
+
+"""
+
+CLIENTS_LIST_EMPTY_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+items: []
+kind: ClientList
+
+"""
 
 
 @pytest.mark.anyio
@@ -74,20 +233,7 @@ async def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock)
     runner = CliRunner()
 
     # List clients
-    list_clients_mock.return_value = [
-        V1Alpha1Client(
-            api_version="jumpstarter.dev/v1alpha1",
-            kind="Client",
-            metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-            status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
-        ),
-        V1Alpha1Client(
-            api_version="jumpstarter.dev/v1alpha1",
-            kind="Client",
-            metadata=V1ObjectMeta(name="another", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-            status=V1Alpha1ClientStatus(endpoint="grpc://example.com:443", credential="asdfb123423"),
-        ),
-    ]
+    list_clients_mock.return_value = CLIENTS_LIST
     result = await runner.invoke(get, ["clients"])
     assert result.exit_code == 0
     assert "test" in result.output
@@ -95,11 +241,96 @@ async def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock)
     assert "grpc://example.com:443" in result.output
     list_clients_mock.reset_mock()
 
+    # List clients JSON output
+    list_clients_mock.return_value = CLIENTS_LIST
+    result = await runner.invoke(get, ["clients", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == CLIENTS_LIST_JSON
+    list_clients_mock.reset_mock()
+
+    # List clients YAML output
+    list_clients_mock.return_value = CLIENTS_LIST
+    result = await runner.invoke(get, ["clients", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == CLIENTS_LIST_YAML
+    list_clients_mock.reset_mock()
+
+    # List clients name output
+    list_clients_mock.return_value = CLIENTS_LIST
+    result = await runner.invoke(get, ["clients", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "client.jumpstarter.dev/test\n"
+    list_clients_mock.reset_mock()
+
     # No clients found
-    list_clients_mock.return_value = []
+    list_clients_mock.return_value = V1Alpha1ClientList(items=[])
     result = await runner.invoke(get, ["clients"])
     assert result.exit_code == 1
     assert "No resources found" in result.output
+    list_clients_mock.reset_mock()
+
+    # No clients found JSON output
+    list_clients_mock.return_value = V1Alpha1ClientList(items=[])
+    result = await runner.invoke(get, ["clients", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == CLIENTS_LIST_EMPTY_JSON
+    list_clients_mock.reset_mock()
+
+    # No clients found YAML output
+    list_clients_mock.return_value = V1Alpha1ClientList(items=[])
+    result = await runner.invoke(get, ["clients", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == CLIENTS_LIST_EMPTY_YAML
+    list_clients_mock.reset_mock()
+
+    # No clients found name output
+    list_clients_mock.return_value = V1Alpha1ClientList(items=[])
+    result = await runner.invoke(get, ["clients", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == ""
+    list_clients_mock.reset_mock()
+
+
+TEST_EXPORTER = V1Alpha1Exporter(
+    api_version="jumpstarter.dev/v1alpha1",
+    kind="Exporter",
+    metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+    status=V1Alpha1ExporterStatus(
+        endpoint="grpc://example.com:443", credential=V1ObjectReference(name="test-credential"), devices=[]
+    ),
+)
+
+TEST_EXPORTER_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "kind": "Exporter",
+    "metadata": {
+        "creationTimestamp": "2024-01-01T21:00:00Z",
+        "name": "test",
+        "namespace": "testing"
+    },
+    "status": {
+        "credential": {
+            "name": "test-credential"
+        },
+        "devices": [],
+        "endpoint": "grpc://example.com:443"
+    }
+}
+"""
+
+TEST_EXPORTER_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  creationTimestamp: '2024-01-01T21:00:00Z'
+  name: test
+  namespace: testing
+status:
+  credential:
+    name: test-credential
+  devices: []
+  endpoint: grpc://example.com:443
+
+"""
 
 
 @pytest.mark.anyio
@@ -109,18 +340,32 @@ async def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock
     runner = CliRunner()
 
     # Get a single exporter
-    get_exporter_mock.return_value = V1Alpha1Exporter(
-        api_version="jumpstarter.dev/v1alpha1",
-        kind="Exporter",
-        metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-        status=V1Alpha1ExporterStatus(
-            endpoint="grpc://example.com:443", credential=V1ObjectReference(name="test-credential"), devices=[]
-        ),
-    )
+    get_exporter_mock.return_value = TEST_EXPORTER
     result = await runner.invoke(get, ["exporter", "test"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "grpc://example.com:443" in result.output
+    get_exporter_mock.reset_mock()
+
+    # Get a single exporter JSON output
+    get_exporter_mock.return_value = TEST_EXPORTER
+    result = await runner.invoke(get, ["exporter", "test", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == TEST_EXPORTER_JSON
+    get_exporter_mock.reset_mock()
+
+    # Get a single exporter YAML output
+    get_exporter_mock.return_value = TEST_EXPORTER
+    result = await runner.invoke(get, ["exporter", "test", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == TEST_EXPORTER_YAML
+    get_exporter_mock.reset_mock()
+
+    # Get a single exporter name output
+    get_exporter_mock.return_value = TEST_EXPORTER
+    result = await runner.invoke(get, ["exporter", "test", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "exporter.jumpstarter.dev/test\n"
     get_exporter_mock.reset_mock()
 
     # No exporter found
@@ -136,25 +381,79 @@ async def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock
     assert "NotFound" in result.output
 
 
+TEST_EXPORTER_DEVICES = V1Alpha1Exporter(
+    api_version="jumpstarter.dev/v1alpha1",
+    kind="Exporter",
+    metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
+    status=V1Alpha1ExporterStatus(
+        endpoint="grpc://example.com:443",
+        credential=V1ObjectReference(name="test-credential"),
+        devices=[
+            V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1"),
+            V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
+        ],
+    ),
+)
+
+TEST_EXPORTER_DEVICES_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "kind": "Exporter",
+    "metadata": {
+        "creationTimestamp": "2024-01-01T21:00:00Z",
+        "name": "test",
+        "namespace": "testing"
+    },
+    "status": {
+        "credential": {
+            "name": "test-credential"
+        },
+        "devices": [
+            {
+                "labels": {
+                    "hardware": "rpi4"
+                },
+                "uuid": "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"
+            },
+            {
+                "labels": {
+                    "hardware": "rpi4"
+                },
+                "uuid": "f7cd30ac-64a3-42c6-ba31-b25f033b97c1"
+            }
+        ],
+        "endpoint": "grpc://example.com:443"
+    }
+}
+"""
+
+TEST_EXPORTER_DEVICES_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  creationTimestamp: '2024-01-01T21:00:00Z'
+  name: test
+  namespace: testing
+status:
+  credential:
+    name: test-credential
+  devices:
+  - labels:
+      hardware: rpi4
+    uuid: 82a8ac0d-d7ff-4009-8948-18a3c5c607b1
+  - labels:
+      hardware: rpi4
+    uuid: f7cd30ac-64a3-42c6-ba31-b25f033b97c1
+  endpoint: grpc://example.com:443
+
+"""
+
+
 @pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "get_exporter")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
 async def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: AsyncMock):
     runner = CliRunner()
     # Returns exporter
-    get_exporter_mock.return_value = V1Alpha1Exporter(
-        api_version="jumpstarter.dev/v1alpha1",
-        kind="Exporter",
-        metadata=V1ObjectMeta(name="test", namespace="testing", creation_timestamp="2024-01-01T21:00:00Z"),
-        status=V1Alpha1ExporterStatus(
-            endpoint="grpc://example.com:443",
-            credential=V1ObjectReference(name="test-credential"),
-            devices=[
-                V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="82a8ac0d-d7ff-4009-8948-18a3c5c607b1"),
-                V1Alpha1ExporterDevice(labels={"hardware": "rpi4"}, uuid="f7cd30ac-64a3-42c6-ba31-b25f033b97c1"),
-            ],
-        ),
-    )
+    get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
     result = await runner.invoke(get, ["exporter", "test", "--devices"])
     assert result.exit_code == 0
     assert "test" in result.output
@@ -162,6 +461,27 @@ async def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: A
     assert "hardware:rpi4" in result.output
     assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
     assert "f7cd30ac-64a3-42c6-ba31-b25f033b97c1" in result.output
+    get_exporter_mock.reset_mock()
+
+    # Returns exporter JSON output
+    get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
+    result = await runner.invoke(get, ["exporter", "test", "--devices", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == TEST_EXPORTER_DEVICES_JSON
+    get_exporter_mock.reset_mock()
+
+    # Returns exporter YAML output
+    get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
+    result = await runner.invoke(get, ["exporter", "test", "--devices", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == TEST_EXPORTER_DEVICES_YAML
+    get_exporter_mock.reset_mock()
+
+    # Returns exporter name output
+    get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
+    result = await runner.invoke(get, ["exporter", "test", "--devices", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "exporter.jumpstarter.dev/test\n"
     get_exporter_mock.reset_mock()
 
     # No exporter found
@@ -177,14 +497,8 @@ async def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: A
     assert "NotFound" in result.output
 
 
-@pytest.mark.anyio
-@patch.object(ExportersV1Alpha1Api, "list_exporters")
-@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
-    runner = CliRunner()
-
-    # List exporters
-    list_exporters_mock.return_value = [
+EXPORTERS_LIST = V1Alpha1ExporterList(
+    items=[
         V1Alpha1Exporter(
             api_version="jumpstarter.dev/v1alpha1",
             kind="Exporter",
@@ -206,31 +520,125 @@ async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncM
             ),
         ),
     ]
+)
+
+EXPORTERS_LIST_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "items": [
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Exporter",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "test",
+                "namespace": "testing"
+            },
+            "status": {
+                "credential": {
+                    "name": "test-credential"
+                },
+                "devices": [],
+                "endpoint": "grpc://example.com:443"
+            }
+        },
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Exporter",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "another",
+                "namespace": "testing"
+            },
+            "status": {
+                "credential": {
+                    "name": "another-credential"
+                },
+                "devices": [],
+                "endpoint": "grpc://example.com:443"
+            }
+        }
+    ],
+    "kind": "ExporterList"
+}
+"""
+
+EXPORTERS_LIST_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+items:
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Exporter
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: test
+    namespace: testing
+  status:
+    credential:
+      name: test-credential
+    devices: []
+    endpoint: grpc://example.com:443
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Exporter
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: another
+    namespace: testing
+  status:
+    credential:
+      name: another-credential
+    devices: []
+    endpoint: grpc://example.com:443
+kind: ExporterList
+
+"""
+
+
+@pytest.mark.anyio
+@patch.object(ExportersV1Alpha1Api, "list_exporters")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
+    runner = CliRunner()
+
+    # List exporters
+    list_exporters_mock.return_value = EXPORTERS_LIST
     result = await runner.invoke(get, ["exporters"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "another" in result.output
     list_exporters_mock.reset_mock()
 
+    # List exporters JSON output
+    list_exporters_mock.return_value = EXPORTERS_LIST
+    result = await runner.invoke(get, ["exporters", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == EXPORTERS_LIST_JSON
+    list_exporters_mock.reset_mock()
+
+    # List exporters YAML output
+    list_exporters_mock.return_value = EXPORTERS_LIST
+    result = await runner.invoke(get, ["exporters", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == EXPORTERS_LIST_YAML
+    list_exporters_mock.reset_mock()
+
+    # List exporters name output
+    list_exporters_mock.return_value = EXPORTERS_LIST
+    result = await runner.invoke(get, ["exporters", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "exporter.jumpstarter.dev/test\n"
+    list_exporters_mock.reset_mock()
+
     # No exporters found
     with patch.object(
         ExportersV1Alpha1Api,
         "list_exporters",
-        return_value=[],
+        return_value=V1Alpha1ExporterList(items=[]),
     ):
         result = await runner.invoke(get, ["exporters"])
         assert result.exit_code == 1
         assert "No resources found" in result.output
 
 
-@pytest.mark.anyio
-@patch.object(ExportersV1Alpha1Api, "list_exporters")
-@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: AsyncMock):
-    runner = CliRunner()
-
-    # List exporters
-    list_exporters_mock.return_value = [
+EXPORTER_DEVICES_LIST = V1Alpha1ExporterList(
+    items=[
         V1Alpha1Exporter(
             api_version="jumpstarter.dev/v1alpha1",
             kind="Exporter",
@@ -256,6 +664,105 @@ async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock
             ),
         ),
     ]
+)
+
+EXPORTERS_DEVICES_LIST_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "items": [
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Exporter",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "test",
+                "namespace": "testing"
+            },
+            "status": {
+                "credential": {
+                    "name": "test-credential"
+                },
+                "devices": [
+                    {
+                        "labels": {
+                            "hardware": "rpi4"
+                        },
+                        "uuid": "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"
+                    }
+                ],
+                "endpoint": "grpc://example.com:443"
+            }
+        },
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Exporter",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "another",
+                "namespace": "testing"
+            },
+            "status": {
+                "credential": {
+                    "name": "another-credential"
+                },
+                "devices": [
+                    {
+                        "labels": {
+                            "hardware": "rpi4"
+                        },
+                        "uuid": "f7cd30ac-64a3-42c6-ba31-b25f033b97c1"
+                    }
+                ],
+                "endpoint": "grpc://example.com:443"
+            }
+        }
+    ],
+    "kind": "ExporterList"
+}
+"""
+
+EXPORTERS_DEVICES_LIST_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+items:
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Exporter
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: test
+    namespace: testing
+  status:
+    credential:
+      name: test-credential
+    devices:
+    - labels:
+        hardware: rpi4
+      uuid: 82a8ac0d-d7ff-4009-8948-18a3c5c607b1
+    endpoint: grpc://example.com:443
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Exporter
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: another
+    namespace: testing
+  status:
+    credential:
+      name: another-credential
+    devices:
+    - labels:
+        hardware: rpi4
+      uuid: f7cd30ac-64a3-42c6-ba31-b25f033b97c1
+    endpoint: grpc://example.com:443
+kind: ExporterList
+
+"""
+
+
+@pytest.mark.anyio
+@patch.object(ExportersV1Alpha1Api, "list_exporters")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: AsyncMock):
+    runner = CliRunner()
+
+    # List exporters
+    list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
     result = await runner.invoke(get, ["exporters", "--devices"])
     assert result.exit_code == 0
     assert "test" in result.output
@@ -265,8 +772,29 @@ async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock
     assert "f7cd30ac-64a3-42c6-ba31-b25f033b97c1" in result.output
     list_exporters_mock.reset_mock()
 
+    # List exporters JSON output
+    list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
+    result = await runner.invoke(get, ["exporters", "--devices", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == EXPORTERS_DEVICES_LIST_JSON
+    list_exporters_mock.reset_mock()
+
+    # List exporters YAML output
+    list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
+    result = await runner.invoke(get, ["exporters", "--devices", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == EXPORTERS_DEVICES_LIST_YAML
+    list_exporters_mock.reset_mock()
+
+    # List exporters name output
+    list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
+    result = await runner.invoke(get, ["exporters", "--devices", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "exporter.jumpstarter.dev/test\n"
+    list_exporters_mock.reset_mock()
+
     # No exporters found
-    list_exporters_mock.return_value = []
+    list_exporters_mock.return_value = V1Alpha1ExporterList(items=[])
     result = await runner.invoke(get, ["exporters", "--devices"])
     assert result.exit_code == 1
     assert "No resources found" in result.output
@@ -334,6 +862,69 @@ FINISHED_LEASE = V1Alpha1Lease(
     ),
 )
 
+FINISHED_LEASE_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "kind": "Lease",
+    "metadata": {
+        "creationTimestamp": "2024-01-01T21:00:00Z",
+        "name": "82a8ac0d-d7ff-4009-8948-18a3c5c607b2",
+        "namespace": "testing"
+    },
+    "spec": {
+        "client": {
+            "name": "test_client"
+        },
+        "duration": "1h",
+        "selector": {}
+    },
+    "status": {
+        "beginTime": "2024-01-01T21:00:00Z",
+        "conditions": [
+            {
+                "lastTransitionTime": "2024-01-01T22:00:00Z",
+                "message": "",
+                "observedGeneration": 1,
+                "reason": "Expired",
+                "status": "False",
+                "type": "Ready"
+            }
+        ],
+        "endTime": "2024-01-01T22:00:00Z",
+        "ended": true,
+        "exporter": {
+            "name": "test_exporter"
+        }
+    }
+}
+"""
+
+FINISHED_LEASE_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+kind: Lease
+metadata:
+  creationTimestamp: '2024-01-01T21:00:00Z'
+  name: 82a8ac0d-d7ff-4009-8948-18a3c5c607b2
+  namespace: testing
+spec:
+  client:
+    name: test_client
+  duration: 1h
+  selector: {}
+status:
+  beginTime: '2024-01-01T21:00:00Z'
+  conditions:
+  - lastTransitionTime: '2024-01-01T22:00:00Z'
+    message: ''
+    observedGeneration: 1
+    reason: Expired
+    status: 'False'
+    type: Ready
+  endTime: '2024-01-01T22:00:00Z'
+  ended: true
+  exporter:
+    name: test_exporter
+
+"""
+
 
 @pytest.mark.anyio
 @patch.object(LeasesV1Alpha1Api, "get_lease")
@@ -370,6 +961,27 @@ async def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
     assert "1h" in result.output
     get_lease_mock.reset_mock()
 
+    # Get a finished lease JSON output
+    get_lease_mock.return_value = FINISHED_LEASE
+    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == FINISHED_LEASE_JSON
+    get_lease_mock.reset_mock()
+
+    # Get a finished lease YAML output
+    get_lease_mock.return_value = FINISHED_LEASE
+    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == FINISHED_LEASE_YAML
+    get_lease_mock.reset_mock()
+
+    # Get a finished lease name output
+    get_lease_mock.return_value = FINISHED_LEASE
+    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b2\n"
+    get_lease_mock.reset_mock()
+
     # No lease found
     get_lease_mock.side_effect = ApiException(
         http_resp=MockResponse(
@@ -383,6 +995,140 @@ async def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
     assert "NotFound" in result.output
 
 
+LEASES_LIST_JSON = """{
+    "apiVersion": "jumpstarter.dev/v1alpha1",
+    "items": [
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "82a8ac0d-d7ff-4009-8948-18a3c5c607b1",
+                "namespace": "testing"
+            },
+            "spec": {
+                "client": {
+                    "name": "test_client"
+                },
+                "duration": "5m",
+                "selector": {
+                    "hardware": "rpi4"
+                }
+            },
+            "status": {
+                "beginTime": "2024-01-01T21:00:00Z",
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2024-01-01T21:00:00Z",
+                        "message": "",
+                        "observedGeneration": 1,
+                        "reason": "Ready",
+                        "status": "True",
+                        "type": "Ready"
+                    }
+                ],
+                "endTime": null,
+                "ended": false,
+                "exporter": {
+                    "name": "test_exporter"
+                }
+            }
+        },
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {
+                "creationTimestamp": "2024-01-01T21:00:00Z",
+                "name": "82a8ac0d-d7ff-4009-8948-18a3c5c607b2",
+                "namespace": "testing"
+            },
+            "spec": {
+                "client": {
+                    "name": "test_client"
+                },
+                "duration": "1h",
+                "selector": {}
+            },
+            "status": {
+                "beginTime": "2024-01-01T21:00:00Z",
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2024-01-01T22:00:00Z",
+                        "message": "",
+                        "observedGeneration": 1,
+                        "reason": "Expired",
+                        "status": "False",
+                        "type": "Ready"
+                    }
+                ],
+                "endTime": "2024-01-01T22:00:00Z",
+                "ended": true,
+                "exporter": {
+                    "name": "test_exporter"
+                }
+            }
+        }
+    ],
+    "kind": "LeaseList"
+}
+"""
+
+LEASES_LIST_YAML = """apiVersion: jumpstarter.dev/v1alpha1
+items:
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Lease
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: 82a8ac0d-d7ff-4009-8948-18a3c5c607b1
+    namespace: testing
+  spec:
+    client:
+      name: test_client
+    duration: 5m
+    selector:
+      hardware: rpi4
+  status:
+    beginTime: '2024-01-01T21:00:00Z'
+    conditions:
+    - lastTransitionTime: '2024-01-01T21:00:00Z'
+      message: ''
+      observedGeneration: 1
+      reason: Ready
+      status: 'True'
+      type: Ready
+    endTime: null
+    ended: false
+    exporter:
+      name: test_exporter
+- apiVersion: jumpstarter.dev/v1alpha1
+  kind: Lease
+  metadata:
+    creationTimestamp: '2024-01-01T21:00:00Z'
+    name: 82a8ac0d-d7ff-4009-8948-18a3c5c607b2
+    namespace: testing
+  spec:
+    client:
+      name: test_client
+    duration: 1h
+    selector: {}
+  status:
+    beginTime: '2024-01-01T21:00:00Z'
+    conditions:
+    - lastTransitionTime: '2024-01-01T22:00:00Z'
+      message: ''
+      observedGeneration: 1
+      reason: Expired
+      status: 'False'
+      type: Ready
+    endTime: '2024-01-01T22:00:00Z'
+    ended: true
+    exporter:
+      name: test_exporter
+kind: LeaseList
+
+"""
+
+
 @pytest.mark.anyio
 @patch.object(LeasesV1Alpha1Api, "list_leases")
 @patch.object(LeasesV1Alpha1Api, "_load_kube_config")
@@ -390,7 +1136,7 @@ async def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     runner = CliRunner()
 
     # Found leases
-    list_leases_mock.return_value = [IN_PROGRESS_LEASE, FINISHED_LEASE]
+    list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
     result = await runner.invoke(get, ["leases"])
     assert result.exit_code == 0
     assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
@@ -408,8 +1154,29 @@ async def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     assert "1h" in result.output
     list_leases_mock.reset_mock()
 
+    # Found leases JSON output
+    list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
+    result = await runner.invoke(get, ["leases", "--output", "json"])
+    assert result.exit_code == 0
+    assert result.output == LEASES_LIST_JSON
+    list_leases_mock.reset_mock()
+
+    # Found leases YAML output
+    list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
+    result = await runner.invoke(get, ["leases", "--output", "yaml"])
+    assert result.exit_code == 0
+    assert result.output == LEASES_LIST_YAML
+    list_leases_mock.reset_mock()
+
+    # Found leases name output
+    list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
+    result = await runner.invoke(get, ["leases", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == "lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b1\n"
+    list_leases_mock.reset_mock()
+
     # No leases found
-    list_leases_mock.return_value = []
+    list_leases_mock.return_value = V1Alpha1LeaseList(items=[])
     result = await runner.invoke(get, ["leases"])
     assert result.exit_code == 1
     assert "No resources found" in result.output

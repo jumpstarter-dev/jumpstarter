@@ -4,13 +4,17 @@ from typing import Optional
 import asyncclick as click
 from jumpstarter_cli_common import (
     AliasedGroup,
+    OutputMode,
+    OutputType,
     opt_context,
     opt_kubeconfig,
     opt_labels,
     opt_log_level,
     opt_namespace,
+    opt_nointeractive,
+    opt_output_all,
 )
-from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
+from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, V1Alpha1Client, V1Alpha1Exporter
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
@@ -33,6 +37,15 @@ def create(log_level: Optional[str]):
         logging.basicConfig(level=logging.INFO)
 
 
+def print_created_client(client: V1Alpha1Client, output: OutputType):
+    if output == OutputMode.JSON:
+        click.echo(client.dump_json())
+    elif output == OutputMode.YAML:
+        click.echo(client.dump_yaml())
+    elif output == OutputMode.NAME:
+        click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
+
+
 @create.command("client")
 @click.argument("name", type=str, required=False, default=None)
 @click.option(
@@ -51,7 +64,6 @@ def create(log_level: Optional[str]):
 )
 @click.option("--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).")
 @click.option(
-    "-o",
     "--out",
     type=click.Path(dir_okay=False, resolve_path=True, writable=True),
     help="Specify an output file for the client config.",
@@ -62,6 +74,8 @@ def create(log_level: Optional[str]):
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
+@opt_nointeractive
+@opt_output_all
 async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -73,15 +87,20 @@ async def create_client(
     unsafe: bool,
     out: Optional[str],
     oidc_username: str | None,
+    nointeractive: bool,
+    output: OutputType,
 ):
     """Create a client object in the Kubernetes cluster"""
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
-            click.echo(f"Creating client '{name}' in namespace '{namespace}'")
-            await api.create_client(name, dict(labels), oidc_username)
+            if output is None:
+                # Only print status if  is not JSON/YAML
+                click.echo(f"Creating client '{name}' in namespace '{namespace}'")
+            created_client = await api.create_client(name, dict(labels), oidc_username)
             # Save the client config
-            if save or out is not None or click.confirm("Save client configuration?"):
-                click.echo("Fetching client credentials from cluster")
+            if save or out is not None or nointeractive is False and click.confirm("Save client configuration?"):
+                if output is None:
+                    click.echo("Fetching client credentials from cluster")
                 client_config = await api.get_client_config(name, allow=[], unsafe=unsafe)
                 if unsafe is False and allow is None:
                     unsafe = click.confirm("Allow unsafe driver client imports?")
@@ -98,11 +117,22 @@ async def create_client(
                     user_config = UserConfigV1Alpha1.load_or_create()
                     user_config.config.current_client = client_config
                     UserConfigV1Alpha1.save(user_config)
-                click.echo(f"Client configuration successfully saved to {client_config.path}")
+                if output is None:
+                    click.echo(f"Client configuration successfully saved to {client_config.path}")
+            print_created_client(created_client, output)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
+
+
+def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
+    if output == OutputMode.JSON:
+        click.echo(exporter.dump_json())
+    elif output == OutputMode.YAML:
+        click.echo(exporter.dump_yaml())
+    elif output == OutputMode.NAME:
+        click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
 
 
 @create.command("exporter")
@@ -115,7 +145,6 @@ async def create_client(
     default=False,
 )
 @click.option(
-    "-o",
     "--out",
     type=click.Path(dir_okay=False, resolve_path=True, writable=True),
     help="Specify an output file for the exporter config.",
@@ -126,6 +155,8 @@ async def create_client(
 @opt_kubeconfig
 @opt_context
 @opt_oidc_username
+@opt_nointeractive
+@opt_output_all
 async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -135,18 +166,24 @@ async def create_exporter(
     save: bool,
     out: Optional[str],
     oidc_username: str | None,
+    nointeractive: bool,
+    output: OutputType,
 ):
     """Create an exporter object in the Kubernetes cluster"""
     try:
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
-            click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
-            await api.create_exporter(name, dict(labels), oidc_username)
+            if output is None:
+                click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
+            created_exporter = await api.create_exporter(name, dict(labels), oidc_username)
             # Save the client config
-            if save or out is not None or click.confirm("Save exporter configuration?"):
-                click.echo("Fetching exporter credentials from cluster")
+            if save or out is not None or nointeractive is False and click.confirm("Save exporter configuration?"):
+                if output is None:
+                    click.echo("Fetching exporter credentials from cluster")
                 exporter_config = await api.get_exporter_config(name)
                 ExporterConfigV1Alpha1.save(exporter_config, out)
-                click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
+                if output is None:
+                    click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
+            print_created_exporter(created_exporter, output)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

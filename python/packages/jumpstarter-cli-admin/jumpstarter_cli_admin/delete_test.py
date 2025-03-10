@@ -8,7 +8,7 @@ from jumpstarter_kubernetes import (
     V1Alpha1Exporter,
     V1Alpha1ExporterStatus,
 )
-from kubernetes_asyncio.client.models import V1ObjectMeta
+from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from .delete import delete
 from jumpstarter.config import (
@@ -125,6 +125,37 @@ async def test_delete_client(
     mock_config_delete.reset_mock()
     mock_save_user_config.reset_mock()
 
+    # Delete client object nointeractive
+    mock_config_exists.return_value = True
+    result = await runner.invoke(delete, ["client", CLIENT_NAME, "--nointeractive"])
+    assert result.exit_code == 0
+    assert f"Deleted client '{CLIENT_NAME}' in namespace 'default'" in result.output
+    assert "Client configuration successfully deleted" not in result.output
+    mock_delete_client.assert_called_once_with(CLIENT_NAME)
+    mock_load_or_create_user_config.assert_not_called()
+    mock_config_delete.assert_not_called()
+
+    mock_load_or_create_user_config.reset_mock()
+    mock_config_exists.reset_mock()
+    mock_delete_client.reset_mock()
+    mock_config_delete.reset_mock()
+    mock_save_user_config.reset_mock()
+
+    # Delete client object output name
+    mock_config_exists.return_value = True
+    result = await runner.invoke(delete, ["client", CLIENT_NAME, "--nointeractive", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == f"client.jumpstarter.dev/{CLIENT_NAME}\n"
+    mock_delete_client.assert_called_once_with(CLIENT_NAME)
+    mock_load_or_create_user_config.assert_not_called()
+    mock_config_delete.assert_not_called()
+
+    mock_load_or_create_user_config.reset_mock()
+    mock_config_exists.reset_mock()
+    mock_delete_client.reset_mock()
+    mock_config_delete.reset_mock()
+    mock_save_user_config.reset_mock()
+
 
 EXPORTER_NAME = "test"
 EXPORTER_ENDPOINT = "grpc://example.com:443"
@@ -136,7 +167,9 @@ EXPORTER_OBJECT = V1Alpha1Exporter(
     api_version="jumpstarter.dev/v1alpha1",
     kind="Exporter",
     metadata=V1ObjectMeta(namespace="default", name=EXPORTER_NAME, creation_timestamp="2024-01-01T21:00:00Z"),
-    status=V1Alpha1ExporterStatus(endpoint=EXPORTER_ENDPOINT, credential=None, devices=[]),
+    status=V1Alpha1ExporterStatus(
+        endpoint=EXPORTER_ENDPOINT, credential=V1ObjectReference(name=f"{EXPORTER_NAME}-credential"), devices=[]
+    ),
 )
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     alias=EXPORTER_NAME,
@@ -193,6 +226,31 @@ async def test_delete_exporter(
     assert "Exporter configuration successfully deleted" in result.output
     mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
     mock_config_delete.assert_called_with(EXPORTER_NAME)
+
+    mock_config_exists.reset_mock()
+    mock_delete_exporter.reset_mock()
+    mock_config_delete.reset_mock()
+
+    # Delete exporter object nointeractive
+    mock_config_exists.return_value = True
+    result = await runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive"])
+    assert result.exit_code == 0
+    assert "Deleted exporter 'test' in namespace 'default'" in result.output
+    assert "Exporter configuration successfully deleted" not in result.output
+    mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
+    mock_config_delete.assert_not_called()
+
+    mock_config_exists.reset_mock()
+    mock_delete_exporter.reset_mock()
+    mock_config_delete.reset_mock()
+
+    # Delete exporter object output name
+    mock_config_exists.return_value = True
+    result = await runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
+    assert result.exit_code == 0
+    assert result.output == f"exporter.jumpstarter.dev/{EXPORTER_NAME}\n"
+    mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
+    mock_config_delete.assert_not_called()
 
     mock_config_exists.reset_mock()
     mock_delete_exporter.reset_mock()

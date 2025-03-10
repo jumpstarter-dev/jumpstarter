@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -55,11 +56,29 @@ async def test_import_client(_load_kube_config_mock, get_client_config_mock: Asy
     save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, None)
     save_client_config_mock.reset_mock()
 
-    # Save with custom output
+    # Save with nointeractive
+    result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--nointeractive"])
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, None)
+    save_client_config_mock.reset_mock()
+
+    # Save with custom out file
     out = f"/tmp/{CLIENT_NAME}.yaml"
     result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--unsafe", "--out", out])
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
+    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    save_client_config_mock.reset_mock()
+
+    # Save with path output
+    out = f"/tmp/{CLIENT_NAME}.yaml"
+    save_client_config_mock.return_value = Path(out)
+    result = await runner.invoke(
+        import_res, ["client", CLIENT_NAME, "--nointeractive", "--unsafe", "--out", out, "--output", "path"]
+    )
+    assert result.exit_code == 0
+    assert result.output == f"{out}\n"
     save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
     save_client_config_mock.reset_mock()
 
@@ -108,11 +127,19 @@ async def test_import_exporter(_load_kube_config_mock, _get_exporter_config_mock
     save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, None)
     save_exporter_config_mock.reset_mock()
 
-    # Save with custom path
+    # Save with custom out file
     out = f"/tmp/{EXPORTER_NAME}.yaml"
     result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--out", out])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
+    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, out)
+
+    # Save with path output
+    out = f"/tmp/{EXPORTER_NAME}.yaml"
+    save_exporter_config_mock.return_value = Path(out)
+    result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--out", out, "--output", "path"])
+    assert result.exit_code == 0
+    assert result.output == f"{out}\n"
     save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, out)
 
 
