@@ -66,19 +66,18 @@ class ClientConfigV1Alpha1(BaseModel):
             with portal.wrap_async_context_manager(self.lease_async(metadata_filter, lease_name, portal)) as lease:
                 yield lease
 
-    def get_exporter(self, namespace: str, name: str):
+    def get_exporter(self, name: str):
         with start_blocking_portal() as portal:
-            return portal.call(self.get_exporter_async, namespace, name)
+            return portal.call(self.get_exporter_async, name)
 
     def list_exporters(
         self,
-        namespace: str,
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
     ):
         with start_blocking_portal() as portal:
-            return portal.call(self.list_exporters_async, namespace, namespace, page_size, page_token, filter)
+            return portal.call(self.list_exporters_async, page_size, page_token, filter)
 
     def request_lease(self, metadata_filter: MetadataFilter):
         with start_blocking_portal() as portal:
@@ -92,14 +91,13 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             portal.call(self.release_lease_async, name)
 
-    async def get_exporter_async(self, namespace: str, name: str):
+    async def get_exporter_async(self, name: str):
         svc = ClientService(channel=await self.channel())
         with translate_grpc_exceptions():
-            return await svc.GetExporter(namespace=namespace, name=name)
+            return await svc.GetExporter(namespace=self.metadata.namespace, name=name)
 
     async def list_exporters_async(
         self,
-        namespace: str,
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
@@ -107,7 +105,7 @@ class ClientConfigV1Alpha1(BaseModel):
         svc = ClientService(channel=await self.channel())
         with translate_grpc_exceptions():
             return await svc.ListExporters(
-                namespace=namespace, page_size=page_size, page_token=page_token, filter=filter
+                namespace=self.metadata.namespace, page_size=page_size, page_token=page_token, filter=filter
             )
 
     async def request_lease_async(
