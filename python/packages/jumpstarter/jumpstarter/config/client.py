@@ -13,6 +13,7 @@ from .common import CONFIG_PATH, ObjectMeta
 from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
+from jumpstarter.client.grpc import ClientService
 from jumpstarter.common import MetadataFilter
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials, translate_grpc_exceptions
@@ -65,6 +66,20 @@ class ClientConfigV1Alpha1(BaseModel):
             with portal.wrap_async_context_manager(self.lease_async(metadata_filter, lease_name, portal)) as lease:
                 yield lease
 
+    def get_exporter(self, namespace: str, name: str):
+        with start_blocking_portal() as portal:
+            return portal.call(self.get_exporter_async, namespace, name)
+
+    def list_exporters(
+        self,
+        namespace: str,
+        page_size: int | None = None,
+        page_token: str | None = None,
+        filter: str | None = None,
+    ):
+        with start_blocking_portal() as portal:
+            return portal.call(self.list_exporters_async, namespace, namespace, page_size, page_token, filter)
+
     def request_lease(self, metadata_filter: MetadataFilter):
         with start_blocking_portal() as portal:
             return portal.call(self.request_lease_async, metadata_filter, portal)
@@ -76,6 +91,24 @@ class ClientConfigV1Alpha1(BaseModel):
     def release_lease(self, name):
         with start_blocking_portal() as portal:
             portal.call(self.release_lease_async, name)
+
+    async def get_exporter_async(self, namespace: str, name: str):
+        svc = ClientService(channel=await self.channel())
+        with translate_grpc_exceptions():
+            return await svc.GetExporter(namespace=namespace, name=name)
+
+    async def list_exporters_async(
+        self,
+        namespace: str,
+        page_size: int | None = None,
+        page_token: str | None = None,
+        filter: str | None = None,
+    ):
+        svc = ClientService(channel=await self.channel())
+        with translate_grpc_exceptions():
+            return await svc.ListExporters(
+                namespace=namespace, page_size=page_size, page_token=page_token, filter=filter
+            )
 
     async def request_lease_async(
         self,
