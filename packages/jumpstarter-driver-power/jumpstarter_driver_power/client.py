@@ -51,3 +51,19 @@ class PowerClient(DriverClient):
             self.cycle(wait)
 
         return base
+
+
+class VirtualPowerClient(PowerClient):
+    def off(self, destroy: bool = False) -> None:
+        self.call('off', destroy)
+
+    def cli(self):
+        parent = super().cli()
+
+        @parent.command(name='off')
+        @click.option('--destroy', is_flag=True, help='destroy the instance after powering it off')
+        def off(destroy: bool):
+            """Power off"""
+            self.off(destroy)
+
+        return parent
