@@ -22,18 +22,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ControllerService_Register_FullMethodName      = "/jumpstarter.v1.ControllerService/Register"
-	ControllerService_Unregister_FullMethodName    = "/jumpstarter.v1.ControllerService/Unregister"
-	ControllerService_Listen_FullMethodName        = "/jumpstarter.v1.ControllerService/Listen"
-	ControllerService_Status_FullMethodName        = "/jumpstarter.v1.ControllerService/Status"
-	ControllerService_Dial_FullMethodName          = "/jumpstarter.v1.ControllerService/Dial"
-	ControllerService_AuditStream_FullMethodName   = "/jumpstarter.v1.ControllerService/AuditStream"
-	ControllerService_ListExporters_FullMethodName = "/jumpstarter.v1.ControllerService/ListExporters"
-	ControllerService_GetExporter_FullMethodName   = "/jumpstarter.v1.ControllerService/GetExporter"
-	ControllerService_GetLease_FullMethodName      = "/jumpstarter.v1.ControllerService/GetLease"
-	ControllerService_RequestLease_FullMethodName  = "/jumpstarter.v1.ControllerService/RequestLease"
-	ControllerService_ReleaseLease_FullMethodName  = "/jumpstarter.v1.ControllerService/ReleaseLease"
-	ControllerService_ListLeases_FullMethodName    = "/jumpstarter.v1.ControllerService/ListLeases"
+	ControllerService_Register_FullMethodName     = "/jumpstarter.v1.ControllerService/Register"
+	ControllerService_Unregister_FullMethodName   = "/jumpstarter.v1.ControllerService/Unregister"
+	ControllerService_Listen_FullMethodName       = "/jumpstarter.v1.ControllerService/Listen"
+	ControllerService_Status_FullMethodName       = "/jumpstarter.v1.ControllerService/Status"
+	ControllerService_Dial_FullMethodName         = "/jumpstarter.v1.ControllerService/Dial"
+	ControllerService_AuditStream_FullMethodName  = "/jumpstarter.v1.ControllerService/AuditStream"
+	ControllerService_GetLease_FullMethodName     = "/jumpstarter.v1.ControllerService/GetLease"
+	ControllerService_RequestLease_FullMethodName = "/jumpstarter.v1.ControllerService/RequestLease"
+	ControllerService_ReleaseLease_FullMethodName = "/jumpstarter.v1.ControllerService/ReleaseLease"
+	ControllerService_ListLeases_FullMethodName   = "/jumpstarter.v1.ControllerService/ListLeases"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -62,12 +60,6 @@ type ControllerServiceClient interface {
 	// Audit events from the exporters
 	// audit events are used to track the exporter's activity
 	AuditStream(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[AuditStreamRequest, emptypb.Empty], error)
-	// List exporters
-	// Returns all exporters matching filter
-	ListExporters(ctx context.Context, in *ListExportersRequest, opts ...grpc.CallOption) (*ListExportersResponse, error)
-	// Get exporter
-	// Get information of the exporter of the given uuid
-	GetExporter(ctx context.Context, in *GetExporterRequest, opts ...grpc.CallOption) (*GetExporterResponse, error)
 	// Get Lease
 	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error)
 	// Request Lease
@@ -167,26 +159,6 @@ func (c *controllerServiceClient) AuditStream(ctx context.Context, opts ...grpc.
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ControllerService_AuditStreamClient = grpc.ClientStreamingClient[AuditStreamRequest, emptypb.Empty]
 
-func (c *controllerServiceClient) ListExporters(ctx context.Context, in *ListExportersRequest, opts ...grpc.CallOption) (*ListExportersResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListExportersResponse)
-	err := c.cc.Invoke(ctx, ControllerService_ListExporters_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *controllerServiceClient) GetExporter(ctx context.Context, in *GetExporterRequest, opts ...grpc.CallOption) (*GetExporterResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetExporterResponse)
-	err := c.cc.Invoke(ctx, ControllerService_GetExporter_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *controllerServiceClient) GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetLeaseResponse)
@@ -253,12 +225,6 @@ type ControllerServiceServer interface {
 	// Audit events from the exporters
 	// audit events are used to track the exporter's activity
 	AuditStream(grpc.ClientStreamingServer[AuditStreamRequest, emptypb.Empty]) error
-	// List exporters
-	// Returns all exporters matching filter
-	ListExporters(context.Context, *ListExportersRequest) (*ListExportersResponse, error)
-	// Get exporter
-	// Get information of the exporter of the given uuid
-	GetExporter(context.Context, *GetExporterRequest) (*GetExporterResponse, error)
 	// Get Lease
 	GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error)
 	// Request Lease
@@ -294,12 +260,6 @@ func (UnimplementedControllerServiceServer) Dial(context.Context, *DialRequest) 
 }
 func (UnimplementedControllerServiceServer) AuditStream(grpc.ClientStreamingServer[AuditStreamRequest, emptypb.Empty]) error {
 	return status.Errorf(codes.Unimplemented, "method AuditStream not implemented")
-}
-func (UnimplementedControllerServiceServer) ListExporters(context.Context, *ListExportersRequest) (*ListExportersResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListExporters not implemented")
-}
-func (UnimplementedControllerServiceServer) GetExporter(context.Context, *GetExporterRequest) (*GetExporterResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetExporter not implemented")
 }
 func (UnimplementedControllerServiceServer) GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLease not implemented")
@@ -417,42 +377,6 @@ func _ControllerService_AuditStream_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ControllerService_AuditStreamServer = grpc.ClientStreamingServer[AuditStreamRequest, emptypb.Empty]
 
-func _ControllerService_ListExporters_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListExportersRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ControllerServiceServer).ListExporters(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ControllerService_ListExporters_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).ListExporters(ctx, req.(*ListExportersRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ControllerService_GetExporter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetExporterRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ControllerServiceServer).GetExporter(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ControllerService_GetExporter_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServiceServer).GetExporter(ctx, req.(*GetExporterRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ControllerService_GetLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetLeaseRequest)
 	if err := dec(in); err != nil {
@@ -543,14 +467,6 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Dial",
 			Handler:    _ControllerService_Dial_Handler,
-		},
-		{
-			MethodName: "ListExporters",
-			Handler:    _ControllerService_ListExporters_Handler,
-		},
-		{
-			MethodName: "GetExporter",
-			Handler:    _ControllerService_GetExporter_Handler,
 		},
 		{
 			MethodName: "GetLease",
