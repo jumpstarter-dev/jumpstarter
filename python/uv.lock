@@ -1763,6 +1763,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "kubernetes" },
     { name = "kubernetes-asyncio" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -1778,6 +1779,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "kubernetes", specifier = ">=31.0.0" },
     { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
+    { name = "pydantic", specifier = ">=1.9.0" },
 ]
 
 [package.metadata.requires-dev]

@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal, Optional, Self
 import grpc
 import yaml
 from anyio.from_thread import start_blocking_portal
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from .common import ObjectMeta
 from .grpc import call_credentials
@@ -69,10 +69,10 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
 class ExporterConfigV1Alpha1(BaseModel):
     BASE_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
 
-    alias: str = Field(default="default", exclude=True)
+    alias: str = Field(default="default")
 
-    apiVersion: Literal["jumpstarter.dev/v1alpha1"] = "jumpstarter.dev/v1alpha1"
-    kind: Literal["ExporterConfig"] = "ExporterConfig"
+    apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
+    kind: Literal["ExporterConfig"] = Field(default="ExporterConfig")
     metadata: ObjectMeta
 
     endpoint: str
@@ -81,7 +81,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
 
-    path: Path | None = Field(default=None, exclude=True)
+    path: Path | None = Field(default=None)
 
     @classmethod
     def _get_path(cls, alias: str):
@@ -99,13 +99,13 @@ class ExporterConfigV1Alpha1(BaseModel):
             return config
 
     @classmethod
-    def load(cls, alias: str):
+    def load(cls, alias: str) -> Self:
         config = cls.load_path(cls._get_path(alias))
         config.alias = alias
         return config
 
     @classmethod
-    def list(cls):
+    def list(cls) -> list[Self]:
         exporters = []
         with suppress(FileNotFoundError):
             for entry in cls.BASE_PATH.iterdir():
@@ -114,10 +114,10 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @classmethod
     def dump_yaml(self, config: Self) -> str:
-        return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+        return yaml.safe_dump(config.model_dump(mode="json", exclude={"alias", "path"}), sort_keys=False)
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None):
+    def save(cls, config: Self, path: Optional[str] = None) -> Path:
         # Set the config path before saving
         if path is None:
             config.path = cls._get_path(config.alias)
@@ -125,11 +125,14 @@ class ExporterConfigV1Alpha1(BaseModel):
         else:
             config.path = Path(path)
         with config.path.open(mode="w") as f:
-            yaml.safe_dump(config.model_dump(mode="json"), f, sort_keys=False)
+            yaml.safe_dump(config.model_dump(mode="json", exclude={"alias", "path"}), f, sort_keys=False)
+        return config.path
 
     @classmethod
-    def delete(cls, alias: str):
-        cls._get_path(alias).unlink(missing_ok=True)
+    def delete(cls, alias: str) -> Path:
+        path = cls._get_path(alias)
+        path.unlink(missing_ok=True)
+        return path
 
     @asynccontextmanager
     async def serve_unix_async(self):
@@ -165,3 +168,17 @@ class ExporterConfigV1Alpha1(BaseModel):
             tls=self.tls,
         ) as exporter:
             await exporter.serve()
+
+
+class ExporterConfigListV1Alpha1(BaseModel):
+    api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
+    items: list[ExporterConfigV1Alpha1]
+    kind: Literal["ExporterConfigList"] = Field(default="ExporterConfigList")
+
+    def dump_json(self):
+        return self.model_dump_json(indent=4, by_alias=True)
+
+    def dump_yaml(self):
+        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)

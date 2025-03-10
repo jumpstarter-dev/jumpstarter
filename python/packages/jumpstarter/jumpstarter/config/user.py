@@ -82,16 +82,21 @@ class UserConfigV1Alpha1(BaseModel):
         return cls.load()
 
     @classmethod
-    def save(cls, config: Self, path: Optional[str] = None):
+    def save(cls, config: Self, path: Optional[str] = None) -> Path:
         """Save a user config as YAML."""
 
         with open(path or cls.USER_CONFIG_PATH, "w") as f:
             yaml.safe_dump(config.model_dump(mode="json", by_alias=True), f, sort_keys=False)
+        return path or cls.USER_CONFIG_PATH
 
-    def use_client(self, name: Optional[str]):
+    def use_client(self, name: Optional[str]) -> Path | None:
         """Updates the current client and saves the user config."""
         if name is not None:
             self.config.current_client = ClientConfigV1Alpha1.load(name)
         else:
             self.config.current_client = None
         self.save(self)
+        if self.config.current_client is not None:
+            return self.config.current_client.path
+        else:
+            return None

@@ -1,10 +1,13 @@
 import asyncio
 import base64
-from dataclasses import dataclass
 from typing import Literal
 
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
+from pydantic import Field
 
+from .json import JsonBaseModel
+from .list import V1Alpha1List
+from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 from jumpstarter.config import ExporterConfigV1Alpha1, ObjectMeta
 
@@ -12,69 +15,72 @@ CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10
 
 
-@dataclass(kw_only=True)
-class V1Alpha1ExporterDevice:
+class V1Alpha1ExporterDevice(JsonBaseModel):
     labels: dict[str, str]
     uuid: str
 
 
-@dataclass(kw_only=True)
-class V1Alpha1ExporterStatus:
-    credential: V1ObjectReference
-    endpoint: str
+class V1Alpha1ExporterStatus(JsonBaseModel):
+    credential: SerializeV1ObjectReference
     devices: list[V1Alpha1ExporterDevice]
+    endpoint: str
 
 
-@dataclass(kw_only=True)
-class V1Alpha1Exporter:
-    api_version: Literal["jumpstarter.dev/v1alpha1"]
-    kind: Literal["Exporter"]
-    metadata: V1ObjectMeta
+class V1Alpha1Exporter(JsonBaseModel):
+    api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
+    kind: Literal["Exporter"] = Field(default="Exporter")
+    metadata: SerializeV1ObjectMeta
     status: V1Alpha1ExporterStatus
+
+    @staticmethod
+    def from_dict(dict: dict):
+        return V1Alpha1Exporter(
+            api_version=dict["apiVersion"],
+            kind=dict["kind"],
+            metadata=V1ObjectMeta(
+                creation_timestamp=dict["metadata"]["creationTimestamp"],
+                generation=dict["metadata"]["generation"],
+                name=dict["metadata"]["name"],
+                namespace=dict["metadata"]["namespace"],
+                resource_version=dict["metadata"]["resourceVersion"],
+                uid=dict["metadata"]["uid"],
+            ),
+            status=V1Alpha1ExporterStatus(
+                credential=V1ObjectReference(name=dict["status"]["credential"]["name"])
+                if "credential" in dict["status"]
+                else None,
+                endpoint=dict["status"]["endpoint"],
+                devices=[V1Alpha1ExporterDevice(labels=d["labels"], uuid=d["uuid"]) for d in dict["status"]["devices"]]
+                if "devices" in dict["status"]
+                else [],
+            ),
+        )
+
+
+class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
+    kind: Literal["ExporterList"] = Field(default="ExporterList")
+
+    @staticmethod
+    def from_dict(dict: dict):
+        return V1Alpha1ExporterList(items=[V1Alpha1Exporter.from_dict(c) for c in dict["items"]])
 
 
 class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
     """Interact with the exporters custom resource API"""
 
-    @staticmethod
-    def _deserialize(result: dict) -> V1Alpha1Exporter:
-        return V1Alpha1Exporter(
-            api_version=result["apiVersion"],
-            kind=result["kind"],
-            metadata=V1ObjectMeta(
-                creation_timestamp=result["metadata"]["creationTimestamp"],
-                generation=result["metadata"]["generation"],
-                name=result["metadata"]["name"],
-                namespace=result["metadata"]["namespace"],
-                resource_version=result["metadata"]["resourceVersion"],
-                uid=result["metadata"]["uid"],
-            ),
-            status=V1Alpha1ExporterStatus(
-                credential=V1ObjectReference(name=result["status"]["credential"]["name"])
-                if "credential" in result["status"]
-                else None,
-                endpoint=result["status"]["endpoint"],
-                devices=[
-                    V1Alpha1ExporterDevice(labels=d["labels"], uuid=d["uuid"]) for d in result["status"]["devices"]
-                ]
-                if "devices" in result["status"]
-                else [],
-            ),
-        )
-
-    async def list_exporters(self) -> list[V1Alpha1Exporter]:
+    async def list_exporters(self) -> V1Alpha1List[V1Alpha1Exporter]:
         """List the exporter objects in the cluster"""
         res = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="exporters", version="v1alpha1"
         )
-        return [ExportersV1Alpha1Api._deserialize(c) for c in res["items"]]
+        return V1Alpha1ExporterList.from_dict(res)
 
     async def get_exporter(self, name: str) -> V1Alpha1Exporter:
         """Get a single exporter object from the cluster"""
         result = await self.api.get_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="exporters", version="v1alpha1", name=name
         )
-        return ExportersV1Alpha1Api._deserialize(result)
+        return V1Alpha1Exporter.from_dict(result)
 
     async def create_exporter(
         self, name: str, labels: dict[str, str] | None = None, oidc_username: str | None = None
@@ -106,7 +112,7 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
             # check if the client status is updated with the credentials
             if "status" in updated_exporter:
                 if "credential" in updated_exporter["status"]:
-                    return ExportersV1Alpha1Api._deserialize(updated_exporter)
+                    return V1Alpha1Exporter.from_dict(updated_exporter)
             count += 1
             await asyncio.sleep(CREATE_EXPORTER_DELAY)
         raise Exception("Timeout waiting for exporter credentials")
