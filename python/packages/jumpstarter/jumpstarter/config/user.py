@@ -87,7 +87,7 @@ class UserConfigV1Alpha1(BaseModel):
 
         with open(path or cls.USER_CONFIG_PATH, "w") as f:
             yaml.safe_dump(config.model_dump(mode="json", by_alias=True), f, sort_keys=False)
-        return path
+        return path or cls.USER_CONFIG_PATH
 
     def use_client(self, name: Optional[str]) -> Path | None:
         """Updates the current client and saves the user config."""

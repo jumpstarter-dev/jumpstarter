@@ -46,7 +46,7 @@ class V1Alpha1Client(JsonBaseModel):
                 credential=V1ObjectReference(name=dict["status"]["credential"]["name"])
                 if "credential" in dict["status"]
                 else None,
-                endpoint=dict["status"]["endpoint"],
+                endpoint=dict["status"].get("endpoint", ""),
             )
             if "status" in dict
             else None,
@@ -58,7 +58,7 @@ class V1Alpha1ClientList(V1Alpha1List[V1Alpha1Client]):
 
     @staticmethod
     def from_dict(dict: dict):
-        return V1Alpha1ClientList(items=[V1Alpha1Client.from_dict(c) for c in dict["items"]])
+        return V1Alpha1ClientList(items=[V1Alpha1Client.from_dict(c) for c in dict.get("items", [])])
 
 
 class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):

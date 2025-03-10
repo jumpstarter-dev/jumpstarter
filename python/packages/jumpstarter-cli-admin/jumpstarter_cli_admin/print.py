@@ -57,7 +57,7 @@ def make_exporter_row(exporter: V1Alpha1Exporter):
     return {
         "NAME": exporter.metadata.name,
         "ENDPOINT": exporter.status.endpoint,
-        "DEVICES": str(len(exporter.status.devices)),
+        "DEVICES": str(len(exporter.status.devices) if exporter.status and exporter.status.devices else 0),
         "AGE": time_since(exporter.metadata.creation_timestamp),
     }
 
@@ -66,19 +66,21 @@ def get_device_rows(exporters: list[V1Alpha1Exporter]):
     """Get the device rows to print from the exporters"""
     devices = []
     for e in exporters:
-        for d in e.status.devices:
-            labels = []
-            for label in d.labels:
-                labels.append(f"{label}:{str(d.labels[label])}")
-            devices.append(
-                {
-                    "NAME": e.metadata.name,
-                    "ENDPOINT": e.status.endpoint,
-                    "AGE": time_since(e.metadata.creation_timestamp),
-                    "LABELS": ",".join(labels),
-                    "UUID": d.uuid,
-                }
-            )
+        if e.status is not None:
+            for d in e.status.devices:
+                labels = []
+                if d.labels is not None:
+                    for label in d.labels:
+                        labels.append(f"{label}:{str(d.labels[label])}")
+                devices.append(
+                    {
+                        "NAME": e.metadata.name,
+                        "ENDPOINT": e.status.endpoint,
+                        "AGE": time_since(e.metadata.creation_timestamp),
+                        "LABELS": ",".join(labels),
+                        "UUID": d.uuid,
+                    }
+                )
     return devices
 
 
