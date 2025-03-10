@@ -1,4 +1,6 @@
 from .jumpstarter.v1 import (
+        client_pb2,
+        client_pb2_grpc,
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
     kubernetes_pb2,
@@ -8,6 +10,8 @@ from .jumpstarter.v1 import (
 )
 
 __all__ = [
+    "client_pb2",
+    "client_pb2_grpc",
     "jumpstarter_pb2",
     "jumpstarter_pb2_grpc",
     "kubernetes_pb2",
