@@ -18,6 +18,14 @@ service ClientService {
     option (google.api.http) = {get: "/v1/{parent=namespaces/*}/exporters"};
     option (google.api.method_signature) = "parent";
   }
+
+  rpc CreateLease(CreateLeaseRequest) returns (Lease) {
+    option (google.api.http) = {
+      post: "/v1/{parent=namespaces/*}/leases"
+      body: "lease"
+    };
+    option (google.api.method_signature) = "parent,lease,lease_id";
+  }
 }
 
 message Exporter {
@@ -63,4 +71,14 @@ message ListExportersRequest {
 message ListExportersResponse {
   repeated Exporter exporters = 1;
   string next_page_token = 2;
+}
+
+message CreateLeaseRequest {
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {child_type: "jumpstarter.dev/Lease"}
+  ];
+
+  string lease_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  Lease lease = 3 [(google.api.field_behavior) = REQUIRED];
 }
