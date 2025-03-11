@@ -1,4 +1,9 @@
 // Copyright 2024 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
 
 syntax = "proto3";
 
@@ -8,7 +13,10 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "jumpstarter/v1/kubernetes.proto";
 
 service ClientService {
   rpc GetExporter(GetExporterRequest) returns (Exporter) {
@@ -62,6 +70,16 @@ message Lease {
   };
 
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  jumpstarter.v1.LabelSelector selector = 2 [(google.api.field_behavior) = OPTIONAL];
+  google.protobuf.Duration duration = 3 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.Duration effective_duration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional google.protobuf.Timestamp begin_time = 5;
+  optional google.protobuf.Timestamp effective_begin_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional google.protobuf.Timestamp end_time = 7;
+  optional google.protobuf.Timestamp effective_end_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional string exporter_uuid = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated jumpstarter.v1.Condition conditions = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message GetExporterRequest {
