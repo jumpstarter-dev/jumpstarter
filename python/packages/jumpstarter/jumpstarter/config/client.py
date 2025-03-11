@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager, contextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar, Literal, Optional, Self
 
@@ -83,9 +84,28 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             return portal.call(self.request_lease_async, metadata_filter, portal)
 
-    def list_leases(self):
+    def list_leases(self, filter: str):
         with start_blocking_portal() as portal:
-            return portal.call(self.list_leases_async)
+            return portal.call(self.list_leases_async, filter)
+
+    def create_lease(
+        self,
+        selector: str,
+        duration: timedelta,
+    ):
+        with start_blocking_portal() as portal:
+            return portal.call(self.create_lease_async, selector, duration)
+
+    def delete_lease(
+        self,
+        name: str,
+    ):
+        with start_blocking_portal() as portal:
+            return portal.call(self.delete_lease_async, name)
+
+    def update_lease(self, name, duration: timedelta):
+        with start_blocking_portal() as portal:
+            return portal.call(self.update_lease_async, name, duration)
 
     def release_lease(self, name):
         with start_blocking_portal() as portal:
@@ -105,6 +125,25 @@ class ClientConfigV1Alpha1(BaseModel):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
             return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+
+    async def create_lease_async(
+        self,
+        selector: str,
+        duration: timedelta,
+    ):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        with translate_grpc_exceptions():
+            return await svc.CreateLease(
+                selector=selector,
+                duration=duration,
+            )
+
+    async def delete_lease_async(self, name: str):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        with translate_grpc_exceptions():
+            await svc.DeleteLease(
+                name=name,
+            )
 
     async def request_lease_async(
         self,
@@ -128,11 +167,15 @@ class ClientConfigV1Alpha1(BaseModel):
         with translate_grpc_exceptions():
             return await lease.request_async()
 
-    async def list_leases_async(self):
+    async def list_leases_async(self, filter: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            result = await svc.ListLeases()
-            return [lease.name for lease in result.leases]
+            return await svc.ListLeases(filter=filter)
+
+    async def update_lease_async(self, name, duration: timedelta):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        with translate_grpc_exceptions():
+            return await svc.UpdateLease(name=name, duration=duration)
 
     async def release_lease_async(self, name):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
