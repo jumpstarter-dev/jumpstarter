@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package jumpstarter.v1;
+package jumpstarter.v1.client;
 
 import "google/api/annotations.proto";
 import "google/api/client.proto";
