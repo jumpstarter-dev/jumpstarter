@@ -1,0 +1,46 @@
+[project]
+name = "jumpstarter-driver-flashers"
+dynamic = ["version", "urls"]
+description = "Add your description here"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" },
+    { name = "Miguel Angel Ajo", email = "majopela@redhat.com" },
+]
+requires-python = ">=3.11"
+dependencies = [
+    "oras>=0.2.25",
+    "anyio>=4.6.2.post1",
+    "jumpstarter",
+    "jumpstarter-driver-opendal",
+    "jumpstarter-driver-pyserial",
+    "jumpstarter-driver-http",
+    "jumpstarter-driver-tftp",
+    "jumpstarter-driver-power",
+]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_flashers"]
+#asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]

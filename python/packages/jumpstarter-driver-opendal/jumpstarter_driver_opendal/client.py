@@ -52,7 +52,7 @@ def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
                 root='/',
                 endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}"
             )
-            return parsed_url.path, operator
+            return Path(parsed_url.path), operator
     else:
         return fs_operator_for_path(path)
 

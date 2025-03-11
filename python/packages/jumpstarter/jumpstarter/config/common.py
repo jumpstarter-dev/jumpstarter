@@ -7,5 +7,5 @@ CONFIG_PATH = Path.home() / ".config" / "jumpstarter"
 
 
 class ObjectMeta(BaseModel):
-    namespace: str
+    namespace: str | None
     name: str
