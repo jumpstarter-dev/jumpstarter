@@ -15,6 +15,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "jumpstarter/v1/kubernetes.proto";
 
@@ -42,6 +43,13 @@ service ClientService {
       body: "lease"
     };
     option (google.api.method_signature) = "parent,lease,lease_id";
+  }
+  rpc UpdateLease(UpdateLeaseRequest) returns (Lease) {
+    option (google.api.http) = {
+      patch: "/v1/{lease.name=namespaces/*/leases/*}"
+      body: "lease"
+    };
+    option (google.api.method_signature) = "lease,update_mask";
   }
   rpc DeleteLease(DeleteLeaseRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {delete: "/v1/{name=namespaces/*/leases/*}"};
@@ -71,7 +79,10 @@ message Lease {
 
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  jumpstarter.v1.LabelSelector selector = 2 [(google.api.field_behavior) = OPTIONAL];
+  jumpstarter.v1.LabelSelector selector = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
   google.protobuf.Duration duration = 3 [(google.api.field_behavior) = REQUIRED];
   google.protobuf.Duration effective_duration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   optional google.protobuf.Timestamp begin_time = 5;
@@ -141,6 +152,11 @@ message CreateLeaseRequest {
 
   string lease_id = 2 [(google.api.field_behavior) = OPTIONAL];
   Lease lease = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateLeaseRequest {
+  Lease lease = 1 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message DeleteLeaseRequest {
