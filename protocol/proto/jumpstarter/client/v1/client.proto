@@ -24,6 +24,10 @@ service ClientService {
     option (google.api.http) = {get: "/v1/{name=namespaces/*/leases/*}"};
     option (google.api.method_signature) = "name";
   }
+  rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse) {
+    option (google.api.http) = {get: "/v1/{parent=namespaces/*}/leases"};
+    option (google.api.method_signature) = "parent";
+  }
   rpc CreateLease(CreateLeaseRequest) returns (Lease) {
     option (google.api.http) = {
       post: "/v1/{parent=namespaces/*}/leases"
@@ -87,6 +91,21 @@ message GetLeaseRequest {
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Lease"}
   ];
+}
+
+message ListLeasesRequest {
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {child_type: "jumpstarter.dev/Lease"}
+  ];
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message ListLeasesResponse {
+  repeated Lease leases = 1;
+  string next_page_token = 2;
 }
 
 message CreateLeaseRequest {
