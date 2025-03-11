@@ -8,6 +8,7 @@ import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
 
 service ClientService {
   rpc GetExporter(GetExporterRequest) returns (Exporter) {
@@ -25,6 +26,10 @@ service ClientService {
       body: "lease"
     };
     option (google.api.method_signature) = "parent,lease,lease_id";
+  }
+  rpc DeleteLease(DeleteLeaseRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/v1/{name=namespaces/*/leases/*}"};
+    option (google.api.method_signature) = "name";
   }
 }
 
@@ -81,4 +86,11 @@ message CreateLeaseRequest {
 
   string lease_id = 2 [(google.api.field_behavior) = OPTIONAL];
   Lease lease = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteLeaseRequest {
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {type: "jumpstarter.dev/Lease"}
+  ];
 }
