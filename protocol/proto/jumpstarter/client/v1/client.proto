@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package jumpstarter.v1.client;
+package jumpstarter.client.v1;
 
 import "google/api/annotations.proto";
 import "google/api/client.proto";
@@ -20,6 +20,10 @@ service ClientService {
     option (google.api.method_signature) = "parent";
   }
 
+  rpc GetLease(GetLeaseRequest) returns (Lease) {
+    option (google.api.http) = {get: "/v1/{name=namespaces/*/leases/*}"};
+    option (google.api.method_signature) = "name";
+  }
   rpc CreateLease(CreateLeaseRequest) returns (Lease) {
     option (google.api.http) = {
       post: "/v1/{parent=namespaces/*}/leases"
@@ -76,6 +80,13 @@ message ListExportersRequest {
 message ListExportersResponse {
   repeated Exporter exporters = 1;
   string next_page_token = 2;
+}
+
+message GetLeaseRequest {
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {type: "jumpstarter.dev/Lease"}
+  ];
 }
 
 message CreateLeaseRequest {
