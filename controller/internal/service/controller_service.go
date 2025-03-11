@@ -30,7 +30,10 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
+	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/auth"
+	clientsvcv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/service/client/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -43,7 +46,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
@@ -59,7 +61,6 @@ import (
 
 // ControlerService exposes a gRPC service
 type ControllerService struct {
-	pb.UnimplementedClientServiceServer
 	pb.UnimplementedControllerServiceServer
 	Client       client.WithWatch
 	Scheme       *runtime.Scheme
@@ -644,74 +645,6 @@ func (s *ControllerService) ListLeases(
 	}, nil
 }
 
-func (s *ControllerService) GetExporter(
-	ctx context.Context,
-	req *pb.GetExporterRequest,
-) (*pb.Exporter, error) {
-	_, err := s.authenticateClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	namespace, name, err := ParseExporterIdentifier(req.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var exporter jumpstarterdevv1alpha1.Exporter
-	if err := s.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &exporter); err != nil {
-		return nil, err
-	}
-
-	return &pb.Exporter{
-		Name:   req.Name,
-		Labels: exporter.Labels,
-	}, nil
-}
-
-func (s *ControllerService) ListExporters(
-	ctx context.Context,
-	req *pb.ListExportersRequest,
-) (*pb.ListExportersResponse, error) {
-	_, err := s.authenticateClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	namespace, err := ParseNamespaceIdentifier(req.Parent)
-	if err != nil {
-		return nil, err
-	}
-
-	selector, err := labels.Parse(req.Filter)
-	if err != nil {
-		return nil, err
-	}
-
-	var exporters jumpstarterdevv1alpha1.ExporterList
-	if err := s.Client.List(ctx, &exporters, &client.ListOptions{
-		Namespace:     namespace,
-		LabelSelector: selector,
-		Limit:         int64(req.PageSize),
-		Continue:      req.PageToken,
-	}); err != nil {
-		return nil, err
-	}
-
-	var results []*pb.Exporter
-	for _, exporter := range exporters.Items {
-		results = append(results, &pb.Exporter{
-			Name:   UnparseExporterIdentifier(exporter.Namespace, exporter.Name),
-			Labels: exporter.Labels,
-		})
-	}
-
-	return &pb.ListExportersResponse{
-		Exporters:     results,
-		NextPageToken: exporters.Continue,
-	}, nil
-}
-
 func (s *ControllerService) Start(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
@@ -747,7 +680,10 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	)
 
 	pb.RegisterControllerServiceServer(server, s)
-	pb.RegisterClientServiceServer(server, s)
+	cpb.RegisterClientServiceServer(
+		server,
+		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr)),
+	)
 
 	// Register reflection service on gRPC server.
 	reflection.Register(server)
