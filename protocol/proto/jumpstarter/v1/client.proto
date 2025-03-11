@@ -32,6 +32,17 @@ message Exporter {
   map<string, string> labels = 2;
 }
 
+message Lease {
+  option (google.api.resource) = {
+    type: "jumpstarter.dev/Lease"
+    pattern: "namespaces/{namespace}/leases/{lease}"
+    singular: "lease"
+    plural: "leases"
+  };
+
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+}
+
 message GetExporterRequest {
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
