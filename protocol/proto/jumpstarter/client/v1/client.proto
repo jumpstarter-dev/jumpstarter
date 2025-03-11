@@ -78,8 +78,15 @@ message Lease {
   optional google.protobuf.Timestamp effective_begin_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
   optional google.protobuf.Timestamp end_time = 7;
   optional google.protobuf.Timestamp effective_end_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
-  optional string exporter_uuid = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
-  repeated jumpstarter.v1.Condition conditions = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional string client = 9 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {type: "jumpstarter.dev/Client"}
+  ];
+  optional string exporter = 10 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}
+  ];
+  repeated jumpstarter.v1.Condition conditions = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message GetExporterRequest {
