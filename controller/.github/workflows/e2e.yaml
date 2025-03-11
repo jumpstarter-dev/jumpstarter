@@ -13,3 +13,10 @@ jobs:
         with:
           controller-ref: ${{ github.ref }}
           jumpstarter-ref: main
+  e2e-tests-28d6b1cc3b49ab9ae176918ab9709a2e2522c97e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: jumpstarter-dev/jumpstarter-e2e@11a5ce6734be9f089ec3ea6ebf55284616f67fe8
+        with:
+          controller-ref: ${{ github.ref }}
+          jumpstarter-ref: 28d6b1cc3b49ab9ae176918ab9709a2e2522c97e
