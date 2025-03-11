@@ -1,7 +1,7 @@
 [project]
 name = "jumpstarter-driver-http"
-version = "0.1.0"
-description = "Add your description here"
+dynamic = ["version", "urls"]
+description = "Exporter HTTP service driver"
 readme = "README.md"
 authors = [
     { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }
