@@ -1,3 +1,5 @@
+from functools import wraps
+
 import asyncclick as click
 
 from jumpstarter.common.exceptions import JumpstarterException
@@ -11,6 +13,7 @@ class ClickExceptionRed(click.ClickException):
 def async_handle_exceptions(func):
     """Decorator to handle exceptions in async functions."""
 
+    @wraps(func)
     async def wrapped(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
@@ -27,6 +30,7 @@ def async_handle_exceptions(func):
 def handle_exceptions(func):
     """Decorator to handle exceptions in blocking functions."""
 
+    @wraps(func)
     def wrapped(*args, **kwargs):
         try:
             return func(*args, **kwargs)

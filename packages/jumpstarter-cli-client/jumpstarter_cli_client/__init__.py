@@ -6,11 +6,13 @@ import asyncclick as click
 from jumpstarter_cli_common import AliasedGroup, opt_log_level, version
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .client_exporter import list_client_exporters
-from .client_lease import client_lease
 from .client_login import client_login
 from .client_shell import client_shell
 from .config import config
+from .create import create
+from .delete import delete
+from .get import get
+from .update import update
 from jumpstarter.common.utils import env
 
 
@@ -38,9 +40,11 @@ def j():
             sys.exit(1)
 
 
-client.add_command(list_client_exporters)
 client.add_command(config)
-client.add_command(client_lease)
+client.add_command(create)
+client.add_command(get)
+client.add_command(delete)
+client.add_command(update)
 client.add_command(client_login)
 client.add_command(client_shell)
 client.add_command(version)
