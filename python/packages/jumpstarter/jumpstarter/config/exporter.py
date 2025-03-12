@@ -28,6 +28,7 @@ class ExporterConfigV1Alpha1DriverInstanceComposite(BaseModel):
 class ExporterConfigV1Alpha1DriverInstanceBase(BaseModel):
     type: str
     config: dict[str, Any] = Field(default_factory=dict)
+    children: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
 
 
 class ExporterConfigV1Alpha1DriverInstance(RootModel):
@@ -42,7 +43,9 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
             case ExporterConfigV1Alpha1DriverInstanceBase():
                 driver_class = import_class(self.root.type, [], True)
 
-                return driver_class(**self.root.config)
+                children = {name: child.instantiate() for name, child in self.root.children.items()}
+
+                return driver_class(children=children, **self.root.config)
 
             case ExporterConfigV1Alpha1DriverInstanceComposite():
                 from jumpstarter_driver_composite.driver import Composite
