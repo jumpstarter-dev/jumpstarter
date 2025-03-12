@@ -143,19 +143,33 @@ runs:
         jmp exporter run test-exporter-sa &
         jmp exporter run test-exporter-legacy &
 
-        kubectl -n default wait --for=condition=Registered exporters.jumpstarter.dev/test-exporter-oidc
-        kubectl -n default wait --for=condition=Registered exporters.jumpstarter.dev/test-exporter-sa
-        kubectl -n default wait --for=condition=Registered exporters.jumpstarter.dev/test-exporter-legacy
+        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-oidc
+        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-sa
+        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-legacy
 
-        jmp client shell test-client-oidc --label example.com/board oidc <<EOF
+        jmp client config use test-client-oidc
+
+        jmp client create lease     --selector example.com/board=oidc --duration 1d
+        jmp client get    leases
+        jmp client get    exporters
+        jmp client delete leases    --all
+
+        jmp admin get client
+        jmp admin get exporter
+        jmp admin get lease
+
+        jmp exporter run test-exporter-oidc &
+        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-oidc
+
+        jmp client shell --client test-client-oidc --selector example.com/board=oidc <<EOF
         j power on
         EOF
 
-        jmp client shell test-client-sa --label example.com/board sa <<EOF
+        jmp client shell --client test-client-sa --selector example.com/board=sa <<EOF
         j power on
         EOF
 
-        jmp client shell test-client-legacy --label example.com/board legacy <<EOF
+        jmp client shell --client test-client-legacy --selector example.com/board=legacy <<EOF
         j power on
         EOF
 
