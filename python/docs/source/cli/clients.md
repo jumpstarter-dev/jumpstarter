@@ -79,10 +79,10 @@ self-signed certificates.
 
 3. Those details can be installed as a secret on CI, or passed down to the final user.
 
-    Then the user can create the client using the [jmp client](./reference/jmp-client.md#jmp-client-create-config) CLI:
+    Then the user can create the client using the [jmp client](./reference/jmp-client.md#jmp-client-config-create) CLI:
 
     ```bash
-    $ jmp client create-config my-client
+    $ jmp client config create my-client
     Enter a valid Jumpstarter service endpoint: devl.jumpstarter.dev
     Enter a Jumpstarter auth token (hidden): ***
     Enter a comma-separated list of allowed driver packages (optional):
