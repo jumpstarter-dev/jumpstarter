@@ -104,8 +104,8 @@ runs:
         jmp admin create exporter test-exporter-legacy --save \
           --label example.com/board legacy
 
-        jmp client   list-configs
-        jmp exporter list-configs
+        jmp client   config list
+        jmp exporter config list
 
         jmp client   login test-client-oidc \
           --endpoint "$ENDPOINT" --namespace default --name test-client-oidc \
@@ -136,8 +136,8 @@ runs:
         go run github.com/mikefarah/yq/v4@latest -i ". * load(\"$GITHUB_ACTION_PATH/exporter.yaml\")" \
           /etc/jumpstarter/exporters/test-exporter-legacy.yaml
 
-        jmp client   list-configs
-        jmp exporter list-configs
+        jmp client   config list
+        jmp exporter config list
 
         jmp exporter run test-exporter-oidc &
         jmp exporter run test-exporter-sa &
