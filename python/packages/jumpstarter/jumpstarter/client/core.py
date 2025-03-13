@@ -13,6 +13,7 @@ from grpc.aio import AioRpcError, Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 from jumpstarter.common import Metadata
+from jumpstarter.common.exceptions import JumpstarterException
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -27,6 +28,24 @@ from jumpstarter.streams import (
     RouterStream,
     forward_stream,
 )
+
+
+class DriverError(JumpstarterException):
+    """
+    Raised when a driver call returns an error
+    """
+
+
+class DriverMethodNotImplemented(DriverError):
+    """
+    Raised when a driver method is not implemented
+    """
+
+
+class DriverInvalidArgument(DriverError):
+    """
+    Raised when a driver method is called with invalid arguments
+    """
 
 
 @dataclass(kw_only=True)
@@ -74,11 +93,11 @@ class AsyncDriverClient(
         except AioRpcError as e:
             match e.code():
                 case StatusCode.UNIMPLEMENTED:
-                    raise NotImplementedError(e.details()) from None
+                    raise DriverMethodNotImplemented(e.details()) from None
                 case StatusCode.INVALID_ARGUMENT:
-                    raise ValueError(e.details()) from None
+                    raise DriverInvalidArgument(e.details()) from None
                 case _:
-                    raise
+                    raise DriverError(e.details()) from e
 
         return decode_value(response.result)
 
@@ -97,11 +116,11 @@ class AsyncDriverClient(
         except AioRpcError as e:
             match e.code():
                 case StatusCode.UNIMPLEMENTED:
-                    raise NotImplementedError(e.details()) from None
+                    raise DriverMethodNotImplemented(e.details()) from None
                 case StatusCode.INVALID_ARGUMENT:
-                    raise ValueError(e.details()) from None
+                    raise DriverInvalidArgument(e.details()) from None
                 case _:
-                    raise
+                    raise DriverError(e.details()) from e
 
     @asynccontextmanager
     async def stream_async(self, method):
