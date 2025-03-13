@@ -36,13 +36,13 @@ class DriverError(JumpstarterException):
     """
 
 
-class DriverMethodNotImplemented(DriverError):
+class DriverMethodNotImplemented(DriverError, NotImplementedError):
     """
     Raised when a driver method is not implemented
     """
 
 
-class DriverInvalidArgument(DriverError):
+class DriverInvalidArgument(DriverError, ValueError):
     """
     Raised when a driver method is called with invalid arguments
     """
