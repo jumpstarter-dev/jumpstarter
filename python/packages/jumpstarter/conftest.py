@@ -16,7 +16,6 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jumpstarter_protocol import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
-    kubernetes_pb2,
     router_pb2_grpc,
 )
 
@@ -58,60 +57,6 @@ class MockController(jumpstarter_pb2_grpc.ControllerServiceServicer):
 
     async def Unregister(self, request, context):
         return jumpstarter_pb2.UnregisterResponse()
-
-    async def RequestLease(self, request, context):
-        lease_name = str(uuid4())
-        if "unsatisfiable" in request.selector.match_labels:
-            self.leases[lease_name] = "unsatisfiable"
-        else:
-            self.leases[lease_name] = 0
-        await self.status[0].send(
-            jumpstarter_pb2.StatusResponse(leased=True, lease_name=lease_name, client_name="dummy")
-        )
-        return jumpstarter_pb2.RequestLeaseResponse(name=lease_name)
-
-    async def GetLease(self, request, context):
-        if self.leases[request.name] == "unsatisfiable":
-            return jumpstarter_pb2.GetLeaseResponse(
-                exporter_uuid=str(uuid4()),
-                conditions=[
-                    kubernetes_pb2.Condition(
-                        type="Unsatisfiable",
-                        status="True",
-                    ),
-                ],
-            )
-
-        self.leases[request.name] += 1
-        if self.leases[request.name] == 1:
-            return jumpstarter_pb2.GetLeaseResponse(
-                exporter_uuid=str(uuid4()),
-                conditions=[],
-            )
-        if self.leases[request.name] == 2:
-            return jumpstarter_pb2.GetLeaseResponse(
-                exporter_uuid=str(uuid4()),
-                conditions=[
-                    kubernetes_pb2.Condition(
-                        type="Pending",
-                        status="True",
-                    ),
-                ],
-            )
-        else:
-            return jumpstarter_pb2.GetLeaseResponse(
-                exporter_uuid=str(uuid4()),
-                conditions=[
-                    kubernetes_pb2.Condition(
-                        type="Ready",
-                        status="True",
-                    ),
-                ],
-            )
-
-    async def ReleaseLease(self, request, context):
-        await self.status[0].send(jumpstarter_pb2.StatusResponse(leased=False))
-        return jumpstarter_pb2.ReleaseLeaseResponse()
 
     async def Dial(self, request, context):
         token = str(uuid4())

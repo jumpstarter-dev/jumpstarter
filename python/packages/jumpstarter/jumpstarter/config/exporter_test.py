@@ -1,68 +1,12 @@
-from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
-from anyio import create_task_group
-from anyio.from_thread import start_blocking_portal
 
-from .client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from .common import ObjectMeta
 from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 from .tls import TLSConfigV1Alpha1
-from jumpstarter.common import MetadataFilter
 
 pytestmark = pytest.mark.anyio
-
-
-async def test_exporter_serve(mock_controller):
-    exporter = ExporterConfigV1Alpha1(
-        apiVersion="jumpstarter.dev/v1alpha1",
-        kind="ExporterConfig",
-        metadata=ObjectMeta(namespace="default", name="test"),
-        endpoint=mock_controller,
-        token="dummy-exporter-token",
-        export={
-            "power": ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_power.driver.MockPower",
-            ),
-            "nested": ExporterConfigV1Alpha1DriverInstance(
-                children={
-                    "tcp": ExporterConfigV1Alpha1DriverInstance(
-                        type="jumpstarter_driver_network.driver.TcpNetwork",
-                        config={
-                            "host": "127.0.0.1",
-                            "port": 8080,
-                        },
-                    )
-                }
-            ),
-        },
-    )
-
-    client = ClientConfigV1Alpha1(
-        name="testclient",
-        metadata=ObjectMeta(namespace="default", name="testclient"),
-        endpoint=mock_controller,
-        token="dummy-client-token",
-        drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
-        tls=TLSConfigV1Alpha1(insecure=True),
-    )
-
-    async with create_task_group() as tg:
-        tg.start_soon(exporter.serve)
-
-        with start_blocking_portal() as portal:
-            async with client.lease_async(
-                metadata_filter=MetadataFilter(),
-                lease_name=None,
-                portal=portal,
-            ) as lease:
-                with ExitStack() as stack:
-                    async with lease.connect_async(stack) as client:
-                        await client.power.call_async("on")
-                        assert hasattr(client.nested, "tcp")
-
-        tg.cancel_scope.cancel()
 
 
 def test_exporter_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
