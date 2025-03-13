@@ -1,8 +1,10 @@
 import logging
+import sys
 from typing import Optional
 
 import asyncclick as click
 from jumpstarter_cli_common import AliasedGroup, opt_log_level, version
+from jumpstarter_cli_common.exceptions import handle_exceptions
 
 from .client_config import create_client_config, delete_client_config, list_client_configs, use_client_config
 from .client_exporter import list_client_exporters
@@ -24,7 +26,16 @@ def client(log_level: Optional[str]):
 
 def j():
     with env() as client:
-        client.cli()(standalone_mode=True)
+
+        @handle_exceptions
+        def cli():
+            client.cli()(standalone_mode=False)
+
+        try:
+            cli()
+        except click.ClickException as e:
+            e.show()
+            sys.exit(1)
 
 
 client.add_command(create_client_config)
