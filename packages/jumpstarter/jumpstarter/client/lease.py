@@ -7,15 +7,16 @@ from contextlib import (
     contextmanager,
 )
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from anyio import fail_after, sleep
 from anyio.from_thread import BlockingPortal
-from google.protobuf import duration_pb2
 from grpc.aio import Channel
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, kubernetes_pb2
+from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
+from jumpstarter.client.grpc import ClientService
 from jumpstarter.common import MetadataFilter, TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
 from jumpstarter.common.grpc import translate_grpc_exceptions
@@ -31,6 +32,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     timeout: int = 1800
     metadata_filter: MetadataFilter = field(default_factory=MetadataFilter)
     portal: BlockingPortal
+    namespace: str
     name: str | None = field(default=None)
     allow: list[str]
     unsafe: bool
@@ -43,24 +45,23 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
             super().__post_init__()
 
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
+        self.svc = ClientService(channel=self.channel)
         self.manager = self.portal.wrap_async_context_manager(self)
 
     async def _create(self):
-        duration = duration_pb2.Duration()
-        duration.FromSeconds(self.timeout)
-        duration_str = str(duration.ToTimedelta())
+        duration = timedelta(seconds=self.timeout)
+        selector = ",".join(("{}={}".format(label[0], label[1]) for label in self.metadata_filter.labels.items()))
 
-        logger.debug("Creating lease request for labels %s for %s", self.metadata_filter.labels, duration_str)
+        logger.debug("Creating lease request for selector %s for duration %s", selector, duration)
         with translate_grpc_exceptions():
             self.name = (
-                await self.controller.RequestLease(
-                    jumpstarter_pb2.RequestLeaseRequest(
-                        duration=duration,
-                        selector=kubernetes_pb2.LabelSelector(match_labels=self.metadata_filter.labels),
-                    )
+                await self.svc.CreateLease(
+                    namespace=self.namespace,
+                    selector=selector,
+                    duration=timedelta(seconds=self.timeout),
                 )
             ).name
-        logger.info("Created lease request for labels %s for %s", self.metadata_filter.labels, duration_str)
+        logger.info("Created lease request for selector %s for duration %s", selector, duration)
 
     def request(self):
         """Request a lease, or verifies a lease which was already created.
@@ -97,7 +98,10 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
             while True:
                 logger.debug("Polling Lease %s", self.name)
                 with translate_grpc_exceptions():
-                    result = await self.controller.GetLease(jumpstarter_pb2.GetLeaseRequest(name=self.name))
+                    result = await self.svc.GetLease(
+                        namespace=self.namespace,
+                        name=self.name,
+                    )
 
                 # lease ready
                 if condition_true(result.conditions, "Ready"):
@@ -131,7 +135,10 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     async def __aexit__(self, exc_type, exc_value, traceback):
         if self.release:
             logger.info("Releasing Lease %s", self.name)
-            await self.controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=self.name))
+            await self.svc.DeleteLease(
+                namespace=self.namespace,
+                name=self.name,
+            )
 
     def __enter__(self):
         # wraps the async context manager enter

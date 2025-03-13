@@ -6,7 +6,6 @@ from typing import ClassVar, Literal, Optional, Self
 import grpc
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .common import CONFIG_PATH, ObjectMeta
@@ -118,6 +117,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
         lease = Lease(
             channel=await self.channel(),
+            namespace=self.metadata.namespace,
             name=None,
             metadata_filter=metadata_filter,
             portal=portal,
@@ -129,14 +129,15 @@ class ClientConfigV1Alpha1(BaseModel):
             return await lease.request_async()
 
     async def list_leases_async(self):
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        svc = ClientService(channel=await self.channel())
         with translate_grpc_exceptions():
-            return (await controller.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
+            result = await svc.ListLeases(namespace=self.metadata.namespace)
+            return [lease.name for lease in result.leases]
 
     async def release_lease_async(self, name):
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        svc = ClientService(channel=await self.channel())
         with translate_grpc_exceptions():
-            await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
+            await svc.DeleteLease(namespace=self.metadata.namespace, name=name)
 
     @asynccontextmanager
     async def lease_async(
@@ -154,6 +155,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
         async with Lease(
             channel=await self.channel(),
+            namespace=self.metadata.namespace,
             name=lease_name,
             metadata_filter=metadata_filter,
             portal=portal,
