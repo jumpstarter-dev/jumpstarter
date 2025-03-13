@@ -79,8 +79,8 @@ message Lease {
 
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
-  jumpstarter.v1.LabelSelector selector = 2 [
-    (google.api.field_behavior) = OPTIONAL,
+  string selector = 2 [
+    (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE
   ];
   google.protobuf.Duration duration = 3 [(google.api.field_behavior) = REQUIRED];
