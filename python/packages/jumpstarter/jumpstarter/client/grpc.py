@@ -128,15 +128,16 @@ class LeaseList(BaseModel):
 @dataclass(kw_only=True, slots=True)
 class ClientService:
     channel: Channel
+    namespace: str
     stub: client_pb2_grpc.ClientServiceStub = field(init=False)
 
     def __post_init__(self):
         self.stub = client_pb2_grpc.ClientServiceStub(channel=self.channel)
 
-    async def GetExporter(self, *, namespace: str, name: str):
+    async def GetExporter(self, *, name: str):
         exporter = await self.stub.GetExporter(
             client_pb2.GetExporterRequest(
-                name="namespaces/{}/exporters/{}".format(namespace, name),
+                name="namespaces/{}/exporters/{}".format(self.namespace, name),
             )
         )
         return Exporter.from_protobuf(exporter)
@@ -144,14 +145,13 @@ class ClientService:
     async def ListExporters(
         self,
         *,
-        namespace: str,
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
     ):
         exporters = await self.stub.ListExporters(
             client_pb2.ListExportersRequest(
-                parent="namespaces/{}".format(namespace),
+                parent="namespaces/{}".format(self.namespace),
                 page_size=page_size,
                 page_token=page_token,
                 filter=filter,
@@ -159,10 +159,10 @@ class ClientService:
         )
         return ExporterList.from_protobuf(exporters)
 
-    async def GetLease(self, *, namespace: str, name: str):
+    async def GetLease(self, *, name: str):
         lease = await self.stub.GetLease(
             client_pb2.GetLeaseRequest(
-                name="namespaces/{}/leases/{}".format(namespace, name),
+                name="namespaces/{}/leases/{}".format(self.namespace, name),
             )
         )
         return Lease.from_protobuf(lease)
@@ -170,14 +170,13 @@ class ClientService:
     async def ListLeases(
         self,
         *,
-        namespace: str,
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
     ):
         leases = await self.stub.ListLeases(
             client_pb2.ListLeasesRequest(
-                parent="namespaces/{}".format(namespace),
+                parent="namespaces/{}".format(self.namespace),
                 page_size=page_size,
                 page_token=page_token,
                 filter=filter,
@@ -188,7 +187,6 @@ class ClientService:
     async def CreateLease(
         self,
         *,
-        namespace: str,
         selector: str,
         duration: timedelta,
     ):
@@ -197,7 +195,7 @@ class ClientService:
 
         lease = await self.stub.CreateLease(
             client_pb2.CreateLeaseRequest(
-                parent="namespaces/{}".format(namespace),
+                parent="namespaces/{}".format(self.namespace),
                 lease=client_pb2.Lease(
                     duration=duration_pb,
                     selector=selector,
@@ -209,7 +207,6 @@ class ClientService:
     async def UpdateLease(
         self,
         *,
-        namespace: str,
         name: str,
         duration: timedelta,
     ):
@@ -222,7 +219,7 @@ class ClientService:
         lease = await self.stub.UpdateLease(
             client_pb2.UpdateLeaseRequest(
                 lease=client_pb2.Lease(
-                    name="namespaces/{}/leases/{}".format(namespace, name),
+                    name="namespaces/{}/leases/{}".format(self.namespace, name),
                     duration=duration_pb,
                 ),
                 update_mask=update_mask,
@@ -230,9 +227,9 @@ class ClientService:
         )
         return Lease.from_protobuf(lease)
 
-    async def DeleteLease(self, *, namespace: str, name: str):
+    async def DeleteLease(self, *, name: str):
         await self.stub.DeleteLease(
             client_pb2.DeleteLeaseRequest(
-                name="namespaces/{}/leases/{}".format(namespace, name),
+                name="namespaces/{}/leases/{}".format(self.namespace, name),
             )
         )

@@ -45,7 +45,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
             super().__post_init__()
 
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
-        self.svc = ClientService(channel=self.channel)
+        self.svc = ClientService(channel=self.channel, namespace=self.namespace)
         self.manager = self.portal.wrap_async_context_manager(self)
 
     async def _create(self):
@@ -56,7 +56,6 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         with translate_grpc_exceptions():
             self.name = (
                 await self.svc.CreateLease(
-                    namespace=self.namespace,
                     selector=selector,
                     duration=timedelta(seconds=self.timeout),
                 )
@@ -99,7 +98,6 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
                 logger.debug("Polling Lease %s", self.name)
                 with translate_grpc_exceptions():
                     result = await self.svc.GetLease(
-                        namespace=self.namespace,
                         name=self.name,
                     )
 
@@ -136,7 +134,6 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         if self.release:
             logger.info("Releasing Lease %s", self.name)
             await self.svc.DeleteLease(
-                namespace=self.namespace,
                 name=self.name,
             )
 
