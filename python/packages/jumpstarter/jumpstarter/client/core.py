@@ -96,6 +96,8 @@ class AsyncDriverClient(
                     raise DriverMethodNotImplemented(e.details()) from None
                 case StatusCode.INVALID_ARGUMENT:
                     raise DriverInvalidArgument(e.details()) from None
+                case StatusCode.UNKNOWN:
+                    raise DriverError(e.details()) from None
                 case _:
                     raise DriverError(e.details()) from e
 
@@ -119,6 +121,8 @@ class AsyncDriverClient(
                     raise DriverMethodNotImplemented(e.details()) from None
                 case StatusCode.INVALID_ARGUMENT:
                     raise DriverInvalidArgument(e.details()) from None
+                case StatusCode.UNKNOWN:
+                    raise DriverError(e.details()) from None
                 case _:
                     raise DriverError(e.details()) from e
 
