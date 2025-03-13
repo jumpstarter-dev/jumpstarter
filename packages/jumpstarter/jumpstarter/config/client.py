@@ -91,9 +91,9 @@ class ClientConfigV1Alpha1(BaseModel):
             portal.call(self.release_lease_async, name)
 
     async def get_exporter_async(self, name: str):
-        svc = ClientService(channel=await self.channel())
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            return await svc.GetExporter(namespace=self.metadata.namespace, name=name)
+            return await svc.GetExporter(name=name)
 
     async def list_exporters_async(
         self,
@@ -101,11 +101,9 @@ class ClientConfigV1Alpha1(BaseModel):
         page_token: str | None = None,
         filter: str | None = None,
     ):
-        svc = ClientService(channel=await self.channel())
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            return await svc.ListExporters(
-                namespace=self.metadata.namespace, page_size=page_size, page_token=page_token, filter=filter
-            )
+            return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
 
     async def request_lease_async(
         self,
@@ -129,15 +127,15 @@ class ClientConfigV1Alpha1(BaseModel):
             return await lease.request_async()
 
     async def list_leases_async(self):
-        svc = ClientService(channel=await self.channel())
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            result = await svc.ListLeases(namespace=self.metadata.namespace)
+            result = await svc.ListLeases()
             return [lease.name for lease in result.leases]
 
     async def release_lease_async(self, name):
-        svc = ClientService(channel=await self.channel())
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            await svc.DeleteLease(namespace=self.metadata.namespace, name=name)
+            await svc.DeleteLease(name=name)
 
     @asynccontextmanager
     async def lease_async(
