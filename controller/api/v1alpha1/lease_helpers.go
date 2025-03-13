@@ -61,7 +61,7 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 
 	lease := cpb.Lease{
 		Name:              fmt.Sprintf("namespaces/%s/leases/%s", l.Namespace, l.Name),
-		Selector:          l.Spec.Selector.String(),
+		Selector:          metav1.FormatLabelSelector(&l.Spec.Selector),
 		Duration:          durationpb.New(l.Spec.Duration.Duration),
 		EffectiveDuration: durationpb.New(l.Spec.Duration.Duration), // TODO: implement lease renewal
 		Client:            ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
