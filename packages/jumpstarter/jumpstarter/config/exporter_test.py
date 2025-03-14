@@ -26,15 +26,13 @@ async def test_exporter_serve(mock_controller):
                 type="jumpstarter_driver_power.driver.MockPower",
             ),
             "nested": ExporterConfigV1Alpha1DriverInstance(
-                children={
-                    "tcp": ExporterConfigV1Alpha1DriverInstance(
-                        type="jumpstarter_driver_network.driver.TcpNetwork",
-                        config={
-                            "host": "127.0.0.1",
-                            "port": 8080,
-                        },
-                    )
-                }
+                tcp=ExporterConfigV1Alpha1DriverInstance(
+                    type="jumpstarter_driver_network.driver.TcpNetwork",
+                    config={
+                        "host": "127.0.0.1",
+                        "port": 8080,
+                    },
+                )
             ),
         },
     )
@@ -95,12 +93,22 @@ export:
     config:
       port: "/dev/ttyUSB0"
       baudrate: 115200
-  nested:
+  nested-simplified:
+    custom:
+      type: "vendorpackage.CustomDriver"
+      config:
+        hello: "world"
+  nested-legacy:
     children:
       custom:
         type: "vendorpackage.CustomDriver"
         config:
-          hello: "world"
+          hello: "again"
+  nested-reserved-name:
+    ref:
+      type: "vendorpackage.CustomDriver"
+      config:
+        hello: "third-time"
 """
     path.write_text(
         text,
@@ -136,16 +144,31 @@ export:
                     "baudrate": 115200,
                 },
             ),
-            "nested": ExporterConfigV1Alpha1DriverInstance(
+            "nested-simplified": ExporterConfigV1Alpha1DriverInstance(
+                custom=ExporterConfigV1Alpha1DriverInstance(
+                    type="vendorpackage.CustomDriver",
+                    config={
+                        "hello": "world",
+                    },
+                )
+            ),
+            "nested-legacy": ExporterConfigV1Alpha1DriverInstance(
                 children={
                     "custom": ExporterConfigV1Alpha1DriverInstance(
                         type="vendorpackage.CustomDriver",
-                        children={},
                         config={
-                            "hello": "world",
+                            "hello": "again",
                         },
-                    )
+                    ),
                 },
+            ),
+            "nested-reserved-name": ExporterConfigV1Alpha1DriverInstance(
+                ref=ExporterConfigV1Alpha1DriverInstance(
+                    type="vendorpackage.CustomDriver",
+                    config={
+                        "hello": "third-time",
+                    },
+                )
             ),
         },
         config={},
