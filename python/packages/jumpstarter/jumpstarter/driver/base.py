@@ -108,6 +108,8 @@ class Driver(
             await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
         except TimeoutError as e:
             await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
+        except Exception as e:
+            await context.abort(StatusCode.UNKNOWN, str(e))
 
     async def StreamingDriverCall(self, request, context):
         """
@@ -136,6 +138,8 @@ class Driver(
             await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
         except TimeoutError as e:
             await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
+        except Exception as e:
+            await context.abort(StatusCode.UNKNOWN, str(e))
 
     @asynccontextmanager
     async def Stream(self, request, context):
