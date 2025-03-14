@@ -45,6 +45,9 @@ def fs_operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
     return Path(path).resolve(), Operator("fs", root="/")
 
 def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
+    """
+    Return a tuple of the path and the operator for the given path.
+    """
     if type(path) is str and path.startswith(('http://', 'https://')):
             parsed_url = urlparse(path)
             operator = Operator(

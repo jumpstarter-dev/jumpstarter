@@ -51,12 +51,17 @@ class BaseFlasher(Driver):
         return "jumpstarter_driver_flashers.client.BaseFlasherClient"
 
     @export
-    async def setup_flasher_bundle(self):
+    async def setup_flasher_bundle(self, force_flash_bundle: str | None = None):
         """Setup flasher bundle
 
         This method sets all the files in place in the tftp server
         so that the target can download from bootloader.
         """
+
+        # the client is requesting a different flasher bundle
+        if force_flash_bundle:
+            self.flasher_bundle = force_flash_bundle
+
         manifest = await self.get_flasher_manifest()
         kernel_path = await self._get_file_path(manifest.spec.kernel.file)
         self.logger.info(f"Setting up kernel in tftp: {kernel_path}")
