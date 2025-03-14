@@ -15,7 +15,7 @@ class UbootConsole(Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-        for child in ("power",):
+        for child in ("power", "serial"):
             if child not in self.children:
                 raise ValueError("UbootConsole: {} driver not configured as a child".format(child))
 
