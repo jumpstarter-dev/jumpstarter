@@ -28,6 +28,7 @@ members = [
     "jumpstarter-driver-shell",
     "jumpstarter-driver-snmp",
     "jumpstarter-driver-tftp",
+    "jumpstarter-driver-uboot",
     "jumpstarter-driver-ustreamer",
     "jumpstarter-driver-yepkit",
     "jumpstarter-example-automotive",
@@ -1718,6 +1719,34 @@ dev = [
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-uboot"
+source = { editable = "packages/jumpstarter-driver-uboot" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "pexpect" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "pexpect", specifier = ">=4.9.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
 [[package]]
