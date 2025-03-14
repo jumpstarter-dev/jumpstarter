@@ -51,6 +51,7 @@ class QemuPower(PowerInterface, Driver):
     @export
     async def on(self) -> None:  # noqa: C901
         root = self.parent.validate_partition("root")
+        bios = self.parent.validate_partition("bios")
         ovmf_code = self.parent.validate_partition("OVMF_CODE.fd")
         ovmf_vars = self.parent.validate_partition("OVMF_VARS.fd")
 
@@ -110,6 +111,12 @@ class QemuPower(PowerInterface, Driver):
         ]
         for device in devices:
             cmdline += ["-device", device]
+
+        if bios.exists():
+            cmdline += [
+                "-bios",
+                str(bios),
+            ]
 
         if ovmf_code.exists() and ovmf_vars.exists():
             cmdline += [
@@ -244,6 +251,8 @@ class Qemu(Driver):
                 return Path(self._tmp_dir.name) / "OVMF_CODE.fd"
             case "OVMF_VARS.fd":
                 return Path(self._tmp_dir.name) / "OVMF_VARS.fd"
+            case "bios":
+                return Path(self._tmp_dir.name) / "bios"
             case _:
                 raise ValueError(f"invalida partition name: {partition}")
 
