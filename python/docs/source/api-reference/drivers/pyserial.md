@@ -2,9 +2,6 @@
 
 **driver**: `jumpstarter_driver_pyserial.driver.PySerial`
 
-The methods of this client are dynamic, and they are generated from
-the `methods` field of the exporter driver configuration.
-
 ## Driver configuration
 ```yaml
 export:

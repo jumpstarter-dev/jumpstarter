@@ -183,6 +183,17 @@ class Opendal(Driver):
     async def capability(self, /) -> Capability:
         return Capability.model_validate(self._operator.capability(), from_attributes=True)
 
+    async def copy_exporter_file(self, /, source: Path, target: str):
+        """Copy a file from the exporter to the target path.
+        This function is intended to be used on the exporter side to copy files to the target path.
+        """
+        async with await AsyncOperator("fs", root=source.parent.as_posix()).open(source.name, "rb") as src:
+            async with await self._operator.open(target, "wb") as dst:
+                while True:
+                    data = await src.read(size=65536)
+                    if len(data) == 0:
+                        break
+                    await dst.write(bs=data)
 
 class FlasherInterface(metaclass=ABCMeta):
     @classmethod
