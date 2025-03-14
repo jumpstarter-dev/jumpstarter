@@ -18,6 +18,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "jumpstarter-driver-qemu",
     "pytest>=8.3.2",
     "pytest-cov>=5.0.0",
     "requests>=2.32.3",
@@ -35,6 +36,7 @@ raw-options = { 'root' = '../../'}
 
 [tool.uv.sources]
 jumpstarter-driver-composite = { workspace = true }
+jumpstarter-driver-qemu = { workspace = true }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

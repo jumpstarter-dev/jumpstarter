@@ -1732,6 +1732,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "jumpstarter-driver-qemu" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "requests" },
@@ -1748,6 +1749,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
