@@ -1,7 +1,7 @@
 [project]
 name = "jumpstarter-driver-flashers"
 dynamic = ["version", "urls"]
-description = "Add your description here"
+description = "Jumpstarter software defined flasher driver"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [

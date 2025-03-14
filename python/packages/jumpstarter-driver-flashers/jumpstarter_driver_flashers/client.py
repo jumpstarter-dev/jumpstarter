@@ -82,7 +82,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         skip_exporter_http = False
         image_url = ""
         operator_scheme = None
-        if path.startswith(("http://")) and not force_exporter_http:
+        if path.startswith("http://") and not force_exporter_http:
             # busybox can handle the http from a remote directly, unless target is isolated
             image_url = path
             skip_exporter_http = True
@@ -346,7 +346,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         if storage.exists(filename):
             # TODO: check hash for existing files
             self.logger.info(f"Artifact {filename} already exists in storage, skipping")
-        storage.write_from_path(path, operator=operator)
+        storage.write_from_path(filename, path, operator=operator)
 
     @contextmanager
     def _services_up(self):

@@ -2,6 +2,8 @@
 
 # oras login quay.io -u mangelajo
 
+set -e
+
 FLASHER_OCI_CONTAINER="${1:-quay.io/jumpstarter-dev/jumpstarter-flasher-test:latest}"
 BUNDLE_FILES=${2:-"./test/"}
 
