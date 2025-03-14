@@ -55,4 +55,24 @@ def test_driver_uboot_console(uboot_image):
 
         print(uboot.setup_dhcp())
 
+        uboot.set_env_dict(
+            {
+                "foo": "bar",
+                "baz": "qux",
+            }
+        )
+
+        assert uboot.get_env("foo") == "bar"
+        assert uboot.get_env("baz") == "qux"
+
+        uboot.set_env_dict(
+            {
+                "foo": "qux",
+                "baz": None,
+            }
+        )
+
+        assert uboot.get_env("foo") == "qux"
+        assert uboot.get_env("baz") is None
+
         root.qemu.power.off()

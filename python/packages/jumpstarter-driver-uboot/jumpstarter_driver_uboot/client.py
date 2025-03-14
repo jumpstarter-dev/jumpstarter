@@ -1,4 +1,3 @@
-import sys
 from functools import cached_property
 
 import pexpect
@@ -78,10 +77,6 @@ class UbootConsoleClient(CompositeClient):
 
         return DhcpInfo(ip_address=ipaddr, gateway=gatewayip, netmask=netmask)
 
-    def wait_for_pattern(self, pattern: str, timeout: int = 300, print_output: bool = False):
-        """Wait for specific pattern in output"""
-        return self._read_until(pattern, timeout, print_output)
-
     def get_env(self, key: str, timeout: int = 5) -> str | None:
         """
         Get U-Boot environment variable value
@@ -122,26 +117,3 @@ class UbootConsoleClient(CompositeClient):
     def set_env_dict(self, env: dict[str, str | None]) -> None:
         for key, value in env.items():
             self.set_env(key, value)
-
-    # TODO: rewrite this, there is a way to do it just with pexpect
-    #  https://github.com/jumpstarter-dev/jumpstarter-devspace/blob/orin-nx-testing/tests/test_on_orin_nx.py#L156
-    def _read_until(
-        self, target: str, timeout: int = 60, print_output: bool = False, error_patterns: list[str] = None
-    ) -> str:
-        saved_logfile = self.console.logfile_read
-        self.logger.debug(f"_read_until {target}")
-        try:
-            if print_output:
-                self.console.logfile_read = sys.stdout.buffer
-
-            self.console.expect(target, timeout=timeout)
-            buffer = self.console.before.decode().strip()
-            if error_patterns and any(pattern in buffer.lower() for pattern in error_patterns):
-                raise RuntimeError(f"Error detected in output: {buffer}")
-            return buffer
-        except pexpect.TIMEOUT as err:
-            raise TimeoutError(f"Timed out waiting for '{target}'") from err
-        except RuntimeError:
-            raise
-        finally:
-            self.console.logfile_read = saved_logfile
