@@ -177,6 +177,7 @@ class QemuPower(PowerInterface, Driver):
         Path(self.parent._pty).symlink_to(pty)
 
         await qmp.execute("system_reset")
+        await qmp.disconnect()
 
     @export
     def off(self) -> None:

@@ -22,7 +22,3 @@ class UbootConsole(Driver):
     @export
     def get_prompt(self) -> str:
         return self.prompt
-
-    @export
-    def set_prompt(self, prompt: str):
-        self.prompt = prompt

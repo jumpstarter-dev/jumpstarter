@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+ESC = "\x1b"
+
 
 class DhcpInfo(BaseModel):
     ip_address: str
