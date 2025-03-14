@@ -20,7 +20,7 @@ def list_client_exporters(name: str | None, labels: list[(str, str)], output: Ou
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
         raise click.BadParameter(
-            "no client specified, and no default client set: specify a client name, or use jmp client use-config ",
+            "no client specified, and no default client set: specify a client name, or use jmp client config use",
             param_hint="name",
         )
 

@@ -12,7 +12,8 @@ async def test_exporter():
     result = await runner.invoke(
         exporter,
         [
-            "create-config",
+            "config",
+            "create",
             "test1",
             "--namespace",
             "default",
@@ -30,7 +31,8 @@ async def test_exporter():
     result = await runner.invoke(
         exporter,
         [
-            "create-config",
+            "config",
+            "create",
             "test1",
             "--namespace",
             "default",
@@ -46,22 +48,22 @@ async def test_exporter():
 
     # create exporter interactively
     result = await runner.invoke(
-        exporter, ["create-config", "test2"], input="default\ntest2\nexample.org:443\ndummytoken\n"
+        exporter, ["config", "create", "test2"], input="default\ntest2\nexample.org:443\ndummytoken\n"
     )
     assert result.exit_code == 0
 
     # list exporters
-    result = await runner.invoke(exporter, ["list-configs"])
+    result = await runner.invoke(exporter, ["config", "list"])
     assert result.exit_code == 0
     assert "test1" in result.output
     assert "test2" in result.output
 
     # delete exporter
-    result = await runner.invoke(exporter, ["delete-config", "test2"])
+    result = await runner.invoke(exporter, ["config", "delete", "test2"])
     assert result.exit_code == 0
 
     ## list exporters
-    result = await runner.invoke(exporter, ["list-configs"])
+    result = await runner.invoke(exporter, ["config", "list"])
     assert result.exit_code == 0
     assert "test1" in result.output
     assert "test2" not in result.output

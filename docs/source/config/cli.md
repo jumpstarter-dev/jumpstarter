@@ -90,30 +90,30 @@ please follow the instructions in the [Jumpstarter service CLI](../cli/clients.m
 
 Importing a new client is as simple as copying the administrator provided yaml
 file to `~/.config/jumpstarter/clients/`, alternatively if we have the token
-and endpoint the `jmp client create <name>` command can be used to create
+and endpoint the `jmp client config create <name>` command can be used to create
 the config file.
 
-To switch between different client configs, use the `jmp client use-config <name>` command:
+To switch between different client configs, use the `jmp client config use <name>` command:
 
 ```bash
-$ jmp client use-config another
+$ jmp client config use another
 Using client config '/home/jdoe/.config/jumpstarter/clients/another.yaml'
 ```
 
-All client configurations can be listed with `jmp client list-configs`:
+All client configurations can be listed with `jmp client config list`:
 
 ```bash
-$ jmp client list-configs
+$ jmp client config list
 CURRENT   NAME       ENDPOINT                       PATH
 *         default    jumpstarter1.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/default.yaml
           myclient   jumpstarter2.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/myclient.yaml
           another    jumpstarter3.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/another.yaml
 ```
 
-Clients can also be removed using `jmp client delete-config <name>`:
+Clients can also be removed using `jmp client config delete <name>`:
 
 ```bash
-$ jmp client delete-config myclient
+$ jmp client config delete myclient
 Deleted client config '/home/jdoe/.config/jumpstarter/clients/myclient.yaml'
 ```
 
@@ -201,10 +201,10 @@ please follow the instructions in the [Jumpstarter service CLI](../cli/exporters
 
 ### Creating a exporter configuration file
 To create a new exporter configuration file from a know endpoint and
-token the `jmp exporter create <name>` command can be used.
+token the `jmp exporter config create <name>` command can be used.
 
 ```bash
-$ jmp exporter create myexporter
+$ jmp exporter config create myexporter
 Endpoint: grpc.jumpstarter.my.domain.com
 Token: <<token>>
 ```
@@ -222,19 +222,19 @@ The path to a config can also be provided:
 jmp exporter run -c /etc/jumpstarter/exporters/another/exporter.yaml
 ```
 
-All exporter configurations can be listed with `jmp exporter list`:
+All exporter configurations can be listed with `jmp exporter config list`:
 
 ```bash
-$ jmp exporter list
+$ jmp exporter config list
 ALIAS             PATH
 test-exporter-2   /etc/jumpstarter/exporters/test-exporter-2.yaml
 my-exporter       /etc/jumpstarter/exporters/my-exporter.yaml
 ```
 
-Exporers can also be removed using `jmp exporter delete <name>`:
+Exporers can also be removed using `jmp exporter config delete <name>`:
 
 ```bash
-$ jmp exporter delete myexporter
+$ jmp exporter config delete myexporter
 Deleted exporter config '/etc/jumpstarter/exporters/myexporter.yaml'
 ```
 

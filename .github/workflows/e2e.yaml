@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 60
     continue-on-error: false
     steps:
-      - uses: jumpstarter-dev/jumpstarter-e2e@main
+      - uses: jumpstarter-dev/jumpstarter-e2e@client-cmd-phase1
         with:
           controller-ref: client-svc-lease
           jumpstarter-ref: ${{ github.ref }}

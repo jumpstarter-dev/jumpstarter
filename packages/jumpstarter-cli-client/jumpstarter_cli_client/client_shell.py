@@ -24,7 +24,7 @@ def client_shell(name: str, labels, lease_name):
         config = UserConfigV1Alpha1.load_or_create().config.current_client
     if not config:
         raise click.BadParameter(
-            "no client specified, and no default client set: specify a client name, or use jmp client use-config ",
+            "no client specified, and no default client set: specify a client name, or use jmp client config use",
             param_hint="name",
         )
 
