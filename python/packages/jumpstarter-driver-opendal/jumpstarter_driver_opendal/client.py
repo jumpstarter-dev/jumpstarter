@@ -44,9 +44,12 @@ class BytesIOStream(ObjectStream[bytes]):
 def fs_operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
     return Path(path).resolve(), Operator("fs", root="/")
 
-def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
-    """
-    Return a tuple of the path and the operator for the given path.
+def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
+    """ Create an operator for the given path
+    Return a tuple of:
+        - the path
+        - the operator for the given path
+        - the scheme of the operator.
     """
     if type(path) is str and path.startswith(('http://', 'https://')):
             parsed_url = urlparse(path)
@@ -55,9 +58,9 @@ def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
                 root='/',
                 endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}"
             )
-            return Path(parsed_url.path), operator
+            return Path(parsed_url.path), operator, 'http'
     else:
-        return fs_operator_for_path(path)
+        return *fs_operator_for_path(path), 'fs'
 
 
 @dataclass(kw_only=True)

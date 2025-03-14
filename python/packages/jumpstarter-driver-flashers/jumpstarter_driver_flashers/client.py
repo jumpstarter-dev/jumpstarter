@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import re
 import sys
@@ -14,7 +16,7 @@ from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
 from jumpstarter_driver_opendal.common import PathBuf
 from jumpstarter_driver_pyserial.client import Console
-from opendal import Operator
+from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
@@ -79,13 +81,14 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """Flash image to DUT"""
         skip_exporter_http = False
         image_url = ""
+        operator_scheme = None
         if path.startswith(("http://")) and not force_exporter_http:
             # busybox can handle the http from a remote directly, unless target is isolated
             image_url = path
             skip_exporter_http = True
         else:
             if operator is None:
-                path, operator = operator_for_path(path)
+                path, operator, operator_scheme = operator_for_path(path)
             image_url = self.http.get_url() + "/" + path.name
 
         # start counting time for the flash operation
@@ -97,13 +100,18 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
             # Start the storage write operation in the background
             storage_thread = threading.Thread(target=self._transfer_bg_thread,
-                                            args=(path, operator, os_image_checksum, self.http.storage, error_queue),
+                                            args=(path, operator, operator_scheme,
+                                                  os_image_checksum, self.http.storage, error_queue),
                                             name="storage_transfer")
             storage_thread.start()
 
         # Make the exporter download the bundle contents and set files in the right places
         self.logger.info("Setting up flasher bundle files in exporter")
         self.call("setup_flasher_bundle", force_flash_bundle)
+
+        # Early exit if there was an error in the background thread
+        if not skip_exporter_http and not error_queue.empty():
+            raise error_queue.get()
 
         with self._services_up():
             with self._busybox() as console:
@@ -141,7 +149,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 total_time = time.time() - start_time
                 # total time in minutes:seconds
                 minutes, seconds = divmod(total_time, 60)
-                self.logger.info(f"Flashing completed in {int(minutes)}:{int(seconds):02d}")
+                self.logger.info(f"Flashing completed in {int(minutes)}m {int(seconds):02d}s")
                 console.sendline("reboot")
                 time.sleep(2)
                 self.logger.info("Powering off target")
@@ -227,7 +235,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return target_path
 
 
-    def _transfer_bg_thread(self, src_path: PathBuf, src_operator: Operator, known_hash: str | None,
+    def _transfer_bg_thread(self, src_path: PathBuf, src_operator: Operator, src_operator_scheme: str,
+                            known_hash: str | None,
                             to_storage: OpendalClient, error_queue):
         """Transfer image to storage in the background
 
@@ -240,18 +249,61 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
         self.logger.info(f"Writing image to storage in the background: {src_path}")
         try:
-            if known_hash and to_storage.exists(src_path.name):
-                self.logger.info(f"Image {src_path} already exists in storage, checking hash")
-                if to_storage.get_hash(src_path.name) == known_hash:
+            # if the source is a local file, we can hash it and compare to the known hash
+            if src_operator_scheme == "fs":
+                file_hash = self._sha256_file(src_operator, src_path)
+                if to_storage.hash(src_path.name) == file_hash:
                     self.logger.info(f"Image {src_path} already exists in storage with matching hash, skipping")
                     return
-            self.logger.info(f"Writing image from storage, with metadata: {src_operator.get_metadata(src_path)}")
+            # if the source is a remote file, we can't hash it, so we need to check the hash from the metadata
+            elif known_hash and to_storage.exists(src_path.name):
+                self.logger.info(f"Image {src_path} already exists in storage, checking hash")
+                if to_storage.hash(src_path.name) == known_hash:
+                    self.logger.info(f"Image {src_path} already exists in storage with matching hash, skipping")
+                    return
+
+            # last attempt to check if the image in storage matches the known metadata
+            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path)
+            metadata_file = src_path.name + ".metadata"
+            self.logger.info(f"Metadata: {metadata_json}")
+            if to_storage.exists(metadata_file) and to_storage.exists(src_path.name):
+                self.logger.info(f"Checking metadata for file in exporter storage {metadata_file}")
+                data = to_storage.read_bytes(metadata_file).decode(errors="ignore")
+                if to_storage.stat(src_path.name).content_length == metadata.content_length and data == metadata_json:
+                    self.logger.info(f"Image {src_path} already exists in storage with matching metadata, skipping")
+                    return
+
+            # ok, we need to write the image to storage
             to_storage.write_from_path(src_path.name, src_path, src_operator)
+            # but also write the metadata to be able to check for matching images later
+            to_storage.write_bytes(metadata_file, metadata_json.encode(errors="ignore"))
             self.logger.info(f"Image written to storage: {src_path}")
+
         except Exception as e:
             self.logger.error(f"Error writing image to storage: {e}")
             error_queue.put(e)
             raise
+
+    def _sha256_file(self, src_operator, src_path) -> str:
+
+        m = hashlib.sha256()
+        with src_operator.open(src_path, "rb") as f:
+            while True:
+                data = f.read(size=65536)
+                if len(data) == 0:
+                    break
+                m.update(data)
+
+        return m.hexdigest()
+
+    def _create_metadata_and_json(self, src_operator, src_path) -> tuple[Metadata, str]:
+        """Create a metadata json string from a metadata object"""
+        metadata = src_operator.stat(src_path)
+        return metadata, json.dumps({
+            "path": str(src_path),
+            "content_length": metadata.content_length,
+            "etag": metadata.etag,
+        })
 
     def _lookup_block_device(self, console, prompt, address: str) -> str:
         """Lookup block device for a given address.
@@ -297,7 +349,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         storage.write_from_path(path, operator=operator)
 
     @contextmanager
-    def _services_up(self): # TODO: may be we don't need this..
+    def _services_up(self):
+        """Make sure that the http and tftp services are up an running in this context"""
         try:
             self.http.start()
             self.tftp.start()
@@ -308,6 +361,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
 
     def _generate_uboot_env(self):
+        """Generate a uboot environment dictionary, may need specific overrides for different targets"""
         tftp_host = self.tftp.get_host()
         return {
             "serverip": tftp_host,
@@ -334,6 +388,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             env = self._generate_uboot_env()
             uboot.set_env_dict(env)
 
+            # load any necessary files to RAM from the tftp storage
             manifest = self.manifest
             kernel_filename = Path(manifest.get_kernel_file()).name
             kernel_address = manifest.get_kernel_address()
@@ -369,21 +424,21 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def use_dtb(self, path: PathBuf, operator: Operator | None = None):
         """Use DTB file"""
         if operator is None:
-            path, operator = operator_for_path(path)
+            path, operator, operator_scheme = operator_for_path(path)
 
         ...
 
     def use_initram(self, path: PathBuf, operator: Operator | None = None):
         """Use initramfs file"""
         if operator is None:
-            path, operator = operator_for_path(path)
+            path, operator, operator_scheme = operator_for_path(path)
 
         ...
 
     def use_kernel(self, path: PathBuf, operator: Operator | None = None):
         """Use kernel file"""
         if operator is None:
-            path, operator = operator_for_path(path)
+            path, operator, operator_scheme  = operator_for_path(path)
 
         ...
 
@@ -434,6 +489,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             """Start a uboot/bootloader interactive console"""
             self.set_console_debug(console_debug)
             with self.bootloader_shell() as serial:
+                print("=> ", end="", flush=True)
                 c = Console(serial)
                 c.run()
 
@@ -443,6 +499,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             """Start a busybox shell"""
             self.set_console_debug(console_debug)
             with self.busybox_shell() as serial:
+                print("# ", end="", flush=True)
                 c = Console(serial)
                 c.run()
 
