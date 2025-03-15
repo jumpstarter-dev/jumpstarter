@@ -1,12 +1,12 @@
 import os
 from contextlib import asynccontextmanager, contextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar, Literal, Optional, Self
 
 import grpc
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .common import CONFIG_PATH, ObjectMeta
@@ -83,18 +83,37 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             return portal.call(self.request_lease_async, metadata_filter, portal)
 
-    def list_leases(self):
+    def list_leases(self, filter: str):
         with start_blocking_portal() as portal:
-            return portal.call(self.list_leases_async)
+            return portal.call(self.list_leases_async, filter)
+
+    def create_lease(
+        self,
+        selector: str,
+        duration: timedelta,
+    ):
+        with start_blocking_portal() as portal:
+            return portal.call(self.create_lease_async, selector, duration)
+
+    def delete_lease(
+        self,
+        name: str,
+    ):
+        with start_blocking_portal() as portal:
+            return portal.call(self.delete_lease_async, name)
+
+    def update_lease(self, name, duration: timedelta):
+        with start_blocking_portal() as portal:
+            return portal.call(self.update_lease_async, name, duration)
 
     def release_lease(self, name):
         with start_blocking_portal() as portal:
             portal.call(self.release_lease_async, name)
 
     async def get_exporter_async(self, name: str):
-        svc = ClientService(channel=await self.channel())
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            return await svc.GetExporter(namespace=self.metadata.namespace, name=name)
+            return await svc.GetExporter(name=name)
 
     async def list_exporters_async(
         self,
@@ -102,10 +121,27 @@ class ClientConfigV1Alpha1(BaseModel):
         page_token: str | None = None,
         filter: str | None = None,
     ):
-        svc = ClientService(channel=await self.channel())
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            return await svc.ListExporters(
-                namespace=self.metadata.namespace, page_size=page_size, page_token=page_token, filter=filter
+            return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+
+    async def create_lease_async(
+        self,
+        selector: str,
+        duration: timedelta,
+    ):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        with translate_grpc_exceptions():
+            return await svc.CreateLease(
+                selector=selector,
+                duration=duration,
+            )
+
+    async def delete_lease_async(self, name: str):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        with translate_grpc_exceptions():
+            await svc.DeleteLease(
+                name=name,
             )
 
     async def request_lease_async(
@@ -118,6 +154,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
         lease = Lease(
             channel=await self.channel(),
+            namespace=self.metadata.namespace,
             name=None,
             metadata_filter=metadata_filter,
             portal=portal,
@@ -128,15 +165,20 @@ class ClientConfigV1Alpha1(BaseModel):
         with translate_grpc_exceptions():
             return await lease.request_async()
 
-    async def list_leases_async(self):
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+    async def list_leases_async(self, filter: str):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            return (await controller.ListLeases(jumpstarter_pb2.ListLeasesRequest())).names
+            return await svc.ListLeases(filter=filter)
+
+    async def update_lease_async(self, name, duration: timedelta):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        with translate_grpc_exceptions():
+            return await svc.UpdateLease(name=name, duration=duration)
 
     async def release_lease_async(self, name):
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel())
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
-            await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=name))
+            await svc.DeleteLease(name=name)
 
     @asynccontextmanager
     async def lease_async(
@@ -154,6 +196,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
         async with Lease(
             channel=await self.channel(),
+            namespace=self.metadata.namespace,
             name=lease_name,
             metadata_filter=metadata_filter,
             portal=portal,

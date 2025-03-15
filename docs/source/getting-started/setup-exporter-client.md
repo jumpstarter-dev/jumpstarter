@@ -56,7 +56,7 @@ To edit the config file with your default text editor, run the following command
 
 ```bash
 # Opens the config for "testing" in your default editor
-$ jmp exporter edit-config testing
+$ jmp exporter config edit testing
 ```
 
 Add the `storage` and `power` drivers under the `export` field in the config file.

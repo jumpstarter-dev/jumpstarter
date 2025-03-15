@@ -88,7 +88,7 @@ $ alias jmp-client='podman run --rm -it -w /home \
 Then you can try:
 
 ```bash
-$ jmp-client list-configs
+$ jmp-client config list
 CURRENT   NAME      ENDPOINT                         PATH
 *         default   grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/default.yaml
           test      grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/test.yaml
