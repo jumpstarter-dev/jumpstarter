@@ -10,6 +10,7 @@ Drivers packages from the [drivers](https://github.com/jumpstarter-dev/jumpstart
 :maxdepth: 2
 can.md
 dbus.md
+flashers.md
 network.md
 opendal.md
 proxy.md

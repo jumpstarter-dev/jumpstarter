@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from abc import ABCMeta, abstractmethod
 from collections.abc import Generator
 from contextlib import closing
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import UUID
 
 import asyncclick as click
@@ -39,8 +41,26 @@ class BytesIOStream(ObjectStream[bytes]):
         pass
 
 
-def _fs_operator_for_path(path: PathBuf) -> (PathBuf, Operator):
+def fs_operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
     return Path(path).resolve(), Operator("fs", root="/")
+
+def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
+    """ Create an operator for the given path
+    Return a tuple of:
+        - the path
+        - the operator for the given path
+        - the scheme of the operator.
+    """
+    if type(path) is str and path.startswith(('http://', 'https://')):
+            parsed_url = urlparse(path)
+            operator = Operator(
+                'http',
+                root='/',
+                endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}"
+            )
+            return Path(parsed_url.path), operator, 'http'
+    else:
+        return *fs_operator_for_path(path), 'fs'
 
 
 @dataclass(kw_only=True)
@@ -64,7 +84,7 @@ class OpendalFile:
         Write into remote file with content from local file
         """
         if operator is None:
-            path, operator = _fs_operator_for_path(path)
+            path, operator = fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
             return self.__write(handle)
@@ -75,7 +95,7 @@ class OpendalFile:
         Read content from remote file into local file
         """
         if operator is None:
-            path, operator = _fs_operator_for_path(path)
+            path, operator = fs_operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
             return self.__read(handle)
@@ -496,7 +516,8 @@ class OpendalClient(DriverClient):
         return base
 
 
-class FlasherClient(DriverClient):
+class FlasherClientInterface(metaclass=ABCMeta):
+    @abstractmethod
     def flash(
         self,
         path: PathBuf,
@@ -505,25 +526,17 @@ class FlasherClient(DriverClient):
         operator: Operator | None = None,
     ):
         """Flash image to DUT"""
-        if operator is None:
-            path, operator = _fs_operator_for_path(path)
+        ...
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
-            return self.call("flash", handle, partition)
-
+    @abstractmethod
     def dump(
         self,
         path: PathBuf,
         *,
         partition: str | None = None,
-        operator: Operator | None = None,
-    ):
+        operator: Operator | None = None):
         """Dump image from DUT"""
-        if operator is None:
-            path, operator = _fs_operator_for_path(path)
-
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
-            return self.call("dump", handle, partition)
+        ...
 
     def cli(self):
         @click.group
@@ -546,6 +559,36 @@ class FlasherClient(DriverClient):
             self.dump(file, partition=partition)
 
         return base
+
+
+class FlasherClient(FlasherClientInterface, DriverClient):
+    def flash(
+        self,
+        path: PathBuf,
+        *,
+        partition: str | None = None,
+        operator: Operator | None = None,
+    ):
+        """Flash image to DUT"""
+        if operator is None:
+            path, operator = fs_operator_for_path(path)
+
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
+            return self.call("flash", handle, partition)
+
+    def dump(
+        self,
+        path: PathBuf,
+        *,
+        partition: str | None = None,
+        operator: Operator | None = None,
+    ):
+        """Dump image from DUT"""
+        if operator is None:
+            path, operator = fs_operator_for_path(path)
+
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
+            return self.call("dump", handle, partition)
 
 
 class StorageMuxClient(DriverClient):
@@ -627,7 +670,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self.host()
 
         if operator is None:
-            path, operator = _fs_operator_for_path(path)
+            path, operator = fs_operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
             try:
@@ -649,7 +692,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self.call("host")
 
         if operator is None:
-            path, operator = _fs_operator_for_path(path)
+            path, operator = fs_operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
             try:

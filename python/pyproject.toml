@@ -12,6 +12,7 @@ jumpstarter-cli-exporter = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-dutlink = { workspace = true }
+jumpstarter-driver-flashers = { workspace = true }
 jumpstarter-driver-http = { workspace = true }
 jumpstarter-driver-raspberrypi = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
@@ -24,6 +25,7 @@ jumpstarter-driver-sdwire = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
+jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }
 jumpstarter-imagehash = { workspace = true }
