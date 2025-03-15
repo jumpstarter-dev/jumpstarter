@@ -43,8 +43,9 @@ class UbootConsoleClient(CompositeClient):
             finally:
                 delattr(self, "p")
 
-    def run_command(self, cmd: str, timeout: int = 60) -> bytes:
-        self.logger.info(f"Running command: {cmd}")
+    def run_command(self, cmd: str, timeout: int = 60, *, _internal_log=True) -> bytes:
+        if _internal_log:
+            self.logger.info(f"Running command: {cmd}")
         if not hasattr(self, "p"):
             raise RuntimeError("Not in a reboot_to_console context")
         self.p.sendline("")
@@ -54,7 +55,8 @@ class UbootConsoleClient(CompositeClient):
         return self.p.before
 
     def run_command_checked(self, cmd: str, timeout: int = 60, check=True) -> list[str]:
-        output = self.run_command("{}; echo $?".format(cmd))
+        self.logger.info(f"Running command checked: {cmd}")
+        output = self.run_command("{}; echo $?".format(cmd), _internal_log=False)
         parsed = output.strip().decode().splitlines()
 
         if len(parsed) < 2:
