@@ -15,45 +15,46 @@ class DhcpInfo:
     @property
     def cidr(self) -> str:
         try:
-            octets = [int(x) for x in self.netmask.split('.')]
-            binary = ''.join([bin(x)[2:].zfill(8) for x in octets])
-            return str(binary.count('1'))
+            octets = [int(x) for x in self.netmask.split(".")]
+            binary = "".join([bin(x)[2:].zfill(8) for x in octets])
+            return str(binary.count("1"))
         except Exception:
             return "24"
 
+
 class UbootConsole:
-    def __init__(self, /,  console, power, logger, prompt="=>"):
+    def __init__(self, /, console, power, logger, prompt="=>"):
         self.console = console
         self.power = power
         self.logger = logger
         self.prompt = prompt
 
     def reboot_to_console(self):
-        """ Trigger U-Boot console
+        """Trigger U-Boot console
         Power cycle the target and wait for the U-Boot prompt
         """
         self.power.cycle()
         self.logger.info("Waiting for U-Boot prompt...")
         data = b""
         for _ in range(100):
-            self.console.send('\x1b')
+            self.console.send("\x1b")
             try:
                 recv = self.console.read_nonblocking(size=4096, timeout=0.1)
                 if recv:
                     data += recv
             except pexpect.TIMEOUT:
                 pass
-            #print(data)
+            # print(data)
             if self.prompt.encode() in data:
-                return     self.console.send('\x1b')
+                return self.console.send("\x1b")
             time.sleep(0.1)
         raise RuntimeError("Failed to get U-Boot prompt")
 
     def run_command(self, cmd: str, timeout: int = 60):
         self.logger.info(f"Running command: {cmd}")
-        if not cmd.endswith('\n'):
-            cmd += '\n'
-        self.console.send(cmd.encode('utf-8'))
+        if not cmd.endswith("\n"):
+            cmd += "\n"
+        self.console.send(cmd.encode("utf-8"))
         return self._read_until(self.prompt, timeout)
 
     def setup_dhcp(self, timeout: int = 60) -> DhcpInfo:
@@ -79,13 +80,9 @@ class UbootConsole:
             raise ValueError("Could not extract complete network information")
 
         # Get netmask from environment
-        netmask = self.get_env('netmask') or "255.255.255.0"
+        netmask = self.get_env("netmask") or "255.255.255.0"
 
-        return DhcpInfo(
-            ip_address=ip_address,
-            gateway=gateway,
-            netmask=netmask
-        )
+        return DhcpInfo(ip_address=ip_address, gateway=gateway, netmask=netmask)
 
     def wait_for_pattern(self, pattern: str, timeout: int = 300, print_output: bool = False):
         """Wait for specific pattern in output"""
@@ -98,7 +95,7 @@ class UbootConsole:
             buffer = self.run_command(f"printenv {var_name}", timeout)
             for line in buffer.splitlines():
                 if f"{var_name}=" in line:
-                    return line.split('=', 1)[1].strip()
+                    return line.split("=", 1)[1].strip()
         except TimeoutError as err:
             raise TimeoutError(f"Timed out waiting for {var_name}") from err
 
@@ -115,12 +112,9 @@ class UbootConsole:
 
     # TODO: rewrite this, there is a way to do it just with pexpect
     #  https://github.com/jumpstarter-dev/jumpstarter-devspace/blob/orin-nx-testing/tests/test_on_orin_nx.py#L156
-    def _read_until(self,
-                   target: str,
-                   timeout: int = 60,
-                   print_output: bool = False,
-                   error_patterns: list[str] = None) -> str:
-
+    def _read_until(
+        self, target: str, timeout: int = 60, print_output: bool = False, error_patterns: list[str] = None
+    ) -> str:
         saved_logfile = self.console.logfile_read
         self.logger.debug(f"_read_until {target}")
         try:
