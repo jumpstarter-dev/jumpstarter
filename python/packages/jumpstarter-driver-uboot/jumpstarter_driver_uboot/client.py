@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from functools import cached_property
 
 import pexpect
@@ -11,6 +12,7 @@ class UbootConsoleClient(CompositeClient):
     def prompt(self) -> str:
         return self.call("get_prompt")
 
+    @contextmanager
     def reboot_to_console(self) -> None:
         """
         Reboot to U-Boot console
@@ -22,6 +24,7 @@ class UbootConsoleClient(CompositeClient):
         self.power.cycle()
 
         self.logger.info("Waiting for U-Boot prompt...")
+
         with self.serial.pexpect() as p:
             for _ in range(100):  # TODO: configurable retries
                 try:
@@ -30,18 +33,25 @@ class UbootConsoleClient(CompositeClient):
                 except pexpect.TIMEOUT:
                     continue
 
-                return
+                break
+            else:
+                raise RuntimeError("Failed to get U-Boot prompt")
 
-            raise RuntimeError("Failed to get U-Boot prompt")
+            self.p = p
+            try:
+                yield
+            finally:
+                delattr(self, "p")
 
     def run_command(self, cmd: str, timeout: int = 60) -> bytes:
         self.logger.info(f"Running command: {cmd}")
-        with self.serial.pexpect() as p:
-            p.sendline("")
-            p.expect_exact(self.prompt, timeout=timeout)
-            p.sendline(cmd)
-            p.expect_exact(self.prompt, timeout=timeout)
-            return p.before
+        if not hasattr(self, "p"):
+            raise RuntimeError("Not in a reboot_to_console context")
+        self.p.sendline("")
+        self.p.expect_exact(self.prompt, timeout=timeout)
+        self.p.sendline(cmd)
+        self.p.expect_exact(self.prompt, timeout=timeout)
+        return self.p.before
 
     def run_command_checked(self, cmd: str, timeout: int = 60, check=True) -> list[str]:
         output = self.run_command("{}; echo $?".format(cmd))
