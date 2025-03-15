@@ -21,7 +21,8 @@ def temp_dirs():
         os.mkdir(tftp)
         yield cache, http, tftp
 
-@pytest.fixture(scope="session") # session to retain cache over time
+
+@pytest.fixture(scope="session")  # session to retain cache over time
 def complete_flasher(temp_dirs):
     cache, http, tftp = temp_dirs
     yield BaseFlasher(
@@ -34,38 +35,29 @@ def complete_flasher(temp_dirs):
         },
     )
 
+
 def test_missing_serial(temp_dirs):
     cache, http, tftp = temp_dirs
     with pytest.raises(ConfigurationError):
-        BaseFlasher(cache_dir=cache,
-                    http_dir=http,
-                    tftp_dir=tftp,
-                    children={
-                        "power": MockPower()
-                    }
-                )
+        BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, children={"power": MockPower()})
 
 
 def test_missing_power(temp_dirs):
     cache, http, tftp = temp_dirs
     with pytest.raises(ConfigurationError):
-        BaseFlasher(cache_dir=cache,
-                    http_dir=http,
-                    tftp_dir=tftp,
-                    children = {
-                        "serial": PySerial(url="loop://")
-                    }
-                )
+        BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, children={"serial": PySerial(url="loop://")})
+
 
 def test_drivers_flashers_setup_flasher_bundle(complete_flasher):
     with serve(complete_flasher) as client:
         client.call("setup_flasher_bundle")
         dtb = client.call("get_dtb_filename")
         kernel = client.call("get_kernel_filename")
-        initram =  client.call("get_initram_filename")
+        initram = client.call("get_initram_filename")
         assert client.tftp.storage.read_bytes(kernel) == b"\x00" * 1024
         assert client.tftp.storage.read_bytes(initram) == b"\x00" * 1024 * 2
         assert client.tftp.storage.read_bytes(dtb) == b"\x00" * 1024 * 3
+
 
 def test_drivers_flashers_manifest(complete_flasher):
     with serve(complete_flasher) as client:
@@ -82,6 +74,7 @@ def test_drivers_flashers_dtb_switching(complete_flasher):
         # verify dtb variant switching to nonexisting
         with pytest.raises(ValueError):
             client.call("use_dtb_variant", "noexists")
+
 
 def test_drivers_flashers_filenames(complete_flasher):
     with serve(complete_flasher) as client:
