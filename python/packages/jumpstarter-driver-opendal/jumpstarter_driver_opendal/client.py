@@ -44,23 +44,20 @@ class BytesIOStream(ObjectStream[bytes]):
 def fs_operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
     return Path(path).resolve(), Operator("fs", root="/")
 
+
 def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
-    """ Create an operator for the given path
+    """Create an operator for the given path
     Return a tuple of:
         - the path
         - the operator for the given path
         - the scheme of the operator.
     """
-    if type(path) is str and path.startswith(('http://', 'https://')):
-            parsed_url = urlparse(path)
-            operator = Operator(
-                'http',
-                root='/',
-                endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}"
-            )
-            return Path(parsed_url.path), operator, 'http'
+    if type(path) is str and path.startswith(("http://", "https://")):
+        parsed_url = urlparse(path)
+        operator = Operator("http", root="/", endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}")
+        return Path(parsed_url.path), operator, "http"
     else:
-        return *fs_operator_for_path(path), 'fs'
+        return *fs_operator_for_path(path), "fs"
 
 
 @dataclass(kw_only=True)
@@ -529,12 +526,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def dump(
-        self,
-        path: PathBuf,
-        *,
-        partition: str | None = None,
-        operator: Operator | None = None):
+    def dump(self, path: PathBuf, *, partition: str | None = None, operator: Operator | None = None):
         """Dump image from DUT"""
         ...
 

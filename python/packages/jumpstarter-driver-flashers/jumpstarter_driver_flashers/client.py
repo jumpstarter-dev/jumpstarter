@@ -20,7 +20,6 @@ from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
-from .uboot import UbootConsole
 from jumpstarter.common.exceptions import ArgumentError
 
 debug_console_option = click.option("--console-debug", is_flag=True, help="Enable console debug mode")
@@ -42,6 +41,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def set_console_debug(self, debug: bool):
         """Set console debug mode"""
         self._console_debug = debug
+        # TODO: also set console debug on uboot client
 
     @contextmanager
     def busybox_shell(self):
@@ -61,12 +61,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self.logger.info("Setting up flasher bundle files in exporter")
         self.call("setup_flasher_bundle")
         with self._services_up():
-            with self.serial.pexpect() as console:
-                if self._console_debug:
-                    console.logfile_read = sys.stdout.buffer
-                uboot = UbootConsole(console=console, power=self.power, logger=self.logger)
-                uboot.reboot_to_console()
-                console.sendline("")
+            with self.uboot.reboot_to_console():
+                pass
             yield self.serial
 
     def flash(
@@ -377,36 +373,37 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         This is a helper context manager that boots the device into uboot and returns a console object.
         """
-        with self.serial.pexpect() as console:
-            if self._console_debug:
-                console.logfile_read = sys.stdout.buffer
-            uboot = UbootConsole(console=console, power=self.power, logger=self.logger)
-            # make sure that the device is booted into the uboot console
-            uboot.reboot_to_console()
+
+        # make sure that the device is booted into the uboot console
+        with self.uboot.reboot_to_console():
             # run dhcp discovery and gather details useful for later
-            self._dhcp_details = uboot.setup_dhcp()
+            self._dhcp_details = self.uboot.setup_dhcp()
             self.logger.info(f"discovered dhcp details: {self._dhcp_details}")
 
             # configure the environment necessary
             env = self._generate_uboot_env()
-            uboot.set_env_dict(env)
+            self.uboot.set_env_dict(env)
 
             # load any necessary files to RAM from the tftp storage
             manifest = self.manifest
             kernel_filename = Path(manifest.get_kernel_file()).name
             kernel_address = manifest.get_kernel_address()
 
-            uboot.run_command(f"tftpboot {kernel_address} {kernel_filename}", timeout=120)
+            self.uboot.run_command(f"tftpboot {kernel_address} {kernel_filename}", timeout=120)
 
             if manifest.get_initram_file():
                 initram_filename = Path(manifest.get_initram_file()).name
                 initram_address = manifest.get_initram_address()
-                uboot.run_command(f"tftpboot {initram_address} {initram_filename}", timeout=120)
+                self.uboot.run_command(f"tftpboot {initram_address} {initram_filename}", timeout=120)
 
             if manifest.get_dtb_file():
                 dtb_filename = Path(manifest.get_dtb_file()).name
                 dtb_address = manifest.get_dtb_address()
-                uboot.run_command(f"tftpboot {dtb_address} {dtb_filename}", timeout=120)
+                self.uboot.run_command(f"tftpboot {dtb_address} {dtb_filename}", timeout=120)
+
+        with self.serial.pexpect() as console:
+            if self._console_debug:
+                console.logfile_read = sys.stdout.buffer
 
             self.logger.info(f"Running boot command: {manifest.spec.bootcmd}")
             console.send(manifest.spec.bootcmd + "\n")
