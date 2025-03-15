@@ -46,33 +46,33 @@ def test_driver_uboot_console(uboot_image):
         root.qemu.flasher.flash(uboot_image, partition="bios")
 
         uboot = root.uboot
-        uboot.reboot_to_console()
 
-        assert uboot.run_command_checked("version") == [
-            "U-Boot 2024.10 (Oct 11 2024 - 00:00:00 +0000)",
-            "",
-        ]
+        with uboot.reboot_to_console():
+            assert uboot.run_command_checked("version") == [
+                "U-Boot 2024.10 (Oct 11 2024 - 00:00:00 +0000)",
+                "",
+            ]
 
-        print(uboot.setup_dhcp())
+            print(uboot.setup_dhcp())
 
-        uboot.set_env_dict(
-            {
-                "foo": "bar",
-                "baz": "qux",
-            }
-        )
+            uboot.set_env_dict(
+                {
+                    "foo": "bar",
+                    "baz": "qux",
+                }
+            )
 
-        assert uboot.get_env("foo") == "bar"
-        assert uboot.get_env("baz") == "qux"
+            assert uboot.get_env("foo") == "bar"
+            assert uboot.get_env("baz") == "qux"
 
-        uboot.set_env_dict(
-            {
-                "foo": "qux",
-                "baz": None,
-            }
-        )
+            uboot.set_env_dict(
+                {
+                    "foo": "qux",
+                    "baz": None,
+                }
+            )
 
-        assert uboot.get_env("foo") == "qux"
-        assert uboot.get_env("baz") is None
+            assert uboot.get_env("foo") == "qux"
+            assert uboot.get_env("baz") is None
 
-        root.qemu.power.off()
+            root.qemu.power.off()
