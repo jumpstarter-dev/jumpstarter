@@ -18,5 +18,5 @@ jobs:
     steps:
       - uses: jumpstarter-dev/jumpstarter-e2e@main
         with:
-          controller-ref: main
+          controller-ref: client-svc-lease
           jumpstarter-ref: ${{ github.ref }}

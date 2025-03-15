@@ -69,6 +69,9 @@ known-local-folder = ["packages", "examples", "jumpstarter"]
 [tool.typos.default]
 locale = "en-us"
 
+[tool.typos.default.extend-words]
+ser = "ser"
+
 [tool.coverage.run]
 omit = ["conftest.py", "test_*.py", "*_test.py", "*_pb2.py", "*_pb2_grpc.py"]
 skip_empty = true
