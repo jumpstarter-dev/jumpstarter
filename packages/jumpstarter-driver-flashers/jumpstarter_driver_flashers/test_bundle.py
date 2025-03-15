@@ -13,5 +13,3 @@ def test_bundle_read():
         "usd": "/sys/class/block#4fb0000",
         "emmc": "/sys/class/block#4f80000",
     }
-
-
