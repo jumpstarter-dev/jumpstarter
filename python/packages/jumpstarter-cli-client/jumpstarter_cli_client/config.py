@@ -20,7 +20,14 @@ from jumpstarter.config import (
 )
 
 
-@click.command("create-config", short_help="Create a client config.")
+@click.group()
+def config():
+    """
+    Modify jumpstarter client config files
+    """
+
+
+@config.command("create", short_help="Create a client config.")
 @click.argument("alias")
 @click.option(
     "--out",
@@ -115,7 +122,7 @@ def set_next_client(name: str):
         user_config.use_client(None)
 
 
-@click.command("delete-config", short_help="Delete a client config.")
+@config.command("delete", short_help="Delete a client config.")
 @click.argument("name", type=str)
 @opt_output_path_only
 @handle_exceptions
@@ -127,7 +134,7 @@ def delete_client_config(name: str, output: PathOutputType):
         click.echo(path)
 
 
-@click.command("list-configs", short_help="List available client configurations.")
+@config.command("list", short_help="List available client configurations.")
 @opt_output_all
 @handle_exceptions
 def list_client_configs(output: OutputType):
@@ -161,7 +168,7 @@ def list_client_configs(output: OutputType):
         click.echo(make_table(columns, rows))
 
 
-@click.command("use-config", short_help="Select the current client config.")
+@config.command("use", short_help="Select the current client config.")
 @click.argument("name", type=str)
 @opt_output_path_only
 @handle_exceptions
