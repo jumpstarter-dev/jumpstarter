@@ -1311,6 +1311,7 @@ dependencies = [
     { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-tftp" },
+    { name = "jumpstarter-driver-uboot" },
     { name = "oras" },
 ]
 
@@ -1329,6 +1330,7 @@ requires-dist = [
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
+    { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
     { name = "oras", specifier = ">=0.2.25" },
 ]
 

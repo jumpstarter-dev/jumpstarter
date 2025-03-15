@@ -4,6 +4,7 @@ from pathlib import Path
 import anyio.to_thread
 from jumpstarter_driver_http.driver import HttpServer
 from jumpstarter_driver_tftp.driver import Tftp
+from jumpstarter_driver_uboot.driver import UbootConsole
 from oras.provider import Registry
 
 from .bundle import FlasherBundleManifestV1Alpha1
@@ -43,6 +44,14 @@ class BaseFlasher(Driver):
         if "power" not in self.children:
             raise ConfigurationError(
                 "'power' instance is required for BaseFlasher either via a ref ir a direct child instance"
+            )
+
+        if "uboot" not in self.children:
+            self.children["uboot"] = UbootConsole(
+                children={
+                    "power": self.children["power"],
+                    "serial": self.children["serial"],
+                }
             )
 
         # bundles that have already been downloaded in the current session
