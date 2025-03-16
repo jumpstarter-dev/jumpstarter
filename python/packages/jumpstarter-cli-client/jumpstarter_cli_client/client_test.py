@@ -12,7 +12,8 @@ async def test_client():
     result = await runner.invoke(
         client,
         [
-            "create-config",
+            "config",
+            "create",
             "test1",
             "--namespace",
             "default",
@@ -32,7 +33,8 @@ async def test_client():
     result = await runner.invoke(
         client,
         [
-            "create-config",
+            "config",
+            "create",
             "test1",
             "--namespace",
             "default",
@@ -51,33 +53,33 @@ async def test_client():
     # create client interactively
     result = await runner.invoke(
         client,
-        ["create-config", "test2"],
+        ["config", "create", "test2"],
         input="default\ntest2\nexample.org:443\ndummytoken\njumpstarter.*,com.example.*\n",
     )
     assert result.exit_code == 0
 
     # list clients
-    result = await runner.invoke(client, ["list-configs"])
+    result = await runner.invoke(client, ["config", "list"])
     assert result.exit_code == 0
     assert "*         test1   example.com:443" in result.output
     assert "          test2   example.org:443" in result.output
 
     # set default client
-    result = await runner.invoke(client, ["use-config", "test2"])
+    result = await runner.invoke(client, ["config", "use", "test2"])
     assert result.exit_code == 0
 
     # list clients
-    result = await runner.invoke(client, ["list-configs"])
+    result = await runner.invoke(client, ["config", "list"])
     assert result.exit_code == 0
     assert "          test1   example.com:443" in result.output
     assert "*         test2   example.org:443" in result.output
 
     # delete default client
-    result = await runner.invoke(client, ["delete-config", "test2"])
+    result = await runner.invoke(client, ["config", "delete", "test2"])
     assert result.exit_code == 0
 
     # list clients
-    result = await runner.invoke(client, ["list-configs"])
+    result = await runner.invoke(client, ["config", "list"])
     assert result.exit_code == 0
     assert "*         test1   example.com:443" in result.output
     assert "*         test2   example.org:443" not in result.output
