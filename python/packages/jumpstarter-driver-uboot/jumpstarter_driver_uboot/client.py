@@ -1,3 +1,4 @@
+import sys
 from contextlib import contextmanager
 from functools import cached_property
 
@@ -13,7 +14,7 @@ class UbootConsoleClient(CompositeClient):
         return self.call("get_prompt")
 
     @contextmanager
-    def reboot_to_console(self) -> None:
+    def reboot_to_console(self, *, debug=False) -> None:
         """
         Reboot to U-Boot console
 
@@ -26,6 +27,9 @@ class UbootConsoleClient(CompositeClient):
         self.logger.info("Waiting for U-Boot prompt...")
 
         with self.serial.pexpect() as p:
+            if debug:
+                p.logfile_read = sys.stdout.buffer
+
             for _ in range(100):  # TODO: configurable retries
                 try:
                     p.send(ESC)
