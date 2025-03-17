@@ -18,6 +18,7 @@ dependencies = [
     "jumpstarter-driver-http",
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-power",
+    "jumpstarter-driver-uboot",
 ]
 
 [tool.hatch.version]
@@ -33,6 +34,9 @@ addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_flashers"]
+
+[tool.uv.sources]
+jumpstarter-driver-uboot = { workspace = true }
 #asyncio_mode = "auto"
 
 [build-system]

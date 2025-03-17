@@ -9,10 +9,12 @@ class FileAddress(BaseModel):
     file: str
     address: str
 
+
 class DtbVariant(BaseModel):
     default: str
     address: str
     variants: dict[str, str]
+
 
 class FlasherLogin(BaseModel):
     login_prompt: str
@@ -20,16 +22,13 @@ class FlasherLogin(BaseModel):
     password: str | None = None
     prompt: str
 
+
 class FlashBundleSpecV1Alpha1(BaseModel):
     manufacturer: str
     link: Optional[str]
     bootcmd: str
     shelltype: Literal["busybox"] = Field(default="busybox")
-    login: FlasherLogin = Field(
-        default_factory=lambda: FlasherLogin(
-            login_prompt="login:",
-            prompt="#")
-        )
+    login: FlasherLogin = Field(default_factory=lambda: FlasherLogin(login_prompt="login:", prompt="#"))
     default_target: str
     targets: dict[str, str]
     kernel: FileAddress
@@ -40,6 +39,7 @@ class FlashBundleSpecV1Alpha1(BaseModel):
 
 class ObjectMeta(BaseModel):
     name: str
+
 
 class FlasherBundleManifestV1Alpha1(BaseModel):
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")

@@ -20,10 +20,10 @@ from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
-from .uboot import UbootConsole
 from jumpstarter.common.exceptions import ArgumentError
 
 debug_console_option = click.option("--console-debug", is_flag=True, help="Enable console debug mode")
+
 
 @dataclass(kw_only=True)
 class BaseFlasherClient(FlasherClient, CompositeClient):
@@ -41,6 +41,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def set_console_debug(self, debug: bool):
         """Set console debug mode"""
         self._console_debug = debug
+        # TODO: also set console debug on uboot client
 
     @contextmanager
     def busybox_shell(self):
@@ -60,12 +61,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self.logger.info("Setting up flasher bundle files in exporter")
         self.call("setup_flasher_bundle")
         with self._services_up():
-            with self.serial.pexpect() as console:
-                if self._console_debug:
-                    console.logfile_read = sys.stdout.buffer
-                uboot = UbootConsole(console=console, power=self.power, logger=self.logger)
-                uboot.reboot_to_console()
-                console.sendline("")
+            with self.uboot.reboot_to_console():
+                pass
             yield self.serial
 
     def flash(
@@ -99,10 +96,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             error_queue = Queue()
 
             # Start the storage write operation in the background
-            storage_thread = threading.Thread(target=self._transfer_bg_thread,
-                                            args=(path, operator, operator_scheme,
-                                                  os_image_checksum, self.http.storage, error_queue),
-                                            name="storage_transfer")
+            storage_thread = threading.Thread(
+                target=self._transfer_bg_thread,
+                args=(path, operator, operator_scheme, os_image_checksum, self.http.storage, error_queue),
+                name="storage_transfer",
+            )
             storage_thread.start()
 
         # Make the exporter download the bundle contents and set files in the right places
@@ -155,7 +153,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 self.logger.info("Powering off target")
                 self.power.off()
 
-
     def _flash_with_progress(self, console, manifest, path, image_url, target_path):
         """Flash image to target device with progress monitoring.
 
@@ -170,8 +167,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         decompress_cmd = _get_decompression_command(path)
         flash_cmd = (
             f'( wget -q -O - "{image_url}" | '
-            f'{decompress_cmd} '
-            f'dd of={target_path} bs=64k iflag=fullblock oflag=direct) &'
+            f"{decompress_cmd} "
+            f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
         )
         console.sendline(flash_cmd)
         console.expect(manifest.spec.login.prompt, timeout=60)
@@ -190,7 +187,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             if "No such file or directory" in console.before.decode(errors="ignore"):
                 break
             data = console.before.decode(errors="ignore")
-            match = re.search(r'pos:\s+(\d+)', data)
+            match = re.search(r"pos:\s+(\d+)", data)
             if match:
                 current_bytes = int(match.group(1))
                 current_time = time.time()
@@ -198,8 +195,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
                 if elapsed >= 1.0:  # Update speed every second
                     bytes_diff = current_bytes - last_pos
-                    speed_mb = (bytes_diff / (1024*1024)) / elapsed
-                    total_mb = current_bytes/(1024*1024)
+                    speed_mb = (bytes_diff / (1024 * 1024)) / elapsed
+                    total_mb = current_bytes / (1024 * 1024)
                     self.logger.info(f"Flash progress: {total_mb:.2f} MB, Speed: {speed_mb:.2f} MB/s")
 
                     last_pos = current_bytes
@@ -208,7 +205,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self.logger.info("Flushing buffers")
         console.sendline("sync")
         console.expect(manifest.spec.login.prompt, timeout=1200)
-
 
     def _get_target_device(self, target: str, manifest: FlasherBundleManifestV1Alpha1, console) -> str:
         """Get the target device path from the manifest, resolving block devices if needed.
@@ -229,15 +225,19 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             raise ArgumentError(f"Target {target} not found in manifest")
 
         if target_path.startswith("/sys/class/block#"):
-            target_path = self._lookup_block_device(
-                console, manifest.spec.login.prompt, target_path.split("#")[1])
+            target_path = self._lookup_block_device(console, manifest.spec.login.prompt, target_path.split("#")[1])
 
         return target_path
 
-
-    def _transfer_bg_thread(self, src_path: PathBuf, src_operator: Operator, src_operator_scheme: str,
-                            known_hash: str | None,
-                            to_storage: OpendalClient, error_queue):
+    def _transfer_bg_thread(
+        self,
+        src_path: PathBuf,
+        src_operator: Operator,
+        src_operator_scheme: str,
+        known_hash: str | None,
+        to_storage: OpendalClient,
+        error_queue,
+    ):
         """Transfer image to storage in the background
 
         Args:
@@ -285,7 +285,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             raise
 
     def _sha256_file(self, src_operator, src_path) -> str:
-
         m = hashlib.sha256()
         with src_operator.open(src_path, "rb") as f:
             while True:
@@ -299,11 +298,13 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _create_metadata_and_json(self, src_operator, src_path) -> tuple[Metadata, str]:
         """Create a metadata json string from a metadata object"""
         metadata = src_operator.stat(src_path)
-        return metadata, json.dumps({
-            "path": str(src_path),
-            "content_length": metadata.content_length,
-            "etag": metadata.etag,
-        })
+        return metadata, json.dumps(
+            {
+                "path": str(src_path),
+                "content_length": metadata.content_length,
+                "etag": metadata.etag,
+            }
+        )
 
     def _lookup_block_device(self, console, prompt, address: str) -> str:
         """Lookup block device for a given address.
@@ -317,7 +318,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # lrwxrwxrwx    1 root     root             0 Jan  1
         # 00:00 mmcblk1 -> ../../devices/platform/bus@100000/4fb0000.mmc/mmc_host/mmc1/mmc1:aaaa/block/mmcblk1
         output = console.before.decode(errors="ignore")
-        match = re.search(r'\s(\w+)\s->', output)
+        match = re.search(r"\s(\w+)\s->", output)
         if match:
             return "/dev/" + match.group(1)
         else:
@@ -359,7 +360,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.http.stop()
             self.tftp.stop()
 
-
     def _generate_uboot_env(self):
         """Generate a uboot environment dictionary, may need specific overrides for different targets"""
         tftp_host = self.tftp.get_host()
@@ -367,46 +367,46 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             "serverip": tftp_host,
         }
 
-
     @contextmanager
     def _busybox(self):
         """Start a busybox shell.
 
         This is a helper context manager that boots the device into uboot and returns a console object.
         """
-        with self.serial.pexpect() as console:
-            if self._console_debug:
-                console.logfile_read = sys.stdout.buffer
-            uboot = UbootConsole(console=console, power=self.power, logger=self.logger)
-            # make sure that the device is booted into the uboot console
-            uboot.reboot_to_console()
+
+        # make sure that the device is booted into the uboot console
+        with self.uboot.reboot_to_console():
             # run dhcp discovery and gather details useful for later
-            self._dhcp_details = uboot.setup_dhcp()
+            self._dhcp_details = self.uboot.setup_dhcp()
             self.logger.info(f"discovered dhcp details: {self._dhcp_details}")
 
             # configure the environment necessary
             env = self._generate_uboot_env()
-            uboot.set_env_dict(env)
+            self.uboot.set_env_dict(env)
 
             # load any necessary files to RAM from the tftp storage
             manifest = self.manifest
             kernel_filename = Path(manifest.get_kernel_file()).name
             kernel_address = manifest.get_kernel_address()
 
-            uboot.run_command(f"tftpboot {kernel_address} {kernel_filename}", timeout=120)
+            self.uboot.run_command(f"tftpboot {kernel_address} {kernel_filename}", timeout=120)
 
             if manifest.get_initram_file():
                 initram_filename = Path(manifest.get_initram_file()).name
                 initram_address = manifest.get_initram_address()
-                uboot.run_command(f"tftpboot {initram_address} {initram_filename}", timeout=120)
+                self.uboot.run_command(f"tftpboot {initram_address} {initram_filename}", timeout=120)
 
             if manifest.get_dtb_file():
                 dtb_filename = Path(manifest.get_dtb_file()).name
                 dtb_address = manifest.get_dtb_address()
-                uboot.run_command(f"tftpboot {dtb_address} {dtb_filename}", timeout=120)
+                self.uboot.run_command(f"tftpboot {dtb_address} {dtb_filename}", timeout=120)
+
+        with self.serial.pexpect() as console:
+            if self._console_debug:
+                console.logfile_read = sys.stdout.buffer
 
             self.logger.info(f"Running boot command: {manifest.spec.bootcmd}")
-            console.send(manifest.spec.bootcmd +"\n")
+            console.send(manifest.spec.bootcmd + "\n")
 
             # if manifest has login details, we need to login
             if manifest.spec.login.username:
@@ -438,7 +438,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def use_kernel(self, path: PathBuf, operator: Operator | None = None):
         """Use kernel file"""
         if operator is None:
-            path, operator, operator_scheme  = operator_for_path(path)
+            path, operator, operator_scheme = operator_for_path(path)
 
         ...
 
@@ -461,16 +461,24 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @base.command()
         @click.argument("file")
         @click.option("--partition", type=str)
-        @click.option('--os-image-checksum',
-                        help='SHA256 checksum of OS image (direct value)')
-        @click.option('--os-image-checksum-file',
-                        help='File containing SHA256 checksum of OS image',
-                        type=click.Path(exists=True, dir_okay=False))
-        @click.option('--force-exporter-http', is_flag=True, help='Force use of exporter HTTP')
-        @click.option('--force-flash-bundle', type=str, help='Force use of a specific flasher OCI bundle')
+        @click.option("--os-image-checksum", help="SHA256 checksum of OS image (direct value)")
+        @click.option(
+            "--os-image-checksum-file",
+            help="File containing SHA256 checksum of OS image",
+            type=click.Path(exists=True, dir_okay=False),
+        )
+        @click.option("--force-exporter-http", is_flag=True, help="Force use of exporter HTTP")
+        @click.option("--force-flash-bundle", type=str, help="Force use of a specific flasher OCI bundle")
         @debug_console_option
-        def flash(file, partition, os_image_checksum, os_image_checksum_file,
-                  console_debug, force_exporter_http, force_flash_bundle):
+        def flash(
+            file,
+            partition,
+            os_image_checksum,
+            os_image_checksum_file,
+            console_debug,
+            force_exporter_http,
+            force_flash_bundle,
+        ):
             """Flash image to DUT from file"""
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
                 with open(os_image_checksum_file) as f:
@@ -478,10 +486,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     self.logger.info(f"Read checksum from file: {os_image_checksum}")
 
             self.set_console_debug(console_debug)
-            self.flash(file,
-                       partition=partition,
-                       force_exporter_http=force_exporter_http,
-                       force_flash_bundle=force_flash_bundle)
+            self.flash(
+                file,
+                partition=partition,
+                force_exporter_http=force_exporter_http,
+                force_flash_bundle=force_flash_bundle,
+            )
 
         @base.command()
         @debug_console_option
@@ -522,8 +532,8 @@ def _get_decompression_command(filename_or_url) -> str:
         filename = urlparse(filename_or_url).path.split("/")[-1]
 
     filename = filename.lower()
-    if filename.endswith(('.gz', '.gzip')):
-        return 'zcat |'
-    elif filename.endswith('.xz'):
-        return 'xzcat |'
-    return ''
+    if filename.endswith((".gz", ".gzip")):
+        return "zcat |"
+    elif filename.endswith(".xz"):
+        return "xzcat |"
+    return ""

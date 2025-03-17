@@ -195,6 +195,7 @@ class Opendal(Driver):
                         break
                     await dst.write(bs=data)
 
+
 class FlasherInterface(metaclass=ABCMeta):
     @classmethod
     def client(cls) -> str:

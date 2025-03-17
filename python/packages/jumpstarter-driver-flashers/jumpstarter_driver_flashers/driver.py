@@ -4,6 +4,7 @@ from pathlib import Path
 import anyio.to_thread
 from jumpstarter_driver_http.driver import HttpServer
 from jumpstarter_driver_tftp.driver import Tftp
+from jumpstarter_driver_uboot.driver import UbootConsole
 from oras.provider import Registry
 
 from .bundle import FlasherBundleManifestV1Alpha1
@@ -13,11 +14,12 @@ from jumpstarter.driver import Driver, export
 
 @dataclass(kw_only=True)
 class BaseFlasher(Driver):
-    """ driver for Jumpstarter"""
+    """driver for Jumpstarter"""
+
     flasher_bundle: str = field(default="quay.io/jumpstarter-dev/jumpstarter-flasher-test:latest")
     cache_dir: str = field(default="/var/lib/jumpstarter/flasher")
-    tftp_dir : str = field(default="/var/lib/tftpboot")
-    http_dir : str = field(default="/var/www/html")
+    tftp_dir: str = field(default="/var/lib/tftpboot")
+    http_dir: str = field(default="/var/www/html")
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -25,26 +27,36 @@ class BaseFlasher(Driver):
 
         # Ensure required children are present if not already instantiated
         # in configuration
-        if 'tftp' not in self.children:
-            self.children['tftp'] = Tftp(root_dir=self.tftp_dir)
-            self.tftp = self.children['tftp']
+        if "tftp" not in self.children:
+            self.children["tftp"] = Tftp(root_dir=self.tftp_dir)
+            self.tftp = self.children["tftp"]
 
-        if 'http' not in self.children:
-            self.children['http'] = HttpServer(root_dir=self.http_dir)
-            self.http = self.children['http']
+        if "http" not in self.children:
+            self.children["http"] = HttpServer(root_dir=self.http_dir)
+            self.http = self.children["http"]
 
         # Ensure required children are present, the following are not auto-created
-        if 'serial' not in self.children:
-            raise ConfigurationError("'serial' instance is required for BaseFlasher "
-                                     "either via a ref ir a direct child instance")
+        if "serial" not in self.children:
+            raise ConfigurationError(
+                "'serial' instance is required for BaseFlasher either via a ref ir a direct child instance"
+            )
 
-        if 'power' not in self.children:
-            raise ConfigurationError("'power' instance is required for BaseFlasher "
-                                     "either via a ref ir a direct child instance")
+        if "power" not in self.children:
+            raise ConfigurationError(
+                "'power' instance is required for BaseFlasher either via a ref ir a direct child instance"
+            )
+
+        if "uboot" not in self.children:
+            self.children["uboot"] = UbootConsole(
+                children={
+                    "power": self.children["power"],
+                    "serial": self.children["serial"],
+                }
+            )
 
         # bundles that have already been downloaded in the current session
         self._downloaded = {}
-        self._use_dtb = None # use default dtb unless set by client
+        self._use_dtb = None  # use default dtb unless set by client
 
     @classmethod
     def client(cls) -> str:
@@ -76,7 +88,6 @@ class BaseFlasher(Driver):
         self.logger.info(f"Setting up dtb in tftp: {dtb_path}")
         await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
 
-
     @export
     def set_dtb(self, handle):
         """Provide a different dtb from client"""
@@ -87,8 +98,10 @@ class BaseFlasher(Driver):
         """Provide a different dtb reference from the flasher bundle"""
         manifest = await self.get_flasher_manifest()
         if manifest.get_dtb_file(variant) is None:
-            raise ValueError(f"DTB variant {variant} not found in the flasher bundle, "
-                             f"available variants are: {list(manifest.spec.dtb.variants.keys())}")
+            raise ValueError(
+                f"DTB variant {variant} not found in the flasher bundle, "
+                f"available variants are: {list(manifest.spec.dtb.variants.keys())}"
+            )
         self._use_dtb = variant
 
     def set_kernel(self, handle):
@@ -186,5 +199,6 @@ class BaseFlasher(Driver):
 
 @dataclass(kw_only=True)
 class TIJ784S4Flasher(BaseFlasher):
-    """ driver for Jumpstarter"""
+    """driver for Jumpstarter"""
+
     flasher_bundle: str = "quay.io/jumpstarter-dev/jumpstarter-flasher-ti-j784s4:latest"
