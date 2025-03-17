@@ -9,7 +9,7 @@ from jumpstarter_cli_common import (
 )
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import DURATION, load_context, opt_context, opt_selector_simple
+from .common import DURATION, opt_config, opt_selector_simple
 
 
 @click.group()
@@ -20,12 +20,12 @@ def create():
 
 
 @create.command(name="lease")
-@opt_context
+@opt_config
 @opt_selector_simple
 @click.option("--duration", "duration", type=DURATION, required=True)
 @opt_output_all
 @handle_exceptions
-async def create_lease(context: str | None, selector: str, duration: timedelta, output: OutputType):
+async def create_lease(config, selector: str, duration: timedelta, output: OutputType):
     """
     Create a lease
 
@@ -50,7 +50,6 @@ async def create_lease(context: str | None, selector: str, duration: timedelta, 
         $ jmp client delete lease "${JMP_LEASE}"
 
     """
-    config = load_context(context)
 
     lease = config.create_lease(selector=selector, duration=duration)
 

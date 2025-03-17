@@ -2,7 +2,7 @@ import asyncclick as click
 from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import load_context, opt_context
+from .common import opt_config
 
 opt_selector = click.option(
     "-l",
@@ -20,15 +20,14 @@ def get():
 
 
 @get.command(name="exporters")
-@opt_context
+@opt_config
 @opt_selector
 @opt_output_all
 @handle_exceptions
-def get_exporters(context: str | None, selector: str | None, output: OutputType):
+def get_exporters(config, selector: str | None, output: OutputType):
     """
     Display one or many exporters
     """
-    config = load_context(context)
 
     exporters = config.list_exporters(filter=selector)
 
@@ -53,15 +52,14 @@ def get_exporters(context: str | None, selector: str | None, output: OutputType)
 
 
 @get.command(name="leases")
-@opt_context
+@opt_config
 @opt_selector
 @opt_output_all
 @handle_exceptions
-def get_leases(context: str | None, selector: str | None, output: OutputType):
+def get_leases(config, selector: str | None, output: OutputType):
     """
     Display one or many leases
     """
-    config = load_context(context)
 
     leases = config.list_leases(filter=selector)
 

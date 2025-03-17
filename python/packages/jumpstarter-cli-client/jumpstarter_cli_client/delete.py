@@ -2,7 +2,7 @@ import asyncclick as click
 from jumpstarter_cli_common import OutputMode, OutputType, opt_output_name_only
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import load_context, opt_context
+from .common import opt_config
 
 
 @click.group()
@@ -13,17 +13,15 @@ def delete():
 
 
 @delete.command(name="leases")
-@opt_context
+@opt_config
 @click.argument("name", required=False)
 @click.option("--all", "all", is_flag=True)
 @opt_output_name_only
 @handle_exceptions
-def delete_leases(context: str | None, name: str, all: bool, output: OutputType):
+def delete_leases(config, name: str, all: bool, output: OutputType):
     """
     Delete leases
     """
-
-    config = load_context(context)
 
     names = []
 

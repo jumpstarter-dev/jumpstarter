@@ -8,8 +8,6 @@ from jumpstarter.config import (
     UserConfigV1Alpha1,
 )
 
-opt_context = click.option("--client", "--context", "context", help="Name of client config")
-
 opt_selector_simple = click.option(
     "-l",
     "--selector",
@@ -24,17 +22,20 @@ def selector_to_labels(selector: str):
     return dict([term.split("=") for term in selector.split(",")])
 
 
-def load_context(context: str | None) -> ClientConfigV1Alpha1:
-    if context:
-        config = ClientConfigV1Alpha1.load(context)
-    else:
-        config = UserConfigV1Alpha1.load_or_create().config.current_client
-    if not config:
-        raise click.BadOptionUsage(
-            "--context",
-            "no client context specified, and no default client context set",
-        )
-    return config
+class ClientParamType(click.ParamType):
+    name = "client"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, ClientConfigV1Alpha1):
+            return value
+
+        if isinstance(value, bool):  # hack to allow loading the default config
+            config = UserConfigV1Alpha1.load_or_create().config.current_client
+            if config is None:
+                self.fail("no client config specified, and no default client config set", param, ctx)
+            return config
+        else:
+            return ClientConfigV1Alpha1.load(value)
 
 
 class DurationParamType(click.ParamType):
@@ -51,3 +52,6 @@ class DurationParamType(click.ParamType):
 
 
 DURATION = DurationParamType()
+CLIENT = ClientParamType()
+
+opt_config = click.option("--client", "config", type=CLIENT, default=False, help="Name of client config")
