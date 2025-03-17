@@ -2,14 +2,7 @@ import asyncclick as click
 from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import opt_config
-
-opt_selector = click.option(
-    "-l",
-    "--selector",
-    help="Selector (label query) to filter on, supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2)."
-    " Matching objects must satisfy all of the specified label constraints.",
-)
+from .common import opt_config, opt_selector
 
 
 @click.group()

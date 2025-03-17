@@ -8,6 +8,13 @@ from jumpstarter.config import (
     UserConfigV1Alpha1,
 )
 
+opt_selector = click.option(
+    "-l",
+    "--selector",
+    help="Selector (label query) to filter on, supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2)."
+    " Matching objects must satisfy all of the specified label constraints.",
+)
+
 opt_selector_simple = click.option(
     "-l",
     "--selector",
