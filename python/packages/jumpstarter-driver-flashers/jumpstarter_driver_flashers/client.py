@@ -61,7 +61,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self.logger.info("Setting up flasher bundle files in exporter")
         self.call("setup_flasher_bundle")
         with self._services_up():
-            with self.uboot.reboot_to_console():
+            with self.uboot.reboot_to_console(debug=self._console_debug):
                 pass
             yield self.serial
 
@@ -375,7 +375,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
 
         # make sure that the device is booted into the uboot console
-        with self.uboot.reboot_to_console():
+        with self.uboot.reboot_to_console(debug=self._console_debug):
             # run dhcp discovery and gather details useful for later
             self._dhcp_details = self.uboot.setup_dhcp()
             self.logger.info(f"discovered dhcp details: {self._dhcp_details}")

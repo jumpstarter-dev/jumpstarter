@@ -1,3 +1,4 @@
+import sys
 from contextlib import contextmanager
 from functools import cached_property
 
@@ -10,14 +11,26 @@ from .common import ESC, DhcpInfo
 class UbootConsoleClient(CompositeClient):
     @cached_property
     def prompt(self) -> str:
+        """
+        U-Boot prompt to expect
+        """
+
         return self.call("get_prompt")
 
     @contextmanager
-    def reboot_to_console(self) -> None:
+    def reboot_to_console(self, *, debug=False) -> None:
         """
         Reboot to U-Boot console
 
         Power cycle the target and wait for the U-Boot prompt
+
+        Must be used as a context manager, other methods can only be
+        used within the reboot_to_console context
+
+        >>> with uboot.reboot_to_console(debug=True): # doctest: +SKIP
+        ...     uboot.set_env("foo", "bar")
+        ...     uboot.setup_dhcp()
+        >>> # uboot.set_env("foo", "baz") # invalid use
         """
 
         self.logger.info("Power cycling target...")
@@ -26,6 +39,9 @@ class UbootConsoleClient(CompositeClient):
         self.logger.info("Waiting for U-Boot prompt...")
 
         with self.serial.pexpect() as p:
+            if debug:
+                p.logfile_read = sys.stdout.buffer
+
             for _ in range(100):  # TODO: configurable retries
                 try:
                     p.send(ESC)
@@ -44,6 +60,10 @@ class UbootConsoleClient(CompositeClient):
                 delattr(self, "p")
 
     def run_command(self, cmd: str, timeout: int = 60, *, _internal_log=True) -> bytes:
+        """
+        Run raw command in the U-Boot console
+        """
+
         if _internal_log:
             self.logger.info(f"Running command: {cmd}")
         if not hasattr(self, "p"):
@@ -55,6 +75,10 @@ class UbootConsoleClient(CompositeClient):
         return self.p.before
 
     def run_command_checked(self, cmd: str, timeout: int = 60, check=True) -> list[str]:
+        """
+        Run command in the U-Boot console and check the exit code
+        """
+
         self.logger.info(f"Running command checked: {cmd}")
         output = self.run_command("{}; echo $?".format(cmd), _internal_log=False)
         parsed = output.strip().decode().splitlines()
@@ -73,6 +97,10 @@ class UbootConsoleClient(CompositeClient):
         return parsed[1:-1]
 
     def setup_dhcp(self, timeout: int = 60) -> DhcpInfo:
+        """
+        Setup dhcp in U-Boot
+        """
+
         self.logger.info("Running DHCP to obtain network configuration...")
 
         autoload = self.get_env("autoload", timeout=timeout)
@@ -116,6 +144,10 @@ class UbootConsoleClient(CompositeClient):
             raise TimeoutError(f"Timed out getting var {key}") from err
 
     def set_env(self, key: str, value: str | None, timeout: int = 5) -> None:
+        """
+        Set U-Boot environment variable value
+        """
+
         if value is not None:
             cmd = "setenv {} '{}'".format(key, value)
         else:
@@ -127,5 +159,9 @@ class UbootConsoleClient(CompositeClient):
             raise TimeoutError(f"Timed out setting var {key}") from err
 
     def set_env_dict(self, env: dict[str, str | None]) -> None:
+        """
+        Set multiple U-Boot environment variable value
+        """
+
         for key, value in env.items():
             self.set_env(key, value)

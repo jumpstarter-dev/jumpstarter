@@ -47,7 +47,7 @@ def test_driver_uboot_console(uboot_image):
 
         uboot = root.uboot
 
-        with uboot.reboot_to_console():
+        with uboot.reboot_to_console(debug=True):
             assert uboot.run_command_checked("version") == [
                 "U-Boot 2024.10 (Oct 11 2024 - 00:00:00 +0000)",
                 "",

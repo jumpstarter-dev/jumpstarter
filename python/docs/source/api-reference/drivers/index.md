@@ -20,6 +20,7 @@ sdwire.md
 shell.md
 snmp.md
 tftp.md
+uboot.md
 ustreamer.md
 yepkit.md
 ```
