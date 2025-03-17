@@ -18,12 +18,15 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
-	"net"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	gwruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -36,7 +39,6 @@ import (
 	clientsvcv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/service/client/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
@@ -659,7 +661,6 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	}
 
 	server := grpc.NewServer(
-		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
 		KeepaliveEnforcementPolicy(),
 		grpc.UnaryInterceptor(func(
 			gctx context.Context,
@@ -688,7 +689,13 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	// Register reflection service on gRPC server.
 	reflection.Register(server)
 
-	listener, err := net.Listen("tcp", ":8082")
+	// Register gRPC gateway
+	gwmux := gwruntime.NewServeMux()
+
+	listener, err := tls.Listen("tcp", ":8082", &tls.Config{
+		Certificates: []tls.Certificate{*cert},
+		NextProtos:   []string{"http/1.1", "h2"},
+	})
 	if err != nil {
 		return err
 	}
@@ -701,7 +708,14 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		server.Stop()
 	}()
 
-	return server.Serve(listener)
+	return http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(
+			r.Header.Get("Content-Type"), "application/grpc") {
+			server.ServeHTTP(w, r)
+		} else {
+			gwmux.ServeHTTP(w, r)
+		}
+	}))
 }
 
 // SetupWithManager sets up the controller with the Manager.
