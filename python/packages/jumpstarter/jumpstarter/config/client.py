@@ -14,7 +14,6 @@ from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_NAME, JMP_NAMES
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService
-from jumpstarter.common import MetadataFilter
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials, translate_grpc_exceptions
 
@@ -62,9 +61,9 @@ class ClientConfigV1Alpha1(BaseModel):
         return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
     @contextmanager
-    def lease(self, metadata_filter: MetadataFilter, lease_name: str | None = None):
+    def lease(self, selector: str | None = None, lease_name: str | None = None):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.lease_async(metadata_filter, lease_name, portal)) as lease:
+            with portal.wrap_async_context_manager(self.lease_async(selector, lease_name, portal)) as lease:
                 yield lease
 
     def get_exporter(self, name: str):
@@ -80,9 +79,9 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             return portal.call(self.list_exporters_async, page_size, page_token, filter)
 
-    def request_lease(self, metadata_filter: MetadataFilter):
+    def request_lease(self, selector: str):
         with start_blocking_portal() as portal:
-            return portal.call(self.request_lease_async, metadata_filter, portal)
+            return portal.call(self.request_lease_async, selector, portal)
 
     def list_leases(self, filter: str):
         with start_blocking_portal() as portal:
@@ -147,7 +146,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
     async def request_lease_async(
         self,
-        metadata_filter: MetadataFilter,
+        selector: str,
         portal: BlockingPortal,
     ):
         # dynamically import to avoid circular imports
@@ -157,7 +156,7 @@ class ClientConfigV1Alpha1(BaseModel):
             channel=await self.channel(),
             namespace=self.metadata.namespace,
             name=None,
-            metadata_filter=metadata_filter,
+            selector=selector,
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
@@ -185,7 +184,7 @@ class ClientConfigV1Alpha1(BaseModel):
     @asynccontextmanager
     async def lease_async(
         self,
-        metadata_filter: MetadataFilter,
+        selector: str,
         lease_name: str | None,
         portal: BlockingPortal,
     ):
@@ -200,7 +199,7 @@ class ClientConfigV1Alpha1(BaseModel):
             channel=await self.channel(),
             namespace=self.metadata.namespace,
             name=lease_name,
-            metadata_filter=metadata_filter,
+            selector=selector,
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,

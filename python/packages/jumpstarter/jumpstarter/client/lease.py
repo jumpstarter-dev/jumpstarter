@@ -18,7 +18,7 @@ from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
 from jumpstarter.client.grpc import ClientService
-from jumpstarter.common import MetadataFilter, TemporaryUnixListener
+from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
 from jumpstarter.common.grpc import translate_grpc_exceptions
 from jumpstarter.common.streams import connect_router_stream
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class Lease(AbstractContextManager, AbstractAsyncContextManager):
     channel: Channel
     timeout: int = 1800
-    metadata_filter: MetadataFilter = field(default_factory=MetadataFilter)
+    selector: str
     portal: BlockingPortal
     namespace: str
     name: str | None = field(default=None)
@@ -52,17 +52,16 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
 
     async def _create(self):
         duration = timedelta(seconds=self.timeout)
-        selector = ",".join(("{}={}".format(label[0], label[1]) for label in self.metadata_filter.labels.items()))
 
-        logger.debug("Creating lease request for selector %s for duration %s", selector, duration)
+        logger.debug("Creating lease request for selector %s for duration %s", self.selector, duration)
         with translate_grpc_exceptions():
             self.name = (
                 await self.svc.CreateLease(
-                    selector=selector,
+                    selector=self.selector,
                     duration=timedelta(seconds=self.timeout),
                 )
             ).name
-        logger.info("Created lease request for selector %s for duration %s", selector, duration)
+        logger.info("Created lease request for selector %s for duration %s", self.selector, duration)
 
     async def get(self):
         with translate_grpc_exceptions():

@@ -12,8 +12,3 @@ class Metadata:
     @property
     def name(self):
         return self.labels.get("jumpstarter.dev/name", "unknown")
-
-
-@dataclass(kw_only=True, slots=True)
-class MetadataFilter:
-    labels: dict[str, str] = field(default_factory=dict)

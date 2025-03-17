@@ -46,7 +46,7 @@ the base class will attempt to:
 1. Use a local connection based on the `JUMPSTARTER_HOST` environment variable
 2. Use an existing lease based on the `JMP_LEASE` environment variable, and existing credentials.
    See the cli reference for [jmp lease request](../cli-reference/jmp.md#jmp-lease-request).
-3. Request a lease based on the `filter_labels` provided in the test class.
+3. Request a lease based on the `selector` provided in the test class.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_testing.pytest.JumpstarterTest
