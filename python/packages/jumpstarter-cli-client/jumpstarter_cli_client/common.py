@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 import asyncclick as click
+from pydantic import TypeAdapter
 
 from jumpstarter.config import (
     ClientConfigV1Alpha1,
@@ -32,3 +35,19 @@ def load_context(context: str | None) -> ClientConfigV1Alpha1:
             "no client context specified, and no default client context set",
         )
     return config
+
+
+class DurationParamType(click.ParamType):
+    name = "duration"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, timedelta):
+            return value
+
+        try:
+            return TypeAdapter(timedelta).validate_python(value)
+        except ValueError:
+            self.fail(f"{value!r} is not a valid duration", param, ctx)
+
+
+DURATION = DurationParamType()

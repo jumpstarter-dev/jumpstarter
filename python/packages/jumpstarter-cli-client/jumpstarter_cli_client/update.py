@@ -3,9 +3,8 @@ from datetime import timedelta
 import asyncclick as click
 from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
 from jumpstarter_cli_common.exceptions import handle_exceptions
-from pydantic import TypeAdapter
 
-from .common import load_context, opt_context
+from .common import DURATION, load_context, opt_context
 
 
 @click.group()
@@ -18,17 +17,15 @@ def update():
 @update.command(name="lease")
 @opt_context
 @click.argument("name")
-@click.option("--duration", "duration", type=str, required=True)
+@click.option("--duration", "duration", type=DURATION, required=True)
 @opt_output_all
 @handle_exceptions
-async def update_lease(context: str | None, name: str, duration: str, output: OutputType):
+async def update_lease(context: str | None, name: str, duration: timedelta, output: OutputType):
     """
     Update a lease
     """
 
     config = load_context(context)
-
-    duration = TypeAdapter(timedelta).validate_python(duration)
 
     lease = config.update_lease(name, duration)
 
