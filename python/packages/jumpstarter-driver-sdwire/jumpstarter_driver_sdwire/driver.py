@@ -18,6 +18,9 @@ class SDWire(StorageMuxFlasherInterface, Driver):
     itf: usb.core.Interface = field(init=False)
 
     storage_device: str | None = field(default=None)
+    storage_timeout: int = field(default=10)
+    storage_leeway: int = field(default=6)
+    storage_fsync_timeout: int = field(default=900)
 
     def effective_storage_device(self):
         if self.storage_device is None:
@@ -103,10 +106,22 @@ class SDWire(StorageMuxFlasherInterface, Driver):
     async def write(self, src: str):
         self.host()
         async with self.resource(src) as res:
-            await write_to_storage_device(self.effective_storage_device(), res, logger=self.logger)
+            await write_to_storage_device(
+                self.effective_storage_device(),
+                res,
+                timeout=self.storage_timeout,
+                leeway=self.storage_leeway,
+                fsync_timeout=self.storage_fsync_timeout,
+                logger=self.logger,
+            )
 
     @export
     async def read(self, dst: str):
         self.host()
         async with self.resource(dst) as res:
-            await read_from_storage_device(self.effective_storage_device(), res, logger=self.logger)
+            await read_from_storage_device(
+                self.effective_storage_device(),
+                res,
+                timeout=self.storage_timeout,
+                logger=self.logger,
+            )
