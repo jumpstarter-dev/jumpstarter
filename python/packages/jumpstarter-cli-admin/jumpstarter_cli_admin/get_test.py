@@ -219,6 +219,10 @@ kind: ClientList
 
 """
 
+CLIENTS_LIST_NAME = """client.jumpstarter.dev/test
+client.jumpstarter.dev/another
+"""
+
 CLIENTS_LIST_EMPTY_YAML = """apiVersion: jumpstarter.dev/v1alpha1
 items: []
 kind: ClientList
@@ -259,7 +263,7 @@ async def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock)
     list_clients_mock.return_value = CLIENTS_LIST
     result = await runner.invoke(get, ["clients", "--output", "name"])
     assert result.exit_code == 0
-    assert result.output == "client.jumpstarter.dev/test\n"
+    assert result.output == CLIENTS_LIST_NAME
     list_clients_mock.reset_mock()
 
     # No clients found
@@ -590,6 +594,10 @@ kind: ExporterList
 
 """
 
+EXPORTERS_LIST_NAME = """exporter.jumpstarter.dev/test
+exporter.jumpstarter.dev/another
+"""
+
 
 @pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "list_exporters")
@@ -623,7 +631,7 @@ async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncM
     list_exporters_mock.return_value = EXPORTERS_LIST
     result = await runner.invoke(get, ["exporters", "--output", "name"])
     assert result.exit_code == 0
-    assert result.output == "exporter.jumpstarter.dev/test\n"
+    assert result.output == EXPORTERS_LIST_NAME
     list_exporters_mock.reset_mock()
 
     # No exporters found
@@ -754,6 +762,7 @@ kind: ExporterList
 
 """
 
+EXPORTERS_DEVICES_LIST_NAME = EXPORTERS_LIST_NAME
 
 @pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "list_exporters")
@@ -790,7 +799,7 @@ async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock
     list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
     result = await runner.invoke(get, ["exporters", "--devices", "--output", "name"])
     assert result.exit_code == 0
-    assert result.output == "exporter.jumpstarter.dev/test\n"
+    assert result.output == EXPORTERS_DEVICES_LIST_NAME
     list_exporters_mock.reset_mock()
 
     # No exporters found
@@ -1128,6 +1137,9 @@ kind: LeaseList
 
 """
 
+LEASES_LIST_NAME = """lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b1
+lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b2
+"""
 
 @pytest.mark.anyio
 @patch.object(LeasesV1Alpha1Api, "list_leases")
@@ -1172,7 +1184,7 @@ async def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
     result = await runner.invoke(get, ["leases", "--output", "name"])
     assert result.exit_code == 0
-    assert result.output == "lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b1\n"
+    assert result.output == LEASES_LIST_NAME
     list_leases_mock.reset_mock()
 
     # No leases found
