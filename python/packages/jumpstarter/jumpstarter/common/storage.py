@@ -114,5 +114,17 @@ async def read_from_storage_device(
     )
     with os.fdopen(os.open(path, os.O_RDONLY), "rb") as file:
         async with FileReadStream(file) as stream:
+            total_bytes = 0
+            next_print = 0
             async for chunk in stream:
                 await resource.send(chunk)
+                if logger:
+                    total_bytes += len(chunk)
+                    if total_bytes > next_print:
+                        logger.info(
+                            "read {} MB from storage device {}".format(
+                                total_bytes / (1024 * 1024),
+                                storage_device,
+                            )
+                        )
+                        next_print += 50 * 1024 * 1024
