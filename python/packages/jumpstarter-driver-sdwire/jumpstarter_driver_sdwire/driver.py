@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 import pyudev
 import usb.core
 import usb.util
-from anyio import fail_after, sleep
-from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_opendal.driver import StorageMuxFlasherInterface
 
+from jumpstarter.common.storage import read_from_storage_device, write_to_storage_device
 from jumpstarter.driver import Driver, export
 
 
@@ -20,6 +18,9 @@ class SDWire(StorageMuxFlasherInterface, Driver):
     itf: usb.core.Interface = field(init=False)
 
     storage_device: str | None = field(default=None)
+    storage_timeout: int = field(default=10)
+    storage_leeway: int = field(default=6)
+    storage_fsync_timeout: int = field(default=900)
 
     def effective_storage_device(self):
         if self.storage_device is None:
@@ -101,45 +102,26 @@ class SDWire(StorageMuxFlasherInterface, Driver):
     def off(self):
         self.host()
 
-    async def wait_for_storage_device(self):
-        with fail_after(10):
-            storage_device = self.effective_storage_device()
-
-            while True:
-                # https://stackoverflow.com/a/2774125
-                try:
-                    fd = os.open(storage_device, os.O_WRONLY)
-                    if os.lseek(fd, 0, os.SEEK_END) > 0:
-                        break
-                except OSError as e:
-                    match e.errno:
-                        case 123:  # No medium found
-                            pass
-                        case 5:  # Input/output error
-                            pass
-                        case _:
-                            raise
-                finally:
-                    if "fd" in locals():
-                        os.close(fd)
-                await sleep(1)
-
-            return storage_device
-
     @export
     async def write(self, src: str):
         self.host()
-        storage_device = await self.wait_for_storage_device()
-        async with await FileWriteStream.from_path(storage_device) as stream:
-            async with self.resource(src) as res:
-                async for chunk in res:
-                    await stream.send(chunk)
+        async with self.resource(src) as res:
+            await write_to_storage_device(
+                self.effective_storage_device(),
+                res,
+                timeout=self.storage_timeout,
+                leeway=self.storage_leeway,
+                fsync_timeout=self.storage_fsync_timeout,
+                logger=self.logger,
+            )
 
     @export
     async def read(self, dst: str):
         self.host()
-        storage_device = await self.wait_for_storage_device()
-        async with await FileReadStream.from_path(storage_device) as stream:
-            async with self.resource(dst) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        async with self.resource(dst) as res:
+            await read_from_storage_device(
+                self.effective_storage_device(),
+                res,
+                timeout=self.storage_timeout,
+                logger=self.logger,
+            )
