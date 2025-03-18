@@ -107,7 +107,7 @@ class CorelliumPower(PowerInterface, Driver):
     parent: Corellium
 
     @export
-    async def on(self) -> None:
+    def on(self) -> None:
         """
         Power a Corellium virtual device on.
 
