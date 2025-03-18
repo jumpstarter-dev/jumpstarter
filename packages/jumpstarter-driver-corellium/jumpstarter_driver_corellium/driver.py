@@ -34,9 +34,7 @@ class Corellium(Driver):
         """
         return 'jumpstarter_driver_corellium.client.CorelliumClient' 
 
-    def __post_init__(self) -> None:
-        if hasattr(super(), "__post_init__"):
-            super().__post_init__()
+    def __post_init__(self) -> None: 
         """
         Post initialization method.
 
@@ -52,6 +50,9 @@ class Corellium(Driver):
         - Corellium API client instance
         - Children jumpstarter drives
         """
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
         api_host = self.get_env_var('CORELLIUM_API_HOST')
         api_token = self.get_env_var('CORELLIUM_API_TOKEN')
         self._api = ApiClient(api_host, api_token)
