@@ -15,9 +15,15 @@ spec:
   targets:
     usd: "/sys/class/block#4fb0000"
     emmc: "/sys/class/block#4f80000"
-  preflash_commands:
-    - "dd if=/dev/zero of=/dev/mmcblk0 bs=512 count=34"
-    - "dd if=/dev/zero of=/dev/mmcblk1 bs=512 count=34"
+# removed for now, even if it's our documented procedure, if
+# the board is configured to boot from sd or emmc (and not SPI), and
+# the flashing of the final image fails, it will result in an un-bootable
+# system -> lab admin going to the site and re-flashing SD, this can
+# only be avoided by using something like sdwire
+#
+#  preflash_commands:
+#    - "dd if=/dev/zero of=/dev/mmcblk0 bs=512 count=34"
+#    - "dd if=/dev/zero of=/dev/mmcblk1 bs=512 count=34"
   kernel:
     file: data/J784S4XEVM.flasher.img
     address: "0x82000000"
