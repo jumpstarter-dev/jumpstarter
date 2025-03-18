@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -8,14 +7,14 @@ from dataclasses import dataclass, field
 import pyudev
 import usb.core
 import usb.util
-from anyio import fail_after, sleep
-from anyio.streams.file import FileReadStream, FileWriteStream
+from anyio import sleep
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_opendal.driver import StorageMuxFlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
 from serial.serialutil import SerialException
 
+from jumpstarter.common.storage import read_from_storage_device, write_to_storage_device
 from jumpstarter.driver import Driver, export
 
 
@@ -187,44 +186,17 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxFlasherInterface, Driver):
     def off(self):
         return self.control("off")
 
-    async def wait_for_storage_device(self):
-        with fail_after(20):
-            while True:
-                self.logger.debug(f"waiting for storage device {self.storage_device}")
-                if os.path.exists(self.storage_device):
-                    self.logger.debug(f"storage device {self.storage_device} is ready")
-                    # https://stackoverflow.com/a/2774125
-                    fd = os.open(self.storage_device, os.O_WRONLY)
-                    try:
-                        if os.lseek(fd, 0, os.SEEK_END) > 0:
-                            break
-                    finally:
-                        os.close(fd)
-                await sleep(1)
-
     @export
     async def write(self, src: str):
         self.host()
-        await self.wait_for_storage_device()
-        async with await FileWriteStream.from_path(self.storage_device) as stream:
-            async with self.resource(src) as res:
-                total_bytes = 0
-                next_print = 0
-                async for chunk in res:
-                    await stream.send(chunk)
-                    if total_bytes > next_print:
-                        self.logger.debug(f"{self.storage_device} written {total_bytes / (1024 * 1024)} MB")
-                        next_print += 50 * 1024 * 1024
-                    total_bytes += len(chunk)
+        async with self.resource(src) as res:
+            await write_to_storage_device(self.storage_device, res, logger=self.logger)
 
     @export
     async def read(self, dst: str):
         self.host()
-        await self.wait_for_storage_device()
-        async with await FileReadStream.from_path(self.storage_device) as stream:
-            async with self.resource(dst) as res:
-                async for chunk in stream:
-                    await res.send(chunk)
+        async with self.resource(dst) as res:
+            await read_from_storage_device(self.storage_device, res, logger=self.logger)
 
 
 @dataclass(kw_only=True)
