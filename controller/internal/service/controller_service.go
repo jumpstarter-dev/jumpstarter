@@ -291,20 +291,6 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		Name:      exporter.Name,
 	})
 
-	original := client.MergeFrom(exporter.DeepCopy())
-	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: exporter.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason: "Connect",
-	})
-	if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
-		logger.Error(err, "unable to update exporter status")
-	}
-
 	defer func() {
 		// Make sure defer runs under a fresh context
 		// otherwise these operations would fail if the rpc context is cancelled
@@ -342,6 +328,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 	}
 
 	defer watcher.Stop()
+
 	for result := range watcher.ResultChan() {
 		switch result.Type {
 		case watch.Added, watch.Modified, watch.Deleted:
@@ -349,6 +336,28 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 			leased := exporter.Status.LeaseRef != nil
 			leaseName := (*string)(nil)
 			clientName := (*string)(nil)
+
+			original := client.MergeFrom(exporter.DeepCopy())
+			if false ||
+				meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+					Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: exporter.Generation,
+					Reason:             "Connect",
+					Message:            "Exporter is connected to the Status endpoint",
+				}) ||
+				meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+					Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: exporter.Generation,
+					Reason:             "Connect",
+					Message:            "Exporter is connected to the Status endpoint",
+				}) {
+				if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
+					logger.Error(err, "unable to update exporter status")
+				}
+			}
+
 			if leased {
 				leaseName = &exporter.Status.LeaseRef.Name
 				var lease jumpstarterdevv1alpha1.Lease
