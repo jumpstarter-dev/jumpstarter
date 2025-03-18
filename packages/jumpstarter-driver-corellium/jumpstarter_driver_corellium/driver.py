@@ -35,6 +35,8 @@ class Corellium(Driver):
         return 'jumpstarter_driver_corellium.client.CorelliumClient' 
 
     def __post_init__(self) -> None:
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
         """
         Post initialization method.
 
