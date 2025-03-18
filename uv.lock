@@ -1276,7 +1276,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
     { name = "trio" },
@@ -1294,7 +1293,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests-mock" },
     { name = "trio", specifier = ">=0.28.0" },

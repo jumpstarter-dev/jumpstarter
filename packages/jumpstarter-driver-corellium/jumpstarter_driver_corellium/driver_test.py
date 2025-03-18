@@ -68,8 +68,7 @@ def test_driver_api_client_ok(monkeypatch, requests_mock):
     assert Session('token', '2022-03-20T01:50:10.000Z') == c.api.session
 
 
-@pytest.mark.asyncio
-async def test_driver_power_on_ok(monkeypatch):
+def test_driver_power_on_ok(monkeypatch):
     monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
     monkeypatch.setenv('CORELLIUM_API_TOKEN', 'api-token')
 
@@ -86,10 +85,9 @@ async def test_driver_power_on_ok(monkeypatch):
           patch.object(root._api, 'get_instance', return_value=None),
           patch.object(root._api, 'create_instance', return_value=instance),
           patch.object(root._api, 'read_instance_state', return_value=None)):
-        await power.on()
+        power.on()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize('mock_data', [
     ({'login': {'side_effect': CorelliumApiException('login error')}}),
     ({'get_project': {'return_value': None}}),
@@ -97,7 +95,7 @@ async def test_driver_power_on_ok(monkeypatch):
     ({'create_instance': {'side_effect': CorelliumApiException('create error')}}),
     ({'read_instance_state': {'side_effect': CorelliumApiException('read error')}}),
 ])
-async def test_driver_power_on_error(monkeypatch, mock_data):
+def test_driver_power_on_error(monkeypatch, mock_data):
     monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
     monkeypatch.setenv('CORELLIUM_API_TOKEN', 'api-token')
 
@@ -112,11 +110,10 @@ async def test_driver_power_on_error(monkeypatch, mock_data):
               patch.object(root._api, 'get_instance', **mock_data.get('get_instance', {'return_value': instance})),
               patch.object(root._api, 'create_instance', **mock_data.get('create_instance', {'return_value': instance})),
               patch.object(root._api, 'read_instance_state', **mock_data.get('read_instance_state', {'return_value': None}))):
-            await power.off()
+            power.off()
 
 
-@pytest.mark.asyncio
-async def test_driver_power_off_ok(monkeypatch):
+def test_driver_power_off_ok(monkeypatch):
     monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
     monkeypatch.setenv('CORELLIUM_API_TOKEN', 'api-token')
 
@@ -129,17 +126,16 @@ async def test_driver_power_off_ok(monkeypatch):
           patch.object(root._api, 'get_project', return_value=project),
           patch.object(root._api, 'get_instance', side_effect=[instance, None]),
           patch.object(root._api, 'destroy_instance', return_value=instance)):
-        await power.off()
+        power.off()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize('mock_data',[
     ({'login': {'side_effect': CorelliumApiException('login error')}}),
     ({'get_project': {'return_value': None}}),
     ({'get_instance': {'return_value': None}}),
     ({'destroy_instance': {'side_effect': CorelliumApiException('destroy error')}}),
 ])
-async def test_driver_power_off_error(monkeypatch, mock_data):
+def test_driver_power_off_error(monkeypatch, mock_data):
     monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
     monkeypatch.setenv('CORELLIUM_API_TOKEN', 'api-token')
 
@@ -153,4 +149,4 @@ async def test_driver_power_off_error(monkeypatch, mock_data):
               patch.object(root._api, 'get_project', **mock_data.get('get_project', {'return_value': project})),
               patch.object(root._api, 'get_instance', **mock_data.get('get_instance', {'side_effect': [instance, None]})),
               patch.object(root._api, 'destroy_instance', **mock_data.get('destroy_instance', {'return_value': instance}))):
-            await power.off()
+            power.off()

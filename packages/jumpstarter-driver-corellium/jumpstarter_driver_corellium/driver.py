@@ -3,7 +3,7 @@ Jumpstarter corellium driver(s) implementation module.
 """
 import os
 import time
-from typing import Optional
+from typing import Dict, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from collections.abc import AsyncGenerator
@@ -108,6 +108,15 @@ class CorelliumPower(PowerInterface, Driver):
     """
     parent: Corellium
 
+    def get_timeout_opts(self) -> Dict[str, int]:
+        """
+        Return config/opts to be used when waiting for Corellium's API. 
+        """
+        return {
+            'retries': int(os.environ.get('CORELLIUM_API_RETRIES', 12)),
+            'interval': os.environ.get('CORELLIUM_API_INTERVAL', 5)
+        }
+
     @export
     def on(self) -> None:
         """
@@ -145,16 +154,22 @@ class CorelliumPower(PowerInterface, Driver):
         self.logger.info(f'Instance: {self.parent.device_name} (ID: {instance.id})')
 
         # wait for device readiness
+        opts = self.get_timeout_opts()
+        counter = 0
         while True:
+            if counter >= opts['retries']:
+                raise ValueError('Instance took too long to be ready')
+
             self.logger.info(f'Waiting for instance to be ready...')
             self.parent.api.read_instance_state(instance)
             if instance.state == 'on':
                 self.logger.info(f'Instance is ready')
                 break
-            time.sleep(5) 
+            counter += 1
+            time.sleep(opts['interval']) 
 
     @export
-    async def off(self) -> None:
+    def off(self) -> None:
         """
         Destroy a Corellium virtual device/instance.
         """
@@ -170,13 +185,19 @@ class CorelliumPower(PowerInterface, Driver):
 
         # destroy a virtual device
         # wait until it's gone
+        opts = self.get_timeout_opts()
+        counter = 0
         self.parent.api.destroy_instance(instance)
         while instance := self.parent.api.get_instance(instance) is not None:
+            if counter >= opts['retries']:
+                raise ValueError('Instance took too long to be powered off')
+
             selg.logger.info('Waiting for instance to be destroyed...')
-            time.sleep(5)
+            counter += 1
+            time.sleep(opts['interval']) 
 
         self.logger.info('Instance destroyed')
 
     @export
-    async def read(self) -> AsyncGenerator[PowerReading, None]:
+    def read(self) -> AsyncGenerator[PowerReading, None]:
         pass
