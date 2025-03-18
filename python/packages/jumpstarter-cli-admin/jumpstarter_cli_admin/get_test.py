@@ -15,6 +15,7 @@ from jumpstarter_kubernetes import (
     V1Alpha1ExporterStatus,
     V1Alpha1Lease,
     V1Alpha1LeaseList,
+    V1Alpha1LeaseSelector,
     V1Alpha1LeaseSpec,
     V1Alpha1LeaseStatus,
 )
@@ -837,7 +838,7 @@ IN_PROGRESS_LEASE = V1Alpha1Lease(
     spec=V1Alpha1LeaseSpec(
         client=V1ObjectReference(name="test_client"),
         duration="5m",
-        selector={"hardware": "rpi4"},
+        selector=V1Alpha1LeaseSelector(match_labels={"hardware": "rpi4"}),
     ),
 )
 
@@ -868,7 +869,7 @@ FINISHED_LEASE = V1Alpha1Lease(
     spec=V1Alpha1LeaseSpec(
         client=V1ObjectReference(name="test_client"),
         duration="1h",
-        selector={},
+        selector=V1Alpha1LeaseSelector(match_labels={}),
     ),
 )
 
@@ -885,7 +886,9 @@ FINISHED_LEASE_JSON = """{
             "name": "test_client"
         },
         "duration": "1h",
-        "selector": {}
+        "selector": {
+            "matchLabels": {}
+        }
     },
     "status": {
         "beginTime": "2024-01-01T21:00:00Z",
@@ -918,7 +921,8 @@ spec:
   client:
     name: test_client
   duration: 1h
-  selector: {}
+  selector:
+    matchLabels: {}
 status:
   beginTime: '2024-01-01T21:00:00Z'
   conditions:
@@ -1022,7 +1026,9 @@ LEASES_LIST_JSON = """{
                 },
                 "duration": "5m",
                 "selector": {
-                    "hardware": "rpi4"
+                    "matchLabels": {
+                        "hardware": "rpi4"
+                    }
                 }
             },
             "status": {
@@ -1057,7 +1063,9 @@ LEASES_LIST_JSON = """{
                     "name": "test_client"
                 },
                 "duration": "1h",
-                "selector": {}
+                "selector": {
+                    "matchLabels": {}
+                }
             },
             "status": {
                 "beginTime": "2024-01-01T21:00:00Z",
@@ -1096,7 +1104,8 @@ items:
       name: test_client
     duration: 5m
     selector:
-      hardware: rpi4
+      matchLabels:
+        hardware: rpi4
   status:
     beginTime: '2024-01-01T21:00:00Z'
     conditions:
@@ -1120,7 +1129,8 @@ items:
     client:
       name: test_client
     duration: 1h
-    selector: {}
+    selector:
+      matchLabels: {}
   status:
     beginTime: '2024-01-01T21:00:00Z'
     conditions:
