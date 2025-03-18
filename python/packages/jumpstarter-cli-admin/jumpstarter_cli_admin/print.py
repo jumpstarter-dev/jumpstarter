@@ -40,8 +40,8 @@ def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output:
     elif output == OutputMode.YAML:
         click.echo(clients.dump_yaml())
     elif output == OutputMode.NAME:
-        if len(clients.items) > 0:
-            click.echo(f"client.jumpstarter.dev/{clients.items[0].metadata.name}")
+        for item in clients.items:
+            click.echo(f"client.jumpstarter.dev/{item.metadata.name}")
     elif len(clients.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     else:
@@ -104,8 +104,8 @@ def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, d
     elif output == OutputMode.YAML:
         click.echo(exporters.dump_yaml())
     elif output == OutputMode.NAME:
-        if len(exporters.items) > 0:
-            click.echo(f"exporter.jumpstarter.dev/{exporters.items[0].metadata.name}")
+        for item in exporters.items:
+            click.echo(f"exporter.jumpstarter.dev/{item.metadata.name}")
     elif len(exporters.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     elif devices:
@@ -168,8 +168,8 @@ def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: Ou
     elif output == OutputMode.YAML:
         click.echo(leases.dump_yaml())
     elif output == OutputMode.NAME:
-        if len(leases.items) > 0:
-            click.echo(f"lease.jumpstarter.dev/{leases.items[0].metadata.name}")
+        for item in leases.items:
+            click.echo(f"lease.jumpstarter.dev/{item.metadata.name}")
     elif len(leases.items) == 0:
         raise click.ClickException(f'No resources found in "{namespace}" namespace')
     else:
