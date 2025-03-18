@@ -18,7 +18,8 @@ grpc:
   # enabling ingress route
   ingress:
     enabled: false
-  
+    class: ""
+
   # enabling openshift route
   route:
     enabled: false
