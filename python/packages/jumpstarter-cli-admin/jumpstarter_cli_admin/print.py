@@ -131,12 +131,14 @@ def get_reason(lease: V1Alpha1Lease):
             return "Expired"
         else:
             return "Complete"
+    else:
+        return reason
 
 
 def make_lease_row(lease: V1Alpha1Lease):
     selectors = []
-    for label in lease.spec.selector:
-        selectors.append(f"{label}:{str(lease.spec.selector[label])}")
+    for label in lease.spec.selector.match_labels:
+        selectors.append(f"{label}:{str(lease.spec.selector.match_labels[label])}")
     return {
         "NAME": lease.metadata.name,
         "CLIENT": lease.spec.client.name if lease.spec.client is not None else "",
