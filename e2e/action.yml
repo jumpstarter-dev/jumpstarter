@@ -45,7 +45,7 @@ runs:
           --key=server-key.pem
 
         go run github.com/mikefarah/yq/v4@latest -i \
-          '.jumpstarter-controller.authenticationConfig = (.jumpstarter-controller.authenticationConfig | from_yaml | .jwt[0].issuer.certificateAuthority = load_str("ca.pem") | to_yaml)' \
+          '.jumpstarter-controller.config.authentication.jwt[0].issuer.certificateAuthority = load_str("ca.pem")' \
           "$GITHUB_ACTION_PATH"/values.kind.yaml
 
         # important!
