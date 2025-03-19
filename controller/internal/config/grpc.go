@@ -1,9 +1,10 @@
 package config
 
 import (
+	"time"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
-	"time"
 )
 
 func LoadGrpcConfiguration(config Grpc) (grpc.ServerOption, error) {
