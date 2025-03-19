@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Optional, Self
+from typing import Any, ClassVar, List, Literal, Optional, Self
 
 import grpc
 import yaml
@@ -82,6 +82,8 @@ class ExporterConfigV1Alpha1(BaseModel):
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
+
+    alternative_endpoints: List[str] = Field(default_factory=list)
 
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
 
@@ -171,6 +173,7 @@ class ExporterConfigV1Alpha1(BaseModel):
             device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
             tls=self.tls,
             grpc_options=self.grpcOptions,
+            alternative_endpoints=self.alternative_endpoints,
         ) as exporter:
             await exporter.serve()
 

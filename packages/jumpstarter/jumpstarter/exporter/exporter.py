@@ -25,6 +25,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     channel_factory: Callable[[], grpc.aio.Channel]
     device_factory: Callable[[], Driver]
     lease_name: str = field(init=False, default="")
+    alternative_endpoints: list[str] = field(default_factory=list)
     tls: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, str] = field(default_factory=dict)
 
@@ -50,7 +51,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             labels=self.labels,
             root_device=self.device_factory(),
         ) as session:
-            async with session.serve_unix_async() as path:
+            async with session.serve_unix_async(alternative_endpoints=self.alternative_endpoints) as path:
                 async with grpc.aio.secure_channel(
                     f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
                 ) as channel:

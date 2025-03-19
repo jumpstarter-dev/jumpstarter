@@ -15,6 +15,7 @@ from jumpstarter_protocol import (
 )
 
 from .logging import LogHandler
+from .tls import with_alternative_endpoints
 from jumpstarter.common import Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.driver import Driver
@@ -53,11 +54,15 @@ class Session(
 
         self._logging_queue = deque(maxlen=32)
         self._logging_handler = LogHandler(self._logging_queue)
+        self._alternative_endpoints = []
 
     @asynccontextmanager
-    async def serve_port_async(self, port):
+    async def serve_ports_async(self, port, alternative_endpoints: list[str] | None = None):
         server = grpc.aio.server()
         server.add_insecure_port(port)
+
+        if alternative_endpoints is not None:
+            self._alternative_endpoints = with_alternative_endpoints(server, alternative_endpoints)
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
@@ -69,15 +74,15 @@ class Session(
             await server.stop(grace=None)
 
     @asynccontextmanager
-    async def serve_unix_async(self):
+    async def serve_unix_async(self, alternative_endpoints: list[str] | None = None):
         with TemporarySocket() as path:
-            async with self.serve_port_async(f"unix://{path}"):
+            async with self.serve_ports_async(f"unix://{path}", alternative_endpoints):
                 yield path
 
     @contextmanager
-    def serve_unix(self):
+    def serve_unix(self, alternative_endpoints: list[str] | None = None):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
+            with portal.wrap_async_context_manager(self.serve_unix_async(alternative_endpoints)) as path:
                 yield path
 
     def __getitem__(self, key: UUID):
@@ -92,6 +97,7 @@ class Session(
                 instance.report(parent=parent, name=name)
                 for (_, parent, name, instance) in self.root_device.enumerate()
             ],
+            alternative_endpoints=self._alternative_endpoints,
         )
 
     async def DriverCall(self, request, context):
