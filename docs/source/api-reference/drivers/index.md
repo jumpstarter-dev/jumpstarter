@@ -23,4 +23,5 @@ tftp.md
 uboot.md
 ustreamer.md
 yepkit.md
+energenie.md
 ```
