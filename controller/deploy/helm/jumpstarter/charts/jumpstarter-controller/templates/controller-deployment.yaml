@@ -9,6 +9,8 @@ metadata:
     {{ if .Values.global.timestamp }}
     deployment.timestamp: {{ .Values.global.timestamp | quote }}
     {{ end }}
+  annotations:
+    configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") . | sha256sum }}
 spec:
   selector:
     matchLabels:
