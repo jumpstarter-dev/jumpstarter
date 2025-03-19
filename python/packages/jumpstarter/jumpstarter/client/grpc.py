@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import yaml
 from google.protobuf import duration_pb2, field_mask_pb2, json_format
@@ -52,6 +52,7 @@ class Lease(BaseModel):
     client: str
     exporter: str
     conditions: list[kubernetes_pb2.Condition]
+    effective_begin_time: datetime | None = None
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -72,6 +73,12 @@ class Lease(BaseModel):
         else:
             exporter = ""
 
+        effective_begin_time = None
+        if data.effective_begin_time:
+            effective_begin_time = data.effective_begin_time.ToDatetime(
+                tzinfo=datetime.now().astimezone().tzinfo,
+            )
+
         return cls(
             namespace=namespace,
             name=name,
@@ -79,6 +86,7 @@ class Lease(BaseModel):
             duration=data.duration.ToTimedelta(),
             client=client,
             exporter=exporter,
+            effective_begin_time=effective_begin_time,
             conditions=data.conditions,
         )
 

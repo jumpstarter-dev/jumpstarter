@@ -31,6 +31,7 @@ def client_shell(name: str, labels, lease_name):
     exit_code = 0
     with config.lease(metadata_filter=MetadataFilter(labels=dict(labels)), lease_name=lease_name) as lease:
         with lease.serve_unix() as path:
-            exit_code = launch_shell(path, "remote", config.drivers.allow, config.drivers.unsafe)
+            with lease.monitor():
+                exit_code = launch_shell(path, "remote", config.drivers.allow, config.drivers.unsafe)
 
     sys.exit(exit_code)

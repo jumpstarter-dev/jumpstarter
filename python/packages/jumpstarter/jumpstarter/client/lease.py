@@ -7,9 +7,9 @@ from contextlib import (
     contextmanager,
 )
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from anyio import fail_after, sleep
+from anyio import create_task_group, fail_after, sleep
 from anyio.from_thread import BlockingPortal
 from grpc.aio import Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
@@ -62,6 +62,11 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
             ).name
         logger.info("Created lease request for selector %s for duration %s", selector, duration)
 
+    async def get(self):
+        with translate_grpc_exceptions():
+            svc = ClientService(channel=self.channel, namespace=self.namespace)
+            return await svc.GetLease(name=self.name)
+
     def request(self):
         """Request a lease, or verifies a lease which was already created.
 
@@ -96,11 +101,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         with fail_after(300):  # TODO: configurable timeout
             while True:
                 logger.debug("Polling Lease %s", self.name)
-                with translate_grpc_exceptions():
-                    result = await self.svc.GetLease(
-                        name=self.name,
-                    )
-
+                result = await self.get()
                 # lease ready
                 if condition_true(result.conditions, "Ready"):
                     logger.debug("Lease %s acquired", self.name)
@@ -157,6 +158,29 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
             yield path
 
     @asynccontextmanager
+    async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):
+        async def _monitor():
+            while True:
+                lease = await self.get()
+                if lease.effective_begin_time:
+                    end_time = lease.effective_begin_time + lease.duration
+                    remain = end_time - datetime.now(tz=datetime.now().astimezone().tzinfo)
+                    if remain < threshold:
+                        logger.info("Lease {} ending soon in {} at {}".format(self.name, remain, end_time))
+                        await sleep(threshold.total_seconds())
+                    else:
+                        await sleep(5)
+                else:
+                    await sleep(1)
+
+        async with create_task_group() as tg:
+            tg.start_soon(_monitor)
+            try:
+                yield
+            finally:
+                tg.cancel_scope.cancel()
+
+    @asynccontextmanager
     async def connect_async(self, stack):
         async with self.serve_unix_async() as path:
             async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as client:
@@ -172,3 +196,8 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     def serve_unix(self):
         with self.portal.wrap_async_context_manager(self.serve_unix_async()) as path:
             yield path
+
+    @contextmanager
+    def monitor(self, threshold: timedelta = timedelta(minutes=5)):
+        with self.portal.wrap_async_context_manager(self.monitor_async(threshold)):
+            yield
