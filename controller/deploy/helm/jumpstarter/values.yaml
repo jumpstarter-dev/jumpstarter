@@ -30,8 +30,12 @@ global:
 ## @param jumpstarter-controller.imagePullPolicy Image pull policy for the controller.
 
 ## @param jumpstarter-controller.namespace Namespace where the controller will be deployed, defaults to global.namespace.
-## @param jumpstarter-controller.grpcConfig Configuration for gRPC server options
-## @param jumpstarter-controller.authenticationConfig Configuration for OIDC authentication, see https://kubernetes.io/docs/reference/access-authn-authz/authentication/#using-authentication-configuration for documentation
+
+## @param jumpstarter-controller.config.grpc.keepalive.minTime. The minimum amount of time a client should wait before sending a keepalive ping.
+## @param jumpstarter-controller.config.grpc.keepalive.permitWithoutStream. Whether to allow keepalive pings even when there are no active streams(RPCs).
+
+## @param jumpstarter-controller.config.authentication.internal.prefix. Prefix to add to the subject claim of the tokens issued by the builtin authenticator.
+## @param jumpstarter-controller.config.authentication.jwt. External OIDC authentication, see https://kubernetes.io/docs/reference/access-authn-authz/authentication/#using-authentication-configuration for documentation
 
 ## @section Ingress And Route parameters
 ## @descriptionStart This section contains parameters for the Ingress and Route configurations.
@@ -74,7 +78,9 @@ jumpstarter-controller:
           # https://grpc.io/docs/guides/keepalive/#how-configuring-keepalive-affects-a-call
           minTime: 3s
           permitWithoutStream: true
-      authentication: {}
+      authentication:
+        internal:
+          prefix: "internal:"
         # jwt:
         # - issuer:
         #     url: https://10.239.206.8:5556/dex
