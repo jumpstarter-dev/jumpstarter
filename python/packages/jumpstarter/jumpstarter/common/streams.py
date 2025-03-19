@@ -32,13 +32,13 @@ class StreamRequestMetadata(BaseModel):
 
 
 @asynccontextmanager
-async def connect_router_stream(endpoint, token, stream, tls_config):
+async def connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
     credentials = grpc.composite_channel_credentials(
         ssl_channel_credentials(endpoint, tls_config),
         grpc.access_token_call_credentials(token),
     )
 
-    async with aio_secure_channel(endpoint, credentials) as channel:
+    async with aio_secure_channel(endpoint, credentials, grpc_options) as channel:
         router = router_pb2_grpc.RouterServiceStub(channel)
         context = router.Stream(metadata=())
         async with RouterStream(context=context) as s:

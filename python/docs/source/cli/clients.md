@@ -32,6 +32,9 @@ metadata:
   name: john
 endpoint: grpc.jumpstarter.192.168.1.10.nip.io:8082
 token: <<token>>
+grpcConfig:
+  # please refer to the https://grpc.github.io/grpc/core/group__grpc__arg__keys.html documentation
+  grpc.keepalive_time_ms: 20000
 tls:
   ca: ''
   insecure: False

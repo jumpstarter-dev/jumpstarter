@@ -48,6 +48,7 @@ class ClientConfigV1Alpha1(BaseModel):
     endpoint: str
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
+    grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
     drivers: ClientConfigV1Alpha1Drivers
 
@@ -57,7 +58,7 @@ class ClientConfigV1Alpha1(BaseModel):
             call_credentials("Client", self.metadata, self.token),
         )
 
-        return aio_secure_channel(self.endpoint, credentials)
+        return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
     @contextmanager
     def lease(self, metadata_filter: MetadataFilter, lease_name: str | None = None):
@@ -122,6 +123,7 @@ class ClientConfigV1Alpha1(BaseModel):
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
             tls_config=self.tls,
+            grpc_options=self.grpcOptions,
         )
         with translate_grpc_exceptions():
             return await lease.request_async()
@@ -161,6 +163,7 @@ class ClientConfigV1Alpha1(BaseModel):
             unsafe=self.drivers.unsafe,
             release=release_lease,
             tls_config=self.tls,
+            grpc_options=self.grpcOptions,
         ) as lease:
             yield lease
 

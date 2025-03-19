@@ -30,6 +30,9 @@ metadata:
   name: demo
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
+grpcConfig:
+    # Please refer to the https://grpc.github.io/grpc/core/group__grpc__arg__keys.html documentation
+    grpc.keepalive_time_ms: 20000
 export:
   power:
     type: jumpstarter_driver_yepkit.driver.Ykush
