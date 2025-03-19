@@ -132,8 +132,9 @@ message GetReportResponse {
 
 message Endpoint {
   string endpoint = 1;
-  string token = 2;
-  optional string certificate = 3;
+  string certificate = 2;
+  string client_certificate = 3;
+  string client_private_key = 4;
 }
 
 message DriverCallRequest {
