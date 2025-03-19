@@ -206,6 +206,7 @@ tls:
   ca: ''
   insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+grpcOptions: {}
 drivers:
   allow:
   - jumpstarter.drivers.*
@@ -241,6 +242,7 @@ tls:
   ca: ''
   insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+grpcOptions: {}
 drivers:
   allow:
   - jumpstarter.drivers.*
@@ -274,6 +276,7 @@ tls:
   ca: ''
   insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+grpcOptions: {}
 drivers:
   allow: []
   unsafe: true

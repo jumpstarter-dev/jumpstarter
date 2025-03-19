@@ -26,6 +26,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     device_factory: Callable[[], Driver]
     lease_name: str = field(init=False, default="")
     tls: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
+    grpc_options: dict[str, str] = field(default_factory=dict)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())
@@ -36,9 +37,9 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             )
         )
 
-    async def __handle(self, path, endpoint, token, tls_config):
+    async def __handle(self, path, endpoint, token, tls_config, grpc_options):
         async with await connect_unix(path) as stream:
-            async with connect_router_stream(endpoint, token, stream, tls_config):
+            async with connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
                 pass
 
     @asynccontextmanager
@@ -69,7 +70,9 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         async with self.session() as path:
             async for request in controller.Listen(jumpstarter_pb2.ListenRequest(lease_name=lease_name)):
                 logger.info("Handling new connection request on lease %s", lease_name)
-                tg.start_soon(self.__handle, path, request.router_endpoint, request.router_token, self.tls)
+                tg.start_soon(
+                    self.__handle, path, request.router_endpoint, request.router_token, self.tls, self.grpc_options
+                )
 
     async def serve(self):
         controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())

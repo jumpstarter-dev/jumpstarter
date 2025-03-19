@@ -8,6 +8,7 @@ from contextlib import (
 )
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 
 from anyio import create_task_group, fail_after, sleep
 from anyio.from_thread import BlockingPortal
@@ -39,6 +40,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     release: bool = True  # release on contexts exit
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
+    grpc_options: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -149,7 +151,9 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     async def handle_async(self, stream):
         logger.debug("Connecting to Lease with name %s", self.name)
         response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
-        async with connect_router_stream(response.router_endpoint, response.router_token, stream, self.tls_config):
+        async with connect_router_stream(
+            response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options
+        ):
             pass
 
     @asynccontextmanager

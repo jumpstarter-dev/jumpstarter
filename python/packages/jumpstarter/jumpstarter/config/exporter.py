@@ -81,6 +81,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     endpoint: str
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
+    grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
 
@@ -163,12 +164,13 @@ class ExporterConfigV1Alpha1(BaseModel):
                 ssl_channel_credentials(self.endpoint, self.tls),
                 call_credentials("Exporter", self.metadata, self.token),
             )
-            return aio_secure_channel(self.endpoint, credentials)
+            return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
         async with Exporter(
             channel_factory=channel_factory,
             device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
             tls=self.tls,
+            grpc_options=self.grpcOptions,
         ) as exporter:
             await exporter.serve()
 
