@@ -40,8 +40,9 @@ import (
 type RouterService struct {
 	pb.UnimplementedRouterServiceServer
 	client.Client
-	Scheme  *runtime.Scheme
-	pending sync.Map
+	Scheme       *runtime.Scheme
+	ServerOption grpc.ServerOption
+	pending      sync.Map
 }
 
 type streamContext struct {
@@ -124,7 +125,7 @@ func (s *RouterService) Start(ctx context.Context) error {
 
 	server := grpc.NewServer(
 		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
-		KeepaliveEnforcementPolicy(),
+		s.ServerOption,
 	)
 
 	pb.RegisterRouterServiceServer(server, s)
