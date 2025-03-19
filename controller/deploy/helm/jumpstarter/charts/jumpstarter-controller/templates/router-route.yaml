@@ -5,6 +5,9 @@ metadata:
   labels:
     external-exposed: "true"
     shard: external
+  annotations:
+    haproxy.router.openshift.io/timeout: 2d
+    haproxy.router.openshift.io/timeout-tunnel: 2d
   name: jumpstarter-router-route
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:

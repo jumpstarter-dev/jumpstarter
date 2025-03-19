@@ -69,6 +69,7 @@ type ControllerService struct {
 	Authn        authentication.ContextAuthenticator
 	Authz        authorizer.Authorizer
 	Attr         authorization.ContextAttributesGetter
+	ServerOption grpc.ServerOption
 	listenQueues sync.Map
 }
 
@@ -661,7 +662,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	}
 
 	server := grpc.NewServer(
-		KeepaliveEnforcementPolicy(),
+		s.ServerOption,
 		grpc.UnaryInterceptor(func(
 			gctx context.Context,
 			req any,
