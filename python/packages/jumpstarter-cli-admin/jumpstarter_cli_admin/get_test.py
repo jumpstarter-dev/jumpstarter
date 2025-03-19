@@ -764,6 +764,7 @@ kind: ExporterList
 
 EXPORTERS_DEVICES_LIST_NAME = EXPORTERS_LIST_NAME
 
+
 @pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "list_exporters")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
@@ -1140,6 +1141,7 @@ kind: LeaseList
 LEASES_LIST_NAME = """lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b1
 lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b2
 """
+
 
 @pytest.mark.anyio
 @patch.object(LeasesV1Alpha1Api, "list_leases")
