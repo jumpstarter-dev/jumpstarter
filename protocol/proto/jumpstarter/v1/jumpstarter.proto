@@ -127,6 +127,13 @@ message GetReportResponse {
   // jumpstarter.dev/hostname=
   // jumpstarter.dev/name=
   repeated DriverInstanceReport reports = 3;
+  repeated Endpoint alternative_endpoints = 4;
+}
+
+message Endpoint {
+  string endpoint = 1;
+  string token = 2;
+  optional string certificate = 3;
 }
 
 message DriverCallRequest {
