@@ -30,6 +30,8 @@ func LoadConfiguration(
 
 	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
 	if ok {
+		// backwards compatibility
+		// TODO: remove in 0.7.0
 		authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
 			ctx,
 			scheme,

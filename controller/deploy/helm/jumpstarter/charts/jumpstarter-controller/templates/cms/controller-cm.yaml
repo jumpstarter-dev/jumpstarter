@@ -10,6 +10,8 @@ metadata:
     deployment.timestamp: {{ .Values.global.timestamp | quote }}
     {{ end }}
 data:
+  # backwards compatibility
+  # TODO: remove in 0.7.0
   {{ if .Values.authenticationConfig }}
   authentication: {{- .Values.authenticationConfig | toYaml | indent 1 }}
   {{ end }}
