@@ -28,18 +28,12 @@ func LoadConfiguration(
 		return nil, "", nil, err
 	}
 
-	rawConfig, ok := configmap.Data["config"]
+	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
 	if ok {
-		var config Config
-		err := yaml.UnmarshalStrict([]byte(rawConfig), &config)
-		if err != nil {
-			return nil, "", nil, err
-		}
-
-		authenticator, prefix, err := LoadAuthenticationConfiguration(
+		authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
 			ctx,
 			scheme,
-			config.Authentication,
+			[]byte(rawAuthenticationConfiguration),
 			signer,
 			certificateAuthority,
 		)
@@ -47,23 +41,27 @@ func LoadConfiguration(
 			return nil, "", nil, err
 		}
 
-		serverOptions, err := LoadGrpcConfiguration(config.Grpc)
-		if err != nil {
-			return nil, "", nil, err
-		}
-
-		return authenticator, prefix, serverOptions, nil
+		return authenticator, prefix, grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             1 * time.Second,
+			PermitWithoutStream: true,
+		}), nil
 	}
 
-	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
+	rawConfig, ok := configmap.Data["config"]
 	if !ok {
-		return nil, "", nil, fmt.Errorf("LoadConfiguration: missing authentication section")
+		return nil, "", nil, fmt.Errorf("LoadConfiguration: missing config section")
 	}
 
-	authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
+	var config Config
+	err := yaml.UnmarshalStrict([]byte(rawConfig), &config)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	authenticator, prefix, err := LoadAuthenticationConfiguration(
 		ctx,
 		scheme,
-		[]byte(rawAuthenticationConfiguration),
+		config.Authentication,
 		signer,
 		certificateAuthority,
 	)
@@ -71,8 +69,10 @@ func LoadConfiguration(
 		return nil, "", nil, err
 	}
 
-	return authenticator, prefix, grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-		MinTime:             1 * time.Second,
-		PermitWithoutStream: true,
-	}), nil
+	serverOptions, err := LoadGrpcConfiguration(config.Grpc)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	return authenticator, prefix, serverOptions, nil
 }
