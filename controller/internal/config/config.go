@@ -3,10 +3,14 @@ package config
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -18,15 +22,42 @@ func LoadConfiguration(
 	key client.ObjectKey,
 	signer *oidc.Signer,
 	certificateAuthority string,
-) (authenticator.Token, string, error) {
+) (authenticator.Token, string, grpc.ServerOption, error) {
 	var configmap corev1.ConfigMap
 	if err := client.Get(ctx, key, &configmap); err != nil {
-		return nil, "", err
+		return nil, "", nil, err
+	}
+
+	rawConfig, ok := configmap.Data["config"]
+	if ok {
+		var config Config
+		err := yaml.UnmarshalStrict([]byte(rawConfig), &config)
+		if err != nil {
+			return nil, "", nil, err
+		}
+
+		authenticator, prefix, err := LoadAuthenticationConfiguration(
+			ctx,
+			scheme,
+			config.Authentication,
+			signer,
+			certificateAuthority,
+		)
+		if err != nil {
+			return nil, "", nil, err
+		}
+
+		serverOptions, err := LoadGrpcConfiguration(config.Grpc)
+		if err != nil {
+			return nil, "", nil, err
+		}
+
+		return authenticator, prefix, serverOptions, nil
 	}
 
 	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
 	if !ok {
-		return nil, "", fmt.Errorf("LoadConfiguration: missing authentication section")
+		return nil, "", nil, fmt.Errorf("LoadConfiguration: missing authentication section")
 	}
 
 	authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
@@ -37,8 +68,11 @@ func LoadConfiguration(
 		certificateAuthority,
 	)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
-	return authenticator, prefix, nil
+	return authenticator, prefix, grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+		MinTime:             1 * time.Second,
+		PermitWithoutStream: true,
+	}), nil
 }

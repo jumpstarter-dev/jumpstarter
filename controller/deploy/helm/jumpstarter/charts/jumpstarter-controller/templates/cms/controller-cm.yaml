@@ -10,4 +10,5 @@ metadata:
     deployment.timestamp: {{ .Values.global.timestamp | quote }}
     {{ end }}
 data:
-  authentication: {{- .Values.authenticationConfig | toYaml | indent 1 }}
+  config: |
+{{ .Values.config | toYaml | indent 4 }}
