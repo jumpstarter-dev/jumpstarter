@@ -107,10 +107,6 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             return portal.call(self.update_lease_async, name, duration)
 
-    def release_lease(self, name):
-        with start_blocking_portal() as portal:
-            portal.call(self.release_lease_async, name)
-
     async def get_exporter_async(self, name: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
@@ -154,11 +150,6 @@ class ClientConfigV1Alpha1(BaseModel):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         with translate_grpc_exceptions():
             return await svc.UpdateLease(name=name, duration=duration)
-
-    async def release_lease_async(self, name):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            await svc.DeleteLease(name=name)
 
     @asynccontextmanager
     async def lease_async(
