@@ -16,14 +16,6 @@ opt_selector = click.option(
     " Matching objects must satisfy all of the specified label constraints.",
 )
 
-opt_selector_simple = click.option(
-    "-l",
-    "--selector",
-    help="Selector (label query) to filter on, only supports '=', (e.g. -l key1=value1,key2=value2)."
-    " Matching objects must satisfy all of the specified label constraints.",
-    required=True,
-)
-
 
 class ClientParamType(click.ParamType):
     name = "client"

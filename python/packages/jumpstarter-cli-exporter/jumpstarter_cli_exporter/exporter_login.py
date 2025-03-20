@@ -1,5 +1,5 @@
 import asyncclick as click
-from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_client_id, opt_connector_id
+from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
 
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1, ObjectMeta
 
@@ -9,12 +9,7 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1, ObjectMeta
 @click.option("-e", "--endpoint", type=str, help="Enter the Jumpstarter service endpoint.", default=None)
 @click.option("--namespace", type=str, help="Enter the Jumpstarter exporter namespace.", default=None)
 @click.option("--name", type=str, help="Enter the Jumpstarter exporter name.", default=None)
-@click.option("--username", type=str, help="Enter the OIDC username.", default=None)
-@click.option("--password", type=str, help="Enter the OIDC password.", default=None)
-@click.option("--token", type=str, help="Enter the OIDC token.", default=None)
-@click.option("--issuer", type=str, help="Enter the OIDC issuer.", default=None)
-@opt_client_id
-@opt_connector_id
+@opt_oidc
 async def exporter_login(
     alias: str,
     endpoint: str,

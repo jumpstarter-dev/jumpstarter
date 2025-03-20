@@ -1,6 +1,6 @@
 import asyncclick as click
 from jumpstarter_cli_common.exceptions import async_handle_exceptions
-from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_client_id, opt_connector_id
+from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
 
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta, UserConfigV1Alpha1
@@ -27,15 +27,6 @@ from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
     help="Enter the Jumpstarter client name.",
     default=None,
 )
-@click.option("--username", type=str, help="Enter the OIDC username.", default=None)
-@click.option("--password", type=str, help="Enter the OIDC password.", default=None)
-@click.option("--token", type=str, help="Enter the OIDC token.", default=None)
-@click.option(
-    "--issuer",
-    type=str,
-    help="Enter the OIDC issuer.",
-    default=None,
-)
 @click.option(
     "--allow",
     type=str,
@@ -45,8 +36,7 @@ from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 @click.option(
     "--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).", default=None
 )
-@opt_client_id
-@opt_connector_id
+@opt_oidc
 @async_handle_exceptions
 async def client_login(  # noqa: C901
     alias: str,

@@ -1,6 +1,7 @@
 import json
 import os
 from dataclasses import dataclass
+from functools import wraps
 from typing import ClassVar
 
 import aiohttp
@@ -21,10 +22,18 @@ if os.uname().sysname != "Darwin" or os.environ.get("JUMPSTARTER_FORCE_SYSTEM_CE
     truststore.inject_into_ssl()
 
 
-opt_client_id = click.option("--client-id", "client_id", type=str, default="jumpstarter-cli", help="OIDC client id")
-opt_connector_id = click.option(
-    "--connector-id", "connector_id", type=str, help="OIDC token exchange connector id (Dex specific)"
-)
+def opt_oidc(f):
+    @click.option("--issuer", help="OIDC issuer")
+    @click.option("--client-id", "client_id", help="OIDC client id", default="jumpstarter-cli")
+    @click.option("--token", help="OIDC access token")
+    @click.option("--username", help="OIDC username")
+    @click.option("--password", help="OIDC password")
+    @click.option("--connector-id", "connector_id", help="OIDC token exchange connector id (Dex specific)")
+    @wraps(f)
+    def wrapper(*args, **kwds):
+        return f(*args, **kwds)
+
+    return wrapper
 
 
 @dataclass(kw_only=True)

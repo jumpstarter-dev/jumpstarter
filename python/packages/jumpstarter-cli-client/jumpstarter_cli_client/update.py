@@ -4,7 +4,7 @@ import asyncclick as click
 from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import DURATION, opt_config
+from .common import opt_config, opt_duration_partial
 
 
 @click.group()
@@ -17,7 +17,7 @@ def update():
 @update.command(name="lease")
 @opt_config
 @click.argument("name")
-@click.option("--duration", "duration", type=DURATION, required=True)
+@opt_duration_partial(required=True)
 @opt_output_all
 @handle_exceptions
 async def update_lease(config, name: str, duration: timedelta, output: OutputType):
