@@ -30,11 +30,13 @@ spec:
             port:
               number: 8083
   tls:
-  - secretName: {{ .Values.grpc.tls.routerCertSecret }}
-    hosts:
+  - hosts:
       {{ if .Values.grpc.routerHostname }}
       - {{ .Values.grpc.routerHostname }}
       {{ else }}
       - router.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided" }}
       {{ end }}
+    {{ if .Values.grpc.tls.routerCertSecret }}
+    secretName: {{ .Values.grpc.tls.routerCertSecret }}
+    {{ end }}
 {{ end }}
