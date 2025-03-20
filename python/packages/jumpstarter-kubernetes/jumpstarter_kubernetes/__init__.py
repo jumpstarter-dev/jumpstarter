@@ -7,7 +7,14 @@ from .exporters import (
     V1Alpha1ExporterStatus,
 )
 from .install import get_ip_address, helm_installed, install_helm_chart
-from .leases import LeasesV1Alpha1Api, V1Alpha1Lease, V1Alpha1LeaseList, V1Alpha1LeaseSpec, V1Alpha1LeaseStatus
+from .leases import (
+    LeasesV1Alpha1Api,
+    V1Alpha1Lease,
+    V1Alpha1LeaseList,
+    V1Alpha1LeaseSelector,
+    V1Alpha1LeaseSpec,
+    V1Alpha1LeaseStatus,
+)
 from .list import V1Alpha1List
 
 __all__ = [
@@ -24,6 +31,7 @@ __all__ = [
     "V1Alpha1Lease",
     "V1Alpha1LeaseStatus",
     "V1Alpha1LeaseList",
+    "V1Alpha1LeaseSelector",
     "V1Alpha1LeaseSpec",
     "V1Alpha1List",
     "get_ip_address",
