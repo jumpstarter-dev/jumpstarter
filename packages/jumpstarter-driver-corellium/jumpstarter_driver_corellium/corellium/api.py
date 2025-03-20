@@ -91,7 +91,7 @@ class ApiClient:
         return None
 
     def create_instance(self, name: str, project: Project, device: Device,
-                        os_version: str = '1.0', os_build: str = 'Critical Application Monitor (Baremetal)') -> Instance:
+                        os_version: str = '1.1.1', os_build: str = 'Critical Application Monitor (Baremetal)') -> Instance:
         """
         Create a new virtual instance from a device spec.
         """

@@ -60,7 +60,7 @@ class VirtualPowerClient(PowerClient):
     def cli(self):
         parent = super().cli()
         
-        @parent.command()
+        @parent.command(name='off')
         @click.option('--destroy', is_flag=True, help='destroy the instance after powering it off')
         def off(destroy: bool):
             """Power off"""

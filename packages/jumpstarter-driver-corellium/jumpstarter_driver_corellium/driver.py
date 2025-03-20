@@ -130,7 +130,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
 
         while True:
             if counter >= opts['retries']:
-                raise ValueError(f'Instance took too long to be reach the desired state: {instance}')
+                raise ValueError(f'Instance took too long to be reach the desired state: {current}')
 
             if self.parent.api.get_instance(current.id) == desired:
                 break
