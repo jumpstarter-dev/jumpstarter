@@ -1931,7 +1931,7 @@ dev = [
 requires-dist = [
     { name = "googleapis-common-protos", specifier = ">=1.69.1" },
     { name = "grpcio", specifier = ">=1.66.1" },
-    { name = "protobuf", specifier = ">=5.29.3" },
+    { name = "protobuf", specifier = ">=6.30.1" },
 ]
 
 [package.metadata.requires-dev]
