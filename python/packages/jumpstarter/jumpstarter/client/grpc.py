@@ -9,6 +9,8 @@ from grpc.aio import Channel
 from jumpstarter_protocol import client_pb2, client_pb2_grpc, kubernetes_pb2
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from jumpstarter.common.grpc import translate_grpc_exceptions
+
 
 def parse_identifier(identifier: str, kind: str) -> (str, str):
     segments = identifier.split("/")
@@ -143,11 +145,12 @@ class ClientService:
         self.stub = client_pb2_grpc.ClientServiceStub(channel=self.channel)
 
     async def GetExporter(self, *, name: str):
-        exporter = await self.stub.GetExporter(
-            client_pb2.GetExporterRequest(
-                name="namespaces/{}/exporters/{}".format(self.namespace, name),
+        with translate_grpc_exceptions():
+            exporter = await self.stub.GetExporter(
+                client_pb2.GetExporterRequest(
+                    name="namespaces/{}/exporters/{}".format(self.namespace, name),
+                )
             )
-        )
         return Exporter.from_protobuf(exporter)
 
     async def ListExporters(
@@ -157,22 +160,24 @@ class ClientService:
         page_token: str | None = None,
         filter: str | None = None,
     ):
-        exporters = await self.stub.ListExporters(
-            client_pb2.ListExportersRequest(
-                parent="namespaces/{}".format(self.namespace),
-                page_size=page_size,
-                page_token=page_token,
-                filter=filter,
+        with translate_grpc_exceptions():
+            exporters = await self.stub.ListExporters(
+                client_pb2.ListExportersRequest(
+                    parent="namespaces/{}".format(self.namespace),
+                    page_size=page_size,
+                    page_token=page_token,
+                    filter=filter,
+                )
             )
-        )
         return ExporterList.from_protobuf(exporters)
 
     async def GetLease(self, *, name: str):
-        lease = await self.stub.GetLease(
-            client_pb2.GetLeaseRequest(
-                name="namespaces/{}/leases/{}".format(self.namespace, name),
+        with translate_grpc_exceptions():
+            lease = await self.stub.GetLease(
+                client_pb2.GetLeaseRequest(
+                    name="namespaces/{}/leases/{}".format(self.namespace, name),
+                )
             )
-        )
         return Lease.from_protobuf(lease)
 
     async def ListLeases(
@@ -182,14 +187,15 @@ class ClientService:
         page_token: str | None = None,
         filter: str | None = None,
     ):
-        leases = await self.stub.ListLeases(
-            client_pb2.ListLeasesRequest(
-                parent="namespaces/{}".format(self.namespace),
-                page_size=page_size,
-                page_token=page_token,
-                filter=filter,
+        with translate_grpc_exceptions():
+            leases = await self.stub.ListLeases(
+                client_pb2.ListLeasesRequest(
+                    parent="namespaces/{}".format(self.namespace),
+                    page_size=page_size,
+                    page_token=page_token,
+                    filter=filter,
+                )
             )
-        )
         return LeaseList.from_protobuf(leases)
 
     async def CreateLease(
@@ -201,15 +207,16 @@ class ClientService:
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
 
-        lease = await self.stub.CreateLease(
-            client_pb2.CreateLeaseRequest(
-                parent="namespaces/{}".format(self.namespace),
-                lease=client_pb2.Lease(
-                    duration=duration_pb,
-                    selector=selector,
-                ),
+        with translate_grpc_exceptions():
+            lease = await self.stub.CreateLease(
+                client_pb2.CreateLeaseRequest(
+                    parent="namespaces/{}".format(self.namespace),
+                    lease=client_pb2.Lease(
+                        duration=duration_pb,
+                        selector=selector,
+                    ),
+                )
             )
-        )
         return Lease.from_protobuf(lease)
 
     async def UpdateLease(
@@ -224,20 +231,22 @@ class ClientService:
         update_mask = field_mask_pb2.FieldMask()
         update_mask.FromJsonString("duration")
 
-        lease = await self.stub.UpdateLease(
-            client_pb2.UpdateLeaseRequest(
-                lease=client_pb2.Lease(
-                    name="namespaces/{}/leases/{}".format(self.namespace, name),
-                    duration=duration_pb,
-                ),
-                update_mask=update_mask,
+        with translate_grpc_exceptions():
+            lease = await self.stub.UpdateLease(
+                client_pb2.UpdateLeaseRequest(
+                    lease=client_pb2.Lease(
+                        name="namespaces/{}/leases/{}".format(self.namespace, name),
+                        duration=duration_pb,
+                    ),
+                    update_mask=update_mask,
+                )
             )
-        )
         return Lease.from_protobuf(lease)
 
     async def DeleteLease(self, *, name: str):
-        await self.stub.DeleteLease(
-            client_pb2.DeleteLeaseRequest(
-                name="namespaces/{}/leases/{}".format(self.namespace, name),
+        with translate_grpc_exceptions():
+            await self.stub.DeleteLease(
+                client_pb2.DeleteLeaseRequest(
+                    name="namespaces/{}/leases/{}".format(self.namespace, name),
+                )
             )
-        )

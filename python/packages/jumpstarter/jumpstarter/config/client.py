@@ -15,7 +15,7 @@ from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common.exceptions import FileNotFoundError
-from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials, translate_grpc_exceptions
+from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 
 
 def _allow_from_env():
@@ -109,8 +109,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
     async def get_exporter_async(self, name: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.GetExporter(name=name)
+        return await svc.GetExporter(name=name)
 
     async def list_exporters_async(
         self,
@@ -119,8 +118,7 @@ class ClientConfigV1Alpha1(BaseModel):
         filter: str | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+        return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
 
     async def create_lease_async(
         self,
@@ -128,28 +126,24 @@ class ClientConfigV1Alpha1(BaseModel):
         duration: timedelta,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.CreateLease(
-                selector=selector,
-                duration=duration,
-            )
+        return await svc.CreateLease(
+            selector=selector,
+            duration=duration,
+        )
 
     async def delete_lease_async(self, name: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            await svc.DeleteLease(
-                name=name,
-            )
+        await svc.DeleteLease(
+            name=name,
+        )
 
     async def list_leases_async(self, filter: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.ListLeases(filter=filter)
+        return await svc.ListLeases(filter=filter)
 
     async def update_lease_async(self, name, duration: timedelta):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.UpdateLease(name=name, duration=duration)
+        return await svc.UpdateLease(name=name, duration=duration)
 
     @asynccontextmanager
     async def lease_async(
