@@ -61,9 +61,14 @@ class ClientConfigV1Alpha1(BaseModel):
         return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
     @contextmanager
-    def lease(self, selector: str | None = None, lease_name: str | None = None):
+    def lease(
+        self,
+        selector: str | None = None,
+        lease_name: str | None = None,
+        duration: timedelta = timedelta(minutes=30),
+    ):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.lease_async(selector, lease_name, portal)) as lease:
+            with portal.wrap_async_context_manager(self.lease_async(selector, lease_name, duration, portal)) as lease:
                 yield lease
 
     def get_exporter(self, name: str):
@@ -186,6 +191,7 @@ class ClientConfigV1Alpha1(BaseModel):
         self,
         selector: str,
         lease_name: str | None,
+        duration: timedelta,
         portal: BlockingPortal,
     ):
         from jumpstarter.client import Lease
@@ -200,6 +206,7 @@ class ClientConfigV1Alpha1(BaseModel):
             namespace=self.metadata.namespace,
             name=lease_name,
             selector=selector,
+            timeout=duration.total_seconds(),
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,
