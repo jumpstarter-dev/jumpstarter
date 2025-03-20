@@ -11,6 +11,9 @@ metadata:
   name: jumpstarter-controller-ingress
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
+  {{ if .Values.grpc.ingress.class }}
+  ingressClassName: {{ .Values.grpc.ingress.class }}
+  {{ end }}
   rules:
   {{ if .Values.grpc.hostname }}
   - host: {{ .Values.grpc.hostname }}
