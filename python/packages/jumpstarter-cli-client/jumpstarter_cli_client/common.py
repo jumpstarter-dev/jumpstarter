@@ -1,4 +1,5 @@
 from datetime import timedelta
+from functools import partial
 
 import asyncclick as click
 from pydantic import TypeAdapter
@@ -57,3 +58,20 @@ DURATION = DurationParamType()
 CLIENT = ClientParamType()
 
 opt_config = click.option("--client", "config", type=CLIENT, default=False, help="Name of client config")
+opt_duration_partial = partial(
+    click.option,
+    "--duration",
+    "duration",
+    type=DURATION,
+    help="""
+Accepted duration formats:
+
+\b
+PnYnMnDTnHnMnS - ISO 8601 duration format
+HH:MM:SS - time in hours, minutes, seconds
+D days, HH:MM:SS - time prefixed by X days
+D d, HH:MM:SS - time prefixed by X d
+
+See https://docs.rs/speedate/latest/speedate/ for details
+""",
+)

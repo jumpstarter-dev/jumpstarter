@@ -15,7 +15,7 @@ from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common.exceptions import FileNotFoundError
-from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials, translate_grpc_exceptions
+from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 
 
 def _allow_from_env():
@@ -61,9 +61,14 @@ class ClientConfigV1Alpha1(BaseModel):
         return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
     @contextmanager
-    def lease(self, selector: str | None = None, lease_name: str | None = None):
+    def lease(
+        self,
+        selector: str | None = None,
+        lease_name: str | None = None,
+        duration: timedelta = timedelta(minutes=30),
+    ):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.lease_async(selector, lease_name, portal)) as lease:
+            with portal.wrap_async_context_manager(self.lease_async(selector, lease_name, duration, portal)) as lease:
                 yield lease
 
     def get_exporter(self, name: str):
@@ -78,10 +83,6 @@ class ClientConfigV1Alpha1(BaseModel):
     ):
         with start_blocking_portal() as portal:
             return portal.call(self.list_exporters_async, page_size, page_token, filter)
-
-    def request_lease(self, selector: str):
-        with start_blocking_portal() as portal:
-            return portal.call(self.request_lease_async, selector, portal)
 
     def list_leases(self, filter: str):
         with start_blocking_portal() as portal:
@@ -106,14 +107,9 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             return portal.call(self.update_lease_async, name, duration)
 
-    def release_lease(self, name):
-        with start_blocking_portal() as portal:
-            portal.call(self.release_lease_async, name)
-
     async def get_exporter_async(self, name: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.GetExporter(name=name)
+        return await svc.GetExporter(name=name)
 
     async def list_exporters_async(
         self,
@@ -122,8 +118,7 @@ class ClientConfigV1Alpha1(BaseModel):
         filter: str | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+        return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
 
     async def create_lease_async(
         self,
@@ -131,61 +126,31 @@ class ClientConfigV1Alpha1(BaseModel):
         duration: timedelta,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.CreateLease(
-                selector=selector,
-                duration=duration,
-            )
+        return await svc.CreateLease(
+            selector=selector,
+            duration=duration,
+        )
 
     async def delete_lease_async(self, name: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            await svc.DeleteLease(
-                name=name,
-            )
-
-    async def request_lease_async(
-        self,
-        selector: str,
-        portal: BlockingPortal,
-    ):
-        # dynamically import to avoid circular imports
-        from jumpstarter.client import Lease
-
-        lease = Lease(
-            channel=await self.channel(),
-            namespace=self.metadata.namespace,
-            name=None,
-            selector=selector,
-            portal=portal,
-            allow=self.drivers.allow,
-            unsafe=self.drivers.unsafe,
-            tls_config=self.tls,
-            grpc_options=self.grpcOptions,
+        await svc.DeleteLease(
+            name=name,
         )
-        with translate_grpc_exceptions():
-            return await lease.request_async()
 
     async def list_leases_async(self, filter: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.ListLeases(filter=filter)
+        return await svc.ListLeases(filter=filter)
 
     async def update_lease_async(self, name, duration: timedelta):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            return await svc.UpdateLease(name=name, duration=duration)
-
-    async def release_lease_async(self, name):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        with translate_grpc_exceptions():
-            await svc.DeleteLease(name=name)
+        return await svc.UpdateLease(name=name, duration=duration)
 
     @asynccontextmanager
     async def lease_async(
         self,
         selector: str,
         lease_name: str | None,
+        duration: timedelta,
         portal: BlockingPortal,
     ):
         from jumpstarter.client import Lease
@@ -200,6 +165,7 @@ class ClientConfigV1Alpha1(BaseModel):
             namespace=self.metadata.namespace,
             name=lease_name,
             selector=selector,
+            duration=duration,
             portal=portal,
             allow=self.drivers.allow,
             unsafe=self.drivers.unsafe,

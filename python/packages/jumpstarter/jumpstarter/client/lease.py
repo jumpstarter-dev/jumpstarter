@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 @dataclass(kw_only=True)
 class Lease(AbstractContextManager, AbstractAsyncContextManager):
     channel: Channel
-    timeout: int = 1800
+    duration: timedelta
     selector: str
     portal: BlockingPortal
     namespace: str
@@ -51,17 +51,15 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         self.manager = self.portal.wrap_async_context_manager(self)
 
     async def _create(self):
-        duration = timedelta(seconds=self.timeout)
-
-        logger.debug("Creating lease request for selector %s for duration %s", self.selector, duration)
+        logger.debug("Creating lease request for selector %s for duration %s", self.selector, self.duration)
         with translate_grpc_exceptions():
             self.name = (
                 await self.svc.CreateLease(
                     selector=self.selector,
-                    duration=timedelta(seconds=self.timeout),
+                    duration=self.duration,
                 )
             ).name
-        logger.info("Created lease request for selector %s for duration %s", self.selector, duration)
+        logger.info("Created lease request for selector %s for duration %s", self.selector, self.duration)
 
     async def get(self):
         with translate_grpc_exceptions():
