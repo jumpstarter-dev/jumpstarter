@@ -4,7 +4,6 @@ from typing import ClassVar
 
 import pytest
 
-from jumpstarter.common import MetadataFilter
 from jumpstarter.common.utils import env
 from jumpstarter.config.client import ClientConfigV1Alpha1
 
@@ -19,7 +18,7 @@ class JumpstarterTest:
 
     Looks for the `JUMPSTARTER_HOST` environment variable to connect to an
     established Jumpstarter shell, otherwise it will try to acquire a lease
-    for a single exporter using the filter_labels annotation.
+    for a single exporter using the selector annotation.
     i.e.:
 
     .. code-block:: python
@@ -33,7 +32,7 @@ class JumpstarterTest:
         log = logging.getLogger(__name__)
 
         class TestResource(JumpstarterTest):
-            filter_labels = {"board":"rpi4"}
+            selector = "board=rpi4"
 
             @pytest.fixture()
             def console(self, client):
@@ -49,7 +48,7 @@ class JumpstarterTest:
 
     """
 
-    filter_labels: ClassVar[dict[str, str]]
+    selector: ClassVar[str]
 
     @pytest.fixture(scope="class")
     def client(self):
@@ -57,9 +56,9 @@ class JumpstarterTest:
             with env() as client:
                 yield client
         except RuntimeError:
-            labels = getattr(self, "filter_labels", {})
+            selector = getattr(self, "selector", None)
             config = ClientConfigV1Alpha1.load("default")
-            with config.lease(metadata_filter=MetadataFilter(labels=labels)) as lease:
+            with config.lease(selector=selector) as lease:
                 with lease.connect() as client:
                     yield client
         # BUG workaround: make sure that grpc servers get the client/lease release properly

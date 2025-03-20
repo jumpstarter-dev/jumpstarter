@@ -24,11 +24,6 @@ opt_selector_simple = click.option(
 )
 
 
-def selector_to_labels(selector: str):
-    # TODO: support complex selectors (e.g. !=)
-    return dict([term.split("=") for term in selector.split(",")])
-
-
 class ClientParamType(click.ParamType):
     name = "client"
 
