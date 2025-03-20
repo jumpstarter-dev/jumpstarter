@@ -88,8 +88,7 @@ class ApiClient:
 
         return None
 
-    def create_instance(self, name: str, project: Project, device: Device,
-                        os_version: str = '1.1.1', os_build: str = 'Critical Application Monitor (Baremetal)') -> Instance:
+    def create_instance(self, name: str, project: Project, device: Device, os_version: str, os_build: str) -> Instance:
         """
         Create a new virtual instance from a device spec.
         """
@@ -123,7 +122,7 @@ class ApiClient:
         except requests.exceptions.RequestException as e:
             raise CorelliumApiException(data.get('error', str(e)))
 
-        for instance in instances:
+        for instance in data:
             if instance['name'] == instance_ref or instance['id'] == instance_ref:
                 return Instance(id=instance['id'], state=instance['state'])
 

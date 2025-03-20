@@ -129,7 +129,7 @@ def test_create_instance_ok(requests_mock):
     project = Project('d59db33d-27bd-4b22-878d-49e4758a648e', 'Default Project')
     device = Device(name='rd1ae', type='automotive', flavor='kronos',
                     description='', model='kronos', peripherals=False, quotas=dict())
-    instance = api.create_instance('my-instance', project, device, '1.0')
+    instance = api.create_instance('my-instance', project, device, '1.1.1', 'Critical Application Monitor (Baremetal)')
 
     assert instance is not None
     assert instance.id
@@ -141,7 +141,7 @@ def test_create_instance_ok(requests_mock):
         (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
         (400, fixture('http/create-instance-400.json'), 'Unsupported device model'),
     ])
-def test_create_instance_error(requests_mock, status_code, data, msg): 
+def test_create_instance_error(requests_mock, status_code, data, msg):
     requests_mock.post('https://api-host/api/v1/instances', status_code=status_code, text=data)
     api = ApiClient('api-host', 'api-token')
     api.session = Session('session-token', '2022-03-20T01:50:10.000Z')
@@ -150,7 +150,7 @@ def test_create_instance_error(requests_mock, status_code, data, msg):
         project = Project('d59db33d-27bd-4b22-878d-49e4758a648e', 'Default Project')
         device = Device(name='rd1ae', type='automotive', flavor='kronos',
                         description='', model='kronos', peripherals=False, quotas=dict())
-        instance = api.create_instance('my-instance', project, device, '1.0')
+        instance = api.create_instance('my-instance', project, device, '1.1.1', 'Critical Application Monitor (Baremetal)')
 
     assert msg in str(e.value)
 

@@ -25,8 +25,8 @@ class Corellium(Driver):
     project_id: str
     device_name: str
     device_flavor: str
-    device_os: Optional[str] = field(default=None)
-    device_build: Optional[str] = field(default=None)
+    device_os: str = field(default='1.1.1')
+    device_build: str = field(default='Critical Application Monitor (Baremetal)')
 
     @classmethod
     def client(cls) -> str:
