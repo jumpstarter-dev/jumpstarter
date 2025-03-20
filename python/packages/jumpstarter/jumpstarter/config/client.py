@@ -84,10 +84,6 @@ class ClientConfigV1Alpha1(BaseModel):
         with start_blocking_portal() as portal:
             return portal.call(self.list_exporters_async, page_size, page_token, filter)
 
-    def request_lease(self, selector: str):
-        with start_blocking_portal() as portal:
-            return portal.call(self.request_lease_async, selector, portal)
-
     def list_leases(self, filter: str):
         with start_blocking_portal() as portal:
             return portal.call(self.list_leases_async, filter)
@@ -148,29 +144,6 @@ class ClientConfigV1Alpha1(BaseModel):
             await svc.DeleteLease(
                 name=name,
             )
-
-    async def request_lease_async(
-        self,
-        selector: str,
-        portal: BlockingPortal,
-    ):
-        # dynamically import to avoid circular imports
-        from jumpstarter.client import Lease
-
-        lease = Lease(
-            channel=await self.channel(),
-            namespace=self.metadata.namespace,
-            name=None,
-            selector=selector,
-            duration=timedelta(minutes=30),
-            portal=portal,
-            allow=self.drivers.allow,
-            unsafe=self.drivers.unsafe,
-            tls_config=self.tls,
-            grpc_options=self.grpcOptions,
-        )
-        with translate_grpc_exceptions():
-            return await lease.request_async()
 
     async def list_leases_async(self, filter: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
