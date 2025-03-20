@@ -134,7 +134,8 @@ be useful in CI or when writing a script that uses Jumpstarter.
 (overrides the config value).
 - `JMP_DRIVERS_ALLOW` - A comma-separated list of allowed driver namespaces
 to automatically load. Can be set to `UNSAFE` to allow unsafe loading of drivers.
-
+- `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force the system CA certificates,
+  which is the behavior by default for all systems but MacOS (see [bug](https://github.com/jumpstarter-dev/jumpstarter/issues/362))
 ## System Configuration
 
 Jumpstarter stores system configs in the `/etc/jumpstarter` directory.

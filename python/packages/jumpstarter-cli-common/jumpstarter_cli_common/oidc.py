@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -12,7 +13,13 @@ from authlib.integrations.requests_client import OAuth2Session
 from joserfc.jws import extract_compact
 from yarl import URL
 
-truststore.inject_into_ssl()
+# if we are running in MacOS avoid injecting system certificates to avoid
+# https://github.com/jumpstarter-dev/jumpstarter/issues/362
+# also allow to force the system certificates injection with
+# JUMPSTARTER_FORCE_SYSTEM_CERTS=1
+if os.uname().sysname != "Darwin" or os.environ.get("JUMPSTARTER_FORCE_SYSTEM_CERTS") == "1":
+    truststore.inject_into_ssl()
+
 
 opt_client_id = click.option("--client-id", "client_id", type=str, default="jumpstarter-cli", help="OIDC client id")
 opt_connector_id = click.option(
