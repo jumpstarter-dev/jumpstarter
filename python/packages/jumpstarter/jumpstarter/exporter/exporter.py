@@ -72,15 +72,26 @@ class Exporter(AbstractAsyncContextManager, Metadata):
 
         listen_tx, listen_rx = create_memory_object_stream()
 
-        async def listen():
+        async def listen(retries=5, backoff=3):
+            retries_left = retries
             while True:
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())
                     async for request in controller.Listen(jumpstarter_pb2.ListenRequest(lease_name=lease_name)):
                         await listen_tx.send(request)
                 except Exception as e:
-                    logger.info("Listen stream interrupted, restarting: {}".format(e))
-                    await sleep(3)
+                    if retries_left > 0:
+                        retries_left -= 1
+                        logger.info(
+                            "Listen stream interrupted, restarting in {}s, {} retries left: {}".format(
+                                backoff, retries_left, e
+                            )
+                        )
+                        await sleep(backoff)
+                    else:
+                        raise
+                else:
+                    retries_left = retries
 
         tg.start_soon(listen)
 
@@ -91,22 +102,33 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                     self.__handle, path, request.router_endpoint, request.router_token, self.tls, self.grpc_options
                 )
 
-    async def serve(self):
+    async def serve(self):  # noqa: C901
         # initial registration
         async with self.session():
             pass
         started = False
         status_tx, status_rx = create_memory_object_stream()
 
-        async def status():
+        async def status(retries=5, backoff=3):
+            retries_left = retries
             while True:
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())
                     async for status in controller.Status(jumpstarter_pb2.StatusRequest()):
                         await status_tx.send(status)
                 except Exception as e:
-                    logger.info("Status stream interrupted, restarting: {}".format(e))
-                    await sleep(3)
+                    if retries_left > 0:
+                        retries_left -= 1
+                        logger.info(
+                            "Status stream interrupted, restarting in {}s, {} retries left: {}".format(
+                                backoff, retries_left, e
+                            )
+                        )
+                        await sleep(backoff)
+                    else:
+                        raise
+                else:
+                    retries_left = retries
 
         async with create_task_group() as tg:
             tg.start_soon(status)
