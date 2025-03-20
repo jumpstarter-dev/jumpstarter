@@ -8,7 +8,7 @@ Jumpstarter can be configured as either a client, an exporter, or both depending
 on your use case and deployment strategy.
 
 By default, a local client and exporter session are automatically initialized when
-running test scripts through `jmp exporter shell` command.
+running test scripts through `jmp shell` command.
 This allows for easy testing of new drivers, client libraries, or verifying that tests work
 on your local bench.
 
@@ -90,30 +90,30 @@ please follow the instructions in the [Jumpstarter service CLI](../cli/clients.m
 
 Importing a new client is as simple as copying the administrator provided yaml
 file to `~/.config/jumpstarter/clients/`, alternatively if we have the token
-and endpoint the `jmp client config create <name>` command can be used to create
+and endpoint the `jmp config client create <name>` command can be used to create
 the config file.
 
-To switch between different client configs, use the `jmp client config use <name>` command:
+To switch between different client configs, use the `jmp config client use <name>` command:
 
 ```bash
-$ jmp client config use another
+$ jmp config client use another
 Using client config '/home/jdoe/.config/jumpstarter/clients/another.yaml'
 ```
 
-All client configurations can be listed with `jmp client config list`:
+All client configurations can be listed with `jmp config client list`:
 
 ```bash
-$ jmp client config list
+$ jmp config client list
 CURRENT   NAME       ENDPOINT                       PATH
 *         default    jumpstarter1.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/default.yaml
           myclient   jumpstarter2.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/myclient.yaml
           another    jumpstarter3.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/another.yaml
 ```
 
-Clients can also be removed using `jmp client config delete <name>`:
+Clients can also be removed using `jmp config client delete <name>`:
 
 ```bash
-$ jmp client config delete myclient
+$ jmp config client delete myclient
 Deleted client config '/home/jdoe/.config/jumpstarter/clients/myclient.yaml'
 ```
 
@@ -202,10 +202,10 @@ please follow the instructions in the [Jumpstarter service CLI](../cli/exporters
 
 ### Creating a exporter configuration file
 To create a new exporter configuration file from a know endpoint and
-token the `jmp exporter config create <name>` command can be used.
+token the `jmp config exporter create <name>` command can be used.
 
 ```bash
-$ jmp exporter config create myexporter
+$ jmp config exporter create myexporter
 Endpoint: grpc.jumpstarter.my.domain.com
 Token: <<token>>
 ```
@@ -213,29 +213,29 @@ Token: <<token>>
 To use a specific config when starting the exporter:
 
 ```bash
-$ jmp exporter run my-exporter
+$ jmp run --exporter my-exporter
 Using exporter config '/etc/jumpstarter/exporters/another/exporter.yaml'
 ```
 
 The path to a config can also be provided:
 
 ```bash
-jmp exporter run -c /etc/jumpstarter/exporters/another/exporter.yaml
+jmp run --exporter-config /etc/jumpstarter/exporters/another/exporter.yaml
 ```
 
-All exporter configurations can be listed with `jmp exporter config list`:
+All exporter configurations can be listed with `jmp config exporter list`:
 
 ```bash
-$ jmp exporter config list
+$ jmp config exporter list
 ALIAS             PATH
 test-exporter-2   /etc/jumpstarter/exporters/test-exporter-2.yaml
 my-exporter       /etc/jumpstarter/exporters/my-exporter.yaml
 ```
 
-Exporers can also be removed using `jmp exporter config delete <name>`:
+Exporters can also be removed using `jmp config exporter delete <name>`:
 
 ```bash
-$ jmp exporter config delete myexporter
+$ jmp config exporter delete myexporter
 Deleted exporter config '/etc/jumpstarter/exporters/myexporter.yaml'
 ```
 
@@ -269,7 +269,7 @@ To run the exporter container on a test runner using Podman:
 $ sudo podman run --rm -ti --name my-exporter --net=host --privileged \
                 -v /run/udev:/run/udev -v /dev:/dev -v /etc/jumpstarter:/etc/jumpstarter \
                 quay.io/jumpstarter-dev/jumpstarter:{{version}} \
-                jmp-exporter run my-exporter
+                jmp run --exporter my-exporter
 
 INFO:jumpstarter.exporter.exporter:Registering exporter with controller
 INFO:jumpstarter.exporter.exporter:Currently not leased
@@ -296,7 +296,7 @@ Description=My exporter
 
 [Container]
 ContainerName=my-exporter
-Exec=/jumpstarter/bin/jmp exporter run my-exporter
+Exec=/jumpstarter/bin/jmp run --exporter my-exporter
 Image=quay.io/jumpstarter-dev/jumpstarter:{{version}}
 Network=host
 PodmanArgs=--privileged

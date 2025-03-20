@@ -8,10 +8,19 @@ from . import jmp
 async def test_cli():
     runner = CliRunner()
     result = await runner.invoke(jmp, [])
-    assert "admin" in result.output
-    assert "client" in result.output
-    assert "exporter" in result.output
-    assert "version" in result.output
+    for subcommand in [
+        "config",
+        "create",
+        "delete",
+        "driver",
+        "get",
+        "login",
+        "run",
+        "shell",
+        "update",
+        "version",
+    ]:
+        assert subcommand in result.output
 
 
 @pytest.fixture

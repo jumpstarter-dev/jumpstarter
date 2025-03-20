@@ -62,7 +62,6 @@ clean: clean-docs clean-venv clean-build clean-test
 .PHONY: sync docs docs-all serve-all test test-packages build clean-test clean-docs clean-venv clean-build \
 	mypy-jumpstarter \
 	mypy-jumpstarter-cli-admin \
-	mypy-jumpstarter-cli-client \
 	mypy-jumpstarter-driver-can \
 	mypy-jumpstarter-driver-dutlink \
 	mypy-jumpstarter-driver-network \

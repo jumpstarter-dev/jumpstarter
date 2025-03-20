@@ -5,11 +5,12 @@ from jumpstarter_cli_common import (
     OutputMode,
     OutputType,
     make_table,
+    opt_config,
     opt_output_all,
 )
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import opt_config, opt_duration_partial, opt_selector
+from .common import opt_duration_partial, opt_selector
 
 
 @click.group()
@@ -20,7 +21,7 @@ def create():
 
 
 @create.command(name="lease")
-@opt_config
+@opt_config(exporter=False)
 @opt_selector
 @opt_duration_partial(required=True)
 @opt_output_all
@@ -43,11 +44,11 @@ async def create_lease(config, selector: str, duration: timedelta, output: Outpu
 
     .. code-block:: bash
 
-        $ JMP_LEASE=$(jmp client create lease -l foo=bar --duration 1d --output name)
+        $ JMP_LEASE=$(jmp create lease -l foo=bar --duration 1d --output name)
         $ jmp shell
         $$ j --help
         $$ exit
-        $ jmp client delete lease "${JMP_LEASE}"
+        $ jmp delete lease "${JMP_LEASE}"
 
     """
 

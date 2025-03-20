@@ -29,7 +29,7 @@ Communication between the local client and exporter take place over a local
 socket provided by `$JUMPSTARTER_HOST`.
 
 ```
-$ jmp-exporter shell -c /exporter-config.yaml
+$ jmp shell --exporter-config /exporter-config.yaml
 $$ echo $JUMPSTARTER_HOST
 $$ j ...
 $$ exit
@@ -45,7 +45,7 @@ the base class will attempt to:
 
 1. Use a local connection based on the `JUMPSTARTER_HOST` environment variable
 2. Use an existing lease based on the `JMP_LEASE` environment variable, and existing credentials.
-   See the cli reference for [jmp lease request](../cli-reference/jmp.md#jmp-lease-request).
+   See the cli reference for [jmp create lease](../cli-reference/jmp.md#jmp-create-lease).
 3. Request a lease based on the `selector` provided in the test class.
 
 ```{eval-rst}

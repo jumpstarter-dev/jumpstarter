@@ -66,7 +66,7 @@ environment.
 
 ```bash
 # Run the exporter myexporter in your local terminal
-$ jmp exporter run myexporter
+$ jmp run --exporter myexporter
 ```
 
 Exporters can also be run in a privileged container or as a systemd daemon. It is

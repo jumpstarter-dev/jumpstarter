@@ -13,14 +13,14 @@ from jumpstarter.config.exporter import ExporterConfigListV1Alpha1, ExporterConf
 arg_alias = click.argument("alias", default="default")
 
 
-@click.group()
-def config():
+@click.group("exporter")
+def config_exporter():
     """
     Modify jumpstarter exporter config files
     """
 
 
-@config.command("create")
+@config_exporter.command("create")
 @click.option("--namespace", prompt=True)
 @click.option("--name", prompt=True)
 @click.option("--endpoint", prompt=True)
@@ -48,7 +48,7 @@ def create_exporter_config(alias, namespace, name, endpoint, token, output: Path
         click.echo(path)
 
 
-@config.command("delete")
+@config_exporter.command("delete")
 @arg_alias
 @opt_output_path_only
 def delete_exporter_config(alias, output: PathOutputType):
@@ -62,7 +62,7 @@ def delete_exporter_config(alias, output: PathOutputType):
         click.echo(path)
 
 
-@config.command("edit")
+@config_exporter.command("edit")
 @arg_alias
 def edit_exporter_config(alias):
     """Edit an exporter config."""
@@ -73,7 +73,7 @@ def edit_exporter_config(alias):
     click.edit(filename=config.path)
 
 
-@config.command("list")
+@config_exporter.command("list")
 @opt_output_all
 def list_exporter_configs(output: OutputType):
     """List exporter configs."""

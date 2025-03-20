@@ -33,7 +33,7 @@ Finally, instruct the users to login with the following commands
 
 ```
 # for clients
-jmp client login <client alias> --endpoint <jumpstarter controller endpoint> \
+jmp login --client <client alias> --endpoint <jumpstarter controller endpoint> \
   --namespace <namespace> --name <client name> \
   --issuer https://<keycloak domain>/realms/<realm name>
 # without additional options, the users would be directed to login with the web browser
@@ -43,10 +43,10 @@ jmp client login <client alias> --endpoint <jumpstarter controller endpoint> \
   --token <token>
 
 # for exporters
-jmp exporter login <exporter alias> --endpoint <jumpstarter controller endpoint> \
+jmp login --exporter <exporter alias> --endpoint <jumpstarter controller endpoint> \
   --namespace <namespace> --name <exporter name> \
   --issuer https://<keycloak domain>/realms/<realm name>
-# --username, --password and --token are also accepted by jmp exporter login
+# --username, --password and --token are also accepted
 ```
 
 ### Dex (for authenticating with kubernetes Service Accounts)
@@ -147,14 +147,14 @@ Finally, instruct the users to login with the following commands in pods configu
 
 ```
 # for clients
-jmp client login <client alias> --endpoint <jumpstarter controller endpoint> \
+jmp login --client <client alias> --endpoint <jumpstarter controller endpoint> \
   --namespace <namespace> --name <client name> \
   --issuer https://dex.dex.svc.cluster.local:5556 \
   --connector-id kubernetes \
   --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
 
 # for exporters
-jmp exporter login <exporter alias> --endpoint <jumpstarter controller endpoint> \
+jmp login --exporter <exporter alias> --endpoint <jumpstarter controller endpoint> \
   --namespace <namespace> --name <exporter name> \
   --issuer https://dex.dex.svc.cluster.local:5556 \
   --connector-id kubernetes \
