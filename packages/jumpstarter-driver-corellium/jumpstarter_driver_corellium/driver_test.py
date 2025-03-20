@@ -82,9 +82,8 @@ def test_driver_power_on_ok(monkeypatch):
     with (patch.object(root._api, 'login', return_value=None),
           patch.object(root._api, 'get_project', return_value=project),
           patch.object(root._api, 'get_device', return_value=device),
-          patch.object(root._api, 'get_instance', return_value=None),
-          patch.object(root._api, 'create_instance', return_value=instance),
-          patch.object(root._api, 'read_instance_state', return_value=None)):
+          patch.object(root._api, 'get_instance', side_effect=[None, instance]),
+          patch.object(root._api, 'create_instance', return_value=instance)):
         power.on()
 
 
@@ -93,7 +92,6 @@ def test_driver_power_on_ok(monkeypatch):
     ({'get_project': {'return_value': None}}),
     ({'get_instance': {'return_value': None}}),
     ({'create_instance': {'side_effect': CorelliumApiException('create error')}}),
-    ({'read_instance_state': {'side_effect': CorelliumApiException('read error')}}),
 ])
 def test_driver_power_on_error(monkeypatch, mock_data):
     monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
@@ -108,8 +106,7 @@ def test_driver_power_on_error(monkeypatch, mock_data):
         with (patch.object(root._api, 'login', **mock_data.get('login', {'return_value': None})),
               patch.object(root._api, 'get_project', **mock_data.get('get_project', {'return_value': project})),
               patch.object(root._api, 'get_instance', **mock_data.get('get_instance', {'return_value': instance})),
-              patch.object(root._api, 'create_instance', **mock_data.get('create_instance', {'return_value': instance})),
-              patch.object(root._api, 'read_instance_state', **mock_data.get('read_instance_state', {'return_value': None}))):
+              patch.object(root._api, 'create_instance', **mock_data.get('create_instance', {'return_value': instance}))):
             power.off()
 
 
@@ -124,8 +121,8 @@ def test_driver_power_off_ok(monkeypatch):
     
     with (patch.object(root._api, 'login', return_value=None), 
           patch.object(root._api, 'get_project', return_value=project),
-          patch.object(root._api, 'get_instance', side_effect=[instance, None]),
-          patch.object(root._api, 'destroy_instance', return_value=instance)):
+          patch.object(root._api, 'set_instance_state', return_value=None),
+          patch.object(root._api, 'get_instance', side_effect=[instance, Instance(id=instance.id, state='off')])):
         power.off()
 
 

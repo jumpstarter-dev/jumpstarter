@@ -112,7 +112,7 @@ class ApiClient:
 
         return Instance(**instance)
 
-    def get_instance(self, instance_name: str) -> Optional[Instance]:
+    def get_instance(self, instance_ref: str) -> Optional[Instance]:
         """
         Retrieve an existing instance by its name.
 
@@ -126,7 +126,7 @@ class ApiClient:
             raise CorelliumApiException(str(e))
 
         for instance in instances:
-            if instance['name'] == instance_name:
+            if instance['name'] == instance_ref or instance['id'] == instance_ref:
                 return Instance(id=instance['id'], state=instance['state'])
 
         return None
@@ -156,32 +156,6 @@ class ApiClient:
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
             raise CorelliumApiException(str(e))
-
-    def read_instance_state(self, instance: Instance) -> None: 
-        """
-        Get virtual instance state from corellium and set the state property
-        in the instance object.
-
-        Valid instance state values:
-
-        - on
-        - off
-        - booting
-        - deleting
-        - creating
-        - restoring
-        - paused
-        - rebooting
-        - error
-        """
-        try:
-            res = self.req.get(f'{self.baseurl}/v1/instances/{instance.id}/state')
-            res.raise_for_status()
-            state = res.text.strip()
-        except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(str(e))
-
-        instance.state = state
 
     def destroy_instance(self, instance: Instance) -> None:
         """

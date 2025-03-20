@@ -10,9 +10,10 @@ from collections.abc import AsyncGenerator
 
 from jumpstarter.driver import Driver, export
 from jumpstarter.common import exceptions as jmp_exceptions
-from jumpstarter_driver_power.driver import PowerInterface, PowerReading
+from jumpstarter_driver_power.driver import VirtualPowerInterface, PowerReading
 
 from .corellium.api import ApiClient
+from .corellium.types import Instance
 
 
 @dataclass(kw_only=True)
@@ -101,7 +102,7 @@ class Corellium(Driver):
 
 
 @dataclass(kw_only=True)
-class CorelliumPower(PowerInterface, Driver):
+class CorelliumPower(VirtualPowerInterface, Driver):
     """
     Power driver implementation for corellium virtual devices.
 
@@ -117,6 +118,25 @@ class CorelliumPower(PowerInterface, Driver):
             'retries': int(os.environ.get('CORELLIUM_API_RETRIES', 12)),
             'interval': os.environ.get('CORELLIUM_API_INTERVAL', 5)
         }
+
+    def wait_instance(self, current: Instance, desired: Optional[Instance]):
+        """
+        Wait for `current` instance to reach the same state as the `desired` instance.
+
+        Desired can also be set to None, which means the instace should not exist.
+        """
+        opts = self.get_timeout_opts()
+        counter = 0
+
+        while True:
+            if counter >= opts['retries']:
+                raise ValueError(f'Instance took too long to be reach the desired state: {instance}')
+
+            if self.parent.api.get_instance(current.id) == desired:
+                break
+            
+            counter += 1
+            time.sleep(opts['interval'])
 
     @export
     def on(self) -> None:
@@ -154,23 +174,10 @@ class CorelliumPower(PowerInterface, Driver):
             instance = self.parent.api.create_instance(self.parent.device_name, project, device, **opts) 
         self.logger.info(f'Instance: {self.parent.device_name} (ID: {instance.id})')
 
-        # wait for device readiness
-        opts = self.get_timeout_opts()
-        counter = 0
-        while True:
-            if counter >= opts['retries']:
-                raise ValueError('Instance took too long to be ready')
-
-            self.logger.info(f'Waiting for instance to be ready...')
-            self.parent.api.read_instance_state(instance)
-            if instance.state == 'on':
-                self.logger.info(f'Instance is ready')
-                break
-            counter += 1
-            time.sleep(opts['interval']) 
-
+        self.wait_instance(instance, Instance(id=instance.id, state='on'))
+    
     @export
-    def off(self) -> None:
+    def off(self, destroy: bool = False) -> None:
         """
         Destroy a Corellium virtual device/instance.
         """
@@ -184,21 +191,13 @@ class CorelliumPower(PowerInterface, Driver):
         if instance is None:
             raise ValueError(f'Instance does not exist')
 
-        # destroy a virtual device
-        # wait until it's gone
-        opts = self.get_timeout_opts()
-        counter = 0
-        self.parent.api.destroy_instance(instance)
-        while instance := self.parent.api.get_instance(instance) is not None:
-            if counter >= opts['retries']:
-                raise ValueError('Instance took too long to be powered off')
+        self.parent.api.set_instance_state(instance, 'off')
+        self.wait_instance(instance, Instance(id=instance.id, state='off'))
 
-            selg.logger.info('Waiting for instance to be destroyed...')
-            counter += 1
-            time.sleep(opts['interval']) 
-
-        self.logger.info('Instance destroyed')
-
+        if destroy:
+            self.parent.api.destroy_instance(instance)
+            self.wait_instance(instance, None)
+    
     @export
     def read(self) -> AsyncGenerator[PowerReading, None]:
-        pass
+        pass 
