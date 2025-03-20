@@ -9,7 +9,7 @@ from jumpstarter_cli_common import (
 )
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import DURATION, opt_config, opt_selector_simple
+from .common import opt_config, opt_duration_partial, opt_selector_simple
 
 
 @click.group()
@@ -22,7 +22,7 @@ def create():
 @create.command(name="lease")
 @opt_config
 @opt_selector_simple
-@click.option("--duration", "duration", type=DURATION, required=True)
+@opt_duration_partial(required=True)
 @opt_output_all
 @handle_exceptions
 async def create_lease(config, selector: str, duration: timedelta, output: OutputType):
