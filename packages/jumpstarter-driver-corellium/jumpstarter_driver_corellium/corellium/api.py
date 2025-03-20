@@ -44,12 +44,10 @@ class ApiClient:
 
         try:
             res = requests.post(f'{self.baseurl}/v1/auth/login', json=data)
-            res.raise_for_status()
             data = res.json()
-        # except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
-        # except requests.exceptions.HTTPError as e:
-        except Exception as e:
-            raise CorelliumApiException(str(e))
+            res.raise_for_status()
+        except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
+            raise CorelliumApiException(data.get('error', str(e)))
 
         self.session = Session(**data)
         self.req.headers.update(self.session.as_header())
@@ -60,12 +58,12 @@ class ApiClient:
         """
         try:
             res = self.req.get(f'{self.baseurl}/v1/projects')
+            data = res.json()
             res.raise_for_status()
-            projects = res.json()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(str(e))
+            raise CorelliumApiException(data.get('error', str(e)))
 
-        for project in projects:
+        for project in data:
             if project['name'] == project_ref or project['id'] == project_ref:
                 return Project(id=project['id'], name=project['name'])
 
@@ -79,12 +77,12 @@ class ApiClient:
         """
         try:
             res = self.req.get(f'{self.baseurl}/v1/models')
+            data = res.json()
             res.raise_for_status()
-            devices = res.json()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(str(e))
+            raise CorelliumApiException(data.get('error', str(e)))
 
-        for device in devices:
+        for device in data:
             if device['model'] == model:
                 return Device(**device)
 
@@ -105,12 +103,12 @@ class ApiClient:
 
         try:
             res = self.req.post(f'{self.baseurl}/v1/instances', json=data)
+            data = res.json()
             res.raise_for_status()
-            instance = res.json()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(str(e))
+            raise CorelliumApiException(data.get('error', str(e)))
 
-        return Instance(**instance)
+        return Instance(**data)
 
     def get_instance(self, instance_ref: str) -> Optional[Instance]:
         """
@@ -120,10 +118,10 @@ class ApiClient:
         """
         try:
             res = self.req.get(f'{self.baseurl}/v1/instances')
+            data = res.json()
             res.raise_for_status()
-            instances = res.json()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(str(e))
+            raise CorelliumApiException(data.get('error', str(e)))
 
         for instance in instances:
             if instance['name'] == instance_ref or instance['id'] == instance_ref:
@@ -153,9 +151,11 @@ class ApiClient:
 
         try:
             res = self.req.put(f'{self.baseurl}/v1/instances/{instance.id}/state', json=data)
+            data = res.json() if res.status_code != 204 else None
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(str(e))
+            msgerr = data if data is not None else str(e)
+            raise CorelliumApiException(msgerr)
 
     def destroy_instance(self, instance: Instance) -> None:
         """
@@ -165,6 +165,8 @@ class ApiClient:
         """
         try:
             res = self.req.delete(f'{self.baseurl}/v1/instances/{instance.id}')
+            data = res.json() if res.status_code != 204 else None
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(str(e))
+            msgerr = data if data is not None else str(e)
+            raise CorelliumApiException(msgerr)

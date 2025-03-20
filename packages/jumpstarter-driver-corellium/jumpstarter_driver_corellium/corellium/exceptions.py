@@ -8,4 +8,3 @@ class CorelliumApiException(JumpstarterException):
     """
     Exception raised when something goes wrong with Corellium's API.
     """
-    pass

@@ -33,7 +33,7 @@ def test_login_ok(requests_mock):
 @pytest.mark.parametrize(
     'status_code,data,msg',
     [ 
-        (403, fixture('http/403.json'), '403 Client Error'),
+        (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
         (200, fixture('http/json-error.json'), 'Invalid control character at'),
     ])
 def test_login_error(requests_mock, status_code, data, msg): 
@@ -72,7 +72,7 @@ def test_get_project_ok(requests_mock, project_name, data, has_results):
 @pytest.mark.parametrize(
     'status_code,data,msg',
     [ 
-        (403, fixture('http/403.json'), '403 Client Error'),
+        (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
         (404, fixture('http/get-projects-404.json'), ''),
     ])
 def test_get_project_error(requests_mock, status_code, data, msg): 
@@ -107,7 +107,7 @@ def test_get_device_ok(requests_mock, model, data, has_results):
 @pytest.mark.parametrize(
     'status_code,data,msg',
     [ 
-        (403, fixture('http/403.json'), '403 Client Error'),
+        (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
     ])
 def test_get_device_error(requests_mock, status_code, data, msg): 
     requests_mock.get('https://api-host/api/v1/models', status_code=status_code, text=data)
@@ -138,8 +138,8 @@ def test_create_instance_ok(requests_mock):
 @pytest.mark.parametrize(
     'status_code,data,msg',
     [ 
-        (403, fixture('http/403.json'), '403 Client Error'),
-        (400, fixture('http/create-instance-400.json'), '400 Client Error'),
+        (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
+        (400, fixture('http/create-instance-400.json'), 'Unsupported device model'),
     ])
 def test_create_instance_error(requests_mock, status_code, data, msg): 
     requests_mock.post('https://api-host/api/v1/instances', status_code=status_code, text=data)
@@ -167,8 +167,8 @@ def test_destroy_instance_state_ok(requests_mock):
 @pytest.mark.parametrize(
     'status_code,data,msg',
     [ 
-        (403, fixture('http/403.json'), '403 Client Error'),
-        (404, fixture('http/get-instance-state-404.json'), '404 Client Error'),
+        (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
+        (404, fixture('http/get-instance-state-404.json'), 'No instance associated with this value'),
     ])
 def test_destroy_instance_error(requests_mock, status_code, data, msg): 
     instance = Instance(id='d59db33d-27bd-4b22-878d-49e4758a648e')
