@@ -94,7 +94,8 @@ def launch_shell(
     context: str,
     allow: list[str],
     unsafe: bool,
-    use_alternative_endpoints: bool,
+    *,
+    use_alternative_endpoints: bool = False,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 

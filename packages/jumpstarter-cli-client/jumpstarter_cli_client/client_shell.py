@@ -23,7 +23,11 @@ def client_shell(config, selector: str, duration: timedelta, lease_name):
         with lease.serve_unix() as path:
             with lease.monitor():
                 exit_code = launch_shell(
-                    path, "remote", config.drivers.allow, config.drivers.unsafe, config.useAlternativeEndpoints
+                    path,
+                    "remote",
+                    config.drivers.allow,
+                    config.drivers.unsafe,
+                    use_alternative_endpoints=config.useAlternativeEndpoints,
                 )
 
     sys.exit(exit_code)
