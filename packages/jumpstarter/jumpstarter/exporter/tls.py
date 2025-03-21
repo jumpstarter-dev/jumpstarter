@@ -11,6 +11,21 @@ SAN = "localhost"
 
 
 def with_alternative_endpoints(server, endpoints: list[str]):
+    """
+    Listen on alternative endpoints directly without going through the router
+
+    Useful when the network bandwidth/latency between the clients/exporters and the router is suboptimal,
+    yet direct connectivity between the clients and exporters can be established, e.g. the exporters have
+    public ip addresses, or they are in the same subnet.
+
+    Since the direct traffic can transit through untrusted networks, it's encrypted and authenticated with
+    mTLS. The client would attempt the first connection through the router, a trusted channel, on which the
+    exporter would provide the client with its own certificate, and a client certificate/key pair for client
+    authentication. All certificates are selfsigned as they are only ever explicitly trusted by the client
+    and the exporter for the duration of a single lease. Future connections would be attempted on alternative
+    endpoints first and fallback to the router if none works.
+    """
+
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
     client_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
 
