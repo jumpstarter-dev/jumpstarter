@@ -55,6 +55,7 @@ docs = [
     { name = "sphinx-click", git = "https://github.com/NickCao/sphinx-click" },
     { name = "sphinx-substitution-extensions", specifier = ">=2024.10.17" },
     { name = "sphinxcontrib-mermaid", specifier = ">=0.9.2" },
+    { name = "sphinxcontrib-programoutput", specifier = ">=0.18" },
 ]
 
 [[package]]
@@ -3252,6 +3253,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/97/69/bf039237ad260073e8c02f820b3e00dc34f3a2de20aff7861e6b19d2f8c5/sphinxcontrib_mermaid-1.0.0.tar.gz", hash = "sha256:2e8ab67d3e1e2816663f9347d026a8dee4a858acdd4ad32dd1c808893db88146", size = 15153 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/c8/784b9ac6ea08aa594c1a4becbd0dbe77186785362e31fd633b8c6ae0197a/sphinxcontrib_mermaid-1.0.0-py3-none-any.whl", hash = "sha256:60b72710ea02087f212028feb09711225fbc2e343a10d34822fe787510e1caa3", size = 9597 },
+]
+
+[[package]]
+name = "sphinxcontrib-programoutput"
+version = "0.18"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sphinx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3f/c0/834af2290f8477213ec0dd60e90104f5644aa0c37b1a0d6f0a2b5efe03c4/sphinxcontrib_programoutput-0.18.tar.gz", hash = "sha256:09e68b6411d937a80b6085f4fdeaa42e0dc5555480385938465f410589d2eed8", size = 26333 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/2c/7aec6e0580f666d4f61474a50c4995a98abfff27d827f0e7bc8c4fa528f5/sphinxcontrib_programoutput-0.18-py3-none-any.whl", hash = "sha256:8a651bc85de69a808a064ff0e48d06c12b9347da4fe5fdb1e94914b01e1b0c36", size = 20346 },
 ]
 
 [[package]]
