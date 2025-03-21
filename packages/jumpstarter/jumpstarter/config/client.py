@@ -50,6 +50,8 @@ class ClientConfigV1Alpha1(BaseModel):
     token: str
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
+    useAlternativeEndpoints: bool = False
+
     drivers: ClientConfigV1Alpha1Drivers
 
     async def channel(self):
@@ -172,6 +174,7 @@ class ClientConfigV1Alpha1(BaseModel):
             release=release_lease,
             tls_config=self.tls,
             grpc_options=self.grpcOptions,
+            use_alternative_endpoints=self.useAlternativeEndpoints,
         ) as lease:
             yield lease
 

@@ -26,7 +26,7 @@ async def client_from_channel(
     stack: ExitStack,
     allow: list[str],
     unsafe: bool,
-    use_alternative_endpoints: bool = True,
+    use_alternative_endpoints: bool = False,
 ) -> DriverClient:
     topo = defaultdict(list)
     last_seen = {}
