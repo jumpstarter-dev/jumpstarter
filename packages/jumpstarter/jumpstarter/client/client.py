@@ -10,6 +10,7 @@ from google.protobuf import empty_pb2
 from .grpc import SmartExporterStub
 from jumpstarter.client import DriverClient
 from jumpstarter.common.importlib import import_class
+from jumpstarter.exporter.tls import SAN
 
 
 @asynccontextmanager
@@ -54,6 +55,7 @@ async def client_from_channel(
                             private_key=endpoint.client_private_key.encode(),
                             certificate_chain=endpoint.client_certificate.encode(),
                         ),
+                        options=(("grpc.ssl_target_name_override", SAN),),
                     )
                 )
 
