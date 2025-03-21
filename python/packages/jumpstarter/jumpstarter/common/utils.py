@@ -89,8 +89,13 @@ def launch_shell(host: str, context: str, allow: list[str], unsafe: bool) -> int
         allow: List of allowed drivers
         unsafe: Whether to allow drivers outside of the allow list
     """
+    cmd = [os.environ.get("SHELL", "bash")]
+    if cmd[0].endswith("bash"):
+        cmd.append("--norc")
+        cmd.append("--noprofile")
+
     process = Popen(
-        [os.environ.get("SHELL", "bash")],
+        cmd,
         stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
