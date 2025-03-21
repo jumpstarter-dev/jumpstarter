@@ -1,0 +1,40 @@
+[
+  {
+    "id": "d59db33d-27bd-4b22-878d-49e4758a648e",
+    "name": "Default Project",
+    "settings": {
+      "internet-access": true,
+      "dhcp": true
+    },
+    "quotas": {
+      "cores": 30,
+      "instances": 75,
+      "ram": 184320
+    },
+    "quotasUsed": {
+      "cores": 2,
+      "instances": 7,
+      "ram": 2048,
+      "gpu": 0
+    }
+  },
+  {
+    "id": "e2fdb33c-37ae-4b22-878d-49e4758a51f0",
+    "name": "OtherProject",
+    "settings": {
+      "internet-access": true,
+      "dhcp": true
+    },
+    "quotas": {
+      "cores": 30,
+      "instances": 75,
+      "ram": 184320
+    },
+    "quotasUsed": {
+      "cores": 2,
+      "instances": 7,
+      "ram": 2048,
+      "gpu": 0
+    }
+  }
+]
