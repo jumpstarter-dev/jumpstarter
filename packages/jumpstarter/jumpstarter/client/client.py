@@ -13,11 +13,18 @@ from jumpstarter.common.importlib import import_class
 
 
 @asynccontextmanager
-async def client_from_path(path: str, portal: BlockingPortal, stack: ExitStack, allow: list[str], unsafe: bool):
+async def client_from_path(
+    path: str,
+    portal: BlockingPortal,
+    stack: ExitStack,
+    allow: list[str],
+    unsafe: bool,
+    use_alternative_endpoints: bool = False,
+):
     async with grpc.aio.secure_channel(
         f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
     ) as channel:
-        yield await client_from_channel(channel, portal, stack, allow, unsafe)
+        yield await client_from_channel(channel, portal, stack, allow, unsafe, use_alternative_endpoints)
 
 
 async def client_from_channel(
