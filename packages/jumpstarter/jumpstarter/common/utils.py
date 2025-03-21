@@ -7,7 +7,7 @@ from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
 from jumpstarter.config.client import _allow_from_env
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_USE_ALTERNATIVE_ENDPOINTS, JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_USE_ALT_ENDPOINTS, JUMPSTARTER_HOST
 from jumpstarter.driver import Driver
 from jumpstarter.exporter import Session
 
@@ -52,7 +52,7 @@ async def env_async(portal, stack):
 
     allow, unsafe = _allow_from_env()
 
-    use_alternative_endpoints = os.environ.get(JMP_USE_ALTERNATIVE_ENDPOINTS, "0") == "1"
+    use_alternative_endpoints = os.environ.get(JMP_USE_ALT_ENDPOINTS, "0") == "1"
 
     async with client_from_path(
         host,
@@ -114,7 +114,7 @@ def launch_shell(
         | {
             JUMPSTARTER_HOST: host,
             JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
-            JMP_USE_ALTERNATIVE_ENDPOINTS: "1" if use_alternative_endpoints else "0",
+            JMP_USE_ALT_ENDPOINTS: "1" if use_alternative_endpoints else "0",
             "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
         },
     )
