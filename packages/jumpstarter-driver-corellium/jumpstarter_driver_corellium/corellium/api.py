@@ -2,7 +2,7 @@ from typing import Optional
 
 import requests
 
-from .types import *
+from .types import Session, Project, Device, Instance
 from .exceptions import CorelliumApiException
 
 
@@ -11,7 +11,7 @@ class ApiClient:
     Corellium ReST API client used by the Corellium driver.
     """
     session: Session
-    req: requests.Session = field(init=False)
+    req: requests.Session
 
     def __init__(self, host: str, token: str) -> None:
         """
