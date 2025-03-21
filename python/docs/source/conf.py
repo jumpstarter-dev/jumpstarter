@@ -26,6 +26,7 @@ controller_version = requests.get(
 
 extensions = [
     "sphinxcontrib.mermaid",
+    "sphinxcontrib.programoutput",
     "myst_parser",
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",

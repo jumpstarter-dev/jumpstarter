@@ -32,19 +32,10 @@ To create an exporter and save the config locally, run the following command:
 $ jmp admin create exporter testing --save
 
 # Usage for jmp admin create exporter
-$ jmp admin create exporter
- --help
-Usage: jmp admin create exporter [OPTIONS] [NAME]
+$ jmp admin create exporter --help
+```
 
-  Create an exporter object in the Kubernetes cluster
-
-Options:
-  -s, --save             Save the config file for the created exporter.
-  -o, --out FILE         Specify an output file for the exporter config.
-  -n, --namespace TEXT   Kubernetes namespace to use
-  --kubeconfig FILENAME  path to the kubeconfig file
-  --context TEXT         Kubernetes context to use
-  --help                 Show this message and exit.
+```{program-output} jmp admin create exporter --help
 ```
 
 ### Edit the Exporter Config
@@ -102,21 +93,9 @@ $ jmp admin create client hello --save --unsafe
 
 # Usage for jmp admin create client
 jmp admin create client --help
-Usage: jmp admin create client [OPTIONS] [NAME]
+```
 
-  Create a client object in the Kubernetes cluster
-
-Options:
-  -s, --save             Save the config file for the created client.
-  -a, --allow TEXT       A comma-separated list of driver client packages to
-                         load.
-  --unsafe               Should all driver client packages be allowed to load
-                         (UNSAFE!).
-  -o, --out FILE         Specify an output file for the client config.
-  -n, --namespace TEXT   Kubernetes namespace to use
-  --kubeconfig FILENAME  path to the kubeconfig file
-  --context TEXT         Kubernetes context to use
-  --help                 Show this message and exit.
+```{program-output} jmp admin create client --help
 ```
 
 ## Connect to the Exporter
@@ -133,30 +112,9 @@ $ jmp shell --client hello --selector example.com/board=foo
 
 # Usage for jmp shell
 $ jmp shell --help
-Usage: jmp shell [OPTIONS]
+```
 
-  Spawns a shell connecting to a local or remote exporter
-
-Options:
-  --exporter-config PATH  Path of exporter config
-  --exporter TEXT         Alias of exporter config
-  --client-config PATH    Path to client config
-  --client TEXT           Alias of client config
-  --lease TEXT
-  -l, --selector TEXT     Selector (label query) to filter on, supports '=',
-                          '==', and '!=' (e.g. -l key1=value1,key2=value2).
-                          Matching objects must satisfy all of the specified
-                          label constraints.
-  --duration DURATION     Accepted duration formats:
-
-                          PnYnMnDTnHnMnS - ISO 8601 duration format
-                          HH:MM:SS - time in hours, minutes, seconds
-                          D days, HH:MM:SS - time prefixed by X days
-                          D d, HH:MM:SS - time prefixed by X d
-
-                          See https://docs.rs/speedate/latest/speedate/ for
-                          details  [default: (00:30:00)]
-  --help                  Show this message and exit.
+```{program-output} jmp shell --help
 ```
 
 Once a lease is acquired, we can interact with the drivers hosted by the exporter
