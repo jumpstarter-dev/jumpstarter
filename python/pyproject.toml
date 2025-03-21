@@ -5,10 +5,8 @@ members = ["packages/*", "examples/*"]
 jumpstarter = { workspace = true }
 jumpstarter-cli = { workspace = true }
 jumpstarter-cli-admin = { workspace = true }
-jumpstarter-cli-client = { workspace = true }
 jumpstarter-cli-common = { workspace = true }
 jumpstarter-cli-driver = { workspace = true }
-jumpstarter-cli-exporter = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-dutlink = { workspace = true }

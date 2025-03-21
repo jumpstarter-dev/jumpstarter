@@ -51,7 +51,7 @@ client.power.off()
 
 ### CLI access
 ```bash
-$ sudo ~/.cargo/bin/uv run jmp exporter shell -c ./packages/jumpstarter-driver-yepkit/examples/exporter.yaml
+$ sudo ~/.cargo/bin/uv run jmp shell --exporter-config ./packages/jumpstarter-driver-yepkit/examples/exporter.yaml
 WARNING:Ykush:No serial number provided for ykush, using the first one found: YK25838
 INFO:Ykush:Power OFF for Ykush YK25838 on port 1
 INFO:Ykush:Power OFF for Ykush YK25838 on port 2

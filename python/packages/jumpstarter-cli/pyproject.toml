@@ -12,9 +12,7 @@ license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
   "jumpstarter-cli-admin",
-  "jumpstarter-cli-client",
   "jumpstarter-cli-driver",
-  "jumpstarter-cli-exporter",
 ]
 
 [dependency-groups]
@@ -27,6 +25,7 @@ dev = [
 
 [project.scripts]
 jmp = "jumpstarter_cli:jmp"
+j = "jumpstarter_cli:j"
 
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_cli"]

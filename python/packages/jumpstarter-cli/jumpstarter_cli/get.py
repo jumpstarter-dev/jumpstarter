@@ -1,8 +1,8 @@
 import asyncclick as click
-from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_output_all
+from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_config, opt_output_all
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import opt_config, opt_selector
+from .common import opt_selector
 
 
 @click.group()
@@ -13,7 +13,7 @@ def get():
 
 
 @get.command(name="exporters")
-@opt_config
+@opt_config(exporter=False)
 @opt_selector
 @opt_output_all
 @handle_exceptions
@@ -45,7 +45,7 @@ def get_exporters(config, selector: str | None, output: OutputType):
 
 
 @get.command(name="leases")
-@opt_config
+@opt_config(exporter=False)
 @opt_selector
 @opt_output_all
 @handle_exceptions

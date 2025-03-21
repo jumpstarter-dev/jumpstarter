@@ -55,7 +55,7 @@ running.
 
 ```shell
 # Spawn a new exporter shell for "demo"
-$ jmp exporter shell demo
+$ jmp shell --exporter demo
 ```
 
 ### Interact with the Exporter Shell
@@ -65,7 +65,7 @@ be available though the magic `j` command within the exporter shell.
 
 ```shell
 # Enter the shell
-$ jmp exporter shell demo
+$ jmp shell --exporter demo
 
 # Running inside exporter shell
 $ j
@@ -104,7 +104,7 @@ directly from the command line. This comes in handy when no CLI is available.
 
 ```shell
 # Enter the shell
-$ jmp exporter shell demo
+$ jmp shell --exporter demo
 # Running python inside exporter shell
 $ python - <<EOF
 from jumpstarter.common.utils import env
@@ -145,7 +145,7 @@ with env() as client:
 
 ```shell
 # Enter the shell
-$ jmp exporter shell demo
+$ jmp shell --exporter demo
 # Running python inside exporter shell
 $ python ./demo.py
 # Exit the shell
@@ -172,7 +172,7 @@ class MyTest(JumpstarterTest):
 
 ```shell
 # Enter the shell
-$ jmp exporter shell demo
+$ jmp shell --exporter demo
 # Running python inside exporter shell
 $ pytest ./mytest.py
 # Exit the shell

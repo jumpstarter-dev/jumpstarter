@@ -1,4 +1,4 @@
-# admin
+# jmp-admin
 
 ```{eval-rst}
 .. click:: jumpstarter_cli_admin:admin

@@ -56,7 +56,7 @@ To edit the config file with your default text editor, run the following command
 
 ```bash
 # Opens the config for "testing" in your default editor
-$ jmp exporter config edit testing
+$ jmp config exporter edit testing
 ```
 
 Add the `storage` and `power` drivers under the `export` field in the config file.
@@ -79,13 +79,13 @@ export:
 
 ## Run an Exporter
 
-To run the exporter locally, we can use the `jmp exporter` CLI tool.
+To run the exporter locally, we can use the `jmp` CLI tool.
 
 Run the following command to start the exporter locally using the config file:
 
 ```bash
 # Runs the exporter "testing" locally
-$ jmp exporter run testing
+$ jmp run --exporter testing
 ```
 
 The exporter will stay running until the process is exited via `^C` or the shell
@@ -129,18 +129,34 @@ Python API.
 
 ```bash
 # Spawn a shell using the "hello" client
-$ jmp client shell hello
+$ jmp shell --client hello --selector example.com/board=foo
 
-# Usage for jmp client shell
-$ jmp client shell --help
-Usage: jmp client shell [OPTIONS] [NAME]
+# Usage for jmp shell
+$ jmp shell --help
+Usage: jmp shell [OPTIONS]
 
-  Spawns a shell connecting to a leased remote exporter
+  Spawns a shell connecting to a local or remote exporter
 
 Options:
-  -l, --label <TEXT TEXT>...
-  -n, --lease TEXT
-  --help                      Show this message and exit.
+  --exporter-config PATH  Path of exporter config
+  --exporter TEXT         Alias of exporter config
+  --client-config PATH    Path to client config
+  --client TEXT           Alias of client config
+  --lease TEXT
+  -l, --selector TEXT     Selector (label query) to filter on, supports '=',
+                          '==', and '!=' (e.g. -l key1=value1,key2=value2).
+                          Matching objects must satisfy all of the specified
+                          label constraints.
+  --duration DURATION     Accepted duration formats:
+
+                          PnYnMnDTnHnMnS - ISO 8601 duration format
+                          HH:MM:SS - time in hours, minutes, seconds
+                          D days, HH:MM:SS - time prefixed by X days
+                          D d, HH:MM:SS - time prefixed by X d
+
+                          See https://docs.rs/speedate/latest/speedate/ for
+                          details  [default: (00:30:00)]
+  --help                  Show this message and exit.
 ```
 
 Once a lease is acquired, we can interact with the drivers hosted by the exporter
@@ -148,7 +164,7 @@ within the shell instance.
 
 ```bash
 # Spawn a shell using the "hello" client
-$ jmp client shell hello
+$ jmp shell --client hello --selector example.com/board=foo
 
 # Running inside client shell
 $ j

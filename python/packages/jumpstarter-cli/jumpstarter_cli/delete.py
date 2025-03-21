@@ -1,8 +1,8 @@
 import asyncclick as click
-from jumpstarter_cli_common import OutputMode, OutputType, opt_output_name_only
+from jumpstarter_cli_common import OutputMode, OutputType, opt_config, opt_output_name_only
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from .common import opt_config, opt_selector
+from .common import opt_selector
 
 
 @click.group()
@@ -13,7 +13,7 @@ def delete():
 
 
 @delete.command(name="leases")
-@opt_config
+@opt_config(exporter=False)
 @click.argument("name", required=False)
 @opt_selector
 @click.option("--all", "all", is_flag=True)

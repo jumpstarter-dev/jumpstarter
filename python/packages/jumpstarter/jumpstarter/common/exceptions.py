@@ -50,7 +50,7 @@ class FileAccessError(JumpstarterException):
     pass
 
 
-class FileNotFoundError(JumpstarterException):
+class FileNotFoundError(JumpstarterException, FileNotFoundError):
     """Raised when a file is not found."""
 
     pass
