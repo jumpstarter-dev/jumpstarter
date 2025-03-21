@@ -207,6 +207,7 @@ tls:
   insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 grpcOptions: {}
+useAlternativeEndpoints: false
 drivers:
   allow:
   - jumpstarter.drivers.*
@@ -243,6 +244,7 @@ tls:
   insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 grpcOptions: {}
+useAlternativeEndpoints: false
 drivers:
   allow:
   - jumpstarter.drivers.*
@@ -277,6 +279,7 @@ tls:
   insecure: false
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 grpcOptions: {}
+useAlternativeEndpoints: false
 drivers:
   allow: []
   unsafe: true
