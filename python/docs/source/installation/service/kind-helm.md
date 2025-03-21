@@ -75,12 +75,11 @@ If you do not have Helm installed, please [install the latest release](https://h
 ```
 # Install Jumpstarter with default options
 $ jmp admin install
-
-# Options provided by the Jumpstarter CLI
-$ jmp admin install --help
 ```
 
-```{program-output} jmp admin install --help
+## Options provided by the Jumpstarter CLI
+
+```{command-output} jmp admin install --help
 ```
 
 ### Install Jumpstarter with Helm

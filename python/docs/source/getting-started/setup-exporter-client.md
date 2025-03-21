@@ -30,12 +30,11 @@ To create an exporter and save the config locally, run the following command:
 ```bash
 # Creates an exporter called "testing" and saves the config
 $ jmp admin create exporter testing --save
-
-# Usage for jmp admin create exporter
-$ jmp admin create exporter --help
 ```
 
-```{program-output} jmp admin create exporter --help
+## Usage for jmp admin create exporter
+
+```{command-output} jmp admin create exporter --help
 ```
 
 ### Edit the Exporter Config
@@ -90,12 +89,11 @@ To connect to the new exporter, a client must be created. We can also use the
 ```bash
 # This will create a client called "hello", allow unsafe drivers, and save the config
 $ jmp admin create client hello --save --unsafe
-
-# Usage for jmp admin create client
-jmp admin create client --help
 ```
 
-```{program-output} jmp admin create client --help
+## Usage for jmp admin create client
+
+```{command-output} jmp admin create client --help
 ```
 
 ## Connect to the Exporter
@@ -109,12 +107,11 @@ Python API.
 ```bash
 # Spawn a shell using the "hello" client
 $ jmp shell --client hello --selector example.com/board=foo
-
-# Usage for jmp shell
-$ jmp shell --help
 ```
 
-```{program-output} jmp shell --help
+## Usage for jmp shell
+
+```{command-output} jmp shell --help
 ```
 
 Once a lease is acquired, we can interact with the drivers hosted by the exporter
