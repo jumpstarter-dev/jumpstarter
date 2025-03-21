@@ -27,7 +27,7 @@ def client_shell(config, selector: str, duration: timedelta, lease_name):
                     "remote",
                     config.drivers.allow,
                     config.drivers.unsafe,
-                    use_alternative_endpoints=config.useAlternativeEndpoints,
+                    use_alternative_endpoints=config.use_alternative_endpoints,
                 )
 
     sys.exit(exit_code)

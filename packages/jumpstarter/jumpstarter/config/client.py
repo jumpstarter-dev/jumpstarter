@@ -50,7 +50,7 @@ class ClientConfigV1Alpha1(BaseModel):
     token: str
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
-    useAlternativeEndpoints: bool = False
+    use_alternative_endpoints: bool = Field(alias="useAlternativeEndpoints", default=False)
 
     drivers: ClientConfigV1Alpha1Drivers
 
@@ -174,7 +174,7 @@ class ClientConfigV1Alpha1(BaseModel):
             release=release_lease,
             tls_config=self.tls,
             grpc_options=self.grpcOptions,
-            use_alternative_endpoints=self.useAlternativeEndpoints,
+            use_alternative_endpoints=self.use_alternative_endpoints,
         ) as lease:
             yield lease
 
@@ -238,12 +238,27 @@ class ClientConfigV1Alpha1(BaseModel):
         else:
             config.path = Path(path)
         with config.path.open(mode="w") as f:
-            yaml.safe_dump(config.model_dump(mode="json", exclude={"path", "alias"}), f, sort_keys=False)
+            yaml.safe_dump(
+                config.model_dump(
+                    mode="json",
+                    exclude={"path", "alias"},
+                    by_alias=True,
+                ),
+                f,
+                sort_keys=False,
+            )
         return config.path
 
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
-        return yaml.safe_dump(config.model_dump(mode="json", exclude={"path", "alias"}), sort_keys=False)
+        return yaml.safe_dump(
+            config.model_dump(
+                mode="json",
+                exclude={"path", "alias"},
+                by_alias=True,
+            ),
+            sort_keys=False,
+        )
 
     @classmethod
     def exists(cls, alias: str) -> bool:
