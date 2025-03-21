@@ -104,26 +104,26 @@ runs:
         jmp admin create exporter test-exporter-legacy --save \
           --label example.com/board legacy
 
-        jmp client   config list
-        jmp exporter config list
+        jmp config client   list
+        jmp config exporter list
 
-        jmp client   login test-client-oidc \
+        jmp login --client test-client-oidc \
           --endpoint "$ENDPOINT" --namespace default --name test-client-oidc \
           --issuer https://dex.dex.svc.cluster.local:5556 \
           --username test-client-oidc@example.com --password password --unsafe
 
-        jmp client   login test-client-sa \
+        jmp login --client test-client-sa \
           --endpoint "$ENDPOINT" --namespace default --name test-client-sa \
           --issuer https://dex.dex.svc.cluster.local:5556 \
           --connector-id kubernetes \
           --token $(kubectl create -n default token test-client-sa) --unsafe
 
-        jmp exporter login test-exporter-oidc \
+        jmp login --exporter test-exporter-oidc \
           --endpoint "$ENDPOINT" --namespace default --name test-exporter-oidc \
           --issuer https://dex.dex.svc.cluster.local:5556 \
           --username test-exporter-oidc@example.com --password password
 
-        jmp exporter login test-exporter-sa \
+        jmp login --exporter test-exporter-sa \
           --endpoint "$ENDPOINT" --namespace default --name test-exporter-sa \
           --issuer https://dex.dex.svc.cluster.local:5556 \
           --connector-id kubernetes \
@@ -136,40 +136,40 @@ runs:
         go run github.com/mikefarah/yq/v4@latest -i ". * load(\"$GITHUB_ACTION_PATH/exporter.yaml\")" \
           /etc/jumpstarter/exporters/test-exporter-legacy.yaml
 
-        jmp client   config list
-        jmp exporter config list
+        jmp config client list
+        jmp config exporter list
 
-        jmp exporter run test-exporter-oidc &
-        jmp exporter run test-exporter-sa &
-        jmp exporter run test-exporter-legacy &
+        jmp run --exporter test-exporter-oidc &
+        jmp run --exporter test-exporter-sa &
+        jmp run --exporter test-exporter-legacy &
 
         kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-oidc
         kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-sa
         kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-legacy
 
-        jmp client config use test-client-oidc
+        jmp config client use test-client-oidc
 
-        jmp client create lease     --selector example.com/board=oidc --duration 1d
-        jmp client get    leases
-        jmp client get    exporters
-        jmp client delete leases    --all
+        jmp create lease     --selector example.com/board=oidc --duration 1d
+        jmp get    leases
+        jmp get    exporters
+        jmp delete leases    --all
 
         jmp admin get client
         jmp admin get exporter
         jmp admin get lease
 
-        jmp exporter run test-exporter-oidc &
+        jmp run --exporter test-exporter-oidc &
         kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-oidc
 
-        jmp client shell --client test-client-oidc --selector example.com/board=oidc <<EOF
+        jmp shell --client test-client-oidc --selector example.com/board=oidc <<EOF
         j power on
         EOF
 
-        jmp client shell --client test-client-sa --selector example.com/board=sa <<EOF
+        jmp shell --client test-client-sa --selector example.com/board=sa <<EOF
         j power on
         EOF
 
-        jmp client shell --client test-client-legacy --selector example.com/board=legacy <<EOF
+        jmp shell --client test-client-legacy --selector example.com/board=legacy <<EOF
         j power on
         EOF
 
