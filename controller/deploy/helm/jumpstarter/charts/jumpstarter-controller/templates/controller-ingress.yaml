@@ -5,6 +5,8 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     {{ if eq .Values.grpc.tls.mode "passthrough" }}
     nginx.ingress.kubernetes.io/ssl-passthrough: "true"
     {{ end }}
