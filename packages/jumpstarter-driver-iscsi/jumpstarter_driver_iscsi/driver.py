@@ -36,7 +36,7 @@ class ISCSI(Driver):
 
     Attributes:
         root_dir (str): Root directory for the iSCSI storage
-        iqn_prefix (str): iSCSI Qualified Name prefix
+        iqn_prefix (str): iqn prefix
         target_name (str): Target name. Defaults to "target1"
         host (str): IP address to bind the server to
         port (int): Port number to listen on. Defaults to 3260
@@ -152,9 +152,9 @@ class ISCSI(Driver):
 
     @export
     def start(self):
-        """Start the iSCSI target server.
+        """Start the iSCSI target server
 
-        Configures and starts the iSCSI target with the current configuration.
+        Configures and starts the iSCSI target with the current configuration
 
         Raises:
             ISCSIError: If the server fails to start
@@ -167,12 +167,13 @@ class ISCSI(Driver):
 
     @export
     def stop(self):
-        """Stop the iSCSI target server.
+        """Stop the iSCSI target server
 
-        Cleans up and stops the iSCSI target server.
+        Cleans up and stops the iSCSI target server
         """
         try:
             for name in list(self._luns.keys()):
+                # TODO: maybe leave?
                 self.remove_lun(name)
 
             if self._target:
@@ -186,7 +187,7 @@ class ISCSI(Driver):
 
     @export
     def get_host(self) -> str:
-        """Get the host address the server is bound to.
+        """Get the host address the server is bound to
 
         Returns:
             str: The IP address or hostname
@@ -195,7 +196,7 @@ class ISCSI(Driver):
 
     @export
     def get_port(self) -> int:
-        """Get the port number the server is listening on.
+        """Get the port number the server is listening on
 
         Returns:
             int: The port number
@@ -204,7 +205,7 @@ class ISCSI(Driver):
 
     @export
     def get_target_iqn(self) -> str:
-        """Get the iSCSI Qualified Name (IQN) of the target.
+        """Get the IQN of the target
 
         Returns:
             str: The IQN string
@@ -213,64 +214,76 @@ class ISCSI(Driver):
 
     @export
     def add_lun(self, name: str, file_path: str, size_mb: int = 0, is_block: bool = False) -> str:
-        """Add a new LUN to the iSCSI target.
+        """
+        Add a new LUN to the iSCSI target.
+
+        For file-backed LUNs (is_block=False), the provided file_path is relative to the configured storage root.
+        For block devices (is_block=True), the file_path must be an absolute path and will be used as provided.
 
         Args:
-            name (str): Unique name for the LUN
-            file_path (str): Path to the file or block device
-            size_mb (int): Size in MB for new file or existing file LUN
-            is_block (bool): If True, the path is treated as a block device
+            name (str): Unique name for the LUN.
+            file_path (str): Path to the file or block device.
+            size_mb (int): Size in MB for new file-backed LUNs (ignored for block devices).
+            is_block (bool): If True, treat file_path as an absolute block device path.
 
         Returns:
-            str: Name of the created LUN
+            str: The name of the created LUN.
 
         Raises:
-            ISCSIError: If the LUN cannot be created
+            ISCSIError: On error or if the file_path is invalid.
         """
-        if not self._tpg:
-            raise ISCSIError("iSCSI target not started, call start() first")
-
         if name in self._luns:
             raise ISCSIError(f"LUN with name {name} already exists")
-
         try:
             size_mb = int(size_mb)
         except (TypeError, ValueError) as e:
             raise ISCSIError("size_mb must be an integer value") from e
 
-        full_path = os.path.join(self.root_dir, file_path)
-
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        # Use the provided file_path directly for block devices and ensure it is absolute
+        if is_block:
+            if not os.path.isabs(file_path):
+                raise ISCSIError("For block devices, file_path must be an absolute path")
+            full_path = file_path
+        else:
+            full_path = os.path.join(self.root_dir, file_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
         try:
             if is_block:
-                if not os.path.exists(full_path) or not os.path.isfile(full_path):
+                if not os.path.exists(full_path):
                     raise ISCSIError(f"Block device {full_path} does not exist")
                 storage_obj = BlockStorageObject(name, full_path)
             else:
-                if size_mb <= 0:
-                    raise ISCSIError("size_mb must be > 0 for file-backed LUNs")
-
-                size_bytes = size_mb * 1024 * 1024
-
                 if not os.path.exists(full_path):
-                    # Create a sparse file of specified size
+                    if size_mb <= 0:
+                        raise ISCSIError("size_mb must be > 0 for new file-backed LUNs")
+                    size_bytes = size_mb * 1024 * 1024
                     with open(full_path, "wb") as f:
                         f.truncate(size_bytes)
                     self.logger.info(f"Created new file {full_path} with size {size_mb}MB")
                 else:
-                    # Resize the file if it exists
-                    with open(full_path, "wb") as f:
-                        f.truncate(size_bytes)
-                    self.logger.info(f"Resized file {full_path} to {size_mb}MB")
-
+                    current_size = os.path.getsize(full_path)
+                    if size_mb <= 0:
+                        size_bytes = current_size
+                        size_mb = size_bytes // (1024 * 1024)
+                        self.logger.info(f"Using existing file size: {size_mb}MB")
+                    else:
+                        size_bytes = size_mb * 1024 * 1024
+                        if current_size != size_bytes:
+                            if current_size < size_bytes:
+                                with open(full_path, "ab") as f:
+                                    f.truncate(size_bytes)
+                                self.logger.info(f"Extended file {full_path} from {current_size/(1024*1024):.1f}MB to {size_mb}MB")
+                            else:
+                                self.logger.warning(
+                                    f"File {full_path} is larger ({current_size/(1024*1024):.1f}MB) than requested size ({size_mb}MB). "
+                                    "Using requested size for LUN but file won't be truncated."
+                                )
                 storage_obj = FileIOStorageObject(name, full_path, size=size_bytes)
-
             lun = LUN(self._tpg, 0, storage_obj)
             self._storage_objects[name] = storage_obj
             self._luns[name] = lun
-
-            self.logger.info(f"Added LUN {name} for path {full_path}")
+            self.logger.info(f"Added LUN {name} for path {full_path} with size {size_mb}MB")
             return name
         except Exception as e:
             self.logger.error(f"Error adding LUN: {e}")
@@ -306,7 +319,7 @@ class ISCSI(Driver):
 
     @export
     def list_luns(self) -> List[Dict[str, Any]]:
-        """List all configured LUNs.
+        """List all configured LUNs
 
         Returns:
             List[Dict[str, Any]]: List of dictionaries with LUN information
@@ -325,7 +338,7 @@ class ISCSI(Driver):
         return result
 
     def close(self):
-        """Clean up resources when the driver is closed."""
+        """Clean up resources when the driver is closed"""
         try:
             self.stop()
         except Exception as e:
