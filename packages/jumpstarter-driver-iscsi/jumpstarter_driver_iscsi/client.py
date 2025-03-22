@@ -56,12 +56,13 @@ class ISCSIServerClient(CompositeClient):
 
     def get_target_iqn(self) -> str:
         """
-        Get the iSCSI Qualified Name (IQN) of the target
+        Get the IQN of the target
 
         Returns:
             str: The IQN string for connecting to this target
         """
         return self.call("get_target_iqn")
+
 
     def add_lun(self, name: str, file_path: str, size_mb: int = 0, is_block: bool = False) -> str:
         """
