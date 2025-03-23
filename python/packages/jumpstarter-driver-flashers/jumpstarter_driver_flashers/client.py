@@ -249,35 +249,38 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
         self.logger.info(f"Writing image to storage in the background: {src_path}")
         try:
+            filename = Path(src_path).name if isinstance(src_path, (str, os.PathLike)) else src_path.name
+
             # if the source is a local file, we can hash it and compare to the known hash
             if src_operator_scheme == "fs":
                 file_hash = self._sha256_file(src_operator, src_path)
-                if to_storage.hash(src_path.name) == file_hash:
-                    self.logger.info(f"Image {src_path} already exists in storage with matching hash, skipping")
+                if to_storage.exists(filename) and to_storage.hash(filename) == file_hash:
+                    self.logger.info(f"Image {filename} already exists in storage with matching hash, skipping")
                     return
+
             # if the source is a remote file, we can't hash it, so we need to check the hash from the metadata
-            elif known_hash and to_storage.exists(src_path.name):
-                self.logger.info(f"Image {src_path} already exists in storage, checking hash")
-                if to_storage.hash(src_path.name) == known_hash:
-                    self.logger.info(f"Image {src_path} already exists in storage with matching hash, skipping")
+            elif known_hash and to_storage.exists(filename):
+                self.logger.info(f"Image {filename} already exists in storage, checking hash")
+                if to_storage.hash(filename) == known_hash:
+                    self.logger.info(f"Image {filename} already exists in storage with matching hash, skipping")
                     return
 
             # last attempt to check if the image in storage matches the known metadata
             metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path)
-            metadata_file = src_path.name + ".metadata"
+            metadata_file = filename + ".metadata"
             self.logger.info(f"Metadata: {metadata_json}")
-            if to_storage.exists(metadata_file) and to_storage.exists(src_path.name):
+            if to_storage.exists(metadata_file) and to_storage.exists(filename):
                 self.logger.info(f"Checking metadata for file in exporter storage {metadata_file}")
                 data = to_storage.read_bytes(metadata_file).decode(errors="ignore")
-                if to_storage.stat(src_path.name).content_length == metadata.content_length and data == metadata_json:
-                    self.logger.info(f"Image {src_path} already exists in storage with matching metadata, skipping")
+                if to_storage.stat(filename).content_length == metadata.content_length and data == metadata_json:
+                    self.logger.info(f"Image {filename} already exists in storage with matching metadata, skipping")
                     return
 
             # ok, we need to write the image to storage
-            to_storage.write_from_path(src_path.name, src_path, src_operator)
+            to_storage.write_from_path(filename, src_path, src_operator)
             # but also write the metadata to be able to check for matching images later
             to_storage.write_bytes(metadata_file, metadata_json.encode(errors="ignore"))
-            self.logger.info(f"Image written to storage: {src_path}")
+            self.logger.info(f"Image written to storage: {filename}")
 
         except Exception as e:
             self.logger.error(f"Error writing image to storage: {e}")
