@@ -5,6 +5,7 @@ Each tool can also be installed separately for users who want to reduce the depe
 
 
 ```{toctree}
+:maxdepth: 4
 reference/index.md
 clients.md
 exporters.md
