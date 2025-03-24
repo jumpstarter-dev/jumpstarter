@@ -11,6 +11,7 @@ metadata:
     {{ end }}
   annotations:
     configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") . | sha256sum }}
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     matchLabels:
