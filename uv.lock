@@ -922,6 +922,7 @@ source = { editable = "packages/jumpstarter" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
+    { name = "cryptography" },
     { name = "jumpstarter-protocol" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -930,7 +931,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "cryptography" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
@@ -944,6 +944,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
+    { name = "cryptography", specifier = ">=43.0.3" },
     { name = "jumpstarter-protocol", editable = "packages/jumpstarter-protocol" },
     { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
@@ -952,7 +953,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cryptography", specifier = ">=43.0.3" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },

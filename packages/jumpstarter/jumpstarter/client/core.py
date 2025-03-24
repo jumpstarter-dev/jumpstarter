@@ -5,11 +5,12 @@ Base classes for drivers and driver clients
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Any
 
 from anyio import create_task_group
 from google.protobuf import empty_pb2
 from grpc import StatusCode
-from grpc.aio import AioRpcError, Channel
+from grpc.aio import AioRpcError
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 
 from jumpstarter.common import Metadata
@@ -60,7 +61,7 @@ class AsyncDriverClient(
     Backing implementation of blocking driver client.
     """
 
-    channel: Channel
+    stub: Any
 
     log_level: str = "INFO"
     logger: logging.Logger = field(init=False)
@@ -68,8 +69,6 @@ class AsyncDriverClient(
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
-        jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
-        router_pb2_grpc.RouterServiceStub.__init__(self, self.channel)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(self.log_level)
 
@@ -89,7 +88,7 @@ class AsyncDriverClient(
         )
 
         try:
-            response = await self.DriverCall(request)
+            response = await self.stub.DriverCall(request)
         except AioRpcError as e:
             match e.code():
                 case StatusCode.UNIMPLEMENTED:
@@ -113,7 +112,7 @@ class AsyncDriverClient(
         )
 
         try:
-            async for response in self.StreamingDriverCall(request):
+            async for response in self.stub.StreamingDriverCall(request):
                 yield decode_value(response.result)
         except AioRpcError as e:
             match e.code():
@@ -128,7 +127,7 @@ class AsyncDriverClient(
 
     @asynccontextmanager
     async def stream_async(self, method):
-        context = self.Stream(
+        context = self.stub.Stream(
             metadata=StreamRequestMetadata.model_construct(request=DriverStreamRequest(uuid=self.uuid, method=method))
             .model_dump(mode="json", round_trip=True)
             .items(),
@@ -142,7 +141,7 @@ class AsyncDriverClient(
         self,
         stream,
     ):
-        context = self.Stream(
+        context = self.stub.Stream(
             metadata=StreamRequestMetadata.model_construct(request=ResourceStreamRequest(uuid=self.uuid))
             .model_dump(mode="json", round_trip=True)
             .items(),
@@ -160,7 +159,7 @@ class AsyncDriverClient(
     @asynccontextmanager
     async def log_stream_async(self):
         async def log_stream():
-            async for response in self.LogStream(empty_pb2.Empty()):
+            async for response in self.stub.LogStream(empty_pb2.Empty()):
                 self.__log(logging.getLevelName(response.severity), response.message)
 
         async with create_task_group() as tg:

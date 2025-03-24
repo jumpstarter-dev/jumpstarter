@@ -16,6 +16,7 @@ dependencies = [
     "anyio>=4.4.0,!=4.6.2",
     "aiohttp>=3.10.5",
     "tqdm>=4.66.5",
+    "cryptography>=43.0.3",
     "pydantic>=2.8.2"
 ]
 
@@ -25,7 +26,6 @@ dev = [
     "pytest-cov>=6.0.0",
     "pytest-anyio>=0.0.0",
     "pytest-asyncio>=0.0.0",
-    "cryptography>=43.0.3",
     "jumpstarter-driver-power",
     "jumpstarter-driver-network",
     "jumpstarter-driver-composite"

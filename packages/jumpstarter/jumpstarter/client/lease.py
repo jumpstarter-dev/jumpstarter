@@ -41,6 +41,7 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
+    use_alternative_endpoints: bool = False
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -184,7 +185,14 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
     @asynccontextmanager
     async def connect_async(self, stack):
         async with self.serve_unix_async() as path:
-            async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as client:
+            async with client_from_path(
+                path,
+                self.portal,
+                stack,
+                allow=self.allow,
+                unsafe=self.unsafe,
+                use_alternative_endpoints=self.use_alternative_endpoints,
+            ) as client:
                 yield client
 
     @contextmanager
