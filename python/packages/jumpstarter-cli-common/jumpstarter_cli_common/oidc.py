@@ -1,5 +1,7 @@
 import json
+import os
 from dataclasses import dataclass
+from functools import wraps
 from typing import ClassVar
 
 import aiohttp
@@ -12,12 +14,26 @@ from authlib.integrations.requests_client import OAuth2Session
 from joserfc.jws import extract_compact
 from yarl import URL
 
-truststore.inject_into_ssl()
+# if we are running in MacOS avoid injecting system certificates to avoid
+# https://github.com/jumpstarter-dev/jumpstarter/issues/362
+# also allow to force the system certificates injection with
+# JUMPSTARTER_FORCE_SYSTEM_CERTS=1
+if os.uname().sysname != "Darwin" or os.environ.get("JUMPSTARTER_FORCE_SYSTEM_CERTS") == "1":
+    truststore.inject_into_ssl()
 
-opt_client_id = click.option("--client-id", "client_id", type=str, default="jumpstarter-cli", help="OIDC client id")
-opt_connector_id = click.option(
-    "--connector-id", "connector_id", type=str, help="OIDC token exchange connector id (Dex specific)"
-)
+
+def opt_oidc(f):
+    @click.option("--issuer", help="OIDC issuer")
+    @click.option("--client-id", "client_id", help="OIDC client id", default="jumpstarter-cli")
+    @click.option("--token", help="OIDC access token")
+    @click.option("--username", help="OIDC username")
+    @click.option("--password", help="OIDC password")
+    @click.option("--connector-id", "connector_id", help="OIDC token exchange connector id (Dex specific)")
+    @wraps(f)
+    def wrapper(*args, **kwds):
+        return f(*args, **kwds)
+
+    return wrapper
 
 
 @dataclass(kw_only=True)

@@ -30,21 +30,11 @@ To create an exporter and save the config locally, run the following command:
 ```bash
 # Creates an exporter called "testing" and saves the config
 $ jmp admin create exporter testing --save
+```
 
-# Usage for jmp admin create exporter
-$ jmp admin create exporter
- --help
-Usage: jmp admin create exporter [OPTIONS] [NAME]
+## Usage for jmp admin create exporter
 
-  Create an exporter object in the Kubernetes cluster
-
-Options:
-  -s, --save             Save the config file for the created exporter.
-  -o, --out FILE         Specify an output file for the exporter config.
-  -n, --namespace TEXT   Kubernetes namespace to use
-  --kubeconfig FILENAME  path to the kubeconfig file
-  --context TEXT         Kubernetes context to use
-  --help                 Show this message and exit.
+```{command-output} jmp admin create exporter --help
 ```
 
 ### Edit the Exporter Config
@@ -56,7 +46,7 @@ To edit the config file with your default text editor, run the following command
 
 ```bash
 # Opens the config for "testing" in your default editor
-$ jmp exporter config edit testing
+$ jmp config exporter edit testing
 ```
 
 Add the `storage` and `power` drivers under the `export` field in the config file.
@@ -79,13 +69,13 @@ export:
 
 ## Run an Exporter
 
-To run the exporter locally, we can use the `jmp exporter` CLI tool.
+To run the exporter locally, we can use the `jmp` CLI tool.
 
 Run the following command to start the exporter locally using the config file:
 
 ```bash
 # Runs the exporter "testing" locally
-$ jmp exporter run testing
+$ jmp run --exporter testing
 ```
 
 The exporter will stay running until the process is exited via `^C` or the shell
@@ -99,24 +89,11 @@ To connect to the new exporter, a client must be created. We can also use the
 ```bash
 # This will create a client called "hello", allow unsafe drivers, and save the config
 $ jmp admin create client hello --save --unsafe
+```
 
-# Usage for jmp admin create client
-jmp admin create client --help
-Usage: jmp admin create client [OPTIONS] [NAME]
+## Usage for jmp admin create client
 
-  Create a client object in the Kubernetes cluster
-
-Options:
-  -s, --save             Save the config file for the created client.
-  -a, --allow TEXT       A comma-separated list of driver client packages to
-                         load.
-  --unsafe               Should all driver client packages be allowed to load
-                         (UNSAFE!).
-  -o, --out FILE         Specify an output file for the client config.
-  -n, --namespace TEXT   Kubernetes namespace to use
-  --kubeconfig FILENAME  path to the kubeconfig file
-  --context TEXT         Kubernetes context to use
-  --help                 Show this message and exit.
+```{command-output} jmp admin create client --help
 ```
 
 ## Connect to the Exporter
@@ -129,18 +106,12 @@ Python API.
 
 ```bash
 # Spawn a shell using the "hello" client
-$ jmp client shell hello
+$ jmp shell --client hello --selector example.com/board=foo
+```
 
-# Usage for jmp client shell
-$ jmp client shell --help
-Usage: jmp client shell [OPTIONS] [NAME]
+## Usage for jmp shell
 
-  Spawns a shell connecting to a leased remote exporter
-
-Options:
-  -l, --label <TEXT TEXT>...
-  -n, --lease TEXT
-  --help                      Show this message and exit.
+```{command-output} jmp shell --help
 ```
 
 Once a lease is acquired, we can interact with the drivers hosted by the exporter
@@ -148,7 +119,7 @@ within the shell instance.
 
 ```bash
 # Spawn a shell using the "hello" client
-$ jmp client shell hello
+$ jmp shell --client hello --selector example.com/board=foo
 
 # Running inside client shell
 $ j

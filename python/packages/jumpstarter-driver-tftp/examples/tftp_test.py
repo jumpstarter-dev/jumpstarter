@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 
 
 class TestResource(JumpstarterTest):
-    filter_labels = {"board": "rpi4"}
+    selector = "board=rpi4"
 
     @pytest.fixture()
     def setup_tftp(self, client):

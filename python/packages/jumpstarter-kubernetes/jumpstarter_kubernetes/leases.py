@@ -17,10 +17,14 @@ class V1Alpha1LeaseStatus(JsonBaseModel):
     exporter: Optional[SerializeV1ObjectReference]
 
 
+class V1Alpha1LeaseSelector(JsonBaseModel):
+    match_labels: dict[str, str] = Field(alias="matchLabels")
+
+
 class V1Alpha1LeaseSpec(JsonBaseModel):
     client: SerializeV1ObjectReference
     duration: Optional[str]
-    selector: dict[str, str]
+    selector: V1Alpha1LeaseSelector
 
 
 class V1Alpha1Lease(JsonBaseModel):
@@ -38,7 +42,6 @@ class V1Alpha1Lease(JsonBaseModel):
             metadata=V1ObjectMeta(
                 creation_timestamp=dict["metadata"]["creationTimestamp"],
                 generation=dict["metadata"]["generation"],
-                labels=dict["metadata"]["labels"],
                 managed_fields=dict["metadata"]["managedFields"],
                 name=dict["metadata"]["name"],
                 namespace=dict["metadata"]["namespace"],
@@ -69,7 +72,7 @@ class V1Alpha1Lease(JsonBaseModel):
                 if "clientRef" in dict["spec"]
                 else None,
                 duration=dict["spec"]["duration"] if "duration" in dict["spec"] else None,
-                selector=dict["spec"]["selector"],
+                selector=V1Alpha1LeaseSelector(match_labels=dict["spec"]["selector"]["matchLabels"]),
             ),
         )
 

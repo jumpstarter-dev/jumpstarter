@@ -8,9 +8,8 @@ from jumpstarter_driver_network.adapters import PexpectAdapter
 from jumpstarter.common.utils import env
 
 # initialize client from exporter config
-# from jumpstarter.common import MetadataFilter
 # from jumpstarter.config.client import ClientConfigV1Alpha1
-# with ClientConfigV1Alpha1.load("default").lease(metadata_filter=MetadataFilter()) as lease:
+# with ClientConfigV1Alpha1.load("default").lease(selector="example.com/board=dutlink") as lease:
 #     with lease.connect() as client:
 
 # initialize client from environment

@@ -18,7 +18,7 @@ from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
 from jumpstarter.client.grpc import ClientService
-from jumpstarter.common import MetadataFilter, TemporaryUnixListener
+from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
 from jumpstarter.common.grpc import translate_grpc_exceptions
 from jumpstarter.common.streams import connect_router_stream
@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 @dataclass(kw_only=True)
 class Lease(AbstractContextManager, AbstractAsyncContextManager):
     channel: Channel
-    timeout: int = 1800
-    metadata_filter: MetadataFilter = field(default_factory=MetadataFilter)
+    duration: timedelta
+    selector: str
     portal: BlockingPortal
     namespace: str
     name: str | None = field(default=None)
@@ -51,18 +51,15 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         self.manager = self.portal.wrap_async_context_manager(self)
 
     async def _create(self):
-        duration = timedelta(seconds=self.timeout)
-        selector = ",".join(("{}={}".format(label[0], label[1]) for label in self.metadata_filter.labels.items()))
-
-        logger.debug("Creating lease request for selector %s for duration %s", selector, duration)
+        logger.debug("Creating lease request for selector %s for duration %s", self.selector, self.duration)
         with translate_grpc_exceptions():
             self.name = (
                 await self.svc.CreateLease(
-                    selector=selector,
-                    duration=timedelta(seconds=self.timeout),
+                    selector=self.selector,
+                    duration=self.duration,
                 )
             ).name
-        logger.info("Created lease request for selector %s for duration %s", selector, duration)
+        logger.info("Created lease request for selector %s for duration %s", self.selector, self.duration)
 
     async def get(self):
         with translate_grpc_exceptions():
@@ -166,13 +163,20 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         async def _monitor():
             while True:
                 lease = await self.get()
+                # TODO: use effective_end_time as the authoritative source for lease end time
                 if lease.effective_begin_time:
                     end_time = lease.effective_begin_time + lease.duration
                     remain = end_time - datetime.now(tz=datetime.now().astimezone().tzinfo)
-                    if remain < threshold:
+                    if remain < timedelta(0):
+                        # lease already expired, stopping monitor
+                        logger.info("Lease {} ended at {}".format(self.name, end_time))
+                        break
+                    elif remain < threshold:
+                        # lease expiring soon, check again on expected expiration time in case it's extended
                         logger.info("Lease {} ending soon in {} at {}".format(self.name, remain, end_time))
                         await sleep(threshold.total_seconds())
                     else:
+                        # lease still active, check again in 5 seconds
                         await sleep(5)
                 else:
                     await sleep(1)

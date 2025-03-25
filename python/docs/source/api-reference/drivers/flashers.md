@@ -85,7 +85,7 @@ This doesn't work with sphinx-click, so we'll just use the raw CLI
 ```
 -->
 ```bash
-$ jmp client shell -l board ti-03
+$ jmp shell -l board=ti-03
 INFO:jumpstarter.client.lease:Created lease request for labels {'board': 'ti-03'} for 0:30:00
 jumpstarter ⚡remote ➤ j storage
 Usage: j storage [OPTIONS] COMMAND [ARGS]...

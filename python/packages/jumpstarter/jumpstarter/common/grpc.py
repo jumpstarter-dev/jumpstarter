@@ -49,7 +49,7 @@ def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) ->
         # we keep a low keepalive time to avoid idle timeouts on cloud load balancers
         ("grpc.keepalive_time_ms", 20000),
         ("grpc.keepalive_timeout_ms", 5000),
-        ("grpc.http2.max_pings_without_data", 5),
+        ("grpc.http2.max_pings_without_data", 0),
         ("grpc.keepalive_permit_without_calls", 1),
     )
     options = dict(defaults)

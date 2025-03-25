@@ -14,7 +14,7 @@ log = logging.getLogger(__file__)
 
 
 class TestResource(JumpstarterTest):
-    filter_labels = {"board": "rpi4"}
+    selector = "board=rpi4"
 
     @pytest.fixture()
     def console(self, client):
