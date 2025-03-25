@@ -62,7 +62,10 @@ jobs:
           done
 
       - name: Run pytest
-        run: make test
+        run: |
+            export UV_PYTHON=${{ matrix.python-version }}
+            make test
+
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
