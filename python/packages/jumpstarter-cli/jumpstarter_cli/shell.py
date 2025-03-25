@@ -22,7 +22,15 @@ from jumpstarter.config import ClientConfigV1Alpha1, ExporterConfigV1Alpha1
 @handle_exceptions
 def shell(config, command: tuple[str, ...], lease_name, selector, duration):
     """
-    Spawns a shell connecting to a local or remote exporter
+    Spawns a shell (or custom command) connecting to a local or remote exporter
+
+    COMMAND is the custom command to run instead of shell.
+
+    Example:
+
+    .. code-block:: bash
+
+        $ jmp shell --exporter foo -- python bar.py
     """
 
     match config:
