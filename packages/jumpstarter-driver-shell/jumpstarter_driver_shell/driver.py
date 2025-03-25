@@ -38,9 +38,11 @@ class Shell(Driver):
             if result.returncode != 0:
                 self.logger.info(f"{method} return code: {result.returncode}")
             if result.stderr != "":
-                self.logger.debug(f"{method} stderr:\n{result.stderr.rstrip('\n')}")
+                stderr = result.stderr.rstrip("\n")
+                self.logger.debug(f"{method} stderr:\n{stderr}")
             if result.stdout != "":
-                self.logger.debug(f"{method} stdout:\n{result.stdout.rstrip('\n')}")
+                stdout = result.stdout.rstrip("\n")
+                self.logger.debug(f"{method} stdout:\n{stdout}")
             return result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired as e:
             self.logger.error(f"Timeout expired while running {method}: {e}")
