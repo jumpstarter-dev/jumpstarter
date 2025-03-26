@@ -7,12 +7,13 @@ from typing import Any, Sequence, Tuple
 from urllib.parse import urlparse
 
 import grpc
+from anyio import fail_after
 from anyio.to_thread import run_sync
 
 from jumpstarter.common.exceptions import ConfigurationError, ConnectionError
 
 
-async def ssl_channel_credentials(target: str, tls_config):
+async def ssl_channel_credentials(target: str, tls_config, timeout=5):
     configure_grpc_env()
     if tls_config.insecure or os.getenv("JUMPSTARTER_GRPC_INSECURE") == "1":
         try:
@@ -22,12 +23,15 @@ async def ssl_channel_credentials(target: str, tls_config):
             raise ConfigurationError(f"Failed parsing {target}") from e
 
         try:
-            root_certificates = await run_sync(ssl.get_server_certificate, (parsed.hostname, port))
+            with fail_after(timeout):
+                root_certificates = await run_sync(ssl.get_server_certificate, (parsed.hostname, port))
             return grpc.ssl_channel_credentials(root_certificates=root_certificates.encode())
         except socket.gaierror as e:
             raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
         except ConnectionRefusedError as e:
             raise ConnectionError(f"Failed connecting to {parsed.hostname}:{port}") from e
+        except TimeoutError as e:
+            raise ConnectionError(f"Timeout connecting to {parsed.hostname}:{port}") from e
 
     elif tls_config.ca != "":
         ca_certificate = base64.b64decode(tls_config.ca)
