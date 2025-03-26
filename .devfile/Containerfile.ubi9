@@ -19,21 +19,21 @@ LABEL summary="devfile jumpstarter developer image"
 LABEL description="Devspaces image for consuming jumpstarter as a client"
 LABEL io.k8s.display-name="jumpstarter-client-developer"
 
-USER root
+#USER root
 
 # switch to python 3.12 as the default
 #RUN rm -rf /usr/bin/python && ln -s /usr/bin/python3.12 /usr/bin/python
 #RUN dnf -y install make git libusbx python3-pyusb && dnf clean all
 # make git libusbx python3-pyusb golang
 
-RUN INSTALL_PKGS="make" && \
-    yum -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
-    rpm -V $INSTALL_PKGS && \
-    # Remove redhat-logos-httpd (httpd dependency) to keep image size smaller.
-    rpm -e --nodeps redhat-logos-httpd && \
-    yum -y clean all --enablerepo='*'
+#RUN INSTALL_PKGS="make" && \
+#    yum -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
+#    rpm -V $INSTALL_PKGS && \
+#    # Remove redhat-logos-httpd (httpd dependency) to keep image size smaller.
+#    rpm -e --nodeps redhat-logos-httpd && \
+#    yum -y clean all --enablerepo='*'
 
-USER 10001
+#USER 10001
 
 RUN --mount=from=builder,source=/src/dist,target=/dist python3.12 -m pip install /dist/*.whl
 
