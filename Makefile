@@ -59,6 +59,10 @@ build:
 
 clean: clean-docs clean-venv clean-build clean-test
 
+build-c: clean
+	podman build -t rhadp-example-repos/jumpstarter -f Dockerfile.ubi9 .
+	podman build -t rhadp-example-repos/jumpstarter-dev -f .devfile/Containerfile.ubi9 .
+
 .PHONY: sync docs docs-all serve-all test test-packages build clean-test clean-docs clean-venv clean-build \
 	mypy-jumpstarter \
 	mypy-jumpstarter-cli-admin \

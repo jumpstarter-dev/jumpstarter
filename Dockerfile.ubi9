@@ -17,8 +17,6 @@ ENV JUMPSTARTER_CONFIG=/opt/app-root/src/.config/jumpstarter/clients
 RUN --mount=from=wheels,source=/src/dist,target=$HOME/dist \
     pip install $HOME/dist/*.whl
 
-RUN pip install pytest
-
 RUN mkdir -p ${JUMPSTARTER_CONFIG} && \
     chown -R 1001:0 ${JUMPSTARTER_CONFIG} && \
     fix-permissions ${JUMPSTARTER_CONFIG} -P
