@@ -14,10 +14,10 @@ jobs:
     strategy:
       matrix:
         image:
-          - jumpstarter-dev/jumpstarter Dockerfile
-          - jumpstarter-dev/jumpstarter-utils Dockerfile.utils
-          - jumpstarter-dev/jumpstarter-dev .devfile/Containerfile
-          - jumpstarter-dev/jumpstarter-devspace .devfile/Containerfile.client
+          - rhadp-example-repos/jumpstarter Dockerfile
+          - rhadp-example-repos/jumpstarter-utils Dockerfile.utils
+          - rhadp-example-repos/jumpstarter-dev .devfile/Containerfile
+          - rhadp-example-repos/jumpstarter-devspace .devfile/Containerfile.client
     runs-on: ubuntu-latest
     permissions:
       contents: read
