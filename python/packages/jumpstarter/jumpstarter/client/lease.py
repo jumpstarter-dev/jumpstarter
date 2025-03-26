@@ -163,13 +163,20 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
         async def _monitor():
             while True:
                 lease = await self.get()
+                # TODO: use effective_end_time as the authoritative source for lease end time
                 if lease.effective_begin_time:
                     end_time = lease.effective_begin_time + lease.duration
                     remain = end_time - datetime.now(tz=datetime.now().astimezone().tzinfo)
-                    if remain < threshold:
+                    if remain < timedelta(0):
+                        # lease already expired, stopping monitor
+                        logger.info("Lease {} ended at {}".format(self.name, end_time))
+                        break
+                    elif remain < threshold:
+                        # lease expiring soon, check again on expected expiration time in case it's extended
                         logger.info("Lease {} ending soon in {} at {}".format(self.name, remain, end_time))
                         await sleep(threshold.total_seconds())
                     else:
+                        # lease still active, check again in 5 seconds
                         await sleep(5)
                 else:
                     await sleep(1)
