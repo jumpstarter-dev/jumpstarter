@@ -11,18 +11,14 @@ projects:
   - name: jumpstarter
     git:
       remotes:
-        origin: https://github.com/jumpstarter-dev/jumpstarter.git
+        origin: https://github.com/rhadp-example-repos/jumpstarter.git
 components:
    - name: runtime
      container:
-       image: quay.io/jumpstarter-dev/jumpstarter-dev:latest
+       image: quay.io/rhadp-example-repos/jumpstarter-dev:latest
        mountSources: true
 
 commands:
-  - id: serve-docs
-    exec:
-      component: runtime
-      commandLine: make serve-docs DOC_LISTEN="--host 0.0.0.0"
   - id: sync
     exec:
       component: runtime

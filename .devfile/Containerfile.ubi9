@@ -23,8 +23,14 @@ USER root
 
 # switch to python 3.12 as the default
 #RUN rm -rf /usr/bin/python && ln -s /usr/bin/python3.12 /usr/bin/python
+#RUN dnf -y install make git libusbx python3-pyusb && dnf clean all
 
-RUN dnf -y install make git libusbx python3-pyusb python3.12-pip golang && dnf clean all
+RUN INSTALL_PKGS="make git libusbx python3-pyusb golang" && \
+    yum -y --setopt=tsflags=nodocs install $INSTALL_PKGS && \
+    rpm -V $INSTALL_PKGS && \
+    # Remove redhat-logos-httpd (httpd dependency) to keep image size smaller.
+    rpm -e --nodeps redhat-logos-httpd && \
+    yum -y clean all --enablerepo='*'
 
 USER 10001
 
