@@ -159,9 +159,9 @@ class ExporterConfigV1Alpha1(BaseModel):
         # dynamic import to avoid circular imports
         from jumpstarter.exporter import Exporter
 
-        def channel_factory():
+        async def channel_factory():
             credentials = grpc.composite_channel_credentials(
-                ssl_channel_credentials(self.endpoint, self.tls),
+                await ssl_channel_credentials(self.endpoint, self.tls),
                 call_credentials("Exporter", self.metadata, self.token),
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
