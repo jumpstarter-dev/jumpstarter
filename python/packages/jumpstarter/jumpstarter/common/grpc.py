@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import socket
@@ -8,7 +9,6 @@ from urllib.parse import urlparse
 
 import grpc
 from anyio import fail_after
-from anyio.to_thread import run_sync
 
 from jumpstarter.common.exceptions import ConfigurationError, ConnectionError
 
@@ -24,7 +24,13 @@ async def ssl_channel_credentials(target: str, tls_config, timeout=5):
 
         try:
             with fail_after(timeout):
-                root_certificates = await run_sync(ssl.get_server_certificate, (parsed.hostname, port))
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+                _, writer = await asyncio.open_connection(parsed.hostname, port, ssl=ssl_context)
+                root_certificates = ""
+                for cert in writer.get_extra_info("ssl_object")._sslobj.get_unverified_chain():
+                    root_certificates += cert.public_bytes()
             return grpc.ssl_channel_credentials(root_certificates=root_certificates.encode())
         except socket.gaierror as e:
             raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
