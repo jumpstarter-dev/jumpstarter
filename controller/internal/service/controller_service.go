@@ -293,6 +293,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 	})
 
 	defer func() {
+		logger.Info("Status stream terminating, marking exporter offline")
 		// Make sure defer runs under a fresh context
 		// otherwise these operations would fail if the rpc context is cancelled
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
@@ -372,17 +373,23 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 				}
 				clientName = &lease.Spec.ClientRef.Name
 			}
-			if err = stream.Send(&pb.StatusResponse{
+
+			status := pb.StatusResponse{
 				Leased:     leased,
 				LeaseName:  leaseName,
 				ClientName: clientName,
-			}); err != nil {
+			}
+			logger.Info("Sending status update to exporter", "status", fmt.Sprintf("%+v", &status))
+			if err = stream.Send(&status); err != nil {
+				logger.Error(err, "Failed to send status update to exporter")
 				return err
 			}
 		case watch.Error:
+			logger.Error(fmt.Errorf("%+v", result.Object), "Received error when watching exporter")
 			return fmt.Errorf("received error when watching exporter")
 		}
 	}
+	logger.Info("Status stream terminated normally")
 	return nil
 }
 
