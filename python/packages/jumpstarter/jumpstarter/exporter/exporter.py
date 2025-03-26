@@ -29,7 +29,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     grpc_options: dict[str, str] = field(default_factory=dict)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())
+        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
         logger.info("Unregistering exporter with controller")
         await controller.Unregister(
             jumpstarter_pb2.UnregisterRequest(
@@ -47,7 +47,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
 
     @asynccontextmanager
     async def session(self):
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())
+        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
         with Session(
             uuid=self.uuid,
             labels=self.labels,
@@ -76,7 +76,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             retries_left = retries
             while True:
                 try:
-                    controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())
+                    controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
                     async for request in controller.Listen(jumpstarter_pb2.ListenRequest(lease_name=lease_name)):
                         await listen_tx.send(request)
                 except Exception as e:
@@ -113,7 +113,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             retries_left = retries
             while True:
                 try:
-                    controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel_factory())
+                    controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
                     async for status in controller.Status(jumpstarter_pb2.StatusRequest()):
                         await status_tx.send(status)
                 except Exception as e:
