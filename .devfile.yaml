@@ -13,10 +13,14 @@ projects:
       remotes:
         origin: https://github.com/rhadp-example-repos/jumpstarter.git
 components:
-   - name: runtime
-     container:
-       image: quay.io/rhadp-example-repos/jumpstarter-dev:latest
-       mountSources: true
+  - name: runtime
+    container:
+      image: quay.io/rhadp-example-repos/jumpstarter-dev:v0.1.0
+      memoryLimit: "4Gi"
+      memoryRequest: "1Gi"
+      cpuLimit: "2"
+      cpuRequest: "1"
+      mountSources: true
 
 commands:
   - id: sync
@@ -31,4 +35,3 @@ commands:
     exec:
       component: runtime
       commandLine: make test
-
