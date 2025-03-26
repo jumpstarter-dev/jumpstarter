@@ -2,6 +2,7 @@ package oidc
 
 import (
 	"context"
+	"os"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -71,10 +72,18 @@ func newJWTAuthenticator(
 		var oidcCAContent oidc.CAContentProvider
 		if len(jwtAuthenticator.Issuer.CertificateAuthority) > 0 {
 			var oidcCAError error
-			oidcCAContent, oidcCAError = dynamiccertificates.NewStaticCAContent(
-				"oidc-authenticator",
-				[]byte(jwtAuthenticator.Issuer.CertificateAuthority),
-			)
+			if _, err := os.Stat(jwtAuthenticator.Issuer.CertificateAuthority); err == nil {
+				oidcCAContent, oidcCAError = dynamiccertificates.NewDynamicCAContentFromFile(
+					"oidc-authenticator",
+					jwtAuthenticator.Issuer.CertificateAuthority,
+				)
+				jwtAuthenticator.Issuer.CertificateAuthority = ""
+			} else {
+				oidcCAContent, oidcCAError = dynamiccertificates.NewStaticCAContent(
+					"oidc-authenticator",
+					[]byte(jwtAuthenticator.Issuer.CertificateAuthority),
+				)
+			}
 			if oidcCAError != nil {
 				return nil, oidcCAError
 			}
