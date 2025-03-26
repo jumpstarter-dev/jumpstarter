@@ -44,7 +44,10 @@ RUN python3.12 -m pip install pytest
 
 USER root
 
-RUN mkdir -p /home/user/.config/jumpstarter/clients
+RUN mkdir -p /home/user/.config/jumpstarter/clients && \
+    mkdir -p /home/user/.local && \
+    mkdir -p /home/user/.cache
+
 RUN chown 10001:0 -R /home/user/{.config,.local,.cache} && chmod g+rwx -R /home/user/{.config,.local,.cache}
 
 USER 10001
