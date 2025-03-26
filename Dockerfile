@@ -6,8 +6,9 @@ RUN dnf install -y make git && \
     rm -rf /var/cache/dnf
 COPY --from=uv /uv /uvx /bin/
 
-FROM fedora:40 AS product
-RUN dnf install -y python3 ustreamer libusb1 && \
+#FROM fedora:40 AS product
+FROM registry.access.redhat.com/ubi9/python-312:9.5 AS product
+RUN dnf install -y python3.12-pip ustreamer libusb1 && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
