@@ -1,0 +1,5 @@
+{
+    "error": "Invalid or missing authorization token",
+    "errorID": "PermissionDenied",
+    "originalError": "Invalid or missing authorization token"
+}

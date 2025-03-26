@@ -1,0 +1,14 @@
+[
+    {
+        "type": "iot",
+        "name": "rpi4b",
+        "flavor": "rpi4b",
+        "description": "Raspberry Pi 4",
+        "model": "rpi4b",
+        "peripherals": false,
+        "quotas": {
+            "cores": 4,
+            "cpus": 4
+        }
+    }
+]
