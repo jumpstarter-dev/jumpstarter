@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import socket
@@ -7,11 +8,12 @@ from typing import Any, Sequence, Tuple
 from urllib.parse import urlparse
 
 import grpc
+from anyio import fail_after
 
 from jumpstarter.common.exceptions import ConfigurationError, ConnectionError
 
 
-def ssl_channel_credentials(target: str, tls_config):
+async def ssl_channel_credentials(target: str, tls_config, timeout=5):
     configure_grpc_env()
     if tls_config.insecure or os.getenv("JUMPSTARTER_GRPC_INSECURE") == "1":
         try:
@@ -21,12 +23,21 @@ def ssl_channel_credentials(target: str, tls_config):
             raise ConfigurationError(f"Failed parsing {target}") from e
 
         try:
-            root_certificates = ssl.get_server_certificate((parsed.hostname, port))
+            with fail_after(timeout):
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+                _, writer = await asyncio.open_connection(parsed.hostname, port, ssl=ssl_context)
+                root_certificates = ""
+                for cert in writer.get_extra_info("ssl_object")._sslobj.get_unverified_chain():
+                    root_certificates += cert.public_bytes()
             return grpc.ssl_channel_credentials(root_certificates=root_certificates.encode())
         except socket.gaierror as e:
             raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
         except ConnectionRefusedError as e:
             raise ConnectionError(f"Failed connecting to {parsed.hostname}:{port}") from e
+        except TimeoutError as e:
+            raise ConnectionError(f"Timeout connecting to {parsed.hostname}:{port}") from e
 
     elif tls_config.ca != "":
         ca_certificate = base64.b64decode(tls_config.ca)
