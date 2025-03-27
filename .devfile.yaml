@@ -15,7 +15,7 @@ projects:
 components:
   - name: runtime
     container:
-      image: quay.io/rhadp-example-repos/jumpstarter-dev:v0.1.0
+      image: quay.io/rhadp-example-repos/jumpstarter-dev:0.1.1
       memoryLimit: "4Gi"
       memoryRequest: "1Gi"
       cpuLimit: "2"
