@@ -50,6 +50,10 @@ class QemuPower(PowerInterface, Driver):
 
     @export
     async def on(self) -> None:  # noqa: C901
+        if hasattr(self, "_process"):
+            self.logger.warning("already powered on, ignoring request")
+            return
+
         root = self.parent.validate_partition("root")
         bios = self.parent.validate_partition("bios")
         ovmf_code = self.parent.validate_partition("OVMF_CODE.fd")
@@ -188,6 +192,8 @@ class QemuPower(PowerInterface, Driver):
             except TimeoutExpired:
                 self._process.kill()
             del self._process
+        else:
+            self.logger.warning("already powered off, ignoring request")
 
         if hasattr(self, "_cidata"):
             del self._cidata
