@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 from collections.abc import AsyncGenerator
@@ -23,6 +24,11 @@ from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
 from jumpstarter.driver import Driver, export
+
+
+class QmpLogFilter(logging.Filter):
+    def filter(self, record):
+        return False
 
 
 @dataclass(kw_only=True)
@@ -168,6 +174,10 @@ class QemuPower(PowerInterface, Driver):
         self._process = Popen(cmdline, stdin=PIPE)
 
         qmp = QMPClient(self.parent.hostname)
+
+        logging.getLogger(
+            "qemu.qmp.protocol.{}".format(self.parent.hostname),
+        ).addFilter(QmpLogFilter())
 
         with fail_after(10):
             while qmp.runstate != Runstate.RUNNING:
