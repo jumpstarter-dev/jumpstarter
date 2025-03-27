@@ -12,9 +12,6 @@ projects:
     git:
       remotes:
         origin: https://github.com/rhadp-example-repos/jumpstarter.git
-      checkoutFrom:
-        remote: origin
-        revision: develop
 components:
   - name: runtime
     container:

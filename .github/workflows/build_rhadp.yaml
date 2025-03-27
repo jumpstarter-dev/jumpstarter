@@ -2,7 +2,7 @@ name: Build and push container image
 on:
   workflow_dispatch:
   push:
-    branches: develop
+    branches: release
   merge_group:
 
 env:
