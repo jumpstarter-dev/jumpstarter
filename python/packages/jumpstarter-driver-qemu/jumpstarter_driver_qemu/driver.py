@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 from collections.abc import AsyncGenerator
@@ -23,6 +24,11 @@ from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
 from jumpstarter.driver import Driver, export
+
+
+class QmpLogFilter(logging.Filter):
+    def filter(self, record):
+        return False
 
 
 @dataclass(kw_only=True)
@@ -50,6 +56,10 @@ class QemuPower(PowerInterface, Driver):
 
     @export
     async def on(self) -> None:  # noqa: C901
+        if hasattr(self, "_process"):
+            self.logger.warning("already powered on, ignoring request")
+            return
+
         root = self.parent.validate_partition("root")
         bios = self.parent.validate_partition("bios")
         ovmf_code = self.parent.validate_partition("OVMF_CODE.fd")
@@ -165,6 +175,10 @@ class QemuPower(PowerInterface, Driver):
 
         qmp = QMPClient(self.parent.hostname)
 
+        logging.getLogger(
+            "qemu.qmp.protocol.{}".format(self.parent.hostname),
+        ).addFilter(QmpLogFilter())
+
         with fail_after(10):
             while qmp.runstate != Runstate.RUNNING:
                 try:
@@ -174,6 +188,7 @@ class QemuPower(PowerInterface, Driver):
 
         chardevs = await qmp.execute("query-chardev")
         pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
+        Path(self.parent._pty).unlink(missing_ok=True)
         Path(self.parent._pty).symlink_to(pty)
 
         await qmp.execute("system_reset")
@@ -188,6 +203,8 @@ class QemuPower(PowerInterface, Driver):
             except TimeoutExpired:
                 self._process.kill()
             del self._process
+        else:
+            self.logger.warning("already powered off, ignoring request")
 
         if hasattr(self, "_cidata"):
             del self._cidata
