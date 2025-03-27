@@ -178,6 +178,7 @@ class QemuPower(PowerInterface, Driver):
 
         chardevs = await qmp.execute("query-chardev")
         pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
+        Path(self.parent._pty).unlink(missing_ok=True)
         Path(self.parent._pty).symlink_to(pty)
 
         await qmp.execute("system_reset")
