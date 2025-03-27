@@ -81,30 +81,23 @@ jumpstarter-controller:
       authentication:
         internal:
           prefix: "internal:"
+        # To trust service account tokens, first execute:
+        #   kubectl create clusterrolebinding oidc-reviewer \
+        #     --clusterrole=system:service-account-issuer-discovery \
+        #     --group=system:unauthenticated
+        # Then uncomment:
+        #
         # jwt:
         # - issuer:
-        #     url: https://10.239.206.8:5556/dex
+        #     url: https://kubernetes.default.svc.cluster.local
         #     audiences:
-        #     - jumpstarter
+        #       - https://kubernetes.default.svc.cluster.local
         #     audienceMatchPolicy: MatchAny
-        #     certificateAuthority: |
-        #       -----BEGIN CERTIFICATE-----
-        #       MIIB/DCCAYKgAwIBAgIIcpC2uS+SjEIwCgYIKoZIzj0EAwMwIDEeMBwGA1UEAxMV
-        #       bWluaWNhIHJvb3QgY2EgNzI5MGI2MCAXDTI1MDIwMzE5MzMyNVoYDzIxMjUwMjAz
-        #       MTkzMzI1WjAgMR4wHAYDVQQDExVtaW5pY2Egcm9vdCBjYSA3MjkwYjYwdjAQBgcq
-        #       hkjOPQIBBgUrgQQAIgNiAAQzezKJ4My35HPeoJvvzTjhS2uJMBYrYfrs5csxZjiy
-        #       q8ORrHM539XhWlA6sVZODhzcF2KL4mC9xKz/yIrsws+LKsIWNHGGmIPEKFYnHBGw
-        #       VBGeARvhpzZP/9frJXAN/8ejgYYwgYMwDgYDVR0PAQH/BAQDAgKEMB0GA1UdJQQW
-        #       MBQGCCsGAQUFBwMBBggrBgEFBQcDAjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1Ud
-        #       DgQWBBSZRBCUuP3ta2xsfjnWIjvgvz4fojAfBgNVHSMEGDAWgBSZRBCUuP3ta2xs
-        #       fjnWIjvgvz4fojAKBggqhkjOPQQDAwNoADBlAjADql5Ks5wh181iUa1ZBnx4XOVe
-        #       l0l7I+mwlwJSPmkZHxruWZTx7gQU4tfDCr+UuzUCMQC2aDXRb17cphipK4gzbExv
-        #       EDLExjhHAqMPrKDmT0jHIi7Bbos38/1tyZ/IoKjLnv0=
-        #       -----END CERTIFICATE-----
+        #     certificateAuthority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
         #   claimMappings:
         #     username:
         #       claim: "sub"
-        #       prefix: ""
+        #       prefix: "kubernetes:"
 
     grpc:
       hostname: ""
