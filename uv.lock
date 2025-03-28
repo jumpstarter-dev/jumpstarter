@@ -9,7 +9,7 @@ members = [
     "jumpstarter-cli",
     "jumpstarter-cli-admin",
     "jumpstarter-cli-common",
-    "jumpstarter-cli-driver",
+    "jumpstarter-cli-pkg",
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-dutlink",
@@ -1019,7 +1019,8 @@ name = "jumpstarter-cli"
 source = { editable = "packages/jumpstarter-cli" }
 dependencies = [
     { name = "jumpstarter-cli-admin" },
-    { name = "jumpstarter-cli-driver" },
+    { name = "jumpstarter-cli-common" },
+    { name = "jumpstarter-cli-pkg" },
 ]
 
 [package.dev-dependencies]
@@ -1033,7 +1034,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter-cli-admin", editable = "packages/jumpstarter-cli-admin" },
-    { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
+    { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
+    { name = "jumpstarter-cli-pkg", editable = "packages/jumpstarter-cli-pkg" },
 ]
 
 [package.metadata.requires-dev]
@@ -1115,10 +1117,9 @@ dev = [
 ]
 
 [[package]]
-name = "jumpstarter-cli-driver"
-source = { editable = "packages/jumpstarter-cli-driver" }
+name = "jumpstarter-cli-pkg"
+source = { editable = "packages/jumpstarter-cli-pkg" }
 dependencies = [
-    { name = "asyncclick" },
     { name = "jumpstarter-cli-common" },
 ]
 
@@ -1131,10 +1132,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "asyncclick", specifier = ">=8.1.7.2" },
-    { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
-]
+requires-dist = [{ name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" }]
 
 [package.metadata.requires-dev]
 dev = [

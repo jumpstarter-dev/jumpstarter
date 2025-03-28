@@ -12,7 +12,7 @@ async def test_cli():
         "config",
         "create",
         "delete",
-        "driver",
+        "pkg",
         "get",
         "login",
         "run",

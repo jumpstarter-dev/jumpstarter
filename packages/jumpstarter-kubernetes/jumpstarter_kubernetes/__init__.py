@@ -15,7 +15,6 @@ from .leases import (
     V1Alpha1LeaseSpec,
     V1Alpha1LeaseStatus,
 )
-from .list import V1Alpha1List
 
 __all__ = [
     "ClientsV1Alpha1Api",
@@ -33,7 +32,6 @@ __all__ = [
     "V1Alpha1LeaseList",
     "V1Alpha1LeaseSelector",
     "V1Alpha1LeaseSpec",
-    "V1Alpha1List",
     "get_ip_address",
     "helm_installed",
     "install_helm_chart",

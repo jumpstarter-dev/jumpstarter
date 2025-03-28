@@ -3,31 +3,25 @@ name = "jumpstarter-driver-shell"
 dynamic = ["version", "urls"]
 description = "Jumpstarter shell driver, for running controlled shell commands on the exporter."
 readme = "README.md"
-authors = [
-    { name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }
-]
+authors = [{ name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }]
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-dependencies = [
-    "anyio>=4.6.2.post1",
-    "jumpstarter",
-]
+dependencies = ["anyio>=4.6.2.post1", "jumpstarter"]
 
-[project.entry-points."jumpstarter.drivers"]
-Shell = "jumpstarter_driver_shell.driver:Shell"
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_shell"]
 
-
 [dependency-groups]
-dev = [
-    "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
+[project.entry-points."jumpstarter.drivers"]
+Shell = "jumpstarter_driver_shell.driver:Shell"
+
+[project.entry-points."jumpstarter.clients"]
+ShellClient = "jumpstarter_driver_shell.client:ShellClient"
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
@@ -35,7 +29,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
