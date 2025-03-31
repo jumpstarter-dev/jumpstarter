@@ -19,11 +19,15 @@ class SerializableBaseModel(BaseModel):
                 return self.dump_json()
             case OutputMode.YAML:
                 return self.dump_yaml()
-            case _:
+            case OutputMode.NAME:
+                return self.dump_name()
+            case OutputMode.PATH:
+                return self.dump_path()
+            case None | _:
                 raise NotImplementedError("unimplemented output mode: {}".format(mode))
 
-    def dump_json(self):
+    def dump_json(self) -> str:
         return self.model_dump_json(indent=4, by_alias=True) + "\n"
 
-    def dump_yaml(self):
+    def dump_yaml(self) -> str:
         return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
