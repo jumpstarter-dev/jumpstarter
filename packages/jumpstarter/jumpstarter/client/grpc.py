@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-import yaml
 from google.protobuf import duration_pb2, field_mask_pb2, json_format
 from grpc.aio import Channel
 from jumpstarter_protocol import client_pb2, client_pb2_grpc, kubernetes_pb2
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import ConfigDict, Field, field_serializer
 
 from jumpstarter.common.grpc import translate_grpc_exceptions
+from jumpstarter.common.pydantic import SerializableBaseModel
 
 
 def parse_identifier(identifier: str, kind: str) -> (str, str):
@@ -35,7 +35,7 @@ def parse_lease_identifier(identifier: str) -> (str, str):
     return parse_identifier(identifier, "leases")
 
 
-class Exporter(BaseModel):
+class Exporter(SerializableBaseModel):
     namespace: str
     name: str
     labels: dict[str, str]
@@ -46,7 +46,7 @@ class Exporter(BaseModel):
         return cls(namespace=namespace, name=name, labels=data.labels)
 
 
-class Lease(BaseModel):
+class Lease(SerializableBaseModel):
     namespace: str
     name: str
     selector: str
@@ -92,14 +92,8 @@ class Lease(BaseModel):
             conditions=data.conditions,
         )
 
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
 
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
-
-
-class ExporterList(BaseModel):
+class ExporterList(SerializableBaseModel):
     exporters: list[Exporter]
     next_page_token: str | None = Field(exclude=True)
 
@@ -110,14 +104,8 @@ class ExporterList(BaseModel):
             next_page_token=data.next_page_token,
         )
 
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
 
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
-
-
-class LeaseList(BaseModel):
+class LeaseList(SerializableBaseModel):
     leases: list[Lease]
     next_page_token: str | None = Field(exclude=True)
 
@@ -127,12 +115,6 @@ class LeaseList(BaseModel):
             leases=list(map(Lease.from_protobuf, data.leases)),
             next_page_token=data.next_page_token,
         )
-
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
-
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
 
 
 @dataclass(kw_only=True, slots=True)

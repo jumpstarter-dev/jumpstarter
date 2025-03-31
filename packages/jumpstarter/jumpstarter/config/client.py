@@ -16,6 +16,7 @@ from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
+from jumpstarter.common.pydantic import SerializableBaseModel
 
 
 def _allow_from_env():
@@ -274,16 +275,10 @@ class ClientConfigV1Alpha1(BaseModel):
         return path
 
 
-class ClientConfigListV1Alpha1(BaseModel):
+class ClientConfigListV1Alpha1(SerializableBaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     current_config: Optional[str] = Field(alias="currentConfig")
     items: list[ClientConfigV1Alpha1]
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
-
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
-
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
