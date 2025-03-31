@@ -7,7 +7,7 @@ os.environ["TQDM_DISABLE"] = "1"
 
 try:
     from jumpstarter.common.utils import serve
-    from jumpstarter.config import ClientConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance, UserConfigV1Alpha1
+    from jumpstarter.config import ExporterConfigV1Alpha1DriverInstance
     from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 except ImportError:
     # some packages in the workspace does not depend on jumpstarter
@@ -26,6 +26,5 @@ else:
 
     @pytest.fixture(autouse=True)
     def tmp_config_path(tmp_path, monkeypatch):
-        monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", tmp_path / "config.yaml")
-        monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", tmp_path / "clients")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "client-config"))
         monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path / "exporters")

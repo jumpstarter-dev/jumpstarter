@@ -16,7 +16,8 @@ dependencies = [
     "anyio>=4.4.0,!=4.6.2",
     "aiohttp>=3.10.5",
     "tqdm>=4.66.5",
-    "pydantic>=2.8.2"
+    "pydantic>=2.8.2",
+    "xdg-base-dirs>=6.0.2",
 ]
 
 [dependency-groups]
