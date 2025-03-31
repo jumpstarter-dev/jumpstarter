@@ -38,12 +38,11 @@ def create(log_level: Optional[str]):
 
 
 def print_created_client(client: V1Alpha1Client, output: OutputType):
-    if output == OutputMode.JSON:
-        click.echo(client.dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(client.dump_yaml())
-    elif output == OutputMode.NAME:
-        click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
+    match output:
+        case OutputMode.JSON | OutputMode.YAML:
+            click.echo(client.dump(output))
+        case OutputMode.NAME:
+            click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
 
 
 @create.command("client")
@@ -127,12 +126,11 @@ async def create_client(
 
 
 def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
-    if output == OutputMode.JSON:
-        click.echo(exporter.dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(exporter.dump_yaml())
-    elif output == OutputMode.NAME:
-        click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
+    match output:
+        case OutputMode.JSON | OutputMode.YAML:
+            click.echo(exporter.dump(output))
+        case OutputMode.NAME:
+            click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
 
 
 @create.command("exporter")
