@@ -5,11 +5,10 @@ from typing import Literal
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
 
-from .json import JsonBaseModel
-from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 from jumpstarter.config import ExporterConfigV1Alpha1, ObjectMeta
+from jumpstarter.models import JsonBaseModel, ListBaseModel
 
 CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10
@@ -57,7 +56,7 @@ class V1Alpha1Exporter(JsonBaseModel):
         )
 
 
-class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
+class V1Alpha1ExporterList(ListBaseModel[V1Alpha1Exporter]):
     kind: Literal["ExporterList"] = Field(default="ExporterList")
 
     @staticmethod
@@ -68,7 +67,7 @@ class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
 class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
     """Interact with the exporters custom resource API"""
 
-    async def list_exporters(self) -> V1Alpha1List[V1Alpha1Exporter]:
+    async def list_exporters(self) -> V1Alpha1ExporterList:
         """List the exporter objects in the cluster"""
         res = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="exporters", version="v1alpha1"

@@ -25,6 +25,7 @@ class OutputMode(str):
     YAML = "yaml"
     NAME = "name"
     PATH = "path"
+    WIDE = "wide"
 
 
 OutputType = Optional[OutputMode]
@@ -32,7 +33,7 @@ OutputType = Optional[OutputMode]
 opt_output_all = click.option(
     "-o",
     "--output",
-    type=click.Choice([OutputMode.JSON, OutputMode.YAML, OutputMode.NAME]),
+    type=click.Choice([OutputMode.JSON, OutputMode.YAML, OutputMode.NAME, OutputMode.WIDE]),
     default=None,
     help='Output mode. Use "-o name" for shorter output (resource/name).',
 )

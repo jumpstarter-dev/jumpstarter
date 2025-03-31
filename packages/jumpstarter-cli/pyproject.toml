@@ -12,7 +12,8 @@ license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
   "jumpstarter-cli-admin",
-  "jumpstarter-cli-driver",
+  "jumpstarter-cli-common",
+  "jumpstarter-cli-pkg",
 ]
 
 [dependency-groups]

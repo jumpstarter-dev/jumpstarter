@@ -10,16 +10,16 @@ authors = [
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
-dependencies = [
-    "jumpstarter",
-    "pillow>=10.4.0",
-]
+dependencies = ["jumpstarter", "pillow>=10.4.0"]
 
 [dependency-groups]
-dev = [
-    "pytest>=8.3.2",
-    "pytest-cov>=5.0.0",
-]
+dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0"]
+
+[project.entry-points."jumpstarter.drivers"]
+UStreamer = "jumpstarter_driver_ustreamer.driver:UStreamer"
+
+[project.entry-points."jumpstarter.clients"]
+UStreamerClient = "jumpstarter_driver_ustreamer.client:UStreamerClient"
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
@@ -27,7 +27,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

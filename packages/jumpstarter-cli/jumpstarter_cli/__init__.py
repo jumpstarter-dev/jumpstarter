@@ -3,7 +3,7 @@ import logging
 import asyncclick as click
 from jumpstarter_cli_admin import admin
 from jumpstarter_cli_common import AliasedGroup, opt_log_level, version
-from jumpstarter_cli_driver import driver
+from jumpstarter_cli_pkg import pkg
 
 from .config import config
 from .create import create
@@ -35,8 +35,8 @@ jmp.add_command(shell)
 jmp.add_command(run)
 jmp.add_command(login)
 jmp.add_command(config)
+jmp.add_command(pkg)
 
-jmp.add_command(driver)
 jmp.add_command(admin)
 jmp.add_command(version)
 

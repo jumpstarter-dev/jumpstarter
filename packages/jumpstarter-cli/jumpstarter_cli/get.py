@@ -8,7 +8,7 @@ from .common import opt_selector
 @click.group()
 def get():
     """
-    Display one or many resources
+    Display one or many resources.
     """
 
 

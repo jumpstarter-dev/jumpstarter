@@ -21,9 +21,15 @@ dependencies = [
     "jumpstarter-driver-uboot",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+BaseFlasher = "jumpstarter_driver_flashers.driver:BaseFlasher"
+
+[project.entry-points."jumpstarter.clients"]
+BaseFlasherClient = "jumpstarter_driver_flashers.client:BaseFlasherClient"
+
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
@@ -44,7 +50,4 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = [
-    "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
