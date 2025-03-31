@@ -29,7 +29,7 @@ def print_client(client: V1Alpha1Client, output: OutputType):
         case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             echo(client.dump(output))
         case _:
-            echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
+            click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
 
 
 def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output: OutputType):
@@ -39,7 +39,7 @@ def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output:
         case _:
             if len(clients.items) == 0:
                 raise click.ClickException(f'No resources found in "{namespace}" namespace')
-            echo(make_table(CLIENT_COLUMNS, list(map(make_client_row, clients.items))))
+            click.echo(make_table(CLIENT_COLUMNS, list(map(make_client_row, clients.items))))
 
 
 EXPORTER_COLUMNS = ["NAME", "ENDPOINT", "DEVICES", "AGE"]
@@ -85,9 +85,9 @@ def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: OutputType
         case _:
             if devices:
                 # Print the devices for the exporter
-                echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
+                click.echo(make_table(DEVICE_COLUMNS, get_device_rows([exporter])))
             else:
-                echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
+                click.echo(make_table(EXPORTER_COLUMNS, [make_exporter_row(exporter)]))
 
 
 def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, devices: bool, output: OutputType):
@@ -98,9 +98,9 @@ def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, d
             if len(exporters.items) == 0:
                 raise click.ClickException(f'No resources found in "{namespace}" namespace')
             if devices:
-                echo(make_table(DEVICE_COLUMNS, get_device_rows(exporters.items)))
+                click.echo(make_table(DEVICE_COLUMNS, get_device_rows(exporters.items)))
             else:
-                echo(make_table(EXPORTER_COLUMNS, list(map(make_exporter_row, exporters.items))))
+                click.echo(make_table(EXPORTER_COLUMNS, list(map(make_exporter_row, exporters.items))))
 
 
 LEASE_COLUMNS = ["NAME", "CLIENT", "SELECTOR", "EXPORTER", "STATUS", "REASON", "BEGIN", "END", "DURATION", "AGE"]
@@ -147,7 +147,7 @@ def print_lease(lease: V1Alpha1Lease, output: OutputType):
         case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             echo(lease.dump(output))
         case _:
-            echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
+            click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
 
 
 def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: OutputType):
@@ -157,4 +157,4 @@ def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: Ou
         case _:
             if len(leases.items) == 0:
                 raise click.ClickException(f'No resources found in "{namespace}" namespace')
-            echo(make_table(LEASE_COLUMNS, list(map(make_lease_row, leases.items))))
+            click.echo(make_table(LEASE_COLUMNS, list(map(make_lease_row, leases.items))))
