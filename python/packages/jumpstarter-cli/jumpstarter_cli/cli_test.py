@@ -1,7 +1,7 @@
 import pytest
 from asyncclick.testing import CliRunner
 
-from . import jmp
+from .jmp import jmp
 
 
 @pytest.mark.anyio

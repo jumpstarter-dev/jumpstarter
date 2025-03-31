@@ -24,8 +24,8 @@ dev = [
 ]
 
 [project.scripts]
-jmp = "jumpstarter_cli:jmp"
-j = "jumpstarter_cli:j"
+jmp = "jumpstarter_cli.jmp:jmp"
+j = "jumpstarter_cli.j:j"
 
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_cli"]
