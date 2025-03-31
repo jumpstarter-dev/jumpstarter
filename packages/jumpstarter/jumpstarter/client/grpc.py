@@ -35,9 +35,15 @@ def parse_lease_identifier(identifier: str) -> (str, str):
     return parse_identifier(identifier, "leases")
 
 
-class Exporter(SerializableBaseModel):
+class GrpcObject(SerializableBaseModel):
     namespace: str
     name: str
+
+    def dump_name(self) -> str:
+        return self.name + "\n"
+
+
+class Exporter(GrpcObject):
     labels: dict[str, str]
 
     @classmethod
@@ -46,9 +52,7 @@ class Exporter(SerializableBaseModel):
         return cls(namespace=namespace, name=name, labels=data.labels)
 
 
-class Lease(SerializableBaseModel):
-    namespace: str
-    name: str
+class Lease(GrpcObject):
     selector: str
     duration: timedelta
     client: str
@@ -97,6 +101,9 @@ class ExporterList(SerializableBaseModel):
     exporters: list[Exporter]
     next_page_token: str | None = Field(exclude=True)
 
+    def dump_name(self) -> str:
+        return "".join(exporter.dump_name() for exporter in self.exporters)
+
     @classmethod
     def from_protobuf(cls, data: client_pb2.ListExportersResponse) -> ExporterList:
         return cls(
@@ -108,6 +115,9 @@ class ExporterList(SerializableBaseModel):
 class LeaseList(SerializableBaseModel):
     leases: list[Lease]
     next_page_token: str | None = Field(exclude=True)
+
+    def dump_name(self) -> str:
+        return "".join(lease.dump_name() for lease in self.leases)
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.ListLeasesResponse) -> LeaseList:

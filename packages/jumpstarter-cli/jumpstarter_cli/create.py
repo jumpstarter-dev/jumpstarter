@@ -2,15 +2,16 @@ from datetime import timedelta
 
 import asyncclick as click
 from jumpstarter_cli_common import (
-    OutputMode,
     OutputType,
+    echo,
     make_table,
     opt_config,
-    opt_output_all,
+    opt_output_auto,
 )
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 from .common import opt_duration_partial, opt_selector
+from jumpstarter.client.grpc import Lease
 
 
 @click.group()
@@ -24,7 +25,7 @@ def create():
 @opt_config(exporter=False)
 @opt_selector
 @opt_duration_partial(required=True)
-@opt_output_all
+@opt_output_auto(Lease)
 @handle_exceptions
 async def create_lease(config, selector: str, duration: timedelta, output: OutputType):
     """
@@ -54,20 +55,17 @@ async def create_lease(config, selector: str, duration: timedelta, output: Outpu
 
     lease = config.create_lease(selector=selector, duration=duration)
 
-    match output:
-        case OutputMode.JSON | OutputMode.YAML:
-            click.echo(lease.dump(output))
-        case OutputMode.NAME:
-            click.echo(lease.name)
-        case _:
-            columns = ["NAME", "SELECTOR", "DURATION", "CLIENT", "EXPORTER"]
-            rows = [
-                {
-                    "NAME": lease.name,
-                    "SELECTOR": lease.selector,
-                    "DURATION": str(lease.duration.total_seconds()),
-                    "CLIENT": lease.client,
-                    "EXPORTER": lease.exporter,
-                }
-            ]
-            click.echo(make_table(columns, rows))
+    if output:
+        echo(lease.dump(output))
+    else:
+        columns = ["NAME", "SELECTOR", "DURATION", "CLIENT", "EXPORTER"]
+        rows = [
+            {
+                "NAME": lease.name,
+                "SELECTOR": lease.selector,
+                "DURATION": str(lease.duration.total_seconds()),
+                "CLIENT": lease.client,
+                "EXPORTER": lease.exporter,
+            }
+        ]
+        click.echo(make_table(columns, rows))
