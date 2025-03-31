@@ -33,11 +33,8 @@ def print_client(client: V1Alpha1Client, output: OutputType):
 
 def print_clients(clients: V1Alpha1List[V1Alpha1Client], namespace: str, output: OutputType):
     match output:
-        case OutputMode.JSON | OutputMode.YAML:
+        case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             click.echo(clients.dump(output))
-        case OutputMode.NAME:
-            for item in clients.items:
-                click.echo(f"client.jumpstarter.dev/{item.metadata.name}")
         case _:
             if len(clients.items) == 0:
                 raise click.ClickException(f'No resources found in "{namespace}" namespace')
@@ -94,11 +91,8 @@ def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: OutputType
 
 def print_exporters(exporters: V1Alpha1List[V1Alpha1Exporter], namespace: str, devices: bool, output: OutputType):
     match output:
-        case OutputMode.JSON | OutputMode.YAML:
+        case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             click.echo(exporters.dump(output))
-        case OutputMode.NAME:
-            for item in exporters.items:
-                click.echo(f"exporter.jumpstarter.dev/{item.metadata.name}")
         case _:
             if len(exporters.items) == 0:
                 raise click.ClickException(f'No resources found in "{namespace}" namespace')
@@ -149,21 +143,16 @@ def make_lease_row(lease: V1Alpha1Lease):
 
 def print_lease(lease: V1Alpha1Lease, output: OutputType):
     match output:
-        case OutputMode.JSON | OutputMode.YAML:
+        case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             click.echo(lease.dump(output))
-        case OutputMode.NAME:
-            click.echo(f"lease.jumpstarter.dev/{lease.metadata.name}")
         case _:
             click.echo(make_table(LEASE_COLUMNS, [make_lease_row(lease)]))
 
 
 def print_leases(leases: V1Alpha1List[V1Alpha1Lease], namespace: str, output: OutputType):
     match output:
-        case OutputMode.JSON | OutputMode.YAML:
+        case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             click.echo(leases.dump(output))
-        case OutputMode.NAME:
-            for item in leases.items:
-                click.echo(f"lease.jumpstarter.dev/{item.metadata.name}")
         case _:
             if len(leases.items) == 0:
                 raise click.ClickException(f'No resources found in "{namespace}" namespace')
