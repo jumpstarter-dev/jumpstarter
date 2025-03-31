@@ -5,7 +5,8 @@ import sys
 import asyncclick as click
 from pydantic import ConfigDict, Field
 
-from .opt import OutputMode, OutputType, opt_output_all
+from .echo import echo
+from .opt import OutputType, opt_output_auto
 from jumpstarter.common.pydantic import SerializableBaseModel
 
 
@@ -39,12 +40,10 @@ def version_obj():
 
 
 @click.command()
-@opt_output_all
+@opt_output_auto(JumpstarterVersion)
 def version(output: OutputType):
     """Get the current Jumpstarter version"""
-    if output == OutputMode.JSON:
-        click.echo(version_obj().dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(version_obj().dump_yaml())
+    if output:
+        echo(version_obj().dump(output))
     else:
         click.echo(version_msg())
