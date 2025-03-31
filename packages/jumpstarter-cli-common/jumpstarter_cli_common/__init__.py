@@ -1,5 +1,6 @@
 from .alias import AliasedGroup
 from .config import opt_config
+from .echo import echo
 from .opt import (
     NameOutputType,
     OutputMode,
@@ -21,6 +22,7 @@ from .version import get_client_version, version
 
 __all__ = [
     "AliasedGroup",
+    "echo",
     "make_table",
     "opt_config",
     "opt_context",

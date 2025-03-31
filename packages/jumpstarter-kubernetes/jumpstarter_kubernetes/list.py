@@ -15,4 +15,4 @@ class V1Alpha1List(JsonBaseModel, Generic[T]):
     kind: Literal["List"] = Field(default="List")
 
     def dump_name(self):
-        return "\n".join(item.dump_name() for item in self.items)
+        return "".join(item.dump_name() for item in self.items)

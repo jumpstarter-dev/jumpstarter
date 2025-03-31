@@ -5,6 +5,7 @@ import asyncclick as click
 from jumpstarter_cli_common import (
     AliasedGroup,
     OutputType,
+    echo,
     opt_context,
     opt_kubeconfig,
     opt_labels,
@@ -38,7 +39,7 @@ def create(log_level: Optional[str]):
 
 def print_created_client(client: V1Alpha1Client, output: OutputType):
     if output is not None:
-        click.echo(client.dump(output))
+        echo(client.dump(output))
 
 
 @create.command("client")
@@ -123,7 +124,7 @@ async def create_client(
 
 def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
     if output is not None:
-        click.echo(exporter.dump(output))
+        echo(exporter.dump(output))
 
 
 @create.command("exporter")

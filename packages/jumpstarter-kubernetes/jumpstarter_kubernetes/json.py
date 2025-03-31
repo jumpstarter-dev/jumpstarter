@@ -14,6 +14,6 @@ class JsonBaseModel(SerializableBaseModel):
                 return super().dump(mode)
 
     def dump_name(self):
-        return "{}.jumpstarter.dev/{}".format(self.kind.lower(), self.metadata.name)
+        return "{}.jumpstarter.dev/{}\n".format(self.kind.lower(), self.metadata.name)
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
