@@ -25,10 +25,8 @@ def make_client_row(client: V1Alpha1Client):
 
 def print_client(client: V1Alpha1Client, output: OutputType):
     match output:
-        case OutputMode.JSON | OutputMode.YAML:
+        case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             click.echo(client.dump(output))
-        case OutputMode.NAME:
-            click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
         case _:
             click.echo(make_table(CLIENT_COLUMNS, [make_client_row(client)]))
 
@@ -84,10 +82,8 @@ def get_device_rows(exporters: list[V1Alpha1Exporter]):
 
 def print_exporter(exporter: V1Alpha1Exporter, devices: bool, output: OutputType):
     match output:
-        case OutputMode.JSON | OutputMode.YAML:
+        case OutputMode.JSON | OutputMode.YAML | OutputMode.NAME:
             click.echo(exporter.dump(output))
-        case OutputMode.NAME:
-            click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
         case _:
             if devices:
                 # Print the devices for the exporter

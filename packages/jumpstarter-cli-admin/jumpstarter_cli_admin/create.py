@@ -4,7 +4,6 @@ from typing import Optional
 import asyncclick as click
 from jumpstarter_cli_common import (
     AliasedGroup,
-    OutputMode,
     OutputType,
     opt_context,
     opt_kubeconfig,
@@ -38,11 +37,8 @@ def create(log_level: Optional[str]):
 
 
 def print_created_client(client: V1Alpha1Client, output: OutputType):
-    match output:
-        case OutputMode.JSON | OutputMode.YAML:
-            click.echo(client.dump(output))
-        case OutputMode.NAME:
-            click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
+    if output is not None:
+        click.echo(client.dump(output))
 
 
 @create.command("client")
@@ -126,11 +122,8 @@ async def create_client(
 
 
 def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
-    match output:
-        case OutputMode.JSON | OutputMode.YAML:
-            click.echo(exporter.dump(output))
-        case OutputMode.NAME:
-            click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
+    if output is not None:
+        click.echo(exporter.dump(output))
 
 
 @create.command("exporter")
