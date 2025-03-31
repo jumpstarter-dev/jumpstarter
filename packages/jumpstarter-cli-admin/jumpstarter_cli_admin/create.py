@@ -12,7 +12,7 @@ from jumpstarter_cli_common import (
     opt_log_level,
     opt_namespace,
     opt_nointeractive,
-    opt_output_all,
+    opt_output_auto,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, V1Alpha1Client, V1Alpha1Exporter
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -71,7 +71,7 @@ def print_created_client(client: V1Alpha1Client, output: OutputType):
 @opt_context
 @opt_oidc_username
 @opt_nointeractive
-@opt_output_all
+@opt_output_auto(V1Alpha1Client)
 async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -148,7 +148,7 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
 @opt_context
 @opt_oidc_username
 @opt_nointeractive
-@opt_output_all
+@opt_output_auto(V1Alpha1Exporter)
 async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],

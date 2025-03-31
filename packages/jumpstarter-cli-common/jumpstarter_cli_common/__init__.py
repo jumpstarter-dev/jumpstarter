@@ -13,6 +13,7 @@ from .opt import (
     opt_namespace,
     opt_nointeractive,
     opt_output_all,
+    opt_output_auto,
     opt_output_name_only,
     opt_output_path_only,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "opt_output_all",
     "opt_output_name_only",
     "opt_output_path_only",
+    "opt_output_auto",
     "OutputMode",
     "OutputType",
     "NameOutputType",

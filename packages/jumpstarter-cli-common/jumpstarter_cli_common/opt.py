@@ -55,3 +55,30 @@ opt_output_path_only = click.option(
 opt_nointeractive = click.option(
     "--nointeractive", is_flag=True, default=False, help="Disable interactive prompts (for use in scripts)."
 )
+
+
+def opt_output_auto(cls):
+    choices = []
+    if hasattr(cls, "dump_json"):
+        choices.append(OutputMode.JSON)
+    if hasattr(cls, "dump_yaml"):
+        choices.append(OutputMode.YAML)
+    if hasattr(cls, "dump_name"):
+        choices.append(OutputMode.NAME)
+    if hasattr(cls, "dump_path"):
+        choices.append(OutputMode.PATH)
+
+    if OutputMode.PATH in choices:
+        help = 'Output mode. Use "-o path" for shorter output (file/path).'
+    elif OutputMode.NAME in choices:
+        help = 'Output mode. Use "-o name" for shorter output (resource/name).'
+    else:
+        help = "Output mode."
+
+    return click.option(
+        "-o",
+        "--output",
+        type=click.Choice(choices),
+        default=None,
+        help=help,
+    )
