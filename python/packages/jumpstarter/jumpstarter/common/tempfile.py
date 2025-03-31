@@ -5,11 +5,12 @@ from tempfile import TemporaryDirectory
 
 from anyio import create_task_group, create_tcp_listener, create_unix_listener
 from anyio.abc import SocketAttribute
+from xdg_base_dirs import xdg_runtime_dir
 
 
 @contextmanager
 def TemporarySocket():
-    with TemporaryDirectory(prefix="jumpstarter-") as tempdir:
+    with TemporaryDirectory(dir=xdg_runtime_dir(), prefix="jumpstarter-") as tempdir:
         yield Path(tempdir) / "socket"
 
 
