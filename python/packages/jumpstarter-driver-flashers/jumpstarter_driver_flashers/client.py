@@ -239,7 +239,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         error_queue,
     ):
         """Transfer image to storage in the background
-
         Args:
             src_path: Path to the source image
             src_operator: Operator to read the source image
@@ -251,35 +250,30 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         try:
             filename = Path(src_path).name if isinstance(src_path, (str, os.PathLike)) else src_path.name
 
-            # if the source is a local file, we can hash it and compare to the known hash
             if src_operator_scheme == "fs":
                 file_hash = self._sha256_file(src_operator, src_path)
-                if to_storage.exists(filename) and to_storage.hash(filename) == file_hash:
+                self.logger.info(f"Hash of {filename} is {file_hash}")
+            else:
+                file_hash = known_hash
+                self.logger.info(f"Using provided hash for {filename}: {known_hash}")
+
+            if file_hash and to_storage.exists(filename):
+                to_storage_hash = to_storage.hash(filename)
+                self.logger.info(f"Hash of existing file in storage: {to_storage_hash}")
+
+                if to_storage_hash == file_hash:
                     self.logger.info(f"Image {filename} already exists in storage with matching hash, skipping")
                     return
+                else:
+                    self.logger.info(f"Image {filename} exists in storage but hash differs, will overwrite")
 
-            # if the source is a remote file, we can't hash it, so we need to check the hash from the metadata
-            elif known_hash and to_storage.exists(filename):
-                self.logger.info(f"Image {filename} already exists in storage, checking hash")
-                if to_storage.hash(filename) == known_hash:
-                    self.logger.info(f"Image {filename} already exists in storage with matching hash, skipping")
-                    return
-
-            # last attempt to check if the image in storage matches the known metadata
-            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path)
-            metadata_file = filename + ".metadata"
-            self.logger.info(f"Metadata: {metadata_json}")
-            if to_storage.exists(metadata_file) and to_storage.exists(filename):
-                self.logger.info(f"Checking metadata for file in exporter storage {metadata_file}")
-                data = to_storage.read_bytes(metadata_file).decode(errors="ignore")
-                if to_storage.stat(filename).content_length == metadata.content_length and data == metadata_json:
-                    self.logger.info(f"Image {filename} already exists in storage with matching metadata, skipping")
-                    return
-
-            # ok, we need to write the image to storage
+            self.logger.info(f"Uploading image to storage: {filename}")
             to_storage.write_from_path(filename, src_path, src_operator)
-            # but also write the metadata to be able to check for matching images later
+
+            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path, file_hash)
+            metadata_file = filename + ".metadata"
             to_storage.write_bytes(metadata_file, metadata_json.encode(errors="ignore"))
+
             self.logger.info(f"Image written to storage: {filename}")
 
         except Exception as e:
@@ -298,16 +292,19 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return m.hexdigest()
 
-    def _create_metadata_and_json(self, src_operator, src_path) -> tuple[Metadata, str]:
+    def _create_metadata_and_json(self, src_operator, src_path, file_hash=None) -> tuple[Metadata, str]:
         """Create a metadata json string from a metadata object"""
         metadata = src_operator.stat(src_path)
-        return metadata, json.dumps(
-            {
-                "path": str(src_path),
-                "content_length": metadata.content_length,
-                "etag": metadata.etag,
-            }
-        )
+        metadata_dict = {
+            "path": str(src_path),
+            "content_length": metadata.content_length,
+            "etag": metadata.etag,
+        }
+
+        if file_hash:
+            metadata_dict["hash"] = file_hash
+
+        return metadata, json.dumps(metadata_dict)
 
     def _lookup_block_device(self, console, prompt, address: str) -> str:
         """Lookup block device for a given address.
