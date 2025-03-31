@@ -55,10 +55,8 @@ async def create_lease(config, selector: str, duration: timedelta, output: Outpu
     lease = config.create_lease(selector=selector, duration=duration)
 
     match output:
-        case OutputMode.JSON:
-            click.echo(lease.dump_json())
-        case OutputMode.YAML:
-            click.echo(lease.dump_yaml())
+        case OutputMode.JSON | OutputMode.YAML:
+            click.echo(lease.dump(output))
         case OutputMode.NAME:
             click.echo(lease.name)
         case _:

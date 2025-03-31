@@ -2,6 +2,8 @@ from typing import Literal, Optional
 
 import asyncclick as click
 
+from jumpstarter.common.pydantic import OutputMode
+
 opt_log_level = click.option(
     "--log-level",
     "log_level",
@@ -19,15 +21,6 @@ opt_namespace = click.option("-n", "--namespace", type=str, help="Kubernetes nam
 
 opt_labels = click.option("-l", "--label", "labels", type=(str, str), multiple=True, help="Labels")
 
-
-class OutputMode(str):
-    JSON = "json"
-    YAML = "yaml"
-    NAME = "name"
-    PATH = "path"
-
-
-OutputType = Optional[OutputMode]
 
 opt_output_all = click.option(
     "-o",

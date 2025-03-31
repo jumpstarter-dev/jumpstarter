@@ -28,10 +28,8 @@ async def update_lease(config, name: str, duration: timedelta, output: OutputTyp
     lease = config.update_lease(name, duration)
 
     match output:
-        case OutputMode.JSON:
-            click.echo(lease.dump_json())
-        case OutputMode.YAML:
-            click.echo(lease.dump_yaml())
+        case OutputMode.JSON | OutputMode.YAML:
+            click.echo(lease.dump(output))
         case OutputMode.NAME:
             click.echo(lease.name)
         case _:

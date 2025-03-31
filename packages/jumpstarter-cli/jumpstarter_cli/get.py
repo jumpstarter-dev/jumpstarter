@@ -25,10 +25,8 @@ def get_exporters(config, selector: str | None, output: OutputType):
     exporters = config.list_exporters(filter=selector)
 
     match output:
-        case OutputMode.JSON:
-            click.echo(exporters.dump_json())
-        case OutputMode.YAML:
-            click.echo(exporters.dump_yaml())
+        case OutputMode.JSON | OutputMode.YAML:
+            click.echo(exporters.dump(output))
         case OutputMode.NAME:
             for exporter in exporters.exporters:
                 click.echo(exporter.name)
@@ -57,10 +55,8 @@ def get_leases(config, selector: str | None, output: OutputType):
     leases = config.list_leases(filter=selector)
 
     match output:
-        case OutputMode.JSON:
-            click.echo(leases.dump_json())
-        case OutputMode.YAML:
-            click.echo(leases.dump_yaml())
+        case OutputMode.JSON | OutputMode.YAML:
+            click.echo(leases.dump(output))
         case OutputMode.NAME:
             for lease in leases.leases:
                 click.echo(lease.name)
