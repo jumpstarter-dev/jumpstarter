@@ -18,3 +18,7 @@ def j():
         except click.ClickException as e:
             e.show()
             sys.exit(1)
+
+
+if __name__ == "__main__":
+    j()
