@@ -2,7 +2,9 @@ from typing import Literal, Optional
 
 import asyncclick as click
 
-from jumpstarter.common.pydantic import OutputMode
+from jumpstarter.common.pydantic import OutputMode, OutputType
+
+__all__ = ["OutputType"]
 
 opt_log_level = click.option(
     "--log-level",
