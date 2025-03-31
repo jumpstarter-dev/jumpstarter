@@ -55,7 +55,7 @@ export:
 ```{doctest}
 >>> with UnixPortforwardAdapter(client=client.unix_socket) as addr:
 ...     print(addr)
-/tmp/jumpstarter-.../socket
+/.../socket
 >>> # the type of the remote socket and the local one doesn't have to match
 >>> # e.g. forward a remote Unix domain socket to a local TCP port
 >>> with TcpPortforwardAdapter(client=client.unix_socket) as addr:
