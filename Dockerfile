@@ -6,7 +6,7 @@ RUN dnf install -y make git && \
     rm -rf /var/cache/dnf
 COPY --from=uv /uv /uvx /bin/
 
-FROM fedora:40 AS product
+FROM --platform=$TARGETPLATFORM fedora:40 AS product
 RUN dnf install -y python3 ustreamer libusb1 yq openssl qemu-img qemu-system-x86 qemu-system-aarch64 && \
     dnf clean all && \
     rm -rf /var/cache/dnf
