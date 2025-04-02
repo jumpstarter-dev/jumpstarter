@@ -1,4 +1,5 @@
 # Common environment variables for client/exporter config
+JMP_CLIENT_CONFIG_HOME = "JMP_CLIENT_CONFIG_HOME"
 JMP_CLIENT_CONFIG = "JMP_CLIENT_CONFIG"
 JMP_NAMESPACE = "JMP_NAMESPACE"
 JMP_NAME = "JMP_NAME"
