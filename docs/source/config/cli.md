@@ -1,9 +1,5 @@
 # CLI Configuration
 
-```{warning}
-This documentation is actively being updated as the project evolves and may not be complete in all areas.
-```
-
 Jumpstarter can be configured as either a client, an exporter, or both depending
 on your use case and deployment strategy.
 

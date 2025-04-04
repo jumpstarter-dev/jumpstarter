@@ -1,9 +1,5 @@
 # Glossary
 
-```{warning}
-This documentation is actively being updated as the project evolves and may not be complete in all areas.
-```
-
 ## Acronyms
 
 * `DUT`: Device Under Test

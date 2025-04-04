@@ -64,6 +64,7 @@ html_static_path = ["_static"]
 html_css_files = [
     "css/versions.css",
     "css/tabs.css",
+    "css/custom.css",
 ]
 html_sidebars = {
     "**": [

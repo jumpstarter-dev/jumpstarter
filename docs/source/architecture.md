@@ -1,9 +1,5 @@
 # Architecture
 
-```{warning}
-This documentation is actively being updated as the project evolves and may not be complete in all areas.
-```
-
 The Jumpstarter architecture is based on a client/server model. This enables a
 single client to communicate with one or many devices under test.
 

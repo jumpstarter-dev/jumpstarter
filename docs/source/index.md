@@ -2,10 +2,6 @@
 
 Jumpstarter is a free and open-source testing tool that enables you to test your software stack on both real hardware and virtual environments using CI/CD principles. It provides powerful testing tools that leverage Cloud Native principles, modern CI/CD technologies, and open standards for the next generation of edge devices, whether physical or emulated.
 
-```{warning}
-This documentation is actively being updated as the project evolves and may not be complete in all areas.
-```
-
 ## Device Automation Made Simple
 
 Jumpstarter decouples your target devices (physical or virtual) from test runners, development machines, and CI/CD pipelines, allowing you to use the same automation scripts, commands, and processes everywhere. Think of it as a *Makefile* for device automation that can run locally on your machine or distributed across your infrastructure.
