@@ -1,6 +1,12 @@
 # Python Packages and CLI
 
 ## Release install
+
+```{warning}
+Until we release 0.6.0 please continue to use the [developer install method](#development-install). 0.5.0 is
+heavily outdated and not fully released to pip, it is not recommended now.
+```
+
 The [Jumpstarter Python packages](https://docs.jumpstarter.dev/packages/)
 contain all the necessary tools to run an exporter or interact with your
 hardware as a client.
