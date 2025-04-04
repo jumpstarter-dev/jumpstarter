@@ -2,6 +2,10 @@ from typing import Literal, Optional
 
 import asyncclick as click
 
+from jumpstarter.common.pydantic import OutputMode, OutputType
+
+__all__ = ["OutputType"]
+
 opt_log_level = click.option(
     "--log-level",
     "log_level",
@@ -19,15 +23,6 @@ opt_namespace = click.option("-n", "--namespace", type=str, help="Kubernetes nam
 
 opt_labels = click.option("-l", "--label", "labels", type=(str, str), multiple=True, help="Labels")
 
-
-class OutputMode(str):
-    JSON = "json"
-    YAML = "yaml"
-    NAME = "name"
-    PATH = "path"
-
-
-OutputType = Optional[OutputMode]
 
 opt_output_all = click.option(
     "-o",
@@ -60,3 +55,30 @@ opt_output_path_only = click.option(
 opt_nointeractive = click.option(
     "--nointeractive", is_flag=True, default=False, help="Disable interactive prompts (for use in scripts)."
 )
+
+
+def opt_output_auto(cls):
+    choices = []
+    if hasattr(cls, "dump_json"):
+        choices.append(OutputMode.JSON)
+    if hasattr(cls, "dump_yaml"):
+        choices.append(OutputMode.YAML)
+    if hasattr(cls, "dump_name"):
+        choices.append(OutputMode.NAME)
+    if hasattr(cls, "dump_path"):
+        choices.append(OutputMode.PATH)
+
+    if OutputMode.PATH in choices:
+        help = 'Output mode. Use "-o path" for shorter output (file/path).'
+    elif OutputMode.NAME in choices:
+        help = 'Output mode. Use "-o name" for shorter output (resource/name).'
+    else:
+        help = "Output mode."
+
+    return click.option(
+        "-o",
+        "--output",
+        type=click.Choice(choices),
+        default=None,
+        help=help,
+    )

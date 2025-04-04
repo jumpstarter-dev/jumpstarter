@@ -66,7 +66,6 @@ status:
   credential:
     name: {name}-credential
   endpoint: {endpoint}
-
 """.format(name=CLIENT_NAME, endpoint=CLIENT_ENDPOINT)
 
 UNSAFE_CLIENT_CONFIG = ClientConfigV1Alpha1(
@@ -214,7 +213,6 @@ status:
     name: {name}-credential
   devices: []
   endpoint: {endpoint}
-
 """.format(name=EXPORTER_NAME, endpoint=EXPORTER_ENDPOINT)
 
 EXPORTER_CONFIG = ExporterConfigV1Alpha1(

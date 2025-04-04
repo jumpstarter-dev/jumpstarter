@@ -1,5 +1,6 @@
 from .alias import AliasedGroup
 from .config import opt_config
+from .echo import echo
 from .opt import (
     NameOutputType,
     OutputMode,
@@ -12,6 +13,7 @@ from .opt import (
     opt_namespace,
     opt_nointeractive,
     opt_output_all,
+    opt_output_auto,
     opt_output_name_only,
     opt_output_path_only,
 )
@@ -21,6 +23,7 @@ from .version import get_client_version, version
 
 __all__ = [
     "AliasedGroup",
+    "echo",
     "make_table",
     "opt_config",
     "opt_context",
@@ -32,6 +35,7 @@ __all__ = [
     "opt_output_all",
     "opt_output_name_only",
     "opt_output_path_only",
+    "opt_output_auto",
     "OutputMode",
     "OutputType",
     "NameOutputType",

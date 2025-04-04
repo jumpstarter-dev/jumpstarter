@@ -49,7 +49,8 @@ def test_exporter_dump_json():
         ],
         "endpoint": "https://test-exporter"
     }
-}"""
+}
+"""
     )
 
 

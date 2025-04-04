@@ -35,7 +35,8 @@ def test_client_dump_json():
         "credential": null,
         "endpoint": "https://test-client"
     }
-}"""
+}
+"""
     )
 
 

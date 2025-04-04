@@ -4,15 +4,15 @@ from typing import Optional
 import asyncclick as click
 from jumpstarter_cli_common import (
     AliasedGroup,
-    OutputMode,
     OutputType,
+    echo,
     opt_context,
     opt_kubeconfig,
     opt_labels,
     opt_log_level,
     opt_namespace,
     opt_nointeractive,
-    opt_output_all,
+    opt_output_auto,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, V1Alpha1Client, V1Alpha1Exporter
 from kubernetes_asyncio.client.exceptions import ApiException
@@ -38,12 +38,8 @@ def create(log_level: Optional[str]):
 
 
 def print_created_client(client: V1Alpha1Client, output: OutputType):
-    if output == OutputMode.JSON:
-        click.echo(client.dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(client.dump_yaml())
-    elif output == OutputMode.NAME:
-        click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
+    if output is not None:
+        echo(client.dump(output))
 
 
 @create.command("client")
@@ -75,7 +71,7 @@ def print_created_client(client: V1Alpha1Client, output: OutputType):
 @opt_context
 @opt_oidc_username
 @opt_nointeractive
-@opt_output_all
+@opt_output_auto(V1Alpha1Client)
 async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -127,12 +123,8 @@ async def create_client(
 
 
 def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
-    if output == OutputMode.JSON:
-        click.echo(exporter.dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(exporter.dump_yaml())
-    elif output == OutputMode.NAME:
-        click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
+    if output is not None:
+        echo(exporter.dump(output))
 
 
 @create.command("exporter")
@@ -156,7 +148,7 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
 @opt_context
 @opt_oidc_username
 @opt_nointeractive
-@opt_output_all
+@opt_output_auto(V1Alpha1Exporter)
 async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
