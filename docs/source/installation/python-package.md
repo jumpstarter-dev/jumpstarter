@@ -10,8 +10,7 @@ The Python package can be installed using ``pip`` or similar, Python
 {{requires_python}} is required.:
 
 ```bash
-$ pip3 install --extra-index-url https://docs.jumpstarter.dev/packages/simple \
-                                jumpstarter-all
+$ pip3 install --extra-index-url https://docs.jumpstarter.dev/packages/simple jumpstarter-all
 
 $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter

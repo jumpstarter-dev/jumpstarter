@@ -45,7 +45,7 @@ mermaid_version = "10.9.1"
 html_theme = "furo"
 
 # html_extra_path = ["extra"]
-html_title = "Jumpstarter Docs"
+html_title = "Jumpstarter Documentation"
 
 myst_heading_anchors = 3
 myst_enable_extensions = [

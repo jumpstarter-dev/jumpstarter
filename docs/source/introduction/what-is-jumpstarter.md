@@ -13,16 +13,6 @@ Jumpstarter aims to provide powerful testing tools that leverage [Cloud
 Native](https://www.cncf.io/) principles, modern CI/CD technologies, and open
 standards for the next generation of edge devices, whether physical or emulated.
 
-## Device Automation Made Simple
-
-Jumpstarter provides tools that enable you to build a consistent development
-environment for your hardware and virtual devices. Think of it as a *Makefile*
-for device automation.
-
-These tools decouple your target devices (physical or virtual) from test
-runners, development machines, and CI/CD pipelines, allowing you to use the same
-automation scripts, commands, and processes everywhere.
-
 For a detailed technical overview of the architecture, see the
 [Architecture](../architecture.md) documentation.
 

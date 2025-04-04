@@ -1,13 +1,11 @@
-# Jumpstarter Docs
+# Welcome to Jumpstarter
+
+Jumpstarter is a free and open-source testing tool that enables you to test your software stack on both real hardware and virtual environments using CI/CD principles. It provides powerful testing tools that leverage Cloud Native principles, modern CI/CD technologies, and open standards for the next generation of edge devices, whether physical or emulated.
 
 ```{warning}
 This documentation may be incomplete, out of date, or incorrect as this project 
 is still evolving.
 ```
-
-# Welcome to Jumpstarter
-
-Jumpstarter is a free and open-source testing tool that enables you to test your software stack on both real hardware and virtual environments using CI/CD principles. It provides powerful testing tools that leverage Cloud Native principles, modern CI/CD technologies, and open standards for the next generation of edge devices, whether physical or emulated.
 
 ## Device Automation Made Simple
 
@@ -32,6 +30,7 @@ Jumpstarter decouples your target devices (physical or virtual) from test runner
 - [Architecture Overview](architecture.md) - Understand how Jumpstarter works internally
 - [Driver Development](introduction/drivers.md) - Create custom drivers for new hardware
 - [API Reference](api-reference/index.md) - Comprehensive API documentation
+- [Contributing Guide](contributing.md) - Guidelines for contributing to the project
 
 ### 🏢 For Teams & Enterprise
 **Building a distributed CI environment?** Scale Jumpstarter across your organization:
@@ -50,6 +49,7 @@ cli/index.md
 config/index.md
 architecture.md
 solution-architectures.md
+contributing.md
 glossary.md
 api-reference/index.md
 ```

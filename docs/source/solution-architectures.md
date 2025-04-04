@@ -182,9 +182,7 @@ hardware-test:
 
 ### Cost Management and Chargeback
 
-Building on the [System Lab as a Service](#system-lab-as-a-service) architecture, organizations can implement usage-based billing for teams through a cost management layer.
-
-> **Note:** Some implementation details of Jumpstarter have been redacted in the following diagram to improve readability and focus on the core concepts.
+Organizations can implement usage-based billing for teams through a cost management layer.
 
 ```{mermaid}
 :config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
