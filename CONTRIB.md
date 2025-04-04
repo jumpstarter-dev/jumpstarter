@@ -1,16 +1,20 @@
 # contrib directory
-This directory contains extensions to the core codebase, community drivers and adapter libraries and tools.
+This directory contains extensions to the core codebase, community drivers and
+adapter libraries and tools.
 
-If you are working on a driver, or adapter library of general interest,
-please consider submitting it to this repository, as it will become available
-to all jumpstarter users.
+If you are working on a driver, or adapter library of general interest, please
+consider submitting it to this repository, as it will become available to all
+jumpstarter users.
 
-If you are creating a driver or adapter library for a specific need, not of general
-interest, or that needs to be private, please consider forking our [jumpstarter-driver-template](https://github.com/jumpstarter-dev/jumpstarter-driver-template)
+If you are creating a driver or adapter library for a specific need, not of
+general interest, or that needs to be private, please consider forking our
+[jumpstarter-driver-template](https://github.com/jumpstarter-dev/jumpstarter-driver-template)
 
 
 ## Creating a new drivers scaffold
-To create a new driver scaffold, you can use the `create_driver.sh` script in this directory. This should help you star a new driver project with the right structure and dependencies quickly.
+To create a new driver scaffold, you can use the `create_driver.sh` script in
+this directory. This should help you star a new driver project with the right
+structure and dependencies quickly.
 
 From the root directory of the project, run the following command:
 ```shell

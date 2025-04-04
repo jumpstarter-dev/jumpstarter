@@ -18,9 +18,9 @@ to debug the connection between an exporter and client without hardware.
 ## Create an Exporter Config
 
 First, we must create an exporter config to define the "shape" of the exporter
-that we are going to test locally. This config is identical to a regular exporter
-config, however, the `endpoint` and `token` fields may be left empty as we do
-not need to connect to the controller service.
+that we are going to test locally. This config is identical to a regular
+exporter config, however, the `endpoint` and `token` fields may be left empty as
+we do not need to connect to the controller service.
 
 Create a text file in `/etc/jumpstarter/exporters` with the following content:
 
@@ -48,10 +48,9 @@ export:
 
 ## Spawn an Exporter Shell
 
-To interact locally with the exporter we created above, we can use the
-"exporter shell" functionality within the `jmp` CLI. When a shell is spawned,
-a local exporter instance is run in the background while the shell session is
-running.
+To interact locally with the exporter we created above, we can use the "exporter
+shell" functionality within the `jmp` CLI. When a shell is spawned, a local
+exporter instance is run in the background while the shell session is running.
 
 ```shell
 # Spawn a new exporter shell for "demo"

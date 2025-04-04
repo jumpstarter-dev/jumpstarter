@@ -59,10 +59,11 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/version_array.js", "js/versions.js"]
+html_js_files = ["js/version_array.js", "js/versions.js", "js/theme-mermaid.js", "js/tabs.js"]
 html_static_path = ["_static"]
 html_css_files = [
     "css/versions.css",
+    "css/tabs.css",
 ]
 html_sidebars = {
     "**": [

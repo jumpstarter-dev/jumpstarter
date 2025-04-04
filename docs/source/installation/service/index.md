@@ -1,7 +1,7 @@
 # Service
 
-To manage your Jumpstarter lab from Kubernetes, the Jumpstarter Service must
-be installed in your cluster.
+To manage your Jumpstarter lab from Kubernetes, the Jumpstarter Service must be
+installed in your cluster.
 
 ## Prerequisites
 

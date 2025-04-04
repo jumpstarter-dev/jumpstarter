@@ -1,11 +1,13 @@
 # OpenShift (ArgoCD)
 
 ## Create namespace
-First, we must create a namespace for the Jumpstarter installation. This namespace
-should be labeled with `argocd.argoproj.io/managed-by=<your-argo-CD-instance>` to allow
-ArgoCD to manage the resources in the namespace.
+First, we must create a namespace for the Jumpstarter installation. This
+namespace should be labeled with
+`argocd.argoproj.io/managed-by=<your-argo-CD-instance>` to allow ArgoCD to
+manage the resources in the namespace.
 
-In this case, using the default openshift-gitops ArgoCD deployment, the command would be:
+In this case, using the default openshift-gitops ArgoCD deployment, the command
+would be:
 ```bash
 kubectl create namespace jumpstarter-lab
 kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-gitops
@@ -13,10 +15,12 @@ kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-
 
 ## Note on CRDs
 
-ArgoCD needs to be able to manage the CRDs that Jumpstarter uses. This is done by creating a ClusterRole and ClusterRoleBinding that allows the ArgoCD application controller to manage the CRDs.
+ArgoCD needs to be able to manage the CRDs that Jumpstarter uses. This is done
+by creating a ClusterRole and ClusterRoleBinding that allows the ArgoCD
+application controller to manage the CRDs.
 
-An alternative to this is to manually create and update the CRDs
-that jumpstarter uses.
+An alternative to this is to manually create and update the CRDs that
+jumpstarter uses.
 
 The ClusterRole & Binding to allow ArgoCD to manage the CRDs are:
 

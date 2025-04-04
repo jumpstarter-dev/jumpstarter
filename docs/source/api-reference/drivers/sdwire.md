@@ -1,8 +1,8 @@
 # SDWire driver
 
 The SDWire driver is an storgate multiplexer driver for using the SDWire
-multiplexer. This device multiplexes an SD card between the DUT and the
-exporter host.
+multiplexer. This device multiplexes an SD card between the DUT and the exporter
+host.
 
 ## Driver Configuration
 

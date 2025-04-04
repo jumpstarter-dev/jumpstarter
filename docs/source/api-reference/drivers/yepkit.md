@@ -4,8 +4,9 @@ Drivers for yepkit products.
 
 ## Ykush driver
 
-This driver provides a client for the [Ykush USB switch](https://www.yepkit.com/products/ykush).
-**driver**: `jumpstarter_driver_yepkit.driver.Ykush`
+This driver provides a client for the [Ykush USB
+switch](https://www.yepkit.com/products/ykush). **driver**:
+`jumpstarter_driver_yepkit.driver.Ykush`
 
 ### Driver configuration
 ```yaml
@@ -25,10 +26,10 @@ export:
 ```
 ### Config parameters
 
-| Parameter | Description | Type | Required | Default |
-|-----------|-------------|------|----------|---------|
-| serial | The serial number of the ykush hub, empty means auto-detection  | no | None | |
-| port | The port number to be managed, "0", "1", "2", "a" which means all | str | yes | "a" |
+| Parameter | Description                                                       | Type | Required | Default |
+| --------- | ----------------------------------------------------------------- | ---- | -------- | ------- |
+| serial    | The serial number of the ykush hub, empty means auto-detection    | no   | None     |         |
+| port      | The port number to be managed, "0", "1", "2", "a" which means all | str  | yes      | "a"     |
 
 
 ### PowerClient API

@@ -1,8 +1,8 @@
 # U-Boot driver
 
-The U-Boot driver is a driver for interacting with the U-Boot bootloader.
-This driver does not interact with the DUT directly, instead it should be
-configured with backing power and serial drivers.
+The U-Boot driver is a driver for interacting with the U-Boot bootloader. This
+driver does not interact with the DUT directly, instead it should be configured
+with backing power and serial drivers.
 
 ## Driver configuration
 

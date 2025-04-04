@@ -18,6 +18,7 @@ getting-started/index.md
 cli/index.md
 config/index.md
 architecture.md
+solution-architectures.md
 glossary.md
 api-reference/index.md
 ```

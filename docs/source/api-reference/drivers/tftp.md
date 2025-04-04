@@ -2,7 +2,8 @@
 
 **driver**: `jumpstarter_driver_tftp.driver.Tftp`
 
-The TFTP driver provides a read-only TFTP server that can be used to serve files.
+The TFTP driver provides a read-only TFTP server that can be used to serve
+files.
 
 ## Driver Configuration
 ```yaml
@@ -17,11 +18,11 @@ export:
 
 ### Config parameters
 
-| Parameter | Description | Type | Required | Default |
-|-----------|-------------|------|----------|---------|
-| root_dir | Root directory for the TFTP server | str | no | "/var/lib/tftpboot" |
-| host | IP address to bind the server to | str | no | auto-detect |
-| port | Port number to listen on | int | no | 69 |
+| Parameter | Description                        | Type | Required | Default             |
+| --------- | ---------------------------------- | ---- | -------- | ------------------- |
+| root_dir  | Root directory for the TFTP server | str  | no       | "/var/lib/tftpboot" |
+| host      | IP address to bind the server to   | str  | no       | auto-detect         |
+| port      | Port number to listen on           | int  | no       | 69                  |
 
 ## TftpServerClient API
 
