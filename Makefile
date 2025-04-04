@@ -6,6 +6,8 @@ default: build
 docs-build:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs html
 
+docs: docs-build
+
 docs-build-all:
 	./docs/make-all-versions.sh
 
@@ -63,7 +65,7 @@ mypy: pkg-mypy-all
 
 .PHONY: default docs-build docs-build-all docs-serve docs-serve-all docs-clean docs-test \
 	docs-linkcheck pkg-test-all pkg-mypy-all build generate sync \
-	clean-venv clean-build clean-test clean-all test-all mypy-all \
+	clean-venv clean-build clean-test clean-all test-all mypy-all docs \
 	pkg-mypy-jumpstarter \
 	pkg-mypy-jumpstarter-cli-admin \
 	pkg-mypy-jumpstarter-driver-can \
