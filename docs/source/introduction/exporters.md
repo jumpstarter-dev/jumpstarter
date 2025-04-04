@@ -2,8 +2,8 @@
 
 Jumpstarter uses a program called an Exporter to enable remote access to your
 hardware. The Exporter typically runs on a "host" system directly connected to
-your hardware. We call it an Exporter because it "exports" the interfaces
-connected to the target for client access.
+your hardware. It is called an Exporter because it "exports" the interfaces
+connected to the target device for client access.
 
 ## Hosts
 
@@ -45,7 +45,7 @@ export:
       url: "/dev/ttyUSB0"
       baudrate: 115200
   storage:
-  type: "jumpstarter_driver_sdwire.driver.SDWire"
+    type: "jumpstarter_driver_sdwire.driver.SDWire"
     config:
       serial: "sdw-00001"
       storage_device: "/dev/disk/by-path/..."
@@ -70,4 +70,4 @@ $ jmp run --exporter myexporter
 
 Exporters can also be run in a privileged container or as a systemd daemon. It
 is recommended to run the Exporter service in the background with auto-restart
-in case something goes wrong and it needs to be restarted.
+capabilities in case something goes wrong and it needs to be restarted.

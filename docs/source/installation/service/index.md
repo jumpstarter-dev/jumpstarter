@@ -5,12 +5,12 @@ installed in your cluster.
 
 ## Prerequisites
 
-- A *Kubernetes* cluster.
+- A *Kubernetes* cluster
 - [Kubectl](https://www.downloadkubernetes.com/)
 - [Helm](https://helm.sh/docs/intro/install/)
 
 ```{tip}
-If you don't have a Kubernetes cluster you can use a local cluster for testing,
+If you don't have a Kubernetes cluster, you can use a local cluster for testing,
 such as [`kind`](https://kind.sigs.k8s.io), [`minikube`](https://minikube.sigs.k8s.io), or [`OpenShift Local`](https://developers.redhat.com/products/openshift-local/overview).
 ```
 

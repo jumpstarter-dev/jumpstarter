@@ -60,11 +60,11 @@ subjects:
 ## Application
 
 ```{warning}
-`jumpstarter-controller.controllerSecret` and `jumpstarter-controller.routerSecret`
-are secrets that are used to secure the authentication between clients and the jumpstarter elements.
-**These secrets should be unique and not shared between installations**. Helm installation can
-auto-generate values for these, but with ArgoCD such mechanism doesn't work. You need to manually
-create these secrets in the namespace where the jumpstarter is installed.
+The parameters `jumpstarter-controller.controllerSecret` and `jumpstarter-controller.routerSecret`
+are security credentials used to secure authentication between clients and Jumpstarter components.
+These secrets must be unique and should not be shared between installations. While Helm installation
+can auto-generate values for these parameters, this mechanism does not work with ArgoCD. You must manually
+create these secrets in the namespace where Jumpstarter will be installed.
 ```
 
 ```{code-block} yaml

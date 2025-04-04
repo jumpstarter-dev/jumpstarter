@@ -4,12 +4,12 @@ If you want to play with the Jumpstarter Controller on your local machine, we
 recommend running a local Kubernetes cluster.
 
 ```{warning}
-We do not recommend a local cluster for a production environment.
-Please use a full Kubernetes installation either on-prem or in the cloud.
+A local cluster is not recommended for production environments.
+Please use a full Kubernetes installation either on-premises or in the cloud for production deployments.
 ```
 
 minikube is a tool for running local Kubernetes clusters using local VMs or
-Podman/Docker container “nodes”, it works across several platforms and can be
+Podman/Docker container "nodes", it works across several platforms and can be
 used with different hypervisors.
 
 You can find more information on the [minikube

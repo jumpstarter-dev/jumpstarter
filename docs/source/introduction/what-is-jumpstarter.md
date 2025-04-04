@@ -5,11 +5,11 @@ software stack on both real hardware and virtual environments using CI/CD
 principles.
 
 Automated testing with physical hardware (Hardware-in-the-Loop or HiL) and
-virtual devices has been around for years in industries such as automotive and
-manufacturing. However, these tools are often expensive and/or inaccessible to
+virtual devices has been established for years in industries such as automotive and
+manufacturing. However, these tools are often expensive and inaccessible to
 hobbyists and open-source projects.
 
-Jumpstarter aims to provide powerful testing tools that leverage [Cloud
+Jumpstarter provides powerful testing tools that leverage [Cloud
 Native](https://www.cncf.io/) principles, modern CI/CD technologies, and open
 standards for the next generation of edge devices, whether physical or emulated.
 

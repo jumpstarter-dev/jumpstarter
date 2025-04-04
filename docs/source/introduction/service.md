@@ -12,7 +12,7 @@ If you're already using a Kubernetes-native CI tool such as
 [Tekton](https://tekton.dev/), [Jenkins X](https://jenkins-x.io/),
 [Konflux](https://konflux-ci.dev), or [GitLab
 CI](https://docs.gitlab.com/user/clusters/agent/ci_cd_workflow/), Jumpstarter
-can integrate directly into your existing cloud or on-prem cluster.
+can integrate directly into your existing cloud or on-premises cluster.
 
 ## Controller
 
@@ -24,7 +24,7 @@ The Controller is implemented as a Kubernetes
 [controller](https://github.com/jumpstarter-dev/jumpstarter-controller) using
 [Custom Resource Definitions
 (CRDs)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
-to store information about clients, exporters, leases, etc.
+to store information about clients, exporters, leases, and other resources.
 
 ### Leases
 
@@ -35,7 +35,7 @@ access to a specific device/exporter.
 Clients can be scheduled to access a specific exporter or any exporter that
 matches a set of requested labels, similar to [node
 selection](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector)
-in Kubernetes. This enable flexible CI-driven testing even when physical
+in Kubernetes. This enables flexible CI-driven testing even when physical
 resources are limited.
 
 ## Router
@@ -46,5 +46,5 @@ interfaces via the client.
 
 Once a lease is established, all traffic between the client and the exporter
 flows through a router instance. While there may only be one controller, the
-router can be scaled with multiple instance handle traffic between many clients
+router can be scaled with multiple instances to handle traffic between many clients
 and exporters simultaneously.

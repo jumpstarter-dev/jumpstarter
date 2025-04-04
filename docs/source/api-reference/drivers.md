@@ -1,7 +1,7 @@
 # Driver Classes and Architecture
 
 ```{warning}
-This project is still evolving, so these docs may be incomplete or out-of-date.
+This documentation is actively being updated as the project evolves and may not be complete in all areas.
 ```
 
 ## Driver Architecture

@@ -1,15 +1,15 @@
-# Local cluster with kind
+# Local cluster with KinD
 
 If you want to play with the Jumpstarter Controller on your local machine, we
 recommend running a local Kubernetes cluster.
 
 ```{warning}
-We do not recommend a local cluster for a production environment.
-Please use a full Kubernetes installation either on-prem or in the cloud.
+A local cluster is not recommended for production environments.
+Please use a full Kubernetes installation either on-premises or in the cloud for production deployments.
 ```
 
 Kind is a tool for running local Kubernetes clusters using Podman or Docker
-container “nodes”.
+container "nodes".
 
 ```{tip}
 We recommend using [minikube](./minikube-helm.md) if you cannot easily use Kind in your local environment

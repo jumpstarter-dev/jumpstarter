@@ -1,7 +1,7 @@
 # CLI Configuration
 
 ```{warning}
-This project is still evolving, so these docs may be incomplete or out-of-date.
+This documentation is actively being updated as the project evolves and may not be complete in all areas.
 ```
 
 Jumpstarter can be configured as either a client, an exporter, or both depending

@@ -7,9 +7,9 @@ controller service, configuring drivers, and running the exporter.
 
 Make sure [the following packages are
 installed](../installation/python-package.md) in your Python environment:
-- `jumpstarter-cli` - The core Jumpstarter CLI.
-- `jumpstarter-driver-opendal` - The OpenDAL storage driver.
-- `jumpstarter-driver-power` - The base power driver.
+- `jumpstarter-cli` - The core Jumpstarter CLI
+- `jumpstarter-driver-opendal` - The OpenDAL storage driver
+- `jumpstarter-driver-power` - The base power driver
 
 You should also have the [Jumpstarter Service](../introduction/service.md)
 running in a Kubernetes cluster you have admin access to. For instructions on
@@ -26,7 +26,7 @@ context selected.
 First, we must create an exporter using the controller service API. The `jmp
 admin` CLI provides methods to interact with the controller directly.
 
-To create an exporter and save the config locally, run the following command:
+To create an exporter and save the configuration locally, run the following command:
 
 ```bash
 # Creates an exporter called "testing" and saves the config
@@ -38,12 +38,12 @@ $ jmp admin create exporter testing --save
 ```{command-output} jmp admin create exporter --help
 ```
 
-### Edit the Exporter Config
+### Edit the Exporter Configuration
 
-Once the exporter has been created, a new config file will be saved to
+Once the exporter has been created, a new configuration file will be saved to
 `/etc/jumpstarter/exporters/testing.yaml`.
 
-To edit the config file with your default text editor, run the following
+To edit the configuration file with your default text editor, run the following
 command:
 
 ```bash
@@ -51,8 +51,8 @@ command:
 $ jmp config exporter edit testing
 ```
 
-Add the `storage` and `power` drivers under the `export` field in the config
-file. The finished config should look like this:
+Add the `storage` and `power` drivers under the `export` field in the configuration
+file. The finished configuration should look like this:
 
 ```yaml
 # /etc/jumpstarter/exporters/testing.yaml
@@ -73,14 +73,14 @@ export:
 
 To run the exporter locally, we can use the `jmp` CLI tool.
 
-Run the following command to start the exporter locally using the config file:
+Run the following command to start the exporter locally using the configuration file:
 
 ```bash
 # Runs the exporter "testing" locally
 $ jmp run --exporter testing
 ```
 
-The exporter will stay running until the process is exited via `^C` or the shell
+The exporter will continue running until the process is terminated via `^C` or the shell
 is closed.
 
 ## Create a Client
