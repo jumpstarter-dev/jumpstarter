@@ -45,7 +45,7 @@ the base class will attempt to:
 
 1. Use a local connection based on the `JUMPSTARTER_HOST` environment variable
 2. Use an existing lease based on the `JMP_LEASE` environment variable, and existing credentials.
-   See the cli reference for [jmp create lease](../cli-reference/jmp.md#jmp-create-lease).
+   See the cli reference for [jmp create lease](./reference/jmp.md#jmp-create-lease).
 3. Request a lease based on the `selector` provided in the test class.
 
 ```{eval-rst}
