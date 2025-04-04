@@ -61,7 +61,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build the documentation
-        run: make docs-all
+        run: make docs
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

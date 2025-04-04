@@ -69,6 +69,7 @@ In local mode, clients communicate directly with exporters running on the same
 machine or through direct network connections.
 
 ```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Developer Machine"
         Client["Client\n(Python Library/CLI)"]
@@ -115,6 +116,7 @@ distributed across a network, with JWT token-based authentication securing all
 connections.
 
 ```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Kubernetes Cluster"
         Controller["Controller\nResource Management"]
@@ -203,5 +205,5 @@ credentials.
 
 Jumpstarter is designed to integrate with a wide range of existing tools and
 workflows. For detailed information about integration patterns and solution
-architectures, see the [Solution Architectures](./solution-architectures.md)
+architectures, see the [Solution Architectures](./solution-architecture.md)
 document.

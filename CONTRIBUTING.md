@@ -130,7 +130,7 @@ We welcome improvements to our documentation.
 
 #### Documentation System Overview
 
-Jumpstarter uses [Sphinx](https://www.sphinx-doc.org/) with Markdown support for its documentation. The documentation is organized into various sections covering different aspects of the project.
+Jumpstarter uses [Sphinx](https://www.sphinx-doc.org/en/master/) with Markdown support for its documentation. The documentation is organized into various sections covering different aspects of the project.
 
 #### Setting Up Documentation Environment
 

@@ -29,14 +29,14 @@ flowchart TB
     subgraph "Jumpstarter Infrastructure"
         Controller["Controller"]
         Exporters["Exporter"]
-        SUTs["System Under Test"]
+        DUTs["Device Under Test"]
     end
 
     GitRepo -- "Code changes" --> Actions
     Actions -- "Request access" --> Controller
     Controller -- "Assign lease" --> Actions
     Controller -- "Connect to" --> Exporters
-    Exporters -- "Control" --> SUTs
+    Exporters -- "Control" --> DUTs
     Actions -- "Update status" --> GitRepo
 ```
 
@@ -109,7 +109,7 @@ flowchart TB
     subgraph "Runner"
         Runner1["Self-Hosted Runner"]
         JmpLocal["Local Mode"]
-        Devices["System Under Test"]
+        Devices["Device Under Test"]
     end
 
     GitRepo -- "Code changes" --> Actions
@@ -243,7 +243,7 @@ This architecture implements a cost chargeback model for infrastructure resource
 
 ## Integration with Developer Environments
 
-### Traditional Developer Workflow with Local and Remote Systems
+### Traditional Developer Workflow
 
 ```{mermaid}
 :config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
@@ -254,13 +254,13 @@ flowchart TB
 
     subgraph "Local Environment"
         LocalExporter["Local Exporter"]
-        DeviceOnDesk["System Under Test"]
+        DeviceOnDesk["Device Under Test"]
     end
 
     subgraph "Lab"
         Controller["Controller"]
         RemoteExporters["Exporter"]
-        LabDevices["System Under Test"]
+        LabDevices["Device Under Test"]
     end
     
     TestCode --> LocalExporter
@@ -281,7 +281,7 @@ shared lab resources:
    controller
 4. The same test code works in both environments
 
-### Cloud Native Developer Workflow with Local and Remote Systems
+### Cloud Native Developer Workflow
 
 ```{mermaid}
 :config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
@@ -302,12 +302,12 @@ flowchart TB
     
       subgraph "Local Environment"
           LocalExporter["Local Exporter"]
-          DeviceOnDesk["System Under Test"]
+          DeviceOnDesk["Device Under Test"]
       end
       
       subgraph "Lab"
           RemoteExporters["Exporter"]
-          LabDevices["System Under Test"]
+          LabDevices["Device Under Test"]
       end
     
     Dev -- "Access via browser" --> Workspace

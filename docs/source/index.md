@@ -30,7 +30,7 @@ Jumpstarter decouples your target devices (physical or virtual) from test runner
 ### 🏢 For Teams & Enterprise
 **Building a distributed CI environment?** Scale Jumpstarter across your organization:
 - [Distributed Mode Setup](installation/service/index.md) - Deploy the Kubernetes-based controller
-- [Solution Architectures](solution-architectures.md) - Reference architectures for complex environments
+- [Solution Architectures](solution-architecture.md) - Reference architectures for complex environments
 - [Managing Lab Resources](introduction/service.md) - Coordinate access to shared hardware
 
 ```{toctree}
@@ -43,7 +43,7 @@ getting-started/index.md
 cli/index.md
 config/index.md
 architecture.md
-solution-architectures.md
+solution-architecture.md
 contributing.md
 glossary.md
 api-reference/index.md
