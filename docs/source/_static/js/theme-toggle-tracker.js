@@ -29,8 +29,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     const effectiveTheme = getEffectiveTheme(theme);
 
                     const logoPath = effectiveTheme === 'dark'
-                        ? '_static/img/logo-dark-theme.svg'
-                        : '_static/img/logo-light-theme.svg';
+                        ? '/_static/img/logo-dark-theme.svg'
+                        : '/_static/img/logo-light-theme.svg';
 
                     logo.setAttribute('src', logoPath);
                     console.log('Theme changed to:', theme,
