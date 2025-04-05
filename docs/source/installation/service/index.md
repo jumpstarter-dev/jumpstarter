@@ -11,6 +11,7 @@ The following pages will guide you through service installation for different en
 * **[Minikube with Helm](minikube-helm.md)** - Installation on Minikube
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 kubernetes-helm.md
 openshift-helm.md

@@ -8,6 +8,7 @@ The following pages will guide you through the installation process:
 * **[Service](service/index.md)** - Deploying the Jumpstarter service in Kubernetes
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 python-package.md
 service/index.md

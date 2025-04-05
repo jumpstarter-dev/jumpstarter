@@ -9,6 +9,7 @@ The following pages will guide you through the API:
 * **[Driver API](drivers.md)** - Core driver API reference
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 drivers/index.md
 adapters/index.md

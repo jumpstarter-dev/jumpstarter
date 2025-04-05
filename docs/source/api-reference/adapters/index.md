@@ -7,6 +7,7 @@ The following pages will guide you through the available adapters:
 * **[Network](network.md)** - Network protocol adapters and utilities
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 network.md
 ```

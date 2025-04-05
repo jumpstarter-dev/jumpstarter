@@ -1,15 +1,22 @@
-# SNMP
+# SNMP driver
 
-**driver**: `jumpstarter_driver_snmp.driver.SNMPServer`
+`jumpstarter-driver-snmp` provides functionality for controlling power via SNMP-enabled PDUs (Power Distribution Units).
 
-A driver for controlling power via SNMP-enabled PDUs (Power Distribution Units).
+## Installation
 
-## Driver configuration
+```bash
+pip install jumpstarter-driver-snmp
+```
+
+## Configuration
+
+Example configuration:
+
 ```yaml
-export:
+interfaces:
   power:
-    type: "jumpstarter_driver_snmp.driver.SNMPServer"
-    config:
+    driver: jumpstarter_driver_snmp.driver.SNMPServer
+    parameters:
       host: "pdu.mgmt.com"
       user: "labuser"
       plug: 32
@@ -37,9 +44,7 @@ export:
 | priv_key      | Privacy key when priv_protocol is not "NONE"        | str   | no       | null                              |
 | timeout       | SNMP timeout in seconds                             | float | no       | 5.0                               |
 
-## SNMPServerClient API
-
-### Methods
+## API Reference
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_snmp.client.SNMPServerClient()
@@ -47,7 +52,7 @@ export:
    :show-inheritance:
 ```
 
-## Examples
+### Examples
 
 Power cycling a device:
 ```python

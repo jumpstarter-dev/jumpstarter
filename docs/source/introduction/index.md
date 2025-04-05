@@ -11,6 +11,7 @@ The following pages will guide you through the fundamentals:
 * **[Service](service.md)** - Architecture and service fundamentals
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 what-is-jumpstarter.md
 clients.md

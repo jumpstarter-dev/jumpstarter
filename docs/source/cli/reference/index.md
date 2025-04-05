@@ -8,6 +8,7 @@ The following pages will guide you through the CLI references:
 * **[JMP](jmp.md)** - Core commands for client and exporter interaction
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 jmp-admin.md
 jmp.md

@@ -10,6 +10,7 @@ The following pages will guide you through the CLI tools:
 * **[Run Tests](run-tests.md)** - Running tests with the CLI
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 reference/index.md
 clients.md

@@ -8,6 +8,7 @@ The following pages will guide you through the setup process:
 * **[Setup Exporter Client](setup-exporter-client.md)** - Configuring and using the exporter client
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 setup-local-exporter.md
 setup-exporter-client.md

@@ -8,6 +8,7 @@ The following pages will guide you through configuration:
 * **[OIDC Authentication](oidc.md)** - Setting up and using OpenID Connect authentication
 
 ```{toctree}
+:maxdepth: 1
 :hidden:
 cli.md
 oidc.md

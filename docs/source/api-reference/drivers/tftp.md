@@ -1,16 +1,22 @@
-# TFTP Driver
+# TFTP driver
 
-**driver**: `jumpstarter_driver_tftp.driver.Tftp`
+`jumpstarter-driver-tftp` provides functionality for a read-only TFTP server that can be used to serve files.
 
-The TFTP driver provides a read-only TFTP server that can be used to serve
-files.
+## Installation
 
-## Driver Configuration
+```bash
+pip install jumpstarter-driver-tftp
+```
+
+## Configuration
+
+Example configuration:
+
 ```yaml
-export:
+interfaces:
   tftp:
-    type: jumpstarter_driver_tftp.driver.Tftp
-    config:
+    driver: jumpstarter_driver_tftp.driver.Tftp
+    parameters:
       root_dir: /var/lib/tftpboot  # Directory to serve files from
       host: 192.168.1.100          # Host IP to bind to (optional)
       port: 69                     # Port to listen on (optional)
@@ -24,7 +30,7 @@ export:
 | host      | IP address to bind the server to   | str  | no       | auto-detect         |
 | port      | Port number to listen on           | int  | no       | 69                  |
 
-## TftpServerClient API
+## API Reference
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_tftp.client.TftpServerClient()
@@ -32,7 +38,7 @@ export:
    :show-inheritance:
 ```
 
-## Exception Classes
+### Exception Classes
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_tftp.driver.TftpError
@@ -44,7 +50,7 @@ export:
    :show-inheritance:
 ```
 
-## Examples
+### Examples
 
 ```{doctest}
 >>> import tempfile
