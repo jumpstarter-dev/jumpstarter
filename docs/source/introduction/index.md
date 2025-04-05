@@ -1,9 +1,17 @@
 # Introduction
 
-This section provides an introduction to Jumpstarter, its basic components, and
-how it works.
+This section introduces you to Jumpstarter's architecture, components, and core functionality. Whether you're a new user or looking to deepen your understanding, you'll find everything you need to get started.
+
+The following pages will guide you through the fundamentals:
+
+* **[What is Jumpstarter](what-is-jumpstarter.md)** - Core concepts and purpose
+* **[Clients](clients.md)** - Interacting with the Jumpstarter ecosystem
+* **[Drivers](drivers.md)** - Infrastructure backend integrations
+* **[Exporters](exporters.md)** - Configuration transformation tools
+* **[Service](service.md)** - Architecture and service fundamentals
 
 ```{toctree}
+:hidden:
 what-is-jumpstarter.md
 clients.md
 drivers.md

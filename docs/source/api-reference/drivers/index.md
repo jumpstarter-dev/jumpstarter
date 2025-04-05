@@ -1,12 +1,27 @@
 # Driver Packages
 
-Drivers packages from the
-[packages](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages)
-directory. Each driver is contained in a separate package in the form of
-`jumpstarter-driver-{name}`.
+This section documents the drivers from the Jumpstarter packages directory. Each driver is contained in a separate package in the form of `jumpstarter-driver-{name}` and provides specific functionality for interacting with different hardware components and systems.
+
+The following pages will guide you through the available drivers:
+
+* **[CAN](can.md)** - Controller Area Network communication
+* **[D-Bus](dbus.md)** - D-Bus message system interface
+* **[Flashers](flashers.md)** - Flash memory programming tools
+* **[Network](network.md)** - Network interfaces and configuration
+* **[OpenDAL](opendal.md)** - Open Data Access Layer
+* **[Proxy](proxy.md)** - Network proxy functionality
+* **[Probe-RS](probe-rs.md)** - Debugging probe support
+* **[PySerial](pyserial.md)** - Serial port communication
+* **[SD Wire](sdwire.md)** - SD card switching utilities
+* **[Shell](shell.md)** - Shell command execution
+* **[SNMP](snmp.md)** - Simple Network Management Protocol
+* **[TFTP](tftp.md)** - Trivial File Transfer Protocol
+* **[U-Boot](uboot.md)** - Universal Bootloader interface
+* **[UStreamer](ustreamer.md)** - Video streaming functionality
+* **[Yepkit](yepkit.md)** - Yepkit hardware control
 
 ```{toctree}
-:maxdepth: 2
+:hidden:
 can.md
 dbus.md
 flashers.md
