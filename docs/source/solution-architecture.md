@@ -1,4 +1,4 @@
-# Solution Architectures
+# Solution Architecture
 
 This document outlines common solution architectures and integration patterns
 for Jumpstarter, helping you understand how to incorporate it into your

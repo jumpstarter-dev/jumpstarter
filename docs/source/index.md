@@ -10,7 +10,7 @@ Jumpstarter decouples your target devices (physical or virtual) from test runner
 
 ### 🔰 For Newcomers
 **New to Jumpstarter?** Start here to understand the core concepts and basic workflows:
-- [What is Jumpstarter?](introduction/what-is-jumpstarter.md) - Understand the key concepts and components
+- [What is Jumpstarter?](introduction/index.md) - Understand the key concepts and components
 - [Installation Guide](installation/index.md) - Get Jumpstarter installed on your system
 - [Setting Up Your First Local Exporter](getting-started/setup-local-exporter.md) - Connect to your first device
 
@@ -30,7 +30,7 @@ Jumpstarter decouples your target devices (physical or virtual) from test runner
 ### 🏢 For Teams & Enterprise
 **Building a distributed CI environment?** Scale Jumpstarter across your organization:
 - [Distributed Mode Setup](installation/service/index.md) - Deploy the Kubernetes-based controller
-- [Solution Architectures](solution-architecture.md) - Reference architectures for complex environments
+- [Solution Architecture](solution-architecture.md) - Reference architectures for complex environments
 - [Managing Lab Resources](introduction/service.md) - Coordinate access to shared hardware
 
 ```{toctree}

@@ -20,7 +20,7 @@ website](https://kind.sigs.k8s.io/docs/user/quick-start/).
 ### Create a kind cluster
 
 First, create a kind cluster config that enables the use of nodeports to host
-the Jumpstarter services.
+the Services.
 
 ```yaml
 # kind_config.yaml
@@ -94,7 +94,7 @@ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
 export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
 export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 
-# Install the Jumpstarter service in the namespace jumpstarter-lab with Helm
+# Install the Service in the namespace jumpstarter-lab with Helm
 helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
             --create-namespace --namespace jumpstarter-lab \
             --set global.baseDomain=${BASEDOMAIN} \

@@ -11,7 +11,7 @@ installed](../installation/python-package.md) in your Python environment:
 - `jumpstarter-driver-opendal` - The OpenDAL storage driver
 - `jumpstarter-driver-power` - The base power driver
 
-You should also have the [Jumpstarter Service](../introduction/service.md)
+You should also have the [Service](../introduction/service.md)
 running in a Kubernetes cluster you have admin access to. For instructions on
 how to install Jumpstarter in a cluster, refer to the [installation
 guide](../installation/service/index.md).

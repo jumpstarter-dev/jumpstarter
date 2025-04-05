@@ -6,7 +6,7 @@ and router.jumpstarter.example.com.
 ````
 
 ```{note}
-Please note that you will need administrator access to the cluster to install the Jumpstarter Service,
+Please note that you will need administrator access to the cluster to install the Service,
 as the installation process will install CRDs and ClusterRoles.
 ```
 

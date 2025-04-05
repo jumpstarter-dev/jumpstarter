@@ -9,7 +9,7 @@ and token to authenticate with that server
 
 By default the libraries and CLI will look for a
 `~/.config/jumpstarter/client.yaml` file, which contains the endpoint and token
-to authenticate with the Jumpstarter service.
+to authenticate with the Service.
 
 Alternatively the client can receive the endpoint and token as environment
 variables:

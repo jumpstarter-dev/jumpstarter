@@ -30,6 +30,10 @@
 * `Lease`: A time-limited reservation of an exporter. A lease is created by a
   client and allows the client to use the exporter resources for a limited time.
 
+* `adapter`: A component that transforms connections exposed by drivers into different forms
+  or interfaces. Adapters take a driver client as input and provide alternative ways to interact
+  with the underlying connection, such as port forwarding, VNC access, or terminal emulation.
+
 * `interface class`: An abstract base class that defines the contract for driver
   implementations. It specifies the required methods that must be implemented by
   driver classes and provides the client class path through the `client()` class

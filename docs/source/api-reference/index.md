@@ -14,4 +14,5 @@ The following pages will guide you through the API:
 drivers/index.md
 adapters/index.md
 drivers.md
+adapters.md
 ```

@@ -39,6 +39,19 @@ client interfaces.
 
 For more information, see [Drivers](./introduction/drivers.md).
 
+### Adapters
+
+Adapters transform connections established by drivers into different forms or interfaces. 
+While drivers establish and manage the basic connections to hardware or virtual devices, 
+adapters take these connections and provide alternative ways to interact with them, making 
+them more convenient for specific use cases.
+
+For example, a network driver might establish a basic TCP connection, while an adapter
+could transform that connection into a web-based VNC client interface, a Unix socket, 
+or a serial console-like interface.
+
+For more information, see [Adapters](./introduction/adapters.md).
+
 ### Exporters
 
 The exporter is a service that runs locally or on a remote Linux device and
@@ -205,5 +218,5 @@ credentials.
 
 Jumpstarter is designed to integrate with a wide range of existing tools and
 workflows. For detailed information about integration patterns and solution
-architectures, see the [Solution Architectures](./solution-architecture.md)
+architectures, see the [Solution Architecture](./solution-architecture.md)
 document.

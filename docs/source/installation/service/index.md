@@ -1,6 +1,6 @@
 # Service Installation
 
-This section explains how to install and configure the Jumpstarter Service in your Kubernetes cluster. The service enables centralized management of your Jumpstarter lab environment. You'll need a Kubernetes cluster, kubectl, and Helm to proceed with installation.
+This section explains how to install and configure the Service in your Kubernetes cluster. The service enables centralized management of your Jumpstarter lab environment. You'll need a Kubernetes cluster, kubectl, and Helm to proceed with installation.
 
 The following pages will guide you through service installation for different environments:
 

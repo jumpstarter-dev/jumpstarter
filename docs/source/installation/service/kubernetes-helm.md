@@ -1,6 +1,6 @@
 # Kubernetes
 
-The Jumpstarter service can be installed on a Kubernetes cluster using Helm.
+The Service can be installed on a Kubernetes cluster using Helm.
 
 ## Install with Helm
 

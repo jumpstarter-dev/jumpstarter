@@ -81,7 +81,7 @@ configured when installing the Jumpstarter Helm chart with `jmp install`.
 ## Creating a client in the distributed service
 
 To create a new client in the distributed service you must use the `jmp admin
-create` subcommand, please follow the instructions in the [Jumpstarter service
+create` subcommand, please follow the instructions in the [Service
 CLI](../cli/clients.md).
 
 ## Importing a client created by the administrator
@@ -203,7 +203,7 @@ export:
 ### Creating a exporter in the distributed service
 
 To create a new exporter in the distributed service you must use the `jmp admin
-create` command, please follow the instructions in the [Jumpstarter service
+create` command, please follow the instructions in the [Service
 CLI](../cli/exporters.md).
 
 ### Creating a exporter configuration file

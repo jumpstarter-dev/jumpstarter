@@ -5,7 +5,7 @@ the distributed service.
 
 ## Creating a Client
 
-If you have configured [a Jumpstarter service](../introduction/service.md) and
+If you have configured [a Service](../introduction/service.md) and
 you have a kubeconfig, the [`jmp admin`
 CLI](reference/jmp-admin.md#jmp-admin-cli-reference) will attempt to use your
 current credentials to provision the client automatically and produce a client
@@ -88,7 +88,7 @@ system is using self-signed certificates.
 
     ```bash
     $ jmp config client create my-client
-    Enter a valid Jumpstarter service endpoint: devl.jumpstarter.dev
+    Enter a valid Service endpoint: devl.jumpstarter.dev
     Enter a Jumpstarter auth token (hidden): ***
     Enter a comma-separated list of allowed driver packages (optional):
     ```

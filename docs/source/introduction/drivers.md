@@ -18,8 +18,9 @@ Drivers in Jumpstarter follow a client/server architecture where:
 - Interface classes define the contract between implementations and clients
 
 For comprehensive documentation on the driver architecture, including detailed
-patterns and examples, see the [Driver Classes and
-Architecture](../api-reference/drivers.md) reference.
+patterns and examples, see the [Driver Classes and Architecture](../api-reference/drivers.md) reference.
+
+Drivers are often used with [Adapters](./adapters.md), which transform driver connections into different forms or interfaces for specific use cases.
 
 ## Types of Drivers
 

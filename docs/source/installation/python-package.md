@@ -72,7 +72,7 @@ i.e. `unalias jmp`
 
 ## Running in a Container
 
-For interacting with the Jumpstarter service without installing the Python
+For interacting with the Service without installing the Python
 packages locally, you can create an alias to run the `jmp` client in a
 container.
 

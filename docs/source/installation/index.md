@@ -5,7 +5,7 @@ This section contains guides to install the latest version of Jumpstarter compon
 The following pages will guide you through the installation process:
 
 * **[Python Package](python-package.md)** - Installing the Jumpstarter Python packages
-* **[Service](service/index.md)** - Deploying the Jumpstarter service in Kubernetes
+* **[Service](service/index.md)** - Deploying the Service in Kubernetes
 
 ```{toctree}
 :maxdepth: 1

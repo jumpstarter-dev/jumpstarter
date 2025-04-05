@@ -5,7 +5,7 @@ the distributed service.
 
 ## Creating a exporter
 
-If you have configured [a Jumpstarter service](../introduction/service.md) and
+If you have configured [a Service](../introduction/service.md) and
 you have a kubeconfig, the [`jmp admin`
 CLI](./reference/jmp-admin.md#jmp-admin-cli-reference) will attempt to use your
 current credentials to provision the client automatically, and produce a base
@@ -76,6 +76,6 @@ host machine at `/etc/jumpstarter/exporters/my-exporter.yaml`.
 Remember, the exporter is a Linux service that exports the interfaces to the target DUT(s)
 (serial ports, video interfaces, bluetooth, anything that Jumpstarter has a driver for,
 and the exporter service can reach via linux device or network). In this case the exporter
-service calls back to the Jumpstarter service to report the available interfaces and
+service calls back to the Service to report the available interfaces and
 waits for commands.
 ```
