@@ -1,3 +1,8 @@
 .admonition.warning {
     margin-bottom: 2rem;
 }
+
+/* Hide the title text in the sidebar */
+.sidebar-brand-text {
+    display: none;
+}

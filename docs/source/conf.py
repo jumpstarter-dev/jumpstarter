@@ -43,7 +43,8 @@ mermaid_version = "10.9.1"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "furo"
-html_title = "Jumpstarter Documentation"
+html_title = "JumpstarterDocumentation"
+html_logo = "_static/img/logo-light-theme.svg"
 html_favicon = "_static/img/favicon.png"
 
 myst_heading_anchors = 3
