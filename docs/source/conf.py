@@ -43,7 +43,7 @@ mermaid_version = "10.9.1"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "furo"
-html_title = "JumpstarterDocumentation"
+html_title = "Jumpstarter"
 html_logo = "_static/img/logo-light-theme.svg"
 html_favicon = "_static/img/favicon.png"
 
@@ -59,7 +59,7 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/version_array.js", "js/versions.js", "js/theme-mermaid.js", "js/tabs.js"]
+html_js_files = ["js/version_array.js", "js/versions.js", "js/tabs.js", "js/theme-toggle-tracker.js"]
 html_static_path = ["_static"]
 html_css_files = [
     "css/versions.css",
