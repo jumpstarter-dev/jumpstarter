@@ -2,7 +2,7 @@
 
 This section provides documentation on Jumpstarter adapter packages that help interface with different network protocols and systems. Adapters serve as intermediate layers for connecting Jumpstarter with various external components.
 
-The following pages will guide you through the available adapters:
+## Types of Adapters
 
 * **[Network](network.md)** - Network protocol adapters and utilities
 
