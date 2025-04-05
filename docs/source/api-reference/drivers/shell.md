@@ -2,8 +2,8 @@
 
 **driver**: `jumpstarter_driver_shell.driver.Shell`
 
-The methods of this client are dynamic, and they are generated from
-the `methods` field of the exporter driver configuration.
+The methods of this client are dynamic, and they are generated from the
+`methods` field of the exporter driver configuration.
 
 ## Driver configuration
 ```yaml

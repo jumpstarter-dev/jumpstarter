@@ -1,6 +1,7 @@
 # DbusNetwork driver
 
-The DbusNetwork driver is a driver for transparently accessing the dbus on the remote machine.
+The DbusNetwork driver is a driver for transparently accessing the dbus on the
+remote machine.
 
 ## Driver configuration
 

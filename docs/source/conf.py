@@ -45,7 +45,7 @@ mermaid_version = "10.9.1"
 html_theme = "furo"
 
 # html_extra_path = ["extra"]
-html_title = "Jumpstarter Docs"
+html_title = "Jumpstarter Documentation"
 
 myst_heading_anchors = 3
 myst_enable_extensions = [
@@ -59,10 +59,12 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/version_array.js", "js/versions.js"]
+html_js_files = ["js/version_array.js", "js/versions.js", "js/theme-mermaid.js", "js/tabs.js"]
 html_static_path = ["_static"]
 html_css_files = [
     "css/versions.css",
+    "css/tabs.css",
+    "css/custom.css",
 ]
 html_sidebars = {
     "**": [

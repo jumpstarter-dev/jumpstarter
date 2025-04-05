@@ -22,7 +22,7 @@ commands:
   - id: serve-docs
     exec:
       component: runtime
-      commandLine: make serve-docs DOC_LISTEN="--host 0.0.0.0"
+      commandLine: make docs-serve DOC_LISTEN="--host 0.0.0.0"
   - id: sync
     exec:
       component: runtime

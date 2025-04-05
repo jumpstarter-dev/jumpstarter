@@ -1,6 +1,7 @@
 # Opendal driver
 
-The Opendal driver is a driver for interacting with storages attached to the exporter.
+The Opendal driver is a driver for interacting with storages attached to the
+exporter.
 
 ## Driver configuration
 
