@@ -2,23 +2,48 @@
 
 This section documents the drivers from the Jumpstarter packages directory. Each driver is contained in a separate package in the form of `jumpstarter-driver-{name}` and provides specific functionality for interacting with different hardware components and systems.
 
-The following pages will guide you through the available drivers:
+## Types of Drivers
 
-* **[CAN](can.md)** - Controller Area Network communication
-* **[D-Bus](dbus.md)** - D-Bus message system interface
-* **[Flashers](flashers.md)** - Flash memory programming tools
-* **[Network](network.md)** - Network interfaces and configuration
-* **[OpenDAL](opendal.md)** - Open Data Access Layer
-* **[Proxy](proxy.md)** - Network proxy functionality
-* **[Probe-RS](probe-rs.md)** - Debugging probe support
-* **[PySerial](pyserial.md)** - Serial port communication
-* **[SD Wire](sdwire.md)** - SD card switching utilities
-* **[Shell](shell.md)** - Shell command execution
-* **[SNMP](snmp.md)** - Simple Network Management Protocol
-* **[TFTP](tftp.md)** - Trivial File Transfer Protocol
-* **[U-Boot](uboot.md)** - Universal Bootloader interface
-* **[UStreamer](ustreamer.md)** - Video streaming functionality
-* **[Yepkit](yepkit.md)** - Yepkit hardware control
+Jumpstarter includes several types of drivers organized by their primary function:
+
+### System Control Drivers
+Drivers that control the power state and basic operation of devices:
+
+* **[Yepkit](/api-reference/drivers/yepkit.md)** (`jumpstarter-driver-yepkit`) - Yepkit hardware control
+
+### Communication Drivers
+Drivers that provide various communication interfaces:
+
+* **[CAN](/api-reference/drivers/can.md)** (`jumpstarter-driver-can`) - Controller Area Network communication
+* **[D-Bus](/api-reference/drivers/dbus.md)** (`jumpstarter-driver-dbus`) - D-Bus message system interface
+* **[Network](/api-reference/drivers/network.md)** (`jumpstarter-driver-network`) - Network interfaces and configuration
+* **[Proxy](/api-reference/drivers/proxy.md)** (`jumpstarter-driver-proxy`) - Network proxy functionality
+* **[PySerial](/api-reference/drivers/pyserial.md)** (`jumpstarter-driver-pyserial`) - Serial port communication
+* **[SNMP](/api-reference/drivers/snmp.md)** (`jumpstarter-driver-snmp`) - Simple Network Management Protocol
+* **[TFTP](/api-reference/drivers/tftp.md)** (`jumpstarter-driver-tftp`) - Trivial File Transfer Protocol
+
+### Storage and Data Drivers
+Drivers that control storage devices and manage data:
+
+* **[OpenDAL](/api-reference/drivers/opendal.md)** (`jumpstarter-driver-opendal`) - Open Data Access Layer
+* **[SD Wire](/api-reference/drivers/sdwire.md)** (`jumpstarter-driver-sdwire`) - SD card switching utilities
+
+### Media Drivers
+Drivers that handle media streams:
+
+* **[UStreamer](/api-reference/drivers/ustreamer.md)** (`jumpstarter-driver-ustreamer`) - Video streaming functionality
+
+### Debug and Programming Drivers
+Drivers for debugging and programming devices:
+
+* **[Flashers](/api-reference/drivers/flashers.md)** (`jumpstarter-driver-flashers`) - Flash memory programming tools
+* **[Probe-RS](/api-reference/drivers/probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe support
+* **[U-Boot](/api-reference/drivers/uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader interface
+
+### Utility Drivers
+General-purpose utility drivers:
+
+* **[Shell](/api-reference/drivers/shell.md)** (`jumpstarter-driver-shell`) - Shell command execution
 
 ```{toctree}
 :hidden:

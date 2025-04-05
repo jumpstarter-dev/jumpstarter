@@ -23,68 +23,10 @@ Architecture](../api-reference/drivers.md) reference.
 
 ## Types of Drivers
 
-Jumpstarter includes several types of drivers organized by their primary
-function:
-
-### System Control Drivers
-
-Drivers that control the power state and basic operation of devices:
-
-- **Power Control** (`jumpstarter-driver-power`) - Control power to physical
-  devices
-- **Yepkit** (`jumpstarter-driver-yepkit`) - Control Yepkit USB switching
-  devices
-- **QEMU** (`jumpstarter-driver-qemu`) - Control virtual machines
-  (start/stop/manage)
-- **RaspberryPi** (`jumpstarter-driver-raspberrypi`) - Interface with Raspberry
-  Pi GPIO
-
-### Communication Drivers
-
-Drivers that provide various communication interfaces:
-
-- **Serial** (`jumpstarter-driver-pyserial`) - Interact with serial ports
-- **CAN** (`jumpstarter-driver-can`) - Interface with CAN bus networks
-- **Network** (`jumpstarter-driver-network`) - Tunnel TCP/UDP network traffic
-- **HTTP** (`jumpstarter-driver-http`) - HTTP client and server capabilities
-- **SNMP** (`jumpstarter-driver-snmp`) - Simple Network Management Protocol
-- **TFTP** (`jumpstarter-driver-tftp`) - Trivial File Transfer Protocol service
-
-### Storage and Data Drivers
-
-Drivers that control storage devices and manage data:
-
-- **SDWire** (`jumpstarter-driver-sdwire`) - Access and control SD card
-  interfaces
-- **OpenDAL** (`jumpstarter-driver-opendal`) - Multi-cloud data access layer
-
-### Media Drivers
-
-Drivers that handle media streams:
-
-- **UStreamer** (`jumpstarter-driver-ustreamer`) - Stream video from cameras
-
-### Debug and Programming Drivers
-
-Drivers for debugging and programming devices:
-
-- **Probe-RS** (`jumpstarter-driver-probe-rs`) - Debug and program embedded
-  devices
-- **U-Boot** (`jumpstarter-driver-uboot`) - Interact with U-Boot bootloader
-- **Flashers** (`jumpstarter-driver-flashers`) - Flash firmware to devices
-
-### Utility Drivers
-
-General-purpose utility drivers:
-
-- **Shell** (`jumpstarter-driver-shell`) - Execute shell commands
-
-### Specialized Hardware Drivers
-
-Drivers for specific hardware platforms:
-
-- **DUTLink** (`jumpstarter-driver-dutlink`) - Interface with DUTLink test
-  hardware
+```{include} ../api-reference/drivers/index.md
+:start-after: "## Types of Drivers"
+:end-before: "```{toctree}"
+```
 
 ### Composite Drivers
 
