@@ -28,10 +28,14 @@
             ? '/_static/img/logo-dark-theme.svg'
             : '/_static/img/logo-light-theme.svg';
 
-        // Create a stylesheet with the logo as a CSS rule to be applied immediately
-        const style = document.createElement('style');
+        // Create or reuse a stylesheet with the logo as a CSS rule to be applied immediately
+        let style = document.getElementById('logo-style');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'logo-style';
+            document.head.appendChild(style);
+        }
         style.textContent = `.sidebar-brand img { content: url("${logoPath}"); }`;
-        document.head.appendChild(style);
 
         return logoPath;
     }
