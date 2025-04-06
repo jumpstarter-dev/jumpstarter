@@ -3,17 +3,11 @@ DOC_LISTEN ?= --host 127.0.0.1
 
 default: build
 
-docs:
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs html
-
 docs-all:
-	./docs/make-all-versions.sh
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
-docs-serve:
+docs-serve: docs-all
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve HOST="$(DOC_LISTEN)"
-
-docs-serve-all:
-	python3 -m http.server 8000 --bind 127.0.0.1 -d ./docs/build_all
 
 docs-test:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest

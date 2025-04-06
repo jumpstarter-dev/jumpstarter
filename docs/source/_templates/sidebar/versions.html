@@ -2,8 +2,17 @@
     <div id="doc_versions" class="">
         <span class="sidebar-brand-text">Versions</span>
         <ul id="doc_versions_list">
+            {% if versions %}
+            {% for item in versions %}
+            <li>
+                <a href="{{ item.url }}" {% if item.name==current_version.name %}class="current" {% endif %}>
+                    {{ item.name }}
+                </a>
+            </li>
+            {% endfor %}
+            {% else %}
             <li><a href="/">main</a></li>
-            ...
+            {% endif %}
         </ul>
     </div>
 </div>

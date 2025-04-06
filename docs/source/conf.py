@@ -14,7 +14,7 @@ import requests
 sys.path.insert(0, os.path.abspath("../.."))
 
 project = "jumpstarter"
-copyright = "2024, Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
+copyright = "2025, Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
 author = "Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
 
 controller_version = requests.get(
@@ -32,6 +32,7 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx_click",
     "sphinx_substitution_extensions",
+    "sphinx_multiversion",
 ]
 
 templates_path = ["_templates"]
@@ -46,6 +47,7 @@ html_theme = "furo"
 html_title = "Jumpstarter"
 html_logo = "_static/img/logo-light-theme.svg"
 html_favicon = "_static/img/favicon.png"
+html_show_sphinx = False
 
 myst_heading_anchors = 3
 myst_enable_extensions = [
@@ -76,4 +78,19 @@ html_sidebars = {
         "sidebar/scroll-end.html",
         "sidebar/versions.html",
     ]
+}
+
+# -- sphinx-multiversion configuration -------------------------------------
+# This replaces the custom bash script approach with built-in functionality
+
+# Tags pattern for html_context["versions"]
+smv_tag_whitelist = r'^v0\.5\.0|^v[0-9]+\.[0-9]+\.[0-9]+$'  # Starting from v0.5.0
+smv_branch_whitelist = r'^(main|master)$'  # Only include main/master branch
+smv_remote_whitelist = None
+smv_released_pattern = r'^v[0-9]+\.[0-9]+\.[0-9]+$'  # Tags that are considered releases
+smv_outputdir_format = '{ref.name}'  # Directory name format
+
+# Patterns for the versions panel
+html_context = {
+    'display_lower': True,  # Display lower versions at the bottom of the menu
 }

@@ -22,3 +22,6 @@ help:
 
 serve:
 	sphinx-autobuild $(HOST) "$(SOURCEDIR)" "$(BUILDDIR)"
+
+multiversion:
+	sphinx-multiversion "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
