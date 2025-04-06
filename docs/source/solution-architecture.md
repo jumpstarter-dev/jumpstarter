@@ -19,7 +19,7 @@ hardware development lifecycle. Here are the key integration points:
 ### Continuous Integration with System Testing
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Version Control"
         GitRepo["Git Repository"]
@@ -99,7 +99,7 @@ hardware-test:
 ### Self-Hosted CI Runner with Attached System
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Version Control"
         GitRepo["Git Repository"]
@@ -185,7 +185,7 @@ hardware-test:
 Organizations can implement usage-based billing for teams through a cost management layer.
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart LR
     subgraph "Kubernetes"
         Controller["Controller"]
@@ -246,7 +246,7 @@ This architecture implements a cost chargeback model for infrastructure resource
 ### Traditional Developer Workflow
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Workstation"
         TestCode["Test Code"]
@@ -284,7 +284,7 @@ shared lab resources:
 ### Cloud Native Developer Workflow
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Web Browser"
         Dev["Developer"]

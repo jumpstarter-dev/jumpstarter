@@ -82,7 +82,7 @@ In local mode, clients communicate directly with exporters running on the same
 machine or through direct network connections.
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Developer Machine"
         Client["Client\n(Python Library/CLI)"]
@@ -129,7 +129,7 @@ distributed across a network, with JWT token-based authentication securing all
 connections.
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#cfd0d0","primaryTextColor":"#000","primaryBorderColor":"#666","lineColor":"#3d94ff","secondaryColor":"#cfd0d0","tertiaryColor":"#fff"}}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Kubernetes Cluster"
         Controller["Controller\nResource Management"]

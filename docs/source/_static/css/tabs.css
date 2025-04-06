@@ -1,7 +1,7 @@
 .tab {
     overflow: hidden;
-    border: 1px solid #ccc;
-    background-color: #f1f1f1;
+    border: 1px solid #e5e5e5;
+    background-color: #f8f8f8;
     border-radius: 4px 4px 0 0;
 }
 
@@ -26,17 +26,17 @@
 }
 
 .tab button:hover {
-    background-color: #ddd;
+    background-color: #c8c8c8;
 }
 
 .tab button.active {
-    background-color: #ccc;
+    background-color: #e5e5e5;
 }
 
 .tabcontent {
     display: none;
     padding: 6px 12px;
-    border: 1px solid #ccc;
+    border: 1px solid #e5e5e5;
     border-top: none;
     border-radius: 0 0 4px 4px;
     animation: fadeEffect 0.5s;
