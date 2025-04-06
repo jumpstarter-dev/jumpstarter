@@ -3,12 +3,10 @@ DOC_LISTEN ?= --host 127.0.0.1
 
 default: build
 
-docs-build:
+docs:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs html
 
-docs: docs-build
-
-docs-build-all:
+docs-all:
 	./docs/make-all-versions.sh
 
 docs-serve:
@@ -63,7 +61,7 @@ test: pkg-test-all docs-test
 
 mypy: pkg-mypy-all
 
-.PHONY: default docs-build docs-build-all docs-serve docs-serve-all docs-clean docs-test \
+.PHONY: default docs docs-all docs-serve docs-serve-all docs-clean docs-test \
 	docs-linkcheck pkg-test-all pkg-mypy-all build generate sync \
 	clean-venv clean-build clean-test clean-all test-all mypy-all docs \
 	pkg-mypy-jumpstarter \
