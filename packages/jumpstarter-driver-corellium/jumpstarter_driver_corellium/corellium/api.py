@@ -10,6 +10,7 @@ class ApiClient:
     """
     Corellium ReST API client used by the Corellium driver.
     """
+
     session: Session
     req: requests.Session
 
@@ -27,7 +28,7 @@ class ApiClient:
         """
         Return the baseurl path for API calls.
         """
-        return f'https://{self.host}/api'
+        return f"https://{self.host}/api"
 
     def login(self) -> None:
         """
@@ -38,34 +39,32 @@ class ApiClient:
 
         It uses the global requests objects so a new session can be generated.
         """
-        data = {
-            'apiToken': self.token
-        }
+        data = {"apiToken": self.token}
 
         try:
-            res = requests.post(f'{self.baseurl}/v1/auth/login', json=data)
+            res = requests.post(f"{self.baseurl}/v1/auth/login", json=data)
             data = res.json()
             res.raise_for_status()
         except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            raise CorelliumApiException(data.get("error", str(e))) from e
 
         self.session = Session(**data)
         self.req.headers.update(self.session.as_header())
 
-    def get_project(self, project_ref: str = 'Default Project') -> Optional[Project]:
+    def get_project(self, project_ref: str = "Default Project") -> Optional[Project]:
         """
         Retrieve a project based on project_ref, which is either its id or name.
         """
         try:
-            res = self.req.get(f'{self.baseurl}/v1/projects')
+            res = self.req.get(f"{self.baseurl}/v1/projects")
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            raise CorelliumApiException(data.get("error", str(e))) from e
 
         for project in data:
-            if project['name'] == project_ref or project['id'] == project_ref:
-                return Project(id=project['id'], name=project['name'])
+            if project["name"] == project_ref or project["id"] == project_ref:
+                return Project(id=project["id"], name=project["name"])
 
         return None
 
@@ -76,14 +75,14 @@ class ApiClient:
         A device object is used to create a new virtual instance.
         """
         try:
-            res = self.req.get(f'{self.baseurl}/v1/models')
+            res = self.req.get(f"{self.baseurl}/v1/models")
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            raise CorelliumApiException(data.get("error", str(e))) from e
 
         for device in data:
-            if device['model'] == model:
+            if device["model"] == model:
                 return Device(**device)
 
         return None
@@ -93,19 +92,19 @@ class ApiClient:
         Create a new virtual instance from a device spec.
         """
         data = {
-            'name': name,
-            'project': project.id,
-            'flavor': device.flavor,
-            'os': os_version,
-            'osbuild': os_build,
+            "name": name,
+            "project": project.id,
+            "flavor": device.flavor,
+            "os": os_version,
+            "osbuild": os_build,
         }
 
         try:
-            res = self.req.post(f'{self.baseurl}/v1/instances', json=data)
+            res = self.req.post(f"{self.baseurl}/v1/instances", json=data)
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            raise CorelliumApiException(data.get("error", str(e))) from e
 
         return Instance(**data)
 
@@ -116,15 +115,15 @@ class ApiClient:
         Return None if it does not exist.
         """
         try:
-            res = self.req.get(f'{self.baseurl}/v1/instances')
+            res = self.req.get(f"{self.baseurl}/v1/instances")
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            raise CorelliumApiException(data.get("error", str(e))) from e
 
         for instance in data:
-            if instance['name'] == instance_ref or instance['id'] == instance_ref:
-                return Instance(id=instance['id'], state=instance['state'])
+            if instance["name"] == instance_ref or instance["id"] == instance_ref:
+                return Instance(id=instance["id"], state=instance["state"])
 
         return None
 
@@ -144,12 +143,10 @@ class ApiClient:
         - rebooting
         - error
         """
-        data = {
-            'state': instance_state
-        }
+        data = {"state": instance_state}
 
         try:
-            res = self.req.put(f'{self.baseurl}/v1/instances/{instance.id}/state', json=data)
+            res = self.req.put(f"{self.baseurl}/v1/instances/{instance.id}/state", json=data)
             data = res.json() if res.status_code != 204 else None
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -164,7 +161,7 @@ class ApiClient:
         Does not return anything since Corellium's API return a HTTP 204 response.
         """
         try:
-            res = self.req.delete(f'{self.baseurl}/v1/instances/{instance.id}')
+            res = self.req.delete(f"{self.baseurl}/v1/instances/{instance.id}")
             data = res.json() if res.status_code != 204 else None
             res.raise_for_status()
         except requests.exceptions.RequestException as e:

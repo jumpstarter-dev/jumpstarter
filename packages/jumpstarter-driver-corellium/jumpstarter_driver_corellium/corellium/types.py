@@ -1,6 +1,7 @@
 """
 Corellium API types.
 """
+
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
@@ -10,6 +11,7 @@ class Session:
     """
     Session data class to hold Corellium's API session data.
     """
+
     token: str
     expiration: str
 
@@ -17,9 +19,7 @@ class Session:
         """
         Return a dict to be used as HTTP header for authenticated requests.
         """
-        return {
-            'Authorization': f'Bearer {self.token}'
-        }
+        return {"Authorization": f"Bearer {self.token}"}
 
 
 @dataclass
@@ -27,6 +27,7 @@ class Project:
     """
     Dataclass that represents a Corellium project.
     """
+
     id: str
     name: str
 
@@ -38,6 +39,7 @@ class Device:
 
     A device object is used to create virtual instances.
     """
+
     name: str
     type: str
     flavor: str
@@ -52,5 +54,6 @@ class Instance:
     """
     Virtual instance dataclass.
     """
+
     id: str
     state: Optional[str] = field(default=None)
