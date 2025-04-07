@@ -1,10 +1,7 @@
 from typing import Optional
 
 import corellium_api
-import requests
-
-from .exceptions import CorelliumApiException
-from .types import Device, Instance, Project, Session
+from corellium_api import Instance, Model, Project
 
 
 class ApiClient:
@@ -12,20 +9,14 @@ class ApiClient:
     Corellium ReST API client used by the Corellium driver.
     """
 
-    session: Session
-    req: requests.Session
-
     def __init__(self, host: str, token: str) -> None:
         """
         Initializes a new client, containing a
         """
         self.host = host
-        self.token = token
-        self.session = None
-        self.req = requests.Session()
 
         configuration = corellium_api.Configuration(host=self.baseurl)
-        configuration.access_token = self.token
+        configuration.access_token = token
         self.api = corellium_api.CorelliumApi(corellium_api.ApiClient(configuration))
 
     @property
@@ -34,27 +25,6 @@ class ApiClient:
         Return the baseurl path for API calls.
         """
         return f"https://{self.host}/api"
-
-    def login(self) -> None:
-        """
-        Login against Corellium's ReST API.
-
-        Set an internal Session object instance to be used
-        in other API calls that require authentication.
-
-        It uses the global requests objects so a new session can be generated.
-        """
-        data = {"apiToken": self.token}
-
-        try:
-            res = requests.post(f"{self.baseurl}/v1/auth/login", json=data)
-            data = res.json()
-            res.raise_for_status()
-        except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
-            raise CorelliumApiException(data.get("error", str(e))) from e
-
-        self.session = Session(**data)
-        self.req.headers.update(self.session.as_header())
 
     async def get_project(self, project_ref: str = "Default Project") -> Optional[Project]:
         """
@@ -68,7 +38,7 @@ class ApiClient:
 
         return None
 
-    async def get_device(self, model: str) -> Optional[Device]:
+    async def get_device(self, model: str) -> Optional[Model]:
         """
         Get a device spec from Corellium's list based on the model name.
 
@@ -83,7 +53,7 @@ class ApiClient:
         return None
 
     async def create_instance(
-        self, name: str, project: Project, device: Device, os_version: str, os_build: str
+        self, name: str, project: Project, device: Model, os_version: str, os_build: str
     ) -> Instance:
         """
         Create a new virtual instance from a device spec.

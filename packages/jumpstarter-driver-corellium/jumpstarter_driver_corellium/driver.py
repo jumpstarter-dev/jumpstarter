@@ -5,14 +5,13 @@ Jumpstarter corellium driver(s) implementation module.
 import os
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from typing import Dict, Optional
 
 from anyio import sleep
+from corellium_api import Instance
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
 from .corellium.api import ApiClient
-from .corellium.types import Instance
 from jumpstarter.common import exceptions as jmp_exceptions
 from jumpstarter.driver import Driver, export
 
@@ -87,18 +86,6 @@ class Corellium(Driver):
         It will also be responsible for creating/refreshing the session token used
         across different API methods that require authentication.
         """
-        # session does not exist, just login and return
-        if self._api.session is None:
-            self._api.login()
-
-            return self._api
-
-        # check if session is about to expire
-        # currently depends on the magic number of 60 seconds
-        now = datetime.utcnow()
-        diff = datetime.strptime(self._api.session.expiration, "%Y-%m-%dT%H:%M:%S.%fZ") - now
-        if diff > timedelta(seconds=1):
-            self._api.login()
 
         return self._api
 

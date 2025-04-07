@@ -1,8 +1,8 @@
 from unittest.mock import patch
 
 import pytest
+from corellium_api import Instance, Model, Project
 
-from .corellium.types import Device, Instance, Project, Session
 from .driver import Corellium, CorelliumPower
 from jumpstarter.common import exceptions as jmp_exceptions
 
@@ -24,8 +24,6 @@ async def test_driver_corellium_init_ok(monkeypatch):
     assert "jmp" == c.device_name
     assert "kronos" == c.device_flavor
     assert "1.0" == c.device_os
-    assert "api-host" == c._api.host
-    assert "api-token" == c._api.token
 
 
 @pytest.mark.parametrize(
@@ -59,24 +57,12 @@ async def test_driver_corellium_init_error(monkeypatch, env, err):
     assert str(err) == str(e.value)
 
 
-async def test_driver_api_client_ok(monkeypatch, requests_mock):
-    requests_mock.post(
-        "https://api-host/api/v1/auth/login", text='{"token": "token", "expiration": "2022-03-20T01:50:10.000Z"}'
-    )
-    monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
-    monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
-
-    c = Corellium(project_id="1", device_name="jmp", device_flavor="kronos", device_os="1.0")
-
-    assert Session("token", "2022-03-20T01:50:10.000Z") == c.api.session
-
-
 async def test_driver_power_on_ok(monkeypatch):
     monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
     monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
 
     project = Project("1", "Default Project")
-    device = Device(
+    device = Model(
         name="rd1ae",
         type="automotive",
         flavor="kronos",
@@ -89,7 +75,6 @@ async def test_driver_power_on_ok(monkeypatch):
     power = CorelliumPower(parent=root)
 
     with (
-        patch.object(root._api, "login", return_value=None),
         patch.object(root._api, "get_project", return_value=project),
         patch.object(root._api, "get_device", return_value=device),
         patch.object(root._api, "get_instance", side_effect=[None, instance]),
@@ -108,7 +93,6 @@ async def test_driver_power_off_ok(monkeypatch):
     power = CorelliumPower(parent=root)
 
     with (
-        patch.object(root._api, "login", return_value=None),
         patch.object(root._api, "get_project", return_value=project),
         patch.object(root._api, "set_instance_state", return_value=None),
         patch.object(root._api, "get_instance", side_effect=[instance, Instance(id=instance.id, state="off")]),
