@@ -174,7 +174,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
                 opts["os_version"] = self.parent.device_os
             if self.parent.device_build:
                 opts["os_build"] = self.parent.device_build
-            instance = self.parent.api.create_instance(self.parent.device_name, project, device, **opts)
+            instance = await self.parent.api.create_instance(self.parent.device_name, project, device, **opts)
         self.logger.info(f"Instance: {self.parent.device_name} (ID: {instance.id})")
 
         await self.wait_instance(instance, Instance(id=instance.id, state="on"))

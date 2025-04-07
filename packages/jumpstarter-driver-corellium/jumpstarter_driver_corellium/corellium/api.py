@@ -82,26 +82,22 @@ class ApiClient:
 
         return None
 
-    def create_instance(self, name: str, project: Project, device: Device, os_version: str, os_build: str) -> Instance:
+    async def create_instance(
+        self, name: str, project: Project, device: Device, os_version: str, os_build: str
+    ) -> Instance:
         """
         Create a new virtual instance from a device spec.
         """
-        data = {
-            "name": name,
-            "project": project.id,
-            "flavor": device.flavor,
-            "os": os_version,
-            "osbuild": os_build,
-        }
 
-        try:
-            res = self.req.post(f"{self.baseurl}/v1/instances", json=data)
-            data = res.json()
-            res.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get("error", str(e))) from e
-
-        return Instance(**data)
+        return await self.api.v1_create_instance(
+            corellium_api.InstanceCreateOptions(
+                name=name,
+                project=project.id,
+                flavor=device.flavor,
+                os=os_version,
+                osbuild=os_build,
+            )
+        )
 
     async def get_instance(self, instance_ref: str) -> Optional[Instance]:
         """
