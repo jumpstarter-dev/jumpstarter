@@ -14,8 +14,8 @@ import requests
 sys.path.insert(0, os.path.abspath("../.."))
 
 project = "jumpstarter"
-copyright = "2025, Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
-author = "Miguel Angel Ajo Pelayo, Nick Cao, Kirk Brauer"
+copyright = "2025, Jumpstarter Contributors"
+author = "Jumpstarter Community"
 
 controller_version = requests.get(
     "https://quay.io/api/v1/repository/jumpstarter-dev/helm/jumpstarter/tag/", params={"limit": 1}
@@ -98,7 +98,7 @@ html_theme_options = {
 # This replaces the custom bash script approach with built-in functionality
 
 # Tags pattern for html_context["versions"]
-smv_tag_whitelist = r"^v0\.5\.0|^main"  # Starting from v0.5.0
+smv_tag_whitelist = r"^main$|^v(0\.([5-9]|[1-9][0-9]*)\.\d+|[1-9]\d*\.\d+\.\d+)$"  # Starting from v0.5.0
 smv_branch_whitelist = r"^(main|master)$"  # Only include main/master branch
 smv_remote_whitelist = None
 smv_released_pattern = r"^v[0-9]+\.[0-9]+\.[0-9]+$"  # Tags that are considered releases
