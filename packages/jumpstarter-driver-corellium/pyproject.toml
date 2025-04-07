@@ -13,7 +13,8 @@ dependencies = [
     "jumpstarter-driver-composite",
     "jumpstarter-driver-power",
     "pyserial>=3.5",
-    "asyncclick>=8.1.7.2"
+    "asyncclick>=8.1.7.2",
+    "corellium-api>=0.4.0",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

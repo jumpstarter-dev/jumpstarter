@@ -473,6 +473,18 @@ wheels = [
 ]
 
 [[package]]
+name = "corellium-api"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "python-dateutil" },
+    { name = "six" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/02/61/0a3fbd12fd85e802031a1ba45e20d54e627028db45b8de8bebad49de3298/corellium_api-0.4.0.tar.gz", hash = "sha256:06e98ff7be608c7727c5610d9208c30f5287ceef0e0fe29976ca50d0a68e8711", size = 155422 }
+
+[[package]]
 name = "coverage"
 version = "7.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1209,6 +1221,7 @@ name = "jumpstarter-driver-corellium"
 source = { editable = "packages/jumpstarter-driver-corellium" }
 dependencies = [
     { name = "asyncclick" },
+    { name = "corellium-api" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-power" },
@@ -1226,6 +1239,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "asyncclick", specifier = ">=8.1.7.2" },
+    { name = "corellium-api", specifier = ">=0.4.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
