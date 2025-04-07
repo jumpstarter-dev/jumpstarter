@@ -23,10 +23,21 @@
         const currentTheme = document.body ? document.body.getAttribute('data-theme') || 'auto' : 'auto';
         const effectiveTheme = getEffectiveTheme(currentTheme);
 
-        // Logo path based on effective theme
+        // Calculate base path by analyzing current URL path
+        // This ensures we get the correct path regardless of navigation depth
+        const path = window.location.pathname;
+        let basePath = '';
+
+        // Extract the version part (e.g., 'main' or 'v0.5.0')
+        const match = path.match(/^\/([^\/]+)/);
+        if (match && match[1]) {
+            basePath = '/' + match[1] + '/';
+        }
+
+        // Logo path based on effective theme with correct base path
         const logoPath = effectiveTheme === 'dark'
-            ? '/_static/img/logo-dark-theme.svg'
-            : '/_static/img/logo-light-theme.svg';
+            ? basePath + '_static/img/logo-dark-theme.svg'
+            : basePath + '_static/img/logo-light-theme.svg';
 
         // Create or reuse a stylesheet with the logo as a CSS rule to be applied immediately
         let style = document.getElementById('logo-style');
