@@ -98,7 +98,7 @@ html_theme_options = {
 # This replaces the custom bash script approach with built-in functionality
 
 # Tags pattern for html_context["versions"]
-smv_tag_whitelist = r"^v0\.5\.0|^v[0-9]+\.[0-9]+\.[0-9]+$"  # Starting from v0.5.0
+smv_tag_whitelist = r"^v0\.5\.0|^main"  # Starting from v0.5.0
 smv_branch_whitelist = r"^(main|master)$"  # Only include main/master branch
 smv_remote_whitelist = None
 smv_released_pattern = r"^v[0-9]+\.[0-9]+\.[0-9]+$"  # Tags that are considered releases
