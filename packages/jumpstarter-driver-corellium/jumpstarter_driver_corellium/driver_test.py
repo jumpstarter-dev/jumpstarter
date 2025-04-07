@@ -96,7 +96,7 @@ async def test_driver_power_on_ok(monkeypatch):
         patch.object(root._api, "get_instance", side_effect=[None, instance]),
         patch.object(root._api, "create_instance", return_value=instance),
     ):
-        power.on()
+        await power.on()
 
 
 @pytest.mark.parametrize(
@@ -124,7 +124,7 @@ async def test_driver_power_on_error(monkeypatch, mock_data):
             patch.object(root._api, "get_instance", **mock_data.get("get_instance", {"return_value": instance})),
             patch.object(root._api, "create_instance", **mock_data.get("create_instance", {"return_value": instance})),
         ):
-            power.off()
+            await power.off()
 
 
 async def test_driver_power_off_ok(monkeypatch):
@@ -142,7 +142,7 @@ async def test_driver_power_off_ok(monkeypatch):
         patch.object(root._api, "set_instance_state", return_value=None),
         patch.object(root._api, "get_instance", side_effect=[instance, Instance(id=instance.id, state="off")]),
     ):
-        power.off()
+        await power.off()
 
 
 @pytest.mark.parametrize(
@@ -172,4 +172,4 @@ async def test_driver_power_off_error(monkeypatch, mock_data):
                 root._api, "destroy_instance", **mock_data.get("destroy_instance", {"return_value": instance})
             ),
         ):
-            power.off()
+            await power.off()

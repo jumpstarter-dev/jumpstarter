@@ -142,7 +142,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
             time.sleep(opts["interval"])
 
     @export
-    def on(self) -> None:
+    async def on(self) -> None:
         """
         Power a Corellium virtual device on.
 
@@ -153,7 +153,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
         self.logger.info(f"\tDevice Flavor: {self.parent.device_flavor}")
         self.logger.info(f"\tDevice OS Version: {self.parent.device_os}")
 
-        project = self.parent.api.get_project(self.parent.project_id)
+        project = await self.parent.api.get_project(self.parent.project_id)
         if project is None:
             raise ValueError(f"Unable to fetch project: {self.parent.project_id}")
         self.logger.info(f"Using project: {project.name}")
@@ -180,12 +180,12 @@ class CorelliumPower(VirtualPowerInterface, Driver):
         self.wait_instance(instance, Instance(id=instance.id, state="on"))
 
     @export
-    def off(self, destroy: bool = False) -> None:
+    async def off(self, destroy: bool = False) -> None:
         """
         Destroy a Corellium virtual device/instance.
         """
         # fail if project does not exist
-        project = self.parent.api.get_project(self.parent.project_id)
+        project = await self.parent.api.get_project(self.parent.project_id)
         if project is None:
             raise ValueError(f"Unable to fetch project: {self.parent.project_id}")
 

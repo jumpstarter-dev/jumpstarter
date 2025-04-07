@@ -56,20 +56,15 @@ class ApiClient:
         self.session = Session(**data)
         self.req.headers.update(self.session.as_header())
 
-    def get_project(self, project_ref: str = "Default Project") -> Optional[Project]:
+    async def get_project(self, project_ref: str = "Default Project") -> Optional[Project]:
         """
         Retrieve a project based on project_ref, which is either its id or name.
         """
-        try:
-            res = self.req.get(f"{self.baseurl}/v1/projects")
-            data = res.json()
-            res.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get("error", str(e))) from e
 
-        for project in data:
-            if project["name"] == project_ref or project["id"] == project_ref:
-                return Project(id=project["id"], name=project["name"])
+        projects = await self.api.v1_get_projects()
+        for project in projects:
+            if project.name == project_ref or project.id == project_ref:
+                return project
 
         return None
 

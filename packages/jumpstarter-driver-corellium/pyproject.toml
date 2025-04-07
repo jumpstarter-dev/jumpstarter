@@ -26,6 +26,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "trio>=0.28.0",
     "requests_mock",
+    "pytest-aiohttp>=1.1.0",
 ]
 
 [tool.hatch.metadata.hooks.vcs.urls]

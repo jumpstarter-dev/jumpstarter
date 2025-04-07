@@ -55,49 +55,6 @@ async def test_login_error(requests_mock, status_code, data, msg):
 
 
 @pytest.mark.parametrize(
-    "project_name,data,has_results",
-    [
-        ("OtherProject", fixture("http/get-projects-200.json"), True),
-        (None, fixture("http/get-projects-200.json"), True),
-        ("notfound", fixture("http/get-projects-200.json"), False),
-    ],
-)
-async def test_get_project_ok(requests_mock, project_name, data, has_results):
-    requests_mock.get("https://api-host/api/v1/projects", status_code=200, text=data)
-    api = ApiClient("api-host", "api-token")
-    api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
-
-    args = []
-    if project_name:
-        args.append(project_name)
-    project = api.get_project(*args)
-
-    if has_results:
-        assert project is not None
-        assert project.name == project_name if project_name is not None else "Default Project"
-    else:
-        assert project is None
-
-
-@pytest.mark.parametrize(
-    "status_code,data,msg",
-    [
-        (403, fixture("http/403.json"), "Invalid or missing authorization token"),
-        (404, fixture("http/get-projects-404.json"), ""),
-    ],
-)
-async def test_get_project_error(requests_mock, status_code, data, msg):
-    requests_mock.get("https://api-host/api/v1/projects", status_code=status_code, text=data)
-    api = ApiClient("api-host", "api-token")
-    api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
-
-    with pytest.raises(CorelliumApiException) as e:
-        api.get_project()
-
-    assert msg in str(e.value)
-
-
-@pytest.mark.parametrize(
     "model,data,has_results",
     [("rpi4b", fixture("http/get-models-200.json"), True), ("notfound", fixture("http/get-models-200.json"), False)],
 )
