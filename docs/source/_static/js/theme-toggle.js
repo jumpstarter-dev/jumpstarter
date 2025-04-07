@@ -26,29 +26,53 @@
         // Calculate base path by analyzing current URL path
         // This ensures we get the correct path regardless of navigation depth
         const path = window.location.pathname;
-        let basePath = '';
+        let logoPath;
 
-        // Extract the version part (e.g., 'main' or 'v0.5.0')
-        const match = path.match(/^\/([^\/]+)/);
-        if (match && match[1]) {
-            basePath = '/' + match[1] + '/';
+        // Function to create the correct logo path based on a base path
+        function createLogoPath(basePath) {
+            return effectiveTheme === 'dark'
+                ? basePath + '_static/img/logo-dark-theme.svg'
+                : basePath + '_static/img/logo-light-theme.svg';
         }
 
-        // Logo path based on effective theme with correct base path
-        const logoPath = effectiveTheme === 'dark'
-            ? basePath + '_static/img/logo-dark-theme.svg'
-            : basePath + '_static/img/logo-light-theme.svg';
+        // Check if _static directory exists at the root level (sphinx-autobuild case)
+        // We dynamically create an image element to test if the root path works
+        const testImg = new Image();
+        testImg.onerror = function () {
+            // Root _static doesn't exist, try to extract version from path
+            const segments = path.split('/').filter(Boolean);
+            if (segments.length > 0) {
+                // First segment might be a version (in multiversion) or a page (in autobuild)
+                // We'll try with it as a version first
+                logoPath = createLogoPath('/' + segments[0] + '/');
+            } else {
+                // Fallback to just root-relative
+                logoPath = createLogoPath('/');
+            }
+            applyLogoPath(logoPath);
+        };
+        testImg.onload = function () {
+            // Root _static exists, use root-relative path (sphinx-autobuild case)
+            logoPath = createLogoPath('/');
+            applyLogoPath(logoPath);
+        };
+        // Set src to test if root _static exists
+        testImg.src = '/_static/img/logo-' + effectiveTheme + '-theme.svg';
 
-        // Create or reuse a stylesheet with the logo as a CSS rule to be applied immediately
-        let style = document.getElementById('logo-style');
-        if (!style) {
-            style = document.createElement('style');
-            style.id = 'logo-style';
-            document.head.appendChild(style);
+        // Function to apply the logo path to CSS
+        function applyLogoPath(logoPath) {
+            // Create or reuse a stylesheet with the logo as a CSS rule
+            let style = document.getElementById('logo-style');
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'logo-style';
+                document.head.appendChild(style);
+            }
+            style.textContent = `.sidebar-brand img { content: url("${logoPath}"); }`;
         }
-        style.textContent = `.sidebar-brand img { content: url("${logoPath}"); }`;
 
-        return logoPath;
+        // Return an empty string initially - actual logo path will be set asynchronously
+        return '';
     }
 
     // Set initial logo - will run even before DOMContentLoaded
