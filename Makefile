@@ -1,13 +1,15 @@
 PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
-DOC_LISTEN ?= --host 127.0.0.1
 
 default: build
 
 docs-all:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
-docs-serve: docs-all
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve HOST="$(DOC_LISTEN)"
+docs-serve: clean-docs
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve
+
+docs-serve-all: clean-docs docs-all
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve-multiversion
 
 docs-test:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
