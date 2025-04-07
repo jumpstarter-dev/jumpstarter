@@ -158,7 +158,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
             raise ValueError(f"Unable to fetch project: {self.parent.project_id}")
         self.logger.info(f"Using project: {project.name}")
 
-        device = self.parent.api.get_device(self.parent.device_flavor)
+        device = await self.parent.api.get_device(self.parent.device_flavor)
         if device is None:
             raise ValueError("Unable to find a device for this model: {self.parent.device_model}")
         self.logger.info(f"Using device spec: {device.name}")

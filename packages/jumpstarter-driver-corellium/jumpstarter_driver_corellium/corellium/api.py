@@ -68,22 +68,17 @@ class ApiClient:
 
         return None
 
-    def get_device(self, model: str) -> Optional[Device]:
+    async def get_device(self, model: str) -> Optional[Device]:
         """
         Get a device spec from Corellium's list based on the model name.
 
         A device object is used to create a new virtual instance.
         """
-        try:
-            res = self.req.get(f"{self.baseurl}/v1/models")
-            data = res.json()
-            res.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get("error", str(e))) from e
 
-        for device in data:
-            if device["model"] == model:
-                return Device(**device)
+        models = await self.api.v1_get_models()
+        for device in models:
+            if device.model == model:
+                return device
 
         return None
 

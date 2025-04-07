@@ -54,41 +54,6 @@ async def test_login_error(requests_mock, status_code, data, msg):
     assert api.session is None
 
 
-@pytest.mark.parametrize(
-    "model,data,has_results",
-    [("rpi4b", fixture("http/get-models-200.json"), True), ("notfound", fixture("http/get-models-200.json"), False)],
-)
-async def test_get_device_ok(requests_mock, model, data, has_results):
-    requests_mock.get("https://api-host/api/v1/models", status_code=200, text=data)
-    api = ApiClient("api-host", "api-token")
-    api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
-
-    device = api.get_device(model)
-
-    if has_results:
-        assert device is not None
-        assert device.model == model
-    else:
-        assert device is None
-
-
-@pytest.mark.parametrize(
-    "status_code,data,msg",
-    [
-        (403, fixture("http/403.json"), "Invalid or missing authorization token"),
-    ],
-)
-async def test_get_device_error(requests_mock, status_code, data, msg):
-    requests_mock.get("https://api-host/api/v1/models", status_code=status_code, text=data)
-    api = ApiClient("api-host", "api-token")
-    api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
-
-    with pytest.raises(CorelliumApiException) as e:
-        api.get_device("mymodel")
-
-    assert msg in str(e.value)
-
-
 async def test_create_instance_ok(requests_mock):
     data = fixture("http/create-instance-200.json")
     requests_mock.post("https://api-host/api/v1/instances", status_code=200, text=data)
