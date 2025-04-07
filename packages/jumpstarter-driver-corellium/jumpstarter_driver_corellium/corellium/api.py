@@ -15,8 +15,10 @@ class ApiClient:
         """
         self.host = host
 
-        configuration = corellium_api.Configuration(host=self.baseurl)
+        configuration = corellium_api.Configuration(host=self.baseurl, disabled_client_side_validations="multipleOf")
         configuration.access_token = token
+        configuration.client_side_validation = False
+        corellium_api.Configuration.set_default(configuration)
         self.api = corellium_api.CorelliumApi(corellium_api.ApiClient(configuration))
 
     @property
