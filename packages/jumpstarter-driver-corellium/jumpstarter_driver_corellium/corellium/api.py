@@ -1,5 +1,6 @@
 from typing import Optional
 
+import corellium_api
 import requests
 
 from .exceptions import CorelliumApiException
@@ -22,6 +23,10 @@ class ApiClient:
         self.token = token
         self.session = None
         self.req = requests.Session()
+
+        configuration = corellium_api.Configuration(host=self.baseurl)
+        configuration.access_token = self.token
+        self.api = corellium_api.CorelliumApi(corellium_api.ApiClient(configuration))
 
     @property
     def baseurl(self) -> str:

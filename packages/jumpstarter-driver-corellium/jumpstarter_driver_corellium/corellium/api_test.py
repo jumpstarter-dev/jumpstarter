@@ -6,6 +6,13 @@ from .api import ApiClient
 from .exceptions import CorelliumApiException
 from .types import Device, Instance, Project, Session
 
+pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
 
 def fixture(path):
     """
@@ -18,7 +25,7 @@ def fixture(path):
         return f.read()
 
 
-def test_login_ok(requests_mock):
+async def test_login_ok(requests_mock):
     requests_mock.post("https://api-host/api/v1/auth/login", text=fixture("http/login-200.json"))
 
     api = ApiClient("api-host", "api-token")
@@ -36,7 +43,7 @@ def test_login_ok(requests_mock):
         (200, fixture("http/json-error.json"), "Invalid control character at"),
     ],
 )
-def test_login_error(requests_mock, status_code, data, msg):
+async def test_login_error(requests_mock, status_code, data, msg):
     requests_mock.post("https://api-host/api/v1/auth/login", status_code=status_code, text=data)
     api = ApiClient("api-host", "api-token")
 
@@ -55,7 +62,7 @@ def test_login_error(requests_mock, status_code, data, msg):
         ("notfound", fixture("http/get-projects-200.json"), False),
     ],
 )
-def test_get_project_ok(requests_mock, project_name, data, has_results):
+async def test_get_project_ok(requests_mock, project_name, data, has_results):
     requests_mock.get("https://api-host/api/v1/projects", status_code=200, text=data)
     api = ApiClient("api-host", "api-token")
     api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
@@ -79,7 +86,7 @@ def test_get_project_ok(requests_mock, project_name, data, has_results):
         (404, fixture("http/get-projects-404.json"), ""),
     ],
 )
-def test_get_project_error(requests_mock, status_code, data, msg):
+async def test_get_project_error(requests_mock, status_code, data, msg):
     requests_mock.get("https://api-host/api/v1/projects", status_code=status_code, text=data)
     api = ApiClient("api-host", "api-token")
     api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
@@ -94,7 +101,7 @@ def test_get_project_error(requests_mock, status_code, data, msg):
     "model,data,has_results",
     [("rpi4b", fixture("http/get-models-200.json"), True), ("notfound", fixture("http/get-models-200.json"), False)],
 )
-def test_get_device_ok(requests_mock, model, data, has_results):
+async def test_get_device_ok(requests_mock, model, data, has_results):
     requests_mock.get("https://api-host/api/v1/models", status_code=200, text=data)
     api = ApiClient("api-host", "api-token")
     api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
@@ -114,7 +121,7 @@ def test_get_device_ok(requests_mock, model, data, has_results):
         (403, fixture("http/403.json"), "Invalid or missing authorization token"),
     ],
 )
-def test_get_device_error(requests_mock, status_code, data, msg):
+async def test_get_device_error(requests_mock, status_code, data, msg):
     requests_mock.get("https://api-host/api/v1/models", status_code=status_code, text=data)
     api = ApiClient("api-host", "api-token")
     api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
@@ -125,7 +132,7 @@ def test_get_device_error(requests_mock, status_code, data, msg):
     assert msg in str(e.value)
 
 
-def test_create_instance_ok(requests_mock):
+async def test_create_instance_ok(requests_mock):
     data = fixture("http/create-instance-200.json")
     requests_mock.post("https://api-host/api/v1/instances", status_code=200, text=data)
     api = ApiClient("api-host", "api-token")
@@ -153,7 +160,7 @@ def test_create_instance_ok(requests_mock):
         (400, fixture("http/create-instance-400.json"), "Unsupported device model"),
     ],
 )
-def test_create_instance_error(requests_mock, status_code, data, msg):
+async def test_create_instance_error(requests_mock, status_code, data, msg):
     requests_mock.post("https://api-host/api/v1/instances", status_code=status_code, text=data)
     api = ApiClient("api-host", "api-token")
     api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
@@ -173,7 +180,7 @@ def test_create_instance_error(requests_mock, status_code, data, msg):
     assert msg in str(e.value)
 
 
-def test_destroy_instance_state_ok(requests_mock):
+async def test_destroy_instance_state_ok(requests_mock):
     instance = Instance(id="d59db33d-27bd-4b22-878d-49e4758a648e")
 
     requests_mock.delete(f"https://api-host/api/v1/instances/{instance.id}", status_code=204, text="")
@@ -189,7 +196,7 @@ def test_destroy_instance_state_ok(requests_mock):
         (404, fixture("http/get-instance-state-404.json"), "No instance associated with this value"),
     ],
 )
-def test_destroy_instance_error(requests_mock, status_code, data, msg):
+async def test_destroy_instance_error(requests_mock, status_code, data, msg):
     instance = Instance(id="d59db33d-27bd-4b22-878d-49e4758a648e")
 
     requests_mock.delete(f"https://api-host/api/v1/instances/{instance.id}", status_code=status_code, text=data)

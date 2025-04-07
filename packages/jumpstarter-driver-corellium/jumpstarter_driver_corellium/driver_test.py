@@ -7,8 +7,15 @@ from .corellium.types import Device, Instance, Project, Session
 from .driver import Corellium, CorelliumPower
 from jumpstarter.common import exceptions as jmp_exceptions
 
+pytestmark = pytest.mark.anyio
 
-def test_driver_corellium_init_ok(monkeypatch):
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+async def test_driver_corellium_init_ok(monkeypatch):
     monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
     monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
 
@@ -40,7 +47,7 @@ def test_driver_corellium_init_ok(monkeypatch):
         ),
     ],
 )
-def test_driver_corellium_init_error(monkeypatch, env, err):
+async def test_driver_corellium_init_error(monkeypatch, env, err):
     monkeypatch.delenv("CORELLIUM_API_HOST", raising=False)
     monkeypatch.delenv("CORELLIUM_API_TOKEN", raising=False)
 
@@ -53,7 +60,7 @@ def test_driver_corellium_init_error(monkeypatch, env, err):
     assert str(err) == str(e.value)
 
 
-def test_driver_api_client_ok(monkeypatch, requests_mock):
+async def test_driver_api_client_ok(monkeypatch, requests_mock):
     requests_mock.post(
         "https://api-host/api/v1/auth/login", text='{"token": "token", "expiration": "2022-03-20T01:50:10.000Z"}'
     )
@@ -65,7 +72,7 @@ def test_driver_api_client_ok(monkeypatch, requests_mock):
     assert Session("token", "2022-03-20T01:50:10.000Z") == c.api.session
 
 
-def test_driver_power_on_ok(monkeypatch):
+async def test_driver_power_on_ok(monkeypatch):
     monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
     monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
 
@@ -101,7 +108,7 @@ def test_driver_power_on_ok(monkeypatch):
         ({"create_instance": {"side_effect": CorelliumApiException("create error")}}),
     ],
 )
-def test_driver_power_on_error(monkeypatch, mock_data):
+async def test_driver_power_on_error(monkeypatch, mock_data):
     monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
     monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
 
@@ -120,7 +127,7 @@ def test_driver_power_on_error(monkeypatch, mock_data):
             power.off()
 
 
-def test_driver_power_off_ok(monkeypatch):
+async def test_driver_power_off_ok(monkeypatch):
     monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
     monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
 
@@ -147,7 +154,7 @@ def test_driver_power_off_ok(monkeypatch):
         ({"destroy_instance": {"side_effect": CorelliumApiException("destroy error")}}),
     ],
 )
-def test_driver_power_off_error(monkeypatch, mock_data):
+async def test_driver_power_off_error(monkeypatch, mock_data):
     monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
     monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
 
