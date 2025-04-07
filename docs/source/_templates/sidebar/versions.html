@@ -1,18 +1,38 @@
-<div id="versions_sidebar" class="version sidebar-collapsible">
-    <div class="sidebar-collapsible-header">
-        <span class="sidebar-brand-text">Versions</span>
-        <ul id="doc_versions_list">
+<div class="toctree-wrapper compound">
+    <div class="toctree-l1">
+        <div class="sidebar-versions">
+            <p>Versions</p>
+
             {% if versions %}
             {% for item in versions %}
-            <li>
-                <a href="{{ item.url }}" {% if item.name==current_version.name %}class="current" {% endif %}>
-                    {{ item.name }}
-                </a>
-            </li>
+            <a href="{{ item.url }}" {% if item.name==current_version.name %}class="current" {% endif %}>{{ item.name
+                }}</a>{% if not loop.last %} {% endif %}
             {% endfor %}
             {% else %}
-            <li><a href="/">main</a></li>
+            <a href="/" class="current">main</a>
             {% endif %}
-        </ul>
+        </div>
     </div>
 </div>
+
+<style>
+    .sidebar-versions {
+        padding-left: 1rem;
+        margin-top: 0.125rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .sidebar-versions p {
+        font-size: var(--sidebar-item-font-size);
+        color: var(--color-sidebar-caption-text);
+    }
+
+    .sidebar-versions a {
+        color: var(--color-sidebar-link-text);
+        font-size: var(--sidebar-item-font-size);
+    }
+
+    .sidebar-versions a.current {
+        font-weight: bold;
+    }
+</style>
