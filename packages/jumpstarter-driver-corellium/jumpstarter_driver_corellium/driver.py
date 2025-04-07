@@ -198,7 +198,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
         self.wait_instance(instance, Instance(id=instance.id, state="off"))
 
         if destroy:
-            self.parent.api.destroy_instance(instance)
+            await self.parent.api.destroy_instance(instance)
             self.wait_instance(instance, None)
 
     @export

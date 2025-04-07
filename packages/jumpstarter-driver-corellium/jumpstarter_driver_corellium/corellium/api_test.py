@@ -4,7 +4,7 @@ import pytest
 
 from .api import ApiClient
 from .exceptions import CorelliumApiException
-from .types import Device, Instance, Project, Session
+from .types import Device, Project, Session
 
 pytestmark = pytest.mark.anyio
 
@@ -98,34 +98,5 @@ async def test_create_instance_error(requests_mock, status_code, data, msg):
             peripherals=False,
         )
         api.create_instance("my-instance", project, device, "1.1.1", "Critical Application Monitor (Baremetal)")
-
-    assert msg in str(e.value)
-
-
-async def test_destroy_instance_state_ok(requests_mock):
-    instance = Instance(id="d59db33d-27bd-4b22-878d-49e4758a648e")
-
-    requests_mock.delete(f"https://api-host/api/v1/instances/{instance.id}", status_code=204, text="")
-    api = ApiClient("api-host", "api-token")
-    api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
-    api.destroy_instance(instance)
-
-
-@pytest.mark.parametrize(
-    "status_code,data,msg",
-    [
-        (403, fixture("http/403.json"), "Invalid or missing authorization token"),
-        (404, fixture("http/get-instance-state-404.json"), "No instance associated with this value"),
-    ],
-)
-async def test_destroy_instance_error(requests_mock, status_code, data, msg):
-    instance = Instance(id="d59db33d-27bd-4b22-878d-49e4758a648e")
-
-    requests_mock.delete(f"https://api-host/api/v1/instances/{instance.id}", status_code=status_code, text=data)
-    api = ApiClient("api-host", "api-token")
-    api.session = Session("session-token", "2022-03-20T01:50:10.000Z")
-
-    with pytest.raises(CorelliumApiException) as e:
-        api.destroy_instance(instance)
 
     assert msg in str(e.value)

@@ -149,17 +149,11 @@ class ApiClient:
 
             raise CorelliumApiException(msgerr) from e
 
-    def destroy_instance(self, instance: Instance) -> None:
+    async def destroy_instance(self, instance: Instance) -> None:
         """
         Delete a virtual instance.
 
         Does not return anything since Corellium's API return a HTTP 204 response.
         """
-        try:
-            res = self.req.delete(f"{self.baseurl}/v1/instances/{instance.id}")
-            data = res.json() if res.status_code != 204 else None
-            res.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            msgerr = data if data is not None else str(e)
 
-            raise CorelliumApiException(msgerr) from e
+        await self.api.v1_delete_instance(instance.id)
