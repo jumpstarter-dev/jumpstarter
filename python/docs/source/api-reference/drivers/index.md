@@ -43,6 +43,7 @@ Drivers for debugging and programming devices:
 * **[Flashers](/api-reference/drivers/flashers.md)** (`jumpstarter-driver-flashers`) - Flash memory programming tools
 * **[Probe-RS](/api-reference/drivers/probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe support
 * **[QEMU](/api-reference/drivers/qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
+* **[Corellium](/api-reference/drivers/corellium.md)** (`jumpstarter-driver-corellium`) - Corellium virtualization platform
 * **[U-Boot](/api-reference/drivers/uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader interface
 
 ### Utility Drivers
@@ -53,6 +54,7 @@ General-purpose utility drivers:
 ```{toctree}
 :hidden:
 can.md
+corellium.md
 dbus.md
 dutlink.md
 flashers.md
