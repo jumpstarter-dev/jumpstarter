@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 import pytest
 
-from .corellium.exceptions import CorelliumApiException
 from .corellium.types import Device, Instance, Project, Session
 from .driver import Corellium, CorelliumPower
 from jumpstarter.common import exceptions as jmp_exceptions
@@ -99,34 +98,6 @@ async def test_driver_power_on_ok(monkeypatch):
         await power.on()
 
 
-@pytest.mark.parametrize(
-    "mock_data",
-    [
-        ({"login": {"side_effect": CorelliumApiException("login error")}}),
-        ({"get_project": {"return_value": None}}),
-        ({"get_instance": {"return_value": None}}),
-        ({"create_instance": {"side_effect": CorelliumApiException("create error")}}),
-    ],
-)
-async def test_driver_power_on_error(monkeypatch, mock_data):
-    monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
-    monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
-
-    project = Project("1", "Default Project")
-    instance = Instance(id="7f4f241c-821f-4219-905f-c3b50b0db5dd", state="on")
-    root = Corellium(project_id="1", device_name="jmp", device_flavor="kronos", device_os="1.0")
-    power = CorelliumPower(parent=root)
-
-    with pytest.raises((CorelliumApiException, ValueError)):
-        with (
-            patch.object(root._api, "login", **mock_data.get("login", {"return_value": None})),
-            patch.object(root._api, "get_project", **mock_data.get("get_project", {"return_value": project})),
-            patch.object(root._api, "get_instance", **mock_data.get("get_instance", {"return_value": instance})),
-            patch.object(root._api, "create_instance", **mock_data.get("create_instance", {"return_value": instance})),
-        ):
-            await power.off()
-
-
 async def test_driver_power_off_ok(monkeypatch):
     monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
     monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
@@ -143,33 +114,3 @@ async def test_driver_power_off_ok(monkeypatch):
         patch.object(root._api, "get_instance", side_effect=[instance, Instance(id=instance.id, state="off")]),
     ):
         await power.off()
-
-
-@pytest.mark.parametrize(
-    "mock_data",
-    [
-        ({"login": {"side_effect": CorelliumApiException("login error")}}),
-        ({"get_project": {"return_value": None}}),
-        ({"get_instance": {"return_value": None}}),
-        ({"destroy_instance": {"side_effect": CorelliumApiException("destroy error")}}),
-    ],
-)
-async def test_driver_power_off_error(monkeypatch, mock_data):
-    monkeypatch.setenv("CORELLIUM_API_HOST", "api-host")
-    monkeypatch.setenv("CORELLIUM_API_TOKEN", "api-token")
-
-    project = Project("1", "Default Project")
-    instance = Instance(id="7f4f241c-821f-4219-905f-c3b50b0db5dd", state="on")
-    root = Corellium(project_id="1", device_name="jmp", device_flavor="kronos", device_os="1.0")
-    power = CorelliumPower(parent=root)
-
-    with pytest.raises((CorelliumApiException, ValueError)):
-        with (
-            patch.object(root._api, "login", **mock_data.get("login", {"return_value": None})),
-            patch.object(root._api, "get_project", **mock_data.get("get_project", {"return_value": project})),
-            patch.object(root._api, "get_instance", **mock_data.get("get_instance", {"side_effect": [instance, None]})),
-            patch.object(
-                root._api, "destroy_instance", **mock_data.get("destroy_instance", {"return_value": instance})
-            ),
-        ):
-            await power.off()

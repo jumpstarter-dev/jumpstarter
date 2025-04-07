@@ -3,12 +3,12 @@ Jumpstarter corellium driver(s) implementation module.
 """
 
 import os
-import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
+from anyio import sleep
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
 from .corellium.api import ApiClient
@@ -122,7 +122,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
             "interval": os.environ.get("CORELLIUM_API_INTERVAL", 5),
         }
 
-    def wait_instance(self, current: Instance, desired: Optional[Instance]):
+    async def wait_instance(self, current: Instance, desired: Optional[Instance]):
         """
         Wait for `current` instance to reach the same state as the `desired` instance.
 
@@ -135,11 +135,11 @@ class CorelliumPower(VirtualPowerInterface, Driver):
             if counter >= opts["retries"]:
                 raise ValueError(f"Instance took too long to be reach the desired state: {current}")
 
-            if self.parent.api.get_instance(current.id) == desired:
+            if await self.parent.api.get_instance(current.id) == desired:
                 break
 
             counter += 1
-            time.sleep(opts["interval"])
+            await sleep(opts["interval"])
 
     @export
     async def on(self) -> None:
@@ -164,9 +164,9 @@ class CorelliumPower(VirtualPowerInterface, Driver):
         self.logger.info(f"Using device spec: {device.name}")
 
         # retrieve an existing instance first
-        instance = self.parent.api.get_instance(self.parent.device_name)
+        instance = await self.parent.api.get_instance(self.parent.device_name)
         if instance:
-            self.parent.api.set_instance_state(instance, "on")
+            await self.parent.api.set_instance_state(instance, "on")
         # create a new one otherwise
         else:
             opts = {}
@@ -177,7 +177,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
             instance = self.parent.api.create_instance(self.parent.device_name, project, device, **opts)
         self.logger.info(f"Instance: {self.parent.device_name} (ID: {instance.id})")
 
-        self.wait_instance(instance, Instance(id=instance.id, state="on"))
+        await self.wait_instance(instance, Instance(id=instance.id, state="on"))
 
     @export
     async def off(self, destroy: bool = False) -> None:
@@ -190,16 +190,16 @@ class CorelliumPower(VirtualPowerInterface, Driver):
             raise ValueError(f"Unable to fetch project: {self.parent.project_id}")
 
         # get instance and fail if instance does not exist
-        instance = self.parent.api.get_instance(self.parent.device_name)
+        instance = await self.parent.api.get_instance(self.parent.device_name)
         if instance is None:
             raise ValueError("Instance does not exist")
 
-        self.parent.api.set_instance_state(instance, "off")
-        self.wait_instance(instance, Instance(id=instance.id, state="off"))
+        await self.parent.api.set_instance_state(instance, "off")
+        await self.wait_instance(instance, Instance(id=instance.id, state="off"))
 
         if destroy:
             await self.parent.api.destroy_instance(instance)
-            self.wait_instance(instance, None)
+            await self.wait_instance(instance, None)
 
     @export
     def read(self) -> AsyncGenerator[PowerReading, None]:

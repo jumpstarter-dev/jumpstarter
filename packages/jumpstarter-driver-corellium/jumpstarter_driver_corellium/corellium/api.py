@@ -103,26 +103,20 @@ class ApiClient:
 
         return Instance(**data)
 
-    def get_instance(self, instance_ref: str) -> Optional[Instance]:
+    async def get_instance(self, instance_ref: str) -> Optional[Instance]:
         """
         Retrieve an existing instance by its name.
 
         Return None if it does not exist.
         """
-        try:
-            res = self.req.get(f"{self.baseurl}/v1/instances")
-            data = res.json()
-            res.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get("error", str(e))) from e
-
-        for instance in data:
-            if instance["name"] == instance_ref or instance["id"] == instance_ref:
-                return Instance(id=instance["id"], state=instance["state"])
+        instances = await self.api.v1_get_instances()
+        for instance in instances:
+            if instance.name == instance_ref or instance.id == instance_ref:
+                return instance
 
         return None
 
-    def set_instance_state(self, instance: Instance, instance_state: str) -> None:
+    async def set_instance_state(self, instance: Instance, instance_state: str) -> None:
         """
         Set the virtual instance state from corellium.
 
@@ -138,16 +132,11 @@ class ApiClient:
         - rebooting
         - error
         """
-        data = {"state": instance_state}
 
-        try:
-            res = self.req.put(f"{self.baseurl}/v1/instances/{instance.id}/state", json=data)
-            data = res.json() if res.status_code != 204 else None
-            res.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            msgerr = data if data is not None else str(e)
-
-            raise CorelliumApiException(msgerr) from e
+        await self.api.v1_set_instance_state(
+            instance.id,
+            corellium_api.V1SetStateBody(state=instance_state),
+        )
 
     async def destroy_instance(self, instance: Instance) -> None:
         """
