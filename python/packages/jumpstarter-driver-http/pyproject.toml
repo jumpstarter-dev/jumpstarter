@@ -3,9 +3,8 @@ name = "jumpstarter-driver-http"
 dynamic = ["version", "urls"]
 description = "Exporter HTTP service driver"
 readme = "README.md"
-authors = [
-    { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }
-]
+license = "Apache-2.0"
+authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "anyio>=4.6.2.post1",
@@ -17,7 +16,7 @@ dependencies = [
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"

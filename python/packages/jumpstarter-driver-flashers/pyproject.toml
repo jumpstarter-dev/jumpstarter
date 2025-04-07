@@ -3,7 +3,7 @@ name = "jumpstarter-driver-flashers"
 dynamic = ["version", "urls"]
 description = "Jumpstarter software defined flasher driver"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 authors = [
     { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" },
     { name = "Miguel Angel Ajo", email = "majopela@redhat.com" },
@@ -23,7 +23,7 @@ dependencies = [
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
@@ -44,7 +44,4 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = [
-    "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
