@@ -1,12 +1,43 @@
 from contextlib import AbstractContextManager
+from ipaddress import IPv6Address, ip_address
+from threading import Event
 
-from .adapters import DbusAdapter
+import asyncclick as click
+
+from .adapters import DbusAdapter, TcpPortforwardAdapter
 from .driver import DbusNetwork
 from jumpstarter.client import DriverClient
 
 
 class NetworkClient(DriverClient):
-    pass
+    def cli(self):
+        @click.group
+        def base():
+            """Generic Network Connection"""
+            pass
+
+        @base.command()
+        @click.option("--address", default="localhost", show_default=True)
+        @click.argument("port", type=int)
+        def forward_tcp(address: str, port: int):
+            """Forward local TCP port to remote network connection"""
+
+            with TcpPortforwardAdapter(
+                client=self,
+                local_host=address,
+                local_port=port,
+            ) as addr:
+                host = ip_address(addr[0])
+                port = addr[1]
+                match host:
+                    case IPv6Address():
+                        click.echo("[{}]:{}".format(host, port))
+                    case _:
+                        click.echo("{}:{}".format(host, port))
+
+                Event().wait()
+
+        return base
 
 
 class DbusNetworkClient(NetworkClient, AbstractContextManager):
