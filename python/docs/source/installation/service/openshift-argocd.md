@@ -1,11 +1,13 @@
 # OpenShift (ArgoCD)
 
 ## Create namespace
-First, we must create a namespace for the Jumpstarter installation. This namespace
-should be labeled with `argocd.argoproj.io/managed-by=<your-argo-CD-instance>` to allow
-ArgoCD to manage the resources in the namespace.
+First, we must create a namespace for the Jumpstarter installation. This
+namespace should be labeled with
+`argocd.argoproj.io/managed-by=<your-argo-CD-instance>` to allow ArgoCD to
+manage the resources in the namespace.
 
-In this case, using the default openshift-gitops ArgoCD deployment, the command would be:
+In this case, using the default openshift-gitops ArgoCD deployment, the command
+would be:
 ```bash
 kubectl create namespace jumpstarter-lab
 kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-gitops
@@ -13,10 +15,12 @@ kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-
 
 ## Note on CRDs
 
-ArgoCD needs to be able to manage the CRDs that Jumpstarter uses. This is done by creating a ClusterRole and ClusterRoleBinding that allows the ArgoCD application controller to manage the CRDs.
+ArgoCD needs to be able to manage the CRDs that Jumpstarter uses. This is done
+by creating a ClusterRole and ClusterRoleBinding that allows the ArgoCD
+application controller to manage the CRDs.
 
-An alternative to this is to manually create and update the CRDs
-that jumpstarter uses.
+An alternative to this is to manually create and update the CRDs that
+jumpstarter uses.
 
 The ClusterRole & Binding to allow ArgoCD to manage the CRDs are:
 
@@ -56,11 +60,11 @@ subjects:
 ## Application
 
 ```{warning}
-`jumpstarter-controller.controllerSecret` and `jumpstarter-controller.routerSecret`
-are secrets that are used to secure the authentication between clients and the jumpstarter elements.
-**These secrets should be unique and not shared between installations**. Helm installation can
-auto-generate values for these, but with ArgoCD such mechanism doesn't work. You need to manually
-create these secrets in the namespace where the jumpstarter is installed.
+The parameters `jumpstarter-controller.controllerSecret` and `jumpstarter-controller.routerSecret`
+are security credentials used to secure authentication between clients and Jumpstarter components.
+These secrets must be unique and should not be shared between installations. While Helm installation
+can auto-generate values for these parameters, this mechanism does not work with ArgoCD. You must manually
+create these secrets in the namespace where Jumpstarter will be installed.
 ```
 
 ```{code-block} yaml

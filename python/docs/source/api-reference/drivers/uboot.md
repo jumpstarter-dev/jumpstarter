@@ -1,10 +1,16 @@
 # U-Boot driver
 
-The U-Boot driver is a driver for interacting with the U-Boot bootloader.
-This driver does not interact with the DUT directly, instead it should be
-configured with backing power and serial drivers.
+`jumpstarter-driver-uboot` provides functionality for interacting with the U-Boot bootloader. This driver does not interact with the DUT directly, instead it should be configured with backing power and serial drivers.
 
-## Driver configuration
+## Installation
+
+```bash
+pip install jumpstarter-driver-uboot
+```
+
+## Configuration
+
+Example configuration:
 
 ```{literalinclude} uboot.yaml
 :language: yaml
@@ -17,7 +23,7 @@ configured with backing power and serial drivers.
 UbootConsole(...)
 ```
 
-## Client API
+## API Reference
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_uboot.client.UbootConsoleClient()

@@ -1,16 +1,22 @@
 # Shell driver
 
-**driver**: `jumpstarter_driver_shell.driver.Shell`
+`jumpstarter-driver-shell` provides functionality for shell command execution.
 
-The methods of this client are dynamic, and they are generated from
-the `methods` field of the exporter driver configuration.
+## Installation
 
-## Driver configuration
+```bash
+pip install jumpstarter-driver-shell
+```
+
+## Configuration
+
+Example configuration:
+
 ```yaml
-export:
-  example:
-    type: jumpstarter_driver_shell.driver.Shell
-    config:
+interfaces:
+  shell:
+    driver: jumpstarter_driver_shell.driver.Shell
+    parameters:
       methods:
         ls: "ls"
         method2: "echo 'Hello World 2'"
@@ -27,10 +33,9 @@ export:
         - "-c"
 ```
 
-## ShellClient API
+## API Reference
 
-Assuming the exporter driver is configured as in the example above, the client
-methods will be generated dynamically, and they will be available as follows:
+Assuming the exporter driver is configured as in the example above, the client methods will be generated dynamically, and they will be available as follows:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_shell.client.ShellClient

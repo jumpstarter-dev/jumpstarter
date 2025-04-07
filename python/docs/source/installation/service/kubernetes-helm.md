@@ -1,12 +1,12 @@
 # Kubernetes
 
-The Jumpstarter service can be installed on a Kubernetes cluster using Helm.
+The Service can be installed on a Kubernetes cluster using Helm.
 
 ## Install with Helm
 
 ```{note}
-Please note that `global.baseDomain` is used to create the host names for the services,
-with the provided example the services will be available at grpc.jumpstarter.example.com
+Please note that `global.baseDomain` is used to create the hostnames for the services.
+With the provided example, the services will be available at grpc.jumpstarter.example.com
 ```
 
 ```{code-block} bash

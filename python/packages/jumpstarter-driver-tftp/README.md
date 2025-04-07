@@ -1,3 +1,1 @@
-# Jumpstarter Driver for TFTP
-
-Simple TFTP server driver for Jumpstarter
+../../docs/source/api-reference/drivers/tftp.md

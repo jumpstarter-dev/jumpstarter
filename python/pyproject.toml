@@ -44,6 +44,7 @@ docs = [
     "sphinx-substitution-extensions>=2024.10.17",
     "requests>=2.32.3",
     "sphinxcontrib-programoutput>=0.18",
+    "sphinx-multiversion>=0.2.4",
 ]
 dev = [
     "ruff==0.9.2",

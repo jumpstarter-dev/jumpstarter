@@ -1,0 +1,8 @@
+.admonition.warning {
+    margin-bottom: 2rem;
+}
+
+/* Hide the Furo attribution text */
+.made-with-furo {
+    display: none !important;
+}

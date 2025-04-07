@@ -1,8 +1,28 @@
 # Network drivers
 
-The network drivers are a set of drivers for interacting with network servers.
+`jumpstarter-driver-network` provides functionality for interacting with network servers and connections.
 
-## Driver configuration
+## Installation
+
+```bash
+pip install jumpstarter-driver-network
+```
+
+## Configuration
+
+Example configuration:
+
+```yaml
+interfaces:
+  network:
+    driver: jumpstarter_driver_network.NetworkDriver
+    parameters:
+      # Add required parameters here
+```
+
+## API Reference
+
+Network driver classes:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_network.driver.TcpNetwork()
@@ -20,7 +40,7 @@ The network drivers are a set of drivers for interacting with network servers.
 .. autoclass:: jumpstarter_driver_network.driver.EchoNetwork()
 ```
 
-## Client API
+Client API:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_network.client.NetworkClient()

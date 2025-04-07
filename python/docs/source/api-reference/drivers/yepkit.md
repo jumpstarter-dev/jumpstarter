@@ -1,37 +1,40 @@
-# Yepkit 
+# Yepkit driver
 
-Drivers for yepkit products.
+`jumpstarter-driver-yepkit` provides functionality for interacting with Yepkit products.
 
-## Ykush driver
+## Installation
 
-This driver provides a client for the [Ykush USB switch](https://www.yepkit.com/products/ykush).
-**driver**: `jumpstarter_driver_yepkit.driver.Ykush`
+```bash
+pip install jumpstarter-driver-yepkit
+```
 
-### Driver configuration
+## Configuration
+
+Example configuration:
+
 ```yaml
-export:
+interfaces:
   power:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
+    driver: jumpstarter_driver_yepkit.driver.Ykush
+    parameters:
       serial: "YK25838"
       port: "1"
 
   power2:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
+    driver: jumpstarter_driver_yepkit.driver.Ykush
+    parameters:
       serial: "YK25838"
       port: "2"
-
 ```
+
 ### Config parameters
 
-| Parameter | Description | Type | Required | Default |
-|-----------|-------------|------|----------|---------|
-| serial | The serial number of the ykush hub, empty means auto-detection  | no | None | |
-| port | The port number to be managed, "0", "1", "2", "a" which means all | str | yes | "a" |
+| Parameter | Description                                                       | Type | Required | Default |
+| --------- | ----------------------------------------------------------------- | ---- | -------- | ------- |
+| serial    | The serial number of the ykush hub, empty means auto-detection    | no   | None     |         |
+| port      | The port number to be managed, "0", "1", "2", "a" which means all | str  | yes      | "a"     |
 
-
-### PowerClient API
+## API Reference
 
 The yepkit ykush driver provides a `PowerClient` with the following API:
 
@@ -41,6 +44,7 @@ The yepkit ykush driver provides a `PowerClient` with the following API:
 ```
 
 ### Examples
+
 Powering on and off a device
 ```{testcode}
 :skipif: True
@@ -50,6 +54,7 @@ client.power.off()
 ```
 
 ### CLI access
+
 ```bash
 $ sudo ~/.cargo/bin/uv run jmp shell --exporter-config ./packages/jumpstarter-driver-yepkit/examples/exporter.yaml
 WARNING:Ykush:No serial number provided for ykush, using the first one found: YK25838

@@ -1,1 +1,1 @@
-# Jumpstarter Power Driver Interface
+../../docs/source/api-reference/drivers/power.md

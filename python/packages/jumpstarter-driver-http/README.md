@@ -1,3 +1,1 @@
-# Jumpstarter Driver for HTTP
-
-Simple HTTP server driver for Jumpstarter
+../../docs/source/api-reference/drivers/http.md

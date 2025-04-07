@@ -1,10 +1,16 @@
 # SDWire driver
 
-The SDWire driver is an storgate multiplexer driver for using the SDWire
-multiplexer. This device multiplexes an SD card between the DUT and the
-exporter host.
+`jumpstarter-driver-sdwire` provides functionality for using the SDWire storage multiplexer. This device multiplexes an SD card between the DUT and the exporter host.
 
-## Driver Configuration
+## Installation
+
+```bash
+pip install jumpstarter-driver-sdwire
+```
+
+## Configuration
+
+Example configuration:
 
 ```{literalinclude} sdwire.yaml
 :language: yaml
@@ -19,10 +25,9 @@ Traceback (most recent call last):
 FileNotFoundError: failed to find sd-wire device
 ```
 
-## Client API
+## API Reference
 
-The SDWire driver implements the `StorageMuxClient` class, which is a generic
-storage class.
+The SDWire driver implements the `StorageMuxClient` class, which is a generic storage class.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_opendal.client.StorageMuxClient()

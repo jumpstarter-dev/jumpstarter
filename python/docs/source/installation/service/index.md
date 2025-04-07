@@ -1,27 +1,18 @@
-# Service
+# Service Installation
 
-To manage your Jumpstarter lab from Kubernetes, the Jumpstarter Service must
-be installed in your cluster.
+This section explains how to install and configure the Service in your Kubernetes cluster. The service enables centralized management of your Jumpstarter lab environment. You'll need a Kubernetes cluster, kubectl, and Helm to proceed with installation.
 
-## Prerequisites
+The following pages will guide you through service installation for different environments:
 
-- A *Kubernetes* cluster.
-- [Kubectl](https://www.downloadkubernetes.com/)
-- [Helm](https://helm.sh/docs/intro/install/)
-
-```{tip}
-If you don't have a Kubernetes cluster you can use a local cluster for testing,
-such as [`kind`](https://kind.sigs.k8s.io), [`minikube`](https://minikube.sigs.k8s.io), or [`OpenShift Local`](https://developers.redhat.com/products/openshift-local/overview).
-```
-
-## Installation
-
-The service installation is very similar between targets, but there are some
-specifics to each target. Please select the appropriate guide for your target:
-
+* **[Kubernetes with Helm](kubernetes-helm.md)** - Standard Kubernetes installation using Helm
+* **[OpenShift with Helm](openshift-helm.md)** - Installation on OpenShift using Helm
+* **[OpenShift with ArgoCD](openshift-argocd.md)** - GitOps-based installation using ArgoCD
+* **[Kind with Helm](kind-helm.md)** - Installation on a local Kind cluster
+* **[Minikube with Helm](minikube-helm.md)** - Installation on Minikube
 
 ```{toctree}
 :maxdepth: 1
+:hidden:
 kubernetes-helm.md
 openshift-helm.md
 openshift-argocd.md

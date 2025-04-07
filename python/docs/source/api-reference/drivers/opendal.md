@@ -1,14 +1,24 @@
-# Opendal driver
+# OpenDAL driver
 
-The Opendal driver is a driver for interacting with storages attached to the exporter.
+`jumpstarter-driver-opendal` provides functionality for interacting with storages attached to the exporter.
 
-## Driver configuration
+## Installation
+
+```bash
+pip install jumpstarter-driver-opendal
+```
+
+## Configuration
+
+Example configuration:
 
 ```{literalinclude} opendal.yaml
 :language: yaml
 ```
 
-## Examples
+## API Reference
+
+### Examples
 
 ```{doctest}
 >>> from tempfile import NamedTemporaryFile
@@ -33,8 +43,7 @@ opendal = instance.__enter__()
 instance.__exit__(None, None, None)
 ```
 
-
-## Client API
+### Client API
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_opendal.client.OpendalClient()
