@@ -83,7 +83,7 @@ class Corellium(Driver):
         Return the internal Corellium API client instance from `self._api`.
 
         It will also be responsible for creating/refreshing the session token used
-        accross diferent API methods that require authentication.
+        across different API methods that require authentication.
         """
         # session does not exist, just login and return
         if self._api.session is None:
@@ -123,7 +123,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
         """
         Wait for `current` instance to reach the same state as the `desired` instance.
 
-        Desired can also be set to None, which means the instace should not exist.
+        Desired can also be set to None, which means the instance should not exist.
         """
         opts = self.get_timeout_opts()
         counter = 0
