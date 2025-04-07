@@ -32,6 +32,7 @@ multiversion:
 	@echo '<html><head><meta http-equiv="refresh" content="0; url=main/index.html" />' >> "$(BUILDDIR)/index.html"
 	@echo '<title>Redirect to main documentation</title></head>' >> "$(BUILDDIR)/index.html"
 	@echo '<body><p>Redirecting to <a href="main/index.html">main documentation</a>...</p></body></html>' >> "$(BUILDDIR)/index.html"
+	cd "$(BUILDDIR)/.." && ln -sf build build_all
 
 serve-multiversion:
 	@echo "Serving multiversion documentation using the HOST variable"
