@@ -133,7 +133,12 @@ def test_create_instance_ok(requests_mock):
 
     project = Project("d59db33d-27bd-4b22-878d-49e4758a648e", "Default Project")
     device = Device(
-        name="rd1ae", type="automotive", flavor="kronos", description="", model="kronos", peripherals=False, quotas={}
+        name="rd1ae",
+        type="automotive",
+        flavor="kronos",
+        description="",
+        model="kronos",
+        peripherals=False,
     )
     instance = api.create_instance("my-instance", project, device, "1.1.1", "Critical Application Monitor (Baremetal)")
 
@@ -162,7 +167,6 @@ def test_create_instance_error(requests_mock, status_code, data, msg):
             description="",
             model="kronos",
             peripherals=False,
-            quotas={},
         )
         api.create_instance("my-instance", project, device, "1.1.1", "Critical Application Monitor (Baremetal)")
 

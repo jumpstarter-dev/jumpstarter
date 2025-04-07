@@ -71,7 +71,12 @@ def test_driver_power_on_ok(monkeypatch):
 
     project = Project("1", "Default Project")
     device = Device(
-        name="rd1ae", type="automotive", flavor="kronos", description="", model="kronos", peripherals=False, quotas={}
+        name="rd1ae",
+        type="automotive",
+        flavor="kronos",
+        description="",
+        model="kronos",
+        peripherals=False,
     )
     instance = Instance(id="7f4f241c-821f-4219-905f-c3b50b0db5dd", state="on")
     root = Corellium(project_id="1", device_name="jmp", device_flavor="kronos", device_os="1.0")
