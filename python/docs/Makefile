@@ -27,11 +27,9 @@ serve:
 
 multiversion:
 	sphinx-multiversion "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
-	@echo "Creating redirect index.html to main/index.html"
-	@echo '<!DOCTYPE html>' > "$(BUILDDIR)/index.html"
-	@echo '<html><head><meta http-equiv="refresh" content="0; url=main/index.html" />' >> "$(BUILDDIR)/index.html"
-	@echo '<title>Redirect to main documentation</title></head>' >> "$(BUILDDIR)/index.html"
-	@echo '<body><p>Redirecting to <a href="main/index.html">main documentation</a>...</p></body></html>' >> "$(BUILDDIR)/index.html"
+	@echo "Moving main directory contents to build root"
+	@mv "$(BUILDDIR)/main/"* "$(BUILDDIR)/"
+	@rm -rf "$(BUILDDIR)/main/"
 
 serve-multiversion:
 	@echo "Serving multiversion documentation using the HOST variable"

@@ -5,11 +5,12 @@
 
             {% if versions %}
             {% for item in versions %}
-            <a href="{{ item.url }}" {% if item.name==current_version.name %}class="current" {% endif %}>{{ item.name
-                }}</a>{% if not loop.last %} {% endif %}
+            <a href="{% if item.name=='main' %}/{% else %}{{ item.url }}{% endif %}" {% if
+                item.name==current_version.name %}class="current" {% endif %}>{% if item.name=='main' %}latest{% else
+                %}{{ item.name }}{% endif %}</a>{% if not loop.last %} {% endif %}
             {% endfor %}
             {% else %}
-            <a href="/" class="current">main</a>
+            <a href="/" class="current">latest</a>
             {% endif %}
         </div>
     </div>

@@ -53,7 +53,7 @@ General-purpose utility drivers:
 
 ```{toctree}
 :hidden:
-:sorted:
+:glob:
 can.md
 corellium.md
 dbus.md
