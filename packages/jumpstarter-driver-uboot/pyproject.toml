@@ -8,22 +8,18 @@ authors = [
   { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
 ]
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = [
-    "jumpstarter",
-    "jumpstarter-driver-composite",
-    "pexpect>=4.9.0",
-]
+dependencies = ["jumpstarter", "jumpstarter-driver-composite", "pexpect>=4.9.0"]
 
 [dependency-groups]
 dev = [
-    "jumpstarter-driver-qemu",
-    "pytest>=8.3.2",
-    "pytest-cov>=5.0.0",
-    "requests>=2.32.3",
-    "rpmfile>=2.1.0",
-    "zstandard>=0.23.0",
+  "jumpstarter-driver-qemu",
+  "pytest>=8.3.2",
+  "pytest-cov>=5.0.0",
+  "requests>=2.32.3",
+  "rpmfile>=2.1.0",
+  "zstandard>=0.23.0",
 ]
 
 [tool.hatch.metadata.hooks.vcs.urls]
@@ -32,7 +28,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [tool.uv.sources]
 jumpstarter-driver-composite = { workspace = true }

@@ -8,7 +8,7 @@ authors = [
     { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
 ]
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "jumpstarter-protocol",
@@ -29,7 +29,7 @@ dev = [
     "cryptography>=43.0.3",
     "jumpstarter-driver-power",
     "jumpstarter-driver-network",
-    "jumpstarter-driver-composite"
+    "jumpstarter-driver-composite",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -41,7 +41,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

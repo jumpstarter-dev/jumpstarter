@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -euxv
 
 # accepted parameters are:
 # $1: driver name
@@ -27,17 +27,17 @@ MODULE_DIRECTORY=${DRIVER_DIRECTORY}/jumpstarter_driver_${DRIVER_NAME}
 mkdir -p ${MODULE_DIRECTORY}
 mkdir -p ${DRIVER_DIRECTORY}/examples
 
-# Create documentation file
+# Define paths
 DOCS_DIRECTORY=docs/source/api-reference/drivers
 DOC_FILE=${DOCS_DIRECTORY}/${DRIVER_NAME}.md
+README_FILE=${DRIVER_DIRECTORY}/README.md
 
-# Create initial documentation file if it doesn't exist
-if [ ! -f "${DOC_FILE}" ]; then
-    echo "Creating initial documentation file: ${DOC_FILE}"
-    cat > "${DOC_FILE}" << EOF
+# Create README.md file with initial documentation
+echo "Creating README.md file: ${README_FILE}"
+cat > "${README_FILE}" << 'EOF'
 # ${DRIVER_CLASS} Driver
 
-\`jumpstarter-driver-${DRIVER_NAME}\` provides functionality for interacting with ${DRIVER_NAME} devices.
+`jumpstarter-driver-${DRIVER_NAME}` provides functionality for interacting with ${DRIVER_NAME} devices.
 
 ## Installation
 
@@ -61,7 +61,17 @@ interfaces:
 
 Add API documentation here.
 EOF
-fi
+# Need to expand variables after EOF to prevent early expansion
+sed -i "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g" "${README_FILE}"
+echo "README.md file content:"
+cat "${README_FILE}"
+
+# Create symlink from documentation directory to README.md
+mkdir -p ${DOCS_DIRECTORY}
+echo "Creating symlink to README.md file"
+rel_path=$(realpath --relative-to="${DOCS_DIRECTORY}" "${README_FILE}")
+ln -sf "${rel_path}" "${DOC_FILE}"
+echo "Created symlink: ${DOC_FILE} -> ${rel_path}"
 
 for f in __init__.py client.py driver_test.py driver.py; do
     echo "Creating: ${MODULE_DIRECTORY}/${f}"
@@ -72,9 +82,3 @@ for f in .gitignore pyproject.toml examples/exporter.yaml; do
     echo "Creating: ${DRIVER_DIRECTORY}/${f}"
     envsubst < __templates__/driver/${f}.tmpl > ${DRIVER_DIRECTORY}/${f}
 done
-
-# Create symlink to documentation file instead of README.md
-echo "Creating symlink to documentation file"
-rel_path=$(realpath --relative-to="${DRIVER_DIRECTORY}" "${DOC_FILE}")
-ln -sf "${rel_path}" "${DRIVER_DIRECTORY}/README.md"
-echo "Created symlink: ${DRIVER_DIRECTORY}/README.md -> ${rel_path}"
