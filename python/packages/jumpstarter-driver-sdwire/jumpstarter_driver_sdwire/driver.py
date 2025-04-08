@@ -52,14 +52,17 @@ class SDWire(StorageMuxFlasherInterface, Driver):
             if product != "sd-wire":
                 continue
 
-            if serial == self.serial or self.serial is None:
-                self.dev = dev
-                self.itf = usb.util.find_descriptor(
-                    dev.get_active_configuration(),
-                    bInterfaceClass=0xFF,
-                    bInterfaceSubClass=0xFF,
-                    bInterfaceProtocol=0xFF,
-                )
+            # Filter by serial if provided
+            if self.serial is not None and self.serial != serial:
+                continue
+
+            self.dev = dev
+            self.itf = usb.util.find_descriptor(
+                dev.get_active_configuration(),
+                bInterfaceClass=0xFF,
+                bInterfaceSubClass=0xFF,
+                bInterfaceProtocol=0xFF,
+            )
 
             if self.effective_storage_device() is None:
                 raise FileNotFoundError("failed to find sdcard driver on sd-wire device")
