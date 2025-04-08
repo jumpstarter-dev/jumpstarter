@@ -5,6 +5,7 @@ from typing import Tuple
 from anyio import BrokenResourceError, WouldBlock, create_memory_object_stream
 from anyio.abc import AnyByteStream, ObjectStream
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from websockets.asyncio.client import ClientConnection as WSSClientConnection
 from wsproto import ConnectionType, WSConnection
 from wsproto.connection import ConnectionState
 from wsproto.events import (
@@ -67,3 +68,24 @@ class WebsocketServerStream(ObjectStream[bytes]):
         with suppress(LocalProtocolError):
             await self.stream.send(self.ws.send(CloseConnection(code=CloseReason.NORMAL_CLOSURE)))
         await self.stream.aclose()
+
+
+@dataclass(kw_only=True)
+class WebsocketClientStream(ObjectStream[bytes]):
+    '''
+    Websocket client streaming.
+    '''
+    conn: WSSClientConnection
+
+    async def send(self, data: bytes) -> None:
+        await self.conn.send(data)
+
+    async def receive(self) -> bytes:
+        return await self.conn.recv()
+
+    async def send_eof(self):
+        pass
+
+    async def aclose(self):
+        await self.conn.close()
+

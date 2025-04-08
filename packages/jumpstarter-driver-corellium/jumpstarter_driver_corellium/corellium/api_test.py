@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+# import websockets
 from .api import ApiClient
 from .exceptions import CorelliumApiException
 from .types import Device, Instance, Project, Session
@@ -167,7 +168,7 @@ def test_destroy_instance_state_ok(requests_mock):
     'status_code,data,msg',
     [
         (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
-        (404, fixture('http/get-instance-state-404.json'), 'No instance associated with this value'),
+        (404, fixture('http/get-instance-404.json'), 'No instance associated with this value'),
     ])
 def test_destroy_instance_error(requests_mock, status_code, data, msg):
     instance = Instance(id='d59db33d-27bd-4b22-878d-49e4758a648e')
@@ -178,5 +179,79 @@ def test_destroy_instance_error(requests_mock, status_code, data, msg):
 
     with pytest.raises(CorelliumApiException) as e:
         api.destroy_instance(instance)
+
+    assert msg in str(e.value)
+
+
+@pytest.mark.parametrize(
+    'console_name,console_id',
+    [
+        ('Console 1', 'port-1-cons',),
+        ('Console 10', None,),
+        ('Console 2', 'port-2-cons',),
+    ])
+def test_get_instance_console_id_ok(requests_mock, console_name, console_id):
+    data = fixture('http/get-instance-200.json')
+    instance = Instance(id='d59db33d-27bd-4b22-878d-49e4758a648e')
+    requests_mock.get(f'https://api-host/api/v1/instances/{instance.id}', status_code=200, text=data)
+    api = ApiClient('api-host', 'api-token')
+    api.session = Session('session-token', '2022-03-20T01:50:10.000Z')
+
+    current = api.get_instance_console_id(instance, console_name)
+
+    assert console_id == current
+
+
+@pytest.mark.parametrize(
+    'status_code,data,msg',
+    [
+        (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
+        (404, fixture('http/get-instance-404.json'), 'No instance associated with this value'),
+    ])
+def test_get_instance_console_id_error(requests_mock, status_code, data, msg):
+    instance = Instance(id='d59db33d-27bd-4b22-878d-49e4758a648e')
+    requests_mock.get(f'https://api-host/api/v1/instances/{instance.id}',
+                      status_code=status_code, text=data)
+    api = ApiClient('api-host', 'api-token')
+    api.session = Session('session-token', '2022-03-20T01:50:10.000Z')
+
+    with pytest.raises(CorelliumApiException) as e:
+        api.get_instance_console_id(instance, 'Console 1')
+
+    assert msg in str(e.value)
+
+
+def test_get_instance_console_url_ok(requests_mock):
+    console_id = 'port-1-cons'
+    data = fixture('http/get-instance-console-url-200.json')
+    instance = Instance(id='d59db33d-27bd-4b22-878d-49e4758a648e')
+    requests_mock.get(f'https://api-host/api/v1/instances/{instance.id}/console?type=1-cons',
+                      status_code=200, text=data)
+    api = ApiClient('api-host', 'api-token')
+    api.session = Session('session-token', '2022-03-20T01:50:10.000Z')
+
+    current = api.get_instance_console_url(instance, console_id)
+    expected = 'wss://api-host/port-cons-1'
+
+    assert expected == current
+
+
+@pytest.mark.parametrize(
+    'status_code,data,msg',
+    [
+        (400, fixture('http/get-instance-console-url-400.json'), 'not a valid type'),
+        (403, fixture('http/403.json'), 'Invalid or missing authorization token'),
+        (404, fixture('http/get-instance-404.json'), 'No instance associated with this value'),
+    ])
+def test_get_instance_console_url_error(requests_mock, status_code, data, msg):
+    console_id = 'port-1-cons'
+    instance = Instance(id='d59db33d-27bd-4b22-878d-49e4758a648e')
+    requests_mock.get(f'https://api-host/api/v1/instances/{instance.id}/console?type=1-cons',
+                      status_code=status_code, text=data)
+    api = ApiClient('api-host', 'api-token')
+    api.session = Session('session-token', '2022-03-20T01:50:10.000Z')
+
+    with pytest.raises(CorelliumApiException) as e:
+        api.get_instance_console_url(instance, console_id)
 
     assert msg in str(e.value)
