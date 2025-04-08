@@ -1,1 +1,25 @@
-../../docs/source/api-reference/drivers/dutlink.md
+# DUT Link driver
+
+`jumpstarter-driver-dutlink` provides functionality for interacting with DUT Link devices.
+
+## Installation
+
+```bash
+pip install jumpstarter-driver-dutlink
+```
+
+## Configuration
+
+Example configuration:
+
+```yaml
+interfaces:
+  dutlink:
+    driver: jumpstarter_driver_dutlink.DUTLinkDriver
+    parameters:
+      # Add required parameters here
+```
+
+## API Reference
+
+Add API documentation here.
