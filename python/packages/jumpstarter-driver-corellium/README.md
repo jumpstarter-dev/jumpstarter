@@ -1,20 +1,39 @@
-# Corellium Jumpstarter Driver
+# Corellium Driver
 
-A Jumpstarter driver that manages virtual devices in [Corellium](https://corellium.com).
+`jumpstarter-driver-corellium` provides functionality for interacting with [Corellium](https://corellium.com) virtualization platform.
 
-It implements the following interfaces:
+## Installation
 
-* PowerInterface
+```bash
+pip install jumpstarter-driver-corellium
+```
 
-## Usage
+## Configuration
 
-Check the [examples folder](./examples) for example files.
+Example configuration:
 
-### Config Exporter
+```yaml
+interfaces:
+  corellium:
+    driver: jumpstarter_driver_corellium.driver.Corellium
+    parameters:
+      project_id: "778f00af-5e9b-40e6-8e7f-c4f14b632e9c"
+      device_name: "jmp-rd1ae"
+      device_flavor: "kronos"
+      # Optional parameters
+      # device_os: "1.0"
+      # device_build: "Critical Application Monitor (Baremetal)"
+```
+
+## API Reference
+
+For more examples, check the [examples folder](./examples).
+
+### ExporterConfig Example
 
 You can run an exporter by running: `jmp exporter shell -c $file`:
 
-```yml
+```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 # endpoint and token are intentionally left empty
@@ -32,7 +51,7 @@ export:
       device_flavor: "kronos"
 ```
 
-```yml
+```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 # endpoint and token are intentionally left empty
