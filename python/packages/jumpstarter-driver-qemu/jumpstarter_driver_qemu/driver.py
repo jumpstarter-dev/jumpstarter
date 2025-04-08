@@ -11,15 +11,16 @@ from pathlib import Path
 from secrets import randbits
 from subprocess import PIPE, CalledProcessError, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
+from typing import Literal
 
 import yaml
 from anyio import fail_after, run_process, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
-from jumpstarter_driver_network.driver import UnixNetwork, VsockNetwork
+from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import FlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
-from pydantic import validate_call
+from pydantic import BaseModel, Field, validate_call
 from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
@@ -113,7 +114,13 @@ class QemuPower(PowerInterface, Driver):
             "-serial",
             "pty",
             "-netdev",
-            "user,id=eth0",
+            ",".join(
+                ["user", "id=eth0"]
+                + [
+                    "hostfwd={}:{}:{}-:{}".format(v.protocol, v.hostaddr, v.hostport, v.guestport)
+                    for k, v in self.parent.hostfwd.items()
+                ]
+            ),
         ]
 
         devices = [
@@ -219,6 +226,13 @@ class QemuPower(PowerInterface, Driver):
         self.off()
 
 
+class Hostfwd(BaseModel):
+    protocol: Literal["tcp"] = "tcp"
+    hostaddr: str = "127.0.0.1"
+    hostport: int = Field(ge=1, le=65535)
+    guestport: int = Field(ge=1, le=65535)
+
+
 @dataclass(kw_only=True)
 class Qemu(Driver):
     arch: str = field(default_factory=platform.machine)
@@ -233,6 +247,8 @@ class Qemu(Driver):
 
     default_partitions: dict[str, Path] = field(default_factory=dict)
 
+    hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
+
     _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
 
     @classmethod
@@ -243,6 +259,7 @@ class Qemu(Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
+        self.hostfwd = {k: Hostfwd.model_validate(v) for k, v in self.hostfwd.items()}
         self.default_partitions = {k: Path(v) for k, v in self.default_partitions.items()}
 
         self.children["power"] = QemuPower(parent=self)
@@ -250,6 +267,11 @@ class Qemu(Driver):
         self.children["console"] = PySerial(url=self._pty, check_present=False)
         self.children["vnc"] = UnixNetwork(path=self._vnc)
         self.children["ssh"] = VsockNetwork(cid=self._cid, port=22)
+
+        for k, v in self.hostfwd.items():
+            match v.protocol:
+                case "tcp":
+                    self.children[k] = TcpNetwork(host=v.hostaddr, port=v.hostport)
 
     @property
     def _pty(self) -> str:
