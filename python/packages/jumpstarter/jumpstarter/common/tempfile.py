@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
+from os import PathLike
 from pathlib import Path
 from socket import AddressFamily
 from tempfile import TemporaryDirectory
@@ -15,8 +16,13 @@ def TemporarySocket():
 
 
 @asynccontextmanager
-async def TemporaryUnixListener(handler):
-    with TemporarySocket() as path:
+async def TemporaryUnixListener(handler, path: PathLike | None = None):
+    if path is not None:
+        cm = nullcontext(path)
+    else:
+        cm = TemporarySocket()
+
+    with cm as path:
         async with await create_unix_listener(path) as listener:
             async with create_task_group() as tg:
                 tg.start_soon(listener.serve, handler, tg)
