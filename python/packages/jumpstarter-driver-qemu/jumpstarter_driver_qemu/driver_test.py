@@ -31,7 +31,15 @@ def ovmf(tmpdir_factory):
 
 @pytest.mark.parametrize("arch,ovmf_arch", [("x86_64", "x64"), ("aarch64", "aarch64")])
 def test_driver_qemu(tmp_path, ovmf, arch, ovmf_arch):
-    with serve(Qemu(arch=arch)) as qemu:
+    with serve(
+        Qemu(
+            arch=arch,
+            default_partitions={
+                "OVMF_CODE.fd": ovmf / ovmf_arch / "code.fd",
+                "OVMF_VARS.fd": ovmf / ovmf_arch / "vars.fd",
+            },
+        )
+    ) as qemu:
         hostname = qemu.hostname
         username = qemu.username
         password = qemu.password
@@ -45,16 +53,6 @@ def test_driver_qemu(tmp_path, ovmf, arch, ovmf_arch):
                 f"pub/fedora/linux/releases/41/Cloud/{arch}/images/Fedora-Cloud-Base-Generic-41-1.4.{arch}.qcow2",
                 operator=Operator("http", endpoint="https://download.fedoraproject.org"),
             )
-
-        qemu.flasher.flash(
-            ovmf / ovmf_arch / "code.fd",
-            partition="OVMF_CODE.fd",
-        )
-
-        qemu.flasher.flash(
-            ovmf / ovmf_arch / "vars.fd",
-            partition="OVMF_VARS.fd",
-        )
 
         qemu.power.on()
 

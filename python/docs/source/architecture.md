@@ -1,177 +1,222 @@
 # Architecture
 
-```{warning}
-This project is still evolving, so these docs may be incomplete or out-of-date.
-```
-
 The Jumpstarter architecture is based on a client/server model. This enables a
 single client to communicate with one or many devices under test.
 
 Devices can either be connected to the same machine as the client or distributed
 across remote test runners, for example, in a hybrid cloud CI environment.
 
-The core of this architecture is the
-[gRPC protocol](https://github.com/jumpstarter-dev/jumpstarter-protocol/tree/main/proto/jumpstarter/v1)
-that connects a client to a device, either directly, or through a central server.
+The core of this architecture is the gRPC protocol that connects clients to
+devices, either directly in local mode, or through a central controller in
+distributed mode.
 
-## Components
+## Core Components
 
-### [`jumpstarter-python`](https://github.com/jumpstarter-dev/jumpstarter-python/)
+Jumpstarter consists of several key components that work together to provide
+testing capabilities for both physical hardware and virtual devices:
 
-#### Device Under Test (DUT)
+### Device Under Test (DUT)
 
-The DUT is the device that is being tested by Jumpstarter. One or more devices
-can be connected to a single exporter instance so they are treated as a single
-unit that can be tested together.
+The DUT is the hardware or virtual device being tested with Jumpstarter. One or
+more devices can be connected to a single exporter instance so they are treated
+as a single unit that can be tested together.
 
-#### Exporter
+### Clients
 
-The exporter is a service that can run locally or on another Linux device that
-"exports" the interfaces connected to the Device Under Test (DUT). The exporter
-implements a gRPC service (exposed via a unix socket) that a client can connect
-to directly or through a proxy server to interact with a specific device.
+The Jumpstarter client is a Python library and CLI tool that connects to
+exporters either locally through a socket or remotely through a central server.
+Clients can run test scripts, direct commands, or interactive shells to control
+hardware.
 
-#### Driver
+For more information, see [Clients](./introduction/clients.md).
 
-Jumpstarter drivers are exporter plugins that provide the ability to interact with
-a specific device. Drivers provide an interface that can be interacted with
-either through Python (as a library) or the CLI.
+### Drivers
 
-#### Client
+Jumpstarter drivers are modular components that provide the ability to interact
+with specific hardware interfaces or virtual devices. Drivers follow a
+consistent pattern with interface definitions, implementation classes, and
+client interfaces.
 
-The Jumpstarter client is a Python library and CLI tool that can connect to one
-or more exporters either locally through a socket or remotely through a central server.
+For more information, see [Drivers](./introduction/drivers.md).
 
-#### Tests
+### Adapters
 
-Tests are any test scripts that utilize the CLI or Python library to interact with
-hardware via Jumpstarter.<!-- Basic tests can be written as YAML steps, while more complex
-testing can take full advantage of Jumpstarter as a library through Python. -->
+Adapters transform connections established by drivers into different forms or interfaces. 
+While drivers establish and manage the basic connections to hardware or virtual devices, 
+adapters take these connections and provide alternative ways to interact with them, making 
+them more convenient for specific use cases.
 
-### [`jumpstarter-controller`](https://github.com/jumpstarter-dev/jumpstarter-controller/)
+For example, a network driver might establish a basic TCP connection, while an adapter
+could transform that connection into a web-based VNC client interface, a Unix socket, 
+or a serial console-like interface.
 
-To provide compatibility with many existing Kubernetes-based tools (such as Helm)
-and CI systems (such as Tekton), Jumpstarter server components are implemented
-as Kubernetes services.
+For more information, see [Adapters](./introduction/adapters.md).
 
-Jumpstarter uses Kubernetes primitives and [Custom Resource Definitions (CRDs)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
-to manage the state of resources such as clients, exporters, and leases.
-When a new client or exporter is registered, a resource is created in the
-cluster to keep track of its state similar to how nodes and pods are managed.
+### Exporters
 
-#### Controller
+The exporter is a service that runs locally or on a remote Linux device and
+"exports" the interfaces connected to the Device Under Test. The exporter
+implements a gRPC service that clients can connect to either directly or through
+a controller to interact with devices.
 
-The controller service manages the client leases on exporter
-instances and keeps track of the connected clients and exporters.
+For more information, see [Exporters](./introduction/exporters.md).
 
-The `jumpstarter-controller` is a Kubernetes [controller](https://github.com/jumpstarter-dev/jumpstarter-controller)
-which provides the reconciliation of CRD resources. This service also provides a
-gRPC API used by clients to acquire leases on exporters.
+### Controller and Router
 
-#### Router
+In distributed environments, Jumpstarter provides Kubernetes-based components:
 
-The router service facilitates routing of messages between the clients and exporters.
+- **Controller**: Manages client leases on exporter instances and tracks
+  connected clients and exporters
+- **Router**: Facilitates message routing between clients and exporters through
+  gRPC streams
 
-The `jumpstarter-router` provides routing via gRPC streams.
+For more information, see [Service](./introduction/service.md).
+
+## Operation Modes
+
+Jumpstarter supports two primary operation modes: local and distributed.
+
+### Local Mode
+
+In local mode, clients communicate directly with exporters running on the same
+machine or through direct network connections.
+
+```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
+flowchart TB
+    subgraph "Developer Machine"
+        Client["Client\n(Python Library/CLI)"]
+        Exporter["Exporter\n(Local Service)"]
+    end
+
+    subgraph "Target Devices"
+        DUT["Physical/Virtual\nDevice Under Test"]
+        Power["Power Interface"]
+        Serial["Serial Interface"]
+        Storage["Storage Interface"]
+    end
+
+    Client <--> |"gRPC via Socket"| Exporter
+    Exporter --> Power
+    Exporter --> Serial
+    Exporter --> Storage
+    Power --> DUT
+    Serial --> DUT
+    Storage --> DUT
+```
+
+When no client configuration or environment variables are present, Jumpstarter
+runs in local mode and communicates with a built-in exporter service via a local
+socket connection.
+
+This mode enables easy development of tests and drivers without requiring
+Kubernetes or other infrastructure, whether working with physical hardware or
+virtual devices.
+
+#### Example: Running Local Tests
+
+```bash
+jmp shell --exporter my-hardware-exporter
+jmp shell --exporter my-virtual-exporter
+
+pytest test_device.py
+```
+
+### Distributed Mode
+
+In distributed mode, a Kubernetes-based controller manages access to exporters
+distributed across a network, with JWT token-based authentication securing all
+connections.
+
+```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
+flowchart TB
+    subgraph "Kubernetes Cluster"
+        Controller["Controller\nResource Management"]
+        Router["Router\nMessage Routing"]
+        Auth["Authentication\nJWT Tokens"]
+    end
+
+    subgraph "Test Runners"
+        Client1["Client 1\n(CI Pipeline)"]
+        Client2["Client 2\n(Developer)"]
+    end
+
+    subgraph "Lab Resources"
+        Exporter1["Exporter 1\n(Physical Hardware)"]
+        Exporter2["Exporter 2\n(Virtual Devices)"]
+        subgraph "Devices"
+            DUT1["Physical Device 1"]
+            DUT2["Physical Device 2"]
+            DUT3["Virtual Device"]
+        end
+    end
+
+    Client1 <--> |"JWT Authentication"| Auth
+    Client2 <--> |"JWT Authentication"| Auth
+    Exporter1 <--> |"JWT Authentication"| Auth
+    Exporter2 <--> |"JWT Authentication"| Auth
+    Auth <--> Controller
+
+    Client1 <--> |"gRPC (Authorized)"| Controller
+    Client2 <--> |"gRPC (Authorized)"| Controller
+    Controller <--> Router
+    Router <--> |"gRPC"| Exporter1
+    Router <--> |"gRPC"| Exporter2
+    Exporter1 --> DUT1
+    Exporter1 --> DUT2
+    Exporter2 --> DUT3
+```
+
+This mode supports multiple clients and exporters, with the controller managing
+leases to ensure exclusive access to both hardware and virtual device resources.
+
+#### Authentication Flow
+
+The authentication flow in distributed mode works as follows:
+
+1. **Client Registration**: Clients are registered in the Kubernetes cluster
+   with a unique identity
+2. **Token Issuance**: The controller issues JWT tokens to authenticated clients
+   and exporters
+3. **Secure Communication**: All gRPC communication between components is
+   secured with these tokens
+4. **Access Control**: The controller enforces permissions based on token
+   identity:
+
+   - Which exporters a client can request leases for
+   - What actions a client can perform
+   - Which driver packages are allowed to be loaded
+
+This authentication mechanism enables fine-grained access control in multi-user
+environments and prevents unauthorized access to hardware resources.
+
+#### Example: Running Distributed Tests
+
+```bash
+# Configure client with server information
+jmp config client use my-client
+
+# Request a lease on an exporter with specific labels
+jmp create lease --selector vendor=acme,model=widget-v2
+
+# Run tests using the leased exporter
+pytest test_device.py
+```
 
 ## Authentication
 
-Authentication for both Clients and Exporters is handled through JWT tokens,
-which are managed by Jumpstarter.
+Authentication for both clients and exporters is handled through JWT tokens
+managed by the controller.
 
-This authentication mechanism makes it possible to dynamically register different
-Jumpstarter clients and exporters to communicate through the server.
-For example, a CI-based client can be registered and authorized to access
-hardware resources exported from a specific lab of test benches.
+This authentication mechanism enables dynamic registration of clients and
+exporters, allowing controlled access to hardware resources. For example, a CI
+pipeline can be granted access to only specific exporters based on its
+credentials.
 
-## Jumpstarter Commands
+## Integration with Existing Tools
 
-```bash
-jumpstarter power on device
-```
-
-## Running Tests Locally (without a server)
-
-When no client configuration or environment variables are present, Jumpstarter
-will run in local mode and communicate with a built-in exporter service
-(or a registered daemon) via the local socket connection.
-
-This mode enables easy development of tests and drivers without having to configure
-a local k8s cluster using a tool such as [Kind](https://kind.sigs.k8s.io/).
-
-### Python Tests
-
-```bash
-pytest test_a.py
-```
-
-```{mermaid}
-block-beta
-columns 1
-  user(("User"))
-  space
-  pytest
-  block:tests
-    testA["test_a.py"]
-    testB["test_b.py"]
-    testC["test_c.py"]
-  end
-  block:jumpstarter
-    client
-    space
-    exporter
-  end
-  space
-
-  block:hardware
-    power
-    storage
-    video
-    serial
-    etc
-  end
-
-  user --> pytest
-  client -- "gRPC" --> exporter
-  exporter --> hardware
-
-style jumpstarter fill:#999,stroke:#333,stroke-width:4px
-```
-
-## Running tests through a central controller
-
-```{mermaid}
-block-beta
-  columns 1
-
-  client(("Client"))
-  space
-  jumpstarter("jumpstarter")
-  space
-  block:service
-    controller
-    router
-  end
-  space
-  block:test
-    columns 1
-    exporter
-    block:hardware
-      power
-      storage
-      video
-      serial
-      etc
-    end
-  end
-
-  client --> jumpstarter
-  exporter -- "gRPC" --> service
-  jumpstarter -- "gRPC" --> service
-
-style hardware fill:#888,stroke:#333,stroke-width:4px
-```
-
-```{toctree}
-drivers.md
-```
+Jumpstarter is designed to integrate with a wide range of existing tools and
+workflows. For detailed information about integration patterns and solution
+architectures, see the [Solution Architecture](./solution-architecture.md)
+document.

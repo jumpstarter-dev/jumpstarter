@@ -66,7 +66,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs/build_all
+          path: ./docs/build
 
   # Deployment job
   deploy:

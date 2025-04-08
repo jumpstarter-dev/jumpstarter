@@ -9,6 +9,7 @@ jumpstarter-cli-common = { workspace = true }
 jumpstarter-cli-driver = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
+jumpstarter-driver-corellium = { workspace = true }
 jumpstarter-driver-dutlink = { workspace = true }
 jumpstarter-driver-flashers = { workspace = true }
 jumpstarter-driver-http = { workspace = true }
@@ -44,6 +45,7 @@ docs = [
     "sphinx-substitution-extensions>=2024.10.17",
     "requests>=2.32.3",
     "sphinxcontrib-programoutput>=0.18",
+    "sphinx-multiversion>=0.2.4",
 ]
 dev = [
     "ruff==0.9.2",

@@ -2,23 +2,18 @@
 name = "jumpstarter-cli-admin"
 dynamic = ["version", "urls"]
 description = ""
-authors = [
-  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
-]
+authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = [
-    "jumpstarter-cli-common",
-    "jumpstarter-kubernetes",
-]
+dependencies = ["jumpstarter-cli-common", "jumpstarter-kubernetes"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.2",
-    "pytest-anyio>=0.0.0",
-    "pytest-asyncio>=0.0.0",
-    "pytest-cov>=5.0.0",
+  "pytest>=8.3.2",
+  "pytest-anyio>=0.0.0",
+  "pytest-asyncio>=0.0.0",
+  "pytest-cov>=5.0.0",
 ]
 
 [project.scripts]
@@ -33,7 +28,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../' }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]

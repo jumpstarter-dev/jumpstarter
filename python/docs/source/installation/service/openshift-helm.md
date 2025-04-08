@@ -1,16 +1,16 @@
 # OpenShift (Helm)
 ```{tip}
-Please note that `global.baseDomain` is used to create the host names for the services,
-with the provided example the services will be available at grpc.jumpstarter.example.com
+Please note that `global.baseDomain` is used to create the hostnames for the services.
+With the provided example, the services will be available at grpc.jumpstarter.example.com
 and router.jumpstarter.example.com.
 ````
 
 ```{note}
-Please note that you will need administrator access to the cluster to install the Jumpstarter Service,
-this is because the install process will install some CRDs and ClusterRoles.
+Please note that you will need administrator access to the cluster to install the Service,
+as the installation process will install CRDs and ClusterRoles.
 ```
 
-To install using helm:
+To install using Helm:
 
 ```{code-block} bash
 :substitutions:

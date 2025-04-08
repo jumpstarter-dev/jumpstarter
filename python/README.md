@@ -1,10 +1,20 @@
-# jumpstarter-python
+# jumpstarter
 
-This project provides both a library, and a command line client to interact with the
-Jumpstarter resources and services.
+A Python library and CLI tool for interacting with Jumpstarter resources and services.
 
-For more details see the following documents:
+## Installation
 
-* [Glossary](https://docs.jumpstarter.dev/glossary)
-* [Usage](https://docs.jumpstarter.dev/getting-started/)
-* [Architecture](https://docs.jumpstarter.dev/architecture.html)
+```bash
+pip install jumpstarter
+```
+
+## Basic Usage
+
+```python
+from jumpstarter import Client
+
+client = Client()
+# Use the client to interact with Jumpstarter services
+```
+
+For comprehensive documentation, visit [docs.jumpstarter.dev](https://docs.jumpstarter.dev)

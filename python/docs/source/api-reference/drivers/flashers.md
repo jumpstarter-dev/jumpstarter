@@ -1,18 +1,19 @@
 # Flashers
 
-The flasher drivers are used to flash images to DUTs via network,
-typically using TFTP and HTTP. It is designed to interact with
-the target bootloader and busybox shell to flash the DUT.
+The flasher drivers are used to flash images to DUTs via network, typically
+using TFTP and HTTP. It is designed to interact with the target bootloader and
+busybox shell to flash the DUT.
 
-All flasher drivers inherit from the `jumpstarter_driver_flashers.driver.BaseFlasher`
-class, referencing their own bundle of binary artifacts necessary to flash the DUT,
-like kernel/initram/dtbs. See the [bundle](#oci-bundles) section for more details.
+All flasher drivers inherit from the
+`jumpstarter_driver_flashers.driver.BaseFlasher` class, referencing their own
+bundle of binary artifacts necessary to flash the DUT, like kernel/initram/dtbs.
+See the [bundle](#oci-bundles) section for more details.
 
 ## Available drivers and bundles
 
-| Driver          | Bundle                                                        |
-|-----------------|---------------------------------------------------------------|
-| TIJ784S4Flasher | quay.io/jumpstarter-dev/jumpstarter-flasher-ti-j784s4:latest  |
+| Driver          | Bundle                                                       |
+| --------------- | ------------------------------------------------------------ |
+| TIJ784S4Flasher | quay.io/jumpstarter-dev/jumpstarter-flasher-ti-j784s4:latest |
 
 
 ## Driver configuration
@@ -39,29 +40,31 @@ export:
       port: "1"
 ```
 
-flasher drivers require four children drivers:
-| Child Driver | Description | Auto-created |
-|--------------|-------------|--------------|
-| serial | To communicate with the DUT via serial and drive the bootloader and busybox shell | No |
-| power | To power on and off the DUT | No |
-| tftp | To serve binaries via TFTP | Yes |
-| http | To serve the images via HTTP | Yes |
+flasher drivers require four children drivers: | Child Driver | Description |
+Auto-created | | ------------ |
+---------------------------------------------------------------------------------
+| ------------ | | serial       | To communicate with the DUT via serial and
+drive the bootloader and busybox shell | No           | | power        | To
+power on and off the DUT                                                       |
+No           | | tftp         | To serve binaries via TFTP | Yes          | |
+http         | To serve the images via HTTP | Yes          |
 
-In the above example we provide the serial and power children by [reference](./proxy.md), so those
-remain also available on the root of the exporter.
+In the above example we provide the serial and power children by
+[reference](./proxy.md), so those remain also available on the root of the
+exporter.
 
-The power driver is used to control power cycling of the DUT, and the serial interface
-is used to communicate with the DUT bootloader via serial. TFTP and HTTP servers are
-used to serve images to the DUT bootloader and busybox shell.
+The power driver is used to control power cycling of the DUT, and the serial
+interface is used to communicate with the DUT bootloader via serial. TFTP and
+HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 
 ### Config parameters
 
-| Parameter | Description | Type | Required | Default |
-|-----------|-------------|------|----------|---------|
-| flasher_bundle | The OCI bundle to use for the flasher | str | yes | |
-| cache_dir | The directory to cache the images | str | no | /var/lib/jumpstarter/flasher |
-| tftp_dir | The directory to serve the images via TFTP | str | no | /var/lib/tftpboot |
-| http_dir | The directory to serve the images via HTTP | str | no | /var/www/html |
+| Parameter      | Description                                | Type | Required | Default                      |
+| -------------- | ------------------------------------------ | ---- | -------- | ---------------------------- |
+| flasher_bundle | The OCI bundle to use for the flasher      | str  | yes      |                              |
+| cache_dir      | The directory to cache the images          | str  | no       | /var/lib/jumpstarter/flasher |
+| tftp_dir       | The directory to serve the images via TFTP | str  | no       | /var/lib/tftpboot            |
+| http_dir       | The directory to serve the images via HTTP | str  | no       | /var/www/html                |
 
 
 ## BaseFlasher API
@@ -74,7 +77,8 @@ The `BaseFlasher` class provides a set of methods to flash the DUT,
 
 ## CLI
 
-The flasher driver provides a CLI to perform flashing, access to busybox shell and uboot.
+The flasher driver provides a CLI to perform flashing, access to busybox shell
+and uboot.
 
 <!--
 This doesn't work with sphinx-click, so we'll just use the raw CLI
@@ -228,10 +232,10 @@ flasherclient.flash("/path/to/image.raw.xz", partition="emmc")
 
 ## Examples of utility consoles
 
-In addition to the flashing mechanisms, the flasher drivers also provide a way to
-access the DUT bootloader and busybox shell for convenience and debugging, when using
-the `busybox_shell` and `bootloader_shell` methods the embedded http and tftp servers
-will be online and serving the images from the flasher bundle.
+In addition to the flashing mechanisms, the flasher drivers also provide a way
+to access the DUT bootloader and busybox shell for convenience and debugging,
+when using the `busybox_shell` and `bootloader_shell` methods the embedded http
+and tftp servers will be online and serving the images from the flasher bundle.
 
 Get the busybox shell on the device
 ```python
@@ -250,12 +254,12 @@ with flasherclient.bootloader_shell() as serial:
 ```
 
 # oci-bundles
-The flasher drivers require some artifacts and basic information about the target device
-to operate. To make this easy to distribute and use, we use OCI bundles to package the
-artifacts and metadata.
+The flasher drivers require some artifacts and basic information about the
+target device to operate. To make this easy to distribute and use, we use OCI
+bundles to package the artifacts and metadata.
 
-The bundle is a container that uses [oras](https://oras.land/) to transport the artifacts
-and metadata. It is a container that contains the following:
+The bundle is a container that uses [oras](https://oras.land/) to transport the
+artifacts and metadata. It is a container that contains the following:
 - `manifest.yaml`: The manifest file that describes the bundle
 - `data/*`: The artifacts, including kernel, initram, dtbs, etc.
 
@@ -265,26 +269,26 @@ and metadata. It is a container that contains the following:
 :language: yaml
 ```
 ## Table with the spec fields of the manifest:
-| Field | Description | Default |
-|-------|-------------|---------|
-| `manufacturer` | Name of the device manufacturer |  |
-| `link` | URL to device documentation or manufacturer website |  |
-| `bootcmd` | Command used to boot the device (e.g. booti, bootz) |  |
-| `default_target` | Default target device to flash to if none specified |  |
-| `targets` | Map of target names to device paths | |
-| `login.type` | Type of login shell | busybox |
-| `login.login_prompt` | Expected login prompt string | login: |
-| `login.username` | Username to log in with, leave empty if not needed |  |
-| `login.password` | Password for login, leave empty if not needed |  |
-| `login.prompt` | Shell prompt after successful login | # |
-| `preflash_commands` | List of commands to run before flashing, useful to clear boot entries, etc | |
-| `kernel.file` | Path to kernel image within bundle |
-| `kernel.address` | Memory address to load kernel to | |
-| `initram.file` | Path to initramfs within bundle (if any)| |
-| `initram.address` | Memory address to load initramfs to (if any) | |
-| `dtb.default` | Default DTB variant to use | |
-| `dtb.address` | Memory address to load DTB to  | |
-| `dtb.variants` | Map of DTB variant names to files |
+| Field                | Description                                                                | Default |
+| -------------------- | -------------------------------------------------------------------------- | ------- |
+| `manufacturer`       | Name of the device manufacturer                                            |         |
+| `link`               | URL to device documentation or manufacturer website                        |         |
+| `bootcmd`            | Command used to boot the device (e.g. booti, bootz)                        |         |
+| `default_target`     | Default target device to flash to if none specified                        |         |
+| `targets`            | Map of target names to device paths                                        |         |
+| `login.type`         | Type of login shell                                                        | busybox |
+| `login.login_prompt` | Expected login prompt string                                               | login:  |
+| `login.username`     | Username to log in with, leave empty if not needed                         |         |
+| `login.password`     | Password for login, leave empty if not needed                              |         |
+| `login.prompt`       | Shell prompt after successful login                                        | #       |
+| `preflash_commands`  | List of commands to run before flashing, useful to clear boot entries, etc |         |
+| `kernel.file`        | Path to kernel image within bundle                                         |
+| `kernel.address`     | Memory address to load kernel to                                           |         |
+| `initram.file`       | Path to initramfs within bundle (if any)                                   |         |
+| `initram.address`    | Memory address to load initramfs to (if any)                               |         |
+| `dtb.default`        | Default DTB variant to use                                                 |         |
+| `dtb.address`        | Memory address to load DTB to                                              |         |
+| `dtb.variants`       | Map of DTB variant names to files                                          |
 
 
 ## Examples

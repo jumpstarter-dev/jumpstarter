@@ -1,14 +1,22 @@
 # OIDC Authentication
 
-Jumpstarter authenticates clients and exporters with internally issued JWT tokens by default, it can also be configured to use external OpenID Connect (OIDC) providers.
+Jumpstarter authenticates clients and exporters with internally issued JWT
+tokens by default, it can also be configured to use external OpenID Connect
+(OIDC) providers.
 
-To use OIDC with you Jumpstarter installation, set the helm value `jumpstarter-controller.authenticationConfiguration` to a valid `AuthenticationConfiguration` yaml configuration.
+To use OIDC with you Jumpstarter installation, set the helm value
+`jumpstarter-controller.authenticationConfiguration` to a valid
+`AuthenticationConfiguration` yaml configuration.
 
 ## Examples
 
 ### Keycloak
 
-Create a new keycloak client for the jumpstarter cli, set `Client ID` to `jumpstarter-cli`, `Valid redirect URIs` to `http://localhost/callback` and leave the remaining fields as default. Use the following snippet as `jumpstarter-controller.authenticationConfiguration` during Jumpstarter installation.
+Create a new keycloak client for the jumpstarter cli, set `Client ID` to
+`jumpstarter-cli`, `Valid redirect URIs` to `http://localhost/callback` and
+leave the remaining fields as default. Use the following snippet as
+`jumpstarter-controller.authenticationConfiguration` during Jumpstarter
+installation.
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -27,7 +35,10 @@ jwt:
       prefix: "keycloak:"
 ```
 
-Then proceed to create clients and exporters with the `jmp admin create` commands, set their corresponding OIDC username with the `--oidc-username` flag, e.g. `jmp admin create client test-client --oidc-username keycloak:developer-1`. Be sure to prefix usernames with "keycloak:", as previously configured.
+Then proceed to create clients and exporters with the `jmp admin create`
+commands, set their corresponding OIDC username with the `--oidc-username` flag,
+e.g. `jmp admin create client test-client --oidc-username keycloak:developer-1`.
+Be sure to prefix usernames with "keycloak:", as previously configured.
 
 Finally, instruct the users to login with the following commands
 
@@ -122,7 +133,9 @@ helm repo add dex https://charts.dexidp.io
 helm install --namespace dex --wait -f dex.values.yaml dex dex/dex
 ```
 
-Configure Jumpstarter to trust dex by using the following snippet as `jumpstarter-controller.authenticationConfiguration` during Jumpstarter installation.
+Configure Jumpstarter to trust dex by using the following snippet as
+`jumpstarter-controller.authenticationConfiguration` during Jumpstarter
+installation.
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -141,9 +154,14 @@ jwt:
         prefix: "dex:"
 ```
 
-Then proceed to create clients and exporters with the `jmp admin create` commands, set their corresponding OIDC username with the `--oidc-username` flag, e.g. `jmp admin create exporter test-exporter --oidc-username dex:system:serviceaccount:default:test-service-account`. Just prefix the full service account name with "dex:", as previously configured.
+Then proceed to create clients and exporters with the `jmp admin create`
+commands, set their corresponding OIDC username with the `--oidc-username` flag,
+e.g. `jmp admin create exporter test-exporter --oidc-username
+dex:system:serviceaccount:default:test-service-account`. Just prefix the full
+service account name with "dex:", as previously configured.
 
-Finally, instruct the users to login with the following commands in pods configured with proper service accounts.
+Finally, instruct the users to login with the following commands in pods
+configured with proper service accounts.
 
 ```
 # for clients

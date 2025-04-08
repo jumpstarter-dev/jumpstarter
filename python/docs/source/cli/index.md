@@ -1,10 +1,17 @@
 # Command-Line Interface
-To simplify the management and operation of Jumpstarter, we provide several command-line tools for different use cases. These CLI tools can also be installed together through the `jmpstarter-cli` package and accessed using the `jmp` command for simplicity.
 
-Each tool can also be installed separately for users who want to reduce the dependencies on their developer machine or an embedded exporter with limited available resources.
+This section covers the Jumpstarter command-line tools that simplify management and operation. Whether you need to interact with clients, exporters, or run tests, these CLI tools provide a consistent interface.
 
+The following pages will guide you through the CLI tools:
+
+* **[Reference](reference/index.md)** - Comprehensive command reference
+* **[Clients](clients.md)** - Using client-related CLI commands
+* **[Exporters](exporters.md)** - Managing exporters via CLI
+* **[Run Tests](run-tests.md)** - Running tests with the CLI
 
 ```{toctree}
+:maxdepth: 1
+:hidden:
 reference/index.md
 clients.md
 exporters.md

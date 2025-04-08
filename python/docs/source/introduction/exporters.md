@@ -1,18 +1,18 @@
 # Exporters
 
 Jumpstarter uses a program called an Exporter to enable remote access to your
-hardware. The Exporter typically runs on a "host" system directly connected
-to your hardware. We call it an Exporter because it "exports" the interfaces
-connected to the target for client access.
+hardware. The Exporter typically runs on a "host" system directly connected to
+your hardware. It is called an Exporter because it "exports" the interfaces
+connected to the target device for client access.
 
 ## Hosts
 
-Typically, the host will be a low-cost test system such as a Raspberry Pi
-or Mini PC with sufficient interfaces to connect to your hardware. It is also
+Typically, the host will be a low-cost test system such as a Raspberry Pi or
+Mini PC with sufficient interfaces to connect to your hardware. It is also
 possible to use a local high-power server (or CI runner) as the host device.
 
-A host can run multiple Exporter instances simultaneously if it needs to interact
-with several different devices at the same time.
+A host can run multiple Exporter instances simultaneously if it needs to
+interact with several different devices at the same time.
 
 ## Configuration
 
@@ -45,7 +45,7 @@ export:
       url: "/dev/ttyUSB0"
       baudrate: 115200
   storage:
-  type: "jumpstarter_driver_sdwire.driver.SDWire"
+    type: "jumpstarter_driver_sdwire.driver.SDWire"
     config:
       serial: "sdw-00001"
       storage_device: "/dev/disk/by-path/..."
@@ -57,18 +57,17 @@ export:
     ref: "power" # reference to another driver, this uses the Proxy driver
 ```
 
-see the [ExporterConfig](../api-reference/exporters/exporterconfig.md) for more details.
 ## Running an Exporter
 
-To run an Exporter on a host system, you must have Python {{requires_python}} installed
-and the driver packages specified in the config installed in your current Python
-environment.
+To run an Exporter on a host system, you must have Python {{requires_python}}
+installed and the driver packages specified in the config installed in your
+current Python environment.
 
 ```bash
 # Run the exporter myexporter in your local terminal
 $ jmp run --exporter myexporter
 ```
 
-Exporters can also be run in a privileged container or as a systemd daemon. It is
-recommended to run the Exporter service in the background with auto-restart
-in case something goes wrong and it needs to be restarted.
+Exporters can also be run in a privileged container or as a systemd daemon. It
+is recommended to run the Exporter service in the background with auto-restart
+capabilities in case something goes wrong and it needs to be restarted.

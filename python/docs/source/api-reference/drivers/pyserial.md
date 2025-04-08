@@ -1,32 +1,43 @@
-# PySerial
+# PySerial driver
 
-**driver**: `jumpstarter_driver_pyserial.driver.PySerial`
+`jumpstarter-driver-pyserial` provides functionality for serial port communication.
 
-## Driver configuration
+## Installation
+
+```bash
+pip install jumpstarter-driver-pyserial
+```
+
+## Configuration
+
+Example configuration:
+
 ```yaml
-export:
-  my_serial:
-    type: ""jumpstarter_driver_pyserial.driver.PySerial"
-    config:
+interfaces:
+  serial:
+    driver: jumpstarter_driver_pyserial.driver.PySerial
+    parameters:
       url: "/dev/ttyUSB0"
       baudrate: 115200
 ```
+
 ### Config parameters
 
-| Parameter | Description | Type | Required | Default |
-|-----------|-------------|------|----------|---------|
-| url | The serial port to connect to, in [pyserial format](https://pyserial.readthedocs.io/en/latest/url_handlers.html)  | str | yes | |
-| baudrate | The baudrate to use for the serial connection | int | no | 115200 |
-| check_existing | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool | no | True |
+| Parameter      | Description                                                                                                                                          | Type | Required | Default |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- | ------- |
+| url            | The serial port to connect to, in [pyserial format](https://pyserial.readthedocs.io/en/latest/url_handlers.html)                                     | str  | yes      |         |
+| baudrate       | The baudrate to use for the serial connection                                                                                                        | int  | no       | 115200  |
+| check_existing | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool | no       | True    |
 
+## API Reference
 
-## PySerialClient API
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_pyserial.client.PySerialClient()
     :members: pexpect, open, stream, open_stream, close
 ```
 
-## Examples
+### Examples
+
 Using expect with a context manager
 ```{testcode}
 with pyserialclient.pexpect() as session:
