@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -euxv
 
 # accepted parameters are:
 # $1: driver name
@@ -34,10 +34,10 @@ DOC_FILE=${DOCS_DIRECTORY}/${DRIVER_NAME}.md
 # Create initial documentation file if it doesn't exist
 if [ ! -f "${DOC_FILE}" ]; then
     echo "Creating initial documentation file: ${DOC_FILE}"
-    cat > "${DOC_FILE}" << EOF
+    cat > "${DOC_FILE}" << 'EOF'
 # ${DRIVER_CLASS} Driver
 
-\`jumpstarter-driver-${DRIVER_NAME}\` provides functionality for interacting with ${DRIVER_NAME} devices.
+`jumpstarter-driver-${DRIVER_NAME}` provides functionality for interacting with ${DRIVER_NAME} devices.
 
 ## Installation
 
@@ -61,6 +61,10 @@ interfaces:
 
 Add API documentation here.
 EOF
+    # Need to expand variables after EOF to prevent early expansion
+    sed -i "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g" "${DOC_FILE}"
+    echo "Documentation file content:"
+    cat "${DOC_FILE}"
 fi
 
 for f in __init__.py client.py driver_test.py driver.py; do
