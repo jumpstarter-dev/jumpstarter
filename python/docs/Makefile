@@ -27,9 +27,11 @@ serve:
 
 multiversion:
 	sphinx-multiversion "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
-	@echo "Moving main directory contents to build root"
-	@mv "$(BUILDDIR)/main/"* "$(BUILDDIR)/"
-	@rm -rf "$(BUILDDIR)/main/"
+	@if [ -d "$(BUILDDIR)/main" ]; then \
+		echo "Moving main directory contents to build root"; \
+		mv "$(BUILDDIR)/main/"* "$(BUILDDIR)/"; \
+		rm -rf "$(BUILDDIR)/main/"; \
+	fi
 
 serve-multiversion:
 	@echo "Serving multiversion documentation using the HOST variable"
