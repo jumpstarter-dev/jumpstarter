@@ -1,6 +1,6 @@
 # ![bolt](./assets/bolt.svg) Jumpstarter
 
-[![badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/readme-improvements/assets/badge/v0.json)](https://github.com/jumpstarter-dev/jumpstarter)
+[![badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/assets/badge/v0.json)](https://github.com/jumpstarter-dev/jumpstarter)
 [![ci](https://img.shields.io/github/actions/workflow/status/jumpstarter-dev/jumpstarter/build.yaml?branch=main&logo=github&label=CI)](https://github.com/jumpstarter-dev/jumpstarter/actions)
 [![release](https://img.shields.io/github/v/release/jumpstarter-dev/jumpstarter)](https://github.com/jumpstarter-dev/jumpstarter/releases)
 [![versions](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fjumpstarter-dev%2Fjumpstarter%2Fmain%2Fpackages%2Fjumpstarter%2Fpyproject.toml)](https://github.com/jumpstarter-dev/jumpstarter/blob/main/packages/jumpstarter/pyproject.toml)
