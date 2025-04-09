@@ -2,6 +2,18 @@
 
 Thank you for your interest in contributing to Jumpstarter! This document outlines the process for contributing to the project and provides guidelines to make the contribution process smooth.
 
+## Getting Help
+
+If you have questions or need help, here are the best ways to connect with the community:
+
+### Community Resources
+
+- **Matrix Chat**: Join our [Matrix community](https://matrix.to/#/#jumpstarter:matrix.org) for real-time discussions and support
+- **Weekly Meetings**: Participate in our [weekly community meetings](https://meet.google.com/gzd-hhbd-hpu) to discuss development and get help
+- **Etherpad**: Check our [Etherpad](https://etherpad.jumpstarter.dev/pad-lister) for meeting notes and collaborative documentation
+- **GitHub Issues**: [Open an issue](https://github.com/jumpstarter-dev/jumpstarter/issues) in the repository for bug reports and feature requests
+- **Documentation**: Visit our [documentation](https://jumpstarter.dev/) for comprehensive guides and tutorials
+
 ## Code of Conduct
 
 Please be respectful and considerate of others when contributing to the project.
@@ -244,13 +256,3 @@ To add a new example:
 2. Include a comprehensive README.md with setup and usage instructions
 3. Follow the structure of existing examples
 4. Ensure the example is well-documented and easy to follow
-
-## Getting Help
-
-If you have questions or need help, please:
-
-1. Check the [documentation](https://docs.jumpstarter.dev/)
-2. Open an issue in the repository
-3. Reach out to the maintainers
-
-Thank you for contributing to Jumpstarter! 

@@ -2,7 +2,7 @@
 
 ## Release install
 
-The [Jumpstarter Python packages](https://docs.jumpstarter.dev/packages/)
+The [Jumpstarter Python packages](https://jumpstarter.dev/packages/)
 contain all the necessary tools to run an exporter or interact with your
 hardware as a client.
 
@@ -10,7 +10,7 @@ The Python package can be installed using ``pip`` or similar. Python
 {{requires_python}} is required:
 
 ```bash
-$ pip3 install --extra-index-url https://docs.jumpstarter.dev/packages/simple jumpstarter-all
+$ pip3 install --extra-index-url https://jumpstarter.dev/packages/simple jumpstarter-all
 
 $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter

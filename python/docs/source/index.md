@@ -1,5 +1,23 @@
 # Welcome to Jumpstarter
 
+```{eval-rst}
+.. image:: https://img.shields.io/badge/GitHub-Repository-black?logo=github
+   :target: https://github.com/jumpstarter-dev/jumpstarter
+   :alt: GitHub Repository
+
+.. image:: https://img.shields.io/badge/Etherpad-Notes-green?logo=etherpad
+   :target: https://etherpad.jumpstarter.dev/pad-lister
+   :alt: Etherpad Notes
+
+.. image:: https://img.shields.io/matrix/jumpstarter:matrix.org?label=Matrix%20Chat&logo=matrix
+   :target: https://matrix.to/#/#jumpstarter:matrix.org
+   :alt: Matrix Chat
+
+.. image:: https://img.shields.io/badge/Weekly%20Meeting-Google%20Meet-blue?logo=google-meet
+   :target: https://meet.google.com/gzd-hhbd-hpu
+   :alt: Weekly Meeting
+```
+
 Jumpstarter is a free and open-source testing tool that enables you to test your software stack on both real hardware and virtual environments using CI/CD principles. It provides powerful testing tools that leverage Cloud Native principles, modern CI/CD technologies, and open standards for the next generation of edge devices, whether physical or emulated.
 
 ## Device Automation Made Simple
