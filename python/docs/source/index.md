@@ -1,17 +1,21 @@
 # Welcome to Jumpstarter
 
 ```{eval-rst}
-.. image:: https://img.shields.io/badge/GitHub-Repository-black?logo=github
+.. image:: https://img.shields.io/badge/GitHub-Repository-blue?logo=github
    :target: https://github.com/jumpstarter-dev/jumpstarter
    :alt: GitHub Repository
 
-.. image:: https://img.shields.io/badge/Etherpad-Notes-green?logo=etherpad
-   :target: https://etherpad.jumpstarter.dev/pad-lister
-   :alt: Etherpad Notes
+.. image:: https://img.shields.io/badge/PyPI-Packages-blue?logo=pypi
+   :target: https://pypi.org/project/jumpstarter/
+   :alt: Python Packages
 
-.. image:: https://img.shields.io/matrix/jumpstarter:matrix.org?label=Matrix%20Chat&logo=matrix
+.. image:: https://img.shields.io/matrix/jumpstarter%3Amatrix.org?color=blue
    :target: https://matrix.to/#/#jumpstarter:matrix.org
    :alt: Matrix Chat
+
+.. image:: https://img.shields.io/badge/Etherpad-Notes-blue?logo=etherpad
+   :target: https://etherpad.jumpstarter.dev/pad-lister
+   :alt: Etherpad Notes
 
 .. image:: https://img.shields.io/badge/Weekly%20Meeting-Google%20Meet-blue?logo=google-meet
    :target: https://meet.google.com/gzd-hhbd-hpu
@@ -65,10 +69,4 @@ solution-architecture.md
 contributing.md
 glossary.md
 api-reference/index.md
-```
-
-## Resources
-
-```{eval-rst}
-* `Python Packages <./packages/index.html>`_
 ```
