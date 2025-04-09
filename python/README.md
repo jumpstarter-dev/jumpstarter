@@ -9,15 +9,12 @@ A free, open-source tool for automated testing on real and virtual hardware with
 
 ## Highlights
 
-- 🚀 A single, unified testing tool for local, virtual, and remote hardware testing.
-- 🐍 Write test scripts in Python with familiar frameworks such as [pytest](https://docs.pytest.org/en/stable/).
-- 🛠️ Use [drivers](https://docs.jumpstarter.dev/introduction/drivers.html) to abstract complex hardware interfaces for testing.
-- 🔌 Built-in support for common interfaces such as [CAN](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-can), [IP](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-network), [GPIO](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-raspberrypi), [U-Boot](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-uboot), [SD Wire](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-sdwire), etc.
-- 💻 Collaborate with developers around the world on shared test hardware.
-- ☸ Integrates with your existing [Cloud Native](https://www.cncf.io/) development environment.
-- 🔄 Run hardware tests with your existing CI/CD pipelines in the cloud.
-- 📦 Support for containerized test runners with Podman/Docker.
-- 🖥️ Supports Linux and macOS.
+- **Unified Testing** - One tool for local, virtual, and remote hardware
+- **Python-Powered** - Leverage Python's testing ecosystem
+- **Hardware Abstraction** - Simplify interfaces with drivers
+- **Collaborative** - Share test hardware globally
+- **CI/CD Ready** - Works with cloud native developer environments and pipelines
+- **Cross-Platform** - Supports Linux and macOS
 
 ## Installation
 
@@ -46,8 +43,8 @@ Additionally, the command line reference documentation can be viewed with `jmp -
 ## Contributing
 
 Jumpstarter welcomes contributors of all levels of experience and would love to
-see you involved in the project. See the [contributing guide](https://github.com/jumpstarter-dev/jumpstarter/blob/main/CONTRIBUTING.md) to get started.
+see you involved in the project. See the [contributing guide](CONTRIBUTING.md) to get started.
 
 ## License
 
-Jumpstarter is licensed under the Apache 2.0 License ([LICENSE](https://github.com/jumpstarter-dev/jumpstarter/blob/main/LICENSE) or [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)).
+Jumpstarter is licensed under the Apache 2.0 License ([LICENSE](LICENSE) or [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)).
