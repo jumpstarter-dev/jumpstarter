@@ -1359,6 +1359,7 @@ dev = [
 name = "jumpstarter-driver-network"
 source = { editable = "packages/jumpstarter-driver-network" }
 dependencies = [
+    { name = "asyncclick" },
     { name = "fabric" },
     { name = "jumpstarter" },
     { name = "pexpect" },
@@ -1376,6 +1377,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asyncclick", specifier = ">=8.1.8" },
     { name = "fabric", specifier = ">=3.2.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "pexpect", specifier = ">=4.9.0" },

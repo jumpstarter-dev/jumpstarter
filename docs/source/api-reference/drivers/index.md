@@ -53,7 +53,6 @@ General-purpose utility drivers:
 
 ```{toctree}
 :hidden:
-:sorted:
 can.md
 corellium.md
 dbus.md
@@ -63,8 +62,8 @@ http.md
 network.md
 opendal.md
 power.md
-proxy.md
 probe-rs.md
+proxy.md
 pyserial.md
 qemu.md
 raspberrypi.md

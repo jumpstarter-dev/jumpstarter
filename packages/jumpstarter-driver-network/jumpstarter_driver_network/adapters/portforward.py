@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from functools import partial
+from os import PathLike
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.adapters import blocking
@@ -37,6 +38,7 @@ async def UnixPortforwardAdapter(
     *,
     client: DriverClient,
     method: str = "connect",
+    path: PathLike | None = None,
 ):
-    async with TemporaryUnixListener(partial(handler, client, method)) as addr:
+    async with TemporaryUnixListener(partial(handler, client, method), path=path) as addr:
         yield addr
