@@ -253,6 +253,6 @@ Once your documentation changes are complete:
 To add a new example:
 
 1. Create a new directory in the `examples/` folder with a descriptive name
-2. Include a comprehensive README.md with setup and usage instructions
+2. Include a comprehensive `README.md` with setup and usage instructions
 3. Follow the structure of existing examples
 4. Ensure the example is well-documented and easy to follow
