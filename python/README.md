@@ -1,4 +1,4 @@
-# ⚡ Jumpstarter
+# ![bolt](./assets/bolt.svg) Jumpstarter
 
 [![PyPI](https://img.shields.io/badge/PyPI-Packages-blue?logo=pypi)](https://pypi.org/project/jumpstarter/)
 [![Matrix](https://img.shields.io/matrix/jumpstarter%3Amatrix.org?color=blue)](https://matrix.to/#/#jumpstarter:matrix.org)
