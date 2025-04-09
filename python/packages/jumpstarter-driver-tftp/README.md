@@ -13,10 +13,10 @@ pip install jumpstarter-driver-tftp
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   tftp:
-    driver: jumpstarter_driver_tftp.driver.Tftp
-    parameters:
+    type: jumpstarter_driver_tftp.driver.Tftp
+    config:
       root_dir: /var/lib/tftpboot  # Directory to serve files from
       host: 192.168.1.100          # Host IP to bind to (optional)
       port: 69                     # Port to listen on (optional)

@@ -13,11 +13,11 @@ pip install jumpstarter-driver-qemu
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   qemu:
-    driver: jumpstarter_driver_qemu.QEMUDriver
-    parameters:
-      # Add required parameters here
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      # Add required config parameters here
 ```
 
 ## API Reference

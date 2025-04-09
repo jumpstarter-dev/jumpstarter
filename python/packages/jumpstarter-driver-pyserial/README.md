@@ -13,10 +13,10 @@ pip install jumpstarter-driver-pyserial
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   serial:
-    driver: jumpstarter_driver_pyserial.driver.PySerial
-    parameters:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
       url: "/dev/ttyUSB0"
       baudrate: 115200
 ```
