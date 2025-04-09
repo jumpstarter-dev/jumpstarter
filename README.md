@@ -11,19 +11,33 @@ An open source and cloud native Hardware-in-the-Loop testing tool that enables y
 
 ## Highlights
 
-- 🚀 A single tool to replace pip, pip-tools, pipx, poetry, pyenv, twine, virtualenv, and more.
-- ⚡️ 10-100x faster than pip.
-- 🗂️ Provides comprehensive project management, with a universal lockfile.
-- ❇️ Runs scripts, with support for inline dependency metadata.
-- 🐍 Installs and manages Python versions.
-- 🛠️ Runs and installs tools published as Python packages.
-- 🔩 Includes a pip-compatible interface for a performance boost with a familiar CLI.
-- 🏢 Supports Cargo-style workspaces for scalable projects.
-- 💾 Disk-space efficient, with a global cache for dependency deduplication.
-- ⏬ Installable without Rust or Python via curl or pip.
-- 🖥️ Supports macOS, Linux, and Windows.
+- 🚀 A single, unified testing tool for local, virtual, and remote hardware testing.
+- 🐍 Write test scripts in Python with familiar frameworks such as [pytest](https://docs.pytest.org/en/stable/).
+- 🛠️ Use [drivers](https://docs.jumpstarter.dev/introduction/drivers.html) to abstract complex hardware interfaces for testing.
+- 🔌 Built-in support for common interfaces such as CAN, IP, GPIO, U-Boot, SD Wire, etc.
+- 💻 Collaborate with developers around the world on shared test hardware.
+- ☸ Integrates with your existing [Cloud Native](https://www.cncf.io/) development environment.
+- 🔄 Run hardware tests with your existing CI/CD pipelines in the cloud.
+- 📦 Support for containerized test runners.
+- 🖥️ Supports Linux and macOS.
 
 ## Installation
+
+Install all the Jumpstarter Python components:
+
+```console
+pip install --extra-index-url https://docs.jumpstarter.dev/packages/simple jumpstarter-all
+```
+
+Or, just install the `jmp` CLI tool:
+
+```console
+pip install --extra-index-url https://docs.jumpstarter.dev/packages/simple jumpstarter-cli
+```
+
+To install the [Jumpstarter Service](https://docs.jumpstarter.dev/introduction/service.html)
+in your Kubernetes cluster, see the [Service Installation](https://docs.jumpstarter.dev/installation/service/index.html)
+documentation.
 
 ## Documentation
 
@@ -36,3 +50,6 @@ Additionally, the command line reference documentation can be viewed with `jmp -
 Jumpstarter welcomes contributors of all levels of experience and would love to
 see you involved in the project. See the [contributing guide](https://github.com/jumpstarter-dev/jumpstarter/blob/main/CONTRIBUTING.md) to get started.
 
+## License
+
+Jumpstarter is licensed under the Apache 2.0 License ([LICENSE](https://github.com/jumpstarter-dev/jumpstarter/blob/main/LICENSE) or [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)).
