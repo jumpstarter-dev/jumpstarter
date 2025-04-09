@@ -95,5 +95,5 @@ smv_outputdir_format = "{ref.name}"  # Directory name format
 # Patterns for the versions panel
 html_context = {
     "display_lower": True,  # Display lower versions at the bottom of the menu
-    "deploy_url": os.getenv("DEPLOY_URL", "http://localhost:8000"),  # Get Netlify URL from environment variable
+    "deploy_url": os.getenv("DEPLOY_URL", "https://docs.jumpstarter.dev"),  # Get Netlify URL from environment variable
 }

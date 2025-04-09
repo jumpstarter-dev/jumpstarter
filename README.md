@@ -14,11 +14,11 @@ An open source and cloud native Hardware-in-the-Loop testing tool that enables y
 - 🚀 A single, unified testing tool for local, virtual, and remote hardware testing.
 - 🐍 Write test scripts in Python with familiar frameworks such as [pytest](https://docs.pytest.org/en/stable/).
 - 🛠️ Use [drivers](https://docs.jumpstarter.dev/introduction/drivers.html) to abstract complex hardware interfaces for testing.
-- 🔌 Built-in support for common interfaces such as CAN, IP, GPIO, U-Boot, SD Wire, etc.
+- 🔌 Built-in support for common interfaces such as [CAN](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-can), [IP](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-network), [GPIO](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-raspberrypi), [U-Boot](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-uboot), [SD Wire](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-sdwire), etc.
 - 💻 Collaborate with developers around the world on shared test hardware.
 - ☸ Integrates with your existing [Cloud Native](https://www.cncf.io/) development environment.
 - 🔄 Run hardware tests with your existing CI/CD pipelines in the cloud.
-- 📦 Support for containerized test runners.
+- 📦 Support for containerized test runners with Podman/Docker.
 - 🖥️ Supports Linux and macOS.
 
 ## Installation
