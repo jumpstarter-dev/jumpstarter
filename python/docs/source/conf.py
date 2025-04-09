@@ -87,7 +87,7 @@ html_theme_options = {
 
 # Tags pattern for html_context["versions"]
 smv_tag_whitelist = r"^v(0\.[5-9](\.\d+)|0\.[1-9][0-9]+(\.\d+)|[1-9]\d*\.\d+\.\d+)$"  # Starting from v0.5.0
-smv_branch_whitelist = r"^(main|master|consolidate-websites)$"  # Only include main/master branch
+smv_branch_whitelist = r"^(main|master)$"  # Only include main/master branch
 smv_remote_whitelist = None
 smv_released_pattern = r"^v[0-9]+\.[0-9]+\.[0-9]+$"  # Tags that are considered releases
 smv_outputdir_format = "{ref.name}"  # Directory name format
