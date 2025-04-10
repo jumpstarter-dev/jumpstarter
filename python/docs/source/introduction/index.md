@@ -1,13 +1,13 @@
 # Introduction
 
-Jumpstarter is a free and open-source testing tool that enables you to test your
+Jumpstarter is a free and open source testing tool that enables you to test your
 software stack on both real hardware and virtual environments using CI/CD
 principles.
 
 Automated testing with physical hardware (Hardware-in-the-Loop or HiL) and
 virtual devices has been established for years in industries such as automotive and
 manufacturing. However, these tools are often expensive and inaccessible to
-hobbyists and open-source projects.
+hobbyists and open source projects.
 
 Jumpstarter provides powerful testing tools that leverage [Cloud
 Native](https://www.cncf.io/) principles, modern CI/CD technologies, and open
