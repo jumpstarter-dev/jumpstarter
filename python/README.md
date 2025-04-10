@@ -1,6 +1,5 @@
 # ![bolt](./assets/bolt.svg) Jumpstarter
 
-[![PyPI](https://img.shields.io/badge/PyPI-Packages-blue?logo=pypi)](https://pypi.org/project/jumpstarter/)
 [![Matrix](https://img.shields.io/matrix/jumpstarter%3Amatrix.org?color=blue)](https://matrix.to/#/#jumpstarter:matrix.org)
 [![Etherpad](https://img.shields.io/badge/Etherpad-Notes-blue?logo=etherpad)](https://etherpad.jumpstarter.dev/pad-lister)
 [![Community Meeting](https://img.shields.io/badge/Weekly%20Meeting-Google%20Meet-blue?logo=google-meet)](https://meet.google.com/gzd-hhbd-hpu)
@@ -21,13 +20,13 @@ A free, open source tool for automated testing on real and virtual hardware with
 Install all the Jumpstarter Python components:
 
 ```shell
-pip install --extra-index-url https://jumpstarter.dev/packages/simple jumpstarter-all
+pip install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-all
 ```
 
 Or, just install the `jmp` CLI tool:
 
 ```shell
-pip install --extra-index-url https://jumpstarter.dev/packages/simple jumpstarter-cli
+pip install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-cli
 ```
 
 To install the [Jumpstarter Service](https://jumpstarter.dev/introduction/service.html)
