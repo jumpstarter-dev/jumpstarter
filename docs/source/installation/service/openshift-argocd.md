@@ -8,7 +8,7 @@ manage the resources in the namespace.
 
 In this case, using the default openshift-gitops ArgoCD deployment, the command
 would be:
-```bash
+```shell
 kubectl create namespace jumpstarter-lab
 kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-gitops
 ```

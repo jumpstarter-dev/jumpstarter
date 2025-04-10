@@ -22,7 +22,7 @@ This example requires the following hardware:
 3) Label the exporter in k8s with the `board=rpi4` label
 4) Prepare the images by running `make` in the `image` directory
 5) Run the tests in this directory by running:
-```bash
+```shell
 $ cd jumpstarter_example_soc_pytest
 $ uv run pytest -s
 ================================================================== test session starts ===================================================================

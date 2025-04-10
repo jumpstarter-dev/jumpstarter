@@ -4,7 +4,7 @@
 
 ## Installation
 
-```bash
+```shell
 pip install jumpstarter-driver-tftp
 ```
 

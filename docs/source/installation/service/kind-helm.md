@@ -56,7 +56,7 @@ nodes:
 
 Next, create a kind cluster using the config you created.
 
-```bash
+```shell
 kind create cluster  --config kind_config.yaml
 ```
 

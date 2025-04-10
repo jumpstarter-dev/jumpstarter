@@ -11,7 +11,7 @@ You will need guestmount installed, sudo permissions.
 fuse must be configured to enable `user_allow_other` in `/etc/fuse.conf`.
 
 
-```bash
+```shell
 $ make
 make download-image
 make[1]: Entering directory '/home/majopela/jumpstarter/examples/soc-pytest/jumpstarter_example_soc_pytest/image'

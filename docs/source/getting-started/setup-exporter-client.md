@@ -28,7 +28,7 @@ admin` CLI provides methods to interact with the controller directly.
 
 To create an exporter and save the configuration locally, run the following command:
 
-```bash
+```shell
 # Creates an exporter called "testing" and saves the config
 $ jmp admin create exporter testing --save
 ```
@@ -46,7 +46,7 @@ Once the exporter has been created, a new configuration file will be saved to
 To edit the configuration file with your default text editor, run the following
 command:
 
-```bash
+```shell
 # Opens the config for "testing" in your default editor
 $ jmp config exporter edit testing
 ```
@@ -75,7 +75,7 @@ To run the exporter locally, we can use the `jmp` CLI tool.
 
 Run the following command to start the exporter locally using the configuration file:
 
-```bash
+```shell
 # Runs the exporter "testing" locally
 $ jmp run --exporter testing
 ```
@@ -88,7 +88,7 @@ is closed.
 To connect to the new exporter, a client must be created. We can also use the
 `jmp admin` CLI tool to create a client using the controller.
 
-```bash
+```shell
 # This will create a client called "hello", allow unsafe drivers, and save the config
 $ jmp admin create client hello --save --unsafe
 ```
@@ -105,7 +105,7 @@ functionality within the `jmp` CLI. When a shell is spawned, the client attempts
 to acquire a lease on an exporter. Once the lease is acquired, the client can be
 interacted with through the magic `j` command or via the Python API.
 
-```bash
+```shell
 # Spawn a shell using the "hello" client
 $ jmp shell --client hello --selector example.com/board=foo
 ```
@@ -118,7 +118,7 @@ $ jmp shell --client hello --selector example.com/board=foo
 Once a lease is acquired, we can interact with the drivers hosted by the
 exporter within the shell instance.
 
-```bash
+```shell
 # Spawn a shell using the "hello" client
 $ jmp shell --client hello --selector example.com/board=foo
 

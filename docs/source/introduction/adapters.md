@@ -14,3 +14,10 @@ For comprehensive documentation on the adapter architecture, including detailed
 patterns and examples, see the [Adapter Classes and Architecture](../api-reference/adapters.md) reference.
 
 Unlike [Drivers](./drivers.md), which establish the foundational connections to hardware or virtual interfaces, adapters focus on providing alternative ways to interact with those connections without modifying the underlying drivers.
+
+## Types of Adapters
+
+```{include} ../api-reference/adapters/index.md
+:start-after: "## Types of Adapters"
+:end-before: "```{toctree}"
+```

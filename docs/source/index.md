@@ -1,10 +1,33 @@
 # Welcome to Jumpstarter
 
-Jumpstarter is a free and open-source testing tool that enables you to test your software stack on both real hardware and virtual environments using CI/CD principles. It provides powerful testing tools that leverage Cloud Native principles, modern CI/CD technologies, and open standards for the next generation of edge devices, whether physical or emulated.
+```{eval-rst}
+.. image:: https://img.shields.io/badge/GitHub-Repository-blue?logo=github
+   :target: https://github.com/jumpstarter-dev/jumpstarter
+   :alt: GitHub Repository
 
-## Device Automation Made Simple
+.. image:: https://img.shields.io/badge/PyPI-Packages-blue?logo=pypi
+   :target: https://pypi.org/project/jumpstarter/
+   :alt: Python Packages
 
-Jumpstarter decouples your target devices (physical or virtual) from test runners, development machines, and CI/CD pipelines, allowing you to use the same automation scripts, commands, and processes everywhere. Think of it as a *Makefile* for device automation that can run locally on your machine or distributed across your infrastructure.
+.. image:: https://img.shields.io/matrix/jumpstarter%3Amatrix.org?color=blue
+   :target: https://matrix.to/#/#jumpstarter:matrix.org
+   :alt: Matrix Chat
+
+.. image:: https://img.shields.io/badge/Etherpad-Notes-blue?logo=etherpad
+   :target: https://etherpad.jumpstarter.dev/pad-lister
+   :alt: Etherpad Notes
+
+.. image:: https://img.shields.io/badge/Weekly%20Meeting-Google%20Meet-blue?logo=google-meet
+   :target: https://meet.google.com/gzd-hhbd-hpu
+   :alt: Weekly Meeting
+```
+
+Jumpstarter is a free and open source testing tool that bridges the gap between development workflows and deployment environments. It enables you to test your software stack consistently across both real hardware and virtual environments using cloud native principles. By decoupling your target devices (physical or virtual) from test runners, development machines, and CI/CD pipelines, Jumpstarter allows you to use the same automation scripts everywhere - like a *Makefile* for device automation.
+
+```{include} ../../README.md
+:start-after: "## Highlights"
+:end-before: "##"
+```
 
 ## Learning Paths
 
@@ -47,10 +70,4 @@ solution-architecture.md
 contributing.md
 glossary.md
 api-reference/index.md
-```
-
-## Resources
-
-```{eval-rst}
-* `Python Packages <./packages/index.html>`_
 ```
