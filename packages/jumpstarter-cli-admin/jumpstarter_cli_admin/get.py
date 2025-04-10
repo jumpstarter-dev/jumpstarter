@@ -9,12 +9,15 @@ from jumpstarter_cli_common import (
     opt_kubeconfig,
     opt_log_level,
     opt_namespace,
-    opt_output_all,
+    opt_output_auto,
 )
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
     LeasesV1Alpha1Api,
+    V1Alpha1Client,
+    V1Alpha1Exporter,
+    V1Alpha1Lease,
 )
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
@@ -41,7 +44,7 @@ def get(log_level: Optional[str]):
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-@opt_output_all
+@opt_output_auto(V1Alpha1Client)
 async def get_client(
     name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
 ):
@@ -65,7 +68,7 @@ async def get_client(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-@opt_output_all
+@opt_output_auto(V1Alpha1Exporter)
 @click.option("-d", "--devices", is_flag=True, help="Display the devices hosted by the exporter(s)")
 async def get_exporter(
     name: Optional[str],
@@ -95,7 +98,7 @@ async def get_exporter(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
-@opt_output_all
+@opt_output_auto(V1Alpha1Lease)
 async def get_lease(
     name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
 ):
