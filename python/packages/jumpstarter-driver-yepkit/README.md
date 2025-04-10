@@ -13,16 +13,16 @@ pip install jumpstarter-driver-yepkit
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   power:
-    driver: jumpstarter_driver_yepkit.driver.Ykush
-    parameters:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
       serial: "YK25838"
       port: "1"
 
   power2:
-    driver: jumpstarter_driver_yepkit.driver.Ykush
-    parameters:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
       serial: "YK25838"
       port: "2"
 ```

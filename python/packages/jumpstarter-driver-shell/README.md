@@ -13,10 +13,10 @@ pip install jumpstarter-driver-shell
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   shell:
-    driver: jumpstarter_driver_shell.driver.Shell
-    parameters:
+    type: jumpstarter_driver_shell.driver.Shell
+    config:
       methods:
         ls: "ls"
         method2: "echo 'Hello World 2'"
