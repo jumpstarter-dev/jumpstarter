@@ -13,11 +13,11 @@ pip install jumpstarter-driver-power
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   power:
-    driver: jumpstarter_driver_power.PowerDriver
-    parameters:
-      # Add required parameters here
+    type: jumpstarter_driver_power.driver.MockPower
+    config:
+      # Add required config parameters here
 ```
 
 ## API Reference

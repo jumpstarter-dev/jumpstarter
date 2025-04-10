@@ -13,10 +13,10 @@ pip install jumpstarter-driver-snmp
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   power:
-    driver: jumpstarter_driver_snmp.driver.SNMPServer
-    parameters:
+    type: jumpstarter_driver_snmp.driver.SNMPServer
+    config:
       host: "pdu.mgmt.com"
       user: "labuser"
       plug: 32

@@ -50,11 +50,11 @@ pip install jumpstarter-driver-${DRIVER_NAME}
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   ${DRIVER_NAME}:
-    driver: jumpstarter_driver_${DRIVER_NAME}.${DRIVER_CLASS}Driver
-    parameters:
-      # Add required parameters here
+    type: jumpstarter_driver_${DRIVER_NAME}.driver.${DRIVER_CLASS}
+    config:
+      # Add required config parameters here
 ```
 
 ## API Reference

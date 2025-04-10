@@ -13,11 +13,11 @@ pip install jumpstarter-driver-dutlink
 Example configuration:
 
 ```yaml
-interfaces:
+export:
   dutlink:
-    driver: jumpstarter_driver_dutlink.DUTLinkDriver
-    parameters:
-      # Add required parameters here
+    type: jumpstarter_driver_dutlink.driver.Dutlink
+    config:
+      # Add required config parameters here
 ```
 
 ## API Reference
