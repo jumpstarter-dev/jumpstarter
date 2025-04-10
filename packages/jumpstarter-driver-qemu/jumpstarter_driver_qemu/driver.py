@@ -11,15 +11,16 @@ from pathlib import Path
 from secrets import randbits
 from subprocess import PIPE, CalledProcessError, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
+from typing import Literal
 
 import yaml
 from anyio import fail_after, run_process, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
-from jumpstarter_driver_network.driver import UnixNetwork, VsockNetwork
+from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import FlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
-from pydantic import validate_call
+from pydantic import BaseModel, Field, validate_call
 from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
@@ -44,7 +45,9 @@ class QemuFlasher(FlasherInterface, Driver):
 
     @export
     async def dump(self, target, partition: str | None = None):
-        async with await FileReadStream.from_path(self.parent.validate_partition(partition)) as stream:
+        async with await FileReadStream.from_path(
+            self.parent.validate_partition(partition, use_default_partitions=True)
+        ) as stream:
             async with self.resource(target) as res:
                 async for chunk in stream:
                     await res.send(chunk)
@@ -60,10 +63,10 @@ class QemuPower(PowerInterface, Driver):
             self.logger.warning("already powered on, ignoring request")
             return
 
-        root = self.parent.validate_partition("root")
-        bios = self.parent.validate_partition("bios")
-        ovmf_code = self.parent.validate_partition("OVMF_CODE.fd")
-        ovmf_vars = self.parent.validate_partition("OVMF_VARS.fd")
+        root = self.parent.validate_partition("root", use_default_partitions=True)
+        bios = self.parent.validate_partition("bios", use_default_partitions=True)
+        ovmf_code = self.parent.validate_partition("OVMF_CODE.fd", use_default_partitions=True)
+        ovmf_vars = self.parent.validate_partition("OVMF_VARS.fd", use_default_partitions=True)
 
         cpu = self.parent.cpu
 
@@ -111,7 +114,13 @@ class QemuPower(PowerInterface, Driver):
             "-serial",
             "pty",
             "-netdev",
-            "user,id=eth0",
+            ",".join(
+                ["user", "id=eth0"]
+                + [
+                    "hostfwd={}:{}:{}-:{}".format(v.protocol, v.hostaddr, v.hostport, v.guestport)
+                    for k, v in self.parent.hostfwd.items()
+                ]
+            ),
         ]
 
         devices = [
@@ -217,6 +226,13 @@ class QemuPower(PowerInterface, Driver):
         self.off()
 
 
+class Hostfwd(BaseModel):
+    protocol: Literal["tcp"] = "tcp"
+    hostaddr: str = "127.0.0.1"
+    hostport: int = Field(ge=1, le=65535)
+    guestport: int = Field(ge=1, le=65535)
+
+
 @dataclass(kw_only=True)
 class Qemu(Driver):
     arch: str = field(default_factory=platform.machine)
@@ -229,6 +245,10 @@ class Qemu(Driver):
     username: str = "jumpstarter"
     password: str = "password"
 
+    default_partitions: dict[str, Path] = field(default_factory=dict)
+
+    hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
+
     _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
 
     @classmethod
@@ -239,11 +259,19 @@ class Qemu(Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
+        self.hostfwd = {k: Hostfwd.model_validate(v) for k, v in self.hostfwd.items()}
+        self.default_partitions = {k: Path(v) for k, v in self.default_partitions.items()}
+
         self.children["power"] = QemuPower(parent=self)
         self.children["flasher"] = QemuFlasher(parent=self)
         self.children["console"] = PySerial(url=self._pty, check_present=False)
         self.children["vnc"] = UnixNetwork(path=self._vnc)
         self.children["ssh"] = VsockNetwork(cid=self._cid, port=22)
+
+        for k, v in self.hostfwd.items():
+            match v.protocol:
+                case "tcp":
+                    self.children[k] = TcpNetwork(host=v.hostaddr, port=v.hostport)
 
     @property
     def _pty(self) -> str:
@@ -261,18 +289,27 @@ class Qemu(Driver):
     def _cid(self) -> int:
         return randbits(32)
 
-    def validate_partition(self, partition: str | None = None) -> Path:
+    def validate_partition(
+        self,
+        partition: str | None = None,
+        use_default_partitions: bool = False,
+    ) -> Path:
         match partition:
             case "root" | None:
-                return Path(self._tmp_dir.name) / "root"
+                path = Path(self._tmp_dir.name) / "root"
             case "OVMF_CODE.fd":
-                return Path(self._tmp_dir.name) / "OVMF_CODE.fd"
+                path = Path(self._tmp_dir.name) / "OVMF_CODE.fd"
             case "OVMF_VARS.fd":
-                return Path(self._tmp_dir.name) / "OVMF_VARS.fd"
+                path = Path(self._tmp_dir.name) / "OVMF_VARS.fd"
             case "bios":
-                return Path(self._tmp_dir.name) / "bios"
+                path = Path(self._tmp_dir.name) / "bios"
             case _:
                 raise ValueError(f"invalida partition name: {partition}")
+
+        if not path.exists() and partition in self.default_partitions and use_default_partitions:
+            return self.default_partitions[partition]
+
+        return path
 
     def cidata(self) -> TemporaryDirectory:
         tmp = TemporaryDirectory()

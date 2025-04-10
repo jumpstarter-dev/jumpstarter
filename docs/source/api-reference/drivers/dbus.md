@@ -1,8 +1,16 @@
-# DbusNetwork driver
+# DBus driver
 
-The DbusNetwork driver is a driver for transparently accessing the dbus on the remote machine.
+`jumpstarter-driver-dbus` provides functionality for transparently accessing the dbus on the remote machine.
 
-## Driver configuration
+## Installation
+
+```bash
+pip install jumpstarter-driver-dbus
+```
+
+## Configuration
+
+Example configuration:
 
 ```{literalinclude} dbus.yaml
 :language: yaml
@@ -15,7 +23,7 @@ The DbusNetwork driver is a driver for transparently accessing the dbus on the r
 DbusNetwork(...)
 ```
 
-## Client API
+## API Reference
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_network.client.DbusNetworkClient()

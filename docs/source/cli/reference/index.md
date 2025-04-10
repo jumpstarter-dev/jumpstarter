@@ -1,28 +1,15 @@
-# Reference
+# CLI Reference
 
-This section provides details on the Jumpstarter CLI.
+This section provides comprehensive documentation for the Jumpstarter command-line interface tools. You'll find details on command syntax, options, and usage examples for effectively managing Jumpstarter components.
 
-## jmp
+The following pages will guide you through the CLI references:
 
-The base jmp command contains a set of subcommands for the different featuers, those
-can also be installed and used independently as `jmp-admin` and `jmp`.
-
-```bash
-jmp [OPTIONS] COMMAND [ARGS]...
-```
-
-### commands
-
-The `jmp-admin` or `jmp admin` CLI allows administration of exporters and clients in a Kubernetes cluster. To use this CLI, you must have a valid `kubeconfig` and access to the cluter/namespace where the Jumpstarter controller resides.
+* **[JMP Admin](jmp-admin.md)** - Administration commands for exporters and clients (requires kubeconfig)
+* **[JMP](jmp.md)** - Core commands for client and exporter interaction
 
 ```{toctree}
 :maxdepth: 1
+:hidden:
 jmp-admin.md
-```
-
-The `jmp` CLI allows interaction with Jumpstarter as a clients or exporter.
-
-```{toctree}
-:maxdepth: 1
 jmp.md
 ```

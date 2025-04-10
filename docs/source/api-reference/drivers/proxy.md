@@ -1,18 +1,22 @@
 # Proxy driver
 
-The Proxy driver is not a real driver, but for creating "proxies" or aliases of
-other drivers to present a desired view of the tree of devices to the client.
+`jumpstarter-driver-proxy` provides functionality for creating "proxies" or aliases of other drivers to present a desired view of the tree of devices to the client. It's also useful when several drivers need configured access to a common resource, like a serial port or a network connection.
 
-It's also useful when several drivers need configured access to a common
-resource, like a serial port or a network connection.
+## Installation
 
-## Driver configuration
+```bash
+pip install jumpstarter-driver-proxy
+```
+
+## Configuration
+
+Example configuration:
 
 ```{literalinclude} proxy.yaml
 :language: yaml
 ```
 
-## Client API
+## API Reference
 
 ```{doctest}
 >>> root.foo.bar.power.on() # instead of

@@ -1,10 +1,16 @@
-import os
 import sys
 import termios
-import threading
 import tty
+from contextlib import contextmanager
+
+from anyio import create_task_group
+from anyio.streams.file import FileReadStream, FileWriteStream
 
 from jumpstarter.client import DriverClient
+
+
+class ConsoleExit(Exception):
+    pass
 
 
 class Console:
@@ -12,41 +18,47 @@ class Console:
         self.serial_client = serial_client
 
     def run(self):
-        with self.serial_client.stream() as stream:
-            self._run(stream)
+        with self.setraw():
+            self.serial_client.portal.call(self.__run)
 
-    def _run(self, stream):
-        self._stream = stream
-        self._old_settings = termios.tcgetattr(0)
+    @contextmanager
+    def setraw(self):
+        original = termios.tcgetattr(sys.stdin.fileno())
         try:
             tty.setraw(sys.stdin.fileno())
-            thread_serial_to_stdout = threading.Thread(target=self._copy_serial_to_stdout, daemon=True)
-            thread_serial_to_stdout.start()
-            ctrl_b_count = 0
-            while True:
-                data = sys.stdin.buffer.read(1)
-                if not data:
-                    continue
-                if data == b"\x02":  # Ctrl-B
-                    ctrl_b_count += 1
-                    if ctrl_b_count == 3:
-                        return
-                else:
-                    ctrl_b_count = 0
-                stream.send(data)
+            yield
         finally:
-            self._reset_terminal()
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, original)
+            # Clear screen and move cursor to top-left (like \033c\033[2J\033[H).
+            print("\033c\033[2J\033[H", end="")
 
-    def _reset_terminal(self):
-        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, self._old_settings)
-        # Clear screen and move cursor to top-left (like \033c\033[2J\033[H).
-        print("\033c\033[2J\033[H", end="")
+    async def __run(self):
+        async with self.serial_client.stream_async(method="connect") as stream:
+            try:
+                async with create_task_group() as tg:
+                    tg.start_soon(self.__serial_to_stdout, stream)
+                    tg.start_soon(self.__stdin_to_serial, stream)
+            except* ConsoleExit:
+                pass
 
-    def _copy_serial_to_stdout(self):
-        try:
-            while True:
-                data = self._stream.receive()
-                os.write(sys.stdout.fileno(), data)
-                sys.stdout.flush()
-        finally:
-            self._reset_terminal()
+    async def __serial_to_stdout(self, stream):
+        stdout = FileWriteStream(sys.stdout.buffer)
+        while True:
+            data = await stream.receive()
+            await stdout.send(data)
+            sys.stdout.flush()
+
+    async def __stdin_to_serial(self, stream):
+        stdin = FileReadStream(sys.stdin.buffer)
+        ctrl_b_count = 0
+        while True:
+            data = await stdin.receive(max_bytes=1)
+            if not data:
+                continue
+            if data == b"\x02":  # Ctrl-B
+                ctrl_b_count += 1
+                if ctrl_b_count == 3:
+                    raise ConsoleExit
+            else:
+                ctrl_b_count = 0
+            await stream.send(data)

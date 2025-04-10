@@ -1,14 +1,10 @@
-# Local cluster with kind
+# Local cluster with KinD
 
-If you want to play with the Jumpstarter Controller on your local machine,
-we recommend running a local Kubernetes cluster.
+If you want to play with the Jumpstarter Controller on your local machine, we
+recommend running a local Kubernetes cluster for development purposes.
 
-```{warning}
-We do not recommend a local cluster for a production environment.
-Please use a full Kubernetes installation either on-prem or in the cloud.
-```
-
-Kind is a tool for running local Kubernetes clusters using Podman or Docker container “nodes”.
+Kind is a tool for running local Kubernetes clusters using Podman or Docker
+container "nodes".
 
 ```{tip}
 We recommend using [minikube](./minikube-helm.md) if you cannot easily use Kind in your local environment
@@ -16,13 +12,15 @@ We recommend using [minikube](./minikube-helm.md) if you cannot easily use Kind 
 ```
 
 
-You can find more information on the [kind website](https://kind.sigs.k8s.io/docs/user/quick-start/).
+You can find more information on the [kind
+website](https://kind.sigs.k8s.io/docs/user/quick-start/).
 
 ## Installation
 
 ### Create a kind cluster
 
-First, create a kind cluster config that enables the use of nodeports to host the Jumpstarter services.
+First, create a kind cluster config that enables the use of nodeports to host
+the Services.
 
 ```yaml
 # kind_config.yaml
@@ -96,7 +94,7 @@ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
 export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
 export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 
-# Install the Jumpstarter service in the namespace jumpstarter-lab with Helm
+# Install the Service in the namespace jumpstarter-lab with Helm
 helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
             --create-namespace --namespace jumpstarter-lab \
             --set global.baseDomain=${BASEDOMAIN} \

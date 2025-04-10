@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -euxv
 
 # accepted parameters are:
 # $1: driver name
@@ -27,13 +27,58 @@ MODULE_DIRECTORY=${DRIVER_DIRECTORY}/jumpstarter_driver_${DRIVER_NAME}
 mkdir -p ${MODULE_DIRECTORY}
 mkdir -p ${DRIVER_DIRECTORY}/examples
 
+# Define paths
+DOCS_DIRECTORY=docs/source/api-reference/drivers
+DOC_FILE=${DOCS_DIRECTORY}/${DRIVER_NAME}.md
+README_FILE=${DRIVER_DIRECTORY}/README.md
+
+# Create README.md file with initial documentation
+echo "Creating README.md file: ${README_FILE}"
+cat > "${README_FILE}" << 'EOF'
+# ${DRIVER_CLASS} Driver
+
+`jumpstarter-driver-${DRIVER_NAME}` provides functionality for interacting with ${DRIVER_NAME} devices.
+
+## Installation
+
+```bash
+pip install jumpstarter-driver-${DRIVER_NAME}
+```
+
+## Configuration
+
+Example configuration:
+
+```yaml
+export:
+  ${DRIVER_NAME}:
+    type: jumpstarter_driver_${DRIVER_NAME}.driver.${DRIVER_CLASS}
+    config:
+      # Add required config parameters here
+```
+
+## API Reference
+
+Add API documentation here.
+EOF
+# Need to expand variables after EOF to prevent early expansion
+sed -i "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g" "${README_FILE}"
+echo "README.md file content:"
+cat "${README_FILE}"
+
+# Create symlink from documentation directory to README.md
+mkdir -p ${DOCS_DIRECTORY}
+echo "Creating symlink to README.md file"
+rel_path=$(realpath --relative-to="${DOCS_DIRECTORY}" "${README_FILE}")
+ln -sf "${rel_path}" "${DOC_FILE}"
+echo "Created symlink: ${DOC_FILE} -> ${rel_path}"
 
 for f in __init__.py client.py driver_test.py driver.py; do
     echo "Creating: ${MODULE_DIRECTORY}/${f}"
     envsubst < __templates__/driver/jumpstarter_driver/${f}.tmpl > ${MODULE_DIRECTORY}/${f}
 done
 
-for f in .gitignore pyproject.toml README.md examples/exporter.yaml; do
+for f in .gitignore pyproject.toml examples/exporter.yaml; do
     echo "Creating: ${DRIVER_DIRECTORY}/${f}"
     envsubst < __templates__/driver/${f}.tmpl > ${DRIVER_DIRECTORY}/${f}
 done

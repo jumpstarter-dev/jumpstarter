@@ -20,6 +20,22 @@ class PowerInterface(metaclass=ABCMeta):
     async def read(self) -> AsyncGenerator[PowerReading, None]: ...
 
 
+class VirtualPowerInterface(metaclass=ABCMeta):
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_power.client.VirtualPowerClient"
+
+    @abstractmethod
+    async def on(self) -> None: ...
+
+    @abstractmethod
+    async def off(self, destroy: bool = False) -> None: ...
+
+    @abstractmethod
+    async def read(self) -> AsyncGenerator[PowerReading, None]: ...
+
+
+
 class MockPower(PowerInterface, Driver):
     """
     MockPower is a mock driver implementing the PowerInterface

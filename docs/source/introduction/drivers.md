@@ -1,27 +1,65 @@
 # Drivers
 
-Jumpstarter uses a modular driver model to build abstractions around the hardware
-interfaces used to interact with a target device.
+Jumpstarter uses a modular driver model to build abstractions around the
+interfaces used to interact with target devices, both physical hardware and
+virtual systems.
 
-An [Exporter](./exporters.md) uses Drivers to "export" the hardware interfaces
-from a host machine to the clients via [gRPC](https://grpc.io/).
-Drivers can be thought of as a simplified API for an interface or device type.
+An [Exporter](./exporters.md) uses Drivers to "export" these interfaces from a
+host machine to the clients via [gRPC](https://grpc.io/). Drivers can be thought
+of as a simplified API for an interface or device type.
 
-Each driver consists of two components:
-- An exporter-side module that implements the "backend" functionality of the driver.
-- A client that provides a Python interface and optionally a CLI "frontend" for the driver.
+## Driver Architecture
 
-While Jumpstarter comes with drivers for many basic interfaces, custom drivers
-can also be developed for specialized hardware/interfaces or to provide
-domain-specific abstractions for your use case.
+Drivers in Jumpstarter follow a client/server architecture where:
+
+- Driver implementations run on the exporter side and interact directly with
+  hardware or virtual devices
+- Driver clients run on the client side and communicate with drivers via gRPC
+- Interface classes define the contract between implementations and clients
+
+For comprehensive documentation on the driver architecture, including detailed
+patterns and examples, see the [Driver Classes and Architecture](../api-reference/drivers.md) reference.
+
+Drivers are often used with [Adapters](./adapters.md), which transform driver connections into different forms or interfaces for specific use cases.
+
+## Types of Drivers
+
+```{include} ../api-reference/drivers/index.md
+:start-after: "## Types of Drivers"
+:end-before: "```{toctree}"
+```
+
+### Composite Drivers
+
+Composite drivers (`jumpstarter-driver-composite`) combine multiple lower-level
+drivers to create higher-level abstractions or specialized workflows. For
+example, a composite driver might coordinate power cycling, storage re-flashing,
+and serial communication to automate a device initialization process.
+
+In Jumpstarter, drivers are organized in a tree structure which allows for the
+representation of complex device configurations that may be found in your
+environment.
+
+Here's an example of a composite driver tree:
+
+```
+MyHarness # Custom composite driver for the entire target device harness
+├─ TcpNetwork # TCP Network driver to tunnel port 8000
+├─ MyPower # Custom power driver to control device power
+├─ SDWire # SD Wire storage emulator to enable re-flash on demand
+├─ DigitalOutput # GPIO pin control to send signals to the device
+└─ MyDebugger # Custom debugger interface composite driver
+   └─ PySerial # Serial debugger with PySerial
+```
 
 ## Driver Configuration
 
-Drivers are configured using a YAML Exporter config file, which specifies
-the drivers to load and the parameters for each. Drivers are distributed as Python
+Drivers are configured using a YAML Exporter config file, which specifies the
+drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
-Here is an example exporter config that loads a custom driver called `jumpstarter_driver_dutlink`:
+Here is an example exporter config that loads drivers for both physical and
+virtual devices:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -32,64 +70,83 @@ metadata:
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
 export:
-  # The name to register the driver instance as
-  dutlink:
-    # A fully-qualified Python module
-    type: jumpstarter_driver_dutlink.driver.Dutlink
-    # Configuration parameters passed to the driver implementation
-    config:
-      storage_device: "/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_5B4C0AB025C0-0:0"
-  # Another driver instance for this device
+  # Physical hardware drivers
   power:
-    type: jumpstarter_driver_dutlink.driver.DutlinkPower
+    type: jumpstarter_driver_yepkit.driver.Ykush
     config:
-      serial: "c415a913" # serial number of the DUTLink board
+      serial: "YK25838"
+      port: "1"
+
+  serial:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+
+  # Virtual device drivers
+  qemu:
+    type: "jumpstarter_driver_qemu.driver.QEMU"
+    config:
+      image_path: "/var/lib/jumpstarter/images/vm.qcow2"
+      memory: "1G"
+      cpu_cores: 2
 ```
 
-## Driver I/O
+## Driver Communication
 
-All drivers are built upon the base `Driver` class, which provides abstractions
-for utilizing Jumpstarter's gRPC transport to send messages and create streams
-to tunnel data between the exporter and the client.
+Drivers use two primary methods to communicate between client and exporter:
 
 ### Messages
 
-Individual commands can be sent as messages from the driver client to a driver
-instance running in the Exporter. These commands are automatically sent over
-Jumpstarter's gRPC connection between the Client and Exporter.
+Commands are sent as messages from driver clients to driver implementations,
+allowing the client to trigger actions or retrieve information from the device.
+Methods marked with the `@export` decorator are made available over the network.
 
 ### Streams
 
-Drivers can also create and manage gRPC streams to pass large files, stream network
-traffic, and emulate I/O devices across the network. Some examples of streams are
-TCP port forwarding and CAN bus emulation.
+Drivers can establish streams for continuous data exchange, such as for serial
+communication or video streaming. This enables real-time interaction with both
+physical and virtual interfaces across the network.
 
-## Composite Drivers
+## Authentication and Security
 
-In Jumpstarter, drivers are organized in a tree structure which allows for the
-representation of complex device trees that may be found in your environment.
+Driver access is controlled through Jumpstarter's authentication mechanisms:
 
-For example, your team may use a custom test harness that connects to the host
-via USB, but provides multiple hardware interfaces through a built-in USB hub.
-Jumpstarter allows you to create a custom Composite Driver that provides a unified
-interface to access all the interfaces provided by your harness.
+### Local Mode Authentication
 
-Here is an example of a driver tree with two custom composite drivers:
+In local mode, drivers are accessible to any process that can connect to the
+local Unix socket. This is typically restricted by file system permissions. When
+running tests locally, authentication is simplified since everything runs in the
+same user context.
 
-```
-MyHarness # Custom composite driver for the entire target device harness
-├─ TcpNetwork # TCP Network driver to tunnel port 8000
-├─ MyPower # Custom power driver to control device power
-├─ SDWire # SD Wire storage emulator to enable re-flash on demand
-├─ DigitalOutput # GPIO pin control to send signals to the device
-└─ MyDebugger # Custom debugger interface composite driver
-   └─ PySerial # Serial debugger with PySerial
-```
+### Distributed Mode Authentication
 
-The `jumpstarter_driver_composite` package provides the base `Composite` and
-`CompositeClient` classes that can be used to build custom composite drivers.
+In distributed mode, authentication is handled through JWT tokens:
 
-A composite driver can also be used to orchestrate multiple interfaces to perform
-a specific task such as flashing a system image or entering a debug mode. While
-the driver may internally perform a complex task, a simple, user-friendly interface
-can be provided to the driver clients.
+- **Client Authentication**: Clients authenticate to the controller using JWT
+  tokens, which establishes their identity and permissions
+- **Exporter Authentication**: Similarly, exporters authenticate to the
+  controller with their own tokens
+- **Driver Access Control**: The controller enforces access control by only
+  allowing authorized clients to acquire leases on exporters and their drivers
+- **Driver Allowlist**: Client configurations can specify which driver packages
+  are allowed to be loaded, preventing unintended execution of untrusted code
+
+### Driver Package Security
+
+When using distributed mode, driver security considerations include:
+
+- **Package Verification**: Clients can verify that only trusted driver packages
+  are loaded by configuring allowlists
+- **Capability Restrictions**: Access to specific driver functionality can be
+  restricted based on client permissions
+- **Session Isolation**: Each client session operates with its own driver
+  instances to prevent interference between users
+
+## Custom Drivers
+
+While Jumpstarter comes with drivers for many basic interfaces, custom drivers
+can be developed for specialized hardware interfaces, emulated environments, or
+to provide domain-specific abstractions for your use case. Custom drivers follow
+the same architecture pattern as built-in drivers and can be integrated into the
+system through the exporter configuration.

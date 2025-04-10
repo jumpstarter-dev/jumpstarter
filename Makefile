@@ -1,36 +1,40 @@
 PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
-EXAMPLE_TARGETS = $(subst examples/,example-,$(wildcard examples/*))
-DOC_LISTEN ?= --host 127.0.0.1
 
 default: build
 
-docs:
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs html
-
 docs-all:
-	./docs/make-all-versions.sh
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
-serve-all:
-	python3 -m http.server 8000 --bind 127.0.0.1 -d ./docs/build_all
+docs-serve: clean-docs
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve
 
-serve-docs:
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve HOST="$(DOC_LISTEN)"
+docs-serve-all: clean-docs docs-all
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve-multiversion
 
-clean-docs:
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs clean
-
-doctest:
+docs-test:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
 
-test-%: packages/%
+docs-linkcheck:
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
+
+pkg-test-%: packages/%
 	uv run --isolated --directory $< pytest
 
-mypy-%: packages/%
+pkg-mypy-%: packages/%
 	uv run --isolated --directory $< mypy .
 
-test-packages: $(addprefix test-,$(PKG_TARGETS))
+pkg-test-all: $(addprefix pkg-test-,$(PKG_TARGETS))
 
-mypy-packages: $(addprefix mypy-,$(PKG_TARGETS))
+pkg-mypy-all: $(addprefix pkg-mypy-,$(PKG_TARGETS))
+
+build:
+	uv build --all --out-dir dist
+
+generate:
+	buf generate
+
+sync:
+	uv sync --all-packages --all-extras
 
 clean-venv:
 	-rm -rf ./.venv
@@ -40,34 +44,30 @@ clean-build:
 	-rm -rf dist
 
 clean-test:
-	-rm .coverage
-	-rm coverage.xml
+	-rm -f .coverage
+	-rm -f coverage.xml
 	-rm -rf htmlcov
 
-sync:
-	uv sync --all-packages --all-extras
-
-test: test-packages doctest
-
-mypy: mypy-packages
-
-generate:
-	buf generate
-
-build:
-	uv build --all --out-dir dist
+clean-docs:
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs clean
 
 clean: clean-docs clean-venv clean-build clean-test
 
-.PHONY: sync docs docs-all serve-all test test-packages build clean-test clean-docs clean-venv clean-build \
-	mypy-jumpstarter \
-	mypy-jumpstarter-cli-admin \
-	mypy-jumpstarter-driver-can \
-	mypy-jumpstarter-driver-dutlink \
-	mypy-jumpstarter-driver-network \
-	mypy-jumpstarter-driver-raspberrypi \
-	mypy-jumpstarter-driver-sdwire \
-	mypy-jumpstarter-driver-tftp \
-	mypy-jumpstarter-driver-yepkit \
-	mypy-jumpstarter-kubernetes \
-	mypy-jumpstarter-protocol
+test: pkg-test-all docs-test
+
+mypy: pkg-mypy-all
+
+.PHONY: default docs docs-all docs-serve docs-serve-all docs-clean docs-test \
+	docs-linkcheck pkg-test-all pkg-mypy-all build generate sync \
+	clean-venv clean-build clean-test clean-all test-all mypy-all docs \
+	pkg-mypy-jumpstarter \
+	pkg-mypy-jumpstarter-cli-admin \
+	pkg-mypy-jumpstarter-driver-can \
+	pkg-mypy-jumpstarter-driver-dutlink \
+	pkg-mypy-jumpstarter-driver-network \
+	pkg-mypy-jumpstarter-driver-raspberrypi \
+	pkg-mypy-jumpstarter-driver-sdwire \
+	pkg-mypy-jumpstarter-driver-tftp \
+	pkg-mypy-jumpstarter-driver-yepkit \
+	pkg-mypy-jumpstarter-kubernetes \
+	pkg-mypy-jumpstarter-protocol
