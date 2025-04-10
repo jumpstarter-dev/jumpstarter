@@ -20,13 +20,13 @@ A free, open-source tool for automated testing on real and virtual hardware with
 
 Install all the Jumpstarter Python components:
 
-```console
+```shell
 pip install --extra-index-url https://jumpstarter.dev/packages/simple jumpstarter-all
 ```
 
 Or, just install the `jmp` CLI tool:
 
-```console
+```shell
 pip install --extra-index-url https://jumpstarter.dev/packages/simple jumpstarter-cli
 ```
 

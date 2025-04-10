@@ -94,14 +94,14 @@ config file.
 To switch between different client configs, use the `jmp config client use
 <name>` command:
 
-```bash
+```shell
 $ jmp config client use another
 Using client config '/home/jdoe/.config/jumpstarter/clients/another.yaml'
 ```
 
 All client configurations can be listed with `jmp config client list`:
 
-```bash
+```shell
 $ jmp config client list
 CURRENT   NAME       ENDPOINT                       PATH
 *         default    jumpstarter1.my-lab.com:1443   /home/jdoe/.config/jumpstarter/clients/default.yaml
@@ -111,7 +111,7 @@ CURRENT   NAME       ENDPOINT                       PATH
 
 Clients can also be removed using `jmp config client delete <name>`:
 
-```bash
+```shell
 $ jmp config client delete myclient
 Deleted client config '/home/jdoe/.config/jumpstarter/clients/myclient.yaml'
 ```
@@ -210,7 +210,7 @@ CLI](../cli/exporters.md).
 To create a new exporter configuration file from a know endpoint and token the
 `jmp config exporter create <name>` command can be used.
 
-```bash
+```shell
 $ jmp config exporter create myexporter
 Endpoint: grpc.jumpstarter.my.domain.com
 Token: <<token>>
@@ -218,20 +218,20 @@ Token: <<token>>
 
 To use a specific config when starting the exporter:
 
-```bash
+```shell
 $ jmp run --exporter my-exporter
 Using exporter config '/etc/jumpstarter/exporters/another/exporter.yaml'
 ```
 
 The path to a config can also be provided:
 
-```bash
+```shell
 jmp run --exporter-config /etc/jumpstarter/exporters/another/exporter.yaml
 ```
 
 All exporter configurations can be listed with `jmp config exporter list`:
 
-```bash
+```shell
 $ jmp config exporter list
 ALIAS             PATH
 test-exporter-2   /etc/jumpstarter/exporters/test-exporter-2.yaml
@@ -240,7 +240,7 @@ my-exporter       /etc/jumpstarter/exporters/my-exporter.yaml
 
 Exporters can also be removed using `jmp config exporter delete <name>`:
 
-```bash
+```shell
 $ jmp config exporter delete myexporter
 Deleted exporter config '/etc/jumpstarter/exporters/myexporter.yaml'
 ```
@@ -323,7 +323,7 @@ WantedBy=multi-user.target default.target
 
 Then enable and start the service:
 
-```bash
+```shell
 sudo systemctl daemon-reload
 sudo systemctl enable --now my-exporter
 ```

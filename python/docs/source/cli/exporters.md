@@ -17,7 +17,7 @@ registered.
 Exporter creation must be done by an administrator user who has access to the
 Kubernetes cluster where the `jumpstarter-controller` service is hosted.
 
-```bash
+```shell
 # Create the exporter instance
 $ jmp admin create exporter my-exporter --namespace jumpstarter-lab -o my-exporter.yaml
 ```

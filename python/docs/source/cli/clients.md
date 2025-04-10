@@ -18,7 +18,7 @@ You can also use the following options to specify the kubeconfig and context to 
 
 To create a new client and its associated config, run the following command:
 
-```bash
+```shell
 $ jmp admin create client john --namespace jumpstarter-lab --unsafe -o john.yaml
 ```
 
@@ -69,13 +69,13 @@ system is using self-signed certificates.
       name: my-client
     ```
 
-    ```bash
+    ```shell
     $ kubectl apply -f my-client.yaml
     ```
 
 2. Retrieve the created client resource information:
 
-    ```bash
+    ```shell
     $ kubectl get client my-client -o yaml
     $ kubectl get client my-client -o=jsonpath='{.status.endpoint}'
     $ kubectl get secret $(kubectl get client my-client -o=jsonpath='{.status.credential.name}') -o=jsonpath='{.data.token}' | base64 -d
@@ -86,7 +86,7 @@ system is using self-signed certificates.
     The end user can then configure their client using the
     [jmp](./reference/jmp.md#jmp-cli-reference) CLI:
 
-    ```bash
+    ```shell
     $ jmp config client create my-client
     Enter a valid Service endpoint: devl.jumpstarter.dev
     Enter a Jumpstarter auth token (hidden): ***

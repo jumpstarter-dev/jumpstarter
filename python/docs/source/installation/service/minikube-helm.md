@@ -17,7 +17,7 @@ website](https://minikube.sigs.k8s.io/docs/start/).
 First, we must start a local minikube cluster with the correct features enabled
 to support Jumpstarter.
 
-```bash
+```shell
 # We must expand the default NodePort range to include the Jumpstarter ports
 minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 ```

@@ -63,7 +63,7 @@ To run an Exporter on a host system, you must have Python {{requires_python}}
 installed and the driver packages specified in the config installed in your
 current Python environment.
 
-```bash
+```shell
 # Run the exporter myexporter in your local terminal
 $ jmp run --exporter myexporter
 ```

@@ -14,7 +14,7 @@ to authenticate with the Service.
 Alternatively the client can receive the endpoint and token as environment
 variables:
 
-```bash
+```shell
 export JMP_ENDPOINT=jumpstarter.my-lab.com:1443
 export JMP_TOKEN=dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 ```

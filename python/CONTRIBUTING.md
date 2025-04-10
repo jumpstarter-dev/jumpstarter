@@ -29,7 +29,7 @@ Please be respectful and considerate of others when contributing to the project.
 
 ## Development Setup
 
-```bash
+```shell
 # Install dependencies
 make sync
 
@@ -71,13 +71,13 @@ If you are working on a driver or adapter library of general interest, please co
 
 To create a new driver scaffold, you can use the `create_driver.sh` script:
 
-```bash
+```shell
 ./__templates__/create_driver.sh vendor_name driver_name "Your Name" "your.email@example.com"
 ```
 
 This will create the necessary files and structure for your driver in the `packages/` directory. For example:
 
-```bash
+```shell
 ./__templates__/create_driver.sh yepkit Ykush "Your Name" "your.email@example.com"
 ```
 
@@ -121,7 +121,7 @@ After creating your driver skeleton:
 
 To test your driver during development:
 
-```bash
+```shell
 # From the project root
 make sync  # Synchronize dependencies
 cd packages/your_driver_package
@@ -156,7 +156,7 @@ To contribute to the documentation, you'll need to set up your development envir
 
 To build and preview the documentation locally:
 
-```bash
+```shell
 cd docs
 make html      # Build HTML documentation
 make docs-serve # Serve documentation locally for preview
