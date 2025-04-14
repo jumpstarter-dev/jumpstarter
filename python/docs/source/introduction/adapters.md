@@ -17,7 +17,4 @@ Unlike [Drivers](./drivers.md), which establish the foundational connections to 
 
 ## Types of Adapters
 
-```{include} ../api-reference/adapters/index.md
-:start-after: "## Types of Adapters"
-:end-before: "```{toctree}"
-```
+* 📡 [Network](../api-reference/adapters/network.md): Adapters that transform network connections and streams into different protocols or connection types.
