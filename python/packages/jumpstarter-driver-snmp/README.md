@@ -4,7 +4,7 @@
 
 ## Installation
 
-```bash
+```shell
 pip install jumpstarter-driver-snmp
 ```
 
@@ -66,7 +66,7 @@ snmp_client.on()
 ```
 
 Using the CLI:
-```bash
+```shell
 j power on
 j power off
 j power cycle --wait 3

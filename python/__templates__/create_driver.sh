@@ -41,7 +41,7 @@ cat > "${README_FILE}" << 'EOF'
 
 ## Installation
 
-```bash
+```shell
 pip install jumpstarter-driver-${DRIVER_NAME}
 ```
 

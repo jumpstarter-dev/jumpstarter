@@ -115,7 +115,7 @@ virtual devices.
 
 #### Example: Running Local Tests
 
-```bash
+```shell
 jmp shell --exporter my-hardware-exporter
 jmp shell --exporter my-virtual-exporter
 
@@ -193,7 +193,7 @@ environments and prevents unauthorized access to hardware resources.
 
 #### Example: Running Distributed Tests
 
-```bash
+```shell
 # Configure client with server information
 jmp config client use my-client
 

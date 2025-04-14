@@ -2,15 +2,15 @@
 
 ## Release install
 
-The [Jumpstarter Python packages](https://docs.jumpstarter.dev/packages/)
+The [Jumpstarter Python packages](https://pkg.jumpstarter.dev/)
 contain all the necessary tools to run an exporter or interact with your
 hardware as a client.
 
 The Python package can be installed using ``pip`` or similar. Python
 {{requires_python}} is required:
 
-```bash
-$ pip3 install --extra-index-url https://docs.jumpstarter.dev/packages/simple jumpstarter-all
+```shell
+$ pip3 install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-all
 
 $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
@@ -37,7 +37,7 @@ We perform basic e2e testing and thorough unit testing, so we recommend
 installing the latest version from the `main` branch.
 
 For this, you will need a few tools like `uv`, `make`, and `git`:
-```bash
+```shell
 $ sudo dnf install -y uv make git
 
 # Clone the repository
@@ -57,7 +57,7 @@ $ sudo mkdir /etc/jumpstarter
 
 Then you can use the Jumpstarter CLI commands by activating the Python virtual
 environment:
-```bash
+```shell
 $ source .venv/bin/activate
 $ jmp version
 ```
@@ -90,7 +90,7 @@ $ alias jmp='podman run --rm -it -w /home \
 
 Then you can try:
 
-```bash
+```shell
 $ jmp config client list
 CURRENT   NAME      ENDPOINT                         PATH
 *         default   grpc.devel.jumpstarter.dev:443   /root/.config/jumpstarter/clients/default.yaml

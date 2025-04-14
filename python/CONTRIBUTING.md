@@ -2,6 +2,18 @@
 
 Thank you for your interest in contributing to Jumpstarter! This document outlines the process for contributing to the project and provides guidelines to make the contribution process smooth.
 
+## Getting Help
+
+If you have questions or need help, here are the best ways to connect with the community:
+
+### Community Resources
+
+- **Matrix Chat**: Join our [Matrix community](https://matrix.to/#/#jumpstarter:matrix.org) for real-time discussions and support
+- **Weekly Meetings**: Participate in our [weekly community meetings](https://meet.google.com/gzd-hhbd-hpu) to discuss development and get help
+- **Etherpad**: Check our [Etherpad](https://etherpad.jumpstarter.dev/pad-lister) for meeting notes and collaborative documentation
+- **GitHub Issues**: [Open an issue](https://github.com/jumpstarter-dev/jumpstarter/issues) in the repository for bug reports and feature requests
+- **Documentation**: Visit our [documentation](https://jumpstarter.dev/) for comprehensive guides and tutorials
+
 ## Code of Conduct
 
 Please be respectful and considerate of others when contributing to the project.
@@ -17,7 +29,7 @@ Please be respectful and considerate of others when contributing to the project.
 
 ## Development Setup
 
-```bash
+```shell
 # Install dependencies
 make sync
 
@@ -59,13 +71,13 @@ If you are working on a driver or adapter library of general interest, please co
 
 To create a new driver scaffold, you can use the `create_driver.sh` script:
 
-```bash
+```shell
 ./__templates__/create_driver.sh vendor_name driver_name "Your Name" "your.email@example.com"
 ```
 
 This will create the necessary files and structure for your driver in the `packages/` directory. For example:
 
-```bash
+```shell
 ./__templates__/create_driver.sh yepkit Ykush "Your Name" "your.email@example.com"
 ```
 
@@ -109,7 +121,7 @@ After creating your driver skeleton:
 
 To test your driver during development:
 
-```bash
+```shell
 # From the project root
 make sync  # Synchronize dependencies
 cd packages/your_driver_package
@@ -144,7 +156,7 @@ To contribute to the documentation, you'll need to set up your development envir
 
 To build and preview the documentation locally:
 
-```bash
+```shell
 cd docs
 make html      # Build HTML documentation
 make docs-serve # Serve documentation locally for preview
@@ -241,16 +253,6 @@ Once your documentation changes are complete:
 To add a new example:
 
 1. Create a new directory in the `examples/` folder with a descriptive name
-2. Include a comprehensive README.md with setup and usage instructions
+2. Include a comprehensive `README.md` with setup and usage instructions
 3. Follow the structure of existing examples
 4. Ensure the example is well-documented and easy to follow
-
-## Getting Help
-
-If you have questions or need help, please:
-
-1. Check the [documentation](https://docs.jumpstarter.dev/)
-2. Open an issue in the repository
-3. Reach out to the maintainers
-
-Thank you for contributing to Jumpstarter! 
