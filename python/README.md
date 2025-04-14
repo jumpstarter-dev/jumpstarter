@@ -8,12 +8,13 @@ A free, open source tool for automated testing on real and virtual hardware with
 
 ## Highlights
 
-- **Unified Testing** - One tool for local, virtual, and remote hardware
-- **Python-Powered** - Leverage Python's testing ecosystem
-- **Hardware Abstraction** - Simplify interfaces with drivers
-- **Collaborative** - Share test hardware globally
-- **CI/CD Ready** - Works with cloud native developer environments and pipelines
-- **Cross-Platform** - Supports Linux and macOS
+- 🚀 **Unified Testing** - One tool for local, virtual, and remote hardware
+- 🐍 **Python-Powered** - Leverage Python's testing ecosystem
+- 🛠️ **Hardware Abstraction** - Simplify complex hardware interfaces with drivers
+- 🔌 Built-in support for common interfaces such as [CAN](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-can), [IP](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-network), [GPIO](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-raspberrypi), [U-Boot](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-uboot), [SD Wire](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-sdwire), etc.
+- 💻 **Collaborative** - Share test hardware globally
+- 🔄 **CI/CD Ready** - Works with cloud native developer environments and pipelines
+- 🖥️ **Cross-Platform** - Supports Linux and macOS
 
 ## Installation
 
