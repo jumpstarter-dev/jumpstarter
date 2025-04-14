@@ -68,6 +68,27 @@ jobs:
         with:
           path: ./docs/build
 
+  check-warnings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Build the documentation for the current version (no warnings allowed)
+        run: make sync && make docs
+
   # Deployment job
   deploy:
     environment:
