@@ -12,13 +12,20 @@ dependencies = [
   "jumpstarter-driver-power",
   "pyserial>=3.5",
   "asyncclick>=8.1.7.2",
+  "corellium-api>=0.4.0",
 ]
 
 [project.entry-points."jumpstarter.drivers"]
 Corellium = "jumpstarter_driver_corellium.driver:Corellium"
 
 [dependency-groups]
-dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0", "trio>=0.28.0", "requests_mock"]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-cov>=5.0.0",
+    "trio>=0.28.0",
+    "requests_mock",
+    "pytest-aiohttp>=1.1.0",
+]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
