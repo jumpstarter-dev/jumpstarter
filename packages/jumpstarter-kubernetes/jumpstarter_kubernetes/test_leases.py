@@ -76,7 +76,8 @@ def test_lease_dump_json():
             "name": "test-exporter"
         }
     }
-}"""
+}
+"""
     )
 
 

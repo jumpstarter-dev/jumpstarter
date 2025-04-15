@@ -75,7 +75,6 @@ status:
   credential:
     name: test-credential
   endpoint: grpc://example.com:443
-
 """
 
 
@@ -217,7 +216,6 @@ items:
       name: another-credential
     endpoint: grpc://example.com:443
 kind: ClientList
-
 """
 
 CLIENTS_LIST_NAME = """client.jumpstarter.dev/test
@@ -227,7 +225,6 @@ client.jumpstarter.dev/another
 CLIENTS_LIST_EMPTY_YAML = """apiVersion: jumpstarter.dev/v1alpha1
 items: []
 kind: ClientList
-
 """
 
 
@@ -334,7 +331,6 @@ status:
     name: test-credential
   devices: []
   endpoint: grpc://example.com:443
-
 """
 
 
@@ -448,7 +444,6 @@ status:
       hardware: rpi4
     uuid: f7cd30ac-64a3-42c6-ba31-b25f033b97c1
   endpoint: grpc://example.com:443
-
 """
 
 
@@ -592,7 +587,6 @@ items:
     devices: []
     endpoint: grpc://example.com:443
 kind: ExporterList
-
 """
 
 EXPORTERS_LIST_NAME = """exporter.jumpstarter.dev/test
@@ -760,7 +754,6 @@ items:
       uuid: f7cd30ac-64a3-42c6-ba31-b25f033b97c1
     endpoint: grpc://example.com:443
 kind: ExporterList
-
 """
 
 EXPORTERS_DEVICES_LIST_NAME = EXPORTERS_LIST_NAME
@@ -936,7 +929,6 @@ status:
   ended: true
   exporter:
     name: test_exporter
-
 """
 
 
@@ -1145,7 +1137,6 @@ items:
     exporter:
       name: test_exporter
 kind: LeaseList
-
 """
 
 LEASES_LIST_NAME = """lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b1

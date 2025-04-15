@@ -7,9 +7,9 @@ from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
 
 from .json import JsonBaseModel
-from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
+from jumpstarter.common.pydantic import SerializableBaseModelList
 from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class V1Alpha1Client(JsonBaseModel):
         )
 
 
-class V1Alpha1ClientList(V1Alpha1List[V1Alpha1Client]):
+class V1Alpha1ClientList(SerializableBaseModelList[V1Alpha1Client]):
     kind: Literal["ClientList"] = Field(default="ClientList")
 
     @staticmethod
@@ -99,7 +99,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             await asyncio.sleep(CREATE_CLIENT_DELAY)
         raise Exception("Timeout waiting for client credentials")
 
-    async def list_clients(self) -> V1Alpha1List[V1Alpha1Client]:
+    async def list_clients(self) -> SerializableBaseModelList[V1Alpha1Client]:
         """List the client objects in the cluster async"""
         res = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="clients", version="v1alpha1"

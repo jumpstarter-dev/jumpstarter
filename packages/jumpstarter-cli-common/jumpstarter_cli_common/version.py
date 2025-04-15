@@ -3,10 +3,11 @@ import os
 import sys
 
 import asyncclick as click
-import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
-from .opt import OutputMode, OutputType, opt_output_all
+from .echo import echo
+from .opt import OutputType, opt_output_auto
+from jumpstarter.common.pydantic import SerializableBaseModel
 
 
 def get_client_version():
@@ -27,17 +28,11 @@ def version_msg():
     return f"Jumpstarter v{jumpstarter_version} from {location} (Python {python_version})"
 
 
-class JumpstarterVersion(BaseModel):
+class JumpstarterVersion(SerializableBaseModel):
     git_version: str = Field(alias="gitVersion")
     python_version: str = Field(alias="pythonVersion")
 
     model_config = ConfigDict(populate_by_name=True)
-
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
-
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
 
 
 def version_obj():
@@ -45,12 +40,10 @@ def version_obj():
 
 
 @click.command()
-@opt_output_all
+@opt_output_auto(JumpstarterVersion)
 def version(output: OutputType):
     """Get the current Jumpstarter version"""
-    if output == OutputMode.JSON:
-        click.echo(version_obj().dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(version_obj().dump_yaml())
+    if output:
+        echo(version_obj().dump(output))
     else:
         click.echo(version_msg())

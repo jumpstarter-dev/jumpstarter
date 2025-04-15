@@ -4,9 +4,9 @@ from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1Object
 from pydantic import Field
 
 from .json import JsonBaseModel
-from .list import V1Alpha1List
 from .serialize import SerializeV1Condition, SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
+from jumpstarter.common.pydantic import SerializableBaseModelList
 
 
 class V1Alpha1LeaseStatus(JsonBaseModel):
@@ -77,7 +77,7 @@ class V1Alpha1Lease(JsonBaseModel):
         )
 
 
-class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
+class V1Alpha1LeaseList(SerializableBaseModelList[V1Alpha1Lease]):
     kind: Literal["LeaseList"] = Field(default="LeaseList")
 
     @staticmethod
@@ -88,7 +88,7 @@ class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
 class LeasesV1Alpha1Api(AbstractAsyncCustomObjectApi):
     """Interact with the leases custom resource API"""
 
-    async def list_leases(self) -> V1Alpha1List[V1Alpha1Lease]:
+    async def list_leases(self) -> SerializableBaseModelList[V1Alpha1Lease]:
         """List the lease objects in the cluster async"""
         result = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="leases", version="v1alpha1"

@@ -14,6 +14,7 @@ from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
+from jumpstarter.common.pydantic import SerializableBaseModel
 from jumpstarter.driver import Driver
 
 
@@ -175,15 +176,9 @@ class ExporterConfigV1Alpha1(BaseModel):
             await exporter.serve()
 
 
-class ExporterConfigListV1Alpha1(BaseModel):
+class ExporterConfigListV1Alpha1(SerializableBaseModel):
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     items: list[ExporterConfigV1Alpha1]
     kind: Literal["ExporterConfigList"] = Field(default="ExporterConfigList")
-
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
-
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
