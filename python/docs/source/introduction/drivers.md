@@ -22,12 +22,18 @@ patterns and examples, see the [Driver Classes and Architecture](../api-referenc
 
 Drivers are often used with [Adapters](./adapters.md), which transform driver connections into different forms or interfaces for specific use cases.
 
-## Types of Drivers
+## Driver Types
 
-```{include} ../api-reference/drivers/index.md
-:start-after: "## Types of Drivers"
-:end-before: "```{toctree}"
-```
+The API reference of the documentation provides a complete list of all drivers,
+you can find it here: [Driver API Reference](../api-reference/drivers/index.md).
+
+Some categories of drivers include:
+* ⚡ [System Control](../api-reference/drivers/index.md#system-control-drivers): Control power to devices, or general control.
+* 📡 [Communication](../api-reference/drivers/index.md#communication-drivers): Provide protocols for network communication, such as TCP/IP, Serial, CAN bus, etc.
+* 💾 [Storage And Data](../api-reference/drivers/index.md#storage-and-data-drivers): Control storage devices, such as SD cards or USB drives, and data.
+* 📹 [Media](../api-reference/drivers/index.md#media-drivers): Provide interfaces for media capture and playback, such as video or audio.
+* 🐞 [Debug and Programming](../api-reference/drivers/index.md#debug-and-programming-drivers): Provide interfaces for debugging and programming devices, such as JTAG or SWD, remote flashing, emulation, etc.
+* 🛠️ [Utility](../api-reference/drivers/index.md#utility-drivers): Provide utility functions, such as shell driver commands on a exporter.
 
 ### Composite Drivers
 

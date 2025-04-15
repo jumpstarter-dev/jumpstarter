@@ -40,6 +40,11 @@ exclude_patterns = []
 
 mermaid_version = "10.9.1"
 
+suppress_warnings = [
+    "ref.class",  # suppress unresolved Python class references (external references
+                 # are warnings otherwise)
+]
+
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 

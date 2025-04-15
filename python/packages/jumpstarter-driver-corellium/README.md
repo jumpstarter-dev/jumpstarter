@@ -25,10 +25,6 @@ export:
       # device_build: "Critical Application Monitor (Baremetal)"
 ```
 
-## API Reference
-
-For more examples, check the [examples folder](./examples).
-
 ### ExporterConfig Example
 
 You can run an exporter by running: `jmp exporter shell -c $file`:

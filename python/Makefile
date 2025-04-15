@@ -2,6 +2,12 @@ PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
 
 default: build
 
+docs-singlehtml:
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
+
+docs:
+	uv run --isolated --all-packages --group docs $(MAKE) -C docs html SPHINXOPTS="-W --keep-going -n"
+
 docs-all:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
