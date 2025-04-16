@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
@@ -125,6 +126,8 @@ func (s *RouterService) Start(ctx context.Context) error {
 
 	server := grpc.NewServer(
 		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
+		grpc.ChainUnaryInterceptor(recovery.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(recovery.StreamServerInterceptor()),
 		s.ServerOption,
 	)
 

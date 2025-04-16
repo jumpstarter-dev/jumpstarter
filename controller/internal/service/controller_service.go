@@ -30,6 +30,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
@@ -679,22 +680,22 @@ func (s *ControllerService) Start(ctx context.Context) error {
 
 	server := grpc.NewServer(
 		s.ServerOption,
-		grpc.UnaryInterceptor(func(
+		grpc.ChainUnaryInterceptor(func(
 			gctx context.Context,
 			req any,
 			_ *grpc.UnaryServerInfo,
 			handler grpc.UnaryHandler,
 		) (resp any, err error) {
 			return handler(logContext(gctx), req)
-		}),
-		grpc.StreamInterceptor(func(
+		}, recovery.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(func(
 			srv any,
 			ss grpc.ServerStream,
 			_ *grpc.StreamServerInfo,
 			handler grpc.StreamHandler,
 		) error {
 			return handler(srv, &wrappedStream{ServerStream: ss})
-		}),
+		}, recovery.StreamServerInterceptor()),
 	)
 
 	pb.RegisterControllerServiceServer(server, s)
