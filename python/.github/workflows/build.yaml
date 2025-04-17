@@ -46,6 +46,15 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
 
+      - name: Set image tags
+        id: set-tags
+        run: |
+          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -73,7 +82,7 @@ jobs:
           context: .
           file: ${{ env.CONTAINERFILE }}
           push: ${{ env.PUSH }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ steps.set-tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
