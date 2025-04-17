@@ -19,7 +19,8 @@ from jumpstarter_protocol import (
     router_pb2_grpc,
 )
 
-from jumpstarter.streams import RouterStream, forward_stream
+from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.router import RouterStream
 
 
 @dataclass(kw_only=True)
