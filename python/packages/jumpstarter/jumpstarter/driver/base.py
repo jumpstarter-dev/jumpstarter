@@ -36,6 +36,7 @@ from jumpstarter.common.streams import (
 from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
 from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.metadata import MetadataStream
+from jumpstarter.streams.progress import ProgressStream
 
 
 @dataclass(kw_only=True)
@@ -220,7 +221,7 @@ class Driver(
                             method, url, headers=headers, raise_for_status=True, timeout=client_timeout
                         ) as resp:
                             async with AiohttpStreamReaderStream(reader=resp.content) as stream:
-                                yield stream
+                                yield ProgressStream(stream=stream, logging=True)
                     case "PUT":
                         remote, stream = create_memory_stream()
                         async with aiohttp.request(
