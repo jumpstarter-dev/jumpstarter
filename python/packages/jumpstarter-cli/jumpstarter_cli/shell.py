@@ -2,7 +2,7 @@ import sys
 from datetime import timedelta
 
 import asyncclick as click
-from jumpstarter_cli_common import opt_config
+from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 from .common import opt_duration_partial, opt_selector

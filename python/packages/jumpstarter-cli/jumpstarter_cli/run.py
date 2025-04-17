@@ -2,7 +2,7 @@ import sys
 import traceback
 
 import asyncclick as click
-from jumpstarter_cli_common import opt_config
+from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 

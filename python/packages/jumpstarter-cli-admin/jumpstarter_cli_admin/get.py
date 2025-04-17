@@ -2,8 +2,8 @@ import logging
 from typing import Optional
 
 import asyncclick as click
-from jumpstarter_cli_common import (
-    AliasedGroup,
+from jumpstarter_cli_common.alias import AliasedGroup
+from jumpstarter_cli_common.opt import (
     OutputType,
     opt_context,
     opt_kubeconfig,

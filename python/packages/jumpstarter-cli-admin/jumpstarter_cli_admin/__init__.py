@@ -1,5 +1,6 @@
 import asyncclick as click
-from jumpstarter_cli_common import AliasedGroup, version
+from jumpstarter_cli_common.alias import AliasedGroup
+from jumpstarter_cli_common.version import version
 
 from .create import create
 from .delete import delete

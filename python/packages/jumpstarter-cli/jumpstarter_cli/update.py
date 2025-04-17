@@ -1,8 +1,10 @@
 from datetime import timedelta
 
 import asyncclick as click
-from jumpstarter_cli_common import OutputMode, OutputType, make_table, opt_config, opt_output_all
+from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
+from jumpstarter_cli_common.opt import OutputMode, OutputType, opt_output_all
+from jumpstarter_cli_common.table import make_table
 
 from .common import opt_duration_partial
 

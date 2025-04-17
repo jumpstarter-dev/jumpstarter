@@ -1,6 +1,7 @@
 import asyncclick as click
-from jumpstarter_cli_common import OutputMode, OutputType, opt_config, opt_output_name_only
+from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
+from jumpstarter_cli_common.opt import OutputMode, OutputType, opt_output_name_only
 
 from .common import opt_selector
 
