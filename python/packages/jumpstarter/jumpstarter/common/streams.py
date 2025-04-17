@@ -7,7 +7,8 @@ from jumpstarter_protocol.jumpstarter.v1 import router_pb2_grpc
 from pydantic import BaseModel, Field, Json
 
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
-from jumpstarter.streams import RouterStream, forward_stream
+from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.router import RouterStream
 
 
 class ResourceStreamRequest(BaseModel):

@@ -5,7 +5,7 @@ from os import PathLike
 from jumpstarter.client import DriverClient
 from jumpstarter.client.adapters import blocking
 from jumpstarter.common import TemporaryTcpListener, TemporaryUnixListener
-from jumpstarter.streams import forward_stream
+from jumpstarter.streams.common import forward_stream
 
 
 async def handler(client, method, conn):

@@ -12,7 +12,7 @@ from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
 from .core import AsyncDriverClient
-from jumpstarter.streams import BlockingStream
+from jumpstarter.streams.blocking import BlockingStream
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
