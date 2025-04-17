@@ -18,7 +18,9 @@ from .logging import LogHandler
 from jumpstarter.common import Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.driver import Driver
-from jumpstarter.streams import MetadataStreamAttributes, RouterStream, forward_stream
+from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.metadata import MetadataStreamAttributes
+from jumpstarter.streams.router import RouterStream
 
 logger = logging.getLogger(__name__)
 

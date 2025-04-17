@@ -10,7 +10,8 @@ from .json import JsonBaseModel
 from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
+from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from jumpstarter.config.common import ObjectMeta
 
 logger = logging.getLogger(__name__)
 

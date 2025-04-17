@@ -10,12 +10,9 @@ from jumpstarter_kubernetes import (
 )
 
 from .import_res import import_res
-from jumpstarter.config import (
-    ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Drivers,
-    ExporterConfigV1Alpha1,
-    ObjectMeta,
-)
+from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from jumpstarter.config.common import ObjectMeta
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 # Generate a random client name
 CLIENT_NAME = uuid.uuid4().hex

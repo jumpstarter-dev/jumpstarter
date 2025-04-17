@@ -1,10 +1,7 @@
 import asyncclick as click
-from jumpstarter_cli_common import (
-    OutputMode,
-    OutputType,
-    make_table,
-    time_since,
-)
+from jumpstarter_cli_common.opt import OutputMode, OutputType
+from jumpstarter_cli_common.table import make_table
+from jumpstarter_cli_common.time import time_since
 from jumpstarter_kubernetes import (
     V1Alpha1Client,
     V1Alpha1Exporter,

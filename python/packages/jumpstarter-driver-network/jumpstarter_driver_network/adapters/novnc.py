@@ -5,7 +5,7 @@ from ..streams import WebsocketServerStream
 from jumpstarter.client import DriverClient
 from jumpstarter.client.adapters import blocking
 from jumpstarter.common import TemporaryTcpListener
-from jumpstarter.streams import forward_stream
+from jumpstarter.streams.common import forward_stream
 
 
 @blocking

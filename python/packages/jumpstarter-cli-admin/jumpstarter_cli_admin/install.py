@@ -1,7 +1,8 @@
 from typing import Literal, Optional
 
 import asyncclick as click
-from jumpstarter_cli_common import get_client_version, opt_context, opt_kubeconfig
+from jumpstarter_cli_common.opt import opt_context, opt_kubeconfig
+from jumpstarter_cli_common.version import get_client_version
 from jumpstarter_kubernetes import get_ip_address, helm_installed, install_helm_chart
 
 

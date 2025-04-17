@@ -21,13 +21,10 @@ from jumpstarter.common.streams import (
     ResourceStreamRequest,
     StreamRequestMetadata,
 )
-from jumpstarter.streams import (
-    MetadataStream,
-    MetadataStreamAttributes,
-    ProgressStream,
-    RouterStream,
-    forward_stream,
-)
+from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.metadata import MetadataStream, MetadataStreamAttributes
+from jumpstarter.streams.progress import ProgressStream
+from jumpstarter.streams.router import RouterStream
 
 
 class DriverError(JumpstarterException):

@@ -3,7 +3,7 @@ import sys
 import asyncclick as click
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
-from jumpstarter.common.utils import env
+from jumpstarter.utils.env import env
 
 
 def j():

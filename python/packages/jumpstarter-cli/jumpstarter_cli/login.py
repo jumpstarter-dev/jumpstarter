@@ -1,8 +1,9 @@
 import asyncclick as click
-from jumpstarter_cli_common import opt_config
+from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
 
-from jumpstarter.config import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
+from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 

@@ -2,12 +2,13 @@ import sys
 from datetime import timedelta
 
 import asyncclick as click
-from jumpstarter_cli_common import opt_config
+from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 from .common import opt_duration_partial, opt_selector
 from jumpstarter.common.utils import launch_shell
-from jumpstarter.config import ClientConfigV1Alpha1, ExporterConfigV1Alpha1
+from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 
 @click.command("shell")

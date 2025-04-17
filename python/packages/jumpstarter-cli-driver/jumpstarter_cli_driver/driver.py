@@ -1,7 +1,7 @@
 from importlib.metadata import entry_points
 
 import asyncclick as click
-from jumpstarter_cli_common import make_table
+from jumpstarter_cli_common.table import make_table
 
 
 @click.command("list")

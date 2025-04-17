@@ -33,7 +33,9 @@ from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
 )
-from jumpstarter.streams import AiohttpStreamReaderStream, MetadataStream, create_memory_stream
+from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
+from jumpstarter.streams.common import create_memory_stream
+from jumpstarter.streams.metadata import MetadataStream
 
 
 @dataclass(kw_only=True)

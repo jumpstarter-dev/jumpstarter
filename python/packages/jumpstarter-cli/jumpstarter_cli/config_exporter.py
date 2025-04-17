@@ -1,12 +1,12 @@
 import asyncclick as click
-from jumpstarter_cli_common import (
+from jumpstarter_cli_common.opt import (
     OutputMode,
     OutputType,
     PathOutputType,
-    make_table,
     opt_output_all,
     opt_output_path_only,
 )
+from jumpstarter_cli_common.table import make_table
 
 from jumpstarter.config.exporter import ExporterConfigListV1Alpha1, ExporterConfigV1Alpha1, ObjectMeta
 
