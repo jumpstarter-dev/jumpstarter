@@ -18,7 +18,7 @@ Example configuration:
 
 ```{doctest}
 :hide:
->>> from jumpstarter.config import ExporterConfigV1Alpha1DriverInstance
+>>> from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
 >>> ExporterConfigV1Alpha1DriverInstance.from_path("source/api-reference/drivers/ustreamer.yaml").instantiate()
 Traceback (most recent call last):
 ...

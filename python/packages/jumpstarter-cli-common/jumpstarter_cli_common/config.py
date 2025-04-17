@@ -3,11 +3,9 @@ from pathlib import Path
 
 import asyncclick as click
 
-from jumpstarter.config import (
-    ClientConfigV1Alpha1,
-    ExporterConfigV1Alpha1,
-    UserConfigV1Alpha1,
-)
+from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+from jumpstarter.config.user import UserConfigV1Alpha1
 
 
 def opt_config_inner(  # noqa: C901

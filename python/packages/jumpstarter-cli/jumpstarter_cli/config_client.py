@@ -11,13 +11,9 @@ from jumpstarter_cli_common.opt import (
 )
 from jumpstarter_cli_common.table import make_table
 
-from jumpstarter.config import (
-    ClientConfigListV1Alpha1,
-    ClientConfigV1Alpha1,
-    ClientConfigV1Alpha1Drivers,
-    ObjectMeta,
-    UserConfigV1Alpha1,
-)
+from jumpstarter.config.client import ClientConfigListV1Alpha1, ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from jumpstarter.config.common import ObjectMeta
+from jumpstarter.config.user import UserConfigV1Alpha1
 
 
 @click.group("client")

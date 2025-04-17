@@ -9,7 +9,8 @@ from .json import JsonBaseModel
 from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
-from jumpstarter.config import ExporterConfigV1Alpha1, ObjectMeta
+from jumpstarter.config.common import ObjectMeta
+from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10

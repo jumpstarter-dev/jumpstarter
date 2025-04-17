@@ -7,8 +7,7 @@ os.environ["TQDM_DISABLE"] = "1"
 
 try:
     from jumpstarter.common.utils import serve
-    from jumpstarter.config import ExporterConfigV1Alpha1DriverInstance
-    from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+    from jumpstarter.config.exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
 except ImportError:
     # some packages in the workspace does not depend on jumpstarter
     pass
