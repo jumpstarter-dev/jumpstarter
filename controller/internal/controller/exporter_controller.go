@@ -19,8 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -72,6 +75,10 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileStatusConditionsOnline(ctx, &exporter); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := r.reconcileStatusEndpoint(ctx, &exporter); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -80,7 +87,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return RequeueConflict(logger, ctrl.Result{}, err)
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 }
 
 func (r *ExporterReconciler) reconcileStatusCredential(
@@ -139,6 +146,32 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 	if exporter.Status.Endpoint != endpoint {
 		logger.Info("reconcileStatusEndpoint: updating controller endpoint")
 		exporter.Status.Endpoint = endpoint
+	}
+
+	return nil
+}
+
+func (r *ExporterReconciler) reconcileStatusConditionsOnline(
+	_ context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) error {
+
+	if time.Now().Sub(exporter.Status.LastSeen.Time) > time.Minute {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Seen",
+			Message:            "Last seen more than 1 minute ago",
+		})
+	} else {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Seen",
+			Message:            "Lase seen less than 1 minute ago",
+		})
 	}
 
 	return nil
