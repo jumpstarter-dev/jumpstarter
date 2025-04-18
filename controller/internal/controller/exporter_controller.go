@@ -159,7 +159,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 	if time.Now().Sub(exporter.Status.LastSeen.Time) > time.Minute {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-			Status:             metav1.ConditionTrue,
+			Status:             metav1.ConditionFalse,
 			ObservedGeneration: exporter.Generation,
 			Reason:             "Seen",
 			Message:            "Last seen more than 1 minute ago",
@@ -167,7 +167,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 	} else {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-			Status:             metav1.ConditionFalse,
+			Status:             metav1.ConditionTrue,
 			ObservedGeneration: exporter.Generation,
 			Reason:             "Seen",
 			Message:            "Lase seen less than 1 minute ago",
