@@ -110,9 +110,9 @@ class ProgressStream(ObjectStream[bytes]):
 
         if self.__recv is None:
             if self.logging:
-                self.__recv = logging_tqdm(desc="read", **TQDM_KWARGS)
+                self.__recv = logging_tqdm(desc="transfer", **TQDM_KWARGS)
             else:
-                self.__recv = tqdm(desc="read", **TQDM_KWARGS)
+                self.__recv = tqdm(desc="transfer", **TQDM_KWARGS)
 
         self.__recv.update(len(item))
 
@@ -121,9 +121,9 @@ class ProgressStream(ObjectStream[bytes]):
     async def send(self, item):
         if self.__send is None:
             if self.logging:
-                self.__send = logging_tqdm(desc="write", **TQDM_KWARGS)
+                self.__send = logging_tqdm(desc="transfer", **TQDM_KWARGS)
             else:
-                self.__send = tqdm(desc="write", **TQDM_KWARGS)
+                self.__send = tqdm(desc="transfer", **TQDM_KWARGS)
 
         self.__send.update(len(item))
 
