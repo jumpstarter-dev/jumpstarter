@@ -228,7 +228,7 @@ class Driver(
                             method, url, headers=headers, raise_for_status=True, data=remote, timeout=client_timeout
                         ) as resp:
                             async with stream:
-                                yield stream
+                                yield ProgressStream(stream=stream, logging=True)
                     case _:
                         # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
                         raise ValueError("unreachable")
