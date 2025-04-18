@@ -151,16 +151,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 
 	original = client.MergeFrom(exporter.DeepCopy())
 
-	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: exporter.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason: "Register",
-	})
-
 	devices := []jumpstarterdevv1alpha1.Device{}
 	for _, device := range req.Reports {
 		devices = append(devices, jumpstarterdevv1alpha1.Device{
@@ -202,16 +192,7 @@ func (s *ControllerService) Unregister(
 	})
 
 	original := client.MergeFrom(exporter.DeepCopy())
-	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-		Status:             metav1.ConditionFalse,
-		ObservedGeneration: exporter.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason:  "Bye",
-		Message: req.GetReason(),
-	})
+	exporter.Status.Devices = nil
 
 	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status")

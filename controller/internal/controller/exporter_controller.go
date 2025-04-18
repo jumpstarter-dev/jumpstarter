@@ -174,6 +174,22 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 		})
 	}
 
+	if exporter.Status.Devices == nil {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Unregister",
+		})
+	} else {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Register",
+		})
+	}
+
 	return nil
 }
 
