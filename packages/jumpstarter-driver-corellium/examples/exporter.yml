@@ -16,3 +16,4 @@ export:
       # optional
       device_os: "1.1.1"
       device_build: "Critical Application Monitor (Baremetal)"
+      console_name: "Primary Compute Non-Secure"
