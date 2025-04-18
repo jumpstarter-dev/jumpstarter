@@ -41,10 +41,6 @@ class BytesIOStream(ObjectStream[bytes]):
         pass
 
 
-def fs_operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator]:
-    return Path(path).resolve(), Operator("fs", root="/")
-
-
 def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
     """Create an operator for the given path
     Return a tuple of:
@@ -57,7 +53,7 @@ def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
         operator = Operator("http", root="/", endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}")
         return Path(parsed_url.path), operator, "http"
     else:
-        return *fs_operator_for_path(path), "fs"
+        return Path(path).resolve(), Operator("fs", root="/"), "fs"
 
 
 @dataclass(kw_only=True)
@@ -81,7 +77,7 @@ class OpendalFile:
         Write into remote file with content from local file
         """
         if operator is None:
-            path, operator = fs_operator_for_path(path)
+            path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
             return self.__write(handle)
@@ -92,7 +88,7 @@ class OpendalFile:
         Read content from remote file into local file
         """
         if operator is None:
-            path, operator = fs_operator_for_path(path)
+            path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
             return self.__read(handle)
@@ -563,7 +559,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
     ):
         """Flash image to DUT"""
         if operator is None:
-            path, operator = fs_operator_for_path(path)
+            path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
             return self.call("flash", handle, partition)
@@ -577,7 +573,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
     ):
         """Dump image from DUT"""
         if operator is None:
-            path, operator = fs_operator_for_path(path)
+            path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
             return self.call("dump", handle, partition)
@@ -662,7 +658,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self.host()
 
         if operator is None:
-            path, operator = fs_operator_for_path(path)
+            path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
             try:
@@ -684,7 +680,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self.call("host")
 
         if operator is None:
-            path, operator = fs_operator_for_path(path)
+            path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
             try:
