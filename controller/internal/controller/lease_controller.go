@@ -465,15 +465,13 @@ func filterOutOfflineExporters(matchingExporters []jumpstarterdevv1alpha1.Export
 	onlineExporters := slices.DeleteFunc(
 		matchingExporters,
 		func(exporter jumpstarterdevv1alpha1.Exporter) bool {
-			return !(true &&
-				meta.IsStatusConditionTrue(
-					exporter.Status.Conditions,
-					string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-				) &&
-				meta.IsStatusConditionTrue(
-					exporter.Status.Conditions,
-					string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-				))
+			return !true || !meta.IsStatusConditionTrue(
+				exporter.Status.Conditions,
+				string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+			) || !meta.IsStatusConditionTrue(
+				exporter.Status.Conditions,
+				string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+			)
 		},
 	)
 	return onlineExporters

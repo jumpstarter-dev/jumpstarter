@@ -151,12 +151,13 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 	return nil
 }
 
+// nolint:unparam
 func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 	_ context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
 
-	if time.Now().Sub(exporter.Status.LastSeen.Time) > time.Minute {
+	if time.Since(exporter.Status.LastSeen.Time) > time.Minute {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,

@@ -6,7 +6,6 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apisv1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,7 +22,7 @@ func ensureSecret(
 	scheme *runtime.Scheme,
 	signer *oidc.Signer,
 	subject string,
-	owner apisv1.Object,
+	owner metav1.Object,
 ) (*corev1.Secret, error) {
 	logger := log.FromContext(ctx).WithName("ensureSecret")
 	var secret corev1.Secret

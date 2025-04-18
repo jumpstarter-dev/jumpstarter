@@ -534,7 +534,7 @@ func (s *ControllerService) RequestLease(
 		return nil, err
 	}
 
-	var lease jumpstarterdevv1alpha1.Lease = jumpstarterdevv1alpha1.Lease{
+	var lease = jumpstarterdevv1alpha1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: client.Namespace,
 			Name:      leaseName.String(),
