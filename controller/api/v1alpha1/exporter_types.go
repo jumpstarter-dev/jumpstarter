@@ -37,6 +37,7 @@ type ExporterStatus struct {
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
 	Devices    []Device                     `json:"devices,omitempty"`
 	LeaseRef   *corev1.LocalObjectReference `json:"leaseRef,omitempty"`
+	LastSeen   metav1.Time                  `json:"lastSeen,omitempty"`
 	Endpoint   string                       `json:"endpoint,omitempty"`
 }
 
