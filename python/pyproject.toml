@@ -80,3 +80,6 @@ skip_empty = true
 
 [tool.pytest.ini_options]
 addopts = "--capture=no --doctest-modules --cov --cov-report=html --cov-report=xml"
+
+[tool.hatch.version]
+source = "vcs"
