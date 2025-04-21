@@ -1227,13 +1227,15 @@ dependencies = [
     { name = "asyncclick" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
-    { name = "pyserial" },
+    { name = "jumpstarter-driver-pyserial" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
     { name = "trio" },
@@ -1244,13 +1246,15 @@ requires-dist = [
     { name = "asyncclick", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-    { name = "pyserial", specifier = ">=3.5" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-asyncio", specifier = ">=0.25.3" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests-mock" },
     { name = "trio", specifier = ">=0.28.0" },
@@ -1379,12 +1383,14 @@ dependencies = [
     { name = "fabric" },
     { name = "jumpstarter" },
     { name = "pexpect" },
+    { name = "websockets" },
     { name = "wsproto" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "types-paramiko" },
     { name = "types-pexpect" },
@@ -1397,12 +1403,14 @@ requires-dist = [
     { name = "fabric", specifier = ">=3.2.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "pexpect", specifier = ">=4.9.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
     { name = "wsproto", specifier = ">=1.2.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-asyncio", specifier = ">=0.26.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "types-paramiko", specifier = ">=3.5.0.20240928" },
     { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
