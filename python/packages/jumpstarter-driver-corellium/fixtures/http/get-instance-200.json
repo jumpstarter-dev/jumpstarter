@@ -1,0 +1,84 @@
+{
+  "id": "7f4f241c-821f-4219-905f-c3b50b0db5dd",
+  "name": "my-instance",
+  "key": "key",
+  "flavor": "kronos",
+  "flavorName": "RD-1AE",
+  "type": "iot",
+  "project": "778f00af-5e9b-40e6-8e7f-c4f14b632e9c",
+  "domainName": "my-domain",
+  "state": "on",
+  "stateChanged": "9999-12-31T00:00:00.000Z",
+  "startedAt": "9999-12-31T00:00:00.000Z",
+  "userTask": null,
+  "taskState": "none",
+  "restoreStatus": {},
+  "error": null,
+  "bootOptions": {
+    "bootArgs": "",
+    "uuid": "uuid",
+    "ecid": "ecid",
+    "noSnapshotMount": true
+  },
+  "serviceIp": "0.0.0.0",
+  "wifiIp": "0.0.0.0",
+  "wifiMac": "mac",
+  "secondaryIp": null,
+  "port-gdb": "1234",
+  "port-usbmuxd": "27015",
+  "port-1-cons": "4001",
+  "port-2-cons": "4002",
+  "consoles": [
+    {
+      "name": "Console 1",
+      "id": "port-1-cons",
+      "port": "4001",
+      "hash": "post-1-cons-hash",
+      "info": "port-1-cons-info"
+    },
+    {
+      "name": "Console 2",
+      "id": "port-2-cons",
+      "port": "4002",
+      "hash": "port-2-cons-hash",
+      "info": "port-2-cons-info"
+    }
+  ],
+  "services": {
+    "vpn": {
+      "proxy": [],
+      "listeners": []
+    }
+  },
+  "panicked": false,
+  "created": "9999-12-31T00:00:00.000Z",
+  "os": "1.1",
+  "agent": null,
+  "netmon": {
+    "hash": "netmon-hash",
+    "info": "netmon-info",
+    "enabled": false
+  },
+  "netdump": {
+    "hash": "netdump-hash",
+    "info": "netdump-info",
+    "enabled": false
+  },
+  "coreTrace": {
+    "enabled": null
+  },
+  "hyperTrace": {
+    "enabled": null
+  },
+  "exposePort": null,
+  "fault": null,
+  "patches": [
+    "jailbroken"
+  ],
+  "createdBy": {
+    "id": "2eadc0a4-bd23-44dd-9a2c-0aef784d0c43",
+    "username": "some@user.email",
+    "label": "full name"
+  },
+  "mast": false
+}

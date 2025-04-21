@@ -38,16 +38,19 @@ class ApiClient:
 
         It uses the global requests objects so a new session can be generated.
         """
-        data = {
+        data = None
+        req_data = {
             'apiToken': self.token
         }
 
         try:
-            res = requests.post(f'{self.baseurl}/v1/auth/login', json=data)
+            res = requests.post(f'{self.baseurl}/v1/auth/login', json=req_data)
             data = res.json()
             res.raise_for_status()
         except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            msgerr = data.get('error') if data is not None else str(e)
+
+            raise CorelliumApiException(msgerr) from e
 
         self.session = Session(**data)
         self.req.headers.update(self.session.as_header())
@@ -56,12 +59,16 @@ class ApiClient:
         """
         Retrieve a project based on project_ref, which is either its id or name.
         """
+        data = None
+
         try:
             res = self.req.get(f'{self.baseurl}/v1/projects')
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            msgerr = data.get('error') if data is not None else str(e)
+
+            raise CorelliumApiException(msgerr) from e
 
         for project in data:
             if project['name'] == project_ref or project['id'] == project_ref:
@@ -75,12 +82,16 @@ class ApiClient:
 
         A device object is used to create a new virtual instance.
         """
+        data = None
+
         try:
             res = self.req.get(f'{self.baseurl}/v1/models')
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            msgerr = data.get('error') if data is not None else str(e)
+
+            raise CorelliumApiException(msgerr) from e
 
         for device in data:
             if device['model'] == model:
@@ -92,7 +103,8 @@ class ApiClient:
         """
         Create a new virtual instance from a device spec.
         """
-        data = {
+        data = None
+        req_data = {
             'name': name,
             'project': project.id,
             'flavor': device.flavor,
@@ -101,11 +113,13 @@ class ApiClient:
         }
 
         try:
-            res = self.req.post(f'{self.baseurl}/v1/instances', json=data)
+            res = self.req.post(f'{self.baseurl}/v1/instances', json=req_data)
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            msgerr = data.get('error') if data is not None else str(e)
+
+            raise CorelliumApiException(msgerr) from e
 
         return Instance(**data)
 
@@ -115,12 +129,16 @@ class ApiClient:
 
         Return None if it does not exist.
         """
+        data = None
+
         try:
             res = self.req.get(f'{self.baseurl}/v1/instances')
             data = res.json()
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            raise CorelliumApiException(data.get('error', str(e))) from e
+            msgerr = data.get('error') if data is not None else str(e)
+
+            raise CorelliumApiException(msgerr) from e
 
         for instance in data:
             if instance['name'] == instance_ref or instance['id'] == instance_ref:
@@ -144,16 +162,17 @@ class ApiClient:
         - rebooting
         - error
         """
-        data = {
+        data = None
+        req_data = {
             'state': instance_state
         }
 
         try:
-            res = self.req.put(f'{self.baseurl}/v1/instances/{instance.id}/state', json=data)
+            res = self.req.put(f'{self.baseurl}/v1/instances/{instance.id}/state', json=req_data)
             data = res.json() if res.status_code != 204 else None
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            msgerr = data if data is not None else str(e)
+            msgerr = data.get('error') if data is not None else str(e)
 
             raise CorelliumApiException(msgerr) from e
 
@@ -168,6 +187,47 @@ class ApiClient:
             data = res.json() if res.status_code != 204 else None
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
-            msgerr = data if data is not None else str(e)
+            msgerr = data.get('error') if data is not None else str(e)
 
             raise CorelliumApiException(msgerr) from e
+
+    def get_instance_console_id(self, instance: Instance, console_name: str) -> Optional[str]:
+        """
+        Retrieve an instance's console id by its name.
+
+        Return None if it does not exist.
+        """
+        data = None
+
+        try:
+            res = self.req.get(f'{self.baseurl}/v1/instances/{instance.id}')
+            data = res.json()
+            res.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            msgerr = data.get('error') if data is not None else str(e)
+
+            raise CorelliumApiException(msgerr) from e
+
+        for console in data.get('consoles', []):
+            if console['name'] == console_name:
+                return console['id']
+
+        return None
+
+    def get_instance_console_url(self, instance: Instance, console_id: str) -> Optional[str]:
+        """
+        Get a a console URL (websocket) to stream logs from.
+        """
+        data = None
+
+        try:
+            res = self.req.get(f'{self.baseurl}/v1/instances/{instance.id}/console',
+                               params={'type': console_id.replace('port-', '')})
+            data = res.json()
+            res.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            msgerr = data.get('error') if data is not None else str(e)
+
+            raise CorelliumApiException(msgerr) from e
+
+        return data['url']

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
+from jumpstarter_driver_network.driver import WebsocketNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
 from .corellium.api import ApiClient
@@ -27,6 +28,7 @@ class Corellium(Driver):
     device_flavor: str
     device_os: str = field(default='1.1.1')
     device_build: str = field(default='Critical Application Monitor (Baremetal)')
+    console_name: str = field(default='Primary Compute Non-Secure')
 
     @classmethod
     def client(cls) -> str:
@@ -59,6 +61,7 @@ class Corellium(Driver):
         self._api = ApiClient(api_host, api_token)
 
         self.children['power'] = CorelliumPower(parent=self)
+        self.children['serial'] = CorelliumConsole(parent=self, url='')
 
     def get_env_var(self, name: str) -> str:
         """
@@ -200,4 +203,50 @@ class CorelliumPower(VirtualPowerInterface, Driver):
 
     @export
     def read(self) -> AsyncGenerator[PowerReading, None]:
+        pass
+
+
+@dataclass(kw_only=True)
+class CorelliumConsole(WebsocketNetwork):
+    """
+    A serial console driver that uses a network websocket to connect
+    to the remote virtual instance console.
+    """
+    parent: Corellium
+    baudrate: int = field(default=115200)
+
+    @classmethod
+    def client(cls) -> str:
+        """
+        Use pyserial client to re-use its console implementation.
+        """
+        return "jumpstarter_driver_pyserial.client.PySerialClient"
+
+    @property
+    def url(self) -> str:
+        """
+        Retrieve console url from Corellium's API to be used by
+        other drivers, such as the PySerial one.
+
+        Overwrites the parent's url property so the required
+        API calls are only invoked when the property is used.
+        """
+        project = self.parent.api.get_project(self.parent.project_id)
+        if project is None:
+            raise ValueError(f"Unable to fetch project: {self.parent.project_id}")
+
+        # get instance and fail if instance does not exist
+        instance = self.parent.api.get_instance(self.parent.device_name)
+        if instance is None:
+            raise ValueError("Instance does not exist or is powered off")
+
+        console_id = self.parent.api.get_instance_console_id(instance, self.parent.console_name)
+        if console_id is None:
+            raise ValueError("Console ID not found for \"{self.patent.console_name}\"")
+        console_url = self.parent.api.get_instance_console_url(instance, console_id)
+
+        return console_url
+
+    @url.setter
+    def url(self, value: str) -> None:
         pass

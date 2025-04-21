@@ -1,5 +1,4 @@
 import sys
-import traceback
 
 import asyncclick as click
 from jumpstarter_cli_common.config import opt_config
@@ -11,9 +10,8 @@ async def _serve_with_exc_handling(exporter):
     try:
         await exporter.serve()
     except* Exception as excgroup:
-        print(f"Exception while serving on the exporter: {excgroup.exceptions}", file=sys.stderr)
         for exc in excgroup.exceptions:
-            traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+            print(f"Exception while serving on the exporter: {exc}", file=sys.stderr)
         result = 1
     return result
 
