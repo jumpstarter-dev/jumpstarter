@@ -4,7 +4,7 @@ import pytest
 
 from .corellium.exceptions import CorelliumApiException
 from .corellium.types import Device, Instance, Project, Session
-from .driver import Corellium, CorelliumPower
+from .driver import Corellium, CorelliumConsole, CorelliumPower
 from jumpstarter.common import exceptions as jmp_exceptions
 
 
@@ -154,3 +154,50 @@ def test_driver_power_off_error(monkeypatch, mock_data):
               patch.object(root._api, 'destroy_instance',
                            **mock_data.get('destroy_instance', {'return_value': instance}))):
             power.off()
+
+
+def test_driver_console_get_url_ok(monkeypatch):
+    monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
+    monkeypatch.setenv('CORELLIUM_API_TOKEN', 'api-token')
+
+    project = Project('1', 'Default Project')
+    instance = Instance(id='7f4f241c-821f-4219-905f-c3b50b0db5dd', state='on')
+    root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
+    console = CorelliumConsole(parent=root, url='')
+
+    with (patch.object(root._api, 'login', return_value=None),
+          patch.object(root._api, 'get_project', return_value=project),
+          patch.object(root._api, 'get_instance', return_value=instance),
+          patch.object(root._api, 'get_instance_console_id', return_value='uart7-cons'),
+          patch.object(root._api, 'get_instance_console_url', return_value='wss://mock')):
+        assert 'wss://mock' == console.url
+
+
+@pytest.mark.parametrize('mock_data',[
+    ({'login': {'side_effect': CorelliumApiException('login error')}}),
+    ({'get_project': {'return_value': None}}),
+    ({'get_instance': {'return_value': None}}),
+    ({'get_instance_console_id': {'side_effect': ValueError('x')}}),
+    ({'get_instance_console_url': {'side_effect': ValueError('x')}})
+])
+def test_driver_console_get_url_error(monkeypatch, mock_data):
+    monkeypatch.setenv('CORELLIUM_API_HOST', 'api-host')
+    monkeypatch.setenv('CORELLIUM_API_TOKEN', 'api-token')
+
+    project = Project('1', 'Default Project')
+    instance = Instance(id='7f4f241c-821f-4219-905f-c3b50b0db5dd', state='on')
+    root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
+    console = CorelliumConsole(parent=root, url='')
+
+    with pytest.raises((CorelliumApiException, ValueError)):
+        with (patch.object(root._api, 'login',
+                           **mock_data.get('login', {'return_value': None})),
+              patch.object(root._api, 'get_project',
+                           **mock_data.get('get_project', {'return_value': project})),
+              patch.object(root._api, 'get_instance',
+                           **mock_data.get('get_instance', {'side_effect': [instance, None]})),
+              patch.object(root._api, 'get_instance_console_id',
+                           **mock_data.get('get_instance_console_id', {'return_value': 'uart7-cons'})),
+              patch.object(root._api, 'get_instance_console_id',
+                           **mock_data.get('get_instance_console_url', {'return_value': 'ws://mock'}))):
+            assert console.url

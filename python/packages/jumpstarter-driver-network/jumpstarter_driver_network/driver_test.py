@@ -3,12 +3,13 @@ import socket
 import subprocess
 import sys
 from shutil import which
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from anyio.from_thread import start_blocking_portal
 
 from .adapters import TcpPortforwardAdapter, UnixPortforwardAdapter
-from .driver import DbusNetwork, TcpNetwork, UdpNetwork, UnixNetwork
+from .driver import DbusNetwork, TcpNetwork, UdpNetwork, UnixNetwork, WebsocketNetwork
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.utils import serve
 
@@ -141,3 +142,14 @@ def test_dbus_network_session(monkeypatch):
                 stderr=subprocess.PIPE,
             )
         assert oldvar == os.getenv("DBUS_SESSION_BUS_ADDRESS")
+
+
+@pytest.mark.asyncio
+async def test_websocket_network_connect():
+    ws = AsyncMock()
+    ws.__aenter__.return_value = ws
+
+    with patch("websockets.connect", return_value=ws) as m:
+        client =  WebsocketNetwork(url="ws://localhost/something")
+        async with client.connect():
+            m.assert_called_once_with("ws://localhost/something")
