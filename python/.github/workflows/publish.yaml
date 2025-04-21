@@ -30,6 +30,6 @@ jobs:
         run: make build
 
       - name: Create release
-        run: gh release create v$(uvx hatch version) dist/* --generate-notes --prerelease
+        run: gh release create v$(uvx --with hatch-vcs hatch version) dist/* --generate-notes --prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
