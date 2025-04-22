@@ -11,7 +11,8 @@ def j():
 
         @handle_exceptions
         def cli():
-            client.cli()(standalone_mode=False)
+            with client.log_stream():
+                client.cli()(standalone_mode=False)
 
         try:
             cli()
