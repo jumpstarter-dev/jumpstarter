@@ -22,6 +22,7 @@ Drivers that control the power state and basic operation of devices:
 * **[DUT Link](dutlink.md)** (`jumpstarter-driver-dutlink`) - [DUT Link
   Board](https://github.com/jumpstarter-dev/dutlink-board) hardware control
 * **[Energenie PDU](energenie.md)** (`jumpstarter-driver-energenie`) - Energenie PDUs
+* **[Tasmota](tasmota.md)** (`jumpstarter-driver-tasmota`) - Tasmota hardware control
 
 ### Communication Drivers
 
@@ -93,6 +94,7 @@ raspberrypi.md
 sdwire.md
 shell.md
 snmp.md
+tasmota.md
 tftp.md
 uboot.md
 ustreamer.md
