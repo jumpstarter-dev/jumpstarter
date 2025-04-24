@@ -5,7 +5,7 @@ on:
   merge_group:
 
 env:
-  PUSH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+  PUSH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release-') }}
   REGISTRY: quay.io
   QUAY_ORG: quay.io/jumpstarter-dev
 
@@ -50,9 +50,16 @@ jobs:
         id: set-tags
         run: |
           TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
           fi
+
+          if [[ "${{ github.ref }}" == refs/heads/release-* ]]; then
+            RELEASE_BRANCH_NAME=$(basename "${{ github.ref }}")
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${RELEASE_BRANCH_NAME}"
+          fi
+
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
