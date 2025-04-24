@@ -33,7 +33,7 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
 from jumpstarter.common.utils import serve
 
 instance = serve(
-    ExporterConfigV1Alpha1DriverInstance.from_path("source/api-reference/drivers/opendal.yaml"
+    ExporterConfigV1Alpha1DriverInstance.from_path("source/reference/package-apis/drivers/opendal.yaml"
 ).instantiate())
 
 opendal = instance.__enter__()

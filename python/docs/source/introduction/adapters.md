@@ -84,7 +84,7 @@ When working with adapters, follow these best practices:
 ```{testcode}
 from contextlib import contextmanager
 import socket
-import threadings
+import threading
 from typing import Tuple, Any
 
 class TcpPortforwardAdapter:
