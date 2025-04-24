@@ -1,6 +1,8 @@
 # U-Boot driver
 
-`jumpstarter-driver-uboot` provides functionality for interacting with the U-Boot bootloader. This driver does not interact with the DUT directly, instead it should be configured with backing power and serial drivers.
+`jumpstarter-driver-uboot` provides functionality for interacting with the
+U-Boot bootloader. This driver does not interact with the DUT directly, instead
+it should be configured with backing power and serial drivers.
 
 ## Installation
 
