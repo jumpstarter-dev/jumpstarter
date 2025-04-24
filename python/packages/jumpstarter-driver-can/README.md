@@ -1,6 +1,7 @@
 # CAN driver
 
-`jumpstarter-driver-can` provides functionality for interacting with CAN bus connections.
+`jumpstarter-driver-can` provides functionality for interacting with CAN bus
+connections.
 
 ## Installation
 

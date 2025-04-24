@@ -35,7 +35,8 @@ export:
 
 ## API Reference
 
-Assuming the exporter driver is configured as in the example above, the client methods will be generated dynamically, and they will be available as follows:
+Assuming the exporter driver is configured as in the example above, the client
+methods will be generated dynamically, and they will be available as follows:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_shell.client.ShellClient

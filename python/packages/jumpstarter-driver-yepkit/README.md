@@ -1,6 +1,7 @@
 # Yepkit driver
 
-`jumpstarter-driver-yepkit` provides functionality for interacting with Yepkit products.
+`jumpstarter-driver-yepkit` provides functionality for interacting with Yepkit
+products.
 
 ## Installation
 

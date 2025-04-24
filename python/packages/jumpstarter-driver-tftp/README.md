@@ -1,6 +1,7 @@
 # TFTP driver
 
-`jumpstarter-driver-tftp` provides functionality for a read-only TFTP server that can be used to serve files.
+`jumpstarter-driver-tftp` provides functionality for a read-only TFTP server
+that can be used to serve files.
 
 ## Installation
 

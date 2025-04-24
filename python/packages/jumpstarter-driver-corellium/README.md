@@ -1,6 +1,7 @@
 # Corellium Driver
 
-`jumpstarter-driver-corellium` provides functionality for interacting with [Corellium](https://corellium.com) virtualization platform.
+`jumpstarter-driver-corellium` provides functionality for interacting with
+[Corellium](https://corellium.com) virtualization platform.
 
 ## Installation
 

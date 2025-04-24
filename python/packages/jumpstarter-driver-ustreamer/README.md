@@ -1,6 +1,8 @@
 # Ustreamer driver
 
-`jumpstarter-driver-ustreamer` provides functionality for using the ustreamer video streaming server driven by the jumpstarter exporter. This driver takes a video device and exposes both snapshot and streaming interfaces.
+`jumpstarter-driver-ustreamer` provides functionality for using the ustreamer
+video streaming server driven by the jumpstarter exporter. This driver takes a
+video device and exposes both snapshot and streaming interfaces.
 
 ## Installation
 
