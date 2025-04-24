@@ -5,7 +5,6 @@ import os
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from typing import Dict, Optional
 
 from jumpstarter_driver_network.driver import WebsocketNetwork
@@ -81,26 +80,10 @@ class Corellium(Driver):
         return value
 
     @property
-    def api(self):
+    def api(self) -> ApiClient:
         """
-        Return the internal Corellium API client instance from `self._api`.
-
-        It will also be responsible for creating/refreshing the session token used
-        across different API methods that require authentication.
+        Return the Corellium API client object.
         """
-        # session does not exist, just login and return
-        if self._api.session is None:
-            self._api.login()
-
-            return self._api
-
-        # check if session is about to expire
-        # currently depends on the magic number of 60 seconds
-        now = datetime.utcnow()
-        diff = datetime.strptime(self._api.session.expiration, '%Y-%m-%dT%H:%M:%S.%fZ') - now
-        if diff > timedelta(seconds=1):
-            self._api.login()
-
         return self._api
 
 
