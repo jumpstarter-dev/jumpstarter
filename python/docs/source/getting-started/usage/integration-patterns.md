@@ -7,7 +7,7 @@ Jumpstarter integrates with various tools and platforms across the hardware
 development lifecycle:
 
 - **Infrastructure**: Kubernetes, Prometheus, Grafana
-- **Developmener Environments**: IDE, scripts, GitHub Actions, GitLab CI, Tekton
+- **Developer Environments**: IDE, scripts, GitHub Actions, GitLab CI, Tekton
 - **Testing Frameworks**: pytest, unittest, Robot Framework
 
 ## Infrastructure
