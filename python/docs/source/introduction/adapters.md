@@ -66,7 +66,7 @@ Adapters typically implement the context manager protocol (`__enter__` and
 This allows adapters to be used in `with` statements for clean, deterministic
 resource handling.
 
-When working with adapters, follow these best practices:
+When working with adapters, follow these recommended practices:
 
 1. **Always use context managers** (`with` statements) to ensure proper resource
    cleanup and prevent resource leaks
