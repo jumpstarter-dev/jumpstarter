@@ -1,4 +1,4 @@
-# ![bolt]assets/bolt.svg) Jumpstarter
+# ![bolt](assets/bolt.svg) Jumpstarter
 
 [![Matrix](https://img.shields.io/matrix/jumpstarter%3Amatrix.org?color=blue)](https://matrix.to/#/#jumpstarter:matrix.org)
 [![Etherpad](https://img.shields.io/badge/Etherpad-Notes-blue?logo=etherpad)](https://etherpad.jumpstarter.dev/pad-lister)
