@@ -278,7 +278,7 @@ class GenericClient(DriverClient):
 modules["example"] = SimpleNamespace(GenericClient=GenericClient)
 
 with serve(GenericDriver()) as client:
-    print(client.query("test"))
+    assert client.query("test") == "Response for test"
     assert client.async_query("async test") == "Async response for async test"
     data = list(client.get_data())
     assert len(data) == 3
