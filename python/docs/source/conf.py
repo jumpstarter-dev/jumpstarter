@@ -42,7 +42,7 @@ mermaid_version = "10.9.1"
 
 suppress_warnings = [
     "ref.class",  # suppress unresolved Python class references (external references
-                 # are warnings otherwise)
+    # are warnings otherwise)
 ]
 
 # -- Options for HTML output -------------------------------------------------

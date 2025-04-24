@@ -1,1 +1,0 @@
-../../../../packages/jumpstarter-driver-qemu/README.md

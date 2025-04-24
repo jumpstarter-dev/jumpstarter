@@ -1,15 +1,22 @@
-# Getting Started Guides
+# Getting Started
 
-This section provides guides to help you set up Jumpstarter and test your software on real hardware. Whether you're a beginner or an experienced user, these guides will help you get up and running quickly.
+This section provides hands-on guides to start using Jumpstarter in your own
+environment. The guides cover:
 
-The following pages will guide you through the setup process:
+- [Installation](installation/index.md): Setting up Jumpstarter packages and
+  services
+- [Configuration](configuration/index.md): Configuring clients, exporters, and
+  authentication
+- [Usage](usage/index.md): Running your first tests and integrating with your
+  development workflow
 
-* **[Setup Local Exporter](setup-local-exporter.md)** - Setting up Jumpstarter with a local exporter
-* **[Setup Exporter Client](setup-exporter-client.md)** - Configuring and using the exporter client
+These guides support both local-mode for individual development and
+distributed-mode for team environments with shared hardware resources.
 
 ```{toctree}
 :maxdepth: 1
 :hidden:
-setup-local-exporter.md
-setup-exporter-client.md
+installation/index.md
+configuration/index.md
+usage/index.md
 ```

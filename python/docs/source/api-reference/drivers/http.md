@@ -1,1 +1,0 @@
-../../../../packages/jumpstarter-driver-http/README.md
