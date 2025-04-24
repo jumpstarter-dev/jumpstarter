@@ -1,18 +1,30 @@
 # Contributing
 
-Thank you for your interest in contributing to Jumpstarter! This document outlines the process for contributing to the project and provides guidelines to make the contribution process smooth.
+Thank you for your interest in contributing to Jumpstarter! This document
+outlines the process for contributing to the project and provides guidelines to
+make the contribution process smooth.
 
 ## Getting Help
 
-If you have questions or need help, here are the best ways to connect with the community:
+If you have questions or need help, here are the best ways to connect with the
+community:
 
 ### Community Resources
 
-- **Matrix Chat**: Join our [Matrix community](https://matrix.to/#/#jumpstarter:matrix.org) for real-time discussions and support
-- **Weekly Meetings**: Participate in our [weekly community meetings](https://meet.google.com/gzd-hhbd-hpu) to discuss development and get help
-- **Etherpad**: Check our [Etherpad](https://etherpad.jumpstarter.dev/pad-lister) for meeting notes and collaborative documentation
-- **GitHub Issues**: [Open an issue](https://github.com/jumpstarter-dev/jumpstarter/issues) in the repository for bug reports and feature requests
-- **Documentation**: Visit our [documentation](https://jumpstarter.dev/) for comprehensive guides and tutorials
+- **Matrix Chat**: Join our [Matrix
+  community](https://matrix.to/#/#jumpstarter:matrix.org) for real-time
+  discussions and support
+- **Weekly Meetings**: Participate in our [weekly community
+  meetings](https://meet.google.com/gzd-hhbd-hpu) to discuss development and get
+  help
+- **Etherpad**: Check our
+  [Etherpad](https://etherpad.jumpstarter.dev/pad-lister) for meeting notes and
+  collaborative documentation
+- **GitHub Issues**: [Open an
+  issue](https://github.com/jumpstarter-dev/jumpstarter/issues) in the
+  repository for bug reports and feature requests
+- **Documentation**: Visit our [documentation](https://jumpstarter.dev/) for
+  comprehensive guides and tutorials
 
 ## Code of Conduct
 
@@ -30,11 +42,8 @@ Please be respectful and considerate of others when contributing to the project.
 ## Development Setup
 
 ```shell
-# Install dependencies
-make sync
-
-# Run tests
-make test
+$ make sync
+$ make test
 ```
 
 ## Contribution Guidelines
@@ -63,22 +72,26 @@ make test
 
 ### Code Contributions
 
-We welcome contributions to the core codebase, including bug fixes, features, and improvements.
+We welcome contributions to the core codebase, including bug fixes, features,
+and improvements.
 
 ### Contributing Drivers
 
-If you are working on a driver or adapter library of general interest, please consider submitting it to this repository, as it will become available to all Jumpstarter users.
+If you are working on a driver or adapter library of general interest, please
+consider submitting it to this repository, as it will become available to all
+Jumpstarter users.
 
 To create a new driver scaffold, you can use the `create_driver.sh` script:
 
 ```shell
-./__templates__/create_driver.sh vendor_name driver_name "Your Name" "your.email@example.com"
+$ ./__templates__/create_driver.sh vendor_name driver_name "Your Name" "your.email@example.com"
 ```
 
-This will create the necessary files and structure for your driver in the `packages/` directory. For example:
+This will create the necessary files and structure for your driver in the
+`packages/` directory. For example:
 
 ```shell
-./__templates__/create_driver.sh yepkit Ykush "Your Name" "your.email@example.com"
+$ ./__templates__/create_driver.sh yepkit Ykush "Your Name" "your.email@example.com"
 ```
 
 Creates:
@@ -97,7 +110,8 @@ packages/jumpstarter_driver_yepkit/examples/exporter.yaml
 
 A Jumpstarter driver typically consists of:
 
-1. **Driver Implementation**: The core functionality that interfaces with the device or service
+1. **Driver Implementation**: The core functionality that interfaces with the
+   device or service
 2. **Client Implementation**: Client code to interact with the driver
 3. **Tests**: Tests to verify the driver's functionality
 4. **Examples**: Example configurations showing how to use the driver
@@ -105,13 +119,16 @@ A Jumpstarter driver typically consists of:
 
 #### Private Drivers
 
-If you are creating a driver or adapter library for a specific need, not of general interest, or that needs to be private, please consider forking our [jumpstarter-driver-template](https://github.com/jumpstarter-dev/jumpstarter-driver-template).
+If you are creating a driver or adapter library for a specific need, not of
+general interest, or that needs to be private, please consider forking our
+[jumpstarter-driver-template](https://github.com/jumpstarter-dev/jumpstarter-driver-template).
 
 #### Driver Development Workflow
 
 After creating your driver skeleton:
 
-1. Implement the driver functionality according to the Jumpstarter driver interface
+1. Implement the driver functionality according to the Jumpstarter driver
+   interface
 2. Write comprehensive tests for your driver
 3. Create example configurations
 4. Document the setup and usage in the README.md
@@ -122,10 +139,9 @@ After creating your driver skeleton:
 To test your driver during development:
 
 ```shell
-# From the project root
-make sync  # Synchronize dependencies
-cd packages/your_driver_package
-pytest     # Run tests for your driver
+$ make sync
+$ cd packages/your_driver_package
+$ pytest
 ```
 
 #### Driver Best Practices
@@ -142,11 +158,14 @@ We welcome improvements to our documentation.
 
 #### Documentation System Overview
 
-Jumpstarter uses [Sphinx](https://www.sphinx-doc.org/en/master/) with Markdown support for its documentation. The documentation is organized into various sections covering different aspects of the project.
+Jumpstarter uses [Sphinx](https://www.sphinx-doc.org/en/master/) with Markdown
+support for its documentation. The documentation is organized into various
+sections covering different aspects of the project.
 
 #### Setting Up Documentation Environment
 
-To contribute to the documentation, you'll need to set up your development environment:
+To contribute to the documentation, you'll need to set up your development
+environment:
 
 1. Clone the Jumpstarter repository
 2. Navigate to the docs directory
@@ -157,12 +176,11 @@ To contribute to the documentation, you'll need to set up your development envir
 To build and preview the documentation locally:
 
 ```shell
-cd docs
-make html      # Build HTML documentation
-make docs-serve # Serve documentation locally for preview
+$ make docs-serve
 ```
 
-The documentation will be available at http://localhost:8000 in your web browser.
+The documentation will be available at http://localhost:8000 in your web
+browser.
 
 #### Documentation Structure
 
@@ -174,7 +192,8 @@ The documentation will be available at http://localhost:8000 in your web browser
 
 #### Writing Documentation
 
-Documentation is written in Markdown with some Sphinx-specific extensions. Common syntax includes:
+Documentation is written in Markdown with some Sphinx-specific extensions.
+Common syntax includes:
 
 ```markdown
 # Heading 1
@@ -203,10 +222,8 @@ This is a warning admonition
 ```
 
 ```python
-# This is a code block
 def example():
-    print("Hello, world!")
-```
+    print("This is a code block")
 ```
 
 #### Documentation Style Guide

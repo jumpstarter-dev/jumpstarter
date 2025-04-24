@@ -40,18 +40,14 @@ export:
       port: "1"
 ```
 
-flasher drivers require four children drivers: | Child Driver | Description |
-Auto-created | | ------------ |
----------------------------------------------------------------------------------
-| ------------ | | serial       | To communicate with the DUT via serial and
-drive the bootloader and busybox shell | No           | | power        | To
-power on and off the DUT                                                       |
-No           | | tftp         | To serve binaries via TFTP | Yes          | |
-http         | To serve the images via HTTP | Yes          |
+flasher drivers require four children drivers:
 
-In the above example we provide the serial and power children by
-[reference](./proxy.md), so those remain also available on the root of the
-exporter.
+| Child Driver | Description                                                                       | Auto-created |
+| ------------ | --------------------------------------------------------------------------------- | ------------ |
+| serial       | To communicate with the DUT via serial and drive the bootloader and busybox shell | No           |
+| power        | To power on and off the DUT                                                       | No           |
+| tftp         | To serve binaries via TFTP                                                        | Yes          |
+| http         | To serve the images via HTTP                                                      | Yes          |
 
 The power driver is used to control power cycling of the DUT, and the serial
 interface is used to communicate with the DUT bootloader via serial. TFTP and
@@ -253,7 +249,8 @@ with flasherclient.bootloader_shell() as serial:
     print(serial.before)
 ```
 
-# oci-bundles
+## oci-bundles
+
 The flasher drivers require some artifacts and basic information about the
 target device to operate. To make this easy to distribute and use, we use OCI
 bundles to package the artifacts and metadata.
@@ -265,10 +262,12 @@ artifacts and metadata. It is a container that contains the following:
 
 ## The format of the manifest is as follows:
 
-```{literalinclude} ../../../../packages/jumpstarter-driver-flashers/oci_bundles/test/manifest.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/test/manifest.yaml
 :language: yaml
 ```
+
 ## Table with the spec fields of the manifest:
+
 | Field                | Description                                                                | Default |
 | -------------------- | -------------------------------------------------------------------------- | ------- |
 | `manufacturer`       | Name of the device manufacturer                                            |         |
@@ -282,20 +281,19 @@ artifacts and metadata. It is a container that contains the following:
 | `login.password`     | Password for login, leave empty if not needed                              |         |
 | `login.prompt`       | Shell prompt after successful login                                        | #       |
 | `preflash_commands`  | List of commands to run before flashing, useful to clear boot entries, etc |         |
-| `kernel.file`        | Path to kernel image within bundle                                         |
+| `kernel.file`        | Path to kernel image within bundle                                         |         |
 | `kernel.address`     | Memory address to load kernel to                                           |         |
 | `initram.file`       | Path to initramfs within bundle (if any)                                   |         |
 | `initram.address`    | Memory address to load initramfs to (if any)                               |         |
 | `dtb.default`        | Default DTB variant to use                                                 |         |
 | `dtb.address`        | Memory address to load DTB to                                              |         |
-| `dtb.variants`       | Map of DTB variant names to files                                          |
-
+| `dtb.variants`       | Map of DTB variant names to files                                          |         |
 
 ## Examples
 
 An example bundle for the TI J784S4XEVM looks like this:
 
-```{literalinclude} ../../../../packages/jumpstarter-driver-flashers/oci_bundles/ti_j784s4xevm/manifest.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/ti_j784s4xevm/manifest.yaml
 :language: yaml
 ```
 
