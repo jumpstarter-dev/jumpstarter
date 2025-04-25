@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from .corellium.exceptions import CorelliumApiException
-from .corellium.types import Device, Instance, Project, Session
+from .corellium.types import Device, Instance, Project
 from .driver import Corellium, CorelliumConsole, CorelliumPower
 from jumpstarter.common import exceptions as jmp_exceptions
 
@@ -18,8 +18,8 @@ def test_driver_corellium_init_ok(monkeypatch):
     assert 'jmp'  == c.device_name
     assert 'kronos' == c.device_flavor
     assert '1.0' == c.device_os
-    assert 'api-host'  == c._api.host
-    assert 'api-token' == c._api.token
+    assert 'api-host'  == c.api.host
+    assert 'api-token' == c.api.token
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,7 @@ def test_driver_api_client_ok(monkeypatch, requests_mock):
 
     c = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
 
-    assert Session('token', '2022-03-20T01:50:10.000Z') == c.api.session
+    assert c.api.req.headers['Authorization'] == 'Bearer api-token'
 
 
 def test_driver_power_on_ok(monkeypatch):
@@ -77,16 +77,14 @@ def test_driver_power_on_ok(monkeypatch):
     root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
     power = CorelliumPower(parent=root)
 
-    with (patch.object(root._api, 'login', return_value=None),
-          patch.object(root._api, 'get_project', return_value=project),
-          patch.object(root._api, 'get_device', return_value=device),
-          patch.object(root._api, 'get_instance', side_effect=[None, instance]),
-          patch.object(root._api, 'create_instance', return_value=instance)):
+    with (patch.object(root.api, 'get_project', return_value=project),
+          patch.object(root.api, 'get_device', return_value=device),
+          patch.object(root.api, 'get_instance', side_effect=[None, instance]),
+          patch.object(root.api, 'create_instance', return_value=instance)):
         power.on()
 
 
 @pytest.mark.parametrize('mock_data', [
-    ({'login': {'side_effect': CorelliumApiException('login error')}}),
     ({'get_project': {'return_value': None}}),
     ({'get_instance': {'return_value': None}}),
     ({'create_instance': {'side_effect': CorelliumApiException('create error')}}),
@@ -101,15 +99,13 @@ def test_driver_power_on_error(monkeypatch, mock_data):
     power = CorelliumPower(parent=root)
 
     with pytest.raises((CorelliumApiException, ValueError)):
-        with (patch.object(root._api, 'login',
-                           **mock_data.get('login', {'return_value': None})),
-              patch.object(root._api, 'get_project',
+        with (patch.object(root.api, 'get_project',
                            **mock_data.get('get_project', {'return_value': project})),
-              patch.object(root._api, 'get_instance',
+              patch.object(root.api, 'get_instance',
                            **mock_data.get('get_instance', {'return_value': instance})),
-              patch.object(root._api, 'create_instance',
+              patch.object(root.api, 'create_instance',
                            **mock_data.get('create_instance', {'return_value': instance}))):
-            power.off()
+            power.on()
 
 
 def test_driver_power_off_ok(monkeypatch):
@@ -121,16 +117,14 @@ def test_driver_power_off_ok(monkeypatch):
     root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
     power = CorelliumPower(parent=root)
 
-    with (patch.object(root._api, 'login', return_value=None),
-          patch.object(root._api, 'get_project', return_value=project),
-          patch.object(root._api, 'set_instance_state', return_value=None),
-          patch.object(root._api, 'get_instance',
+    with (patch.object(root.api, 'get_project', return_value=project),
+          patch.object(root.api, 'set_instance_state', return_value=None),
+          patch.object(root.api, 'get_instance',
                        side_effect=[instance, Instance(id=instance.id, state='off')])):
         power.off()
 
 
 @pytest.mark.parametrize('mock_data',[
-    ({'login': {'side_effect': CorelliumApiException('login error')}}),
     ({'get_project': {'return_value': None}}),
     ({'get_instance': {'return_value': None}}),
     ({'destroy_instance': {'side_effect': CorelliumApiException('destroy error')}}),
@@ -145,13 +139,11 @@ def test_driver_power_off_error(monkeypatch, mock_data):
     power = CorelliumPower(parent=root)
 
     with pytest.raises((CorelliumApiException, ValueError)):
-        with (patch.object(root._api, 'login',
-                           **mock_data.get('login', {'return_value': None})),
-              patch.object(root._api, 'get_project',
+        with (patch.object(root.api, 'get_project',
                            **mock_data.get('get_project', {'return_value': project})),
-              patch.object(root._api, 'get_instance',
+              patch.object(root.api, 'get_instance',
                            **mock_data.get('get_instance', {'side_effect': [instance, None]})),
-              patch.object(root._api, 'destroy_instance',
+              patch.object(root.api, 'destroy_instance',
                            **mock_data.get('destroy_instance', {'return_value': instance}))):
             power.off()
 
@@ -165,16 +157,14 @@ def test_driver_console_get_url_ok(monkeypatch):
     root = Corellium(project_id='1', device_name='jmp', device_flavor='kronos', device_os='1.0')
     console = CorelliumConsole(parent=root, url='')
 
-    with (patch.object(root._api, 'login', return_value=None),
-          patch.object(root._api, 'get_project', return_value=project),
-          patch.object(root._api, 'get_instance', return_value=instance),
-          patch.object(root._api, 'get_instance_console_id', return_value='uart7-cons'),
-          patch.object(root._api, 'get_instance_console_url', return_value='wss://mock')):
+    with (patch.object(root.api, 'get_project', return_value=project),
+          patch.object(root.api, 'get_instance', return_value=instance),
+          patch.object(root.api, 'get_instance_console_id', return_value='uart7-cons'),
+          patch.object(root.api, 'get_instance_console_url', return_value='wss://mock')):
         assert 'wss://mock' == console.url
 
 
 @pytest.mark.parametrize('mock_data',[
-    ({'login': {'side_effect': CorelliumApiException('login error')}}),
     ({'get_project': {'return_value': None}}),
     ({'get_instance': {'return_value': None}}),
     ({'get_instance_console_id': {'side_effect': ValueError('x')}}),
@@ -190,14 +180,12 @@ def test_driver_console_get_url_error(monkeypatch, mock_data):
     console = CorelliumConsole(parent=root, url='')
 
     with pytest.raises((CorelliumApiException, ValueError)):
-        with (patch.object(root._api, 'login',
-                           **mock_data.get('login', {'return_value': None})),
-              patch.object(root._api, 'get_project',
+        with (patch.object(root.api, 'get_project',
                            **mock_data.get('get_project', {'return_value': project})),
-              patch.object(root._api, 'get_instance',
+              patch.object(root.api, 'get_instance',
                            **mock_data.get('get_instance', {'side_effect': [instance, None]})),
-              patch.object(root._api, 'get_instance_console_id',
+              patch.object(root.api, 'get_instance_console_id',
                            **mock_data.get('get_instance_console_id', {'return_value': 'uart7-cons'})),
-              patch.object(root._api, 'get_instance_console_id',
+              patch.object(root.api, 'get_instance_console_id',
                            **mock_data.get('get_instance_console_url', {'return_value': 'ws://mock'}))):
             assert console.url
