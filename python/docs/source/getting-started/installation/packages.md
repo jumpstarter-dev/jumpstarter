@@ -22,7 +22,7 @@ Install the Python package using `pip` or a similar tool. You need Python
 
 ```shell
 $ pip3 install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-all
-$ mkdir -p "${XDG_CONFIG_DIRS}/.config/jumpstarter/"
+$ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
 ```
 
@@ -49,7 +49,7 @@ $ git clone https://github.com/jumpstarter-dev/jumpstarter.git
 $ cd jumpstarter
 $ rm .python-version
 $ make sync
-$ mkdir -p "${XDG_CONFIG_DIRS}/.config/jumpstarter/"
+$ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
 ```
 
@@ -71,7 +71,7 @@ alias to your shell profile for persistent use:
 :substitutions:
 $ alias jmp='podman run --rm -it -w /home \
     -v "$(pwd):/home":z \
-    -v "${XDG_CONFIG_DIRS}/.config/jumpstarter/:/root/.config/jumpstarter":z \
+    -v "${HOME}/.config/jumpstarter/:/root/.config/jumpstarter":z \
     quay.io/jumpstarter-dev/jumpstarter:{{version}} jmp'
 ```
 
@@ -82,9 +82,9 @@ typically requires `root` privileges:
 
 ```{code-block} shell
 :substitutions:
-$ mkdir -p "${XDG_CONFIG_DIRS}/.config/jumpstarter/" /etc/jumpstarter
+$ mkdir -p "${HOME}/.config/jumpstarter/" /etc/jumpstarter
 $ alias jmp='podman run --rm -it \
-    -v "${XDG_CONFIG_DIRS}/.config/jumpstarter/:/root/.config/jumpstarter":z \
+    -v "${HOME}/.config/jumpstarter/:/root/.config/jumpstarter":z \
     --net=host --privileged \
     -v /run/udev:/run/udev -v /dev:/dev -v /etc/jumpstarter:/etc/jumpstarter:z \
     quay.io/jumpstarter-dev/jumpstarter:{{version}} jmp'

@@ -75,7 +75,7 @@ Create a client to connect to your new exporter using the `jmp admin` CLI:
 
 The following command creates a client named "hello", enables unsafe drivers for
 development purposes, and saves the configuration locally in
-`${XDG_CONFIG_DIRS}/.config/jumpstarter/clients/`:
+`${HOME}/.config/jumpstarter/clients/`:
 
 ```shell
 $ jmp admin create client hello --save --unsafe
