@@ -41,8 +41,6 @@ Jumpstarter undergoes active development with frequent feature additions. We
 conduct thorough testing and recommend installing the latest version from the
 `main` branch.
 
-You'll need these tools:
-
 ```shell
 $ sudo dnf install -y uv make git
 $ git clone https://github.com/jumpstarter-dev/jumpstarter.git
