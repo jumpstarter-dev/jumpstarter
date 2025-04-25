@@ -3,24 +3,24 @@ from typing import Optional
 import requests
 
 from .exceptions import CorelliumApiException
-from .types import Device, Instance, Project, Session
+from .types import Device, Instance, Project
 
 
 class ApiClient:
     """
     Corellium ReST API client used by the Corellium driver.
     """
-    session: Session
     req: requests.Session
 
     def __init__(self, host: str, token: str) -> None:
         """
-        Initializes a new client, containing a
+        Initializes a new client using the API token
+        in all HTTP requests.
         """
         self.host = host
         self.token = token
-        self.session = None
         self.req = requests.Session()
+        self.req.headers.update({'Authorization': f'Bearer {self.token}'})
 
     @property
     def baseurl(self) -> str:
@@ -28,32 +28,6 @@ class ApiClient:
         Return the baseurl path for API calls.
         """
         return f'https://{self.host}/api'
-
-    def login(self) -> None:
-        """
-        Login against Corellium's ReST API.
-
-        Set an internal Session object instance to be used
-        in other API calls that require authentication.
-
-        It uses the global requests objects so a new session can be generated.
-        """
-        data = None
-        req_data = {
-            'apiToken': self.token
-        }
-
-        try:
-            res = requests.post(f'{self.baseurl}/v1/auth/login', json=req_data)
-            data = res.json()
-            res.raise_for_status()
-        except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
-            msgerr = data.get('error') if data is not None else str(e)
-
-            raise CorelliumApiException(msgerr) from e
-
-        self.session = Session(**data)
-        self.req.headers.update(self.session.as_header())
 
     def get_project(self, project_ref: str = 'Default Project') -> Optional[Project]:
         """
