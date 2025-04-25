@@ -11,7 +11,7 @@ precedence (highest to lowest):
 1. **Command-line arguments** - Highest priority, override all other settings
 2. **Environment variables** - Override file-based configurations
 3. **User configuration files** - Located in
-   `${XDG_CONFIG_DIRS}/.config/jumpstarter/`
+   `${HOME}/.config/jumpstarter/`
 4. **System configuration files** - Located in `/etc/jumpstarter/`
 
 ## Client Configuration Hierarchy
@@ -22,9 +22,9 @@ For client operations, Jumpstarter processes configurations in this order:
 2. **Environment variables** such as `JMP_ENDPOINT`, `JMP_TOKEN`, or
    `JMP_CLIENT_CONFIG`
 3. **Current client** defined in
-   `${XDG_CONFIG_DIRS}/.config/jumpstarter/config.yaml`
+   `${HOME}/.config/jumpstarter/config.yaml`
 4. **Specific client file** in
-   `${XDG_CONFIG_DIRS}/.config/jumpstarter/clients/<n>.yaml`
+   `${HOME}/.config/jumpstarter/clients/<n>.yaml`
 
 ## Exporter Configuration Hierarchy
 
@@ -40,7 +40,7 @@ For exporter operations, Jumpstarter processes configurations in this order:
 Here's a practical example of how configuration overrides work:
 
 1. You create a client configuration file at
-   `${XDG_CONFIG_DIRS}/.config/jumpstarter/clients/default.yaml`:
+   `${HOME}/.config/jumpstarter/clients/default.yaml`:
 
    ```yaml
    endpoint: "jumpstarter1.my-lab.com:1443"
