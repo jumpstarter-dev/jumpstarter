@@ -27,7 +27,14 @@ development workflows and deployment environments. It enables you to test your
 software stack consistently across both real hardware and virtual environments
 using cloud native principles. See Jumpstarter in action:
 
-<script src="https://asciinema.org/a/xhJLxvKMsF8r8Sb7o2EIURufU.js" id="asciicast-xhJLxvKMsF8r8Sb7o2EIURufU" async="true" data-size="medium"></script>
+```{raw} html
+<script
+   src="https://asciinema.org/a/xhJLxvKMsF8r8Sb7o2EIURufU.js"
+   id="asciicast-xhJLxvKMsF8r8Sb7o2EIURufU"
+   async="true"
+   data-size="medium"
+></script>
+```
 
 One tool, any target. Jumpstarter decouples devices from test runners, letting
 you use identical automation scripts everywhere - your *Makefile* for device
