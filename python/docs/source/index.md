@@ -27,7 +27,7 @@ development workflows and deployment environments. It enables you to test your
 software stack consistently across both real hardware and virtual environments
 using cloud native principles.
 
-<iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/40OmDwTgl1A?si=qZxbyZsz4jWn3PI2&rel=0" title="YouTube video player" frameborder="2" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+<script src="https://asciinema.org/a/xhJLxvKMsF8r8Sb7o2EIURufU.js" id="asciicast-xhJLxvKMsF8r8Sb7o2EIURufU" async="true" data-size="medium"></script>
 
 By decoupling your target devices (physical or virtual) from test runners,
 development machines, and CI/CD pipelines, Jumpstarter allows you to use the
