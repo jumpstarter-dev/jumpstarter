@@ -9,9 +9,10 @@ different sources are prioritized.
 
 ## User Configuration
 
-**File**: `config.yaml` **Location**: `~/.config/jumpstarter/config.yaml`
+**File**: `config.yaml`  
+**Location**: `~/.config/jumpstarter/config.yaml`  
 **Description**: Defines global user settings including current client
-selection.
+selection.  
 
 **Format**:
 ```yaml
@@ -25,9 +26,10 @@ config:
 
 ## Client Configuration
 
-**File**: Various files with `.yaml` extension **Location**:
-`~/.config/jumpstarter/clients/*.yaml` **Description**: Stores client
-configurations including endpoints, access tokens, and driver settings.
+**File**: Various files with `.yaml` extension  
+**Location**: `~/.config/jumpstarter/clients/*.yaml`  
+**Description**: Stores client configurations including endpoints, access
+tokens, and driver settings.  
 
 **Format**:
 ```yaml
@@ -66,9 +68,10 @@ jmp config client delete <name>  # Remove a client config
 
 ## Exporter Configuration
 
-**File**: Various files with `.yaml` extension **Location**:
-`/etc/jumpstarter/exporters/*.yaml` **Description**: Defines exporter settings
-including connection details and driver configurations.
+**File**: Various files with `.yaml` extension  
+**Location**: `/etc/jumpstarter/exporters/*.yaml`  
+**Description**: Defines exporter settings including connection details and
+driver configurations.  
 
 **Format**:
 ```yaml
