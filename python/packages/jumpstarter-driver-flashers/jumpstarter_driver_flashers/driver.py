@@ -29,11 +29,11 @@ class BaseFlasher(Driver):
         # in configuration
         if "tftp" not in self.children:
             self.children["tftp"] = Tftp(root_dir=self.tftp_dir)
-            self.tftp = self.children["tftp"]
+        self.tftp = self.children["tftp"]
 
         if "http" not in self.children:
             self.children["http"] = HttpServer(root_dir=self.http_dir)
-            self.http = self.children["http"]
+        self.http = self.children["http"]
 
         # Ensure required children are present, the following are not auto-created
         if "serial" not in self.children:
