@@ -124,4 +124,32 @@ jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
 ```
 
 For persistent operation, exporters can be installed as systemd services using
-podman-systemd.
+podman-systemd. Create a systemd service file at
+`/etc/containers/systemd/my-exporter.container` with the following content:
+
+```{code-block} ini
+:substitutions:
+[Unit]
+Description=My exporter
+[Container]
+ContainerName=my-exporter
+Exec=/jumpstarter/bin/jmp run --exporter my-exporter
+Image=quay.io/jumpstarter-dev/jumpstarter:{{version}}
+Network=host
+PodmanArgs=--privileged
+Volume=/run/udev:/run/udev
+Volume=/dev:/dev
+Volume=/etc/jumpstarter:/etc/jumpstarter
+[Service]
+Restart=always
+StartLimitBurst=0
+[Install]
+WantedBy=multi-user.target default.target
+```
+
+Then enable and start the service:
+
+```shell
+sudo systemctl daemon-reload
+sudo systemctl enable --now my-exporter
+```

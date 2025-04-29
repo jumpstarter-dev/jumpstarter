@@ -49,19 +49,18 @@ We welcome bug fixes, features, and improvements to the core codebase.
 To create a new driver scaffold:
 
 ```shell
-$ ./__templates__/create_driver.sh vendor_name driver_name "Your Name" "your.email@example.com"
+$ ./__templates__/create_driver.sh driver_package DriverClass "Your Name" "your.email@example.com"
 ```
 
 For private drivers, consider forking our [jumpstarter-driver-template](https://github.com/jumpstarter-dev/jumpstarter-driver-template).
 
-Test your driver: `make sync && cd packages/your_driver_package && pytest`
+Test your driver: `make pkg-test-${package_name}`
 
 ### Contributing Documentation
 
 Jumpstarter uses Sphinx with Markdown. Build and preview locally:
 
 ```shell
-$ make docs-test
 $ make docs-serve
 ```
 
