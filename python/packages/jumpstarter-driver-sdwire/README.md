@@ -1,6 +1,8 @@
 # SDWire driver
 
-`jumpstarter-driver-sdwire` provides functionality for using the SDWire storage multiplexer. This device multiplexes an SD card between the DUT and the exporter host.
+`jumpstarter-driver-sdwire` provides functionality for using the SDWire storage
+multiplexer. This device multiplexes an SD card between the DUT and the exporter
+host.
 
 ## Installation
 
@@ -27,7 +29,8 @@ FileNotFoundError: failed to find sd-wire device
 
 ## API Reference
 
-The SDWire driver implements the `StorageMuxClient` class, which is a generic storage class.
+The SDWire driver implements the `StorageMuxClient` class, which is a generic
+storage class.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_opendal.client.StorageMuxClient()

@@ -7,22 +7,22 @@ connected to the target device for client access.
 
 ## Hosts
 
-Typically, the host will be a low-cost test system such as a Raspberry Pi or
-Mini PC with sufficient interfaces to connect to your hardware. It is also
+Typically, the host will be a low-cost test system such as a single board
+computer with sufficient interfaces to connect to your hardware. It is also
 possible to use a local high-power server (or CI runner) as the host device.
 
 A host can run multiple Exporter instances simultaneously if it needs to
 interact with several different devices at the same time.
 
-## Configuration
+## Exporter Configuration
 
 Exporters use a YAML configuration file to define which Drivers must be loaded
 and the configuration required.
 
-Here is an example Exporter config file:
+Here is an example Exporter config file which would typically be saved at
+`/etc/jumpstarter/exporters/demo.yaml`:
 
 ```yaml
-# /etc/jumpstarter/exporters/myexporter.yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 metadata:
@@ -31,7 +31,6 @@ metadata:
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
 grpcConfig:
-    # Please refer to the https://grpc.github.io/grpc/core/group__grpc__arg__keys.html documentation
     grpc.keepalive_time_ms: 20000
 export:
   power:
@@ -54,8 +53,12 @@ export:
     config:
       hello: "world"
   reference:
-    ref: "power" # reference to another driver, this uses the Proxy driver
+    ref: "power"
 ```
+
+Note that the `grpcConfig` section supports all options documented in the [gRPC
+argument keys
+documentation](https://grpc.github.io/grpc/core/group__grpc__arg__keys.html).
 
 ## Running an Exporter
 
@@ -63,8 +66,9 @@ To run an Exporter on a host system, you must have Python {{requires_python}}
 installed and the driver packages specified in the config installed in your
 current Python environment.
 
+You can run the exporter in your local terminal with:
+
 ```shell
-# Run the exporter myexporter in your local terminal
 $ jmp run --exporter myexporter
 ```
 

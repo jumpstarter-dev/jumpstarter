@@ -1,6 +1,7 @@
 # Network drivers
 
-`jumpstarter-driver-network` provides functionality for interacting with network servers and connections.
+`jumpstarter-driver-network` provides functionality for interacting with network
+servers and connections.
 
 ## Installation
 

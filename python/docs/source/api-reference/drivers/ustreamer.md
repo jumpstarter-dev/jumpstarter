@@ -1,1 +1,0 @@
-../../../../packages/jumpstarter-driver-ustreamer/README.md

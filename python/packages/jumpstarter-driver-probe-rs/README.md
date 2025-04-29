@@ -1,6 +1,7 @@
 # probe-rs driver
 
-`jumpstarter-driver-probe-rs` provides functionality for remote debugging and flashing of embedded devices using the [probe-rs](https://probe.rs) tools.
+`jumpstarter-driver-probe-rs` provides functionality for remote debugging and
+flashing of embedded devices using the [probe-rs](https://probe.rs) tools.
 
 ## Installation
 
@@ -43,7 +44,8 @@ export:
 
 ### CLI
 
-The probe driver client comes with a CLI tool that can be used to interact with the target device.
+The probe driver client comes with a CLI tool that can be used to interact with
+the target device.
 ```
 jumpstarter ⚡ local ➤ j probe
 Usage: j probe [OPTIONS] COMMAND [ARGS]...
