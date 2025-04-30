@@ -38,5 +38,8 @@ testpaths = ["jumpstarter_driver_tftp"]
 asyncio_mode = "auto"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
