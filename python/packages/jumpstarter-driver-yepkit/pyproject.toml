@@ -39,5 +39,5 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
-[tool.hatch.metadata.hooks.pin_jumpstarter]
+[tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"

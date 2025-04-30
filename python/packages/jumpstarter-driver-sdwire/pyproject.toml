@@ -31,5 +31,5 @@ raw-options = { 'root' = '../../' }
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
-[tool.hatch.metadata.hooks.pin_jumpstarter]
+[tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
