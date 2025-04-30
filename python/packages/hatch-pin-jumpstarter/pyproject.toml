@@ -10,6 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     "hatchling>=1.27.0",
     "packaging>=24.2",
+    "tomli>=2.2.1",
+    "tomli-w>=1.2.0",
 ]
 
 [build-system]
