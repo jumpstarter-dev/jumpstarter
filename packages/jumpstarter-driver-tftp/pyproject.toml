@@ -1,16 +1,21 @@
 [project]
 name = "jumpstarter-driver-tftp"
-dynamic = ["version", "urls"]
+dynamic = [
+    "version",
+    "urls",
+]
 description = "Add your description here"
 readme = "README.md"
 license = "Apache-2.0"
-authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
+authors = [
+    { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" },
+]
 requires-python = ">=3.11"
 dependencies = [
     "anyio>=4.6.2.post1",
-    "jumpstarter",
-    "jumpstarter-driver-composite",
-    "jumpstarter-driver-opendal",
+    "jumpstarter ~= 0.6",
+    "jumpstarter-driver-composite ~= 0.6",
+    "jumpstarter-driver-opendal ~= 0.6",
 ]
 
 [dependency-groups]
@@ -22,10 +27,11 @@ dev = [
     "jumpstarter-testing",
 ]
 
-
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../' }
+
+[tool.hatch.version.raw-options]
+root = "../../"
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
@@ -34,9 +40,14 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 [tool.pytest.ini_options]
 log_cli = true
 log_cli_level = "INFO"
-testpaths = ["jumpstarter_driver_tftp"]
+testpaths = [
+    "jumpstarter_driver_tftp",
+]
 asyncio_mode = "auto"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = [
+    "hatchling",
+    "hatch-vcs",
+]
 build-backend = "hatchling.build"

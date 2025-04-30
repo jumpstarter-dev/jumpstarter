@@ -1,6 +1,9 @@
 [project]
 name = "jumpstarter"
-dynamic = ["version", "urls"]
+dynamic = [
+    "version",
+    "urls",
+]
 description = ""
 authors = [
     { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
@@ -11,7 +14,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-    "jumpstarter-protocol",
+    "jumpstarter-protocol ~= 0.6",
     "pyyaml>=6.0.2",
     "anyio>=4.4.0,!=4.6.2",
     "aiohttp>=3.10.5",
@@ -33,7 +36,9 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["jumpstarter"]
+packages = [
+    "jumpstarter",
+]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
@@ -41,8 +46,13 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../' }
+
+[tool.hatch.version.raw-options]
+root = "../../"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = [
+    "hatchling",
+    "hatch-vcs",
+]
 build-backend = "hatchling.build"

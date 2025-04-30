@@ -1,14 +1,20 @@
 [project]
 name = "jumpstarter-driver-snmp"
-dynamic = ["version", "urls"]
+dynamic = [
+    "version",
+    "urls",
+]
 description = "SNMP driver"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
-
-dependencies = ["jumpstarter", "pysnmp==7.1.16"]
-
+authors = [
+    { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" },
+]
+dependencies = [
+    "jumpstarter ~= 0.6",
+    "pysnmp==7.1.16",
+]
 
 [dependency-groups]
 dev = [
@@ -19,11 +25,12 @@ dev = [
     "jumpstarter-testing",
 ]
 
-
 [tool.pytest.ini_options]
 log_cli = true
 log_cli_level = "INFO"
-testpaths = ["jumpstarter_driver_snmp"]
+testpaths = [
+    "jumpstarter_driver_snmp",
+]
 asyncio_mode = "auto"
 
 [tool.hatch.metadata.hooks.vcs.urls]
@@ -32,8 +39,13 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../' }
+
+[tool.hatch.version.raw-options]
+root = "../../"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = [
+    "hatchling",
+    "hatch-vcs",
+]
 build-backend = "hatchling.build"

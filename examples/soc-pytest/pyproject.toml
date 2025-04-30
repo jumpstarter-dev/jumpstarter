@@ -3,20 +3,20 @@ name = "jumpstarter-example-soc-pytest"
 version = "0.1.0"
 description = ""
 authors = [
-  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
-  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
-  { name = "Nick Cao", email = "ncao@redhat.com" },
+    { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+    { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+    { name = "Nick Cao", email = "ncao@redhat.com" },
 ]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-  "pytest>=8.3.2",
-  "jumpstarter",
-  "jumpstarter-testing",
-  "jumpstarter-imagehash",
-  "jumpstarter-driver-network",
-  "jumpstarter-driver-dutlink",
+    "pytest>=8.3.2",
+    "jumpstarter ~= 0.6",
+    "jumpstarter-testing ~= 0.6",
+    "jumpstarter-imagehash ~= 0.6",
+    "jumpstarter-driver-network ~= 0.6",
+    "jumpstarter-driver-dutlink ~= 0.6",
 ]
 
 [tool.pytest.ini_options]

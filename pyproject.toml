@@ -53,6 +53,8 @@ dev = [
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
     "mypy>=1.15.0",
+    "tomli>=2.2.1",
+    "tomli-w>=1.2.0",
 ]
 
 [tool.ruff]

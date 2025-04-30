@@ -14,7 +14,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 FROM builder AS wheels
 ADD . /src
-RUN make -C /src build
+WORKDIR /src
+RUN make sync
+# remove the package dependency pinning for jumpstarter related packages
+RUN uv run ./scripts/pin_release_versions.py --unpin
+RUN make build
 
 FROM product
 RUN --mount=from=wheels,source=/src/dist,target=/dist \
