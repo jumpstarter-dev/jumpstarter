@@ -24,7 +24,7 @@ docs-linkcheck:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
 
 pkg-test-%: packages/%
-	uv run --isolated --directory $< pytest
+	uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
 
 pkg-mypy-%: packages/%
 	uv run --isolated --directory $< mypy .

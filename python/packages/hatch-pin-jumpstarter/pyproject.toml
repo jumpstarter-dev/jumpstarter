@@ -18,5 +18,11 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+]
+
 [project.entry-points.hatch]
 pin_jumpstarter = "hatch_pin_jumpstarter"
