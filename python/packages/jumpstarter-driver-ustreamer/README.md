@@ -1,6 +1,8 @@
 # Ustreamer driver
 
-`jumpstarter-driver-ustreamer` provides functionality for using the ustreamer video streaming server driven by the jumpstarter exporter. This driver takes a video device and exposes both snapshot and streaming interfaces.
+`jumpstarter-driver-ustreamer` provides functionality for using the ustreamer
+video streaming server driven by the jumpstarter exporter. This driver takes a
+video device and exposes both snapshot and streaming interfaces.
 
 ## Installation
 
@@ -19,7 +21,7 @@ Example configuration:
 ```{doctest}
 :hide:
 >>> from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
->>> ExporterConfigV1Alpha1DriverInstance.from_path("source/api-reference/drivers/ustreamer.yaml").instantiate()
+>>> ExporterConfigV1Alpha1DriverInstance.from_path("source/reference/package-apis/drivers/ustreamer.yaml").instantiate()
 Traceback (most recent call last):
 ...
 io.UnsupportedOperation: fileno

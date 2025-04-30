@@ -1,6 +1,7 @@
 # DUT Link driver
 
-`jumpstarter-driver-dutlink` provides functionality for interacting with DUT Link devices.
+`jumpstarter-driver-dutlink` provides functionality for interacting with DUT
+Link devices.
 
 ## Installation
 

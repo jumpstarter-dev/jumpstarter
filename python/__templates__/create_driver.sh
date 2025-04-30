@@ -28,7 +28,7 @@ mkdir -p ${MODULE_DIRECTORY}
 mkdir -p ${DRIVER_DIRECTORY}/examples
 
 # Define paths
-DOCS_DIRECTORY=docs/source/api-reference/drivers
+DOCS_DIRECTORY=docs/source/reference/package-apis/drivers
 DOC_FILE=${DOCS_DIRECTORY}/${DRIVER_NAME}.md
 README_FILE=${DRIVER_DIRECTORY}/README.md
 

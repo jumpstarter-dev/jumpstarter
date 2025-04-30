@@ -1,6 +1,7 @@
 # Raspberry Pi driver
 
-`jumpstarter-driver-raspberrypi` provides functionality for interacting with Raspberry Pi devices.
+`jumpstarter-driver-raspberrypi` provides functionality for interacting with
+Raspberry Pi devices.
 
 ## Installation
 
