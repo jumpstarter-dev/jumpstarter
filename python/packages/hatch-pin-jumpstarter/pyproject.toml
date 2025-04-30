@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Nick Cao", email = "nickcao@nichi.co" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "hatchling>=1.27.0",
     "packaging>=24.2",
