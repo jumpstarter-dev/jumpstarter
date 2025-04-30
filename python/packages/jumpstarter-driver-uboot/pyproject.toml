@@ -35,5 +35,8 @@ jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-qemu = { workspace = true }
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
