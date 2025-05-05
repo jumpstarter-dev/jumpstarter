@@ -6,7 +6,7 @@ connections.
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-can
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-can
 ```
 
 ## Configuration

@@ -7,7 +7,7 @@ host.
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-sdwire
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-sdwire
 ```
 
 ## Configuration

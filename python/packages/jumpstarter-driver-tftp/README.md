@@ -6,7 +6,7 @@ that can be used to serve files.
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-tftp
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-tftp
 ```
 
 ## Configuration
