@@ -1,6 +1,7 @@
 """
 Corellium API client exceptions module
 """
+
 from jumpstarter.common.exceptions import JumpstarterException
 
 

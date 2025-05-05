@@ -35,7 +35,6 @@ class VirtualPowerInterface(metaclass=ABCMeta):
     async def read(self) -> AsyncGenerator[PowerReading, None]: ...
 
 
-
 class MockPower(PowerInterface, Driver):
     """
     MockPower is a mock driver implementing the PowerInterface

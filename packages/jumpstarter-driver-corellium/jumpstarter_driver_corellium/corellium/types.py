@@ -1,6 +1,7 @@
 """
 Corellium API types.
 """
+
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -10,6 +11,7 @@ class Project:
     """
     Dataclass that represents a Corellium project.
     """
+
     id: str
     name: str
 
@@ -21,6 +23,7 @@ class Device:
 
     A device object is used to create virtual instances.
     """
+
     name: str
     type: str
     flavor: str
@@ -35,5 +38,6 @@ class Instance:
     """
     Virtual instance dataclass.
     """
+
     id: str
     state: Optional[str] = field(default=None)

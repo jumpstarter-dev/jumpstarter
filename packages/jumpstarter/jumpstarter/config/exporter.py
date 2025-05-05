@@ -29,6 +29,7 @@ class ExporterConfigV1Alpha1DriverInstanceBase(BaseModel):
     type: str
     config: dict[str, Any] = Field(default_factory=dict)
     children: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+    sandbox: bool = False
 
 
 class ExporterConfigV1Alpha1DriverInstance(RootModel):
@@ -41,11 +42,16 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
     def instantiate(self) -> Driver:
         match self.root:
             case ExporterConfigV1Alpha1DriverInstanceBase():
-                driver_class = import_class(self.root.type, [], True)
+                if self.root.sandbox:
+                    from jumpstarter_driver_composite.driver import External
 
-                children = {name: child.instantiate() for name, child in self.root.children.items()}
+                    return External(type=self.root.type, config=self.root.config)
+                else:
+                    driver_class = import_class(self.root.type, [], True)
 
-                return driver_class(children=children, **self.root.config)
+                    children = {name: child.instantiate() for name, child in self.root.children.items()}
+
+                    return driver_class(children=children, **self.root.config)
 
             case ExporterConfigV1Alpha1DriverInstanceComposite():
                 from jumpstarter_driver_composite.driver import Composite

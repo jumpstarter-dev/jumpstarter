@@ -72,9 +72,10 @@ class WebsocketServerStream(ObjectStream[bytes]):
 
 @dataclass(kw_only=True)
 class WebsocketClientStream(ObjectStream[bytes]):
-    '''
+    """
     Websocket client streaming.
-    '''
+    """
+
     conn: WSSClientConnection
 
     async def send(self, data: bytes) -> None:
@@ -88,4 +89,3 @@ class WebsocketClientStream(ObjectStream[bytes]):
 
     async def aclose(self):
         await self.conn.close()
-

@@ -1247,6 +1247,7 @@ source = { editable = "packages/jumpstarter-driver-composite" }
 dependencies = [
     { name = "asyncclick" },
     { name = "jumpstarter" },
+    { name = "landlock" },
 ]
 
 [package.dev-dependencies]
@@ -1260,6 +1261,7 @@ dev = [
 requires-dist = [
     { name = "asyncclick", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "landlock", specifier = ">=1.0.0.dev4" },
 ]
 
 [package.metadata.requires-dev]
@@ -2063,6 +2065,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b8/72/8a03b615bca6024c15b741dfbc649d2782230b983054d2fc850761932596/kubernetes_asyncio-32.3.0.tar.gz", hash = "sha256:3efdc39776f4e1c892ce08b74364e67be6c1d6870cba01ab27bb296fdc6fc485", size = 1026421 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7a/1d/2989471e16dfa6f4e8ae0b3f8db285ae0966005606aa138896251e0af927/kubernetes_asyncio-32.3.0-py3-none-any.whl", hash = "sha256:3a0769d4bf39c638e474c76cd22f4aa81903db5ebd14573c1e3b3b7ebbf86fbc", size = 1973299 },
+]
+
+[[package]]
+name = "landlock"
+version = "1.0.0.dev4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/48/8a5b049cfdb03b2c341024780055b496e7d034f1b7e8650d187c820165f3/landlock-1.0.0.dev4.tar.gz", hash = "sha256:0085e1ea60af6fe603b4a10258ab85a6fde1cd48a7789183b1e5029390bba0ef", size = 6708 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/7f/73ecca47ca190000322359a6345feae6c395a22ddd51bbd19c6de8b5ba68/landlock-1.0.0.dev4-py3-none-any.whl", hash = "sha256:c2329e392bf127548e60cc87e1e5324bd6fb0f42ba72367ccf7ec450ce8db9b7", size = 7500 },
 ]
 
 [[package]]

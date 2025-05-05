@@ -150,6 +150,6 @@ async def test_websocket_network_connect():
     ws.__aenter__.return_value = ws
 
     with patch("websockets.connect", return_value=ws) as m:
-        client =  WebsocketNetwork(url="ws://localhost/something")
+        client = WebsocketNetwork(url="ws://localhost/something")
         async with client.connect():
             m.assert_called_once_with("ws://localhost/something")

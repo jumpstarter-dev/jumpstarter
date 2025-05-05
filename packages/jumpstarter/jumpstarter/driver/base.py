@@ -6,19 +6,23 @@ from __future__ import annotations
 
 import logging
 from abc import ABCMeta, abstractmethod
-from contextlib import asynccontextmanager
-from dataclasses import field
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass, field
 from inspect import isasyncgenfunction, iscoroutinefunction
 from itertools import chain
 from typing import Any
 from uuid import UUID, uuid4
 
 import aiohttp
-from anyio import to_thread
+import grpc
+from anyio import Event, TypedAttributeLookupError, to_thread
 from grpc import StatusCode
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
+from jumpstarter_protocol import (
+    jumpstarter_pb2,
+    jumpstarter_pb2_grpc,
+    router_pb2_grpc,
+)
 from pydantic import TypeAdapter
-from pydantic.dataclasses import dataclass
 
 from .decorators import (
     MARKER_DRIVERCALL,
@@ -26,17 +30,19 @@ from .decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
-from jumpstarter.common import Metadata
+from jumpstarter.common import Metadata, TemporarySocket
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
+    StreamRequestMetadata,
 )
 from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
-from jumpstarter.streams.common import create_memory_stream
-from jumpstarter.streams.metadata import MetadataStream
+from jumpstarter.streams.common import create_memory_stream, forward_stream
+from jumpstarter.streams.metadata import MetadataStream, MetadataStreamAttributes
 from jumpstarter.streams.progress import ProgressStream
+from jumpstarter.streams.router import RouterStream
 
 
 @dataclass(kw_only=True)
@@ -86,6 +92,13 @@ class Driver(
 
     def extra_labels(self) -> dict[str, str]:
         return {}
+
+    async def GetReport(self, request, context):
+        return jumpstarter_pb2.GetReportResponse(
+            uuid=str(self.uuid),
+            labels=self.labels,
+            reports=[instance.report(parent=parent, name=name) for (_, parent, name, instance) in self.enumerate()],
+        )
 
     async def DriverCall(self, request, context):
         """
@@ -144,8 +157,22 @@ class Driver(
         except Exception as e:
             await context.abort(StatusCode.UNKNOWN, str(e))
 
+    async def Stream(self, _request_iterator, context):
+        request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
+        async with self.StreamManager(request, context) as stream:
+            metadata = []
+            with suppress(TypedAttributeLookupError):
+                metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
+            await context.send_initial_metadata(metadata)
+
+            async with RouterStream(context=context) as remote:
+                async with forward_stream(remote, stream):
+                    event = Event()
+                    context.add_done_callback(lambda _: event.set())
+                    await event.wait()
+
     @asynccontextmanager
-    async def Stream(self, request, context):
+    async def StreamManager(self, request, context):
         """
         :meta private:
         """
@@ -249,3 +276,23 @@ class Driver(
             await context.abort(StatusCode.NOT_FOUND, f"method {name} missing marker {marker}")
 
         return method
+
+    @asynccontextmanager
+    async def serve_port_async(self, port):
+        server = grpc.aio.server()
+        server.add_insecure_port(port)
+
+        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+
+        await server.start()
+        try:
+            yield
+        finally:
+            await server.stop(grace=None)
+
+    @asynccontextmanager
+    async def serve_unix_async(self):
+        with TemporarySocket() as path:
+            async with self.serve_port_async(f"unix://{path}"):
+                yield path
