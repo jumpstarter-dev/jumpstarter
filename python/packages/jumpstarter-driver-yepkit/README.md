@@ -6,7 +6,7 @@ products.
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-yepkit
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-yepkit
 ```
 
 ## Configuration
