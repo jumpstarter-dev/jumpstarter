@@ -28,7 +28,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["src"]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
@@ -38,3 +38,6 @@ dev = [
     "pytest-asyncio>=0.0.0",
     "pytest-asyncio>=0.24.0",
 ]
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"

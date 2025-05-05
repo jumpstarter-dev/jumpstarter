@@ -40,8 +40,11 @@ jumpstarter-driver-uboot = { workspace = true }
 #asyncio_mode = "auto"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"

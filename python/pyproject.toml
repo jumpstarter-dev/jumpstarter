@@ -32,6 +32,7 @@ jumpstarter-kubernetes = { workspace = true }
 jumpstarter-protocol = { workspace = true }
 jumpstarter-testing = { workspace = true }
 sphinx-click = { git = "https://github.com/NickCao/sphinx-click" }
+hatch-pin-jumpstarter = { workspace = true }
 
 [dependency-groups]
 docs = [
