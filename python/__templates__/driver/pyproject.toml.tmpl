@@ -29,8 +29,11 @@ testpaths = ["jumpstarter_driver_${DRIVER_NAME}"]
 asyncio_mode = "auto"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
