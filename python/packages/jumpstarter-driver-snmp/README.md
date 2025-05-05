@@ -6,7 +6,7 @@ SNMP-enabled PDUs (Power Distribution Units).
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-snmp
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-snmp
 ```
 
 ## Configuration

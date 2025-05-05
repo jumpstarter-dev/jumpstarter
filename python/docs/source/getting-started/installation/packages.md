@@ -21,7 +21,7 @@ Install the Python package using `pip` or a similar tool. You need Python
 {{requires_python}}:
 
 ```shell
-$ pip3 install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-all
+$ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-all
 $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
 ```
@@ -32,8 +32,16 @@ installing in a virtual environment instead:
 ```shell
 $ python3 -m venv ~/.venv/jumpstarter
 $ source ~/.venv/jumpstarter/bin/activate
-$ pip3 install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-all
+$ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-all
 ```
+
+Additional package indexes are available, this is a complete list of our indexes:
+
+| Index | Description |
+|-------|-------------|
+| [releases](https://pkg.jumpstarter.dev/) | Release, or release-candidate versions |
+| [main](https://pkg.jumpstarter.dev/main/) | Index tracking the main branch, equivalent to installing from sources |
+| [release-0.6](https://pkg.jumpstarter.dev/release-0.6) | Index tracking a stable branch |
 
 ### Installing from Source
 

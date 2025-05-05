@@ -6,7 +6,7 @@ servers and connections.
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-network
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-network
 ```
 
 ## Configuration
