@@ -58,6 +58,7 @@ dev = [
 ]
 
 [tool.ruff]
+target-version = "py311"
 exclude = ["packages/jumpstarter-protocol"]
 line-length = 120
 
