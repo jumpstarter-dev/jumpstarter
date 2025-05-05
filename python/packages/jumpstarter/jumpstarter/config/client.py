@@ -1,6 +1,8 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager, contextmanager
 from datetime import timedelta
+from functools import wraps
 from pathlib import Path
 from typing import ClassVar, Literal, Optional, Self
 
@@ -27,6 +29,19 @@ def _allow_from_env():
             return [], True
         case _:
             return allow.split(","), False
+
+
+def _blocking_compat(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(f(*args, **kwargs))
+        else:
+            return f(*args, **kwargs)
+
+    return wrapper
 
 
 class ClientConfigV1Alpha1Drivers(BaseModel):
@@ -71,47 +86,16 @@ class ClientConfigV1Alpha1(BaseModel):
             with portal.wrap_async_context_manager(self.lease_async(selector, lease_name, duration, portal)) as lease:
                 yield lease
 
-    def get_exporter(self, name: str):
-        with start_blocking_portal() as portal:
-            return portal.call(self.get_exporter_async, name)
-
-    def list_exporters(
-        self,
-        page_size: int | None = None,
-        page_token: str | None = None,
-        filter: str | None = None,
-    ):
-        with start_blocking_portal() as portal:
-            return portal.call(self.list_exporters_async, page_size, page_token, filter)
-
-    def list_leases(self, filter: str):
-        with start_blocking_portal() as portal:
-            return portal.call(self.list_leases_async, filter)
-
-    def create_lease(
-        self,
-        selector: str,
-        duration: timedelta,
-    ):
-        with start_blocking_portal() as portal:
-            return portal.call(self.create_lease_async, selector, duration)
-
-    def delete_lease(
+    @_blocking_compat
+    async def get_exporter(
         self,
         name: str,
     ):
-        with start_blocking_portal() as portal:
-            return portal.call(self.delete_lease_async, name)
-
-    def update_lease(self, name, duration: timedelta):
-        with start_blocking_portal() as portal:
-            return portal.call(self.update_lease_async, name, duration)
-
-    async def get_exporter_async(self, name: str):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.GetExporter(name=name)
 
-    async def list_exporters_async(
+    @_blocking_compat
+    async def list_exporters(
         self,
         page_size: int | None = None,
         page_token: str | None = None,
@@ -120,7 +104,8 @@ class ClientConfigV1Alpha1(BaseModel):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
 
-    async def create_lease_async(
+    @_blocking_compat
+    async def create_lease(
         self,
         selector: str,
         duration: timedelta,
@@ -131,17 +116,36 @@ class ClientConfigV1Alpha1(BaseModel):
             duration=duration,
         )
 
-    async def delete_lease_async(self, name: str):
+    @_blocking_compat
+    async def delete_lease(
+        self,
+        name: str,
+    ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         await svc.DeleteLease(
             name=name,
         )
 
-    async def list_leases_async(self, filter: str):
+    @_blocking_compat
+    async def list_leases(
+        self,
+        page_size: int | None = None,
+        page_token: str | None = None,
+        filter: str | None = None,
+    ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.ListLeases(filter=filter)
+        return await svc.ListLeases(
+            page_size=page_size,
+            page_token=page_token,
+            filter=filter,
+        )
 
-    async def update_lease_async(self, name, duration: timedelta):
+    @_blocking_compat
+    async def update_lease(
+        self,
+        name,
+        duration: timedelta,
+    ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.UpdateLease(name=name, duration=duration)
 
