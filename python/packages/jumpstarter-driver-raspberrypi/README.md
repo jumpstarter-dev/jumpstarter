@@ -6,7 +6,7 @@ Raspberry Pi devices.
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-raspberrypi
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-raspberrypi
 ```
 
 ## Configuration

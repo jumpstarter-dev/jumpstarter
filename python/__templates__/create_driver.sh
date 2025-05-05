@@ -42,7 +42,7 @@ cat > "${README_FILE}" << 'EOF'
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-${DRIVER_NAME}
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-${DRIVER_NAME}
 ```
 
 ## Configuration

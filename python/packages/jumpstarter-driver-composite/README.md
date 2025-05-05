@@ -5,7 +5,7 @@
 ## Installation
 
 ```bash
-pip install jumpstarter-driver-composite
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-composite
 ```
 
 ## Configuration

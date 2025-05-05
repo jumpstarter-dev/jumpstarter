@@ -5,7 +5,7 @@
 ## Installation
 
 ```shell
-pip install jumpstarter-driver-shell
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-shell
 ```
 
 ## Configuration
