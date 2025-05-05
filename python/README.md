@@ -42,7 +42,7 @@ Additionally, the command line reference documentation can be viewed with `jmp -
 ## Contributing
 
 Jumpstarter welcomes contributors of all levels of experience and would love to
-see you involved in the project. See the [contributing guide](CONTRIBUTING.md) to get started.
+see you involved in the project. See the [contributing guide](https://jumpstarter.dev/contributing/) to get started.
 
 ## License
 
