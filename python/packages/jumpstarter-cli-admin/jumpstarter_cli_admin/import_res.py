@@ -1,6 +1,7 @@
 from typing import Optional
 
 import click
+from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import (
     PathOutputType,
     opt_context,
@@ -47,6 +48,7 @@ def import_res():
 @opt_context
 @opt_output_path_only
 @opt_nointeractive
+@blocking
 async def import_client(
     name: str,
     namespace: str,
@@ -102,6 +104,7 @@ async def import_client(
 @opt_context
 @opt_output_path_only
 @opt_nointeractive
+@blocking
 async def import_exporter(
     name: str,
     namespace: str,

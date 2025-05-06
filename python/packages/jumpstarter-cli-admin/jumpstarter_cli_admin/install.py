@@ -1,6 +1,7 @@
 from typing import Literal, Optional
 
 import click
+from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import opt_context, opt_kubeconfig
 from jumpstarter_cli_common.version import get_client_version
 from jumpstarter_kubernetes import get_ip_address, helm_installed, install_helm_chart
@@ -35,6 +36,7 @@ def get_chart_version() -> str:
 @click.option("-v", "--version", help="The version of the service to install", default=get_chart_version())
 @opt_kubeconfig
 @opt_context
+@blocking
 async def install(
     helm: str,
     chart: str,

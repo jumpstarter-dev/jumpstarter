@@ -3,6 +3,7 @@ from typing import Optional
 
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
+from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import (
     NameOutputType,
     opt_context,
@@ -49,6 +50,7 @@ def delete(log_level: Optional[str]):
 @opt_context
 @opt_output_name_only
 @opt_nointeractive
+@blocking
 async def delete_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -99,6 +101,7 @@ async def delete_client(
 @opt_context
 @opt_output_name_only
 @opt_nointeractive
+@blocking
 async def delete_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
