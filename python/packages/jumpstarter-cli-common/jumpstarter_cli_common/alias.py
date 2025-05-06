@@ -40,7 +40,7 @@ class AliasedGroup(click.Group):
             return click.Group.get_command(self, ctx, matches[0])
         ctx.fail(f"Too many matches: {', '.join(sorted(matches))}")
 
-    async def resolve_command(self, ctx, args):
+    def resolve_command(self, ctx, args):
         # always return the full command name
-        _, cmd, args = await super().resolve_command(ctx, args)
+        _, cmd, args = super().resolve_command(ctx, args)
         return cmd.name, cmd, args
