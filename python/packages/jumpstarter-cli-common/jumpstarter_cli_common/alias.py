@@ -1,4 +1,4 @@
-import asyncclick as click
+import click
 
 
 class AliasedGroup(click.Group):

@@ -2,7 +2,7 @@ import types
 from functools import wraps
 from types import TracebackType
 
-import asyncclick as click
+import click
 
 from jumpstarter.common.exceptions import JumpstarterException
 

@@ -1,6 +1,6 @@
 import signal
 
-import asyncclick as click
+import click
 from anyio import open_signal_receiver
 from anyio.abc import CancelScope
 

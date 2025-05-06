@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-import asyncclick as click
+import click
 
 from jumpstarter.client import DriverClient
 

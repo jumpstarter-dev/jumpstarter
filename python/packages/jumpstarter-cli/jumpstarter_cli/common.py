@@ -1,7 +1,7 @@
 from datetime import timedelta
 from functools import partial
 
-import asyncclick as click
+import click
 from pydantic import TypeAdapter
 
 opt_selector = click.option(

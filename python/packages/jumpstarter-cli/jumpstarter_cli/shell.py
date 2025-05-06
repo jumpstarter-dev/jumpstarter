@@ -1,7 +1,7 @@
 import sys
 from datetime import timedelta
 
-import asyncclick as click
+import click
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 

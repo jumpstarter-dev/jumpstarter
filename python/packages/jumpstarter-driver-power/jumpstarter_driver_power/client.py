@@ -1,7 +1,7 @@
 import time
 from collections.abc import Generator
 
-import asyncclick as click
+import click
 
 from .common import PowerReading
 from jumpstarter.client import DriverClient

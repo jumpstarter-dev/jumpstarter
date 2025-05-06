@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-import asyncclick as click
+import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.opt import (
     NameOutputType,
