@@ -6,8 +6,6 @@ help:
 	@echo "Jumpstarter Makefile Help"
 	@echo "=========================="
 	@echo ""
-	@echo "Available targets:"
-	@echo ""
 	@echo "Build targets:"
 	@echo "  build              - Build all packages"
 	@echo "  generate           - Generate code from protobuf definitions"
@@ -19,13 +17,13 @@ help:
 	@echo "  docs-all           - Build multiversion documentation"
 	@echo "  docs-serve         - Build and serve documentation locally"
 	@echo "  docs-serve-all     - Build and serve multiversion documentation locally"
-	@echo "  docs-test          - Run documentation tests"
 	@echo "  docs-linkcheck     - Check documentation links"
 	@echo ""
 	@echo "Testing targets:"
 	@echo "  test               - Run all package tests and documentation tests"
 	@echo "  pkg-test-all       - Run tests for all packages"
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
+	@echo "  docs-test          - Run documentation tests"
 	@echo ""
 	@echo "Linting and type checking:"
 	@echo "  mypy               - Run mypy type checking on all packages"
@@ -41,7 +39,7 @@ help:
 	@echo "  clean-test         - Clean test artifacts"
 	@echo "  clean-docs         - Clean documentation build"
 
-default: build
+default: help
 
 docs-singlehtml:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
