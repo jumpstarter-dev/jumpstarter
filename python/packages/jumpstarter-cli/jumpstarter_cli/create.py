@@ -22,7 +22,7 @@ def create():
 @opt_duration_partial(required=True)
 @opt_output_all
 @handle_exceptions
-async def create_lease(config, selector: str, duration: timedelta, output: OutputType):
+def create_lease(config, selector: str, duration: timedelta, output: OutputType):
     """
     Create a lease
 
