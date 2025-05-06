@@ -1,4 +1,5 @@
 import click
+from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
 
@@ -25,6 +26,7 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 )
 # end client specific
 @opt_config(allow_missing=True)
+@blocking
 async def login(  # noqa: C901
     config,
     endpoint: str,
