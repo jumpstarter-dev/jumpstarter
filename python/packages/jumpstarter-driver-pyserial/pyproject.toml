@@ -13,7 +13,7 @@ dependencies = [
   "jumpstarter",
   "jumpstarter-driver-network",
   "pyserial>=3.5",
-  "asyncclick>=8.1.7.2",
+  "click>=8.1.7.2",
   "pyserial-asyncio>=0.6",
 ]
 

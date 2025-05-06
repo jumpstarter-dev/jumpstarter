@@ -12,7 +12,7 @@ dependencies = [
   "jumpstarter-driver-power",
   "jumpstarter-driver-network",
   "jumpstarter-driver-pyserial",
-  "asyncclick>=8.1.7.2",
+  "click>=8.1.7.2",
 ]
 
 [project.entry-points."jumpstarter.drivers"]
