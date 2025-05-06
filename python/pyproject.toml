@@ -11,6 +11,7 @@ jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-corellium = { workspace = true }
 jumpstarter-driver-dutlink = { workspace = true }
+jumpstarter-driver-energenie = { workspace = true }
 jumpstarter-driver-flashers = { workspace = true }
 jumpstarter-driver-http = { workspace = true }
 jumpstarter-driver-raspberrypi = { workspace = true }
