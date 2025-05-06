@@ -1,6 +1,5 @@
 from unittest.mock import AsyncMock, Mock, patch
 
-import pytest
 from click.testing import CliRunner
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
@@ -36,14 +35,13 @@ USER_CONFIG_CURRENT = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current
 USER_CONFIG_NOT_CURRENT = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config(current_client=None))
 
 
-@pytest.mark.anyio
 @patch.object(ClientConfigV1Alpha1, "delete")
 @patch.object(ClientConfigV1Alpha1, "exists")
 @patch.object(ClientsV1Alpha1Api, "delete_client")
 @patch.object(UserConfigV1Alpha1, "load_or_create")
 @patch.object(UserConfigV1Alpha1, "save")
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")
-async def test_delete_client(
+def test_delete_client(
     _mock_load_kube_config,
     mock_save_user_config: Mock,
     mock_load_or_create_user_config: Mock,
@@ -55,7 +53,7 @@ async def test_delete_client(
 
     # Delete client object and config does not exist
     mock_config_exists.return_value = False
-    result = await runner.invoke(delete, ["client", CLIENT_NAME])
+    result = runner.invoke(delete, ["client", CLIENT_NAME])
     assert result.exit_code == 0
     assert f"Deleted client '{CLIENT_NAME}' in namespace 'default'" in result.output
     assert "Client configuration successfully deleted" not in result.output
@@ -70,7 +68,7 @@ async def test_delete_client(
 
     # Delete client object and delete config prompt = n
     mock_config_exists.return_value = True
-    result = await runner.invoke(delete, ["client", CLIENT_NAME], input="n\n")
+    result = runner.invoke(delete, ["client", CLIENT_NAME], input="n\n")
     assert result.exit_code == 0
     assert f"Deleted client '{CLIENT_NAME}' in namespace 'default'" in result.output
     assert "Client configuration successfully deleted" not in result.output
@@ -87,7 +85,7 @@ async def test_delete_client(
     # Delete client object, not current client config and delete config prompt = Y
     mock_config_exists.return_value = True
     mock_load_or_create_user_config.return_value = USER_CONFIG_NOT_CURRENT
-    result = await runner.invoke(delete, ["client", CLIENT_NAME], input="Y\n")
+    result = runner.invoke(delete, ["client", CLIENT_NAME], input="Y\n")
     assert result.exit_code == 0
     assert f"Deleted client '{CLIENT_NAME}' in namespace 'default'" in result.output
     assert "Client configuration successfully deleted" in result.output
@@ -105,7 +103,7 @@ async def test_delete_client(
     # Delete client object, current client config and delete config prompt = Y
     mock_config_exists.return_value = True
     mock_load_or_create_user_config.return_value = USER_CONFIG_CURRENT
-    result = await runner.invoke(delete, ["client", CLIENT_NAME], input="Y\n")
+    result = runner.invoke(delete, ["client", CLIENT_NAME], input="Y\n")
     assert result.exit_code == 0
     assert f"Deleted client '{CLIENT_NAME}' in namespace 'default'" in result.output
     assert "Client configuration successfully deleted" in result.output
@@ -123,7 +121,7 @@ async def test_delete_client(
 
     # Delete client object nointeractive
     mock_config_exists.return_value = True
-    result = await runner.invoke(delete, ["client", CLIENT_NAME, "--nointeractive"])
+    result = runner.invoke(delete, ["client", CLIENT_NAME, "--nointeractive"])
     assert result.exit_code == 0
     assert f"Deleted client '{CLIENT_NAME}' in namespace 'default'" in result.output
     assert "Client configuration successfully deleted" not in result.output
@@ -139,7 +137,7 @@ async def test_delete_client(
 
     # Delete client object output name
     mock_config_exists.return_value = True
-    result = await runner.invoke(delete, ["client", CLIENT_NAME, "--nointeractive", "--output", "name"])
+    result = runner.invoke(delete, ["client", CLIENT_NAME, "--nointeractive", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == f"client.jumpstarter.dev/{CLIENT_NAME}\n"
     mock_delete_client.assert_called_once_with(CLIENT_NAME)
@@ -175,12 +173,11 @@ EXPORTER_CONFIG = ExporterConfigV1Alpha1(
 )
 
 
-@pytest.mark.anyio
 @patch.object(ExporterConfigV1Alpha1, "delete")
 @patch.object(ExporterConfigV1Alpha1, "exists")
 @patch.object(ExportersV1Alpha1Api, "delete_exporter")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_delete_exporter(
+def test_delete_exporter(
     _mock_load_kube_config,
     mock_delete_exporter: AsyncMock,
     mock_config_exists: Mock,
@@ -190,7 +187,7 @@ async def test_delete_exporter(
 
     # Delete exporter object and config does not exist
     mock_config_exists.return_value = False
-    result = await runner.invoke(delete, ["exporter", EXPORTER_NAME])
+    result = runner.invoke(delete, ["exporter", EXPORTER_NAME])
     assert result.exit_code == 0
     assert "Deleted exporter 'test' in namespace 'default'" in result.output
     assert "Exporter configuration successfully deleted" not in result.output
@@ -203,7 +200,7 @@ async def test_delete_exporter(
 
     # Delete exporter object and config exists, delete = n
     mock_config_exists.return_value = True
-    result = await runner.invoke(delete, ["exporter", EXPORTER_NAME], input="n\n")
+    result = runner.invoke(delete, ["exporter", EXPORTER_NAME], input="n\n")
     assert result.exit_code == 0
     assert "Deleted exporter 'test' in namespace 'default'" in result.output
     assert "Exporter configuration successfully deleted" not in result.output
@@ -216,7 +213,7 @@ async def test_delete_exporter(
 
     # Delete exporter object and config exists, delete = Y
     mock_config_exists.return_value = True
-    result = await runner.invoke(delete, ["exporter", EXPORTER_NAME], input="Y\n")
+    result = runner.invoke(delete, ["exporter", EXPORTER_NAME], input="Y\n")
     assert result.exit_code == 0
     assert "Deleted exporter 'test' in namespace 'default'" in result.output
     assert "Exporter configuration successfully deleted" in result.output
@@ -229,7 +226,7 @@ async def test_delete_exporter(
 
     # Delete exporter object nointeractive
     mock_config_exists.return_value = True
-    result = await runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive"])
+    result = runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive"])
     assert result.exit_code == 0
     assert "Deleted exporter 'test' in namespace 'default'" in result.output
     assert "Exporter configuration successfully deleted" not in result.output
@@ -242,7 +239,7 @@ async def test_delete_exporter(
 
     # Delete exporter object output name
     mock_config_exists.return_value = True
-    result = await runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
+    result = runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == f"exporter.jumpstarter.dev/{EXPORTER_NAME}\n"
     mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
@@ -251,8 +248,3 @@ async def test_delete_exporter(
     mock_config_exists.reset_mock()
     mock_delete_exporter.reset_mock()
     mock_config_delete.reset_mock()
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"

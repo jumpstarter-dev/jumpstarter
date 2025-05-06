@@ -1,7 +1,6 @@
 import uuid
 from unittest.mock import AsyncMock, Mock, patch
 
-import pytest
 from click.testing import CliRunner
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
@@ -83,18 +82,17 @@ CLIENT_CONFIG = ClientConfigV1Alpha1(
 )
 
 
-@pytest.mark.anyio
 @patch.object(ClientConfigV1Alpha1, "save")
 @patch.object(ClientsV1Alpha1Api, "get_client_config")
 @patch.object(ClientsV1Alpha1Api, "create_client", return_value=CLIENT_OBJECT)
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")
-async def test_create_client(
+def test_create_client(
     _mock_load_kube_config, _mock_create_client, mock_get_client_config: AsyncMock, mock_save_client: Mock
 ):
     runner = CliRunner()
 
     # Don't save client config save = n
-    result = await runner.invoke(create, ["client", CLIENT_NAME], input="n\n")
+    result = runner.invoke(create, ["client", CLIENT_NAME], input="n\n")
     assert result.exit_code == 0
     assert "Creating client" in result.output
     assert CLIENT_NAME in result.output
@@ -106,7 +104,7 @@ async def test_create_client(
     mock_get_client_config.return_value = UNSAFE_CLIENT_CONFIG
 
     # Save with prompts save = Y, unsafe = Y
-    result = await runner.invoke(create, ["client", CLIENT_NAME], input="Y\nY\n")
+    result = runner.invoke(create, ["client", CLIENT_NAME], input="Y\nY\n")
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
     mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, None)
@@ -114,7 +112,7 @@ async def test_create_client(
 
     # Save with unsafe with custom output file
     out = f"/tmp/{CLIENT_NAME}.yaml"
-    result = await runner.invoke(create, ["client", CLIENT_NAME, "--unsafe", "--out", out], input="\n\n")
+    result = runner.invoke(create, ["client", CLIENT_NAME, "--unsafe", "--out", out], input="\n\n")
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
     mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
@@ -124,42 +122,42 @@ async def test_create_client(
     mock_get_client_config.return_value = CLIENT_CONFIG
 
     # Save with arguments
-    result = await runner.invoke(create, ["client", CLIENT_NAME, "--save", "--allow", DRIVER_NAME], input="n\n")
+    result = runner.invoke(create, ["client", CLIENT_NAME, "--save", "--allow", DRIVER_NAME], input="n\n")
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
     mock_save_client.assert_called_once_with(CLIENT_CONFIG, None)
     mock_save_client.reset_mock()
 
     # Save with prompts, save = Y, unsafe = n, allow = DRIVER_NAME
-    result = await runner.invoke(create, ["client", CLIENT_NAME], input=f"Y\nn\n{DRIVER_NAME}\n")
+    result = runner.invoke(create, ["client", CLIENT_NAME], input=f"Y\nn\n{DRIVER_NAME}\n")
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
     mock_save_client.assert_called_once_with(CLIENT_CONFIG, None)
     mock_save_client.reset_mock()
 
     # Save with nointeractive
-    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive"])
+    result = runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive"])
     assert result.exit_code == 0
     assert "Creating client" in result.output
     mock_save_client.assert_not_called()
     mock_save_client.reset_mock()
 
     # With JSON output
-    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "json"])
+    result = runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == CLIENT_JSON
     mock_save_client.assert_not_called()
     mock_save_client.reset_mock()
 
     # With YAML output
-    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "yaml"])
+    result = runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == CLIENT_YAML
     mock_save_client.assert_not_called()
     mock_save_client.reset_mock()
 
     # With name output
-    result = await runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "name"])
+    result = runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == f"client.jumpstarter.dev/{CLIENT_NAME}\n"
     mock_save_client.assert_not_called()
@@ -222,18 +220,17 @@ EXPORTER_CONFIG = ExporterConfigV1Alpha1(
 )
 
 
-@pytest.mark.anyio
 @patch.object(ExporterConfigV1Alpha1, "save")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
 @patch.object(ExportersV1Alpha1Api, "create_exporter", return_value=EXPORTER_OBJECT)
 @patch.object(ExportersV1Alpha1Api, "get_exporter_config", return_value=EXPORTER_CONFIG)
-async def test_create_exporter(
+def test_create_exporter(
     _get_exporter_config_mock, _create_exporter_mock, _load_kube_config_mock, save_exporter_mock: Mock
 ):
     runner = CliRunner()
 
     # Don't save exporter config
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME], input="n\n")
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME], input="n\n")
     assert result.exit_code == 0
     assert "Creating exporter" in result.output
     assert EXPORTER_NAME in result.output
@@ -242,14 +239,14 @@ async def test_create_exporter(
     save_exporter_mock.reset_mock()
 
     # Save with prompts
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME], input="Y\n")
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME], input="Y\n")
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, None)
     save_exporter_mock.reset_mock()
 
     # Save with arguments
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--save"])
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--save"])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, None)
@@ -257,41 +254,36 @@ async def test_create_exporter(
 
     # Save with arguments and custom path
     out = f"/tmp/{EXPORTER_NAME}.yaml"
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--out", out])
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--out", out])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, out)
     save_exporter_mock.reset_mock()
 
     # Save with nointeractive
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive"])
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive"])
     assert result.exit_code == 0
     assert "Creating exporter" in result.output
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 
     # Save with JSON output
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "json"])
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == EXPORTER_JSON
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 
     # Save with YAML output
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "yaml"])
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == EXPORTER_YAML
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 
     # Save with name output
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == f"exporter.jumpstarter.dev/{EXPORTER_NAME}\n"
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
