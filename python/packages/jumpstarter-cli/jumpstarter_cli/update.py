@@ -22,7 +22,7 @@ def update():
 @opt_duration_partial(required=True)
 @opt_output_all
 @handle_exceptions
-async def update_lease(config, name: str, duration: timedelta, output: OutputType):
+def update_lease(config, name: str, duration: timedelta, output: OutputType):
     """
     Update a lease
     """
