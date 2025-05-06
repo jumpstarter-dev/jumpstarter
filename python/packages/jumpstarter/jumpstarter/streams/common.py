@@ -18,7 +18,13 @@ async def copy_stream(dst: AnyByteStream, src: AnyByteStream):
     with suppress(BrokenResourceError, ClosedResourceError, asyncio.exceptions.InvalidStateError):
         async for v in src:
             await dst.send(v)
-        with suppress(AttributeError):
+        with suppress(
+            AttributeError,
+            # https://github.com/jumpstarter-dev/jumpstarter/issues/444
+            # sending EOF to UDS on Darwin could result in
+            # OSError: [Errno 57] Socket is not connected
+            OSError,
+        ):
             await dst.send_eof()
 
 
