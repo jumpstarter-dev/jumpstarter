@@ -55,7 +55,7 @@ docs = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "sphinx", specifier = "<8.1.0" },
     { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
-    { name = "sphinx-click", git = "https://github.com/NickCao/sphinx-click" },
+    { name = "sphinx-click", specifier = ">=6.0.0" },
     { name = "sphinx-multiversion", specifier = ">=0.2.4" },
     { name = "sphinx-substitution-extensions", specifier = ">=2024.10.17" },
     { name = "sphinxcontrib-mermaid", specifier = ">=0.9.2" },
@@ -3443,12 +3443,16 @@ wheels = [
 
 [[package]]
 name = "sphinx-click"
-version = "0.0.1.dev179"
-source = { git = "https://github.com/NickCao/sphinx-click#f738c837deb5fd99c42570684ceb8417cd297dd9" }
+version = "6.0.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "docutils" },
     { name = "sphinx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/0a/5b1e8d0579dbb4ca8114e456ca4a68020bfe8e15c7001f3856be4929ab83/sphinx_click-6.0.0.tar.gz", hash = "sha256:f5d664321dc0c6622ff019f1e1c84e58ce0cecfddeb510e004cf60c2a3ab465b", size = 29574, upload-time = "2024-05-15T14:49:17.044Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/d7/8621c4726ad3f788a1db4c0c409044b16edc563f5c9542807b3724037555/sphinx_click-6.0.0-py3-none-any.whl", hash = "sha256:1e0a3c83bcb7c55497751b19d07ebe56b5d7b85eb76dd399cf9061b497adc317", size = 9922, upload-time = "2024-05-15T14:49:15.768Z" },
 ]
 
 [[package]]
