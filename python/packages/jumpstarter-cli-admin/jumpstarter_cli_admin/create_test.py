@@ -2,7 +2,7 @@ import uuid
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from asyncclick.testing import CliRunner
+from click.testing import CliRunner
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,

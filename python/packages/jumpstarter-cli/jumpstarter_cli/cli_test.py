@@ -1,5 +1,5 @@
 import pytest
-from asyncclick.testing import CliRunner
+from click.testing import CliRunner
 
 from .jmp import jmp
 
