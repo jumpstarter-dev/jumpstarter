@@ -10,7 +10,9 @@
       let
         pkgs = import nixpkgs { inherit system; };
         deps =
-          pkgs: with pkgs; [
+          pkgs:
+          with pkgs;
+          [
             # core development utils
             uv
             ruff
@@ -20,6 +22,8 @@
             iperf3
             # qemu driver
             qemu
+          ]
+          ++ lib.optionals stdenv.hostPlatform.isLinux [
             # ustreamer driver
             ustreamer
           ];
