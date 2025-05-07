@@ -8,16 +8,36 @@ from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import jumpstarter_pb2_grpc
 
-from jumpstarter.client import DriverClient
+from jumpstarter.client import DriverClient, LogClient
 from jumpstarter.common.importlib import import_class
 
 
 @asynccontextmanager
-async def client_from_path(path: str, portal: BlockingPortal, stack: ExitStack, allow: list[str], unsafe: bool):
+async def client_from_path(
+    path: str,
+    portal: BlockingPortal,
+    stack: ExitStack,
+    allow: list[str],
+    unsafe: bool,
+):
     async with grpc.aio.secure_channel(
         f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
     ) as channel:
         yield await client_from_channel(channel, portal, stack, allow, unsafe)
+
+
+@asynccontextmanager
+async def log_client_from_path(
+    path: str,
+    portal: BlockingPortal,
+):
+    async with grpc.aio.secure_channel(
+        f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+    ) as channel:
+        yield LogClient(
+            channel=channel,
+            portal=portal,
+        )
 
 
 async def client_from_channel(
