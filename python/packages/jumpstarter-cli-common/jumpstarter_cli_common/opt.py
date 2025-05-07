@@ -3,10 +3,13 @@ from functools import partial
 from typing import Literal, Optional
 
 import click
+from rich import traceback
 from rich.logging import RichHandler
 
 
 def _opt_log_level_callback(ctx, param, value):
+    traceback.install()
+
     basicConfig = partial(logging.basicConfig, handlers=[RichHandler()])
     if value:
         basicConfig(level=value.upper())
