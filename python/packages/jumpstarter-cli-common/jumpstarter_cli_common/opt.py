@@ -1,14 +1,17 @@
 import logging
+from functools import partial
 from typing import Literal, Optional
 
 import click
+from rich.logging import RichHandler
 
 
 def _opt_log_level_callback(ctx, param, value):
+    basicConfig = partial(logging.basicConfig, handlers=[RichHandler()])
     if value:
-        logging.basicConfig(level=value.upper())
+        basicConfig(level=value.upper())
     else:
-        logging.basicConfig(level=logging.INFO)
+        basicConfig(level=logging.INFO)
 
 
 opt_log_level = click.option(
