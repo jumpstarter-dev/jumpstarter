@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from asyncclick.testing import CliRunner
+from click.testing import CliRunner
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
@@ -79,15 +78,14 @@ status:
 """
 
 
-@pytest.mark.anyio
 @patch.object(ClientsV1Alpha1Api, "get_client")
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")
-async def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
+def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
     runner = CliRunner()
 
     # Get a single client
     get_client_mock.return_value = TEST_CLIENT
-    result = await runner.invoke(get, ["client", "test"])
+    result = runner.invoke(get, ["client", "test"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "grpc://example.com:443" in result.output
@@ -95,21 +93,21 @@ async def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
 
     # Get a single client JSON output
     get_client_mock.return_value = TEST_CLIENT
-    result = await runner.invoke(get, ["client", "test", "--output", "json"])
+    result = runner.invoke(get, ["client", "test", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == TEST_CLIENT_JSON
     get_client_mock.reset_mock()
 
     # Get a single client YAML output
     get_client_mock.return_value = TEST_CLIENT
-    result = await runner.invoke(get, ["client", "test", "--output", "yaml"])
+    result = runner.invoke(get, ["client", "test", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == TEST_CLIENT_YAML
     get_client_mock.reset_mock()
 
     # Get a single client name output
     get_client_mock.return_value = TEST_CLIENT
-    result = await runner.invoke(get, ["client", "test", "--output", "name"])
+    result = runner.invoke(get, ["client", "test", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == "client.jumpstarter.dev/test\n"
     get_client_mock.reset_mock()
@@ -122,7 +120,7 @@ async def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
             '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"clients.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"clients"},"code":404}',  # noqa: E501
         )
     )
-    result = await runner.invoke(get, ["client", "hello"])
+    result = runner.invoke(get, ["client", "hello"])
     assert result.exit_code == 1
     assert "NotFound" in result.output
     get_client_mock.reset_mock()
@@ -231,15 +229,14 @@ kind: ClientList
 """
 
 
-@pytest.mark.anyio
 @patch.object(ClientsV1Alpha1Api, "list_clients")
 @patch.object(ClientsV1Alpha1Api, "_load_kube_config")
-async def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock):
+def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock):
     runner = CliRunner()
 
     # List clients
     list_clients_mock.return_value = CLIENTS_LIST
-    result = await runner.invoke(get, ["clients"])
+    result = runner.invoke(get, ["clients"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "another" in result.output
@@ -248,49 +245,49 @@ async def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock)
 
     # List clients JSON output
     list_clients_mock.return_value = CLIENTS_LIST
-    result = await runner.invoke(get, ["clients", "--output", "json"])
+    result = runner.invoke(get, ["clients", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == CLIENTS_LIST_JSON
     list_clients_mock.reset_mock()
 
     # List clients YAML output
     list_clients_mock.return_value = CLIENTS_LIST
-    result = await runner.invoke(get, ["clients", "--output", "yaml"])
+    result = runner.invoke(get, ["clients", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == CLIENTS_LIST_YAML
     list_clients_mock.reset_mock()
 
     # List clients name output
     list_clients_mock.return_value = CLIENTS_LIST
-    result = await runner.invoke(get, ["clients", "--output", "name"])
+    result = runner.invoke(get, ["clients", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == CLIENTS_LIST_NAME
     list_clients_mock.reset_mock()
 
     # No clients found
     list_clients_mock.return_value = V1Alpha1ClientList(items=[])
-    result = await runner.invoke(get, ["clients"])
+    result = runner.invoke(get, ["clients"])
     assert result.exit_code == 1
     assert "No resources found" in result.output
     list_clients_mock.reset_mock()
 
     # No clients found JSON output
     list_clients_mock.return_value = V1Alpha1ClientList(items=[])
-    result = await runner.invoke(get, ["clients", "--output", "json"])
+    result = runner.invoke(get, ["clients", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == CLIENTS_LIST_EMPTY_JSON
     list_clients_mock.reset_mock()
 
     # No clients found YAML output
     list_clients_mock.return_value = V1Alpha1ClientList(items=[])
-    result = await runner.invoke(get, ["clients", "--output", "yaml"])
+    result = runner.invoke(get, ["clients", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == CLIENTS_LIST_EMPTY_YAML
     list_clients_mock.reset_mock()
 
     # No clients found name output
     list_clients_mock.return_value = V1Alpha1ClientList(items=[])
-    result = await runner.invoke(get, ["clients", "--output", "name"])
+    result = runner.invoke(get, ["clients", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == ""
     list_clients_mock.reset_mock()
@@ -338,15 +335,14 @@ status:
 """
 
 
-@pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "get_exporter")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock):
+def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock):
     runner = CliRunner()
 
     # Get a single exporter
     get_exporter_mock.return_value = TEST_EXPORTER
-    result = await runner.invoke(get, ["exporter", "test"])
+    result = runner.invoke(get, ["exporter", "test"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "grpc://example.com:443" in result.output
@@ -354,21 +350,21 @@ async def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock
 
     # Get a single exporter JSON output
     get_exporter_mock.return_value = TEST_EXPORTER
-    result = await runner.invoke(get, ["exporter", "test", "--output", "json"])
+    result = runner.invoke(get, ["exporter", "test", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == TEST_EXPORTER_JSON
     get_exporter_mock.reset_mock()
 
     # Get a single exporter YAML output
     get_exporter_mock.return_value = TEST_EXPORTER
-    result = await runner.invoke(get, ["exporter", "test", "--output", "yaml"])
+    result = runner.invoke(get, ["exporter", "test", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == TEST_EXPORTER_YAML
     get_exporter_mock.reset_mock()
 
     # Get a single exporter name output
     get_exporter_mock.return_value = TEST_EXPORTER
-    result = await runner.invoke(get, ["exporter", "test", "--output", "name"])
+    result = runner.invoke(get, ["exporter", "test", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == "exporter.jumpstarter.dev/test\n"
     get_exporter_mock.reset_mock()
@@ -381,7 +377,7 @@ async def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock
             '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
         )
     )
-    result = await runner.invoke(get, ["exporter", "hello"])
+    result = runner.invoke(get, ["exporter", "hello"])
     assert result.exit_code == 1
     assert "NotFound" in result.output
 
@@ -452,14 +448,13 @@ status:
 """
 
 
-@pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "get_exporter")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: AsyncMock):
+def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: AsyncMock):
     runner = CliRunner()
     # Returns exporter
     get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
-    result = await runner.invoke(get, ["exporter", "test", "--devices"])
+    result = runner.invoke(get, ["exporter", "test", "--devices"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "grpc://example.com:443" in result.output
@@ -470,21 +465,21 @@ async def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: A
 
     # Returns exporter JSON output
     get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
-    result = await runner.invoke(get, ["exporter", "test", "--devices", "--output", "json"])
+    result = runner.invoke(get, ["exporter", "test", "--devices", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == TEST_EXPORTER_DEVICES_JSON
     get_exporter_mock.reset_mock()
 
     # Returns exporter YAML output
     get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
-    result = await runner.invoke(get, ["exporter", "test", "--devices", "--output", "yaml"])
+    result = runner.invoke(get, ["exporter", "test", "--devices", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == TEST_EXPORTER_DEVICES_YAML
     get_exporter_mock.reset_mock()
 
     # Returns exporter name output
     get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
-    result = await runner.invoke(get, ["exporter", "test", "--devices", "--output", "name"])
+    result = runner.invoke(get, ["exporter", "test", "--devices", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == "exporter.jumpstarter.dev/test\n"
     get_exporter_mock.reset_mock()
@@ -497,7 +492,7 @@ async def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: A
             '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"exporters.jumpstarter.dev "test" not found","reason":"NotFound","details":{"name":"hello","group":"jumpstarter.dev","kind":"exporters"},"code":404}',  # noqa: E501
         )
     )
-    result = await runner.invoke(get, ["exporter", "hello", "--devices"])
+    result = runner.invoke(get, ["exporter", "hello", "--devices"])
     assert result.exit_code == 1
     assert "NotFound" in result.output
 
@@ -600,15 +595,14 @@ exporter.jumpstarter.dev/another
 """
 
 
-@pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "list_exporters")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
+def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
     runner = CliRunner()
 
     # List exporters
     list_exporters_mock.return_value = EXPORTERS_LIST
-    result = await runner.invoke(get, ["exporters"])
+    result = runner.invoke(get, ["exporters"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "another" in result.output
@@ -616,21 +610,21 @@ async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncM
 
     # List exporters JSON output
     list_exporters_mock.return_value = EXPORTERS_LIST
-    result = await runner.invoke(get, ["exporters", "--output", "json"])
+    result = runner.invoke(get, ["exporters", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == EXPORTERS_LIST_JSON
     list_exporters_mock.reset_mock()
 
     # List exporters YAML output
     list_exporters_mock.return_value = EXPORTERS_LIST
-    result = await runner.invoke(get, ["exporters", "--output", "yaml"])
+    result = runner.invoke(get, ["exporters", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == EXPORTERS_LIST_YAML
     list_exporters_mock.reset_mock()
 
     # List exporters name output
     list_exporters_mock.return_value = EXPORTERS_LIST
-    result = await runner.invoke(get, ["exporters", "--output", "name"])
+    result = runner.invoke(get, ["exporters", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == EXPORTERS_LIST_NAME
     list_exporters_mock.reset_mock()
@@ -641,7 +635,7 @@ async def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncM
         "list_exporters",
         return_value=V1Alpha1ExporterList(items=[]),
     ):
-        result = await runner.invoke(get, ["exporters"])
+        result = runner.invoke(get, ["exporters"])
         assert result.exit_code == 1
         assert "No resources found" in result.output
 
@@ -766,15 +760,14 @@ kind: ExporterList
 EXPORTERS_DEVICES_LIST_NAME = EXPORTERS_LIST_NAME
 
 
-@pytest.mark.anyio
 @patch.object(ExportersV1Alpha1Api, "list_exporters")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
-async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: AsyncMock):
+def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: AsyncMock):
     runner = CliRunner()
 
     # List exporters
     list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
-    result = await runner.invoke(get, ["exporters", "--devices"])
+    result = runner.invoke(get, ["exporters", "--devices"])
     assert result.exit_code == 0
     assert "test" in result.output
     assert "another" in result.output
@@ -785,28 +778,28 @@ async def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock
 
     # List exporters JSON output
     list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
-    result = await runner.invoke(get, ["exporters", "--devices", "--output", "json"])
+    result = runner.invoke(get, ["exporters", "--devices", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == EXPORTERS_DEVICES_LIST_JSON
     list_exporters_mock.reset_mock()
 
     # List exporters YAML output
     list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
-    result = await runner.invoke(get, ["exporters", "--devices", "--output", "yaml"])
+    result = runner.invoke(get, ["exporters", "--devices", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == EXPORTERS_DEVICES_LIST_YAML
     list_exporters_mock.reset_mock()
 
     # List exporters name output
     list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
-    result = await runner.invoke(get, ["exporters", "--devices", "--output", "name"])
+    result = runner.invoke(get, ["exporters", "--devices", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == EXPORTERS_DEVICES_LIST_NAME
     list_exporters_mock.reset_mock()
 
     # No exporters found
     list_exporters_mock.return_value = V1Alpha1ExporterList(items=[])
-    result = await runner.invoke(get, ["exporters", "--devices"])
+    result = runner.invoke(get, ["exporters", "--devices"])
     assert result.exit_code == 1
     assert "No resources found" in result.output
 
@@ -940,15 +933,14 @@ status:
 """
 
 
-@pytest.mark.anyio
 @patch.object(LeasesV1Alpha1Api, "get_lease")
 @patch.object(LeasesV1Alpha1Api, "_load_kube_config")
-async def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
+def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
     runner = CliRunner()
 
     # Get an in progress lease
     get_lease_mock.return_value = IN_PROGRESS_LEASE
-    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
+    result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
     assert result.exit_code == 0
     assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
     assert "test_client" in result.output
@@ -962,7 +954,7 @@ async def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
 
     # Get a finished lease
     get_lease_mock.return_value = FINISHED_LEASE
-    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2"])
+    result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2"])
     assert result.exit_code == 0
     assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b2" in result.output
     assert "test_client" in result.output
@@ -977,21 +969,21 @@ async def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
 
     # Get a finished lease JSON output
     get_lease_mock.return_value = FINISHED_LEASE
-    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "json"])
+    result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == FINISHED_LEASE_JSON
     get_lease_mock.reset_mock()
 
     # Get a finished lease YAML output
     get_lease_mock.return_value = FINISHED_LEASE
-    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "yaml"])
+    result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == FINISHED_LEASE_YAML
     get_lease_mock.reset_mock()
 
     # Get a finished lease name output
     get_lease_mock.return_value = FINISHED_LEASE
-    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "name"])
+    result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == "lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b2\n"
     get_lease_mock.reset_mock()
@@ -1004,7 +996,7 @@ async def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
             '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"leases.jumpstarter.dev "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" not found","reason":"NotFound","details":{"name":"82a8ac0d-d7ff-4009-8948-18a3c5c607b1","group":"jumpstarter.dev","kind":"leases"},"code":404}',  # noqa: E501
         )
     )
-    result = await runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
+    result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b1"])
     assert result.exit_code == 1
     assert "NotFound" in result.output
 
@@ -1153,15 +1145,14 @@ lease.jumpstarter.dev/82a8ac0d-d7ff-4009-8948-18a3c5c607b2
 """
 
 
-@pytest.mark.anyio
 @patch.object(LeasesV1Alpha1Api, "list_leases")
 @patch.object(LeasesV1Alpha1Api, "_load_kube_config")
-async def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
+def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     runner = CliRunner()
 
     # Found leases
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
-    result = await runner.invoke(get, ["leases"])
+    result = runner.invoke(get, ["leases"])
     assert result.exit_code == 0
     assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b1" in result.output
     assert "82a8ac0d-d7ff-4009-8948-18a3c5c607b2" in result.output
@@ -1180,32 +1171,27 @@ async def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
 
     # Found leases JSON output
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
-    result = await runner.invoke(get, ["leases", "--output", "json"])
+    result = runner.invoke(get, ["leases", "--output", "json"])
     assert result.exit_code == 0
     assert result.output == LEASES_LIST_JSON
     list_leases_mock.reset_mock()
 
     # Found leases YAML output
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
-    result = await runner.invoke(get, ["leases", "--output", "yaml"])
+    result = runner.invoke(get, ["leases", "--output", "yaml"])
     assert result.exit_code == 0
     assert result.output == LEASES_LIST_YAML
     list_leases_mock.reset_mock()
 
     # Found leases name output
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
-    result = await runner.invoke(get, ["leases", "--output", "name"])
+    result = runner.invoke(get, ["leases", "--output", "name"])
     assert result.exit_code == 0
     assert result.output == LEASES_LIST_NAME
     list_leases_mock.reset_mock()
 
     # No leases found
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[])
-    result = await runner.invoke(get, ["leases"])
+    result = runner.invoke(get, ["leases"])
     assert result.exit_code == 1
     assert "No resources found" in result.output
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"

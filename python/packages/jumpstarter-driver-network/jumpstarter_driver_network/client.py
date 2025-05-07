@@ -2,7 +2,7 @@ from contextlib import AbstractContextManager
 from ipaddress import IPv6Address, ip_address
 from threading import Event
 
-import asyncclick as click
+import click
 
 from .adapters import DbusAdapter, TcpPortforwardAdapter, UnixPortforwardAdapter
 from .driver import DbusNetwork

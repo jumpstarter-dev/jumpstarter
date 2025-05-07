@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-import asyncclick as click
+import click
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 

@@ -1,6 +1,6 @@
 import json
 
-import asyncclick as click
+import click
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 

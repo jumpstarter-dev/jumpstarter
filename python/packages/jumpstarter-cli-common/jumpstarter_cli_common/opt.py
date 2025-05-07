@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-import asyncclick as click
+import click
 
 opt_log_level = click.option(
     "--log-level",

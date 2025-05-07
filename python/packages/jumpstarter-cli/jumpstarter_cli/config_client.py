@@ -1,6 +1,6 @@
 from typing import Optional
 
-import asyncclick as click
+import click
 from jumpstarter_cli_common.exceptions import handle_exceptions
 from jumpstarter_cli_common.opt import (
     OutputMode,

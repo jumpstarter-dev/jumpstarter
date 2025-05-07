@@ -1,8 +1,9 @@
 import logging
 from typing import Optional
 
-import asyncclick as click
+import click
 from jumpstarter_cli_common.alias import AliasedGroup
+from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import (
     OutputMode,
     OutputType,
@@ -78,6 +79,7 @@ def print_created_client(client: V1Alpha1Client, output: OutputType):
 @opt_oidc_username
 @opt_nointeractive
 @opt_output_all
+@blocking
 async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -159,6 +161,7 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
 @opt_oidc_username
 @opt_nointeractive
 @opt_output_all
+@blocking
 async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],

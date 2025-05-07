@@ -1,6 +1,6 @@
 from importlib.metadata import entry_points
 
-import asyncclick as click
+import click
 from jumpstarter_cli_common.table import make_table
 
 

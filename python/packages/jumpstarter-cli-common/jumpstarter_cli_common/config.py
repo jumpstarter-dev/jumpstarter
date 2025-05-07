@@ -1,7 +1,7 @@
 from functools import partial, reduce, wraps
 from pathlib import Path
 
-import asyncclick as click
+import click
 
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
