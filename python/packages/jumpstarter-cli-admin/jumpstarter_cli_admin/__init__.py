@@ -1,5 +1,3 @@
-import logging
-
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.opt import opt_log_level
@@ -14,12 +12,8 @@ from .install import install
 
 @click.group(cls=AliasedGroup)
 @opt_log_level
-def admin(log_level):
+def admin():
     """Jumpstarter Kubernetes cluster admin CLI tool"""
-    if log_level:
-        logging.basicConfig(level=log_level.upper())
-    else:
-        logging.basicConfig(level=logging.INFO)
 
 
 admin.add_command(get)

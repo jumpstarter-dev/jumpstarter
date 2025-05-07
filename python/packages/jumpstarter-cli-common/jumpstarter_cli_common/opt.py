@@ -1,13 +1,25 @@
+import logging
 from typing import Literal, Optional
 
 import click
+
+
+def _opt_log_level_callback(ctx, param, value):
+    if value:
+        logging.basicConfig(level=value.upper())
+    else:
+        logging.basicConfig(level=logging.INFO)
+
 
 opt_log_level = click.option(
     "--log-level",
     "log_level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     help="Set the log level",
+    expose_value=False,
+    callback=_opt_log_level_callback,
 )
+
 
 opt_kubeconfig = click.option(
     "--kubeconfig", "kubeconfig", type=click.File(), default=None, help="path to the kubeconfig file"
