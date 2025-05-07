@@ -11,8 +11,18 @@ from anyio.from_thread import BlockingPortal
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
-from .core import AsyncDriverClient
+from .core import AsyncDriverClient, AsyncLogClient
 from jumpstarter.streams.blocking import BlockingStream
+
+
+@dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
+class LogClient(AsyncLogClient):
+    portal: BlockingPortal
+
+    @contextmanager
+    def log_stream(self):
+        with self.portal.wrap_async_context_manager(self.log_stream_async()):
+            yield
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -74,11 +84,6 @@ class DriverClient(AsyncDriverClient):
 
         with self.portal.wrap_async_context_manager(self.stream_async(method)) as stream:
             yield BlockingStream(stream=stream, portal=self.portal)
-
-    @contextmanager
-    def log_stream(self):
-        with self.portal.wrap_async_context_manager(self.log_stream_async()):
-            yield
 
     def open_stream(self) -> BlockingStream:
         """

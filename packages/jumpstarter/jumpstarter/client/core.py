@@ -46,6 +46,39 @@ class DriverInvalidArgument(DriverError, ValueError):
 
 
 @dataclass(kw_only=True)
+class AsyncLogClient(
+    jumpstarter_pb2_grpc.ExporterServiceStub,
+):
+    """
+    Async log client base class
+    """
+
+    channel: Channel
+    logger: logging.Logger = field(
+        default_factory=lambda: logging.getLogger("exporter"),
+    )
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        jumpstarter_pb2_grpc.ExporterServiceStub.__init__(self, self.channel)
+
+    @asynccontextmanager
+    async def log_stream_async(self):
+        async def log_stream_task():
+            async for response in self.LogStream(empty_pb2.Empty()):
+                self.logger.log(logging.getLevelName(response.severity), response.message)
+
+        async with create_task_group() as tg:
+            tg.start_soon(log_stream_task)
+            try:
+                yield
+            finally:
+                tg.cancel_scope.cancel()
+
+
+@dataclass(kw_only=True)
 class AsyncDriverClient(
     Metadata,
     jumpstarter_pb2_grpc.ExporterServiceStub,
@@ -150,19 +183,3 @@ class AsyncDriverClient(
                 yield ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata)).resource.model_dump(
                     mode="json"
                 )
-
-    def __log(self, level: int, msg: str):
-        self.logger.log(level, msg)
-
-    @asynccontextmanager
-    async def log_stream_async(self):
-        async def log_stream():
-            async for response in self.LogStream(empty_pb2.Empty()):
-                self.__log(logging.getLevelName(response.severity), response.message)
-
-        async with create_task_group() as tg:
-            tg.start_soon(log_stream)
-            try:
-                yield
-            finally:
-                tg.cancel_scope.cancel()
