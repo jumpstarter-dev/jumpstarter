@@ -1,4 +1,3 @@
-import logging
 from typing import Optional
 
 import click
@@ -8,7 +7,6 @@ from jumpstarter_cli_common.opt import (
     NameOutputType,
     opt_context,
     opt_kubeconfig,
-    opt_log_level,
     opt_namespace,
     opt_nointeractive,
     opt_output_name_only,
@@ -27,13 +25,8 @@ from jumpstarter.config.user import UserConfigV1Alpha1
 
 
 @click.group(cls=AliasedGroup)
-@opt_log_level
-def delete(log_level: Optional[str]):
+def delete():
     """Create Jumpstarter Kubernetes objects"""
-    if log_level:
-        logging.basicConfig(level=log_level.upper())
-    else:
-        logging.basicConfig(level=logging.INFO)
 
 
 @delete.command("client")

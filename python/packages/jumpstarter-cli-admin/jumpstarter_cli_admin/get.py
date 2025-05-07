@@ -1,4 +1,3 @@
-import logging
 from typing import Optional
 
 import click
@@ -8,7 +7,6 @@ from jumpstarter_cli_common.opt import (
     OutputType,
     opt_context,
     opt_kubeconfig,
-    opt_log_level,
     opt_namespace,
     opt_output_all,
 )
@@ -28,13 +26,8 @@ from .print import print_client, print_clients, print_exporter, print_exporters,
 
 
 @click.group(cls=AliasedGroup)
-@opt_log_level
-def get(log_level: Optional[str]):
+def get():
     """Get Jumpstarter Kubernetes objects"""
-    if log_level:
-        logging.basicConfig(level=log_level.upper())
-    else:
-        logging.basicConfig(level=logging.INFO)
 
 
 @get.command("client")
