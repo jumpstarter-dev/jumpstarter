@@ -1,8 +1,9 @@
 import logging
 from typing import Optional
 
-import asyncclick as click
+import click
 from jumpstarter_cli_common.alias import AliasedGroup
+from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import (
     OutputType,
     opt_context,
@@ -42,6 +43,7 @@ def get(log_level: Optional[str]):
 @opt_kubeconfig
 @opt_context
 @opt_output_all
+@blocking
 async def get_client(
     name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
 ):
@@ -67,6 +69,7 @@ async def get_client(
 @opt_context
 @opt_output_all
 @click.option("-d", "--devices", is_flag=True, help="Display the devices hosted by the exporter(s)")
+@blocking
 async def get_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
@@ -96,6 +99,7 @@ async def get_exporter(
 @opt_kubeconfig
 @opt_context
 @opt_output_all
+@blocking
 async def get_lease(
     name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
 ):

@@ -11,7 +11,7 @@ from pathlib import Path, PosixPath
 from queue import Queue
 from urllib.parse import urlparse
 
-import asyncclick as click
+import click
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
 from jumpstarter_driver_opendal.common import PathBuf

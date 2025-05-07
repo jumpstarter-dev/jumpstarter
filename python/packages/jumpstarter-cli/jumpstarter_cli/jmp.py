@@ -1,6 +1,6 @@
 import logging
 
-import asyncclick as click
+import click
 from jumpstarter_cli_admin import admin
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.opt import opt_log_level

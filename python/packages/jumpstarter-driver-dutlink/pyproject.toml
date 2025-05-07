@@ -19,7 +19,7 @@ dependencies = [
   "jumpstarter-driver-power",
   "pyudev>=0.24.3",
   "pyusb>=1.2.1",
-  "asyncclick>=8.1.7.2",
+  "click>=8.1.7.2",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

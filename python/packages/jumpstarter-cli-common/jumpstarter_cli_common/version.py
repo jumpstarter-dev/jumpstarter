@@ -2,7 +2,7 @@ import importlib.metadata
 import os
 import sys
 
-import asyncclick as click
+import click
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 

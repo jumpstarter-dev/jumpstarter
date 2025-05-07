@@ -5,7 +5,7 @@ from functools import wraps
 from typing import ClassVar
 
 import aiohttp
-import asyncclick as click
+import click
 import truststore
 from aiohttp import web
 from anyio import create_memory_object_stream

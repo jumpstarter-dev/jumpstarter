@@ -1,4 +1,4 @@
-import asyncclick as click
+import click
 from jumpstarter_cli_common.opt import OutputMode, OutputType
 from jumpstarter_cli_common.table import make_table
 from jumpstarter_cli_common.time import time_since

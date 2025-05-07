@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID
 
-import asyncclick as click
+import click
 from anyio import EndOfStream
 from anyio.abc import ObjectStream
 from opendal import Operator

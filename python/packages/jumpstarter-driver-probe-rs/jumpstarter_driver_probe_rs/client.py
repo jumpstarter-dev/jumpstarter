@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-import asyncclick as click
+import click
 from jumpstarter_driver_opendal.adapter import OpendalAdapter
 from opendal import Operator
 

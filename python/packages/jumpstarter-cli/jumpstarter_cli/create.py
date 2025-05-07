@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-import asyncclick as click
+import click
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 from jumpstarter_cli_common.opt import OutputMode, OutputType, opt_output_all
@@ -22,7 +22,7 @@ def create():
 @opt_duration_partial(required=True)
 @opt_output_all
 @handle_exceptions
-async def create_lease(config, selector: str, duration: timedelta, output: OutputType):
+def create_lease(config, selector: str, duration: timedelta, output: OutputType):
     """
     Create a lease
 

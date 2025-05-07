@@ -9,7 +9,7 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "pyserial>=3.5", "asyncclick>=8.1.7.2"]
+dependencies = ["jumpstarter", "pyserial>=3.5", "click>=8.1.7.2"]
 
 [project.entry-points."jumpstarter.drivers"]
 MockPower = "jumpstarter_driver_power.driver:MockPower"

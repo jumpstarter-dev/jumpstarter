@@ -1,6 +1,7 @@
 import sys
 
-import asyncclick as click
+import click
+from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
@@ -19,6 +20,7 @@ async def _serve_with_exc_handling(exporter):
 @click.command("run")
 @opt_config(client=False)
 @handle_exceptions
+@blocking
 async def run(config):
     """Run an exporter locally."""
 

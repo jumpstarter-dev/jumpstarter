@@ -1,4 +1,4 @@
-import asyncclick as click
+import click
 
 from .config_client import config_client
 from .config_exporter import config_exporter
