@@ -6,6 +6,7 @@ on:
       - '*'
     branches:
       - main
+      - 'release-*'
 
 env:
   REGISTRY: quay.io
@@ -30,6 +31,28 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
 
+      - name: Set image tags
+        id: set-tags
+        run: |
+          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          fi
+
+          if [[ "${{ github.ref }}" == "refs/heads/release-*" ]]; then
+            RELEASE_BRANCH_NAME=$(basename "${{ github.ref }}")
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${RELEASE_BRANCH_NAME}"
+          fi
+
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -38,8 +61,15 @@ jobs:
           password: ${{ secrets.QUAY_TOKEN }}
 
       - name: Build and push Docker image
-        run: |
-          make docker-buildx IMG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.set-tags.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   publish-helm-charts-containers:
     needs: build-and-push-image
@@ -73,3 +103,9 @@ jobs:
       - name: Push helm charts
         run: |
           helm push jumpstarter-*.tgz oci://${{ env.QUAY_ORG }}/helm
+
+          if [[ "${{ github.ref }}" == "refs/heads/release-*" ]]; then
+            RELEASE_BRANCH_NAME=$(basename "${{ github.ref }}")
+            helm chart save jumpstarter-*.tgz ${{ env.QUAY_ORG }}/helm:${RELEASE_BRANCH_NAME}
+            helm chart push ${{ env.QUAY_ORG }}/helm:${RELEASE_BRANCH_NAME}
+          fi
