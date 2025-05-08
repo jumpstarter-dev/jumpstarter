@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-
+      - 'release-*'
 jobs:
   e2e-tests:
     strategy:
@@ -17,7 +17,8 @@ jobs:
       - uses: jumpstarter-dev/jumpstarter-e2e@main
         with:
           controller-ref: ${{ github.ref }}
-          jumpstarter-ref: main
+          # use the matching branch on the jumpstarter repo
+          jumpstarter-ref: ${{ github.event.pull_request.base.ref }}
   e2e-tests-28d6b1cc3b49ab9ae176918ab9709a2e2522c97e:
     runs-on: ubuntu-latest
     steps:
