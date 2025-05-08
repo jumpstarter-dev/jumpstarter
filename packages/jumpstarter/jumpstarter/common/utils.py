@@ -45,11 +45,14 @@ ANSI_WHITE = "\\[\\e[97m\\]"
 ANSI_RESET = "\\[\\e[0m\\]"
 PROMPT_CWD = "\\W"
 
+BASH_PROMPT = f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{{context}} {ANSI_YELLOW}➤{ANSI_RESET} "
+ZSH_PROMPT = "%F{grey}%~ %F{yellow}⚡%F{white}{{context}} %F{yellow}➤%f "
+
 
 def launch_shell(
     host: str,
     context: str,
-    allow: [str],
+    allow: list[str],
     unsafe: bool,
     *,
     command: tuple[str, ...] | None = None,
@@ -63,11 +66,7 @@ def launch_shell(
         unsafe: Whether to allow drivers outside of the allow list
     """
 
-    env = os.environ | {
-        JUMPSTARTER_HOST: host,
-        JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
-        "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
-    }
+    env = os.environ | {JUMPSTARTER_HOST: host, JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow)}
 
     if command:
         process = Popen(command, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
@@ -76,6 +75,11 @@ def launch_shell(
         if cmd[0].endswith("bash"):
             cmd.append("--norc")
             cmd.append("--noprofile")
+            env["PS1"] = f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} "
+        elif cmd[0].endswith("zsh"):
+            cmd.append("-f")
+            cmd.append("-i")
+            env["PROMPT"] = "%F{grey}%~ %F{yellow}⚡%F{white}local %F{yellow}➤%f "
 
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
 

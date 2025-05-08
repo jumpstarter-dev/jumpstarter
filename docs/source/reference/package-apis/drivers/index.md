@@ -15,6 +15,8 @@ function:
 Drivers that control the power state and basic operation of devices:
 
 * **[Power](power.md)** (`jumpstarter-driver-power`) - Power control for devices
+* **[Android](android.md)** (`jumpstarter-driver-android`) -
+  Android device control over ADB
 * **[Raspberry Pi](raspberrypi.md)** (`jumpstarter-driver-raspberrypi`) -
   Raspberry Pi hardware control
 * **[Yepkit](yepkit.md)** (`jumpstarter-driver-yepkit`) - Yepkit hardware
@@ -56,6 +58,16 @@ Drivers that handle media streams:
 * **[UStreamer](ustreamer.md)** (`jumpstarter-driver-ustreamer`) - Video
   streaming functionality
 
+### Virtualization Drivers
+
+Drivers for running virtual machines and systems:
+
+* **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
+* **[Corellium](corellium.md)** (`jumpstarter-driver-corellium`) - Corellium
+  virtualization platform
+* **[Android](android.md)** (`jumpstarter-driver-android`) -
+  Android Virtual Device (AVD) emulator
+
 ### Debug and Programming Drivers
 
 Drivers for debugging and programming devices:
@@ -64,9 +76,6 @@ Drivers for debugging and programming devices:
   programming tools
 * **[Probe-RS](probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe
   support
-* **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
-* **[Corellium](corellium.md)** (`jumpstarter-driver-corellium`) - Corellium
-  virtualization platform
 * **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader
   interface
 
@@ -78,6 +87,7 @@ General-purpose utility drivers:
 
 ```{toctree}
 :hidden:
+android.md
 can.md
 corellium.md
 dutlink.md
