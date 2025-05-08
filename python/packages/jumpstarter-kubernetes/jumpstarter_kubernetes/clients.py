@@ -53,6 +53,21 @@ class V1Alpha1Client(JsonBaseModel):
             else None,
         )
 
+    @classmethod
+    def rich_add_columns(cls, table):
+        table.add_column("NAME")
+        table.add_column("ENDPOINT")
+        # table.add_column("AGE")
+
+    def rich_add_rows(self, table):
+        table.add_row(
+            self.metadata.name,
+            self.status.endpoint if self.status is not None else "",
+        )
+
+    def rich_add_names(self, names):
+        names.append(f"client.jumpstarter.dev/{self.metadata.name}")
+
 
 class V1Alpha1ClientList(V1Alpha1List[V1Alpha1Client]):
     kind: Literal["ClientList"] = Field(default="ClientList")
@@ -60,6 +75,18 @@ class V1Alpha1ClientList(V1Alpha1List[V1Alpha1Client]):
     @staticmethod
     def from_dict(dict: dict):
         return V1Alpha1ClientList(items=[V1Alpha1Client.from_dict(c) for c in dict.get("items", [])])
+
+    @classmethod
+    def rich_add_columns(cls, table):
+        V1Alpha1Client.rich_add_columns(table)
+
+    def rich_add_rows(self, table):
+        for client in self.items:
+            client.rich_add_rows(table)
+
+    def rich_add_names(self, names):
+        for client in self.items:
+            client.rich_add_names(names)
 
 
 class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):

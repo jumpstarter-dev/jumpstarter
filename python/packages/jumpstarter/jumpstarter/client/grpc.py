@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-import yaml
 from google.protobuf import duration_pb2, field_mask_pb2, json_format
 from grpc import ChannelConnectivity
 from grpc.aio import Channel
@@ -48,6 +47,20 @@ class Exporter(BaseModel):
     def from_protobuf(cls, data: client_pb2.Exporter) -> Exporter:
         namespace, name = parse_exporter_identifier(data.name)
         return cls(namespace=namespace, name=name, labels=data.labels)
+
+    @classmethod
+    def rich_add_columns(cls, table):
+        table.add_column("NAME")
+        table.add_column("LABELS")
+
+    def rich_add_rows(self, table):
+        table.add_row(
+            self.name,
+            ",".join(("{}={}".format(i[0], i[1]) for i in self.labels.items())),
+        )
+
+    def rich_add_names(self, names):
+        names.append(self.name)
 
 
 class Lease(BaseModel):
@@ -96,11 +109,25 @@ class Lease(BaseModel):
             conditions=data.conditions,
         )
 
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
+    @classmethod
+    def rich_add_columns(cls, table):
+        table.add_column("NAME")
+        table.add_column("SELECTOR")
+        table.add_column("DURATION")
+        table.add_column("CLIENT")
+        table.add_column("EXPORTER")
 
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
+    def rich_add_rows(self, table):
+        table.add_row(
+            self.name,
+            self.selector,
+            str(self.duration),
+            self.client,
+            self.exporter,
+        )
+
+    def rich_add_names(self, names):
+        names.append(self.name)
 
 
 class ExporterList(BaseModel):
@@ -114,11 +141,17 @@ class ExporterList(BaseModel):
             next_page_token=data.next_page_token,
         )
 
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
+    @classmethod
+    def rich_add_columns(cls, table):
+        Exporter.rich_add_columns(table)
 
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
+    def rich_add_rows(self, table):
+        for exporter in self.exporters:
+            exporter.rich_add_rows(table)
+
+    def rich_add_names(self, names):
+        for exporter in self.exporters:
+            exporter.rich_add_names(names)
 
 
 class LeaseList(BaseModel):
@@ -132,11 +165,17 @@ class LeaseList(BaseModel):
             next_page_token=data.next_page_token,
         )
 
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
+    @classmethod
+    def rich_add_columns(cls, table):
+        Lease.rich_add_columns(table)
 
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
+    def rich_add_rows(self, table):
+        for lease in self.leases:
+            lease.rich_add_rows(table)
+
+    def rich_add_names(self, names):
+        for lease in self.leases:
+            lease.rich_add_names(names)
 
 
 @dataclass(kw_only=True, slots=True)
