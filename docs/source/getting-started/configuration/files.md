@@ -29,7 +29,17 @@ config:
 **File**: Various files with `.yaml` extension  
 **Location**: `~/.config/jumpstarter/clients/*.yaml`  
 **Description**: Stores client configurations including endpoints, access
-tokens, and driver settings.  
+tokens, and driver settings.
+
+```{warning}
+The jumpstarter-controller endpoints are secured by TLS, but in 0.6 the certificates
+are rotated every time the controller is restarted. This means that the certificates cannot
+be trusted by default. You should either use `tls.insecure: true` in your client
+configuration which is the default for this version, or set the `JUMPSTARTER_GRPC_INSECURE`
+environment variable to `1` to disable TLS verification. This will be fixed in 0.7 with proper
+certificate management, and cert-manager integration. See issue
+[#455](https://github.com/jumpstarter-dev/jumpstarter/issues/455)
+```
 
 **Format**:
 ```yaml
@@ -39,7 +49,7 @@ metadata:
   name: myclient
   namespace: jumpstarter-lab
 tls:
-  insecure: false
+  insecure: true
   ca: ""
 endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
@@ -81,7 +91,7 @@ metadata:
   name: myexporter
   namespace: jumpstarter-lab
 tls:
-  insecure: false
+  insecure: true
   ca: ""
 endpoint: "jumpstarter.my-lab.com:1443"
 token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"

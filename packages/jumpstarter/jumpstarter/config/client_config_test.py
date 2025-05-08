@@ -205,7 +205,7 @@ metadata:
 endpoint: jumpstarter.my-lab.com:1443
 tls:
   ca: ''
-  insecure: false
+  insecure: true
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 grpcOptions: {}
 drivers:
@@ -241,7 +241,7 @@ metadata:
 endpoint: jumpstarter.my-lab.com:1443
 tls:
   ca: ''
-  insecure: false
+  insecure: true
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 grpcOptions: {}
 drivers:
@@ -275,7 +275,7 @@ metadata:
 endpoint: jumpstarter.my-lab.com:1443
 tls:
   ca: ''
-  insecure: false
+  insecure: true
 token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
 grpcOptions: {}
 drivers:

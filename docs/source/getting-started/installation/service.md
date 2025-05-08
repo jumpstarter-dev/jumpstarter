@@ -16,6 +16,16 @@ Jumpstarter environment. Before installing, ensure you have:
 - `router.jumpstarter.example.com` (for router endpoints)
 ```
 
+```{warning}
+The jumpstarter-controller endpoints are secured by TLS, but in 0.6 the certificates
+are rotated every time the controller is restarted. This means that the certificates cannot
+be trusted by default. You should either use `tls.insecure: true` in your client
+configuration which is the default for this version, or set the `JUMPSTARTER_GRPC_INSECURE`
+environment variable to `1` to disable TLS verification. This will be fixed in 0.7 with proper
+certificate management, and cert-manager integration. See issue
+[#455](https://github.com/jumpstarter-dev/jumpstarter/issues/455)
+```
+
 ## Kubernetes with Helm
 
 Install Jumpstarter on a standard Kubernetes cluster using Helm:
