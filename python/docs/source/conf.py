@@ -91,10 +91,11 @@ html_theme_options = {
 # This replaces the custom bash script approach with built-in functionality
 
 # Tags pattern for html_context["versions"]
-smv_tag_whitelist = r"^v(0\.[5-9](\.\d+)|0\.[1-9][0-9]+(\.\d+)|[1-9]\d*\.\d+\.\d+)$"  # Starting from v0.5.0
-smv_branch_whitelist = r"^(main|master)$"  # Only include main/master branch
-smv_remote_whitelist = None
-smv_released_pattern = r"^v[0-9]+\.[0-9]+\.[0-9]+$"  # Tags that are considered releases
+smv_tag_whitelist = r"$^" # Ignore all tags
+smv_branch_whitelist = r"^(main|release-\d+\.\d+)$" # Include all release branches and main
+smv_remote_whitelist = r'^(origin|upstream)$' # Include branches from origin and upstream
+smv_prefer_remote_refs = True
+# smv_released_pattern = r"^v[0-9]+\.[0-9]+\.[0-9]+$"  # Tags that are considered releases
 smv_outputdir_format = "{ref.name}"  # Directory name format
 
 # Ensure static files are copied to all versions
