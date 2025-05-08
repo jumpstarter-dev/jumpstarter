@@ -3,7 +3,9 @@ from typing import Optional
 import asyncclick as click
 from jumpstarter_cli_common.opt import (
     PathOutputType,
+    confirm_insecure_tls,
     opt_context,
+    opt_insecure_tls_config,
     opt_kubeconfig,
     opt_namespace,
     opt_nointeractive,
@@ -45,6 +47,7 @@ def import_res():
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_insecure_tls_config
 @opt_output_path_only
 @opt_nointeractive
 async def import_client(
@@ -52,6 +55,7 @@ async def import_client(
     namespace: str,
     kubeconfig: Optional[str],
     context: Optional[str],
+    insecure_tls_config: bool,
     allow: Optional[str],
     unsafe: bool,
     out: Optional[str],
@@ -63,6 +67,7 @@ async def import_client(
     if out is None and ClientConfigV1Alpha1.exists(name):
         raise click.ClickException(f"A client with the name '{name}' already exists")
     try:
+        confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             if unsafe is False and allow is None and nointeractive is False:
                 unsafe = click.confirm("Allow unsafe driver client imports?")
@@ -74,6 +79,7 @@ async def import_client(
                 click.echo("Fetching client credentials from cluster")
             allow_drivers = allow.split(",") if allow is not None and len(allow) > 0 else []
             client_config = await api.get_client_config(name, allow=allow_drivers, unsafe=unsafe)
+            client_config.tls.insecure = insecure_tls_config
             config_path = ClientConfigV1Alpha1.save(client_config, out)
             # If this is the only client config, set it as default
             if out is None and len(ClientConfigV1Alpha1.list()) == 1:
@@ -100,6 +106,7 @@ async def import_client(
 @opt_namespace
 @opt_kubeconfig
 @opt_context
+@opt_insecure_tls_config
 @opt_output_path_only
 @opt_nointeractive
 async def import_exporter(
@@ -108,6 +115,7 @@ async def import_exporter(
     out: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
+    insecure_tls_config: bool,
     output: PathOutputType,
     nointeractive: bool,
 ):
@@ -119,10 +127,12 @@ async def import_exporter(
     else:
         raise click.ClickException(f'An exporter with the name "{name}" already exists')
     try:
+        confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
                 click.echo("Fetching exporter credentials from cluster")
             exporter_config = await api.get_exporter_config(name)
+            exporter_config.tls.insecure = insecure_tls_config
             config_path = ExporterConfigV1Alpha1.save(exporter_config, out)
             if output is None:
                 click.echo(f"Exporter configuration successfully saved to {config_path}")
