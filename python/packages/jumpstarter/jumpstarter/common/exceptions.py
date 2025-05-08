@@ -8,7 +8,9 @@ class JumpstarterException(Exception):
     class for all jumpstarter-specific errors.
     It handles the __cause__ attribute so the jumpstarter errors could be raised as
 
-    raise SomeError("message") from original_exception
+    .. code-block:: python
+
+        raise SomeError("message") from original_exception
     """
 
     def __init__(self, message: str):
