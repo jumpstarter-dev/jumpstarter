@@ -1,4 +1,3 @@
-import logging
 from typing import Optional
 
 import click
@@ -10,7 +9,6 @@ from jumpstarter_cli_common.opt import (
     opt_context,
     opt_kubeconfig,
     opt_labels,
-    opt_log_level,
     opt_namespace,
     opt_nointeractive,
     opt_output_all,
@@ -31,13 +29,8 @@ opt_oidc_username = click.option("--oidc-username", "oidc_username", type=str, d
 
 
 @click.group(cls=AliasedGroup)
-@opt_log_level
-def create(log_level: Optional[str]):
+def create():
     """Create Jumpstarter Kubernetes objects"""
-    if log_level:
-        logging.basicConfig(level=log_level.upper())
-    else:
-        logging.basicConfig(level=logging.INFO)
 
 
 def print_created_client(client: V1Alpha1Client, output: OutputType):

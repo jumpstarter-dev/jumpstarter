@@ -1114,7 +1114,6 @@ source = { editable = "packages/jumpstarter-cli" }
 dependencies = [
     { name = "jumpstarter-cli-admin" },
     { name = "jumpstarter-cli-driver" },
-    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -1129,7 +1128,6 @@ dev = [
 requires-dist = [
     { name = "jumpstarter-cli-admin", editable = "packages/jumpstarter-cli-admin" },
     { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
-    { name = "rich", specifier = ">=14.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1179,6 +1177,7 @@ dependencies = [
     { name = "joserfc" },
     { name = "jumpstarter" },
     { name = "pydantic" },
+    { name = "rich" },
     { name = "truststore" },
     { name = "yarl" },
 ]
@@ -1198,6 +1197,7 @@ requires-dist = [
     { name = "joserfc", specifier = ">=1.0.3" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "pydantic", specifier = ">=2.8.2" },
+    { name = "rich", specifier = ">=14.0.0" },
     { name = "truststore", specifier = ">=0.10.1" },
     { name = "yarl", specifier = ">=1.18.3" },
 ]
