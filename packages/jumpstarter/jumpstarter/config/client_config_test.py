@@ -324,7 +324,7 @@ drivers:
             f.close()
 
         monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path(d))
-        configs = ClientConfigV1Alpha1.list()
+        configs = ClientConfigV1Alpha1.list().items
         assert len(configs) == 1
         assert configs[0].alias == "testclient"
 
@@ -332,13 +332,13 @@ drivers:
 def test_client_config_list_none(monkeypatch: pytest.MonkeyPatch):
     with tempfile.TemporaryDirectory() as d:
         monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path(d))
-        configs = ClientConfigV1Alpha1.list()
+        configs = ClientConfigV1Alpha1.list().items
         assert len(configs) == 0
 
 
 def test_client_config_list_not_found_returns_empty(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(ClientConfigV1Alpha1, "CLIENT_CONFIGS_PATH", Path("/homeless-shelter"))
-    configs = ClientConfigV1Alpha1.list()
+    configs = ClientConfigV1Alpha1.list().items
     assert len(configs) == 0
 
 
