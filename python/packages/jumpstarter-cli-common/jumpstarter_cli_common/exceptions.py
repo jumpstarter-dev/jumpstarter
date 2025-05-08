@@ -1,4 +1,6 @@
+import types
 from functools import wraps
+from types import TracebackType
 
 import asyncclick as click
 
@@ -42,3 +44,62 @@ def handle_exceptions(func):
             raise
 
     return wrapped
+
+
+# https://peps.python.org/pep-0785/#reference-implementation
+def leaf_exceptions(self: BaseExceptionGroup, *, fix_tracebacks: bool = True) -> list[BaseException]:
+    """
+    Return a flat list of all 'leaf' exceptions.
+
+    If fix_tracebacks is True, each leaf will have the traceback replaced
+    with a composite so that frames attached to intermediate groups are
+    still visible when debugging. Pass fix_tracebacks=False to disable
+    this modification, e.g. if you expect to raise the group unchanged.
+    """
+
+    def _flatten(group: BaseExceptionGroup, parent_tb: TracebackType | None = None):
+        group_tb = group.__traceback__
+        combined_tb = _combine_tracebacks(parent_tb, group_tb)
+        result = []
+        for exc in group.exceptions:
+            if isinstance(exc, BaseExceptionGroup):
+                result.extend(_flatten(exc, combined_tb))
+            elif fix_tracebacks:
+                tb = _combine_tracebacks(combined_tb, exc.__traceback__)
+                result.append(exc.with_traceback(tb))
+            else:
+                result.append(exc)
+        return result
+
+    return _flatten(self)
+
+
+def _combine_tracebacks(
+    tb1: TracebackType | None,
+    tb2: TracebackType | None,
+) -> TracebackType | None:
+    """
+    Combine two tracebacks, putting tb1 frames before tb2 frames.
+
+    If either is None, return the other.
+    """
+    if tb1 is None:
+        return tb2
+    if tb2 is None:
+        return tb1
+
+    # Convert tb1 to a list of frames
+    frames = []
+    current = tb1
+    while current is not None:
+        frames.append((current.tb_frame, current.tb_lasti, current.tb_lineno))
+        current = current.tb_next
+
+    # Create a new traceback starting with tb2
+    new_tb = tb2
+
+    # Add frames from tb1 to the beginning (in reverse order)
+    for frame, lasti, lineno in reversed(frames):
+        new_tb = types.TracebackType(tb_next=new_tb, tb_frame=frame, tb_lasti=lasti, tb_lineno=lineno)
+
+    return new_tb
