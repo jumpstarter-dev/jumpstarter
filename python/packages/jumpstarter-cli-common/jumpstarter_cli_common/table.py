@@ -1,31 +1,28 @@
+from io import StringIO
+
+from rich.console import Console
+from rich.table import Table
+
+
 def make_table(columns: list[str], values: list[dict]):
-    """Make a pretty table from a list of `columns` and a list of `values`, each of which is a valid `dict`"""
+    """Print a pretty table from a list of `columns` and a list of `values`, each of which is a valid `dict`"""
 
-    # Initialize the max_lens dict with the length of the column titles
-    max_lens: dict[str, int] = {}
+    table = Table(
+        box=None,
+        header_style=None,
+        pad_edge=None,
+    )
+
     for name in columns:
-        max_lens[name] = len(name)
+        table.add_column(
+            name,
+            overflow="fold",
+            no_wrap=(name == "UUID"),
+        )
 
-    # Get the max length for each column from the values
     for v in values:
-        for k in columns:
-            length = len(v[k])
-            if length > max_lens[k]:
-                max_lens[k] = length
+        table.add_row(*[v[k] for k in columns])
 
-    # Generate a formatting string based on the max lengths
-    format_str = ""
-    for k in max_lens:
-        format_str += f"{{:<{max_lens[k] + 3}}}"
-
-    # Print the formatted header
-    lines: list[str] = [format_str.format(*columns)]
-
-    # Print the formatted rows
-    for v in values:
-        col_vals = []
-        for k in columns:
-            col_vals.append(v[k])
-        lines.append(format_str.format(*col_vals))
-
-    return "\n".join(lines)
+    console = Console(file=StringIO())
+    console.print(table)
+    return console.file.getvalue()

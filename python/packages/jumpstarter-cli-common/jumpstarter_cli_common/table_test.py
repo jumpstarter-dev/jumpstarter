@@ -1,6 +1,9 @@
 from .table import make_table
 
-EXPECTED_TABLE = "TEST     HELLO   \n123456   There   "
+EXPECTED_TABLE = """
+TEST    HELLO
+123456  There
+""".lstrip()
 
 
 def test_make_table():

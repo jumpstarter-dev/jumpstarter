@@ -27,3 +27,8 @@ else:
     def tmp_config_path(tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "client-config"))
         monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path / "exporters")
+
+    @pytest.fixture(autouse=True)
+    def console_size(monkeypatch):
+        monkeypatch.setenv("COLUMNS", "1024")
+        monkeypatch.setenv("LINES", "1024")
