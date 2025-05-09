@@ -6,7 +6,9 @@ from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.opt import (
     OutputMode,
     OutputType,
+    confirm_insecure_tls,
     opt_context,
+    opt_insecure_tls_config,
     opt_kubeconfig,
     opt_labels,
     opt_log_level,
@@ -75,6 +77,7 @@ def print_created_client(client: V1Alpha1Client, output: OutputType):
 @opt_labels
 @opt_kubeconfig
 @opt_context
+@opt_insecure_tls_config
 @opt_oidc_username
 @opt_nointeractive
 @opt_output_all
@@ -82,6 +85,7 @@ async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
+    insecure_tls_config: bool,
     namespace: str,
     labels: list[(str, str)],
     save: bool,
@@ -94,6 +98,7 @@ async def create_client(
 ):
     """Create a client object in the Kubernetes cluster"""
     try:
+        confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
                 # Only print status if  is not JSON/YAML
@@ -113,6 +118,7 @@ async def create_client(
                 allow_drivers = allow.split(",") if allow is not None and len(allow) > 0 else []
                 client_config.drivers.unsafe = unsafe
                 client_config.drivers.allow = allow_drivers
+                client_config.tls.insecure = insecure_tls_config
                 ClientConfigV1Alpha1.save(client_config, out)
                 # If this is the only client config, set it as default
                 if out is None and len(ClientConfigV1Alpha1.list()) == 1:
@@ -156,6 +162,7 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
 @opt_labels
 @opt_kubeconfig
 @opt_context
+@opt_insecure_tls_config
 @opt_oidc_username
 @opt_nointeractive
 @opt_output_all
@@ -163,6 +170,7 @@ async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
+    insecure_tls_config: bool,
     namespace: str,
     labels: list[(str, str)],
     save: bool,
@@ -173,6 +181,7 @@ async def create_exporter(
 ):
     """Create an exporter object in the Kubernetes cluster"""
     try:
+        confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
                 click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
@@ -182,6 +191,7 @@ async def create_exporter(
                 if output is None:
                     click.echo("Fetching exporter credentials from cluster")
                 exporter_config = await api.get_exporter_config(name)
+                exporter_config.tls.insecure = insecure_tls_config
                 ExporterConfigV1Alpha1.save(exporter_config, out)
                 if output is None:
                     click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")

@@ -46,13 +46,14 @@ Note, the HTTPS URL is mandatory, and you only need to include certificateAuthor
    prefix usernames with `keycloak:` as configured in the claim mappings:
 
 ```shell
-$ jmp admin create client test-client --oidc-username keycloak:developer-1
+$ jmp admin create client test-client --insecure-tls-config --oidc-username keycloak:developer-1
 ```
 
 4. Instruct users to log in with:
 
 ```shell
 $ jmp login --client <client alias> \
+    --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <client name> \
     --issuer https://<keycloak domain>/realms/<realm name>
@@ -62,6 +63,7 @@ For non-interactive login, add username and password:
 
 ```shell
 $ jmp login --client <client alias> [other parameters] \
+    --insecure-tls-config \
     --username <username> \
     --password <password>
 ```
@@ -76,6 +78,7 @@ For exporters, use similar login command but with the `--exporter` flag:
 
 ```shell
 $ jmp login --exporter <exporter alias> \
+    --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <exporter name> \
     --issuer https://<keycloak domain>/realms/<realm name>
@@ -188,6 +191,7 @@ jwt:
 
 ```shell
 $ jmp admin create exporter test-exporter \
+    --insecure-tls-config \
     --oidc-username dex:system:serviceaccount:default:test-service-account
 ```
 
@@ -197,6 +201,7 @@ For clients:
 
 ```shell
 $ jmp login --client <client alias> \
+    --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <client name> \
     --issuer https://dex.dex.svc.cluster.local:5556 \
@@ -208,6 +213,7 @@ For exporters:
 
 ```shell
 $ jmp login --exporter <exporter alias> \
+    --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <exporter name> \
     --issuer https://dex.dex.svc.cluster.local:5556 \

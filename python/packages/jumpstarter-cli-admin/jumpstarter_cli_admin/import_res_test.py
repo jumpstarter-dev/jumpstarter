@@ -13,6 +13,7 @@ from .import_res import import_res
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 # Generate a random client name
 CLIENT_NAME = uuid.uuid4().hex
@@ -33,6 +34,14 @@ CLIENT_CONFIG = ClientConfigV1Alpha1(
     endpoint=CLIENT_ENDPOINT,
     token=CLIENT_TOKEN,
     drivers=ClientConfigV1Alpha1Drivers(allow=[DRIVER_NAME], unsafe=False),
+)
+INSECURE_TLS_CLIENT_CONFIG = ClientConfigV1Alpha1(
+    alias=CLIENT_NAME,
+    metadata=ObjectMeta(namespace="default", name=CLIENT_NAME),
+    endpoint=CLIENT_ENDPOINT,
+    token=CLIENT_TOKEN,
+    tls=TLSConfigV1Alpha1(insecure=True),
+    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
 )
 
 
@@ -60,12 +69,40 @@ async def test_import_client(_load_kube_config_mock, get_client_config_mock: Asy
     save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, None)
     save_client_config_mock.reset_mock()
 
+    # Test insecure TLS config
+    get_client_config_mock.return_value = INSECURE_TLS_CLIENT_CONFIG
+
+    # Save with prompts accept insecure = Y
+    result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--insecure-tls-config"], input="Y\nY\n")
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    save_client_config_mock.assert_called_once_with(INSECURE_TLS_CLIENT_CONFIG, None)
+    save_client_config_mock.reset_mock()
+
+   # Save with prompts no interactive prompts and insecure tls cert
+    result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--nointeractive", "--insecure-tls-config"])
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    save_client_config_mock.assert_called_once_with(INSECURE_TLS_CLIENT_CONFIG, None)
+    save_client_config_mock.reset_mock()
+
+
+    # Save with prompts accept insecure = N
+    result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--insecure-tls-config"], input="n\n")
+    assert result.exit_code == 1
+    assert "Aborted" in result.output
+    save_client_config_mock.assert_not_called()
+    save_client_config_mock.reset_mock()
+
+    # Reset mock for subsequent tests
+    get_client_config_mock.return_value = UNSAFE_CLIENT_CONFIG
+
     # Save with custom out file
     out = f"/tmp/{CLIENT_NAME}.yaml"
     result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--unsafe", "--out", out])
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
-    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, str(Path(out).resolve()))
     save_client_config_mock.reset_mock()
 
     # Save with path output
@@ -76,7 +113,7 @@ async def test_import_client(_load_kube_config_mock, get_client_config_mock: Asy
     )
     assert result.exit_code == 0
     assert result.output == f"{out}\n"
-    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, str(Path(out).resolve()))
     save_client_config_mock.reset_mock()
 
     # Create and save safe client config
@@ -108,6 +145,13 @@ EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     endpoint=EXPORTER_ENDPOINT,
     token=EXPORTER_TOKEN,
 )
+INSECURE_TLS_EXPORTER_CONFIG = ExporterConfigV1Alpha1(
+    alias=EXPORTER_NAME,
+    metadata=ObjectMeta(namespace="default", name=EXPORTER_NAME),
+    endpoint=EXPORTER_ENDPOINT,
+    token=EXPORTER_TOKEN,
+    tls=TLSConfigV1Alpha1(insecure=True),
+)
 
 
 @pytest.mark.anyio
@@ -124,12 +168,32 @@ async def test_import_exporter(_load_kube_config_mock, _get_exporter_config_mock
     save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, None)
     save_exporter_config_mock.reset_mock()
 
+    # Test insecure TLS config
+    _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
+
+    # Save with prompts accept insecure = Y
+    result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--insecure-tls-config"], input="Y\n")
+    assert result.exit_code == 0
+    assert "Exporter configuration successfully saved" in result.output
+    save_exporter_config_mock.assert_called_once_with(INSECURE_TLS_EXPORTER_CONFIG, None)
+    save_exporter_config_mock.reset_mock()
+
+    # Save with prompts accept insecure = N
+    result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--insecure-tls-config"], input="n\n")
+    assert result.exit_code == 1
+    assert "Aborted" in result.output
+    save_exporter_config_mock.assert_not_called()
+    save_exporter_config_mock.reset_mock()
+
+    # Reset mock for subsequent tests
+    _get_exporter_config_mock.return_value = EXPORTER_CONFIG
+
     # Save with custom out file
     out = f"/tmp/{EXPORTER_NAME}.yaml"
     result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--out", out])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
-    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, out)
+    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, str(Path(out).resolve()))
 
     # Save with path output
     out = f"/tmp/{EXPORTER_NAME}.yaml"
@@ -137,7 +201,7 @@ async def test_import_exporter(_load_kube_config_mock, _get_exporter_config_mock
     result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--out", out, "--output", "path"])
     assert result.exit_code == 0
     assert result.output == f"{out}\n"
-    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, out)
+    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, str(Path(out).resolve()))
 
 
 @pytest.fixture
