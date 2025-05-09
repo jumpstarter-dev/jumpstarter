@@ -9,6 +9,7 @@ from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter_driver_tftp.server import TftpServer
 
+from jumpstarter.common.ipaddress import get_default_ip
 from jumpstarter.driver import Driver, export
 
 
@@ -55,17 +56,7 @@ class Tftp(Driver):
         self.storage = self.children["storage"]
 
         if self.host == "":
-            self.host = self.get_default_ip()
-
-    def get_default_ip(self):
-        """Get the IP address of the default route interface"""
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                return s.getsockname()[0]
-        except Exception:
-            self.logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
-            return "0.0.0.0"
+            self.host = get_default_ip(logger=self.logger)
 
     @classmethod
     def client(cls) -> str:
