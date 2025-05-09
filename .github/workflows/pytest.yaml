@@ -12,9 +12,10 @@ permissions:
   pull-requests: read
 jobs:
   pytest-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
+        runs-on: [ubuntu-24.04, macos-15]
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +31,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install Qemu
+        if: runner.os == 'Linux'
         run: |
           echo <<EOF | sudo tee /etc/udev/rules.d/99-kvm.rules
           KERNEL=="kvm", GROUP="kvm", MODE="0666"
