@@ -8,7 +8,7 @@ from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter_driver_tftp.server import TftpServer
 
-from jumpstarter.common.ipaddress import get_ip_address
+from jumpstarter.common.ipaddr import get_ip_address
 from jumpstarter.driver import Driver, export
 
 
