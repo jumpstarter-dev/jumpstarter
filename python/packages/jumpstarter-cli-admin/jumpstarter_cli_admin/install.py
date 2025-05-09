@@ -6,7 +6,7 @@ from jumpstarter_cli_common.opt import opt_context, opt_kubeconfig
 from jumpstarter_cli_common.version import get_client_version
 from jumpstarter_kubernetes import helm_installed, install_helm_chart
 
-from jumpstarter.common.ipaddress import get_ip_address
+from jumpstarter.common.ipaddr import get_ip_address
 
 
 def get_chart_version() -> str:
