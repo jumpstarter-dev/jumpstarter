@@ -65,7 +65,7 @@ async def test_import_client(_load_kube_config_mock, get_client_config_mock: Asy
     result = await runner.invoke(import_res, ["client", CLIENT_NAME, "--unsafe", "--out", out])
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
-    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, str(Path(out).resolve()))
     save_client_config_mock.reset_mock()
 
     # Save with path output
@@ -76,7 +76,7 @@ async def test_import_client(_load_kube_config_mock, get_client_config_mock: Asy
     )
     assert result.exit_code == 0
     assert result.output == f"{out}\n"
-    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    save_client_config_mock.assert_called_once_with(UNSAFE_CLIENT_CONFIG, str(Path(out).resolve()))
     save_client_config_mock.reset_mock()
 
     # Create and save safe client config
@@ -129,7 +129,7 @@ async def test_import_exporter(_load_kube_config_mock, _get_exporter_config_mock
     result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--out", out])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
-    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, out)
+    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, str(Path(out).resolve()))
 
     # Save with path output
     out = f"/tmp/{EXPORTER_NAME}.yaml"
@@ -137,7 +137,7 @@ async def test_import_exporter(_load_kube_config_mock, _get_exporter_config_mock
     result = await runner.invoke(import_res, ["exporter", EXPORTER_NAME, "--out", out, "--output", "path"])
     assert result.exit_code == 0
     assert result.output == f"{out}\n"
-    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, out)
+    save_exporter_config_mock.assert_called_with(EXPORTER_CONFIG, str(Path(out).resolve()))
 
 
 @pytest.fixture
