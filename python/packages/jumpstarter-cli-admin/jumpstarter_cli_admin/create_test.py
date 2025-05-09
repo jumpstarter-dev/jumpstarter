@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from click.testing import CliRunner
@@ -115,7 +116,7 @@ def test_create_client(
     result = runner.invoke(create, ["client", CLIENT_NAME, "--unsafe", "--out", out], input="\n\n")
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
-    mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, str(Path(out).resolve()))
     mock_save_client.reset_mock()
 
     # Regular client config is returned
@@ -257,7 +258,7 @@ def test_create_exporter(
     result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--out", out])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
-    save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, out)
+    save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, str(Path(out).resolve()))
     save_exporter_mock.reset_mock()
 
     # Save with nointeractive
