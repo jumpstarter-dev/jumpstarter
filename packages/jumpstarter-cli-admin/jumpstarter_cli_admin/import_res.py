@@ -78,7 +78,7 @@ async def import_client(
             client_config = await api.get_client_config(name, allow=allow_drivers, unsafe=unsafe)
             config_path = ClientConfigV1Alpha1.save(client_config, out)
             # If this is the only client config, set it as default
-            if out is None and len(ClientConfigV1Alpha1.list()) == 1:
+            if out is None and len(ClientConfigV1Alpha1.list().items) == 1:
                 user_config = UserConfigV1Alpha1.load_or_create()
                 user_config.config.current_client = client_config
                 UserConfigV1Alpha1.save(user_config)
