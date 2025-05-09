@@ -3,6 +3,16 @@
 This guide walks you through the process of creating an exporter using the
 controller service, configuring drivers, and running the exporter.
 
+```{warning}
+The jumpstarter-controller endpoints are secured by TLS. However, in release 0.6.x,
+the certificates are self-signed and rotated on every restart. This means the client
+will not be able to verify the server certificate. To bypass this, you should use the
+`--insecure-tls-config` flag when creating clients and exporters. This issue will be
+resolved in the next release. See [issue #455](https://github.com/jumpstarter-dev/jumpstarter/issues/455)
+for more details.
+Alternatively, you can configure the ingress/route in reencrypt mode with your own key and certificate.
+```
+
 ## Prerequisites
 
 Install [the following packages](../installation/packages.md) in your Python
@@ -30,7 +40,7 @@ Run this command to create an exporter named `example-distributed` and save the
 configuration locally:
 
 ```shell
-$ jmp admin create exporter example-distributed --save
+$ jmp admin create exporter example-distributed --save --insecure-tls-config
 ```
 
 After creating the exporter, find the new configuration file at
@@ -78,7 +88,7 @@ development purposes, and saves the configuration locally in
 `${HOME}/.config/jumpstarter/clients/`:
 
 ```shell
-$ jmp admin create client hello --save --unsafe
+$ jmp admin create client hello --save --unsafe --insecure-tls-config
 ```
 
 ### Spawn an Exporter Shell

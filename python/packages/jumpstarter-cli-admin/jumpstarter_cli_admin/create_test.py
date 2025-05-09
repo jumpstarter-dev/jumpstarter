@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from click.testing import CliRunner
@@ -16,6 +17,7 @@ from .create import create
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 # Generate a random client name
 CLIENT_NAME = uuid.uuid4().hex
@@ -81,6 +83,15 @@ CLIENT_CONFIG = ClientConfigV1Alpha1(
     drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
 )
 
+INSECURE_TLS_CLIENT_CONFIG = ClientConfigV1Alpha1(
+    alias=CLIENT_NAME,
+    metadata=ObjectMeta(namespace="default", name=CLIENT_NAME),
+    endpoint=CLIENT_ENDPOINT,
+    token=CLIENT_TOKEN,
+    tls=TLSConfigV1Alpha1(insecure=True),
+    drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
+)
+
 
 @patch.object(ClientConfigV1Alpha1, "save")
 @patch.object(ClientsV1Alpha1Api, "get_client_config")
@@ -100,6 +111,32 @@ def test_create_client(
     mock_save_client.assert_not_called()
     mock_save_client.reset_mock()
 
+    # Insecure TLS config is returned
+    mock_get_client_config.return_value = INSECURE_TLS_CLIENT_CONFIG
+
+    # Save with prompts accept insecure = Y, save = Y, unsafe = Y
+    result = runner.invoke(create, ["client", "--insecure-tls-config", CLIENT_NAME], input="Y\nY\nY\n")
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    mock_save_client.assert_called_once_with(INSECURE_TLS_CLIENT_CONFIG, None)
+    mock_save_client.reset_mock()
+
+    # Save no interactive and insecure tls
+    result = runner.invoke(create, ["client", "--insecure-tls-config", "--unsafe",
+                                    "--save", "--nointeractive", CLIENT_NAME])
+    assert result.exit_code == 0
+    assert "Client configuration successfully saved" in result.output
+    mock_save_client.assert_called_once_with(INSECURE_TLS_CLIENT_CONFIG, None)
+    mock_save_client.reset_mock()
+
+   # Insecure TLS config is returned
+    mock_get_client_config.return_value = INSECURE_TLS_CLIENT_CONFIG
+
+    # Save with prompts accept insecure = N
+    result = runner.invoke(create, ["client", "--insecure-tls-config", CLIENT_NAME], input="n\n")
+    assert result.exit_code == 1
+    assert "Aborted" in result.output
+
     # Unsafe client config is returned
     mock_get_client_config.return_value = UNSAFE_CLIENT_CONFIG
 
@@ -115,7 +152,7 @@ def test_create_client(
     result = runner.invoke(create, ["client", CLIENT_NAME, "--unsafe", "--out", out], input="\n\n")
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
-    mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, out)
+    mock_save_client.assert_called_once_with(UNSAFE_CLIENT_CONFIG, str(Path(out).resolve()))
     mock_save_client.reset_mock()
 
     # Regular client config is returned
@@ -219,6 +256,13 @@ EXPORTER_CONFIG = ExporterConfigV1Alpha1(
     token=EXPORTER_TOKEN,
 )
 
+INSECURE_TLS_EXPORTER_CONFIG = ExporterConfigV1Alpha1(
+    alias=EXPORTER_NAME,
+    metadata=ObjectMeta(namespace="default", name=EXPORTER_NAME),
+    endpoint=EXPORTER_ENDPOINT,
+    token=EXPORTER_TOKEN,
+    tls=TLSConfigV1Alpha1(insecure=True),
+)
 
 @patch.object(ExporterConfigV1Alpha1, "save")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
@@ -237,6 +281,31 @@ def test_create_exporter(
     assert "Exporter configuration successfully saved" not in result.output
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
+
+    # Insecure TLS config is returned
+    _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
+    # Save with prompts accept insecure = Y, save = Y
+    result = runner.invoke(create, ["exporter", "--insecure-tls-config", EXPORTER_NAME], input="Y\nY\n")
+    assert result.exit_code == 0
+    assert "Exporter configuration successfully saved" in result.output
+    save_exporter_mock.assert_called_once_with(INSECURE_TLS_EXPORTER_CONFIG, None)
+    save_exporter_mock.reset_mock()
+
+    _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
+    # Save with prompts accept no interactive
+    result = runner.invoke(create, ["exporter", "--insecure-tls-config", "--nointeractive", "--save", EXPORTER_NAME])
+    assert result.exit_code == 0
+    assert "Exporter configuration successfully saved" in result.output
+    save_exporter_mock.assert_called_once_with(INSECURE_TLS_EXPORTER_CONFIG, None)
+    save_exporter_mock.reset_mock()
+
+    # Insecure TLS config is returned
+    _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
+    # Save with prompts accept insecure = N
+    result = runner.invoke(create, ["exporter", "--insecure-tls-config", EXPORTER_NAME], input="n\n")
+    assert result.exit_code == 1
+    assert "Aborted" in result.output
+
 
     # Save with prompts
     result = runner.invoke(create, ["exporter", EXPORTER_NAME], input="Y\n")
@@ -257,7 +326,7 @@ def test_create_exporter(
     result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--out", out])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
-    save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, out)
+    save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, str(Path(out).resolve()))
     save_exporter_mock.reset_mock()
 
     # Save with nointeractive
