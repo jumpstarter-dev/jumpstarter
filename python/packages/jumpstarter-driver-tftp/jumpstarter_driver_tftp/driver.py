@@ -1,6 +1,5 @@
 import asyncio
 import os
-import socket
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
@@ -9,7 +8,7 @@ from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter_driver_tftp.server import TftpServer
 
-from jumpstarter.common.ipaddress import get_default_ip
+from jumpstarter.common.ipaddress import get_ip_address
 from jumpstarter.driver import Driver, export
 
 
@@ -56,7 +55,7 @@ class Tftp(Driver):
         self.storage = self.children["storage"]
 
         if self.host == "":
-            self.host = get_default_ip(logger=self.logger)
+            self.host = get_ip_address(logger=self.logger)
 
     @classmethod
     def client(cls) -> str:

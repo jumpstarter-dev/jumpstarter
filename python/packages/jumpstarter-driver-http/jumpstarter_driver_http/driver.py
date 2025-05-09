@@ -6,7 +6,7 @@ import anyio
 from aiohttp import web
 from jumpstarter_driver_opendal.driver import Opendal
 
-from jumpstarter.common.ipaddress import get_default_ip
+from jumpstarter.common.ipaddress import get_ip_address
 from jumpstarter.driver import Driver, export
 
 
@@ -42,7 +42,7 @@ class HttpServer(Driver):
             ]
         )
         if self.host is None:
-            self.host = get_default_ip(logger=self.logger)
+            self.host = get_ip_address(logger=self.logger)
 
     @classmethod
     def client(cls) -> str:
