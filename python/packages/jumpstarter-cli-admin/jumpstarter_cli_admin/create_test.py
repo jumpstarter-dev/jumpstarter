@@ -279,7 +279,8 @@ async def test_create_exporter(
     runner = CliRunner()
 
     # Don't save exporter config
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME], input="n\n")
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--label", "foo=bar"], input="n\n")
+    print(result.output)
     assert result.exit_code == 0
     assert "Creating exporter" in result.output
     assert EXPORTER_NAME in result.output
@@ -290,7 +291,9 @@ async def test_create_exporter(
     # Insecure TLS config is returned
     _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
     # Save with prompts accept insecure = Y, save = Y
-    result = await runner.invoke(create, ["exporter", "--insecure-tls-config", EXPORTER_NAME], input="Y\nY\n")
+    result = await runner.invoke(
+        create, ["exporter", "--insecure-tls-config", EXPORTER_NAME, "--label", "foo=bar"], input="Y\nY\n"
+    )
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(INSECURE_TLS_EXPORTER_CONFIG, None)
@@ -299,7 +302,7 @@ async def test_create_exporter(
     _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
     # Save with prompts accept no interactive
     result = await runner.invoke(
-        create, ["exporter", "--insecure-tls-config", "--nointeractive", "--save", EXPORTER_NAME]
+        create, ["exporter", "--insecure-tls-config", "--nointeractive", "--save", EXPORTER_NAME, "--label", "foo=bar"]
     )
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
@@ -309,19 +312,21 @@ async def test_create_exporter(
     # Insecure TLS config is returned
     _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
     # Save with prompts accept insecure = N
-    result = await runner.invoke(create, ["exporter", "--insecure-tls-config", EXPORTER_NAME], input="n\n")
+    result = await runner.invoke(
+        create, ["exporter", "--insecure-tls-config", EXPORTER_NAME, "--label", "foo=bar"], input="n\n"
+    )
     assert result.exit_code == 1
     assert "Aborted" in result.output
 
     # Save with prompts
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME], input="Y\n")
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--label", "foo=bar"], input="Y\n")
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, None)
     save_exporter_mock.reset_mock()
 
     # Save with arguments
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--save"])
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--save"])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, None)
@@ -329,35 +334,41 @@ async def test_create_exporter(
 
     # Save with arguments and custom path
     out = f"/tmp/{EXPORTER_NAME}.yaml"
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--out", out])
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--out", out])
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
     save_exporter_mock.assert_called_once_with(EXPORTER_CONFIG, str(Path(out).resolve()))
     save_exporter_mock.reset_mock()
 
     # Save with nointeractive
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive"])
+    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--nointeractive"])
     assert result.exit_code == 0
     assert "Creating exporter" in result.output
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 
     # Save with JSON output
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "json"])
+    result = await runner.invoke(
+        create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--nointeractive", "--output", "json"]
+    )
     assert result.exit_code == 0
     assert result.output == EXPORTER_JSON
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 
     # Save with YAML output
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "yaml"])
+    result = await runner.invoke(
+        create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--nointeractive", "--output", "yaml"]
+    )
     assert result.exit_code == 0
     assert result.output == EXPORTER_YAML
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 
     # Save with name output
-    result = await runner.invoke(create, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
+    result = await runner.invoke(
+        create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--nointeractive", "--output", "name"]
+    )
     assert result.exit_code == 0
     assert result.output == f"exporter.jumpstarter.dev/{EXPORTER_NAME}\n"
     save_exporter_mock.assert_not_called()

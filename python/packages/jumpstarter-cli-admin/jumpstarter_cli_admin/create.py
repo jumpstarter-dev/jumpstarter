@@ -74,7 +74,7 @@ def print_created_client(client: V1Alpha1Client, output: OutputType):
     default=None,
 )
 @opt_namespace
-@opt_labels
+@opt_labels()
 @opt_kubeconfig
 @opt_context
 @opt_insecure_tls_config
@@ -87,7 +87,7 @@ async def create_client(
     context: Optional[str],
     insecure_tls_config: bool,
     namespace: str,
-    labels: list[(str, str)],
+    labels: dict[str, str],
     save: bool,
     allow: Optional[str],
     unsafe: bool,
@@ -103,7 +103,7 @@ async def create_client(
             if output is None:
                 # Only print status if  is not JSON/YAML
                 click.echo(f"Creating client '{name}' in namespace '{namespace}'")
-            created_client = await api.create_client(name, dict(labels), oidc_username)
+            created_client = await api.create_client(name, labels, oidc_username)
             # Save the client config
             if save or out is not None or nointeractive is False and click.confirm("Save client configuration?"):
                 if output is None:
@@ -159,7 +159,7 @@ def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
     default=None,
 )
 @opt_namespace
-@opt_labels
+@opt_labels(required=True)
 @opt_kubeconfig
 @opt_context
 @opt_insecure_tls_config
@@ -172,7 +172,7 @@ async def create_exporter(
     context: Optional[str],
     insecure_tls_config: bool,
     namespace: str,
-    labels: list[(str, str)],
+    labels: dict[str, str],
     save: bool,
     out: Optional[str],
     oidc_username: str | None,
@@ -185,7 +185,7 @@ async def create_exporter(
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
                 click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
-            created_exporter = await api.create_exporter(name, dict(labels), oidc_username)
+            created_exporter = await api.create_exporter(name, labels, oidc_username)
             # Save the client config
             if save or out is not None or nointeractive is False and click.confirm("Save exporter configuration?"):
                 if output is None:
