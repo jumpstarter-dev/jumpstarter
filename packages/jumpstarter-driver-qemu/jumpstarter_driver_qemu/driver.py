@@ -27,6 +27,10 @@ from qemu.qmp.protocol import ConnectError, Runstate
 from jumpstarter.driver import Driver, export
 
 
+def _vsock_available():
+    return platform.system() == "Linux"
+
+
 class QmpLogFilter(logging.Filter):
     def filter(self, record):
         return False
@@ -126,8 +130,11 @@ class QemuPower(PowerInterface, Driver):
         devices = [
             "virtio-net-pci,netdev=eth0",
             "virtio-gpu-pci",
-            "vhost-vsock-pci,guest-cid={}".format(self.parent._cid),
         ]
+
+        if _vsock_available():
+            devices.append("vhost-vsock-pci,guest-cid={}".format(self.parent._cid))
+
         for device in devices:
             cmdline += ["-device", device]
 
@@ -266,7 +273,9 @@ class Qemu(Driver):
         self.children["flasher"] = QemuFlasher(parent=self)
         self.children["console"] = PySerial(url=self._pty, check_present=False)
         self.children["vnc"] = UnixNetwork(path=self._vnc)
-        self.children["ssh"] = VsockNetwork(cid=self._cid, port=22)
+
+        if _vsock_available():
+            self.children["ssh"] = VsockNetwork(cid=self._cid, port=22)
 
         for k, v in self.hostfwd.items():
             match v.protocol:
