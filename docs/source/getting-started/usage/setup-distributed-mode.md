@@ -40,7 +40,7 @@ Run this command to create an exporter named `example-distributed` and save the
 configuration locally:
 
 ```shell
-$ jmp admin create exporter example-distributed --save --insecure-tls-config
+$ jmp admin create exporter example-distributed --label foo=bar --save --insecure-tls-config
 ```
 
 After creating the exporter, find the new configuration file at

@@ -190,7 +190,7 @@ jwt:
    service account name with "dex:" as configured in the claim mappings.:
 
 ```shell
-$ jmp admin create exporter test-exporter \
+$ jmp admin create exporter test-exporter --label foo=bar \
     --insecure-tls-config \
     --oidc-username dex:system:serviceaccount:default:test-service-account
 ```
