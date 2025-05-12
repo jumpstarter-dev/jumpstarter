@@ -6,20 +6,17 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
+import asyncio
 import os
 import sys
 
-import requests
+from jumpstarter_cli_admin.controller import get_latest_compatible_controller_version
 
 sys.path.insert(0, os.path.abspath("../.."))
 
 project = "jumpstarter"
 copyright = "2025, Jumpstarter Contributors"
 author = "Jumpstarter Contributors"
-
-controller_version = requests.get(
-    "https://quay.io/api/v1/repository/jumpstarter-dev/helm/jumpstarter/tag/", params={"limit": 1}
-).json()["tags"][0]["name"]
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -54,6 +51,19 @@ html_logo = "_static/img/logo-light-theme.svg"
 html_favicon = "_static/img/favicon.png"
 html_show_sphinx = False
 
+
+def get_controller_version():
+    name = os.getenv("SPHINX_MULTIVERSION_NAME")
+    if name == "main" or name is None:
+        version = None
+    elif name.startswith("release-"):
+        version = name.removeprefix("release-")
+    else:
+        version = None
+
+    return asyncio.run(get_latest_compatible_controller_version(client_version=version))
+
+
 myst_heading_anchors = 3
 myst_enable_extensions = [
     "substitution",
@@ -61,7 +71,7 @@ myst_enable_extensions = [
 myst_substitutions = {
     "requires_python": ">=3.11",
     "version": "latest",
-    "controller_version": controller_version,
+    "controller_version": get_controller_version(),
 }
 
 doctest_test_doctest_blocks = ""
@@ -91,9 +101,9 @@ html_theme_options = {
 # This replaces the custom bash script approach with built-in functionality
 
 # Tags pattern for html_context["versions"]
-smv_tag_whitelist = r"$^" # Ignore all tags
-smv_branch_whitelist = r"^(main|release-\d+\.\d+)$" # Include all release branches and main
-smv_remote_whitelist = r'^(origin|upstream)$' # Include branches from origin and upstream
+smv_tag_whitelist = r"$^"  # Ignore all tags
+smv_branch_whitelist = r"^(main|release-\d+\.\d+)$"  # Include all release branches and main
+smv_remote_whitelist = r"^(origin|upstream)$"  # Include branches from origin and upstream
 smv_prefer_remote_refs = True
 # smv_released_pattern = r"^v[0-9]+\.[0-9]+\.[0-9]+$"  # Tags that are considered releases
 smv_outputdir_format = "{ref.name}"  # Directory name format
