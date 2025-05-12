@@ -10,6 +10,8 @@ async def get_latest_compatible_controller_version(
 ):
     if client_version is None:
         client_version = Version(get_client_version())
+    else:
+        client_version = Version(client_version)
 
     async with aiohttp.ClientSession(
         raise_for_status=True,
