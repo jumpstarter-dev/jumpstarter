@@ -61,7 +61,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
 )
 
-// ControlerService exposes a gRPC service
+// ControllerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
 	Client       client.WithWatch
