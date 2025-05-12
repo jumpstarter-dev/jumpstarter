@@ -186,7 +186,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Message:            "Lase seen less than 1 minute ago",
 		})
 		// marking the exporter online, requeue after 30 seconds
-		requeueAfter = time.Duration(time.Second * 30)
+		requeueAfter = time.Second * 30
 	}
 
 	if exporter.Status.Devices == nil {
