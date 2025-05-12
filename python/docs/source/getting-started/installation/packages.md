@@ -20,8 +20,9 @@ tools you need to run an exporter or interact with your hardware as a client.
 Install the Python package using `pip` or a similar tool. You need Python
 {{requires_python}}:
 
-```shell
-$ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-all
+```{code-block} shell
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-all
 $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
 ```
@@ -29,10 +30,11 @@ $ sudo mkdir /etc/jumpstarter
 The command above installs packages globally. For library usage, we recommend
 installing in a virtual environment instead:
 
-```shell
+```{code-block} shell
+:substitutions:
 $ python3 -m venv ~/.venv/jumpstarter
 $ source ~/.venv/jumpstarter/bin/activate
-$ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-all
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-all
 ```
 
 Additional package indexes are available, this is a complete list of our indexes:

@@ -64,6 +64,14 @@ def get_controller_version():
     return asyncio.run(get_latest_compatible_controller_version(client_version=version))
 
 
+def get_index_url():
+    name = os.getenv("SPHINX_MULTIVERSION_NAME")
+    if name is None:
+        return "https://pkg.jumpstarter.dev/simple"
+    else:
+        return "https://pkg.jumpstarter.dev/{}/simple".format(name)
+
+
 myst_heading_anchors = 3
 myst_enable_extensions = [
     "substitution",
@@ -72,6 +80,7 @@ myst_substitutions = {
     "requires_python": ">=3.11",
     "version": "latest",
     "controller_version": get_controller_version(),
+    "index_url": get_index_url(),
 }
 
 doctest_test_doctest_blocks = ""
