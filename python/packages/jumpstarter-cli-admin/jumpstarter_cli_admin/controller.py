@@ -1,5 +1,4 @@
 import aiohttp
-import click
 import semver
 from jumpstarter_cli_common.version import get_client_version
 from packaging.version import Version
@@ -23,13 +22,13 @@ async def get_latest_compatible_controller_version(
             ) as resp:
                 resp = await resp.json()
         except Exception as e:
-            raise click.ClickException(f"Failed to fetch controller versions: {e}") from e
+            raise RuntimeError(f"Failed to fetch controller versions: {e}") from e
 
     compatible = set()
     fallback = set()
 
     if not isinstance(resp, dict) or "tags" not in resp or not isinstance(resp["tags"], list):
-        raise click.ClickException("Unexpected response fetching controller version")
+        raise RuntimeError("Unexpected response fetching controller version")
 
     for tag in resp["tags"]:
         if not isinstance(tag, dict) or "name" not in tag:
