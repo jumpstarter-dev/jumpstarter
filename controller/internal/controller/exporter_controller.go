@@ -157,7 +157,15 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
 
-	if time.Since(exporter.Status.LastSeen.Time) > time.Minute {
+	if exporter.Status.LastSeen.IsZero() {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Seen",
+			Message:            "Never seen",
+		})
+	} else if time.Since(exporter.Status.LastSeen.Time) > time.Minute {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,
