@@ -3,16 +3,10 @@ from typing import Literal, Optional
 import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import opt_context, opt_kubeconfig
-from jumpstarter_cli_common.version import get_client_version
 from jumpstarter_kubernetes import helm_installed, install_helm_chart
 
+from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address
-
-
-def get_chart_version() -> str:
-    client_version = get_client_version()
-    parts = client_version.split(".")
-    return f"{parts[0].replace('v', '')}.{parts[1]}.{parts[2]}"
 
 
 @click.command
@@ -35,7 +29,7 @@ def get_chart_version() -> str:
 @click.option("--nodeport", "mode", flag_value="nodeport", help="Use Nodeport routing (recommended)", default=True)
 @click.option("--ingress", "mode", flag_value="ingress", help="Use a Kubernetes ingress")
 @click.option("--route", "mode", flag_value="route", help="Use an OpenShift route")
-@click.option("-v", "--version", help="The version of the service to install", default=get_chart_version())
+@click.option("-v", "--version", help="The version of the service to install", default=None)
 @opt_kubeconfig
 @opt_context
 @blocking
@@ -70,6 +64,9 @@ async def install(
 
     if router_endpoint is None:
         router_endpoint = f"router.{basedomain}:8083"
+
+    if version is None:
+        version = await get_latest_compatible_controller_version()
 
     click.echo(f'Installing Jumpstarter service v{version} in namespace "{namespace}" with Helm\n')
     click.echo(f"Chart URI: {chart}")
