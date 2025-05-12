@@ -75,7 +75,8 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileStatusConditionsOnline(ctx, &exporter); err != nil {
+	result, err := r.reconcileStatusConditionsOnline(ctx, &exporter)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -87,7 +88,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return RequeueConflict(logger, ctrl.Result{}, err)
 	}
 
-	return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	return result, nil
 }
 
 func (r *ExporterReconciler) reconcileStatusCredential(
@@ -155,7 +156,8 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 	_ context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
-) error {
+) (ctrl.Result, error) {
+	var requeueAfter time.Duration = 0
 
 	if exporter.Status.LastSeen.IsZero() {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
@@ -165,6 +167,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Reason:             "Seen",
 			Message:            "Never seen",
 		})
+		// marking the exporter offline, no need to requeue
 	} else if time.Since(exporter.Status.LastSeen.Time) > time.Minute {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
@@ -173,6 +176,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Reason:             "Seen",
 			Message:            "Last seen more than 1 minute ago",
 		})
+		// marking the exporter offline, no need to requeue
 	} else {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
@@ -181,6 +185,8 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Reason:             "Seen",
 			Message:            "Lase seen less than 1 minute ago",
 		})
+		// marking the exporter online, requeue after 30 seconds
+		requeueAfter = time.Duration(time.Second * 30)
 	}
 
 	if exporter.Status.Devices == nil {
@@ -199,7 +205,9 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 		})
 	}
 
-	return nil
+	return ctrl.Result{
+		RequeueAfter: requeueAfter,
+	}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
