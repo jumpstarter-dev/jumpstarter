@@ -35,7 +35,53 @@ opt_context = click.option("--context", "context", type=str, default=None, help=
 
 opt_namespace = click.option("-n", "--namespace", type=str, help="Kubernetes namespace to use", default="default")
 
-opt_labels = click.option("-l", "--label", "labels", type=(str, str), multiple=True, help="Labels")
+
+def _opt_labels_callback(ctx, param, value):
+    labels = {}
+
+    for label in value:
+        k, sep, v = label.partition("=")
+        if sep == "":
+            raise click.BadParameter("Invalid label '{}', should be formatted as 'key=value'".format(k))
+        labels[k] = v
+
+    return labels
+
+
+opt_labels = partial(
+    click.option,
+    "-l",
+    "--label",
+    "labels",
+    type=str,
+    multiple=True,
+    help="Labels to set on resource, can be set multiple times",
+    callback=_opt_labels_callback,
+)
+
+opt_insecure_tls_config = click.option(
+    "--insecure-tls-config",
+    "insecure_tls_config",
+    is_flag=True,
+    default=False,
+    help="Disable endpoint TLS verification. This is insecure and should only be used for testing purposes",
+)
+
+
+def confirm_insecure_tls(insecure_tls_config: bool, nointeractive: bool):
+    """Confirm if insecure TLS config is enabled and user wants to continue.
+
+    Args:
+        insecure_tls_config (bool): Insecure TLS config flag requested by the user.
+        nointeractive (bool): This flag is set to True if the command is run in non-interactive mode.
+
+    Raises:
+        click.Abort: Abort the command if user does not want to continue.
+    """
+    if nointeractive is False and insecure_tls_config:
+        if not click.confirm("Insecure TLS config is enabled. Are you sure you want to continue?"):
+            click.echo("Aborting.")
+            raise click.Abort()
 
 
 class OutputMode(str):

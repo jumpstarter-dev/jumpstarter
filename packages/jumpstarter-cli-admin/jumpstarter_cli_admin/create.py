@@ -5,7 +5,9 @@ from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import (
     OutputType,
+    confirm_insecure_tls,
     opt_context,
+    opt_insecure_tls_config,
     opt_kubeconfig,
     opt_labels,
     opt_namespace,
@@ -57,9 +59,10 @@ def create():
     default=None,
 )
 @opt_namespace
-@opt_labels
+@opt_labels()
 @opt_kubeconfig
 @opt_context
+@opt_insecure_tls_config
 @opt_oidc_username
 @opt_nointeractive
 @opt_output_all
@@ -68,8 +71,9 @@ async def create_client(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
+    insecure_tls_config: bool,
     namespace: str,
-    labels: list[(str, str)],
+    labels: dict[str, str],
     save: bool,
     allow: Optional[str],
     unsafe: bool,
@@ -80,11 +84,12 @@ async def create_client(
 ):
     """Create a client object in the Kubernetes cluster"""
     try:
+        confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
                 # Only print status if  is not JSON/YAML
                 click.echo(f"Creating client '{name}' in namespace '{namespace}'")
-            created_client = await api.create_client(name, dict(labels), oidc_username)
+            created_client = await api.create_client(name, labels, oidc_username)
             # Save the client config
             if save or out is not None or nointeractive is False and click.confirm("Save client configuration?"):
                 if output is None:
@@ -99,6 +104,7 @@ async def create_client(
                 allow_drivers = allow.split(",") if allow is not None and len(allow) > 0 else []
                 client_config.drivers.unsafe = unsafe
                 client_config.drivers.allow = allow_drivers
+                client_config.tls.insecure = insecure_tls_config
                 ClientConfigV1Alpha1.save(client_config, out)
                 # If this is the only client config, set it as default
                 if out is None and len(ClientConfigV1Alpha1.list().items) == 1:
@@ -130,9 +136,10 @@ async def create_client(
     default=None,
 )
 @opt_namespace
-@opt_labels
+@opt_labels(required=True)
 @opt_kubeconfig
 @opt_context
+@opt_insecure_tls_config
 @opt_oidc_username
 @opt_nointeractive
 @opt_output_all
@@ -141,8 +148,9 @@ async def create_exporter(
     name: Optional[str],
     kubeconfig: Optional[str],
     context: Optional[str],
+    insecure_tls_config: bool,
     namespace: str,
-    labels: list[(str, str)],
+    labels: dict[str, str],
     save: bool,
     out: Optional[str],
     oidc_username: str | None,
@@ -151,15 +159,17 @@ async def create_exporter(
 ):
     """Create an exporter object in the Kubernetes cluster"""
     try:
+        confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
                 click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
-            created_exporter = await api.create_exporter(name, dict(labels), oidc_username)
+            created_exporter = await api.create_exporter(name, labels, oidc_username)
             # Save the client config
             if save or out is not None or nointeractive is False and click.confirm("Save exporter configuration?"):
                 if output is None:
                     click.echo("Fetching exporter credentials from cluster")
                 exporter_config = await api.get_exporter_config(name)
+                exporter_config.tls.insecure = insecure_tls_config
                 ExporterConfigV1Alpha1.save(exporter_config, out)
                 if output is None:
                     click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")

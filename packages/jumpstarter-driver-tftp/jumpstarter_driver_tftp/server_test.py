@@ -42,7 +42,9 @@ async def tftp_server():
 
 async def create_test_client(server_port):
     loop = asyncio.get_running_loop()
-    transport, protocol = await loop.create_datagram_endpoint(asyncio.DatagramProtocol, remote_addr=("127.0.0.1", 0))
+    transport, protocol = await loop.create_datagram_endpoint(
+        asyncio.DatagramProtocol, remote_addr=("127.0.0.1", server_port)
+    )
     return transport, protocol
 
 
@@ -70,7 +72,7 @@ async def test_read_request_for_existing_file(tftp_server):
     await server.ready_event.wait()
 
     try:
-        transport, _ = await create_test_client(server.port)
+        transport, _ = await create_test_client(server_port)
 
         rrq_packet = (
             Opcode.RRQ.to_bytes(2, "big")
@@ -97,7 +99,7 @@ async def test_read_request_for_nonexistent_file(tftp_server):
     server_task = asyncio.create_task(server.start())
 
     try:
-        transport, protocol = await create_test_client(server.port)
+        transport, protocol = await create_test_client(server_port)
 
         rrq_packet = Opcode.RRQ.to_bytes(2, "big") + b"nonexistent.txt\x00" + b"octet\x00"
 
@@ -117,7 +119,7 @@ async def test_write_request_rejection(tftp_server):
     server_task = asyncio.create_task(server.start())
 
     try:
-        transport, _ = await create_test_client(server.port)
+        transport, _ = await create_test_client(server_port)
         wrq_packet = Opcode.WRQ.to_bytes(2, "big") + b"test.txt\x00" + b"octet\x00"
 
         transport.sendto(wrq_packet)
@@ -137,7 +139,7 @@ async def test_invalid_packet_handling(tftp_server):
     await server.ready_event.wait()
 
     try:
-        transport, _ = await create_test_client(server.port)
+        transport, _ = await create_test_client(server_port)
         transport.sendto(b"\x00\x01")
 
         assert server.transport is not None
@@ -157,7 +159,7 @@ async def test_path_traversal_prevention(tftp_server):
     await server.ready_event.wait()
 
     try:
-        transport, _ = await create_test_client(server.port)
+        transport, _ = await create_test_client(server_port)
 
         rrq_packet = Opcode.RRQ.to_bytes(2, "big") + b"../../../etc/passwd\x00" + b"octet\x00"
 
@@ -179,7 +181,7 @@ async def test_options_negotiation(tftp_server):
     await server.ready_event.wait()
 
     try:
-        transport, _ = await create_test_client(server.port)
+        transport, _ = await create_test_client(server_port)
 
         # RRQ with options
         rrq_packet = (
@@ -257,7 +259,7 @@ async def test_invalid_options_handling(tftp_server):
     await server.ready_event.wait()
 
     try:
-        transport, _ = await create_test_client(server.port)
+        transport, _ = await create_test_client(server_port)
 
         rrq_packet = (
             Opcode.RRQ.to_bytes(2, "big")

@@ -6,6 +6,7 @@ import anyio
 from aiohttp import web
 from jumpstarter_driver_opendal.driver import Opendal
 
+from jumpstarter.common.ipaddr import get_ip_address
 from jumpstarter.driver import Driver, export
 
 
@@ -41,18 +42,7 @@ class HttpServer(Driver):
             ]
         )
         if self.host is None:
-            self.host = self.get_default_ip()
-
-    def get_default_ip(self):
-        try:
-            import socket
-
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                return s.getsockname()[0]
-        except Exception:
-            self.logger.warning("Could not determine default IP address, falling back to 0.0.0.0")
-            return "0.0.0.0"
+            self.host = get_ip_address(logger=self.logger)
 
     @classmethod
     def client(cls) -> str:

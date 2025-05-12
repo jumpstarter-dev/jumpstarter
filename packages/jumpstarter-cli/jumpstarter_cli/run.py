@@ -1,9 +1,7 @@
-import sys
-
 import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
-from jumpstarter_cli_common.exceptions import handle_exceptions
+from jumpstarter_cli_common.exceptions import handle_exceptions, leaf_exceptions
 
 
 async def _serve_with_exc_handling(exporter):
@@ -11,8 +9,11 @@ async def _serve_with_exc_handling(exporter):
     try:
         await exporter.serve()
     except* Exception as excgroup:
-        for exc in excgroup.exceptions:
-            print(f"Exception while serving on the exporter: {exc}", file=sys.stderr)
+        for exc in leaf_exceptions(excgroup):
+            click.echo(
+                f"Exception while serving on the exporter: {type(exc).__name__}: {exc}",
+                err=True,
+            )
         result = 1
     return result
 
