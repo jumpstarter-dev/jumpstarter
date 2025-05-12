@@ -6,7 +6,13 @@ authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter-cli-common", "jumpstarter-kubernetes"]
+dependencies = [
+    "aiohttp>=3.11.18",
+    "jumpstarter-cli-common",
+    "jumpstarter-kubernetes",
+    "packaging>=25.0",
+    "semver~=2.13",
+]
 
 [dependency-groups]
 dev = [
