@@ -26,10 +26,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: build bin/jmpctl
-
-.PHONY: cli
-cli: bin/jmpctl
+all: build
 
 ##@ General
 
@@ -67,9 +64,6 @@ fmt: ## Run go fmt against code.
 .PHONY: vet
 vet: ## Run go vet against code.
 	go vet ./...
-
-bin/jmpctl: $(GO_FILES)
-	CGO_ENABLED=0 go build -o bin/jmpctl ./cmd/jmpctl
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
@@ -154,7 +148,7 @@ deploy: docker-build cluster grpcurl
 	./hack/deploy_with_helm.sh
 
 .PHONY: deploy-exporters
-deploy-exporters: cli
+deploy-exporters:
 	./hack/demoenv/prepare_exporters.sh
 
 .PHONY: lint-helm
