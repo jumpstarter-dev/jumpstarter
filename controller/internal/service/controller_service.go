@@ -296,6 +296,8 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		}
 	}
 
+	// ticker does not tick instantly, thus calling online immediately once
+	// https://github.com/golang/go/issues/17601
 	select {
 	case <-ctx.Done():
 		return nil
