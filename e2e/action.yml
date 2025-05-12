@@ -97,12 +97,12 @@ runs:
 
         jmp admin create exporter test-exporter-oidc   --out /dev/null \
           --oidc-username dex:test-exporter-oidc \
-          --label example.com/board oidc
+          --label example.com/board=oidc
         jmp admin create exporter test-exporter-sa     --out /dev/null \
           --oidc-username dex:system:serviceaccount:default:test-exporter-sa \
-          --label example.com/board sa
+          --label example.com/board=sa
         jmp admin create exporter test-exporter-legacy --save \
-          --label example.com/board legacy
+          --label example.com/board=legacy
 
         jmp config client   list
         jmp config exporter list
