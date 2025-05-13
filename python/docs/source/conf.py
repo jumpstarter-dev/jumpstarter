@@ -29,7 +29,6 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx_click",
     "sphinx_substitution_extensions",
-    "sphinx_multiversion",
     "sphinx_copybutton"
 ]
 
@@ -99,42 +98,11 @@ html_sidebars = {
         "sidebar/scroll-start.html",
         "sidebar/navigation.html",
         "sidebar/scroll-end.html",
-        "sidebar/versions.html",
     ]
 }
 html_theme_options = {
     "sidebar_hide_name": True,
     "top_of_page_button": "edit",
-}
-
-# -- sphinx-multiversion configuration -------------------------------------
-# This replaces the custom bash script approach with built-in functionality
-
-# Tags pattern for html_context["versions"]
-smv_tag_whitelist = r"$^" # Ignore all tags
-smv_branch_whitelist = r"^(main|release-\d+\.\d+)$" # Include all release branches and main
-smv_remote_whitelist = r'^(origin|upstream)$' # Include branches from origin and upstream
-smv_prefer_remote_refs = True
-# smv_released_pattern = r"^v[0-9]+\.[0-9]+\.[0-9]+$"  # Tags that are considered releases
-smv_outputdir_format = "{ref.name}"  # Directory name format
-
-# Ensure static files are copied to all versions
-smv_static_files = [
-    "_static/**",
-    "_templates/**",
-]
-
-# Ensure RST directives are processed
-smv_include_patterns = [
-    "*.md",
-    "*.rst",
-    "*.txt",
-]
-
-# Patterns for the versions panel
-html_context = {
-    "display_lower": True,  # Display lower versions at the bottom of the menu
-    "deploy_url": os.getenv("DEPLOY_URL", "https://docs.jumpstarter.dev"),  # Get Netlify URL from environment variable
 }
 
 # sphinx-copybutton config
