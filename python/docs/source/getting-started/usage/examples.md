@@ -6,17 +6,17 @@ distributed modes. Each example demonstrates how to accomplish common tasks.
 ## Starting and Exiting a Session
 
 Start a local exporter session:
-```shell
+```console
 $ jmp shell --exporter example-local
 ```
 
 Start a distributed exporter session:
-```shell
+```console
 $ jmp shell --client hello --selector example.com/board=foo
 ```
 
 When finished, simply exit the shell:
-```shell
+```console
 $ exit
 ```
 
@@ -25,7 +25,7 @@ $ exit
 The exporter shell provides access to driver CLI interfaces through the magic
 `j` command:
 
-```shell
+```console
 $ jmp shell # Use appropriate --exporter or --client parameters
 $ j
 Usage: j [OPTIONS] COMMAND [ARGS]...
@@ -77,7 +77,7 @@ with env() as client:
    client.power.off()
 ```
 
-```shell
+```console
 $ jmp shell # Use appropriate --exporter or --client parameters
 $ python ./example.py
 $ exit
@@ -121,7 +121,7 @@ class MyTest(JumpstarterTest):
       client.power.off()
 ```
 
-```shell
+```console
 $ jmp shell # Use appropriate --exporter or --client parameters
 $ pytest ./example_test.py
 $ exit

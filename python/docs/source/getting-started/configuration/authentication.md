@@ -45,13 +45,13 @@ Note, the HTTPS URL is mandatory, and you only need to include certificateAuthor
 3. Create clients and exporters with the `jmp admin create` commands. Be sure to
    prefix usernames with `keycloak:` as configured in the claim mappings:
 
-```shell
+```console
 $ jmp admin create client test-client --insecure-tls-config --oidc-username keycloak:developer-1
 ```
 
 4. Instruct users to log in with:
 
-```shell
+```console
 $ jmp login --client <client alias> \
     --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \
@@ -61,7 +61,7 @@ $ jmp login --client <client alias> \
 
 For non-interactive login, add username and password:
 
-```shell
+```console
 $ jmp login --client <client alias> [other parameters] \
     --insecure-tls-config \
     --username <username> \
@@ -70,13 +70,13 @@ $ jmp login --client <client alias> [other parameters] \
 
 For machine-to-machine authentication (useful in CI environments), use a token:
 
-```shell
+```console
 $ jmp login --client <client alias> [other parameters] --token <token>
 ```
 
 For exporters, use similar login command but with the `--exporter` flag:
 
-```shell
+```console
 $ jmp login --exporter <exporter alias> \
     --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \
@@ -90,7 +90,7 @@ Follow these steps to set up Dex for service account authentication:
 
 1. Initialize a self-signed CA and sign certificate for Dex:
 
-```shell
+```console
 $ easyrsa init-pki
 $ easyrsa --no-pass build-ca
 $ easyrsa --no-pass build-server-full dex.dex.svc.cluster.local
@@ -98,7 +98,7 @@ $ easyrsa --no-pass build-server-full dex.dex.svc.cluster.local
 
 Then import the certificate into a Kubernetes secret:
 
-```shell
+```console
 $ kubectl create namespace dex
 $ kubectl -n dex create secret tls dex-tls \
     --cert=pki/issued/dex.dex.svc.cluster.local.crt \
@@ -153,7 +153,7 @@ service:
 
 Ensure OIDC discovery URLs do not require authentication:
 
-```shell
+```console
 $ kubectl create clusterrolebinding oidc-reviewer  \
     --clusterrole=system:service-account-issuer-discovery \
     --group=system:unauthenticated
@@ -161,7 +161,7 @@ $ kubectl create clusterrolebinding oidc-reviewer  \
 
 Then install Dex:
 
-```shell
+```console
 $ helm repo add dex https://charts.dexidp.io
 $ helm install --namespace dex --wait -f values.yaml dex dex/dex
 ```
@@ -189,7 +189,7 @@ jwt:
 4. Create clients and exporters with appropriate OIDC usernames. Prefix the full
    service account name with "dex:" as configured in the claim mappings.:
 
-```shell
+```console
 $ jmp admin create exporter test-exporter --label foo=bar \
     --insecure-tls-config \
     --oidc-username dex:system:serviceaccount:default:test-service-account
@@ -199,7 +199,7 @@ $ jmp admin create exporter test-exporter --label foo=bar \
 
 For clients:
 
-```shell
+```console
 $ jmp login --client <client alias> \
     --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \
@@ -211,7 +211,7 @@ $ jmp login --client <client alias> \
 
 For exporters:
 
-```shell
+```console
 $ jmp login --exporter <exporter alias> \
     --insecure-tls-config \
     --endpoint <jumpstarter controller endpoint> \

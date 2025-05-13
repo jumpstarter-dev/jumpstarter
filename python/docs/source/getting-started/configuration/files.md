@@ -59,11 +59,11 @@ drivers:
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
 
 **CLI Commands**:
-```shell
-jmp config client create <name>  # Create new client config
-jmp config client use <name>     # Switch to a different client
-jmp config client list           # List available clients
-jmp config client delete <name>  # Remove a client config
+```console
+$ jmp config client create <name>  # Create new client config
+$ jmp config client use <name>     # Switch to a different client
+$ jmp config client list           # List available clients
+$ jmp config client delete <name>  # Remove a client config
 ```
 
 ## Exporter Configuration
@@ -108,22 +108,22 @@ export:
 - `JMP_NAME` - Exporter name
 
 **CLI Commands**:
-```shell
-jmp config exporter create <name>   # Create new exporter config
-jmp config exporter list            # List available exporters
-jmp config exporter delete <name>   # Remove an exporter config
+```console
+$ jmp config exporter create <name>   # Create new exporter config
+$ jmp config exporter list            # List available exporters
+$ jmp config exporter delete <name>   # Remove an exporter config
 ```
 
 ## Running Exporters
 
 Exporters can be run manually or as system services:
 
-```shell
+```console
 # Run with specific exporter config
-jmp run --exporter my-exporter
+$ jmp run --exporter my-exporter
 
 # Or specify a config path directly
-jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
+$ jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
 ```
 
 For persistent operation, exporters can be installed as systemd services using
@@ -152,7 +152,7 @@ WantedBy=multi-user.target default.target
 
 Then enable and start the service:
 
-```shell
-sudo systemctl daemon-reload
-sudo systemctl enable --now my-exporter
+```console
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable --now my-exporter
 ```
