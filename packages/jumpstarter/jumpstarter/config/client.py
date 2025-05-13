@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import os
 from contextlib import asynccontextmanager, contextmanager
@@ -252,11 +254,16 @@ class ClientConfigV1Alpha1(BaseModel):
         return cls._get_path(alias).exists()
 
     @classmethod
-    def list(cls) -> list[Self]:
+    def list(cls) -> ClientConfigListV1Alpha1:
         """List the available client configs."""
+        from .user import UserConfigV1Alpha1
+
         if cls.CLIENT_CONFIGS_PATH.exists() is False:
             # Return an empty list if the dir does not exist
-            return []
+            return ClientConfigListV1Alpha1(
+                current_config=None,
+                items=[],
+            )
 
         results = os.listdir(cls.CLIENT_CONFIGS_PATH)
         # Only accept YAML files in the list
@@ -266,7 +273,15 @@ class ClientConfigV1Alpha1(BaseModel):
             path = cls.CLIENT_CONFIGS_PATH / file
             return cls.from_file(path)
 
-        return list(map(make_config, files))
+        current_config = None
+        if UserConfigV1Alpha1.exists():
+            current_client = UserConfigV1Alpha1.load().config.current_client
+            current_config = current_client.alias if current_client is not None else None
+
+        return ClientConfigListV1Alpha1(
+            current_config=current_config,
+            items=list(map(make_config, files)),
+        )
 
     @classmethod
     def delete(cls, alias: str) -> Path:
@@ -284,10 +299,24 @@ class ClientConfigListV1Alpha1(BaseModel):
     items: list[ClientConfigV1Alpha1]
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
 
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
-
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
-
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+
+    @classmethod
+    def rich_add_columns(cls, table):
+        table.add_column("CURRENT")
+        table.add_column("ALIAS")
+        table.add_column("ENDPOINT")
+        table.add_column("PATH")
+
+    def rich_add_rows(self, table):
+        for client in self.items:
+            table.add_row(
+                "*" if self.current_config == client.alias else "",
+                client.alias,
+                client.endpoint,
+                str(client.path),
+            )
+
+    def rich_add_names(self, names):
+        for client in self.items:
+            names.append(client.alias)
