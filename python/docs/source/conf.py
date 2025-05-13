@@ -30,6 +30,7 @@ extensions = [
     "sphinx_click",
     "sphinx_substitution_extensions",
     "sphinx_multiversion",
+    "sphinx_copybutton"
 ]
 
 templates_path = ["_templates"]
@@ -135,3 +136,9 @@ html_context = {
     "display_lower": True,  # Display lower versions at the bottom of the menu
     "deploy_url": os.getenv("DEPLOY_URL", "https://docs.jumpstarter.dev"),  # Get Netlify URL from environment variable
 }
+
+# sphinx-copybutton config
+copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
+copybutton_prompt_is_regexp = True
+copybutton_only_copy_prompt_lines = True
+copybutton_line_continuation_character = "\\"
