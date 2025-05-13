@@ -339,6 +339,13 @@ func setExporterOnlineConditions(ctx context.Context, name string, status metav1
 		Status: status,
 		Reason: "dummy",
 	})
+	if status == metav1.ConditionTrue {
+		exporter.Status.Devices = []jumpstarterdevv1alpha1.Device{{}}
+		exporter.Status.LastSeen = metav1.Now()
+	} else {
+		exporter.Status.Devices = nil
+		exporter.Status.LastSeen = metav1.NewTime(metav1.Now().Add(-time.Minute * 2))
+	}
 	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
 }
 

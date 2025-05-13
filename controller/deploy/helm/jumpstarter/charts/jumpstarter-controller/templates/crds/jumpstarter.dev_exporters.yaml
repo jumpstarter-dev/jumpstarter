@@ -135,6 +135,9 @@ spec:
                 type: array
               endpoint:
                 type: string
+              lastSeen:
+                format: date-time
+                type: string
               leaseRef:
                 description: |-
                   LocalObjectReference contains enough information to let you locate the

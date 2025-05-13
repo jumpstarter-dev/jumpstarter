@@ -23,7 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -33,7 +32,7 @@ import (
 
 // ClientReconciler reconciles a Client object
 type ClientReconciler struct {
-	client.Client
+	kclient.Client
 	Scheme *runtime.Scheme
 	Signer *oidc.Signer
 }

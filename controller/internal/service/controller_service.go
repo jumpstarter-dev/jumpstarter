@@ -46,7 +46,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -62,7 +61,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
 )
 
-// ControlerService exposes a gRPC service
+// ControllerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
 	Client       client.WithWatch
@@ -151,16 +150,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 
 	original = client.MergeFrom(exporter.DeepCopy())
 
-	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: exporter.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason: "Register",
-	})
-
 	devices := []jumpstarterdevv1alpha1.Device{}
 	for _, device := range req.Reports {
 		devices = append(devices, jumpstarterdevv1alpha1.Device{
@@ -202,16 +191,7 @@ func (s *ControllerService) Unregister(
 	})
 
 	original := client.MergeFrom(exporter.DeepCopy())
-	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-		Status:             metav1.ConditionFalse,
-		ObservedGeneration: exporter.Generation,
-		LastTransitionTime: metav1.Time{
-			Time: time.Now(),
-		},
-		Reason:  "Bye",
-		Message: req.GetReason(),
-	})
+	exporter.Status.Devices = nil
 
 	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status")
@@ -293,34 +273,6 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		Name:      exporter.Name,
 	})
 
-	defer func() {
-		logger.Info("Status stream terminating, marking exporter offline")
-		// Make sure defer runs under a fresh context
-		// otherwise these operations would fail if the rpc context is cancelled
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-		if err := s.Client.Get(
-			ctx,
-			types.NamespacedName{Name: exporter.Name, Namespace: exporter.Namespace},
-			exporter,
-		); err != nil {
-			logger.Error(err, "unable to refresh exporter status, continuing anyway")
-		}
-		original := client.MergeFrom(exporter.DeepCopy())
-		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: exporter.Generation,
-			LastTransitionTime: metav1.Time{
-				Time: time.Now(),
-			},
-			Reason: "Disconnect",
-		})
-		if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
-			logger.Error(err, "unable to update exporter status, continuing anyway")
-		}
-		cancel()
-	}()
-
 	watcher, err := s.Client.Watch(ctx, &jumpstarterdevv1alpha1.ExporterList{}, &client.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector("metadata.name", exporter.Name),
 		Namespace:     exporter.Namespace,
@@ -332,66 +284,72 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	defer watcher.Stop()
 
-	for result := range watcher.ResultChan() {
-		switch result.Type {
-		case watch.Added, watch.Modified, watch.Deleted:
-			exporter = result.Object.(*jumpstarterdevv1alpha1.Exporter)
-			leased := exporter.Status.LeaseRef != nil
-			leaseName := (*string)(nil)
-			clientName := (*string)(nil)
+	ticker := time.NewTicker(time.Second * 10)
 
-			original := client.MergeFrom(exporter.DeepCopy())
-			if false ||
-				meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-					Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
-					Status:             metav1.ConditionTrue,
-					ObservedGeneration: exporter.Generation,
-					Reason:             "Connect",
-					Message:            "Exporter is connected to the Status endpoint",
-				}) ||
-				meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-					Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
-					Status:             metav1.ConditionTrue,
-					ObservedGeneration: exporter.Generation,
-					Reason:             "Connect",
-					Message:            "Exporter is connected to the Status endpoint",
-				}) {
-				if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
-					logger.Error(err, "unable to update exporter status")
-				}
-			}
+	defer ticker.Stop()
 
-			if leased {
-				leaseName = &exporter.Status.LeaseRef.Name
-				var lease jumpstarterdevv1alpha1.Lease
-				if err := s.Client.Get(
-					ctx,
-					types.NamespacedName{Namespace: exporter.Namespace, Name: *leaseName},
-					&lease,
-				); err != nil {
-					logger.Error(err, "failed to get lease on exporter")
-					return err
-				}
-				clientName = &lease.Spec.ClientRef.Name
-			}
-
-			status := pb.StatusResponse{
-				Leased:     leased,
-				LeaseName:  leaseName,
-				ClientName: clientName,
-			}
-			logger.Info("Sending status update to exporter", "status", fmt.Sprintf("%+v", &status))
-			if err = stream.Send(&status); err != nil {
-				logger.Error(err, "Failed to send status update to exporter")
-				return err
-			}
-		case watch.Error:
-			logger.Error(fmt.Errorf("%+v", result.Object), "Received error when watching exporter")
-			return fmt.Errorf("received error when watching exporter")
+	online := func() {
+		original := client.MergeFrom(exporter.DeepCopy())
+		exporter.Status.LastSeen = metav1.Now()
+		if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
+			logger.Error(err, "unable to update exporter status.lastSeen")
 		}
 	}
-	logger.Info("Status stream terminated normally")
-	return nil
+
+	// ticker does not tick instantly, thus calling online immediately once
+	// https://github.com/golang/go/issues/17601
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+		online()
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("Status stream terminated normally")
+			return nil
+		case <-ticker.C:
+			online()
+		case result := <-watcher.ResultChan():
+			switch result.Type {
+			case watch.Added, watch.Modified, watch.Deleted:
+				exporter = result.Object.(*jumpstarterdevv1alpha1.Exporter)
+				leased := exporter.Status.LeaseRef != nil
+				leaseName := (*string)(nil)
+				clientName := (*string)(nil)
+
+				if leased {
+					leaseName = &exporter.Status.LeaseRef.Name
+					var lease jumpstarterdevv1alpha1.Lease
+					if err := s.Client.Get(
+						ctx,
+						types.NamespacedName{Namespace: exporter.Namespace, Name: *leaseName},
+						&lease,
+					); err != nil {
+						logger.Error(err, "failed to get lease on exporter")
+						return err
+					}
+					clientName = &lease.Spec.ClientRef.Name
+				}
+
+				status := pb.StatusResponse{
+					Leased:     leased,
+					LeaseName:  leaseName,
+					ClientName: clientName,
+				}
+				logger.Info("Sending status update to exporter", "status", fmt.Sprintf("%+v", &status))
+				if err = stream.Send(&status); err != nil {
+					logger.Error(err, "Failed to send status update to exporter")
+					return err
+				}
+			case watch.Error:
+				logger.Error(fmt.Errorf("%+v", result.Object), "Received error when watching exporter")
+				return fmt.Errorf("received error when watching exporter")
+			}
+		}
+	}
 }
 
 func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.DialResponse, error) {
@@ -578,7 +536,7 @@ func (s *ControllerService) RequestLease(
 		return nil, err
 	}
 
-	var lease jumpstarterdevv1alpha1.Lease = jumpstarterdevv1alpha1.Lease{
+	var lease = jumpstarterdevv1alpha1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: client.Namespace,
 			Name:      leaseName.String(),

@@ -19,8 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -72,6 +75,11 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	result, err := r.reconcileStatusConditionsOnline(ctx, &exporter)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := r.reconcileStatusEndpoint(ctx, &exporter); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -80,7 +88,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return RequeueConflict(logger, ctrl.Result{}, err)
 	}
 
-	return ctrl.Result{}, nil
+	return result, nil
 }
 
 func (r *ExporterReconciler) reconcileStatusCredential(
@@ -142,6 +150,64 @@ func (r *ExporterReconciler) reconcileStatusEndpoint(
 	}
 
 	return nil
+}
+
+// nolint:unparam
+func (r *ExporterReconciler) reconcileStatusConditionsOnline(
+	_ context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (ctrl.Result, error) {
+	var requeueAfter time.Duration = 0
+
+	if exporter.Status.LastSeen.IsZero() {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Seen",
+			Message:            "Never seen",
+		})
+		// marking the exporter offline, no need to requeue
+	} else if time.Since(exporter.Status.LastSeen.Time) > time.Minute {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Seen",
+			Message:            "Last seen more than 1 minute ago",
+		})
+		// marking the exporter offline, no need to requeue
+	} else {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Seen",
+			Message:            "Lase seen less than 1 minute ago",
+		})
+		// marking the exporter online, requeue after 30 seconds
+		requeueAfter = time.Second * 30
+	}
+
+	if exporter.Status.Devices == nil {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Unregister",
+		})
+	} else {
+		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: exporter.Generation,
+			Reason:             "Register",
+		})
+	}
+
+	return ctrl.Result{
+		RequeueAfter: requeueAfter,
+	}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

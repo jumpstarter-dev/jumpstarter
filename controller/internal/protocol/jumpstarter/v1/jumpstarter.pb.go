@@ -86,7 +86,7 @@ func (x *RegisterRequest) GetReports() []*DriverInstanceReport {
 
 type DriverInstanceReport struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                     // a unique id within the expoter
+	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                     // a unique id within the exporter
 	ParentUuid    *string                `protobuf:"bytes,2,opt,name=parent_uuid,json=parentUuid,proto3,oneof" json:"parent_uuid,omitempty"` // optional, if device has a parent device
 	Labels        map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
