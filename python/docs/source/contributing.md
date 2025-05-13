@@ -50,7 +50,7 @@ We welcome bug fixes, features, and improvements to the core codebase.
 
 To create a new driver scaffold:
 
-```shell
+```console
 $ ./__templates__/create_driver.sh driver_package DriverClass "Your Name" "your.email@example.com"
 ```
 
@@ -62,7 +62,7 @@ Test your driver: `make pkg-test-${package_name}`
 
 Jumpstarter uses Sphinx with Markdown. Build and preview locally:
 
-```shell
+```console
 $ make docs-serve
 ```
 

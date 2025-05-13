@@ -47,7 +47,7 @@ Interact with your local exporter using the "exporter shell" functionality in
 the `jmp` CLI. When you spawn a shell, Jumpstarter runs a local exporter
 instance in the background for the duration of your shell session.
 
-```shell
+```console
 $ jmp shell --exporter example-local
 ```
 
@@ -55,7 +55,7 @@ $ jmp shell --exporter example-local
 
 To terminate the local exporter, simply exit the shell:
 
-```shell
+```console
 $ exit
 ```
 

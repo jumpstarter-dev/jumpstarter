@@ -6,8 +6,8 @@ exporter.
 
 Usage:
 
-```shell
-j [OPTIONS] COMMAND [ARGS]...
+```console
+$ j [OPTIONS] COMMAND [ARGS]...
 ```
 
 The available commands depend on which drivers are loaded in your current

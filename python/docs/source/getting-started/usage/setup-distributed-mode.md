@@ -39,7 +39,7 @@ provides commands to interact with the controller directly.
 Run this command to create an exporter named `example-distributed` and save the
 configuration locally:
 
-```shell
+```console
 $ jmp admin create exporter example-distributed --label foo=bar --save --insecure-tls-config
 ```
 
@@ -47,7 +47,7 @@ After creating the exporter, find the new configuration file at
 `/etc/jumpstarter/exporters/example-distributed.yaml`. Edit the configuration
 using your default text editor with:
 
-```shell
+```console
 $ jmp config exporter edit example-distributed
 ```
 
@@ -73,7 +73,7 @@ export:
 
 Start the exporter locally using the `jmp` CLI tool:
 
-```shell
+```console
 $ jmp run --exporter example-distributed
 ```
 
@@ -87,7 +87,7 @@ The following command creates a client named "hello", enables unsafe drivers for
 development purposes, and saves the configuration locally in
 `${HOME}/.config/jumpstarter/clients/`:
 
-```shell
+```console
 $ jmp admin create client hello --save --unsafe --insecure-tls-config
 ```
 
@@ -98,7 +98,7 @@ in the `jmp` CLI. When you spawn a shell, the client attempts to acquire a lease
 on an exporter. Once the lease is acquired, you can interact with the exporter
 through your shell session.
 
-```shell
+```console
 $ jmp shell --client hello --selector example.com/board=foo
 ```
 
@@ -106,7 +106,7 @@ $ jmp shell --client hello --selector example.com/board=foo
 
 To terminate the local exporter, simply exit the shell:
 
-```shell
+```console
 $ exit
 ```
 

@@ -89,7 +89,7 @@ or other infrastructure. Developers can work with devices on their desk, develop
 drivers, create automation scripts, and test with QEMU or other virtualization
 tools.
 
-```shell
+```console
 $ jmp shell --exporter my-exporter
 $ pytest test_device.py
 ```
@@ -176,7 +176,7 @@ credentials, ensuring proper resource isolation in shared testing environments.
 
 The following example shows how to run tests in distributed mode:
 
-```shell
+```console
 $ jmp config client use my-client
 $ jmp create lease --selector vendor=acme,model=widget-v2
 $ pytest test_device.py

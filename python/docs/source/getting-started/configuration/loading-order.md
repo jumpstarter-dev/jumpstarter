@@ -48,13 +48,13 @@ Here's a practical example of how configuration overrides work:
 
 2. You set an environment variable in your terminal:
 
-   ```shell
+   ```console
    $ export JMP_ENDPOINT="jumpstarter2.my-lab.com:1443"
    ```
 
 3. You run a command with an explicit endpoint argument:
 
-   ```shell
+   ```console
    $ jmp --endpoint jumpstarter3.my-lab.com:1443 info
    ```
 

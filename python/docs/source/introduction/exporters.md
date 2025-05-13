@@ -68,7 +68,7 @@ current Python environment.
 
 You can run the exporter in your local terminal with:
 
-```shell
+```console
 $ jmp run --exporter myexporter
 ```
 

@@ -20,7 +20,7 @@ Jumpstarter environment. Before installing, ensure you have:
 
 Install Jumpstarter on a standard Kubernetes cluster using Helm:
 
-```{code-block} bash
+```{code-block} console
 :substitutions:
 $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
         --create-namespace --namespace jumpstarter-lab \
@@ -34,7 +34,7 @@ $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstar
 
 Install Jumpstarter on an OpenShift cluster using Helm:
 
-```{code-block} bash
+```{code-block} console
 :substitutions:
 $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
           --create-namespace --namespace jumpstarter-lab \
@@ -48,7 +48,7 @@ $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstar
 
 First, create and label a namespace for Jumpstarter:
 
-```shell
+```console
 $ kubectl create namespace jumpstarter-lab
 $ kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-gitops
 ```
@@ -140,7 +140,7 @@ website](https://minikube.sigs.k8s.io/docs/start/).
 
 Expand the default NodePort range to include the Jumpstarter ports:
 
-```shell
+```console
 $ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 ```
 
@@ -151,7 +151,7 @@ your Kubernetes cluster.
 
 Use the minikube IP address when installing with the CLI:
 
-```shell
+```console
 $ jmp admin install --ip $(minikube ip)
 ```
 
@@ -162,7 +162,7 @@ options, see the [MAN pages](../../reference/man-pages/jmp.md).
 
 For manual installation with Helm, use these commands:
 
-```{code-block} shell
+```{code-block} console
 :substitutions:
 $ export IP=$(minikube ip)
 $ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
@@ -234,7 +234,7 @@ nodes:
 
 Next, create a kind cluster using the config you created:
 
-```shell
+```console
 $ kind create cluster --config kind_config.yaml
 ```
 
@@ -246,7 +246,7 @@ cluster.
 
 Install Jumpstarter with default options:
 
-```shell
+```console
 $ jmp admin install
 ```
 
@@ -257,7 +257,7 @@ options, see the [MAN pages](../../reference/man-pages/jmp.md).
 
 If you prefer manual installation with Helm, use the following commands:
 
-```{code-block} bash
+```{code-block} console
 :substitutions:
 $ export IP="X.X.X.X"
 $ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
