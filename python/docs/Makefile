@@ -26,12 +26,7 @@ serve:
 	sphinx-autobuild --host $(HOST) --port $(PORT) "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
 multiversion:
-	sphinx-multiversion "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
-	@if [ -d "$(BUILDDIR)/main" ]; then \
-		echo "Moving main directory contents to build root"; \
-		mv "$(BUILDDIR)/main/"* "$(BUILDDIR)/"; \
-		rm -rf "$(BUILDDIR)/main/"; \
-	fi
+	./multiversion.sh
 
 serve-multiversion:
 	@echo "Serving multiversion documentation using the HOST variable"
