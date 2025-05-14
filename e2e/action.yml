@@ -143,9 +143,9 @@ runs:
         jmp run --exporter test-exporter-sa &
         jmp run --exporter test-exporter-legacy &
 
-        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-oidc
-        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-sa
-        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-legacy
+        kubectl -n default wait --for=condition=Online --for=condition=Registered exporters.jumpstarter.dev/test-exporter-oidc
+        kubectl -n default wait --for=condition=Online --for=condition=Registered exporters.jumpstarter.dev/test-exporter-sa
+        kubectl -n default wait --for=condition=Online --for=condition=Registered exporters.jumpstarter.dev/test-exporter-legacy
 
         jmp config client use test-client-oidc
 
@@ -159,7 +159,7 @@ runs:
         jmp admin get lease
 
         jmp run --exporter test-exporter-oidc &
-        kubectl -n default wait --for=condition=Online exporters.jumpstarter.dev/test-exporter-oidc
+        kubectl -n default wait --for=condition=Online --for=condition=Registered exporters.jumpstarter.dev/test-exporter-oidc
 
         jmp shell --client test-client-oidc --selector example.com/board=oidc <<EOF
         j power on
