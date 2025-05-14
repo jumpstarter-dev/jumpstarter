@@ -10,8 +10,7 @@ precedence (highest to lowest):
 
 1. **Command-line arguments** - Highest priority, override all other settings
 2. **Environment variables** - Override file-based configurations
-3. **User configuration files** - Located in
-   `${HOME}/.config/jumpstarter/`
+3. **User configuration files** - Located in `${HOME}/.config/jumpstarter/`
 4. **System configuration files** - Located in `/etc/jumpstarter/`
 
 ## Client Configuration Hierarchy
@@ -21,10 +20,8 @@ For client operations, Jumpstarter processes configurations in this order:
 1. **Command-line options** such as `--endpoint` or `--client-config`
 2. **Environment variables** such as `JMP_ENDPOINT`, `JMP_TOKEN`, or
    `JMP_CLIENT_CONFIG`
-3. **Current client** defined in
-   `${HOME}/.config/jumpstarter/config.yaml`
-4. **Specific client file** in
-   `${HOME}/.config/jumpstarter/clients/<n>.yaml`
+3. **Current client** defined in `${HOME}/.config/jumpstarter/config.yaml`
+4. **Specific client file** in `${HOME}/.config/jumpstarter/clients/<n>.yaml`
 
 ## Exporter Configuration Hierarchy
 

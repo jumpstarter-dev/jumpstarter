@@ -5,8 +5,8 @@ covers:
 
 - [API Pages](man-pages/index.md): Command-line tools and utilities
   documentation
-- [Packages](package-apis/index.md): API documentation for Jumpstarter packages and
-  components
+- [Packages](package-apis/index.md): API documentation for Jumpstarter packages
+  and components
 
 These references are useful for developers working with Jumpstarter.
 
