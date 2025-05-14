@@ -1,25 +1,16 @@
 import json
-import os
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
 
 import aiohttp
 import click
-import truststore
 from aiohttp import web
 from anyio import create_memory_object_stream
 from anyio.to_thread import run_sync
 from authlib.integrations.requests_client import OAuth2Session
 from joserfc.jws import extract_compact
 from yarl import URL
-
-# if we are running in MacOS avoid injecting system certificates to avoid
-# https://github.com/jumpstarter-dev/jumpstarter/issues/362
-# also allow to force the system certificates injection with
-# JUMPSTARTER_FORCE_SYSTEM_CERTS=1
-if os.uname().sysname != "Darwin" or os.environ.get("JUMPSTARTER_FORCE_SYSTEM_CERTS") == "1":
-    truststore.inject_into_ssl()
 
 
 def opt_oidc(f):
