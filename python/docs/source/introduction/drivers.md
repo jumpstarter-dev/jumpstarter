@@ -66,8 +66,9 @@ Some categories of drivers include:
 - [Communication](../reference/package-apis/drivers/index.md#communication-drivers):
   Provide protocols for network communication, such as TCP/IP, Serial, CAN bus,
   etc.
-- [Data and Storage](../reference/package-apis/drivers/index.md#storage-and-data-drivers): Control
-  storage devices, such as SD cards or USB drives, and data.
+- [Data and
+  Storage](../reference/package-apis/drivers/index.md#storage-and-data-drivers):
+  Control storage devices, such as SD cards or USB drives, and data.
 - [Media](../reference/package-apis/drivers/index.md#media-drivers): Provide
   interfaces for media capture and playback, such as video or audio.
 - [Debug and

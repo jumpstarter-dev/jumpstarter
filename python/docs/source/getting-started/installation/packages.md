@@ -37,7 +37,8 @@ $ source ~/.venv/jumpstarter/bin/activate
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-all
 ```
 
-Additional package indexes are available, this is a complete list of our indexes:
+Additional package indexes are available, this is a complete list of our
+indexes:
 
 | Index | Description |
 |-------|-------------|
