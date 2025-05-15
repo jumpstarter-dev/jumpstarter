@@ -2,10 +2,13 @@ name: Build and push container image
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+      - release-*
   merge_group:
 
 env:
-  PUSH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release-') }}
+  PUSH: ${{ github.repository_owner == 'jumpstarter-dev' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release-')) }}
   REGISTRY: quay.io
   QUAY_ORG: quay.io/jumpstarter-dev
 
@@ -40,6 +43,7 @@ jobs:
           echo "CONTAINERFILE=${CONTAINERFILE}"
 
       - name: Get version
+        if: ${{ env.PUSH == 'true' }}
         run: |
           VERSION=$(git describe --tags)
           VERSION=${VERSION#v} # remove the leading v prefix for version
@@ -47,6 +51,7 @@ jobs:
           echo "VERSION=${VERSION}"
 
       - name: Set image tags
+        if: ${{ env.PUSH == 'true' }}
         id: set-tags
         run: |
           TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"

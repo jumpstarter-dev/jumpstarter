@@ -1,20 +1,21 @@
-name: "Spell Check"
+name: Spell Check
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+      - release-*
   pull_request:
   merge_group:
 
 permissions:
   contents: read
-  pull-requests: read
+
 jobs:
   typos:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Run typos
-        uses: crate-ci/typos@master
+        uses: crate-ci/typos@0f0ccba9ed1df83948f0c15026e4f5ccfce46109 # v1.32.0
