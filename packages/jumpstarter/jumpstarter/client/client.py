@@ -6,8 +6,8 @@ from uuid import UUID
 import grpc
 from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
-from jumpstarter_protocol import jumpstarter_pb2_grpc
 
+from .grpc import MultipathExporterStub
 from jumpstarter.client import DriverClient
 from jumpstarter.common.importlib import import_class
 
@@ -32,7 +32,9 @@ async def client_from_channel(
     reports = {}
     clients = OrderedDict()
 
-    response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
+    stub = MultipathExporterStub([channel])
+
+    response = await stub.GetReport(empty_pb2.Empty())
 
     for index, report in enumerate(response.reports):
         topo[index] = []
@@ -52,7 +54,7 @@ async def client_from_channel(
         client = client_class(
             uuid=UUID(report.uuid),
             labels=report.labels,
-            channel=channel,
+            stub=stub,
             portal=portal,
             stack=stack.enter_context(ExitStack()),
             children={reports[k].labels["jumpstarter.dev/name"]: clients[k] for k in topo[index]},
