@@ -9,6 +9,13 @@ All flasher drivers inherit from the
 bundle of binary artifacts necessary to flash the DUT, like kernel/initram/dtbs.
 See the [bundle](#oci-bundles) section for more details.
 
+## Installation
+
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-flashers
+```
+
 ## Available drivers and bundles
 
 | Driver          | Bundle                                                       |

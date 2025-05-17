@@ -5,8 +5,9 @@ storages attached to the exporter.
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-opendal
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-opendal
 ```
 
 ## Configuration

@@ -10,8 +10,9 @@ This driver provides a client for the [EnerGenie Programmable power switch](http
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-energenie
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-energenie
 ```
 
 ### Configuration
