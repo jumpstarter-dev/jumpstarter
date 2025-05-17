@@ -1,12 +1,12 @@
 # CAN driver
 
-`jumpstarter-driver-can` provides functionality for interacting with CAN bus
-connections.
+`jumpstarter-driver-can` provides functionality for interacting with CAN bus connections.
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-can
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-can
 ```
 
 ## Configuration
