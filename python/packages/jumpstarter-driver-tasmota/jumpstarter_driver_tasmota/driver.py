@@ -83,3 +83,9 @@ class TasmotaPower(PowerInterface, Driver):
     @export
     def read(self):
         pass
+
+    def close(self):
+        self.off()
+
+    def reset(self):
+        self.off()
