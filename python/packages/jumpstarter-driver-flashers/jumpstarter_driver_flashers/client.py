@@ -24,6 +24,8 @@ from jumpstarter.common.exceptions import ArgumentError
 
 debug_console_option = click.option("--console-debug", is_flag=True, help="Enable console debug mode")
 
+EXPECT_TIMEOUT_DEFAULT = 60
+EXPECT_TIMEOUT_SYNC = 1200
 
 @dataclass(kw_only=True)
 class BaseFlasherClient(FlasherClient, CompositeClient):
@@ -127,11 +129,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 for preflash_command in manifest.spec.preflash_commands:
                     self.logger.info(f"Running preflash command: {preflash_command}")
                     console.sendline(preflash_command)
-                    console.expect(manifest.spec.login.prompt, timeout=5)
+                    console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
                 # make sure that the device is connected to the network and has an IP address
                 console.sendline("udhcpc")
-                console.expect(manifest.spec.login.prompt, timeout=10)
+                console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
                 if not skip_exporter_http:
                     # Wait for the storage write operation to complete before proceeding
@@ -171,10 +173,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
         )
         console.sendline(flash_cmd)
-        console.expect(manifest.spec.login.prompt, timeout=60)
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
 
         console.sendline("pidof dd")
-        console.expect(manifest.spec.login.prompt, timeout=3)
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         dd_pid = console.before.decode(errors="ignore").splitlines()[1].strip()
 
         # Initialize progress tracking variables
@@ -183,7 +185,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         while True:
             console.sendline(f"cat /proc/{dd_pid}/fdinfo/1")
-            console.expect(manifest.spec.login.prompt, timeout=3)
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
             if "No such file or directory" in console.before.decode(errors="ignore"):
                 break
             data = console.before.decode(errors="ignore")
@@ -204,7 +206,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             time.sleep(1)
         self.logger.info("Flushing buffers")
         console.sendline("sync")
-        console.expect(manifest.spec.login.prompt, timeout=1200)
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_SYNC)
 
     def _get_target_device(self, target: str, manifest: FlasherBundleManifestV1Alpha1, console) -> str:
         """Get the target device path from the manifest, resolving block devices if needed.
@@ -312,7 +314,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         so we need to lookup the block device by address.
         """
         console.send(f"ls -l /sys/class/block/ | grep {address} | head -n 1" + "\n")
-        console.expect(prompt, timeout=5)
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         # This produces an output like:
         # ls /sys/class/block/ -la | grep 4fb0000
         # lrwxrwxrwx    1 root     root             0 Jan  1
@@ -410,15 +412,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
             # if manifest has login details, we need to login
             if manifest.spec.login.username:
-                console.expect(manifest.spec.login.login_prompt, timeout=120)
+                console.expect(manifest.spec.login.login_prompt, timeout=EXPECT_TIMEOUT_DEFAULT*3)
                 console.send(manifest.spec.login.username + "\n")
 
             # if manifest has password, we need to send it
             if manifest.spec.login.password:
-                console.expect("ssword:", timeout=30)
+                console.expect("ssword:", timeout=EXPECT_TIMEOUT_DEFAULT)
                 console.send(manifest.spec.login.password + "\n")
 
-            console.expect(manifest.spec.login.prompt, timeout=120)
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT*3)
             yield console
 
     def use_dtb(self, path: PathBuf, operator: Operator | None = None):
