@@ -4,31 +4,21 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
-from typing import ClassVar, Literal, Optional, Self
+from typing import Annotated, ClassVar, Literal, Optional, Self
 
 import grpc
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .common import CONFIG_PATH, ObjectMeta
-from .env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_LEASE, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
+from .env import JMP_LEASE
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
-
-
-def _allow_from_env():
-    allow = os.environ.get(JMP_DRIVERS_ALLOW)
-    match allow:
-        case None:
-            return [], False
-        case "UNSAFE":
-            return [], True
-        case _:
-            return allow.split(","), False
 
 
 def _blocking_compat(f):
@@ -44,13 +34,32 @@ def _blocking_compat(f):
     return wrapper
 
 
-class ClientConfigV1Alpha1Drivers(BaseModel):
-    allow: list[str] = Field(default_factory=[])
+class ClientConfigV1Alpha1Drivers(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="JMP_DRIVERS_")
+
+    allow: Annotated[list[str], NoDecode] = Field(default_factory=list)
     unsafe: bool = Field(default=False)
 
+    @field_validator("allow", mode="before")
+    @classmethod
+    def decode_allow(cls, v: str | list[str]) -> list[str]:
+        if not isinstance(v, list):
+            return list(v.split(","))
+        else:
+            return v
 
-class ClientConfigV1Alpha1(BaseModel):
+    @model_validator(mode="after")
+    def decode_unsafe(self) -> Self:
+        if "UNSAFE" in self.allow:
+            self.unsafe = True
+
+        return self
+
+
+class ClientConfigV1Alpha1(BaseSettings):
     CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
+
+    model_config = SettingsConfigDict(env_prefix="JMP_")
 
     alias: str = Field(default="default")
     path: Path | None = Field(default=None)
@@ -58,14 +67,14 @@ class ClientConfigV1Alpha1(BaseModel):
     apiVersion: Literal["jumpstarter.dev/v1alpha1"] = Field(default="jumpstarter.dev/v1alpha1")
     kind: Literal["ClientConfig"] = Field(default="ClientConfig")
 
-    metadata: ObjectMeta
+    metadata: ObjectMeta = Field(default_factory=ObjectMeta)
 
     endpoint: str
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
-    drivers: ClientConfigV1Alpha1Drivers
+    drivers: ClientConfigV1Alpha1Drivers = Field(default_factory=ClientConfigV1Alpha1Drivers)
 
     async def channel(self):
         credentials = grpc.composite_channel_credentials(
@@ -201,19 +210,7 @@ class ClientConfigV1Alpha1(BaseModel):
 
     @classmethod
     def from_env(cls):
-        allow, unsafe = _allow_from_env()
-        return cls(
-            metadata=ObjectMeta(
-                namespace=os.environ.get(JMP_NAMESPACE),
-                name=os.environ.get(JMP_NAME),
-            ),
-            endpoint=os.environ.get(JMP_ENDPOINT),
-            token=os.environ.get(JMP_TOKEN),
-            drivers=ClientConfigV1Alpha1Drivers(
-                allow=allow,
-                unsafe=unsafe,
-            ),
-        )
+        return cls()
 
     @classmethod
     def _get_path(cls, alias: str) -> Path:
@@ -290,4 +287,4 @@ class ClientConfigListV1Alpha1(BaseModel):
     def dump_yaml(self):
         return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+    model_config = SettingsConfigDict(arbitrary_types_allowed=True, populate_by_name=True)

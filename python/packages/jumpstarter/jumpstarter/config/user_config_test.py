@@ -4,8 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
-from jumpstarter.config.common import ObjectMeta
+from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
 from jumpstarter.config.user import UserConfigV1Alpha1, UserConfigV1Alpha1Config
 
 
@@ -60,7 +59,7 @@ config: {}
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
+            alias="testclient",
             metadata=ObjectMeta(namespace="default", name="testclient"),
             endpoint="abc",
             token="123",
@@ -87,7 +86,7 @@ config:
         ClientConfigV1Alpha1,
         "load",
         return_value=ClientConfigV1Alpha1(
-            name="testclient",
+            alias="testclient",
             metadata=ObjectMeta(namespace="default", name="testclient"),
             endpoint="abc",
             token="123",

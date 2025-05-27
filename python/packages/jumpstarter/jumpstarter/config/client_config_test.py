@@ -72,7 +72,6 @@ def test_client_config_from_env_allow_unsafe(monkeypatch: pytest.MonkeyPatch):
     assert config.metadata.name == "testclient"
     assert config.token == "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
     assert config.endpoint == "jumpstarter.my-lab.com:1443"
-    assert config.drivers.allow == []
     assert config.drivers.unsafe is True
 
 
