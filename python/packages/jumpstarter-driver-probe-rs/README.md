@@ -5,8 +5,9 @@ flashing of embedded devices using the [probe-rs](https://probe.rs) tools.
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-probe-rs
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-probe-rs
 ```
 
 ## Configuration
