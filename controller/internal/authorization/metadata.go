@@ -2,6 +2,10 @@ package authorization
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"regexp"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -11,6 +15,12 @@ import (
 )
 
 var _ = ContextAttributesGetter(&MetadataAttributesGetter{})
+
+var (
+	invalidChar       = regexp.MustCompile("[^-a-zA-Z0-9]")
+	multipleHyphen    = regexp.MustCompile("-+")
+	surroundingHyphen = regexp.MustCompile("^-|-$")
+)
 
 type MetadataAttributesGetterConfig struct {
 	NamespaceKey string
@@ -26,6 +36,25 @@ func NewMetadataAttributesGetter(config MetadataAttributesGetterConfig) *Metadat
 	return &MetadataAttributesGetter{
 		config: config,
 	}
+}
+
+func normalizeName(name string) string {
+	hash := sha256.Sum256([]byte(name))
+
+	sanitized := strings.ToLower(name)
+	sanitized = invalidChar.ReplaceAllString(sanitized, "-")
+	sanitized = multipleHyphen.ReplaceAllString(sanitized, "-")
+	sanitized = surroundingHyphen.ReplaceAllString(sanitized, "")
+
+	if len(sanitized) > 37 {
+		sanitized = sanitized[:37]
+	}
+
+	return strings.Join([]string{
+		"oidc",
+		sanitized,
+		hex.EncodeToString(hash[:3]),
+	}, "-")
 }
 
 func (b *MetadataAttributesGetter) ContextAttributes(
@@ -50,6 +79,10 @@ func (b *MetadataAttributesGetter) ContextAttributes(
 	name, err := mdGet(md, b.config.NameKey)
 	if err != nil {
 		return nil, err
+	}
+
+	if name == "" {
+		name = normalizeName(userInfo.GetName())
 	}
 
 	return authorizer.AttributesRecord{
