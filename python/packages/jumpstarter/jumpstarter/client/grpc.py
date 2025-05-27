@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import OrderedDict
+from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
+from types import SimpleNamespace
+from typing import Any
 
 import yaml
 from google.protobuf import duration_pb2, field_mask_pb2, json_format
+from grpc import ChannelConnectivity
 from grpc.aio import Channel
-from jumpstarter_protocol import client_pb2, client_pb2_grpc, kubernetes_pb2
+from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_grpc, kubernetes_pb2, router_pb2_grpc
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from jumpstarter.common.grpc import translate_grpc_exceptions
@@ -250,3 +254,33 @@ class ClientService:
                     name="namespaces/{}/leases/{}".format(self.namespace, name),
                 )
             )
+
+
+@dataclass(frozen=True, slots=True)
+class MultipathExporterStub:
+    """
+    Multipath ExporterServiceStub
+
+    Connecting to exporter service using multiple channels.
+    All channels are tried in sequence, and the first one ready
+    is used, prioritizing channels in the front.
+    """
+
+    channels: InitVar[list[Channel]]
+
+    __stubs: dict[Channel, Any] = field(init=False, default_factory=OrderedDict)
+
+    def __post_init__(self, channels):
+        for channel in channels:
+            stub = SimpleNamespace()
+            jumpstarter_pb2_grpc.ExporterServiceStub.__init__(stub, channel)
+            router_pb2_grpc.RouterServiceStub.__init__(stub, channel)
+            self.__stubs[channel] = stub
+
+    def __getattr__(self, name):
+        for channel, stub in self.__stubs.items():
+            # find the first channel that's ready
+            if channel.get_state(try_to_connect=True) == ChannelConnectivity.READY:
+                return getattr(stub, name)
+        # or fallback to the last channel (via router)
+        return getattr(next(reversed(self.__stubs.values())), name)
