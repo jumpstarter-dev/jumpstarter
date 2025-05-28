@@ -82,7 +82,7 @@ runs:
     - name: Run jumpstarter
       shell: bash
       run: |
-        ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+        export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
 
         sudo mkdir -p /etc/jumpstarter/exporters
         sudo chown $USER /etc/jumpstarter/exporters
@@ -94,4 +94,4 @@ runs:
         kubectl create -n default sa test-client-sa
         kubectl create -n default sa test-exporter-sa
 
-        bats --verbose-run "$GITHUB_ACTION_PATH"/tests.bats
+        bats --show-output-of-passing-tests --verbose-run "$GITHUB_ACTION_PATH"/tests.bats
