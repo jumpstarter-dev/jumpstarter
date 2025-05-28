@@ -1,0 +1,25 @@
+name: "PR Analytics"
+on:
+  workflow_dispatch:
+    inputs:
+      report_date_start:
+        description: "Report date start(d/MM/yyyy)"
+      report_date_end:
+        description: "Report date end(d/MM/yyyy)"
+jobs:
+  create-report:
+    name: "Create report"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Run script for analytics"
+        uses: AlexSim93/pull-request-analytics-action@v4
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # In the case of a personal access token, it needs to be added to the repository's secrets and used in this field.
+          GITHUB_REPO_FOR_ISSUE: jumpstarter
+          GITHUB_OWNER_FOR_ISSUE: jumpstarter-dev 
+          GITHUB_OWNERS_REPOS: jumpstarter-dev/jumpstarter #TODO: check with more repos later, needs PAT: ,jumpstarter-dev/jumpstarter-controller
+          USE_CHARTS: true
+          TIMEZONE: "Etc/UTC"
+          REPORT_DATE_START: ${{ inputs.report_date_start }}
+          REPORT_DATE_END: ${{ inputs.report_date_end }}
+
