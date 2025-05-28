@@ -18,6 +18,7 @@ dependencies = [
     "tqdm>=4.66.5",
     "pydantic>=2.8.2",
     "xdg-base-dirs>=6.0.2",
+    "pydantic-settings>=2.9.1",
 ]
 
 [dependency-groups]

@@ -1,7 +1,9 @@
+from contextlib import suppress
 from functools import partial, reduce, wraps
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -52,7 +54,14 @@ def opt_config_inner(  # noqa: C901
             match len(params):
                 case 0:
                     if client:
-                        config = UserConfigV1Alpha1.load_or_create().config.current_client
+                        config = None
+
+                        with suppress(ValidationError):
+                            config = ClientConfigV1Alpha1()
+
+                        if config is None:
+                            config = UserConfigV1Alpha1.load_or_create().config.current_client
+
                         if config is None:
                             raise click.ClickException(
                                 f"none of {', '.join(options_names)} is specified, and default config is not set"

@@ -4,7 +4,7 @@ from contextlib import ExitStack, asynccontextmanager, contextmanager
 from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.client import client_from_path
-from jumpstarter.config.client import _allow_from_env
+from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import JUMPSTARTER_HOST
 
 
@@ -21,9 +21,15 @@ async def env_async(portal, stack):
     if host is None:
         raise RuntimeError(f"{JUMPSTARTER_HOST} not set")
 
-    allow, unsafe = _allow_from_env()
+    drivers = ClientConfigV1Alpha1Drivers()
 
-    async with client_from_path(host, portal, stack, allow=allow, unsafe=unsafe) as client:
+    async with client_from_path(
+        host,
+        portal,
+        stack,
+        allow=drivers.allow,
+        unsafe=drivers.unsafe,
+    ) as client:
         try:
             yield client
         finally:
