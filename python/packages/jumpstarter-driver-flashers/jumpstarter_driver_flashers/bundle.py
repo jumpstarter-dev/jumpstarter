@@ -33,7 +33,7 @@ class FlashBundleSpecV1Alpha1(BaseModel):
     targets: dict[str, str]
     kernel: FileAddress
     initram: Optional[FileAddress] = None
-    dtb: DtbVariant
+    dtb: Optional[DtbVariant] = None
     preflash_commands: list[str] = Field(default_factory=list)
 
 
@@ -47,10 +47,15 @@ class FlasherBundleManifestV1Alpha1(BaseModel):
     metadata: ObjectMeta
     spec: FlashBundleSpecV1Alpha1
 
-    def get_dtb_address(self) -> str:
+    def get_dtb_address(self) -> str | None:
+        if not self.spec.dtb:
+            return None
         return self.spec.dtb.address
 
     def get_dtb_file(self, variant: str | None = None) -> str | None:
+        if not self.spec.dtb:
+            return None
+
         if not variant:
             variant = self.spec.dtb.default
 
