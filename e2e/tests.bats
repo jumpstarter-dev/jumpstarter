@@ -59,58 +59,64 @@ setup() {
   jmp config exporter list
 }
 
+@test "can run exporters" {
+  (while true; do
+    jmp run --exporter test-exporter-oidc
+  done) &
+
+  (while true; do
+    jmp run --exporter test-exporter-sa
+  done) &
+
+  (while true; do
+    jmp run --exporter test-exporter-legacy
+  done) &
+
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-oidc
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-sa
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-legacy
+}
+
+@test "can operate on leases" {
+  jmp config client use test-client-oidc
+
+  jmp create lease     --selector example.com/board=oidc --duration 1d
+  jmp get    leases
+  jmp get    exporters
+  jmp delete leases    --all
+}
+
+@test "can lease and connect to exporters" {
+  jmp shell --client test-client-oidc   --selector example.com/board=oidc   j power on
+  jmp shell --client test-client-sa     --selector example.com/board=sa     j power on
+  jmp shell --client test-client-legacy --selector example.com/board=legacy j power on
+}
+
+@test "can get crds with admin cli" {
+  jmp admin get client
+  jmp admin get exporter
+  jmp admin get lease
+}
+
 @test "can delete clients with admin cli" {
+  kubectl -n default get secret test-client-oidc-client
+
   jmp admin delete client   test-client-oidc   --delete
   jmp admin delete client   test-client-sa     --delete
   jmp admin delete client   test-client-legacy --delete
+
+  run ! kubectl -n default get secret test-client-oidc-client
 }
 
 @test "can delete exporters with admin cli" {
+  kubectl -n default get secret test-exporter-oidc-exporter
+
   jmp admin delete exporter test-exporter-oidc   --delete
   jmp admin delete exporter test-exporter-sa     --delete
   jmp admin delete exporter test-exporter-legacy --delete
+
+  run ! kubectl -n default get secret test-exporter-oidc-exporter
 }
-
-
-# @test "can run our script" {
-# 
-# 
-#   jmp run --exporter test-exporter-oidc &
-#   jmp run --exporter test-exporter-sa &
-#   jmp run --exporter test-exporter-legacy &
-# 
-#   kubectl -n default wait --for=condition=Online --for=condition=Registered \
-#     exporters.jumpstarter.dev/test-exporter-oidc
-#   kubectl -n default wait --for=condition=Online --for=condition=Registered \
-#     exporters.jumpstarter.dev/test-exporter-sa
-#   kubectl -n default wait --for=condition=Online --for=condition=Registered \
-#     exporters.jumpstarter.dev/test-exporter-legacy
-# 
-#   jmp config client use test-client-oidc
-# 
-#   jmp create lease     --selector example.com/board=oidc --duration 1d
-#   jmp get    leases
-#   jmp get    exporters
-#   jmp delete leases    --all
-# 
-#   jmp admin get client
-#   jmp admin get exporter
-#   jmp admin get lease
-# 
-#   jmp run --exporter test-exporter-oidc &
-#   kubectl -n default wait --for=condition=Online --for=condition=Registered \
-#     exporters.jumpstarter.dev/test-exporter-oidc
-# 
-#   jmp shell --client test-client-oidc   --selector example.com/board=oidc   j power on
-#   jmp shell --client test-client-sa     --selector example.com/board=sa     j power on
-#   jmp shell --client test-client-legacy --selector example.com/board=legacy j power on
-# 
-#   kubectl -n default get secret test-client-oidc-client
-#   kubectl -n default get secret test-exporter-oidc-exporter
-# 
-#   jmp admin delete client   test-client-oidc -d
-#   jmp admin delete exporter test-exporter-oidc -d
-# 
-#   ! kubectl -n default get secret test-client-oidc-client
-#   ! kubectl -n default get secret test-exporter-oidc-exporter
-# }
