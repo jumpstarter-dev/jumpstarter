@@ -80,7 +80,21 @@ setup() {
     exporters.jumpstarter.dev/test-exporter-legacy
 }
 
+@test "can specify client config only using environment variables" {
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-oidc
+
+  JMP_NAMEPSACE=default \
+  JMP_NAME=test-exporter-legacy \
+  JMP_ENDPOINT=$(kubectl get clients.jumpstarter.dev -n default test-client-legacy -o 'jsonpath={.status.endpoint}') \
+  JMP_TOKEN=$(kubectl get secrets -n default test-client-legacy-client -o 'jsonpath={.data.token}' | base64 -d) \
+  jmp shell --selector example.com/board=oidc j power on
+}
+
 @test "can operate on leases" {
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-oidc
+
   jmp config client use test-client-oidc
 
   jmp create lease     --selector example.com/board=oidc --duration 1d
@@ -90,6 +104,13 @@ setup() {
 }
 
 @test "can lease and connect to exporters" {
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-oidc
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-sa
+  kubectl -n default wait --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-legacy
+
   jmp shell --client test-client-oidc   --selector example.com/board=oidc   j power on
   jmp shell --client test-client-sa     --selector example.com/board=sa     j power on
   jmp shell --client test-client-legacy --selector example.com/board=legacy j power on
