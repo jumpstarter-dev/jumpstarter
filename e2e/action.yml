@@ -19,7 +19,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y bats
+        sudo apt-get install -y bats bats-support bats-assert
     - name: Checkout jumpstarter controller
       uses: actions/checkout@v4
       with:
