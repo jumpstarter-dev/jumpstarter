@@ -5,6 +5,7 @@ from typing import Literal
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
 
+from .datetime import time_since
 from .json import JsonBaseModel
 from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
@@ -57,6 +58,47 @@ class V1Alpha1Exporter(JsonBaseModel):
             ),
         )
 
+    @classmethod
+    def rich_add_columns(cls, table, devices: bool = False):
+        if devices:
+            table.add_column("NAME")
+            table.add_column("ENDPOINT")
+            table.add_column("AGE")
+            table.add_column("LABELS")
+            table.add_column("UUID")
+        else:
+            table.add_column("NAME")
+            table.add_column("ENDPOINT")
+            table.add_column("DEVICES")
+            table.add_column("AGE")
+
+    def rich_add_rows(self, table, devices: bool = False):
+        if devices:
+            if self.status is not None:
+                for d in self.status.devices:
+                    labels = []
+                    if d.labels is not None:
+                        for label in d.labels:
+                            labels.append(f"{label}:{str(d.labels[label])}")
+                    table.add_row(
+                        self.metadata.name,
+                        self.status.endpoint,
+                        time_since(self.metadata.creation_timestamp),
+                        ",".join(labels),
+                        d.uuid,
+                    )
+
+        else:
+            table.add_row(
+                self.metadata.name,
+                self.status.endpoint,
+                str(len(self.status.devices) if self.status and self.status.devices else 0),
+                time_since(self.metadata.creation_timestamp),
+            )
+
+    def rich_add_names(self, names):
+        names.append(f"exporter.jumpstarter.dev/{self.metadata.name}")
+
 
 class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
     kind: Literal["ExporterList"] = Field(default="ExporterList")
@@ -64,6 +106,18 @@ class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
     @staticmethod
     def from_dict(dict: dict):
         return V1Alpha1ExporterList(items=[V1Alpha1Exporter.from_dict(c) for c in dict["items"]])
+
+    @classmethod
+    def rich_add_columns(cls, table, **kwargs):
+        V1Alpha1Exporter.rich_add_columns(table, **kwargs)
+
+    def rich_add_rows(self, table, **kwargs):
+        for exporter in self.items:
+            exporter.rich_add_rows(table, **kwargs)
+
+    def rich_add_names(self, names):
+        for exporter in self.items:
+            exporter.rich_add_names(names)
 
 
 class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
