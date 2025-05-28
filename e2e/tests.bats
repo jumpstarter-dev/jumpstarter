@@ -60,17 +60,23 @@ setup() {
 }
 
 @test "can run exporters" {
-  (while true; do
-    jmp run --exporter test-exporter-oidc
-  done) &
+  cat <<EOF | bash 3>&- &
+while true; do
+  jmp run --exporter test-exporter-oidc
+done
+EOF
 
-  (while true; do
-    jmp run --exporter test-exporter-sa
-  done) &
+  cat <<EOF | bash 3>&- &
+while true; do
+  jmp run --exporter test-exporter-sa
+done
+EOF
 
-  (while true; do
-    jmp run --exporter test-exporter-legacy
-  done) &
+  cat <<EOF | bash 3>&- &
+while true; do
+  jmp run --exporter test-exporter-legacy
+done
+EOF
 
   kubectl -n default wait --for=condition=Online --for=condition=Registered \
     exporters.jumpstarter.dev/test-exporter-oidc
