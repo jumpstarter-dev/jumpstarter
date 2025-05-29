@@ -130,20 +130,32 @@ EOF
 
 @test "can delete clients with admin cli" {
   kubectl -n default get secret test-client-oidc-client
+  kubectl -n default get clients.jumpstarter.dev/test-client-oidc
+  kubectl -n default get clients.jumpstarter.dev/test-client-sa
+  kubectl -n default get clients.jumpstarter.dev/test-client-legacy
 
   jmp admin delete client   test-client-oidc   --delete
   jmp admin delete client   test-client-sa     --delete
   jmp admin delete client   test-client-legacy --delete
 
   run ! kubectl -n default get secret test-client-oidc-client
+  run ! kubectl -n default get clients.jumpstarter.dev/test-client-oidc
+  run ! kubectl -n default get clients.jumpstarter.dev/test-client-sa
+  run ! kubectl -n default get clients.jumpstarter.dev/test-client-legacy
 }
 
 @test "can delete exporters with admin cli" {
   kubectl -n default get secret test-exporter-oidc-exporter
+  kubectl -n default get exporters.jumpstarter.dev/test-exporter-oidc
+  kubectl -n default get exporters.jumpstarter.dev/test-exporter-sa
+  kubectl -n default get exporters.jumpstarter.dev/test-exporter-legacy
 
   jmp admin delete exporter test-exporter-oidc   --delete
   jmp admin delete exporter test-exporter-sa     --delete
   jmp admin delete exporter test-exporter-legacy --delete
 
   run ! kubectl -n default get secret test-exporter-oidc-exporter
+  run ! kubectl -n default get exporters.jumpstarter.dev/test-exporter-oidc
+  run ! kubectl -n default get exporters.jumpstarter.dev/test-exporter-sa
+  run ! kubectl -n default get exporters.jumpstarter.dev/test-exporter-legacy
 }
