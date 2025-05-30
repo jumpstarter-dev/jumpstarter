@@ -6,12 +6,17 @@ import (
 
 type Config struct {
 	Authentication Authentication `json:"authentication"`
+	Provisioning   Provisioning   `json:"provisioning"`
 	Grpc           Grpc           `json:"grpc"`
 }
 
 type Authentication struct {
 	Internal Internal                            `json:"internal"`
 	JWT      []apiserverv1beta1.JWTAuthenticator `json:"jwt"`
+}
+
+type Provisioning struct {
+	Enabled bool `json:"enabled"`
 }
 
 type Internal struct {
