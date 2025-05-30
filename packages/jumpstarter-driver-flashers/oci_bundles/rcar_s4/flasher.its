@@ -1,0 +1,57 @@
+/dts-v1/;
+
+/ {
+	description = "R-Car S4 flasher FIT Image";
+	#address-cells = <1>;
+
+	images {
+		kernel {
+			description = "Kernel";
+			data = /incbin/("kernel/vmlinuz");
+			type = "kernel";
+			arch = "arm64";
+			os = "linux";
+			compression = "none";
+			load = <0x48080000>;
+			entry = <0x48080000>;
+			hash {
+				algo = "sha1";
+			};
+		};
+		fdt {
+			description = "DTB";
+			data = /incbin/("kernel/dtb/renesas/r8a779f0-spider.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x48000000>;
+			entry = <0x48000000>;
+			hash {
+				algo = "sha1";
+			};
+		};
+		initrd {
+			description = "Initrd";
+			data = /incbin/("/buildroot/output/images/rootfs.cpio.lzo");
+			type = "ramdisk";
+			arch = "arm64";
+			os = "linux";
+			hash {
+				algo = "sha1";
+			};
+		};
+	};
+
+	configurations {
+		default = "standard";
+		standard {
+			description = "Standard Boot";
+			kernel = "kernel";
+			fdt = "fdt";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha1";
+			};
+		};
+	};
+};
