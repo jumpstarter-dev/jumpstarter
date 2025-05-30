@@ -22,6 +22,10 @@ config:
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-client-oidc"
       userID: "73bca0b9-9be6-4e73-a8fb-347c2ac23255"
+    - email: "test-client-oidc-provisioning@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "test-client-oidc-provisioning"
+      userID: "464d9494-5cc3-44e1-a380-c0403bd31fcb"
     - email: "test-exporter-oidc@example.com"
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-exporter-oidc"

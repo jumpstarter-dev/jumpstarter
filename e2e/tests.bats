@@ -1,6 +1,17 @@
 setup() {
   bats_load_library bats-support
   bats_load_library bats-assert
+
+  bats_require_minimum_version 1.5.0
+}
+
+wait_for_exporter() {
+  kubectl -n default wait --timeout 20m --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-oidc
+  kubectl -n default wait --timeout 20m --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-sa
+  kubectl -n default wait --timeout 20m --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-legacy
 }
 
 @test "can create clients with admin cli" {
@@ -30,6 +41,11 @@ setup() {
     --endpoint "$ENDPOINT" --namespace default --name test-client-oidc \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc@example.com --password password --unsafe
+
+  jmp login --client test-client-oidc-provisioning \
+    --endpoint "$ENDPOINT" --namespace default --name "" \
+    --issuer https://dex.dex.svc.cluster.local:5556 \
+    --username test-client-oidc-provisioning@example.com --password password --unsafe
 
   jmp login --client test-client-sa \
     --endpoint "$ENDPOINT" --namespace default --name test-client-sa \
@@ -78,17 +94,12 @@ while true; do
 done
 EOF
 
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-oidc
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-sa
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-legacy
+
+  wait_for_exporter
 }
 
 @test "can specify client config only using environment variables" {
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-oidc
+  wait_for_exporter
 
   JMP_NAMEPSACE=default \
   JMP_NAME=test-exporter-legacy \
@@ -98,8 +109,7 @@ EOF
 }
 
 @test "can operate on leases" {
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-oidc
+  wait_for_exporter
 
   jmp config client use test-client-oidc
 
@@ -110,16 +120,14 @@ EOF
 }
 
 @test "can lease and connect to exporters" {
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-oidc
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-sa
-  kubectl -n default wait --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-legacy
+  wait_for_exporter
 
   jmp shell --client test-client-oidc   --selector example.com/board=oidc   j power on
   jmp shell --client test-client-sa     --selector example.com/board=sa     j power on
   jmp shell --client test-client-legacy --selector example.com/board=legacy j power on
+
+  wait_for_exporter
+  jmp shell --client test-client-oidc-provisioning --selector example.com/board=oidc j power on
 }
 
 @test "can get crds with admin cli" {
