@@ -5,7 +5,7 @@ metadata:
 spec:
   manufacturer: Texas Instruments
   link: "https://www.ti.com/tool/PROCESSOR-SDK-J784S4"
-  bootcmd: "booti 0x82000000 - 0x84000000"
+  bootcmd: "imxtract 0x90000000 fdt-j784s4 0x82000000; imxtract 0x90000000 kernel 0x82100000; booti 0x82100000 - 0x82000000"
   shelltype: "busybox"
   login:
     login_prompt: "login:"
@@ -25,10 +25,5 @@ spec:
 #    - "dd if=/dev/zero of=/dev/mmcblk0 bs=512 count=34"
 #    - "dd if=/dev/zero of=/dev/mmcblk1 bs=512 count=34"
   kernel:
-    file: data/J784S4XEVM.flasher.img
-    address: "0x82000000"
-  dtb:
-    default: k3-j784s4-evm
-    address: "0x84000000"
-    variants:
-      k3-j784s4-evm: data/dtbs/k3-j784s4-evm.dtb
+    file: data/flasher.itb
+    address: "0x90000000"
