@@ -42,6 +42,11 @@ wait_for_exporter() {
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc@example.com --password password --unsafe
 
+  jmp login --client test-client-oidc-provisioning \
+    --endpoint "$ENDPOINT" --namespace default --name "" \
+    --issuer https://dex.dex.svc.cluster.local:5556 \
+    --username test-client-oidc-provisioning@example.com --password password --unsafe
+
   jmp login --client test-client-sa \
     --endpoint "$ENDPOINT" --namespace default --name test-client-sa \
     --issuer https://dex.dex.svc.cluster.local:5556 \
@@ -120,6 +125,9 @@ EOF
   jmp shell --client test-client-oidc   --selector example.com/board=oidc   j power on
   jmp shell --client test-client-sa     --selector example.com/board=sa     j power on
   jmp shell --client test-client-legacy --selector example.com/board=legacy j power on
+
+  wait_for_exporter
+  jmp shell --client test-client-oidc-provisioning --selector example.com/board=oidc j power on
 }
 
 @test "can get crds with admin cli" {
