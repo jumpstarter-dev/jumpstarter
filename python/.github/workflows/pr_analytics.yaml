@@ -10,9 +10,13 @@ jobs:
   create-report:
     name: "Create report"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
     steps:
       - name: "Run script for analytics"
-        uses: AlexSim93/pull-request-analytics-action@v4
+        uses: AlexSim93/pull-request-analytics-action@cc57ceb92148c5d5879ca578a2b59f99c3cbe231 # v4.6.1
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # In the case of a personal access token, it needs to be added to the repository's secrets and used in this field.
           GITHUB_REPO_FOR_ISSUE: jumpstarter
@@ -22,4 +26,3 @@ jobs:
           TIMEZONE: "Etc/UTC"
           REPORT_DATE_START: ${{ inputs.report_date_start }}
           REPORT_DATE_END: ${{ inputs.report_date_end }}
-
