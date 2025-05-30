@@ -1,0 +1,19 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: FlashBundleManifest
+metadata:
+  name: rcar-s4
+spec:
+  manufacturer: Renesas
+  link: "https://www.renesas.com/en/products/automotive-products/automotive-system-chips-socs/r-car-s4-automotive-system-chip-soc-car-servercommunication-gateway"
+  bootcmd: "bootm 0x58000000"
+  shelltype: "busybox"
+  login:
+    login_prompt: "login:"
+    username: "root"
+    prompt: "#"
+  default_target: "emmc"
+  targets:
+    emmc: "/dev/mmcblk0"
+  kernel:
+    file: data/flasher.itb
+    address: "0x58000000"
