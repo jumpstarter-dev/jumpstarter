@@ -1781,7 +1781,9 @@ dev = [
 name = "jumpstarter-driver-snmp"
 source = { editable = "packages/jumpstarter-driver-snmp" }
 dependencies = [
+    { name = "click" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-power" },
     { name = "pysnmp" },
 ]
 
@@ -1796,7 +1798,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.1.8" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "pysnmp", specifier = "==7.1.16" },
 ]
 

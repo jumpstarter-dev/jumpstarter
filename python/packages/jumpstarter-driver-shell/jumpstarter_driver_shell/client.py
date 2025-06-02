@@ -5,7 +5,7 @@ from jumpstarter.client import DriverClient
 
 @dataclass(kw_only=True)
 class ShellClient(DriverClient):
-    _methods: list[str] = None
+    _methods: list[str] | None = None
 
     """
     Client interface for Shell driver.
