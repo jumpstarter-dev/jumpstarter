@@ -114,12 +114,5 @@ lint-fix:
 	lint lint-fix \
 	pkg-ty-jumpstarter \
 	pkg-ty-jumpstarter-cli-admin \
-	pkg-ty-jumpstarter-driver-can \
-	pkg-ty-jumpstarter-driver-dutlink \
-	pkg-ty-jumpstarter-driver-network \
-	pkg-ty-jumpstarter-driver-raspberrypi \
-	pkg-ty-jumpstarter-driver-sdwire \
-	pkg-ty-jumpstarter-driver-tftp \
-	pkg-ty-jumpstarter-driver-yepkit \
 	pkg-ty-jumpstarter-kubernetes \
 	pkg-ty-jumpstarter-protocol

@@ -1,7 +1,7 @@
 import logging
 
 import pytest
-from jumpstarter_driver_tftp.driver import FileNotFound, TftpError
+from jumpstarter_driver_tftp.driver import TftpError
 from jumpstarter_testing.pytest import JumpstarterTest
 
 log = logging.getLogger(__name__)
@@ -34,5 +34,5 @@ class TestResource(JumpstarterTest):
             client.tftp.delete_file(test_file)
             assert test_file not in client.tftp.list_files()
 
-        except (TftpError, FileNotFound) as e:
-            pytest.fail(f"Test failed: {e}")
+        except (TftpError, FileNotFoundError) as e:
+            pytest.fail(f"Test failed: {e}") # ty: ignore[call-non-callable]

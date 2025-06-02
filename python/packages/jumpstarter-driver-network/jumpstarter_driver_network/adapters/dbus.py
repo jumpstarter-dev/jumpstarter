@@ -1,12 +1,12 @@
 from contextlib import contextmanager
 from os import environ, getenv
 
+from ..client import DbusNetworkClient
 from .portforward import TcpPortforwardAdapter
-from jumpstarter.client import DriverClient
 
 
 @contextmanager
-def DbusAdapter(*, client: DriverClient):
+def DbusAdapter(*, client: DbusNetworkClient):
     match client.kind:
         case "system":
             varname = "DBUS_SYSTEM_BUS_ADDRESS"
