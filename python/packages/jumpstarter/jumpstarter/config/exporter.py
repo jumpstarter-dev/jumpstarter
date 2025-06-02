@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel
 from .common import ObjectMeta
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
+from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
@@ -78,9 +79,9 @@ class ExporterConfigV1Alpha1(BaseModel):
     kind: Literal["ExporterConfig"] = Field(default="ExporterConfig")
     metadata: ObjectMeta
 
-    endpoint: str
+    endpoint: str | None = Field(default=None)
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
-    token: str
+    token: str | None = Field(default=None)
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
@@ -160,6 +161,9 @@ class ExporterConfigV1Alpha1(BaseModel):
         from jumpstarter.exporter import Exporter
 
         async def channel_factory():
+            if self.endpoint is None or self.token is None:
+                raise ConfigurationError("endpoint or token not set in exporter config")
+
             credentials = grpc.composite_channel_credentials(
                 await ssl_channel_credentials(self.endpoint, self.tls),
                 call_credentials("Exporter", self.metadata, self.token),

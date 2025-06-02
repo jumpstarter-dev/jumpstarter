@@ -17,7 +17,7 @@ from .env import JMP_LEASE
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService
-from jumpstarter.common.exceptions import FileNotFoundError
+from jumpstarter.common.exceptions import ConfigurationError, FileNotFoundError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 
 
@@ -69,14 +69,17 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     metadata: ObjectMeta = Field(default_factory=ObjectMeta)
 
-    endpoint: str
+    endpoint: str | None = Field(default=None)
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
-    token: str
+    token: str | None = Field(default=None)
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
     drivers: ClientConfigV1Alpha1Drivers = Field(default_factory=ClientConfigV1Alpha1Drivers)
 
     async def channel(self):
+        if self.endpoint is None or self.token is None:
+            raise ConfigurationError("endpoint or token not set in client config")
+
         credentials = grpc.composite_channel_credentials(
             await ssl_channel_credentials(self.endpoint, self.tls),
             call_credentials("Client", self.metadata, self.token),
