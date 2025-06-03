@@ -75,7 +75,7 @@ def test_client_config_from_env_allow_unsafe(monkeypatch: pytest.MonkeyPatch):
     assert config.drivers.unsafe is True
 
 
-@pytest.mark.parametrize("missing_field", [JMP_TOKEN, JMP_ENDPOINT])
+@pytest.mark.parametrize("missing_field", [JMP_NAMESPACE, JMP_NAME])
 def test_client_config_from_env_missing_field_raises(monkeypatch: pytest.MonkeyPatch, missing_field):
     monkeypatch.setenv(JMP_NAMESPACE, "default")
     monkeypatch.setenv(JMP_NAME, "testclient")
