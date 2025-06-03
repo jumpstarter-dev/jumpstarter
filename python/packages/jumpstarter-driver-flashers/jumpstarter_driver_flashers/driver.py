@@ -84,9 +84,10 @@ class BaseFlasher(Driver):
             self.logger.info(f"Setting up initram in tftp: {initram_path}")
             await self.tftp.storage.copy_exporter_file(initram_path, initram_path.name)
 
-        dtb_path = await self._get_file_path(manifest.get_dtb_file(self._use_dtb))
-        self.logger.info(f"Setting up dtb in tftp: {dtb_path}")
-        await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
+        dtb_path = await self._get_file_path(manifest.get_dtb_file(self._use_dtb)) if manifest.spec.dtb else None
+        if dtb_path:
+            self.logger.info(f"Setting up dtb in tftp: {dtb_path}")
+            await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
 
     @export
     def set_dtb(self, handle):
@@ -165,7 +166,7 @@ class BaseFlasher(Driver):
         return Path(manifest.get_kernel_file()).name
 
     @export
-    async def get_initram_filename(self) -> str:
+    async def get_initram_filename(self) -> str | None:
         """Return the initram filename"""
         manifest = await self.get_flasher_manifest()
         filename = manifest.get_initram_file()
@@ -202,3 +203,10 @@ class TIJ784S4Flasher(BaseFlasher):
     """driver for Jumpstarter"""
 
     flasher_bundle: str = "quay.io/jumpstarter-dev/jumpstarter-flasher-ti-j784s4:latest"
+
+
+@dataclass(kw_only=True)
+class RCarS4Flasher(BaseFlasher):
+    """RCarS4 driver for Jumpstarter"""
+
+    flasher_bundle: str = "quay.io/jumpstarter-dev/jumpstarter-flasher-rcar-s4:latest"

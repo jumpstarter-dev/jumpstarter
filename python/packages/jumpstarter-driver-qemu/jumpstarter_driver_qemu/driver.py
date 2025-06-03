@@ -227,7 +227,7 @@ class QemuPower(PowerInterface, Driver):
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
-        pass
+        raise NotImplementedError
 
     def close(self):
         self.off()

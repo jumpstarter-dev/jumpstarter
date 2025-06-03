@@ -2,7 +2,7 @@ from socketserver import BaseRequestHandler, TCPServer
 from threading import Thread
 from time import sleep
 
-from paramiko import AUTH_SUCCESSFUL, OPEN_SUCCEEDED, ServerInterface, Transport
+from paramiko import AUTH_SUCCESSFUL, OPEN_SUCCEEDED, ServerInterface, Transport  # ty: ignore[unresolved-import]
 from paramiko.rsakey import RSAKey
 
 from ..driver import TcpNetwork

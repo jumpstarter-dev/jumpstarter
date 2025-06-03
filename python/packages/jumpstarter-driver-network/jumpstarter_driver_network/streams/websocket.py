@@ -25,7 +25,8 @@ class WebsocketServerStream(ObjectStream[bytes]):
 
     ws: WSConnection = field(init=False, default_factory=lambda: WSConnection(ConnectionType.SERVER))
     queue: Tuple[MemoryObjectSendStream[bytes], MemoryObjectReceiveStream[bytes]] = field(
-        init=False, default_factory=lambda: create_memory_object_stream[bytes](32)
+        init=False,
+        default_factory=lambda: create_memory_object_stream[bytes](32),  # ty: ignore[call-non-callable]
     )
 
     async def send(self, data: bytes) -> None:
@@ -72,9 +73,10 @@ class WebsocketServerStream(ObjectStream[bytes]):
 
 @dataclass(kw_only=True)
 class WebsocketClientStream(ObjectStream[bytes]):
-    '''
+    """
     Websocket client streaming.
-    '''
+    """
+
     conn: WSSClientConnection
 
     async def send(self, data: bytes) -> None:
@@ -88,4 +90,3 @@ class WebsocketClientStream(ObjectStream[bytes]):
 
     async def aclose(self):
         await self.conn.close()
-

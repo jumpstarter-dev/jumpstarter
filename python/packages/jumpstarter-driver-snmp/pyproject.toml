@@ -7,7 +7,12 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 
-dependencies = ["jumpstarter", "pysnmp==7.1.16"]
+dependencies = [
+    "click>=8.1.8",
+    "jumpstarter",
+    "jumpstarter-driver-power",
+    "pysnmp==7.1.16",
+]
 
 
 [dependency-groups]
@@ -40,3 +45,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
+
+[tool.uv.sources]
+jumpstarter-driver-power = { workspace = true }

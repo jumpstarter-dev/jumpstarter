@@ -233,7 +233,7 @@ class EchoNetwork(NetworkInterface, Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        tx, rx = create_memory_object_stream[bytes](32)
+        tx, rx = create_memory_object_stream[bytes](32) # ty: ignore[call-non-callable]
         self.logger.debug("Connecting Echo")
         async with StapledObjectStream(tx, rx) as stream:
             yield stream

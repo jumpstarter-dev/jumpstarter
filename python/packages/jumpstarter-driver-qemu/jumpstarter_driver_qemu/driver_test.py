@@ -38,7 +38,7 @@ def get_native_arch_config():
     elif native_arch == "aarch64":
         return "aarch64", "aarch64"
     else:
-        pytest.skip(f"Unsupported architecture: {native_arch}")
+        pytest.skip(f"Unsupported architecture: {native_arch}") # ty: ignore[call-non-callable]
 
 
 def test_driver_qemu(tmp_path, ovmf):

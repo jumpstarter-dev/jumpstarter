@@ -27,6 +27,7 @@ debug_console_option = click.option("--console-debug", is_flag=True, help="Enabl
 EXPECT_TIMEOUT_DEFAULT = 60
 EXPECT_TIMEOUT_SYNC = 1200
 
+
 @dataclass(kw_only=True)
 class BaseFlasherClient(FlasherClient, CompositeClient):
     """
@@ -123,6 +124,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 target_device = self._get_target_device(target, manifest, console)
 
                 self.logger.info(f"Using target block device: {target_device}")
+                console.sendline(f"export dhcp_addr={self._dhcp_details.ip_address}")
+                console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+                console.sendline(f"export gw_addr={self._dhcp_details.gateway}")
+                console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
                 # Preflash commands are executed before the flash operation
                 # generally used to clean up boot entries in existing devices
@@ -412,7 +417,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
             # if manifest has login details, we need to login
             if manifest.spec.login.username:
-                console.expect(manifest.spec.login.login_prompt, timeout=EXPECT_TIMEOUT_DEFAULT*3)
+                console.expect(manifest.spec.login.login_prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 3)
                 console.send(manifest.spec.login.username + "\n")
 
             # if manifest has password, we need to send it
@@ -420,7 +425,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 console.expect("ssword:", timeout=EXPECT_TIMEOUT_DEFAULT)
                 console.send(manifest.spec.login.password + "\n")
 
-            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT*3)
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 3)
             yield console
 
     def use_dtb(self, path: PathBuf, operator: Operator | None = None):

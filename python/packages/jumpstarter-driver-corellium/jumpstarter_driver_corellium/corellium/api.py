@@ -1,6 +1,7 @@
 from typing import Optional
 
 import requests
+import requests.exceptions
 
 from .exceptions import CorelliumApiException
 from .types import Device, Instance, Project
@@ -69,7 +70,7 @@ class ApiClient:
 
         for device in data:
             if device['model'] == model:
-                return Device(**device)
+                return Device(**device) # ty: ignore[missing-argument]
 
         return None
 
@@ -95,7 +96,7 @@ class ApiClient:
 
             raise CorelliumApiException(msgerr) from e
 
-        return Instance(**data)
+        return Instance(**data) # ty: ignore[missing-argument]
 
     def get_instance(self, instance_ref: str) -> Optional[Instance]:
         """
