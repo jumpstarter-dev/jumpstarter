@@ -1,4 +1,5 @@
 from io import StringIO
+from typing import cast
 
 from rich.console import Console
 from rich.table import Table
@@ -10,7 +11,7 @@ def make_table(columns: list[str], values: list[dict]):
     table = Table(
         box=None,
         header_style=None,
-        pad_edge=None,
+        pad_edge=False,
     )
 
     for name in columns:
@@ -25,4 +26,4 @@ def make_table(columns: list[str], values: list[dict]):
 
     console = Console(file=StringIO())
     console.print(table)
-    return console.file.getvalue()
+    return cast(StringIO, console.file).getvalue()

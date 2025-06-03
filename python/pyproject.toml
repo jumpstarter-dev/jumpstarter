@@ -54,7 +54,7 @@ dev = [
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
-    "mypy>=1.15.0",
+    "ty>=0.0.1a8",
 ]
 
 [tool.ruff]

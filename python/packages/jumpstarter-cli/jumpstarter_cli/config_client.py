@@ -1,3 +1,4 @@
+from os import PathLike
 from typing import Optional
 
 import click
@@ -76,7 +77,7 @@ def create_client_config(
     token: str,
     allow: str,
     unsafe: bool,
-    out: Optional[str],
+    out: Optional[PathLike],
     output: PathOutputType,
 ):
     """Create a Jumpstarter client configuration."""

@@ -64,6 +64,6 @@ class PySerial(Driver):
                 yield stream
             self.logger.info("Disconnected from %s", self.url)
         else:
-            tx, rx = create_memory_object_stream[bytes](32)
+            tx, rx = create_memory_object_stream[bytes](32) # ty: ignore[call-non-callable]
             async with StapledObjectStream(tx, rx) as stream:
                 yield stream
