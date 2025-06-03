@@ -5,6 +5,7 @@ metadata:
 spec:
   manufacturer: Renesas
   link: "https://www.renesas.com/en/products/automotive-products/automotive-system-chips-socs/r-car-s4-automotive-system-chip-soc-car-servercommunication-gateway"
+  # boot default configuration R-Car S4 Spider, for S4SK use "bootm 0x58000000#s4sk"
   bootcmd: "bootm 0x58000000"
   shelltype: "busybox"
   login:
