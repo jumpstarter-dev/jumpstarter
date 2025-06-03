@@ -3,6 +3,7 @@
 [![Matrix](https://img.shields.io/matrix/jumpstarter%3Amatrix.org?color=blue)](https://matrix.to/#/#jumpstarter:matrix.org)
 [![Etherpad](https://img.shields.io/badge/Etherpad-Notes-blue?logo=etherpad)](https://etherpad.jumpstarter.dev/pad-lister)
 [![Community Meeting](https://img.shields.io/badge/Weekly%20Meeting-Google%20Meet-blue?logo=google-meet)](https://meet.google.com/gzd-hhbd-hpu)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjumpstarter-dev%2Fjumpstarter.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjumpstarter-dev%2Fjumpstarter?ref=badge_shield)
 
 A free, open source tool for automated testing on real and virtual hardware with
 CI/CD integration. Simplify device automation with consistent rules across local
@@ -57,3 +58,6 @@ guide](https://jumpstarter.dev/contributing/) to get started.
 
 Jumpstarter is licensed under the Apache 2.0 License ([LICENSE](LICENSE) or
 [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)).
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjumpstarter-dev%2Fjumpstarter.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjumpstarter-dev%2Fjumpstarter?ref=badge_large)
