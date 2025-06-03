@@ -21,7 +21,7 @@ connection between an exporter and client without physical hardware.
 
 Create an exporter configuration named `example-local` to define the
 capabilities of your local test exporter. This configuration mirrors a regular
-exporter config but leaves the `endpoint` and `token` fields empty since you
+exporter config but without the `endpoint` and `token` fields since you
 don't need to connect to the controller service.
 
 Create `example-local.yaml` in `/etc/jumpstarter/exporters` with this content:
@@ -32,8 +32,6 @@ kind: ExporterConfig
 metadata:
   namespace: default
   name: example-local
-endpoint: ""
-token: ""
 export:
   storage:
     type: jumpstarter_driver_opendal.driver.MockStorageMux
