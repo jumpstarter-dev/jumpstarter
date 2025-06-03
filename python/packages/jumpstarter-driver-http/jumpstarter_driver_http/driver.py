@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import anyio
+import anyio.from_thread
 from aiohttp import web
 from jumpstarter_driver_opendal.driver import Opendal
 

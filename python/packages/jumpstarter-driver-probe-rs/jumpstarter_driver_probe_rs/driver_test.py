@@ -2,7 +2,7 @@ from .driver import ProbeRs
 from jumpstarter.common.utils import serve
 
 
-def test_drivers_probe_rs():
+def test_drivers_probe_rs(monkeypatch):
     instance = ProbeRs()
 
     def mock_run_cmd(cmd):
@@ -12,7 +12,7 @@ def test_drivers_probe_rs():
             return "DEADBEEF CAFEBABE\nCAFE0000 DEAD0000"
         return "ok"
 
-    instance._run_cmd = mock_run_cmd
+    monkeypatch.setattr(instance, "_run_cmd", mock_run_cmd)
 
     with serve(instance) as client:
         info = client.info()
@@ -24,9 +24,10 @@ def test_drivers_probe_rs():
         assert client.read(32, 0xF000, 4) == [0xDEADBEEF, 0xCAFEBABE, 0xCAFE0000, 0xDEAD0000]
 
 
-def test_drivers_probe_rs_errors():
+def test_drivers_probe_rs_errors(monkeypatch):
     instance = ProbeRs()
-    instance._run_cmd = lambda cmd: ""  # Simulate error response
+
+    monkeypatch.setattr(instance, "_run_cmd", lambda cmd: "")  # Simulate error response
 
     with serve(instance) as client:
         assert client.info() == ""  # Error case

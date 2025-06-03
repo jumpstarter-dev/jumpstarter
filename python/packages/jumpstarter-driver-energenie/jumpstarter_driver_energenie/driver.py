@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
 import requests
+import requests.exceptions
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 
 from jumpstarter.driver import Driver, export

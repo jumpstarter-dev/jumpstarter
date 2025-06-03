@@ -57,7 +57,7 @@ def opt_config_inner(  # noqa: C901
                         config = None
 
                         with suppress(ValidationError):
-                            config = ClientConfigV1Alpha1()
+                            config = ClientConfigV1Alpha1()  # ty: ignore[missing-argument]
 
                         if config is None:
                             config = UserConfigV1Alpha1.load_or_create().config.current_client

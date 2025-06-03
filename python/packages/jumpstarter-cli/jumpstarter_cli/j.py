@@ -1,6 +1,7 @@
-import concurrent
+import concurrent.futures._base
 import sys
 from contextlib import ExitStack
+from typing import cast
 
 import click
 from anyio import create_task_group, get_cancelled_exc_class, run, to_thread
@@ -31,7 +32,7 @@ async def j_async():
 
     except* click.ClickException as excgroup:
         for exc in leaf_exceptions(excgroup):
-            exc.show()
+            cast(click.ClickException, exc).show()
 
         sys.exit(1)
     except* (

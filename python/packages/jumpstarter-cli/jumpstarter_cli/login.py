@@ -116,10 +116,10 @@ async def login(  # noqa: C901
 
     match kind:
         case "client":
-            ClientConfigV1Alpha1.save(config)
+            ClientConfigV1Alpha1.save(config) # ty: ignore[invalid-argument-type]
         case "client_config":
-            ClientConfigV1Alpha1.save(config, value)
+            ClientConfigV1Alpha1.save(config, value) # ty: ignore[invalid-argument-type]
         case "exporter":
-            ExporterConfigV1Alpha1.save(config)
+            ExporterConfigV1Alpha1.save(config) # ty: ignore[invalid-argument-type]
         case "exporter_config":
-            ExporterConfigV1Alpha1.save(config, value)
+            ExporterConfigV1Alpha1.save(config, value) # ty: ignore[invalid-argument-type]
