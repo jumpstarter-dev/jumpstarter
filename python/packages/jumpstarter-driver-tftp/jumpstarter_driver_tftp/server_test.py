@@ -26,7 +26,7 @@ async def tftp_server():
             server_task.cancel()
             raise RuntimeError("Failed to bind TFTP server to a port.")
 
-        yield server, temp_dir, server.address[1]
+        yield server, temp_dir, server.address[1] # ty: ignore[possibly-unbound-implicit-call]
 
         await server.shutdown()
         await server_task
@@ -245,7 +245,7 @@ async def test_retry_mechanism(tftp_server):
         assert 1 in block_numbers, "First block number should be 1"
 
     except Exception as e:
-        pytest.fail(f"Test failed with error: {str(e)}")
+        pytest.fail(f"Test failed with error: {str(e)}") # ty: ignore[call-non-callable]
 
     finally:
         if transport is not None:

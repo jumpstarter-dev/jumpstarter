@@ -4,7 +4,7 @@ import pathlib
 from enum import IntEnum
 from typing import Optional, Set, Tuple
 
-from opendal import Operator
+from opendal import AsyncOperator
 
 
 class Opcode(IntEnum):
@@ -36,7 +36,7 @@ class TftpServer:
         self,
         host: str,
         port: int,
-        operator: Operator,
+        operator: AsyncOperator,
         block_size: int = 512,
         timeout: float = 5.0,
         retries: int = 3,

@@ -1,4 +1,5 @@
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from functools import cached_property
 
@@ -18,7 +19,7 @@ class UbootConsoleClient(CompositeClient):
         return self.call("get_prompt")
 
     @contextmanager
-    def reboot_to_console(self, *, debug=False) -> None:
+    def reboot_to_console(self, *, debug=False) -> Generator[None]:
         """
         Reboot to U-Boot console
 

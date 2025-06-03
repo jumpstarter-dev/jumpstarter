@@ -115,8 +115,12 @@ class IsoTpAddress(BaseModel):
             rxid=addr._rxid,
             target_address=addr._target_address,
             source_address=addr._source_address,
-            physical_id=addr.physical_id if hasattr(addr, "physical_id") else None,
-            functional_id=addr.functional_id if hasattr(addr, "functional_id") else None,
+            physical_id=addr.physical_id  # ty: ignore[possibly-unbound-attribute]
+            if hasattr(addr, "physical_id")
+            else None,
+            functional_id=addr.functional_id  # ty: ignore[possibly-unbound-attribute]
+            if hasattr(addr, "functional_id")
+            else None,
             address_extension=addr._address_extension,
             rx_only=addr._rx_only,
             tx_only=addr._tx_only,

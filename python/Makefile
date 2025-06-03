@@ -26,9 +26,9 @@ help:
 	@echo "  docs-test          - Run documentation tests"
 	@echo ""
 	@echo "Linting and type checking:"
-	@echo "  mypy               - Run mypy type checking on all packages"
-	@echo "  pkg-mypy-all       - Run mypy on all packages"
-	@echo "  pkg-mypy-<pkg>     - Run mypy on a specific package"
+	@echo "  ty                 - Run ty type checking on all packages"
+	@echo "  pkg-ty-all       - Run ty on all packages"
+	@echo "  pkg-ty-<pkg>     - Run ty on a specific package"
 	@echo "  lint               - Run ruff linter"
 	@echo "  lint-fix           - Run ruff linter with auto-fix"
 	@echo ""
@@ -65,12 +65,12 @@ docs-linkcheck:
 pkg-test-%: packages/%
 	uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
 
-pkg-mypy-%: packages/%
-	uv run --isolated --directory $< mypy .
+pkg-ty-%: packages/%
+	uv run --isolated --directory $< ty check .
 
 pkg-test-all: $(addprefix pkg-test-,$(PKG_TARGETS))
 
-pkg-mypy-all: $(addprefix pkg-mypy-,$(PKG_TARGETS))
+pkg-ty-all: $(addprefix pkg-ty-,$(PKG_TARGETS))
 
 build:
 	uv build --all --out-dir dist
@@ -100,7 +100,7 @@ clean: clean-docs clean-venv clean-build clean-test
 
 test: pkg-test-all docs-test
 
-mypy: pkg-mypy-all
+ty: pkg-ty-all
 
 lint:
 	uv run ruff check
@@ -109,17 +109,10 @@ lint-fix:
 	uv run ruff check --fix
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
-	docs-linkcheck pkg-test-all pkg-mypy-all build generate sync \
-	clean-venv clean-build clean-test clean-all test-all mypy-all docs \
+	docs-linkcheck pkg-test-all pkg-ty-all build generate sync \
+	clean-venv clean-build clean-test clean-all test-all ty-all docs \
 	lint lint-fix \
-	pkg-mypy-jumpstarter \
-	pkg-mypy-jumpstarter-cli-admin \
-	pkg-mypy-jumpstarter-driver-can \
-	pkg-mypy-jumpstarter-driver-dutlink \
-	pkg-mypy-jumpstarter-driver-network \
-	pkg-mypy-jumpstarter-driver-raspberrypi \
-	pkg-mypy-jumpstarter-driver-sdwire \
-	pkg-mypy-jumpstarter-driver-tftp \
-	pkg-mypy-jumpstarter-driver-yepkit \
-	pkg-mypy-jumpstarter-kubernetes \
-	pkg-mypy-jumpstarter-protocol
+	pkg-ty-jumpstarter \
+	pkg-ty-jumpstarter-cli-admin \
+	pkg-ty-jumpstarter-kubernetes \
+	pkg-ty-jumpstarter-protocol

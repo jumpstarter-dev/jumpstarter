@@ -166,7 +166,7 @@ class BaseFlasher(Driver):
         return Path(manifest.get_kernel_file()).name
 
     @export
-    async def get_initram_filename(self) -> str:
+    async def get_initram_filename(self) -> str | None:
         """Return the initram filename"""
         manifest = await self.get_flasher_manifest()
         filename = manifest.get_initram_file()
