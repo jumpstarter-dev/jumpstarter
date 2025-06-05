@@ -14,6 +14,9 @@ class PowerClient(DriverClient):
     def off(self) -> None:
         self.call("off")
 
+    def rescue(self) -> None:
+        self.call("rescue")
+
     def cycle(self, wait: int = 2):
         """Power cycle the device"""
         self.logger.info("Starting power cycle sequence")

@@ -10,10 +10,17 @@ STORAGE_DEVICE = "/dev/null"  # MANUAL: replace with path to block device
 
 
 def power_test(power):
+    # Test normal power on/off sequence
     power.on()  # MANUAL: led DUT_ON should be turned on
     sleep(1)
     assert next(power.read()).current != 0
     power.off()  # MANUAL: led DUT_ON should be turned off
+
+    # Test rescue mode
+    power.rescue()  # MANUAL: device should enter rescue mode
+    sleep(1)
+    # Note: We can't assert the state here as rescue mode behavior is device-specific
+    power.off()  # MANUAL: device should power off after rescue mode
 
 
 def storage_test(storage):
