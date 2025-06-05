@@ -13,6 +13,7 @@ community and we welcome contributions.
 
 ## Getting Started
 
+0. Get familiar with [Jumpstarter Internals](./contributing/internals.md)
 1. Follow our [dev setup guide](./contributing/development-environment.md)
 2. Make changes on a new branch
 3. Test your changes thoroughly
@@ -81,4 +82,5 @@ Documentation recommended practices:
 :hidden:
 
 contributing/development-environment.md
+contributing/internals.md
 ```

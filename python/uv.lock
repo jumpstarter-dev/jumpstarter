@@ -1699,8 +1699,10 @@ dev = [
 name = "jumpstarter-driver-raspberrypi"
 source = { editable = "packages/jumpstarter-driver-raspberrypi" }
 dependencies = [
+    { name = "click" },
     { name = "gpiozero" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-power" },
 ]
 
 [package.dev-dependencies]
@@ -1711,8 +1713,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.1.7.2" },
     { name = "gpiozero", specifier = ">=2.0.1" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
 ]
 
 [package.metadata.requires-dev]
