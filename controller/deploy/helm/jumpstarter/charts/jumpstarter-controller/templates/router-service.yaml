@@ -21,4 +21,4 @@ spec:
     nodePort: {{ .Values.grpc.nodeport.routerPort }}
     {{ end }}
   selector:
-    control-plane: controller-manager
+    control-plane: controller-router

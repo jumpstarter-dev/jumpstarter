@@ -31,17 +31,13 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // RouterService exposes a gRPC service
 type RouterService struct {
 	pb.UnimplementedRouterServiceServer
-	client.Client
-	Scheme       *runtime.Scheme
 	ServerOption grpc.ServerOption
 	pending      sync.Map
 }
@@ -60,7 +56,7 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 	parsed, err := jwt.ParseWithClaims(
 		token,
 		&jwt.RegisteredClaims{},
-		func(t *jwt.Token) (interface{}, error) { return []byte(os.Getenv("ROUTER_KEY")), nil },
+		func(t *jwt.Token) (any, error) { return []byte(os.Getenv("ROUTER_KEY")), nil },
 		jwt.WithIssuer("https://jumpstarter.dev/stream"),
 		jwt.WithAudience("https://jumpstarter.dev/router"),
 		jwt.WithIssuedAt(),

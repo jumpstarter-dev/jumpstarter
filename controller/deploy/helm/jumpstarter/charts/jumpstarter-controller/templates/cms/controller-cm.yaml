@@ -17,3 +17,12 @@ data:
   {{ end }}
   config: |
 {{ .Values.config | toYaml | indent 4 }}
+  router: |
+    default:
+      {{ if .Values.grpc.routerEndpoint }}
+      endpoint: {{ .Values.grpc.routerEndpoint }}
+      {{ else if .Values.routerHostname }}
+      endpoint: {{ .Values.routerHostname }}:{{ .Values.grpc.tls.port }}
+      {{ else }}
+      endpoint: router.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
+      {{ end }}
