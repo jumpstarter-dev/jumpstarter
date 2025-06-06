@@ -17,14 +17,18 @@ limitations under the License.
 package service
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/exp/maps"
 
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 
@@ -33,6 +37,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
@@ -70,6 +75,7 @@ type ControllerService struct {
 	Authz        authorizer.Authorizer
 	Attr         authorization.ContextAttributesGetter
 	ServerOption grpc.ServerOption
+	Router       config.Router
 	listenQueues sync.Map
 }
 
@@ -394,6 +400,34 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
+	if lease.Status.ExporterRef == nil {
+		err := fmt.Errorf("lease not active")
+		logger.Error(err, "unable to get exporter referenced by lease")
+		return nil, err
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := s.Client.Get(ctx,
+		types.NamespacedName{Namespace: client.Namespace, Name: lease.Status.ExporterRef.Name}, &exporter); err != nil {
+		logger.Error(err, "unable to get exporter referenced by lease")
+		return nil, err
+	}
+
+	candidates := maps.Values(s.Router)
+	slices.SortFunc(candidates, func(a config.RouterEntry, b config.RouterEntry) int {
+		return -cmp.Compare(MatchLabels(a.Labels, exporter.Labels), MatchLabels(b.Labels, exporter.Labels))
+	})
+
+	if len(candidates) == 0 {
+		err := fmt.Errorf("no router available")
+		logger.Error(err, "no router available")
+		return nil, err
+	}
+
+	logger.Info("selected router", "endpoint", candidates[0].Endpoint, "labels", candidates[0].Labels)
+
+	endpoint := candidates[0].Endpoint
+
 	stream := k8suuid.NewUUID()
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
@@ -410,9 +444,6 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		logger.Error(err, "unable to sign token")
 		return nil, status.Errorf(codes.Internal, "unable to sign token")
 	}
-
-	// TODO: find best router from list
-	endpoint := routerEndpoint()
 
 	response := &pb.ListenResponse{
 		RouterEndpoint: endpoint,

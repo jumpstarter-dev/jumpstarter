@@ -31,3 +31,10 @@ type Keepalive struct {
 	MinTime             string `json:"minTime"`
 	PermitWithoutStream bool   `json:"permitWithoutStream"`
 }
+
+type Router map[string]RouterEntry
+
+type RouterEntry struct {
+	Endpoint string            `json:"endpoint"`
+	Labels   map[string]string `json:"labels"`
+}

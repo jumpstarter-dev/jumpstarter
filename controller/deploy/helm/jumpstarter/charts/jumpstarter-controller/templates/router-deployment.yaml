@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jumpstarter-controller
+  name: jumpstarter-router
   namespace: {{ default .Release.Namespace .Values.namespace }}
   labels:
-    control-plane: controller-manager
+    control-plane: controller-router
     app.kubernetes.io/name: jumpstarter-controller
-    {{ if .Values.global.timestamp }}
+  {{ if .Values.global.timestamp }}
     deployment.timestamp: {{ .Values.global.timestamp | quote }}
-    {{ end }}
+  {{ end }}
   annotations:
     configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") . | sha256sum }}
     argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     matchLabels:
-      control-plane: controller-manager
+      control-plane: controller-router
   replicas: 1
   template:
     metadata:
       annotations:
-        kubectl.kubernetes.io/default-container: manager
+        kubectl.kubernetes.io/default-container: router
       labels:
-        control-plane: controller-manager
+        control-plane: controller-router
       {{ if .Values.global.timestamp }}
         deployment.timestamp: {{ .Values.global.timestamp | quote }}
       {{ end }}
@@ -52,24 +52,17 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - args:
-          - --leader-elect
-          - --health-probe-bind-address=:8081
-          - -metrics-bind-address=:8080
+      - command:
+          - /router
         env:
-        - name: GRPC_ENDPOINT
-          {{ if .Values.grpc.endpoint }}
-          value : {{ .Values.grpc.endpoint }}
-          {{ else if .Values.hostname }}
-          value: {{ .Values.hostname }}:{{ .Values.grpc.tls.port }}
+        - name: GRPC_ROUTER_ENDPOINT
+          {{ if .Values.grpc.routerEndpoint }}
+          value: {{ .Values.grpc.routerEndpoint }}
+          {{ else if .Values.routerHostname }}
+          value: {{ .Values.routerHostname }}:{{ .Values.grpc.tls.port }}
           {{ else }}
-          value: grpc.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
+          value: router.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
           {{ end }}
-        - name: CONTROLLER_KEY
-          valueFrom:
-            secretKeyRef:
-              name: jumpstarter-controller-secret
-              key: key
         - name: ROUTER_KEY
           valueFrom:
             secretKeyRef:
@@ -82,24 +75,12 @@ spec:
 
         image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
-        name: manager
+        name: router
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
             - "ALL"
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 8081
-          initialDelaySeconds: 5
-          periodSeconds: 10
         resources:
           limits:
             cpu: 2000m
