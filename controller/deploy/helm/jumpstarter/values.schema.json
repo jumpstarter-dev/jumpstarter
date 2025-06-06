@@ -1,46 +1,139 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "jumpstarter-controller": {
-      "type": "object"
-    },
-    "global": {
-      "type": "object",
+  "$defs": {
+    "Global": {
       "additionalProperties": false,
       "properties": {
         "namespace": {
-          "type": "string",
-          "description": "Namespace where the components will be deployed"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Namespace where the components will be deployed",
+          "title": "Namespace"
         },
         "timestamp": {
-          "type": [ "integer", "string" ],
-          "description": "Timestamp to be used to trigger a new deployment, i.e. if you want pods to be restarted and pickup the latest tag"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Timestamp to be used to trigger a new deployment, i.e. if you want pods to be restarted and pickup the latest tag",
+          "title": "Timestamp"
         },
         "baseDomain": {
-          "type": "string",
-          "description": "Base domain to construct the FQDN for the service endpoints"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Base domain to construct the FQDN for the service endpoints",
+          "title": "Basedomain"
         },
         "storageClassName": {
-          "type": "string",
-          "description": "Storage class name for multiple reader/writer PVC"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Storage class name for multiple reader/writer PVC",
+          "title": "Storageclassname"
         },
         "storageClassNameRWM": {
-          "type": "string",
-          "description": "Storage class name for the PVCs"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Storage class name for the PVCs",
+          "title": "Storageclassnamerwm"
         },
         "metrics": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "description": "Whether to enable metrics exporting and service"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metrics"
+            },
+            {
+              "type": "null"
             }
-          }
+          ],
+          "default": null
         }
-      }
+      },
+      "title": "Global",
+      "type": "object"
+    },
+    "Metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable metrics exporting and service",
+          "title": "Enabled"
+        }
+      },
+      "title": "Metrics",
+      "type": "object"
     }
-  }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "jumpstarter-controller": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Jumpstarter-Controller"
+    },
+    "global": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Global"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "title": "Model",
+  "type": "object"
 }

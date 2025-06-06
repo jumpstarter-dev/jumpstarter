@@ -1,350 +1,1073 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "$defs": {
-    "port": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 65535
-    },
-    "ingress": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Whether to enable Ingress for the gRPC endpoint"
-        },
-        "class": {
-          "type": "string",
-          "description": "IngressClass to use for the gRPC endpoint"
-        }
-      }
-    },
-    "route": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Whether to enable OpenShift Router for the gRPC endpoint"
-        }
-      }
-    },
-    "PrefixedClaimOrExpression": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "claim": {
-          "type": "string"
-        },
-        "prefix": {
-          "type": "string"
-        },
-        "expression": {
-          "type": "string"
-        }
-      },
-      "oneOf": [
-        {
-          "required": [ "prefix", "claim" ]
-        },
-        {
-          "required": [ "prefix", "expression" ]
-        }
-      ]
-    },
-    "ClaimOrExpression": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "claim": {
-          "type": "string"
-        },
-        "expression": {
-          "type": "string"
-        }
-      },
-      "oneOf": [
-        {
-          "required": [ "claim" ]
-        },
-        {
-          "required": [ "expression" ]
-        }
-      ]
-    },
-    "JWTAuthenticator": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "issuer": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "url": {
-              "type": "string"
-            },
-            "discoveryURL": {
-              "type": "string"
-            },
-            "certificateAuthority": {
-              "type": "string"
-            },
-            "audiences": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "audienceMatchPolicy": {
-              "type": "string",
-              "enum": [ "MatchAny" ]
-            }
-          }
-        },
-        "claimValidationRules": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "claim": {
-                "type": "string"
-              },
-              "requiredValue": {
-                "type": "string"
-              },
-              "expression": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "claimMappings": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "username": {
-              "$ref": "#/$defs/PrefixedClaimOrExpression"
-            },
-            "groups": {
-              "$ref": "#/$defs/PrefixedClaimOrExpression"
-            },
-            "uid": {
-              "$ref": "#/$defs/ClaimOrExpression"
-            },
-            "extra": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "key": {
-                    "type": "string"
-                  },
-                  "valueExpression": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "userValidationRules": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "expression": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "required": [ "image", "imagePullPolicy" ],
-  "additionalProperties": false,
-  "properties": {
-    "enabled": {
-      "type": "boolean",
-      "description": "Whether to enable jumpstarter controller"
-    },
-    "authenticationConfig": {
+    "AudienceMatchPolicy": {
+      "enum": [
+        "MatchAny"
+      ],
+      "title": "AudienceMatchPolicy",
       "type": "string"
     },
-    "config": {
-      "type": "object",
+    "Authentication": {
       "additionalProperties": false,
       "properties": {
-        "provisioning": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            }
-          }
-        },
-        "authentication": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "internal": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "prefix": {
-                  "type": "string"
-                }
-              }
+        "internal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Internal"
             },
-            "jwt": {
-              "type": "array",
-              "description": "External OIDC authentication, see https://kubernetes.io/docs/reference/access-authn-authz/authentication/#using-authentication-configuration for documentation",
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "jwt": {
+          "anyOf": [
+            {
               "items": {
                 "$ref": "#/$defs/JWTAuthenticator"
-              }
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
             }
-          }
-        },
-        "grpc": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "keepalive": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "minTime": {
-                  "type": "string",
-                  "description": "The minimum amount of time a client should wait before sending a keepalive ping"
-                },
-                "permitWithoutStream": {
-                  "type": "boolean",
-                  "description": "Whether to allow keepalive pings even when there are no active streams(RPCs)"
-                }
-              }
-            }
-          }
+          ],
+          "default": null,
+          "description": "External OIDC authentication, see https://kubernetes.io/docs/reference/access-authn-authz/authentication/#using-authentication-configuration for documentation",
+          "title": "Jwt"
         }
-      }
+      },
+      "title": "Authentication",
+      "type": "object"
     },
-    "namespace": {
-      "type": "string",
-      "description": "Namespace where the controller will be deployed, defaults to global.namespace"
+    "ClaimMappings": {
+      "additionalProperties": false,
+      "properties": {
+        "username": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrefixedClaimOrExpression"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "groups": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrefixedClaimOrExpression"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "uid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClaimOrExpression"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extra": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ExtraItem"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extra"
+        }
+      },
+      "title": "ClaimMappings",
+      "type": "object"
     },
-    "image": {
-      "type": "string",
-      "description": "Image for the controller"
+    "ClaimOrExpression": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimOrExpression1"
+        },
+        {
+          "$ref": "#/$defs/ClaimOrExpression2"
+        }
+      ],
+      "title": "ClaimOrExpression"
     },
-    "tag": {
-      "type": "string",
-      "description": "Image tag for the controller"
+    "ClaimOrExpression1": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "title": "Claim",
+          "type": "string"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        }
+      },
+      "required": [
+        "claim"
+      ],
+      "title": "ClaimOrExpression1",
+      "type": "object"
     },
-    "imagePullPolicy": {
-      "type": "string",
-      "description": "Image pull policy for the controller"
+    "ClaimOrExpression2": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claim"
+        },
+        "expression": {
+          "title": "Expression",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expression"
+      ],
+      "title": "ClaimOrExpression2",
+      "type": "object"
     },
-    "global": {
-      "type": "object",
-      "description": "Global parameters",
+    "ClaimValidationRule": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claim"
+        },
+        "requiredValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requiredvalue"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        }
+      },
+      "title": "ClaimValidationRule",
+      "type": "object"
+    },
+    "ExtraItem": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "valueExpression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valueexpression"
+        }
+      },
+      "title": "ExtraItem",
+      "type": "object"
+    },
+    "Global": {
       "properties": {
         "baseDomain": {
-          "type": "string",
-          "description": "Base domain to construct the FQDN for the service endpoints"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Base domain to construct the FQDN for the service endpoints",
+          "title": "Basedomain"
         },
         "metrics": {
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "type": "boolean"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metrics"
+            },
+            {
+              "type": "null"
             }
-          }
+          ],
+          "default": null
         }
-      }
+      },
+      "title": "Global",
+      "type": "object"
     },
-    "grpc": {
-      "type": "object",
+    "Grpc": {
+      "additionalProperties": false,
+      "properties": {
+        "keepalive": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Keepalive"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Grpc",
+      "type": "object"
+    },
+    "Grpc1": {
       "additionalProperties": false,
       "properties": {
         "hostname": {
-          "type": "string",
-          "description": "Hostname for the controller to use for the controller gRPC"
-        },
-        "routerHostname": {
-          "type": "string",
-          "description": "Hostname for the controller to use for the controller gRPC"
-        },
-        "endpoint": {
-          "type": "string",
-          "description": "The endpoints are passed down to the services to know where to announce the endpoints to the clients"
-        },
-        "routerEndpoint": {
-          "type": "string",
-          "description": "The endpoints are passed down to the services to know where to announce the endpoints to the clients"
-        },
-        "ingress": {
-          "$ref": "#/$defs/ingress"
-        },
-        "route": {
-          "$ref": "#/$defs/route"
-        },
-        "nodeport": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "port": {
-              "$ref": "#/$defs/port"
-            },
-            "routerPort": {
-              "$ref": "#/$defs/port"
-            }
-          }
-        },
-        "mode": {
-          "enum": [ "ingress", "route" ]
-        },
-        "tls": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "secret": {
+          "anyOf": [
+            {
               "type": "string"
             },
-            "controllerCertSecret": {
-              "type": "string",
-              "description": "Secret containing the TLS certificate/key for the gRPC controller endpoint"
-            },
-            "routerCertSecret": {
-              "type": "string",
-              "description": "Secret containing the TLS certificate/key for the gRPC router endpoints"
-            },
-            "port": {
-              "$ref": "#/$defs/port",
-              "description": "Port to use for the gRPC endpoints Ingress or Route, this can be useful for ingress routers on non-standard ports"
-            },
-            "mode": {
-              "enum": [ "passthrough", "reencrypt" ],
-              "description": "TLS mode for gRPC endpoints"
+            {
+              "type": "null"
             }
-          }
+          ],
+          "default": null,
+          "description": "Hostname for the controller to use for the controller gRPC",
+          "title": "Hostname"
+        },
+        "routerHostname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Hostname for the controller to use for the controller gRPC",
+          "title": "Routerhostname"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The endpoints are passed down to the services to know where to announce the endpoints to the clients",
+          "title": "Endpoint"
+        },
+        "routerEndpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The endpoints are passed down to the services to know where to announce the endpoints to the clients",
+          "title": "Routerendpoint"
+        },
+        "ingress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ingress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "route": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Route"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "nodeport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Nodeport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Mode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tls": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Tls"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
-      }
+      },
+      "title": "Grpc1",
+      "type": "object"
+    },
+    "Ingress": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable Ingress for the gRPC endpoint",
+          "title": "Enabled"
+        },
+        "class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "IngressClass to use for the gRPC endpoint",
+          "title": "Class"
+        }
+      },
+      "title": "Ingress",
+      "type": "object"
+    },
+    "Internal": {
+      "additionalProperties": false,
+      "properties": {
+        "prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prefix"
+        }
+      },
+      "title": "Internal",
+      "type": "object"
+    },
+    "Issuer": {
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "discoveryURL": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Discoveryurl"
+        },
+        "certificateAuthority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Certificateauthority"
+        },
+        "audiences": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audiences"
+        },
+        "audienceMatchPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudienceMatchPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Issuer",
+      "type": "object"
+    },
+    "JWTAuthenticator": {
+      "additionalProperties": false,
+      "properties": {
+        "issuer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Issuer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "claimValidationRules": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ClaimValidationRule"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claimvalidationrules"
+        },
+        "claimMappings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClaimMappings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "userValidationRules": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/UserValidationRule"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uservalidationrules"
+        }
+      },
+      "title": "JWTAuthenticator",
+      "type": "object"
+    },
+    "JumpstarterConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "provisioning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provisioning"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "authentication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Authentication"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "grpc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grpc"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "JumpstarterConfig",
+      "type": "object"
+    },
+    "Keepalive": {
+      "additionalProperties": false,
+      "properties": {
+        "minTime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The minimum amount of time a client should wait before sending a keepalive ping",
+          "title": "Mintime"
+        },
+        "permitWithoutStream": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to allow keepalive pings even when there are no active streams(RPCs)",
+          "title": "Permitwithoutstream"
+        }
+      },
+      "title": "Keepalive",
+      "type": "object"
+    },
+    "Metrics": {
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled"
+        }
+      },
+      "title": "Metrics",
+      "type": "object"
+    },
+    "Mode": {
+      "enum": [
+        "ingress",
+        "route"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "Mode1": {
+      "enum": [
+        "passthrough",
+        "reencrypt"
+      ],
+      "title": "Mode1",
+      "type": "string"
+    },
+    "Nodeport": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Port"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "routerPort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Port"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Nodeport",
+      "type": "object"
+    },
+    "Port": {
+      "maximum": 65535,
+      "minimum": 0,
+      "title": "Port",
+      "type": "integer"
+    },
+    "PrefixedClaimOrExpression": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PrefixedClaimOrExpression1"
+        },
+        {
+          "$ref": "#/$defs/PrefixedClaimOrExpression2"
+        }
+      ],
+      "title": "PrefixedClaimOrExpression"
+    },
+    "PrefixedClaimOrExpression1": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "title": "Claim",
+          "type": "string"
+        },
+        "prefix": {
+          "title": "Prefix",
+          "type": "string"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        }
+      },
+      "required": [
+        "claim",
+        "prefix"
+      ],
+      "title": "PrefixedClaimOrExpression1",
+      "type": "object"
+    },
+    "PrefixedClaimOrExpression2": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claim"
+        },
+        "prefix": {
+          "title": "Prefix",
+          "type": "string"
+        },
+        "expression": {
+          "title": "Expression",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prefix",
+        "expression"
+      ],
+      "title": "PrefixedClaimOrExpression2",
+      "type": "object"
+    },
+    "Provisioning": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled"
+        }
+      },
+      "title": "Provisioning",
+      "type": "object"
+    },
+    "Route": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable OpenShift Router for the gRPC endpoint",
+          "title": "Enabled"
+        }
+      },
+      "title": "Route",
+      "type": "object"
+    },
+    "Tls": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled"
+        },
+        "secret": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secret"
+        },
+        "controllerCertSecret": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Secret containing the TLS certificate/key for the gRPC controller endpoint",
+          "title": "Controllercertsecret"
+        },
+        "routerCertSecret": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Secret containing the TLS certificate/key for the gRPC router endpoints",
+          "title": "Routercertsecret"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Port"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Port to use for the gRPC endpoints Ingress or Route, this can be useful for ingress routers on non-standard ports"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Mode1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "TLS mode for gRPC endpoints"
+        }
+      },
+      "title": "Tls",
+      "type": "object"
+    },
+    "UserValidationRule": {
+      "additionalProperties": false,
+      "properties": {
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        }
+      },
+      "title": "UserValidationRule",
+      "type": "object"
     }
-  }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether to enable jumpstarter controller",
+      "title": "Enabled"
+    },
+    "authenticationConfig": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Authenticationconfig"
+    },
+    "config": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JumpstarterConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "namespace": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Namespace where the controller will be deployed, defaults to global.namespace",
+      "title": "Namespace"
+    },
+    "image": {
+      "description": "Image for the controller",
+      "title": "Image",
+      "type": "string"
+    },
+    "tag": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Image tag for the controller",
+      "title": "Tag"
+    },
+    "imagePullPolicy": {
+      "description": "Image pull policy for the controller",
+      "title": "Imagepullpolicy",
+      "type": "string"
+    },
+    "global": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Global"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Global parameters"
+    },
+    "grpc": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Grpc1"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "image",
+    "imagePullPolicy"
+  ],
+  "title": "Model",
+  "type": "object"
 }
