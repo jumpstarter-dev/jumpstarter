@@ -241,17 +241,18 @@ class EchoNetwork(NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class WebsocketNetwork(NetworkInterface, Driver):
-    '''
+    """
     Handles websocket connections from a given url.
-    '''
+    """
+
     url: str
 
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        '''
+        """
         Create a websocket connection to `self.url` and srreams its output.
-        '''
+        """
         self.logger.info("Connecting to %s", self.url)
 
         async with websockets.connect(self.url) as websocket:
