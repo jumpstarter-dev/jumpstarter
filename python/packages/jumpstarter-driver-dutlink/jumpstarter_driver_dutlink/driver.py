@@ -132,6 +132,15 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
         self.control("off")
 
     @export
+    def rescue(self) -> None:
+        """Put the device in rescue mode.
+
+        Rescue mode is a special power state that can be used for recovery purposes.
+        The exact behavior depends on the device's firmware implementation.
+        """
+        self.control("rescue")
+
+    @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
         prev = None
 
