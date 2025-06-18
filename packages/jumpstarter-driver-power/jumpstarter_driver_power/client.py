@@ -9,16 +9,18 @@ from jumpstarter.client import DriverClient
 
 class PowerClient(DriverClient):
     def on(self) -> None:
+        """Power on the device."""
         self.call("on")
 
     def off(self) -> None:
+        """Power off the device."""
         self.call("off")
 
     def rescue(self) -> None:
         self.call("rescue")
 
     def cycle(self, wait: int = 2):
-        """Power cycle the device"""
+        """Power cycle the device."""
         self.logger.info("Starting power cycle sequence")
         self.off()
         self.logger.info(f"Waiting {wait} seconds...")
@@ -27,6 +29,8 @@ class PowerClient(DriverClient):
         self.logger.info("Power cycle sequence complete")
 
     def read(self) -> Generator[PowerReading, None, None]:
+        """Read power data from the device."""
+
         for v in self.streamingcall("read"):
             yield PowerReading.model_validate(v, strict=True)
 
