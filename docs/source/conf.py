@@ -86,12 +86,9 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/tabs.js", "js/theme-toggle.js"]
+html_js_files = ["js/theme-toggle.js"]
 html_static_path = ["_static"]
-html_css_files = [
-    "css/tabs.css",
-    "css/custom.css",
-]
+html_css_files = ["css/custom.css"]
 html_sidebars = {
     "**": [
         "sidebar/brand.html",
