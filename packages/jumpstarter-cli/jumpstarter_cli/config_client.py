@@ -10,9 +10,9 @@ from jumpstarter_cli_common.opt import (
     opt_output_all,
     opt_output_path_only,
 )
-from jumpstarter_cli_common.table import make_table
+from jumpstarter_cli_common.print import model_print
 
-from jumpstarter.config.client import ClientConfigListV1Alpha1, ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.user import UserConfigV1Alpha1
 
@@ -94,7 +94,7 @@ def create_client_config(
     path = ClientConfigV1Alpha1.save(config, out)
 
     # If this is the only client config, set it as default
-    if out is None and len(ClientConfigV1Alpha1.list()) == 1:
+    if out is None and len(ClientConfigV1Alpha1.list().items) == 1:
         user_config = UserConfigV1Alpha1.load_or_create()
         user_config.config.current_client = config
         UserConfigV1Alpha1.save(user_config)
@@ -110,7 +110,7 @@ def set_next_client(name: str):
         and user_config.config.current_client is not None
         and user_config.config.current_client.alias == name
     ):
-        for c in ClientConfigV1Alpha1.list():
+        for c in ClientConfigV1Alpha1.list().items:
             if c.alias != name:
                 # Use the next available client config
                 user_config.use_client(c.alias)
@@ -135,34 +135,9 @@ def delete_client_config(name: str, output: PathOutputType):
 @opt_output_all
 @handle_exceptions
 def list_client_configs(output: OutputType):
-    # Allow listing if there is no user config defined
-    current_name = None
-    if UserConfigV1Alpha1.exists():
-        current_client = UserConfigV1Alpha1.load().config.current_client
-        current_name = current_client.alias if current_client is not None else None
-
     configs = ClientConfigV1Alpha1.list()
 
-    if output == OutputMode.JSON:
-        click.echo(ClientConfigListV1Alpha1(current_config=current_name, items=configs).dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(ClientConfigListV1Alpha1(current_config=current_name, items=configs).dump_yaml())
-    elif output == OutputMode.NAME:
-        if len(configs) > 0:
-            click.echo(configs[0].alias)
-    else:
-        columns = ["CURRENT", "NAME", "ENDPOINT", "PATH"]
-
-        def make_row(c: ClientConfigV1Alpha1):
-            return {
-                "CURRENT": "*" if current_name == c.alias else "",
-                "NAME": c.alias,
-                "ENDPOINT": c.endpoint,
-                "PATH": str(c.path),
-            }
-
-        rows = list(map(make_row, configs))
-        click.echo(make_table(columns, rows))
+    model_print(configs, output)
 
 
 @config_client.command("use", short_help="Select the current client config.")

@@ -110,12 +110,12 @@ class ExporterConfigV1Alpha1(BaseModel):
         return config
 
     @classmethod
-    def list(cls) -> list[Self]:
+    def list(cls) -> ExporterConfigListV1Alpha1:
         exporters = []
         with suppress(FileNotFoundError):
             for entry in cls.BASE_PATH.iterdir():
                 exporters.append(cls.load(entry.stem))
-        return exporters
+        return ExporterConfigListV1Alpha1(items=exporters)
 
     @classmethod
     def dump_yaml(self, config: Self) -> str:
@@ -184,10 +184,20 @@ class ExporterConfigListV1Alpha1(BaseModel):
     items: list[ExporterConfigV1Alpha1]
     kind: Literal["ExporterConfigList"] = Field(default="ExporterConfigList")
 
-    def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
-
-    def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
-
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+
+    @classmethod
+    def rich_add_columns(cls, table):
+        table.add_column("ALIAS")
+        table.add_column("PATH")
+
+    def rich_add_rows(self, table):
+        for exporter in self.items:
+            table.add_row(
+                exporter.alias,
+                str(exporter.path),
+            )
+
+    def rich_add_names(self, names):
+        for exporter in self.items:
+            names.append(exporter.alias)

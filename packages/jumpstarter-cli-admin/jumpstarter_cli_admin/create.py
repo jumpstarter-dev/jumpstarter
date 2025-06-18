@@ -4,7 +4,6 @@ import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import (
-    OutputMode,
     OutputType,
     confirm_insecure_tls,
     opt_context,
@@ -15,7 +14,8 @@ from jumpstarter_cli_common.opt import (
     opt_nointeractive,
     opt_output_all,
 )
-from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, V1Alpha1Client, V1Alpha1Exporter
+from jumpstarter_cli_common.print import model_print
+from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
@@ -33,15 +33,6 @@ opt_oidc_username = click.option("--oidc-username", "oidc_username", type=str, d
 @click.group(cls=AliasedGroup)
 def create():
     """Create Jumpstarter Kubernetes objects"""
-
-
-def print_created_client(client: V1Alpha1Client, output: OutputType):
-    if output == OutputMode.JSON:
-        click.echo(client.dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(client.dump_yaml())
-    elif output == OutputMode.NAME:
-        click.echo(f"client.jumpstarter.dev/{client.metadata.name}")
 
 
 @create.command("client")
@@ -116,26 +107,17 @@ async def create_client(
                 client_config.tls.insecure = insecure_tls_config
                 ClientConfigV1Alpha1.save(client_config, out)
                 # If this is the only client config, set it as default
-                if out is None and len(ClientConfigV1Alpha1.list()) == 1:
+                if out is None and len(ClientConfigV1Alpha1.list().items) == 1:
                     user_config = UserConfigV1Alpha1.load_or_create()
                     user_config.config.current_client = client_config
                     UserConfigV1Alpha1.save(user_config)
                 if output is None:
                     click.echo(f"Client configuration successfully saved to {client_config.path}")
-            print_created_client(created_client, output)
+            model_print(created_client, output, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
-
-
-def print_created_exporter(exporter: V1Alpha1Exporter, output: OutputType):
-    if output == OutputMode.JSON:
-        click.echo(exporter.dump_json())
-    elif output == OutputMode.YAML:
-        click.echo(exporter.dump_yaml())
-    elif output == OutputMode.NAME:
-        click.echo(f"exporter.jumpstarter.dev/{exporter.metadata.name}")
 
 
 @create.command("exporter")
@@ -191,7 +173,7 @@ async def create_exporter(
                 ExporterConfigV1Alpha1.save(exporter_config, out)
                 if output is None:
                     click.echo(f"Exporter configuration successfully saved to {exporter_config.path}")
-            print_created_exporter(created_exporter, output)
+            model_print(created_exporter, output, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

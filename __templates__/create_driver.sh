@@ -20,6 +20,15 @@ export DRIVER_CLASS=$2
 export AUTHOR_NAME=$3
 export AUTHOR_EMAIL=$4
 
+# MacOS has a different syntax for sed -i, we either use gsed (GNU sed) or apply the right -i syntax
+if command -v gsed &> /dev/null; then
+    sed_cmd="gsed"
+elif [[ "$(uname)" == "Darwin" ]]; then
+    sed_cmd="sed -i ''"
+else
+    sed_cmd="sed -i"
+fi
+
 # create the driver directory
 DRIVER_DIRECTORY=packages/jumpstarter-driver-${DRIVER_NAME}
 MODULE_DIRECTORY=${DRIVER_DIRECTORY}/jumpstarter_driver_${DRIVER_NAME}
@@ -62,14 +71,14 @@ export:
 Add API documentation here.
 EOF
 # Need to expand variables after EOF to prevent early expansion
-sed -i "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g" "${README_FILE}"
+$sed_cmd "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g" "${README_FILE}"
 echo "README.md file content:"
 cat "${README_FILE}"
 
 # Create symlink from documentation directory to README.md
 mkdir -p ${DOCS_DIRECTORY}
 echo "Creating symlink to README.md file"
-rel_path=$(realpath --relative-to="${DOCS_DIRECTORY}" "${README_FILE}")
+rel_path=$(python3 -c "import os.path; print(os.path.relpath('${README_FILE}', '${DOCS_DIRECTORY}'))")
 ln -sf "${rel_path}" "${DOC_FILE}"
 echo "Created symlink: ${DOC_FILE} -> ${rel_path}"
 
