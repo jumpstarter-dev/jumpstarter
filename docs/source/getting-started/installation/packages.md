@@ -36,7 +36,12 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-all
 
 # Create config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
+
+# Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
+
+# Take ownership for the "admin" user/group
+$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 ````
 
@@ -52,7 +57,12 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-all
 
 # Create config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
+
+# Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
+
+# Take ownership for the "admin" user/group
+$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 ````
 
@@ -67,7 +77,12 @@ $ uv add --extra-index-url {{index_url}} jumpstarter-all
 
 # Create config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
+
+# Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
+
+# Take ownership for the "admin" user/group
+$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 ````
 
@@ -75,11 +90,11 @@ $ sudo mkdir /etc/jumpstarter
 Additional package indexes are available, this is a complete list of our
 indexes:
 
-| Index | Description |
-|-------|-------------|
-| [releases](https://pkg.jumpstarter.dev/) | Release, or release-candidate versions |
-| [main](https://pkg.jumpstarter.dev/main/) | Index tracking the main branch, equivalent to installing from sources |
-| [release-0.6](https://pkg.jumpstarter.dev/release-0.6) | Index tracking a stable branch |
+| Index                                                  | Description                                                           |
+| ------------------------------------------------------ | --------------------------------------------------------------------- |
+| [releases](https://pkg.jumpstarter.dev/)               | Release, or release-candidate versions                                |
+| [main](https://pkg.jumpstarter.dev/main/)              | Index tracking the main branch, equivalent to installing from sources |
+| [release-0.6](https://pkg.jumpstarter.dev/release-0.6) | Index tracking a stable branch                                        |
 
 ### Installing from Source
 
@@ -107,7 +122,12 @@ jumpstarter$ make sync
 
 # Create local config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
+
+# Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
+
+# Take ownership for the "admin" user/group
+$ sudo chown $USER:$USER /etc/jumpstarter
 
 # Activate the virtual environment to use the Jumpstarter CLI
 $ source .venv/bin/activate
@@ -121,8 +141,14 @@ If you prefer not to install packages locally, you can run Jumpstarter from a co
 First, create the config directories so you can mount them inside the container:
 
 ```{code-block} console
+# Create local config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
-$ sudo mkdir -p /etc/jumpstarter/
+
+# Create the exporter config directory
+$ sudo mkdir /etc/jumpstarter
+
+# Take ownership for the "admin" user/group
+$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 
 To start a Jumpstarter container with all the driver packages pre-installed, run:
