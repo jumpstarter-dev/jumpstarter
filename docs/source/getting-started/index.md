@@ -19,5 +19,4 @@ distributed-mode for team environments with shared hardware resources.
 installation/index.md
 configuration/index.md
 guides/index.md
-tutorials/index.md
 ```
