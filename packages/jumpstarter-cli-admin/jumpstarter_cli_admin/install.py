@@ -4,7 +4,7 @@ from typing import Literal, Optional
 import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import opt_context, opt_kubeconfig
-from jumpstarter_kubernetes import helm_installed, install_helm_chart
+from jumpstarter_kubernetes import helm_installed, install_helm_chart, uninstall_helm_chart
 
 from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
@@ -73,7 +73,7 @@ async def install(
     kubeconfig: Optional[str],
     context: Optional[str],
 ):
-    """Install the Jumpstarter service in a Kubernetes cluster."""
+    """Install the Jumpstarter service in a Kubernetes cluster"""
     # Check if helm is installed
     if helm_installed(helm) is False:
         raise click.ClickException(
@@ -107,6 +107,8 @@ async def install(
         chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm
     )
 
+    click.echo(f'Installed Helm release "{name}" in namespace "{namespace}"')
+
 
 @click.command
 @click.option("--kind", "cluster_type", flag_value="kind", help="Use default settings for a local Kind cluster")
@@ -117,6 +119,36 @@ async def install(
 async def ip(
     cluster_type: Optional[Literal["kind"] | Literal["minikube"]],
 ):
-    """Attempt to determine the IP address of your computer."""
+    """Attempt to determine the IP address of your computer"""
     ip = await get_ip_generic(cluster_type)
     click.echo(ip)
+
+
+@click.command
+@click.option("--helm", type=str, help="Path or name of a helm executable", default="helm")
+@click.option("--name", type=str, help="The name of the chart installation", default="jumpstarter")
+@click.option(
+    "-n", "--namespace", type=str, help="Namespace to install Jumpstarter components in", default="jumpstarter-lab"
+)
+@opt_kubeconfig
+@opt_context
+@blocking
+async def uninstall(
+    helm: str,
+    name: str,
+    namespace: str,
+    kubeconfig: Optional[str],
+    context: Optional[str],
+):
+    """Uninstall the Jumpstarter service in a Kubernetes cluster"""
+    # Check if helm is installed
+    if helm_installed(helm) is False:
+        raise click.ClickException(
+            "helm is not installed (or not in your PATH), please specify a helm executable with --helm <EXECUTABLE>"
+        )
+
+    click.echo(f'Uninstalling Jumpstarter service in namespace "{namespace}" with Helm')
+
+    await uninstall_helm_chart(name, namespace, kubeconfig, context, helm)
+
+    click.echo(f'Uninstalled Helm release "{name}" from namespace "{namespace}"')

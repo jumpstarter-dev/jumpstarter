@@ -49,6 +49,32 @@ async def install_helm_chart(
         f"jumpstarter-controller.grpc.mode={mode}",
         "--version",
         version,
+        "--wait",
+    ]
+
+    if kubeconfig is not None:
+        args.append("--kubeconfig")
+        args.append(kubeconfig)
+
+    if context is not None:
+        args.append("--kube-context")
+        args.append(context)
+
+    # Attempt to install Jumpstarter using Helm
+    process = await asyncio.create_subprocess_exec(*args)
+    await process.wait()
+
+
+async def uninstall_helm_chart(
+    name: str, namespace: str, kubeconfig: Optional[str], context: Optional[str], helm: Optional[str] = "helm"
+):
+    args = [
+        helm,
+        "uninstall",
+        name,
+        "--namespace",
+        namespace,
+        "--wait",
     ]
 
     if kubeconfig is not None:

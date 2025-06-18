@@ -231,6 +231,9 @@ To check the status of the installation, run:
 
 ```{code-block} console
 $ kubectl get pods -n jumpstarter-lab --watch
+NAME                                    READY   STATUS      RESTARTS   AGE
+jumpstarter-controller-cc74d879-6b22b   1/1     Running     0          48s
+jumpstarter-secrets-w42z4               0/1     Completed   0          48s
 ```
 
 For complete documentation of the `jmp admin install` command and all available
@@ -284,4 +287,7 @@ To check the status of the installation, run:
 
 ```{code-block} console
 $ kubectl get pods -n jumpstarter-lab --watch
+NAME                                    READY   STATUS      RESTARTS   AGE
+jumpstarter-controller-cc74d879-6b22b   1/1     Running     0          48s
+jumpstarter-secrets-w42z4               0/1     Completed   0          48s
 ```
