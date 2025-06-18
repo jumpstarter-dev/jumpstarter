@@ -58,6 +58,7 @@ $ sudo mkdir /etc/jumpstarter
 
 ````{tab} uv
 ```{code-block} console
+:substitutions:
 # Create a new virtual environment
 $ uv venv
 
