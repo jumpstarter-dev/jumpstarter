@@ -47,7 +47,7 @@ async def install(
     kubeconfig: Optional[str],
     context: Optional[str],
 ):
-    """Install the Jumpstarter service in a Kubernetes cluster"""
+    """Install the Jumpstarter service in a Kubernetes cluster."""
     # Check if helm is installed
     if helm_installed(helm) is False:
         raise click.ClickException(
@@ -80,3 +80,13 @@ async def install(
     await install_helm_chart(
         chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm
     )
+
+@click.command
+def ip():
+    """Attempt to determine the IP address of your computer."""
+    ip = get_ip_address()
+    if ip == "0.0.0.0":
+        raise click.ClickException(
+            "Could not determine IP address, use --ip <IP> to specify an IP address when running jmp admin install."
+        )
+    click.echo(ip)

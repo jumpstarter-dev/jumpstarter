@@ -36,11 +36,11 @@ $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstar
 ```{code-block} console
 :substitutions:
 $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-          --create-namespace --namespace jumpstarter-lab \
-          --set global.baseDomain=jumpstarter.example.com \
-          --set global.metrics.enabled=true \
-          --set jumpstarter-controller.grpc.mode=route \ # Use the OpenShift router
-          --version={{controller_version}}
+        --create-namespace --namespace jumpstarter-lab \
+        --set global.baseDomain=jumpstarter.example.com \
+        --set global.metrics.enabled=true \
+        --set jumpstarter-controller.grpc.mode=route \
+        --version={{controller_version}}
 ```
 ````
 
@@ -148,7 +148,7 @@ website](https://kind.sigs.k8s.io/docs/user/quick-start/).
 First, create a kind cluster config that enables nodeports to host the Services.
 Save this as `kind_config.yaml`:
 
-```yaml
+```{code-block} yaml
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 kubeadmConfigPatches:
@@ -181,7 +181,7 @@ nodes:
 
 Next, create a kind cluster using the config you created:
 
-```console
+```{code-block} console
 $ kind create cluster --config kind_config.yaml
 ```
 ````
@@ -198,23 +198,9 @@ website](https://minikube.sigs.k8s.io/docs/start/).
 
 Expand the default NodePort range to include the Jumpstarter ports:
 
-```console
+```{code-block} console
 $ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 ```
-
-### Install Jumpstarter with the CLI
-
-The Jumpstarter CLI's `jmp admin install` command simplifies installation in
-your Kubernetes cluster.
-
-Use the minikube IP address when installing with the CLI:
-
-```console
-$ jmp admin install --ip $(minikube ip)
-```
-
-For complete documentation of the `jmp admin install` command and all available
-options, see the [MAN pages](../../reference/man-pages/jmp.md).
 ````
 
 ### Install Jumpstarter with the CLI
@@ -223,19 +209,29 @@ The Jumpstarter CLI provides the `jmp admin install` command to automatically
 run Helm with the correct arguments, simplifying installation in your Kubernetes
 cluster.
 
+```{warning}
+Sometimes the automatic IP address detection for will not work correctly, if it does not work for you, use the `--ip` parameter to manually pass an IPv4 address to the Jumpstarter CLI.
+```
+
 Install Jumpstarter with default options:
 
 ````{tab} kind
-```console
+```{code-block} console
 $ jmp admin install
 ```
 ````
 
 ````{tab} minikube
-```console
+```{code-block} console
 $ jmp admin install --ip $(minikube ip)
 ```
 ````
+
+To check the status of the installation, run:
+
+```{code-block} console
+$ kubectl get pods -n jumpstarter-lab --watch
+```
 
 For complete documentation of the `jmp admin install` command and all available
 options, see the [MAN pages](../../reference/man-pages/jmp.md).
@@ -247,7 +243,7 @@ For manual installation with Helm, use these commands:
 ````{tab} kind
 ```{code-block} console
 :substitutions:
-$ export IP="X.X.X.X"
+$ export IP="X.X.X.X" # Enter the IP address of your computer on the local network
 $ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
 $ export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
 $ export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
@@ -283,3 +279,9 @@ $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstar
     --version={{controller_version}}
 ```
 ````
+
+To check the status of the installation, run:
+
+```{code-block} console
+$ kubectl get pods -n jumpstarter-lab --watch
+```
