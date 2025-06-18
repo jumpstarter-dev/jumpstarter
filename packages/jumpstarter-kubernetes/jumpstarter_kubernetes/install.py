@@ -48,7 +48,7 @@ async def install_helm_chart(
         "--set",
         f"jumpstarter-controller.grpc.mode={mode}",
         "--version",
-        version
+        version,
     ]
 
     if kubeconfig is not None:

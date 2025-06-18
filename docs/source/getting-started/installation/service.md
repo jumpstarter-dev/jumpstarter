@@ -55,7 +55,7 @@ $ kubectl create namespace jumpstarter-lab
 $ kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-gitops
 ```
 
-1. For ArgoCD to manage Jumpstarter CRDs, create this `ClusterRole` and `ClusterRoleBinding`:
+For ArgoCD to manage Jumpstarter CRDs, create this `ClusterRole` and `ClusterRoleBinding`:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -90,7 +90,7 @@ subjects:
   namespace: openshift-gitops
 ```
 
-2. Create an ArgoCD Application to deploy Jumpstarter:
+Create an ArgoCD Application to deploy Jumpstarter:
 
 ```{warning}
 The secrets `jumpstarter-controller.controllerSecret` and `jumpstarter-controller.routerSecret`
@@ -217,13 +217,13 @@ Install Jumpstarter with default options:
 
 ````{tab} kind
 ```{code-block} console
-$ jmp admin install
+$ jmp admin install --kind
 ```
 ````
 
 ````{tab} minikube
 ```{code-block} console
-$ jmp admin install --ip $(minikube ip)
+$ jmp admin install --minikube
 ```
 ````
 
