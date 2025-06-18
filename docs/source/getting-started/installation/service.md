@@ -210,7 +210,7 @@ run Helm with the correct arguments, simplifying installation in your Kubernetes
 cluster.
 
 ```{warning}
-Sometimes the automatic IP address detection for will not work correctly, if it does not work for you, use the `--ip` parameter to manually pass an IPv4 address to the Jumpstarter CLI.
+Sometimes the automatic IP address detection for will not work correctly, to check if Jumpstarter can determine your IP address, run `jmp admin ip`. If the IP address cannot be determined, use the `--ip` argument to manually set your IP address.
 ```
 
 Install Jumpstarter with default options:
