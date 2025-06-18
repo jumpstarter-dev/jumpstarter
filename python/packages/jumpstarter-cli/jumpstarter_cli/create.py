@@ -3,8 +3,8 @@ from datetime import timedelta
 import click
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
-from jumpstarter_cli_common.opt import OutputMode, OutputType, opt_output_all
-from jumpstarter_cli_common.table import make_table
+from jumpstarter_cli_common.opt import OutputType, opt_output_all
+from jumpstarter_cli_common.print import model_print
 
 from .common import opt_duration_partial, opt_selector
 
@@ -50,22 +50,4 @@ def create_lease(config, selector: str, duration: timedelta, output: OutputType)
 
     lease = config.create_lease(selector=selector, duration=duration)
 
-    match output:
-        case OutputMode.JSON:
-            click.echo(lease.dump_json())
-        case OutputMode.YAML:
-            click.echo(lease.dump_yaml())
-        case OutputMode.NAME:
-            click.echo(lease.name)
-        case _:
-            columns = ["NAME", "SELECTOR", "DURATION", "CLIENT", "EXPORTER"]
-            rows = [
-                {
-                    "NAME": lease.name,
-                    "SELECTOR": lease.selector,
-                    "DURATION": str(lease.duration.total_seconds()),
-                    "CLIENT": lease.client,
-                    "EXPORTER": lease.exporter,
-                }
-            ]
-            click.echo(make_table(columns, rows))
+    model_print(lease, output)

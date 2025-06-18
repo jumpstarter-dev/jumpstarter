@@ -267,7 +267,7 @@ def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock):
     # No clients found
     list_clients_mock.return_value = V1Alpha1ClientList(items=[])
     result = runner.invoke(get, ["clients"])
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     assert "No resources found" in result.output
     list_clients_mock.reset_mock()
 
@@ -636,7 +636,7 @@ def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
         return_value=V1Alpha1ExporterList(items=[]),
     ):
         result = runner.invoke(get, ["exporters"])
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert "No resources found" in result.output
 
 
@@ -800,7 +800,7 @@ def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: Asyn
     # No exporters found
     list_exporters_mock.return_value = V1Alpha1ExporterList(items=[])
     result = runner.invoke(get, ["exporters", "--devices"])
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     assert "No resources found" in result.output
 
 
@@ -1193,5 +1193,5 @@ def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     # No leases found
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[])
     result = runner.invoke(get, ["leases"])
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     assert "No resources found" in result.output

@@ -10,6 +10,7 @@ from jumpstarter_cli_common.opt import (
     opt_namespace,
     opt_output_all,
 )
+from jumpstarter_cli_common.print import model_print
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
@@ -22,7 +23,6 @@ from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,
 )
-from .print import print_client, print_clients, print_exporter, print_exporters, print_lease, print_leases
 
 
 @click.group(cls=AliasedGroup)
@@ -45,10 +45,10 @@ async def get_client(
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 client = await api.get_client(name)
-                print_client(client, output)
+                model_print(client, output, namespace=namespace)
             else:
                 clients = await api.list_clients()
-                print_clients(clients, namespace, output)
+                model_print(clients, output, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -76,10 +76,10 @@ async def get_exporter(
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 exporter = await api.get_exporter(name)
-                print_exporter(exporter, devices, output)
+                model_print(exporter, output, devices=devices, namespace=namespace)
             else:
                 exporters = await api.list_exporters()
-                print_exporters(exporters, namespace, devices, output)
+                model_print(exporters, output, devices=devices, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -101,10 +101,10 @@ async def get_lease(
         async with LeasesV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 lease = await api.get_lease(name)
-                print_lease(lease, output)
+                model_print(lease, output, namespace=namespace)
             else:
                 leases = await api.list_leases()
-                print_leases(leases, namespace, output)
+                model_print(leases, output, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
