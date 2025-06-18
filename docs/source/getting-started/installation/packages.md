@@ -22,7 +22,7 @@ tools you need to interact with hardware locally.
 - Python {{requires_python}}
 - A package manager such as [`pip`](https://pip.pypa.io/en/stable/installation/) or [`uv`](https://docs.astral.sh/uv/getting-started/installation).
 
-To install all of the Jumpstarter core packages and drivers, use the `jumpstarter-all` meta package:
+To install all the Jumpstarter core packages and drivers, use the `jumpstarter-all` meta package:
 
 ```{tip}
 Consider installing your Python packages in a [virtual environment](https://docs.python.org/3/library/venv.html) instead of globally.
@@ -108,7 +108,7 @@ jumpstarter$ make sync
 $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
 
-# Active the virtual environment to use the Jumpstarter CLI
+# Activate the virtual environment to use the Jumpstarter CLI
 $ source .venv/bin/activate
 $ jmp version
 ```
