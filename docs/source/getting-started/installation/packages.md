@@ -39,9 +39,6 @@ $ mkdir -p "${HOME}/.config/jumpstarter/"
 
 # Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
-
-# Take ownership for the "admin" user/group
-$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 ````
 
@@ -60,9 +57,6 @@ $ mkdir -p "${HOME}/.config/jumpstarter/"
 
 # Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
-
-# Take ownership for the "admin" user/group
-$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 ````
 
@@ -80,12 +74,8 @@ $ mkdir -p "${HOME}/.config/jumpstarter/"
 
 # Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
-
-# Take ownership for the "admin" user/group
-$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 ````
-
 
 Additional package indexes are available, this is a complete list of our
 indexes:
@@ -126,9 +116,6 @@ $ mkdir -p "${HOME}/.config/jumpstarter/"
 # Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
 
-# Take ownership for the "admin" user/group
-$ sudo chown $USER:$USER /etc/jumpstarter
-
 # Activate the virtual environment to use the Jumpstarter CLI
 $ source .venv/bin/activate
 $ jmp version
@@ -146,9 +133,6 @@ $ mkdir -p "${HOME}/.config/jumpstarter/"
 
 # Create the exporter config directory
 $ sudo mkdir /etc/jumpstarter
-
-# Take ownership for the "admin" user/group
-$ sudo chown $USER:$USER /etc/jumpstarter
 ```
 
 To start a Jumpstarter container with all the driver packages pre-installed, run:
