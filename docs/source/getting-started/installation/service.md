@@ -227,6 +227,12 @@ $ jmp admin install --minikube
 ```
 ````
 
+Uninstall Jumpstarter with the CLI:
+
+```{code-block} console
+$ jmp admin uninstall
+```
+
 To check the status of the installation, run:
 
 ```{code-block} console
@@ -251,14 +257,14 @@ $ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
 $ export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
 $ export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-            --create-namespace --namespace jumpstarter-lab \
-            --set global.baseDomain=${BASEDOMAIN} \
-            --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
-            --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
-            --set global.metrics.enabled=false \
-            --set jumpstarter-controller.grpc.nodeport.enabled=true \
-            --set jumpstarter-controller.grpc.mode=nodeport \
-            --version={{controller_version}}
+    --create-namespace --namespace jumpstarter-lab \
+    --set global.baseDomain=${BASEDOMAIN} \
+    --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
+    --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
+    --set global.metrics.enabled=false \
+    --set jumpstarter-controller.grpc.nodeport.enabled=true \
+    --set jumpstarter-controller.grpc.mode=nodeport \
+    --version={{controller_version}}
 ```
 ````
 
@@ -290,4 +296,10 @@ $ kubectl get pods -n jumpstarter-lab --watch
 NAME                                    READY   STATUS      RESTARTS   AGE
 jumpstarter-controller-cc74d879-6b22b   1/1     Running     0          48s
 jumpstarter-secrets-w42z4               0/1     Completed   0          48s
+```
+
+To uninstall the Helm release, run:
+
+```{code-block} console
+helm uninstall jumpstarter --namespace jumpstarter-lab
 ```
