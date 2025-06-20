@@ -23,6 +23,7 @@ from jumpstarter.common.streams import (
     StreamRequestMetadata,
 )
 from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.encoding import compress_stream
 from jumpstarter.streams.metadata import MetadataStream, MetadataStreamAttributes
 from jumpstarter.streams.progress import ProgressStream
 from jumpstarter.streams.router import RouterStream
@@ -137,18 +138,23 @@ class AsyncDriverClient(
     async def resource_async(
         self,
         stream,
+        content_encoding: str | None = None,
     ):
         context = self.stub.Stream(
-            metadata=StreamRequestMetadata.model_construct(request=ResourceStreamRequest(uuid=self.uuid))
+            metadata=StreamRequestMetadata.model_construct(
+                request=ResourceStreamRequest(uuid=self.uuid, x_jmp_content_encoding=content_encoding)
+            )
             .model_dump(mode="json", round_trip=True)
             .items(),
         )
         metadata = dict(list(await context.initial_metadata()))
         async with MetadataStream(stream=RouterStream(context=context), metadata=metadata) as rstream:
+            metadata = ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata))
+            if metadata.x_jmp_accept_encoding is None:
+                stream = compress_stream(stream, content_encoding)
+
             async with forward_stream(ProgressStream(stream=stream), rstream):
-                yield ResourceMetadata(**rstream.extra(MetadataStreamAttributes.metadata)).resource.model_dump(
-                    mode="json"
-                )
+                yield metadata.resource.model_dump(mode="json")
 
     def __log(self, level: int, msg: str):
         self.logger.log(level, msg)

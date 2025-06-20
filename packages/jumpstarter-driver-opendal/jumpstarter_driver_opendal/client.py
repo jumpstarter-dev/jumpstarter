@@ -19,6 +19,7 @@ from .adapter import OpendalAdapter
 from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
 from jumpstarter.client import DriverClient
 from jumpstarter.common.exceptions import ArgumentError
+from jumpstarter.streams.encoding import Compression
 
 
 @dataclass(kw_only=True)
@@ -517,12 +518,20 @@ class FlasherClientInterface(metaclass=ABCMeta):
         *,
         partition: str | None = None,
         operator: Operator | None = None,
+        compression: Compression | None = None,
     ):
         """Flash image to DUT"""
         ...
 
     @abstractmethod
-    def dump(self, path: PathBuf, *, partition: str | None = None, operator: Operator | None = None):
+    def dump(
+        self,
+        path: PathBuf,
+        *,
+        partition: str | None = None,
+        operator: Operator | None = None,
+        compression: Compression | None = None,
+    ):
         """Dump image from DUT"""
         ...
 
@@ -535,16 +544,18 @@ class FlasherClientInterface(metaclass=ABCMeta):
         @base.command()
         @click.argument("file")
         @click.option("--partition", type=str)
-        def flash(file, partition):
+        @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
+        def flash(file, partition, compression):
             """Flash image to DUT from file"""
-            self.flash(file, partition=partition)
+            self.flash(file, partition=partition, compression=compression)
 
         @base.command()
         @click.argument("file")
         @click.option("--partition", type=str)
-        def dump(file, partition):
+        @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
+        def dump(file, partition, compression):
             """Dump image from DUT to file"""
-            self.dump(file, partition=partition)
+            self.dump(file, partition=partition, compression=compression)
 
         return base
 
@@ -556,12 +567,13 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         *,
         partition: str | None = None,
         operator: Operator | None = None,
+        compression: Compression | None = None,
     ):
         """Flash image to DUT"""
         if operator is None:
             path, operator, _ = operator_for_path(path)
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb", compression=compression) as handle:
             return self.call("flash", handle, partition)
 
     def dump(
@@ -570,12 +582,13 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         *,
         partition: str | None = None,
         operator: Operator | None = None,
+        compression: Compression | None = None,
     ):
         """Dump image from DUT"""
         if operator is None:
             path, operator, _ = operator_for_path(path)
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb", compression=compression) as handle:
             return self.call("dump", handle, partition)
 
 
@@ -650,6 +663,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         *,
         partition: str | None = None,
         operator: Operator | None = None,
+        compression: Compression | None = None,
     ):
         """Flash image to DUT"""
         if partition is not None:
@@ -660,7 +674,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         if operator is None:
             path, operator, _ = operator_for_path(path)
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb") as handle:
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb", compression=compression) as handle:
             try:
                 return self.write(handle)
             finally:
@@ -672,6 +686,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         *,
         partition: str | None = None,
         operator: Operator | None = None,
+        compression: Compression | None = None,
     ):
         """Dump image from DUT"""
         if partition is not None:
@@ -682,7 +697,7 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         if operator is None:
             path, operator, _ = operator_for_path(path)
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb") as handle:
+        with OpendalAdapter(client=self, operator=operator, path=path, mode="wb", compression=compression) as handle:
             try:
                 return self.call("read", handle)
             finally:
