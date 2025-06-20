@@ -46,7 +46,10 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
+
 	// +kubebuilder:scaffold:imports
+
+	_ "google.golang.org/grpc/encoding"
 )
 
 var (
