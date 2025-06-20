@@ -1,4 +1,4 @@
-# Usage
+# Guides
 
 This section provides guidance on how to use Jumpstarter effectively in your
 development workflow. The guides cover:

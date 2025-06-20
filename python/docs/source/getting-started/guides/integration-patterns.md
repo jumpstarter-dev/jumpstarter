@@ -46,14 +46,7 @@ automated testing on real systems:
 
 **CI Configuration Examples:**
 
-<div class="tab-container">
-  <div class="tab">
-    <button class="tablinks active" onclick="openTab(event, 'GitHub1')">GitHub</button>
-    <button class="tablinks" onclick="openTab(event, 'GitLab1')">GitLab</button>
-  </div>
-
-  <div id="GitHub1" class="tabcontent" style="display:block;">
-
+````{tab} GitHub
 ```yaml
 # .github/workflows/hardware-test.yml
 jobs:
@@ -71,11 +64,9 @@ jobs:
         if: always()
         run: jmp delete lease
 ```
+````
 
-  </div>
-
-  <div id="GitLab1" class="tabcontent">
-
+````{tab} GitLab
 ```yaml
 # .gitlab-ci.yml
 hardware-test:
@@ -88,9 +79,7 @@ hardware-test:
   after_script:
     - jmp delete lease
 ```
-
-  </div>
-</div>
+````
 
 ### Self-Hosted CI Runner with Attached System
 
@@ -135,14 +124,7 @@ This approach works best when:
 
 **CI Configuration Examples:**
 
-<div class="tab-container">
-  <div class="tab">
-    <button class="tablinks active" onclick="openTab(event, 'GitHub2')">GitHub</button>
-    <button class="tablinks" onclick="openTab(event, 'GitLab2')">GitLab</button>
-  </div>
-
-  <div id="GitHub2" class="tabcontent" style="display:block;">
-
+````{tab} GitHub
 ```yaml
 # .github/workflows/self-hosted-hw-test.yml
 jobs:
@@ -158,11 +140,9 @@ jobs:
         if: always()
         run: jmp local stop
 ```
+````
 
-  </div>
-
-  <div id="GitLab2" class="tabcontent">
-
+````{tab} GitLab
 ```yaml
 # .gitlab-ci.yml
 hardware-test:
@@ -174,9 +154,7 @@ hardware-test:
   after_script:
     - jmp local stop
 ```
-
-  </div>
-</div>
+````
 
 ### Cost Management and Chargeback
 
