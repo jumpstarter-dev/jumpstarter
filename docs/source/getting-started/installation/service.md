@@ -18,8 +18,9 @@ Jumpstarter environment. Before installing, ensure you have:
 
 ## Kubernetes with Helm
 
-Install Jumpstarter on a standard Kubernetes cluster using Helm:
+Install Jumpstarter on a standard Kubernetes cluster or OpenShift using Helm:
 
+````{tab} Kubernetes
 ```{code-block} console
 :substitutions:
 $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
@@ -29,22 +30,23 @@ $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstar
         --set jumpstarter-controller.grpc.mode=ingress \
         --version={{controller_version}}
 ```
+````
 
-## OpenShift with Helm
-
-Install Jumpstarter on an OpenShift cluster using Helm:
-
+````{tab} OpenShift
 ```{code-block} console
 :substitutions:
 $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-          --create-namespace --namespace jumpstarter-lab \
-          --set global.baseDomain=jumpstarter.example.com \
-          --set global.metrics.enabled=true \
-          --set jumpstarter-controller.grpc.mode=route \
-          --version={{controller_version}}
+        --create-namespace --namespace jumpstarter-lab \
+        --set global.baseDomain=jumpstarter.example.com \
+        --set global.metrics.enabled=true \
+        --set jumpstarter-controller.grpc.mode=route \
+        --version={{controller_version}}
 ```
+````
 
-## OpenShift with ArgoCD
+## Install with OpenShift and ArgoCD
+
+You can also use ArgoCD to install Jumpstarter in your OpenShift cluster:
 
 First, create and label a namespace for Jumpstarter:
 
@@ -53,8 +55,7 @@ $ kubectl create namespace jumpstarter-lab
 $ kubectl label namespace jumpstarter-lab argocd.argoproj.io/managed-by=openshift-gitops
 ```
 
-For ArgoCD to manage Jumpstarter CRDs, create this ClusterRole and
-ClusterRoleBinding:
+For ArgoCD to manage Jumpstarter CRDs, create this `ClusterRole` and `ClusterRoleBinding`:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -127,67 +128,13 @@ spec:
     targetRevision: "{{controller_version}}"
 ```
 
-## Local cluster with Minikube
+## Local Cluster
 
-Minikube runs local Kubernetes clusters using VMs or container "nodes". It works
-across several platforms and supports different hypervisors, making it ideal for
-local development and testing.
+If you want to test our Jumpstarter locally, you can create a local cluster using tools such as [minikube](https://minikube.sigs.k8s.io/docs/start/) and [kind](https://kind.sigs.k8s.io/docs/user/quick-start/).
 
-Find more information on the [minikube
-website](https://minikube.sigs.k8s.io/docs/start/).
-
-### Create a minikube cluster
-
-Expand the default NodePort range to include the Jumpstarter ports:
-
-```console
-$ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
-```
-
-### Install Jumpstarter with the CLI
-
-The Jumpstarter CLI's `jmp admin install` command simplifies installation in
-your Kubernetes cluster.
-
-Use the minikube IP address when installing with the CLI:
-
-```console
-$ jmp admin install --ip $(minikube ip)
-```
-
-For complete documentation of the `jmp admin install` command and all available
-options, see the [MAN pages](../../reference/man-pages/jmp.md).
-
-### Install Jumpstarter with Helm
-
-For manual installation with Helm, use these commands:
-
-```{code-block} console
-:substitutions:
-$ export IP=$(minikube ip)
-$ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
-$ export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
-$ export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
-$ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-    --create-namespace --namespace jumpstarter-lab \
-    --set global.baseDomain=${BASEDOMAIN} \
-    --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
-    --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
-    --set global.metrics.enabled=false \
-    --set jumpstarter-controller.grpc.nodeport.enabled=true \
-    --set jumpstarter-controller.grpc.nodeport.port=8082 \
-    --set jumpstarter-controller.grpc.nodeport.routerPort=8083 \
-    --set jumpstarter-controller.grpc.mode=nodeport \
-    --version={{controller_version}}
-```
-
-## Local cluster with kind
-
-To try the Jumpstarter Controller on your local machine, run a local Kubernetes
-cluster for development purposes.
-
-kind is a tool for running local Kubernetes clusters using Podman or Docker
-container "nodes".
+````{tab} kind
+Kind is a tool for running local Kubernetes clusters using Podman or Docker
+containerized "nodes".
 
 ```{tip}
 Consider minikube for environments requiring [untrusted certificates](https://minikube.sigs.k8s.io/docs/handbook/untrusted_certs/).
@@ -201,7 +148,7 @@ website](https://kind.sigs.k8s.io/docs/user/quick-start/).
 First, create a kind cluster config that enables nodeports to host the Services.
 Save this as `kind_config.yaml`:
 
-```yaml
+```{code-block} yaml
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 kubeadmConfigPatches:
@@ -234,9 +181,27 @@ nodes:
 
 Next, create a kind cluster using the config you created:
 
-```console
+```{code-block} console
 $ kind create cluster --config kind_config.yaml
 ```
+````
+
+````{tab} minikube
+Minikube runs local Kubernetes clusters using VMs or container "nodes". It works
+across several platforms and supports different hypervisors, making it ideal for
+local development and testing.
+
+Find more information on the [minikube
+website](https://minikube.sigs.k8s.io/docs/start/).
+
+### Create a minikube cluster
+
+Expand the default NodePort range to include the Jumpstarter ports:
+
+```{code-block} console
+$ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
+```
+````
 
 ### Install Jumpstarter with the CLI
 
@@ -244,10 +209,37 @@ The Jumpstarter CLI provides the `jmp admin install` command to automatically
 run Helm with the correct arguments, simplifying installation in your Kubernetes
 cluster.
 
+```{warning}
+Sometimes the automatic IP address detection for will not work correctly, to check if Jumpstarter can determine your IP address, run `jmp admin ip`. If the IP address cannot be determined, use the `--ip` argument to manually set your IP address.
+```
+
 Install Jumpstarter with default options:
 
-```console
-$ jmp admin install
+````{tab} kind
+```{code-block} console
+$ jmp admin install --kind
+```
+````
+
+````{tab} minikube
+```{code-block} console
+$ jmp admin install --minikube
+```
+````
+
+Uninstall Jumpstarter with the CLI:
+
+```{code-block} console
+$ jmp admin uninstall
+```
+
+To check the status of the installation, run:
+
+```{code-block} console
+$ kubectl get pods -n jumpstarter-lab --watch
+NAME                                    READY   STATUS      RESTARTS   AGE
+jumpstarter-controller-cc74d879-6b22b   1/1     Running     0          48s
+jumpstarter-secrets-w42z4               0/1     Completed   0          48s
 ```
 
 For complete documentation of the `jmp admin install` command and all available
@@ -255,21 +247,59 @@ options, see the [MAN pages](../../reference/man-pages/jmp.md).
 
 ### Install Jumpstarter with Helm
 
-If you prefer manual installation with Helm, use the following commands:
+For manual installation with Helm, use these commands:
 
+````{tab} kind
 ```{code-block} console
 :substitutions:
-$ export IP="X.X.X.X"
+$ export IP="X.X.X.X" # Enter the IP address of your computer on the local network
 $ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
 $ export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
 $ export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 $ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-            --create-namespace --namespace jumpstarter-lab \
-            --set global.baseDomain=${BASEDOMAIN} \
-            --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
-            --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
-            --set global.metrics.enabled=false \
-            --set jumpstarter-controller.grpc.nodeport.enabled=true \
-            --set jumpstarter-controller.grpc.mode=nodeport \
-            --version={{controller_version}}
+    --create-namespace --namespace jumpstarter-lab \
+    --set global.baseDomain=${BASEDOMAIN} \
+    --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
+    --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
+    --set global.metrics.enabled=false \
+    --set jumpstarter-controller.grpc.nodeport.enabled=true \
+    --set jumpstarter-controller.grpc.mode=nodeport \
+    --version={{controller_version}}
+```
+````
+
+````{tab} minikube
+```{code-block} console
+:substitutions:
+$ export IP=$(minikube ip)
+$ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
+$ export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
+$ export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
+$ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
+    --create-namespace --namespace jumpstarter-lab \
+    --set global.baseDomain=${BASEDOMAIN} \
+    --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
+    --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
+    --set global.metrics.enabled=false \
+    --set jumpstarter-controller.grpc.nodeport.enabled=true \
+    --set jumpstarter-controller.grpc.nodeport.port=8082 \
+    --set jumpstarter-controller.grpc.nodeport.routerPort=8083 \
+    --set jumpstarter-controller.grpc.mode=nodeport \
+    --version={{controller_version}}
+```
+````
+
+To check the status of the installation, run:
+
+```{code-block} console
+$ kubectl get pods -n jumpstarter-lab --watch
+NAME                                    READY   STATUS      RESTARTS   AGE
+jumpstarter-controller-cc74d879-6b22b   1/1     Running     0          48s
+jumpstarter-secrets-w42z4               0/1     Completed   0          48s
+```
+
+To uninstall the Helm release, run:
+
+```{code-block} console
+helm uninstall jumpstarter --namespace jumpstarter-lab
 ```

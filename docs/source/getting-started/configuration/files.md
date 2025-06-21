@@ -10,7 +10,7 @@ different sources are prioritized.
 ## User Configuration
 
 **File**: `config.yaml`  
-**Location**: `~/.config/jumpstarter/config.yaml`  
+**Location**: `/home/<user>/.config/jumpstarter/config.yaml`  
 **Description**: Defines global user settings including current client
 selection.  
 
@@ -19,36 +19,38 @@ selection.
 apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
-  current-client: default
+  current-client: default # The currently selected client config to use (by local alias).
 ```
 
-**CLI Commands**: Modified through `jmp config` commands.
+**CLI Commands**: The current client selection can be changed using: `jmp config client use <alias>`
 
 ## Client Configuration
 
-**File**: Various files with `.yaml` extension  
-**Location**: `~/.config/jumpstarter/clients/*.yaml`  
+**File**: All valid client configuration files with a `.yaml` extension.  
+**Location**: `/home/<user>/.config/jumpstarter/clients/*.yaml`  
 **Description**: Stores client configurations including endpoints, access
-tokens, and driver settings.  
+tokens, and driver settings.
 
 **Format**:
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
-kind: Client
+kind: ClientConfig
 metadata:
-  name: myclient
-  namespace: jumpstarter-lab
+  name: myclient # The name of the client in the cluster.
+  namespace: jumpstarter-lab # The namespace of the client in the cluster.
 tls:
-  insecure: false
-  ca: ""
-endpoint: "jumpstarter.my-lab.com:1443"
-token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
+  insecure: false # Enable insecure TLS for testing and development
+  ca: "" # A CA certificate to use
+endpoint: "jumpstarter.my-lab.com:1443" # The Jumpstarter service endpoint
+token: "******************" # An authentication token
 drivers:
-  allow: ["jumpstarter_drivers_*", "vendorpackage.*"]
+  allow: ["jumpstarter_drivers_*", "vendorpackage.*"] # Driver packages the client can dynamically load
+  unsafe: false # Allow any driver package to load dynamically
 ```
 
 **Environment Variables**:
-- `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification
+
+- `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
 - `JMP_CLIENT_CONFIG` - Path to a client configuration file
 - `JMP_CLIENT` - Name of a registered client config
 - `JMP_NAMESPACE` - Namespace in the controller
@@ -59,16 +61,16 @@ drivers:
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
 
 **CLI Commands**:
-```console
-$ jmp config client create <name>  # Create new client config
-$ jmp config client use <name>     # Switch to a different client
-$ jmp config client list           # List available clients
-$ jmp config client delete <name>  # Remove a client config
+```{code-block}  console
+$ jmp config client create <alias>  # Create new empty client config
+$ jmp config client use <alias>     # Switch to a different client config
+$ jmp config client list            # List available client configs
+$ jmp config client delete <alias>  # Remove a client config locally
 ```
 
 ## Exporter Configuration
 
-**File**: Various files with `.yaml` extension  
+**File**: All valid exporter configuration files with a `.yaml` extension  
 **Location**: `/etc/jumpstarter/exporters/*.yaml`  
 **Description**: Defines exporter settings including connection details and
 driver configurations.  
@@ -76,19 +78,19 @@ driver configurations.
 **Format**:
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
-kind: Exporter
+kind: ExporterConfig
 metadata:
-  name: myexporter
-  namespace: jumpstarter-lab
+  name: myexporter # The name of the exporter in the cluster.
+  namespace: jumpstarter-lab # The namespace of the exporter in the cluster.
 tls:
-  insecure: false
-  ca: ""
-endpoint: "jumpstarter.my-lab.com:1443"
-token: "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz"
-export:
+  insecure: false # Enable insecure TLS for testing and development
+  ca: "" # A CA certificate to use
+endpoint: "jumpstarter.my-lab.com:1443" # The Jumpstarter service endpoint
+token: "******************" # An authentication token
+export: # Configure drivers to expose to the clients
   power:
-    type: "jumpstarter_driver_power.driver.PduPower"
-    config:
+    type: "jumpstarter_driver_power.driver.PduPower" # The driver Python class path and type
+    config: # Dynamic configuration dict passed to the driver class
       host: "192.168.1.111"
       port: 1234
       username: "admin"
@@ -108,51 +110,61 @@ export:
 - `JMP_NAME` - Exporter name
 
 **CLI Commands**:
-```console
-$ jmp config exporter create <name>   # Create new exporter config
-$ jmp config exporter list            # List available exporters
-$ jmp config exporter delete <name>   # Remove an exporter config
+```{code-block}  console
+$ jmp config exporter create <alias>  # Create new empty exporter config
+$ jmp config exporter list            # List available exporter configs
+$ jmp config exporter delete <alias>  # Remove a local exporter config
 ```
 
 ## Running Exporters
 
-Exporters can be run manually or as system services:
+### Running from the CLI
 
-```console
-# Run with specific exporter config
+Exporters can be run manually from the command line for testing:
+
+```{code-block} console
+# Run using the exporter config alias (the config file name)
+# The exporter process will exit when the lease is released
 $ jmp run --exporter my-exporter
 
-# Or specify a config path directly
+# Run using the path to a specific exporter config file
 $ jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
 ```
 
-For persistent operation, exporters can be installed as systemd services using
-podman-systemd. Create a systemd service file at
-`/etc/containers/systemd/my-exporter.container` with the following content:
+### Running as a Service
+
+For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the exporter process alive and restart it after a lease ends or something goes wrong.
+
+Containerized exporters can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
+
+Create a systemd service file at `/etc/containers/systemd/my-exporter.container` with the following content:
 
 ```{code-block} ini
 :substitutions:
 [Unit]
 Description=My exporter
+
 [Container]
 ContainerName=my-exporter
-Exec=/jumpstarter/bin/jmp run --exporter my-exporter
-Image=quay.io/jumpstarter-dev/jumpstarter:{{version}}
-Network=host
-PodmanArgs=--privileged
-Volume=/run/udev:/run/udev
-Volume=/dev:/dev
-Volume=/etc/jumpstarter:/etc/jumpstarter
+Exec=/jumpstarter/bin/jmp run --exporter my-exporter # Command to run inside the container
+Image=quay.io/jumpstarter-dev/jumpstarter:{{version}} # The container image to use
+Network=host # Use host networking
+PodmanArgs=--privileged # Enable privileged mode to allow hardware access
+Volume=/run/udev:/run/udev # Support devices within the container
+Volume=/dev:/dev # Support devices within the container
+Volume=/etc/jumpstarter:/etc/jumpstarter # Mount Jumpstarter configs directory
+
 [Service]
-Restart=always
+Restart=always # Always restart the container after exit
 StartLimitBurst=0
+
 [Install]
 WantedBy=multi-user.target default.target
 ```
 
 Then enable and start the service:
 
-```console
+```{code-block} console
 $ sudo systemctl daemon-reload
 $ sudo systemctl enable --now my-exporter
 ```

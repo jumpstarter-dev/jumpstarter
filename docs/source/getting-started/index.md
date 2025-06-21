@@ -7,7 +7,7 @@ environment. The guides cover:
   services
 - [Configuration](configuration/index.md): Configuring clients, exporters, and
   authentication
-- [Usage](usage/index.md): Running your first tests and integrating with your
+- [Guides](guides/index.md): Running your first tests and integrating with your
   development workflow
 
 These guides support both local-mode for individual development and
@@ -18,5 +18,5 @@ distributed-mode for team environments with shared hardware resources.
 :hidden:
 installation/index.md
 configuration/index.md
-usage/index.md
+guides/index.md
 ```
