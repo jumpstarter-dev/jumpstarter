@@ -23,6 +23,8 @@ Drivers that control the power state and basic operation of devices:
   Board](https://github.com/jumpstarter-dev/dutlink-board) hardware control
 * **[Energenie PDU](energenie.md)** (`jumpstarter-driver-energenie`) - Energenie PDUs
 * **[Tasmota](tasmota.md)** (`jumpstarter-driver-tasmota`) - Tasmota hardware control
+* **[HTTP Power](http-power.md)** (`jumpstarter-driver-http-power`) - HTTP-based power
+  control, useful for smart sockets, like the Shelly Smart Plug or similar
 
 ### Communication Drivers
 
@@ -84,6 +86,7 @@ dutlink.md
 energenie.md
 flashers.md
 http.md
+http-power.md
 network.md
 opendal.md
 power.md
