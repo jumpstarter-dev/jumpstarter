@@ -11,6 +11,7 @@ members = [
     "jumpstarter-cli-admin",
     "jumpstarter-cli-common",
     "jumpstarter-cli-driver",
+    "jumpstarter-driver-android",
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-corellium",
@@ -62,6 +63,24 @@ docs = [
     { name = "sphinx-substitution-extensions", specifier = ">=2024.10.17" },
     { name = "sphinxcontrib-mermaid", specifier = ">=0.9.2" },
     { name = "sphinxcontrib-programoutput", specifier = ">=0.18" },
+]
+
+[[package]]
+name = "adbutils"
+version = "2.8.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "deprecation" },
+    { name = "pillow" },
+    { name = "requests" },
+    { name = "retry2" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/24/c37bee0adc71f7b2b0b0795be4425a547598c5d28651f803e648dcf2b8ca/adbutils-2.8.11.tar.gz", hash = "sha256:d0f96e5d01e104fb42af6fa1263ff6ab9d2fc719538a11c18b4219a95c0bacc3", size = 187055, upload-time = "2025-05-28T10:03:53.173Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/0f/34132e695fd927498367298e2cd162da8fb5ac99164545e9dd67954d3cc9/adbutils-2.8.11-py3-none-macosx_10_9_intel.macosx_10_9_x86_64.macosx_10_10_intel.macosx_10_10_x86_64.whl", hash = "sha256:94310cd9246bad1fba44fc5c5834fc43a1c821e966fb22f529aaefe534d353df", size = 6705906, upload-time = "2025-05-28T10:03:46.697Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/e2/e8059c06f53cf8893d5f5b99f83b0d668ff9bdf04b91249a1d62dea184d2/adbutils-2.8.11-py3-none-manylinux1_x86_64.whl", hash = "sha256:752b2c12be979135cf280c15977dd46a8b388ad9c4a54fd3e9ca84e40b9c0a27", size = 3576855, upload-time = "2025-05-28T10:03:48.549Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/43/95ff5d4818a4ebb5eee36157dcb046f2251c7497d8dc2e019e4640209cf4/adbutils-2.8.11-py3-none-win32.whl", hash = "sha256:bf49a96da06fba5d6d3bcdeed62a188bf10c9f6dfc4c880cde4ed25a1b67e295", size = 3337476, upload-time = "2025-05-28T10:03:50.077Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/2f/09090fb2ccd8970666ebc42c505de0a03b787e43af4325f3450aa3c538bf/adbutils-2.8.11-py3-none-win_amd64.whl", hash = "sha256:3029635959695dd677504a9ef6627ee44eb8a6ebee6aad7f55ac3113919b3d01", size = 3337478, upload-time = "2025-05-28T10:03:51.75Z" },
 ]
 
 [[package]]
@@ -580,6 +599,18 @@ wheels = [
 ]
 
 [[package]]
+name = "deprecation"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/d3/8ae2869247df154b64c1884d7346d412fed0c49df84db635aab2d1c40e62/deprecation-2.1.0.tar.gz", hash = "sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff", size = 173788, upload-time = "2020-04-20T14:23:38.738Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/c3/253a89ee03fc9b9682f1541728eb66db7db22148cd94f89ab22528cd1e1b/deprecation-2.1.0-py2.py3-none-any.whl", hash = "sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a", size = 11178, upload-time = "2020-04-20T14:23:36.581Z" },
+]
+
+[[package]]
 name = "distlib"
 version = "0.3.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1052,6 +1083,7 @@ dependencies = [
     { name = "jumpstarter-cli-admin" },
     { name = "jumpstarter-cli-common" },
     { name = "jumpstarter-cli-driver" },
+    { name = "jumpstarter-driver-android" },
     { name = "jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-corellium" },
@@ -1085,6 +1117,7 @@ requires-dist = [
     { name = "jumpstarter-cli-admin", editable = "packages/jumpstarter-cli-admin" },
     { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
     { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
+    { name = "jumpstarter-driver-android", editable = "packages/jumpstarter-driver-android" },
     { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-corellium", editable = "packages/jumpstarter-driver-corellium" },
@@ -1247,6 +1280,40 @@ dev = [
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-android"
+source = { editable = "packages/jumpstarter-driver-android" }
+dependencies = [
+    { name = "adbutils" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-power" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "trio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adbutils", specifier = ">=2.8.7" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]
@@ -3248,6 +3315,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/42/f2/05f29bc3913aea15eb670be136045bf5c5bbf4b99ecb839da9b422bb2c85/requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9", size = 55650, upload-time = "2024-03-22T20:32:29.939Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/5d/63d4ae3b9daea098d5d6f5da83984853c1bbacd5dc826764b249fe119d24/requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36", size = 24179, upload-time = "2024-03-22T20:32:28.055Z" },
+]
+
+[[package]]
+name = "retry2"
+version = "0.9.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "decorator" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/49/1cae6d9b932378cc75f902fa70648945b7ea7190cb0d09ff83b47de3e60a/retry2-0.9.5-py2.py3-none-any.whl", hash = "sha256:f7fee13b1e15d0611c462910a6aa72a8919823988dd0412152bc3719c89a4e55", size = 6013, upload-time = "2023-01-11T21:49:08.397Z" },
 ]
 
 [[package]]
