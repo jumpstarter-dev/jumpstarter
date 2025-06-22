@@ -112,7 +112,7 @@ $ jmp admin uninstall --minikube --delete-cluster
 ````
 
 For complete documentation of the `jmp admin install` command and all available
-options, see the [MAN pages](../../reference/man-pages/jmp.md).
+options, see the [MAN pages](../../../reference/man-pages/jmp.md).
 
 ## Manual Local Cluster Install
 
