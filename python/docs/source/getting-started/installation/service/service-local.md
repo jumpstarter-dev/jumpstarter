@@ -53,7 +53,6 @@ Additional options for cluster creation:
 - `--force-recreate-cluster`: Force recreate the cluster if it already exists (destroys all data)
 - `--kind-extra-args`: Pass additional arguments to kind cluster creation
 - `--minikube-extra-args`: Pass additional arguments to minikube cluster creation
-- `--kind-extra-args`: Pass additional arguments to kind cluster creation
 
 To set a custom cluster name:
 
