@@ -215,7 +215,7 @@ async def _install_jumpstarter_helm_chart(
     click.echo(f'Installed Helm release "{name}" in namespace "{namespace}"')
 
 
-async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_name: str = None) -> str:
+async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_name: str) -> str:
     if cluster_type == "minikube":
         if not minikube_installed(minikube):
             raise click.ClickException("minikube is not installed (or not in your PATH)")
