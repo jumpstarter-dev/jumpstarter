@@ -250,9 +250,11 @@ class TestIPDetection:
     """Test IP address detection functions."""
 
     @pytest.mark.asyncio
+    @patch("jumpstarter_cli_admin.install.minikube_installed")
     @patch("jumpstarter_cli_admin.install.get_minikube_ip")
     @patch("jumpstarter_cli_admin.install.get_ip_address")
-    async def test_get_ip_generic_minikube(self, mock_get_ip_address, mock_get_minikube_ip):
+    async def test_get_ip_generic_minikube(self, mock_get_ip_address, mock_get_minikube_ip, mock_minikube_installed):
+        mock_minikube_installed.return_value = True
         mock_get_minikube_ip.return_value = "192.168.49.2"
 
         result = await get_ip_generic("minikube", "minikube", "test-cluster")
