@@ -130,7 +130,11 @@ spec:
 
 ## Local Cluster
 
-If you want to test our Jumpstarter locally, you can create a local cluster using tools such as [minikube](https://minikube.sigs.k8s.io/docs/start/) and [kind](https://kind.sigs.k8s.io/docs/user/quick-start/).
+If you want to test Jumpstarter locally, you can create a local cluster using tools such as [minikube](https://minikube.sigs.k8s.io/docs/start/) and [kind](https://kind.sigs.k8s.io/docs/user/quick-start/).
+
+```{tip}
+The quickest way to get started is using the [Jumpstarter admin CLI](#install-jumpstarter-with-the-cli) with the `--create-cluster` flag, which automatically creates and configures your local cluster. For manual cluster setup, continue reading below.
+```
 
 ````{tab} kind
 Kind is a tool for running local Kubernetes clusters using Podman or Docker
@@ -213,7 +217,38 @@ cluster.
 Sometimes the automatic IP address detection for will not work correctly, to check if Jumpstarter can determine your IP address, run `jmp admin ip`. If the IP address cannot be determined, use the `--ip` argument to manually set your IP address.
 ```
 
-Install Jumpstarter with default options:
+#### Create cluster and install Jumpstarter in one command
+
+The admin CLI can automatically create a local cluster and install Jumpstarter with a single command:
+
+````{tab} kind
+```{code-block} console
+$ jmp admin install --kind --create-cluster
+```
+````
+
+````{tab} minikube
+```{code-block} console
+$ jmp admin install --minikube --create-cluster
+```
+````
+
+Additional options for cluster creation:
+
+- `--cluster-name`: Specify a custom cluster name (default: `jumpstarter-lab`)
+- `--force-recreate-cluster`: Force recreate the cluster if it already exists (destroys all data)
+- `--kind-extra-args`: Pass additional arguments to kind cluster creation
+- `--minikube-extra-args`: Pass additional arguments to minikube cluster creation
+
+Example with custom cluster name:
+
+```{code-block} console
+$ jmp admin install --kind --create-cluster --cluster-name my-jumpstarter-cluster
+```
+
+#### Install Jumpstarter on existing cluster
+
+If you already have a cluster running, install Jumpstarter with default options:
 
 ````{tab} kind
 ```{code-block} console
@@ -227,11 +262,27 @@ $ jmp admin install --minikube
 ```
 ````
 
+#### Uninstall Jumpstarter
+
 Uninstall Jumpstarter with the CLI:
 
 ```{code-block} console
 $ jmp admin uninstall
 ```
+
+To also delete the local cluster when uninstalling, use the `--delete-cluster` flag:
+
+````{tab} kind
+```{code-block} console
+$ jmp admin uninstall --delete-cluster --kind
+```
+````
+
+````{tab} minikube
+```{code-block} console
+$ jmp admin uninstall --delete-cluster --minikube
+```
+````
 
 To check the status of the installation, run:
 
@@ -301,5 +352,5 @@ jumpstarter-secrets-w42z4               0/1     Completed   0          48s
 To uninstall the Helm release, run:
 
 ```{code-block} console
-helm uninstall jumpstarter --namespace jumpstarter-lab
+$ helm uninstall jumpstarter --namespace jumpstarter-lab
 ```

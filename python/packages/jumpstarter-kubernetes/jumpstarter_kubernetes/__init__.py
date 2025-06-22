@@ -1,4 +1,12 @@
 from .clients import ClientsV1Alpha1Api, V1Alpha1Client, V1Alpha1ClientList, V1Alpha1ClientStatus
+from .cluster import (
+    create_kind_cluster,
+    create_minikube_cluster,
+    delete_kind_cluster,
+    delete_minikube_cluster,
+    kind_installed,
+    minikube_installed,
+)
 from .exporters import (
     ExportersV1Alpha1Api,
     V1Alpha1Exporter,
@@ -6,7 +14,11 @@ from .exporters import (
     V1Alpha1ExporterList,
     V1Alpha1ExporterStatus,
 )
-from .install import helm_installed, install_helm_chart, uninstall_helm_chart
+from .install import (
+    helm_installed,
+    install_helm_chart,
+    uninstall_helm_chart,
+)
 from .leases import (
     LeasesV1Alpha1Api,
     V1Alpha1Lease,
@@ -37,4 +49,10 @@ __all__ = [
     "helm_installed",
     "install_helm_chart",
     "uninstall_helm_chart",
+    "minikube_installed",
+    "kind_installed",
+    "create_minikube_cluster",
+    "create_kind_cluster",
+    "delete_minikube_cluster",
+    "delete_kind_cluster",
 ]
