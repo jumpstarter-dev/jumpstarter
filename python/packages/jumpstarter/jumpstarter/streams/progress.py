@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from io import StringIO
@@ -47,11 +48,12 @@ class ProgressStream(ObjectStream[bytes]):
             TimeElapsedColumn(),
             TextColumn("Remaining:"),
             TimeRemainingColumn(),
-            disable=self.logging,
+            disable=self.logging or os.environ.get("TERM") == "dumb",
         )
 
     def __del__(self):
-        self.__prog.stop()
+        if self.__prog.live.is_started:
+            self.__prog.stop()
 
     async def receive(self):
         if self.__recv is None:

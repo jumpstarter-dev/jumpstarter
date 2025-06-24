@@ -8,7 +8,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from anyio.streams.file import FileReadStream, FileWriteStream
-from opendal import AsyncFile, AsyncOperator, Metadata
+from opendal import AsyncFile, AsyncOperator
+from opendal import Metadata as OpendalMetadata
 from pydantic import validate_call
 
 from .adapter import AsyncFileStream
@@ -23,7 +24,7 @@ class Opendal(Driver):
 
     _operator: AsyncOperator = field(init=False)
     _fds: dict[UUID, AsyncFile] = field(init=False, default_factory=dict)
-    _metadata: dict[UUID, Metadata] = field(init=False, default_factory=dict)
+    _metadata: dict[UUID, OpendalMetadata] = field(init=False, default_factory=dict)
 
     @classmethod
     def client(cls) -> str:
@@ -38,7 +39,10 @@ class Opendal(Driver):
     @export
     @validate_call(validate_return=True)
     async def open(self, /, path: str, mode: Mode) -> UUID:
-        metadata = await self._operator.stat(path)
+        try:
+            metadata = await self._operator.stat(path)
+        except Exception:
+            metadata = None
         file = await self._operator.open(path, mode)
         uuid = uuid4()
 

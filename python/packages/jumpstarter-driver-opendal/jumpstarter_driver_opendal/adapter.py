@@ -74,7 +74,10 @@ async def OpendalAdapter(
         ).model_dump(mode="json")
     # otherwise stream the file content from the client to the exporter
     else:
-        metadata = await operator.to_async_operator().stat(path)
+        try:
+            metadata = await operator.to_async_operator().stat(path)
+        except Exception:
+            metadata = None
         file = await operator.to_async_operator().open(path, mode)
         async with client.resource_async(
             AsyncFileStream(file=file, metadata=metadata),
