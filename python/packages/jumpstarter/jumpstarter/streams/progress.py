@@ -3,19 +3,25 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from io import StringIO
 
+from anyio import TypedAttributeSet, typed_attribute
 from anyio.abc import ObjectStream
 from rich.console import Console
 from rich.progress import (
     BarColumn,
-    FileSizeColumn,
+    DownloadColumn,
     Progress,
     TaskID,
     TextColumn,
     TimeElapsedColumn,
+    TimeRemainingColumn,
     TransferSpeedColumn,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ProgressAttribute(TypedAttributeSet):
+    total: float = typed_attribute()
 
 
 @dataclass(kw_only=True)
@@ -36,8 +42,11 @@ class ProgressStream(ObjectStream[bytes]):
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TransferSpeedColumn(),
-            FileSizeColumn(),
+            DownloadColumn(),
+            TextColumn("Elapsed:"),
             TimeElapsedColumn(),
+            TextColumn("Remaining:"),
+            TimeRemainingColumn(),
             disable=self.logging,
         )
 
@@ -47,7 +56,10 @@ class ProgressStream(ObjectStream[bytes]):
     async def receive(self):
         if self.__recv is None:
             self.__prog.start()
-            self.__recv = self.__prog.add_task("transfer", total=None)
+            self.__recv = self.__prog.add_task(
+                "transfer",
+                total=self.stream.extra(ProgressAttribute.total, None),
+            )
 
         item = await self.stream.receive()
 
@@ -63,7 +75,10 @@ class ProgressStream(ObjectStream[bytes]):
     async def send(self, item):
         if self.__send is None:
             self.__prog.start()
-            self.__send = self.__prog.add_task("transfer", total=None)
+            self.__send = self.__prog.add_task(
+                "transfer",
+                total=self.stream.extra(ProgressAttribute.total, None),
+            )
 
         self.__prog.advance(self.__recv, len(item))
         if self.logging and (datetime.now() - self.__last > timedelta(seconds=2)):
