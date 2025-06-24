@@ -12,6 +12,8 @@ import sys
 
 from jumpstarter_cli_admin.controller import get_latest_compatible_controller_version
 
+os.environ["TERM"] = "dumb"
+
 sys.path.insert(0, os.path.abspath("../.."))
 
 project = "jumpstarter"

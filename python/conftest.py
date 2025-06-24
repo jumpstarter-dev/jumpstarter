@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 import pytest
 
-os.environ["TQDM_DISABLE"] = "1"
+os.environ["TERM"] = "dumb"
 
 try:
     from jumpstarter.common.utils import serve

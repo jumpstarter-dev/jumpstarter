@@ -1,16 +1,17 @@
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Any, Callable, Literal, Mapping
 
 from anyio import BrokenResourceError, EndOfStream
 from anyio.abc import ObjectStream
-from opendal import AsyncFile, Operator
+from opendal import AsyncFile, Metadata, Operator
 from opendal.exceptions import Error
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.adapters import blocking
 from jumpstarter.common.resources import PresignedRequestResource
 from jumpstarter.streams.encoding import Compression
+from jumpstarter.streams.progress import ProgressAttribute
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -20,6 +21,7 @@ class AsyncFileStream(ObjectStream[bytes]):
     """
 
     file: AsyncFile
+    metadata: Metadata | None = field(default=None)
 
     async def send(self, item: bytes):
         try:
@@ -45,6 +47,13 @@ class AsyncFileStream(ObjectStream[bytes]):
         with suppress(Error):
             await self.file.close()
 
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        if self.metadata is not None and self.metadata.content_length != 0:
+            return {ProgressAttribute.total: lambda: float(self.metadata.content_length)}
+        else:
+            return {}
+
 
 @blocking
 @asynccontextmanager
@@ -65,6 +74,13 @@ async def OpendalAdapter(
         ).model_dump(mode="json")
     # otherwise stream the file content from the client to the exporter
     else:
+        try:
+            metadata = await operator.to_async_operator().stat(path)
+        except Exception:
+            metadata = None
         file = await operator.to_async_operator().open(path, mode)
-        async with client.resource_async(AsyncFileStream(file=file), content_encoding=compression) as res:
+        async with client.resource_async(
+            AsyncFileStream(file=file, metadata=metadata),
+            content_encoding=compression,
+        ) as res:
             yield res
