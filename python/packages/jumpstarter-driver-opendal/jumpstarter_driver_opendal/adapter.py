@@ -10,6 +10,7 @@ from opendal.exceptions import Error
 from jumpstarter.client import DriverClient
 from jumpstarter.client.adapters import blocking
 from jumpstarter.common.resources import PresignedRequestResource
+from jumpstarter.streams.encoding import Compression
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -53,9 +54,10 @@ async def OpendalAdapter(
     operator: Operator,  # opendal.Operator for the storage backend
     path: str,  # file path in storage backend relative to the storage root
     mode: Literal["rb", "wb"] = "rb",  # binary read or binary write mode
+    compression: Compression | None = None,  # compression algorithm
 ):
     # if the access mode is binary read, and the storage backend supports presigned read requests
-    if mode == "rb" and operator.capability().presign_read:
+    if mode == "rb" and operator.capability().presign_read and compression is None:
         # create presigned url for the specified file with a 60 second expiration
         presigned = await operator.to_async_operator().presign_read(path, expire_second=60)
         yield PresignedRequestResource(
@@ -64,5 +66,5 @@ async def OpendalAdapter(
     # otherwise stream the file content from the client to the exporter
     else:
         file = await operator.to_async_operator().open(path, mode)
-        async with client.resource_async(AsyncFileStream(file=file)) as res:
+        async with client.resource_async(AsyncFileStream(file=file), content_encoding=compression) as res:
             yield res

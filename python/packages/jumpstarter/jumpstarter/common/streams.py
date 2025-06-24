@@ -14,6 +14,7 @@ from jumpstarter.streams.router import RouterStream
 class ResourceStreamRequest(BaseModel):
     kind: Literal["resource"] = "resource"
     uuid: UUID
+    x_jmp_content_encoding: str | None = None
 
 
 class DriverStreamRequest(BaseModel):

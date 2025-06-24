@@ -5,6 +5,7 @@ Base classes for drivers and driver clients
 from __future__ import annotations
 
 import logging
+import os
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import field
@@ -33,10 +34,22 @@ from jumpstarter.common.streams import (
     DriverStreamRequest,
     ResourceStreamRequest,
 )
+from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
 from jumpstarter.streams.common import create_memory_stream
+from jumpstarter.streams.encoding import Compression, compress_stream
 from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
+
+SUPPORTED_CONTENT_ENCODINGS = (
+    {}
+    if os.environ.get(JMP_DISABLE_COMPRESSION) == "1"
+    else {
+        Compression.GZIP,
+        Compression.XZ,
+        Compression.BZ2,
+    }
+)
 
 
 @dataclass(kw_only=True)
@@ -166,7 +179,12 @@ class Driver(
                 async with MetadataStream(
                     stream=remote,
                     metadata=ResourceMetadata.model_construct(
-                        resource=ClientStreamResource(uuid=resource_uuid)
+                        resource=ClientStreamResource(
+                            uuid=resource_uuid, x_jmp_content_encoding=request.x_jmp_content_encoding
+                        ),
+                        x_jmp_accept_encoding=request.x_jmp_content_encoding
+                        if request.x_jmp_content_encoding in SUPPORTED_CONTENT_ENCODINGS
+                        else None,
                     ).model_dump(mode="json", round_trip=True),
                 ) as stream:
                     yield stream
@@ -207,10 +225,10 @@ class Driver(
     async def resource(self, handle: str, timeout: int = 300):
         handle = TypeAdapter(Resource).validate_python(handle)
         match handle:
-            case ClientStreamResource(uuid=uuid):
+            case ClientStreamResource(uuid=uuid, x_jmp_content_encoding=content_encoding):
                 async with self.resources[uuid] as stream:
                     try:
-                        yield stream
+                        yield compress_stream(stream, content_encoding)
                     finally:
                         del self.resources[uuid]
             case PresignedRequestResource(headers=headers, url=url, method=method):
