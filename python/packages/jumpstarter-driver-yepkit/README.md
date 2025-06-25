@@ -42,7 +42,8 @@ The yepkit ykush driver provides a `PowerClient` with the following API:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_power.client.PowerClient()
-    :members: on, off
+    :members: on, off, cycle
+    :no-index:
 ```
 
 ### Examples
