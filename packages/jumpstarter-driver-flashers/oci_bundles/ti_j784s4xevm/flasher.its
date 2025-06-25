@@ -1,0 +1,77 @@
+/dts-v1/;
+
+/ {
+	description = "TI flasher FIT Image";
+	#address-cells = <1>;
+
+	images {
+		kernel {
+			description = "Kernel";
+			data = /incbin/("/buildroot/output/images/Image");
+			type = "kernel";
+			arch = "arm64";
+			os = "linux";
+			compression = "none";
+			load = <0x80000000>;
+			entry = <0x80000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		initrd {
+			description = "Initrd";
+			data = /incbin/("/buildroot/output/images/rootfs.cpio.lzo");
+			type = "ramdisk";
+			arch = "arm64";
+			os = "linux";
+			compression = "none";
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-j784s4 {
+			description = "DTB J784S4EVM";
+			data = /incbin/("/buildroot/output/images/k3-j784s4-evm.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x88000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-am69 {
+			description = "DTB SK-AM69";
+			data = /incbin/("/buildroot/output/images/k3-am69-sk.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x88000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+	};
+
+	configurations {
+		default = "j784s4";
+		j784s4 {
+			description = "Boot J784S4";
+			kernel = "kernel";
+			fdt = "fdt-j784s4";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+		am69 {
+			description = "Boot AM69";
+			kernel = "kernel";
+			fdt = "fdt-am69";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+	};
+};
