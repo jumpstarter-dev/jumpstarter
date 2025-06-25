@@ -101,6 +101,14 @@ def launch_shell(
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
         return process.wait()
 
+    elif shell_name == "zsh":
+        env = common_env | {
+            "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
+        }
+        cmd = [shell, "--no-rcs"]
+        process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+        return process.wait()
+
     else:
         process = Popen([shell], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
         return process.wait()
