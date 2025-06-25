@@ -1,6 +1,6 @@
 #!/bin/bash
 
-KVER="5.14.0-587.536.el9iv.aarch64"
+KVER="5.14.0-594.543.el9iv.aarch64"
 KMOD=(
 	# R-Car S4 storage
 	fixed
