@@ -517,9 +517,9 @@ class FlasherClientInterface(metaclass=ABCMeta):
         self,
         path: PathBuf | dict[str, PathBuf],
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | dict[str, Operator] | None = None,
-        compression: Compression | dict[str, Compression] | None = None,
+        compression: Compression | None = None,
     ):
         """Flash image to DUT"""
         ...
@@ -529,7 +529,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
@@ -545,37 +545,36 @@ class FlasherClientInterface(metaclass=ABCMeta):
         @base.command()
         @click.argument("file", nargs=-1, required=False)
         @click.option(
-            "--partition",
-            "-p",
-            "partition_specs",
+            "--target",
+            "-t",
+            "target_specs",
             multiple=True,
             help="name:file",
         )
-        @click.option("--single-partition", type=str, help="Partition name when flashing a single file")
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
-        def flash(file, partition_specs, single_partition, compression):
-            if partition_specs:
+        def flash(file, target_specs, compression):
+            if target_specs:
                 mapping: dict[str, str] = {}
-                for spec in partition_specs:
+                for spec in target_specs:
                     if ":" not in spec:
-                        raise click.ClickException(f"Invalid partition spec '{spec}', expected name:file")
+                        raise click.ClickException(f"Invalid target spec '{spec}', expected name:file")
                     name, img = spec.split(":", 1)
                     mapping[name] = img
                 self.flash(cast(dict[str, PathBuf], mapping), compression=compression)
                 return
 
             if not file:
-                raise click.ClickException("FILE argument is required unless --partition/-p is used")
+                raise click.ClickException("FILE argument is required unless --target/-t is used")
 
-            self.flash(file[0], partition=single_partition, compression=compression)
+            self.flash(file[0], target=None, compression=compression)
 
         @base.command()
         @click.argument("file")
-        @click.option("--partition", type=str)
+        @click.option("--target", type=str)
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
-        def dump(file, partition, compression):
+        def dump(file, target, compression):
             """Dump image from DUT to file"""
-            self.dump(file, partition=partition, compression=compression)
+            self.dump(file, target=target, compression=compression)
 
         return base
 
@@ -611,7 +610,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         self,
         image: PathBuf,
         *,
-        partition: str | None,
+        target: str | None,
         operator: Operator | None,
         compression: Compression | None,
     ):
@@ -620,46 +619,42 @@ class FlasherClient(FlasherClientInterface, DriverClient):
             image, operator, _ = operator_for_path(image)
 
         with OpendalAdapter(client=self, operator=operator, path=image, mode="rb", compression=compression) as handle:
-            return self.call("flash", handle, partition)
+            return self.call("flash", handle, target)
 
     def flash(
         self,
         path: PathBuf | dict[str, PathBuf],
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | dict[str, Operator] | None = None,
-        compression: Compression | dict[str, Compression] | None = None,
+        compression: Compression | None = None,
     ):
         if isinstance(path, dict):
-            if partition is not None:
-                raise ArgumentError("'partition' parameter is not valid when flashing multiple images")
+            if target is not None:
+                raise ArgumentError("'target' parameter is not valid when flashing multiple images")
 
             results: dict[str, object] = {}
 
             oper_map = operator if isinstance(operator, dict) else {}
-            comp_map = compression if isinstance(compression, dict) else {}
 
             for part, img in path.items():
                 op_val = oper_map.get(part) if isinstance(operator, dict) else operator
-                comp_val = comp_map.get(part) if isinstance(compression, dict) else compression
                 results[part] = self._flash_single(
-                    img, partition=part, operator=cast(Operator | None, op_val), compression=comp_val
+                    img, target=part, operator=cast(Operator | None, op_val), compression=compression
                 )
 
             return results
 
         if isinstance(operator, dict):
             raise ArgumentError("operator mapping provided for single image flash")
-        if isinstance(compression, dict):
-            raise ArgumentError("compression mapping provided for single image flash")
 
-        return self._flash_single(path, partition=partition, operator=operator, compression=compression)
+        return self._flash_single(path, target=target, operator=operator, compression=compression)
 
     def dump(
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
@@ -740,13 +735,13 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
         """Flash image to DUT"""
-        if partition is not None:
-            raise ArgumentError(f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+        if target is not None:
+            raise ArgumentError(f"target is not supported for StorageMuxFlasherClient, {target} provided")
 
         self.host()
 
