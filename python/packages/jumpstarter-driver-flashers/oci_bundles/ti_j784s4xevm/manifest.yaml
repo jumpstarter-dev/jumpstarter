@@ -31,4 +31,5 @@ spec:
     default: k3-j784s4-evm
     address: "0x84000000"
     variants:
-      k3-j784s4-evm: data/dtbs/k3-j784s4-evm.dtb
+      k3-j784s4-evm:
+        file: data/dtbs/k3-j784s4-evm.dtb

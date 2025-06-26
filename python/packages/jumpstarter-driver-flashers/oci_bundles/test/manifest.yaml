@@ -31,6 +31,9 @@ spec:
     default: test-dtb
     address: "0x84000000"
     variants:
-      test-dtb: data/dtbs/test-dtb.dtb
-      alternate: data/dtbs/alternate.dtb
-
+      test-dtb:
+        file: data/dtbs/test-dtb.dtb
+      alternate:
+        file: data/dtbs/alternate.dtb
+      othercmd:
+        bootcmd: "bootm"

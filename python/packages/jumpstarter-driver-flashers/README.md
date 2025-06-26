@@ -68,7 +68,8 @@ HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 | cache_dir      | The directory to cache the images          | str  | no       | /var/lib/jumpstarter/flasher |
 | tftp_dir       | The directory to serve the images via TFTP | str  | no       | /var/lib/tftpboot            |
 | http_dir       | The directory to serve the images via HTTP | str  | no       | /var/www/html                |
-
+| variant        | The variant of the DUT DTB to flash to     | str  | no       | (the default defined in the manifest) |
+| manifest       | The manifest to use from the bundle. Every bundle can have multiple manifests, this is the name of the manifest to use  | str  | no       | manifest.yaml |
 
 ## BaseFlasher API
 
