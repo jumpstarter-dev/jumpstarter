@@ -6,6 +6,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -514,11 +515,11 @@ class FlasherClientInterface(metaclass=ABCMeta):
     @abstractmethod
     def flash(
         self,
-        path: PathBuf,
+        path: PathBuf | dict[str, PathBuf],
         *,
         partition: str | None = None,
-        operator: Operator | None = None,
-        compression: Compression | None = None,
+        operator: Operator | dict[str, Operator] | None = None,
+        compression: Compression | dict[str, Compression] | None = None,
     ):
         """Flash image to DUT"""
         ...
@@ -542,12 +543,31 @@ class FlasherClientInterface(metaclass=ABCMeta):
             pass
 
         @base.command()
-        @click.argument("file")
-        @click.option("--partition", type=str)
+        @click.argument("file", nargs=-1, required=False)
+        @click.option(
+            "--partition",
+            "-p",
+            "partition_specs",
+            multiple=True,
+            help="name:file",
+        )
+        @click.option("--single-partition", type=str, help="Partition name when flashing a single file")
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
-        def flash(file, partition, compression):
-            """Flash image to DUT from file"""
-            self.flash(file, partition=partition, compression=compression)
+        def flash(file, partition_specs, single_partition, compression):
+            if partition_specs:
+                mapping: dict[str, str] = {}
+                for spec in partition_specs:
+                    if ":" not in spec:
+                        raise click.ClickException(f"Invalid partition spec '{spec}', expected name:file")
+                    name, img = spec.split(":", 1)
+                    mapping[name] = img
+                self.flash(cast(dict[str, PathBuf], mapping), compression=compression)
+                return
+
+            if not file:
+                raise click.ClickException("FILE argument is required unless --partition/-p is used")
+
+            self.flash(file[0], partition=single_partition, compression=compression)
 
         @base.command()
         @click.argument("file")
@@ -561,20 +581,79 @@ class FlasherClientInterface(metaclass=ABCMeta):
 
 
 class FlasherClient(FlasherClientInterface, DriverClient):
-    def flash(
+    def _should_upload_file(self, storage, filename: str, src_path: PathBuf, src_operator: Operator) -> bool:
+        """Check if file should be uploaded by comparing existence and hash."""
+        if not storage.exists(filename):
+            return True
+
+        try:
+            import hashlib
+
+            m = hashlib.sha256()
+            with src_operator.open(src_path, "rb") as f:
+                while True:
+                    data = f.read(size=65536)
+                    if len(data) == 0:
+                        break
+                    m.update(data)
+            src_hash = m.hexdigest()
+
+            storage_hash = storage.hash(filename)
+
+            if storage_hash == src_hash:
+                return False
+            else:
+                return True
+        except Exception:
+            return True
+
+    def _flash_single(
         self,
-        path: PathBuf,
+        image: PathBuf,
         *,
-        partition: str | None = None,
-        operator: Operator | None = None,
-        compression: Compression | None = None,
+        partition: str | None,
+        operator: Operator | None,
+        compression: Compression | None,
     ):
         """Flash image to DUT"""
         if operator is None:
-            path, operator, _ = operator_for_path(path)
+            image, operator, _ = operator_for_path(image)
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb", compression=compression) as handle:
+        with OpendalAdapter(client=self, operator=operator, path=image, mode="rb", compression=compression) as handle:
             return self.call("flash", handle, partition)
+
+    def flash(
+        self,
+        path: PathBuf | dict[str, PathBuf],
+        *,
+        partition: str | None = None,
+        operator: Operator | dict[str, Operator] | None = None,
+        compression: Compression | dict[str, Compression] | None = None,
+    ):
+        if isinstance(path, dict):
+            if partition is not None:
+                raise ArgumentError("'partition' parameter is not valid when flashing multiple images")
+
+            results: dict[str, object] = {}
+
+            oper_map = operator if isinstance(operator, dict) else {}
+            comp_map = compression if isinstance(compression, dict) else {}
+
+            for part, img in path.items():
+                op_val = oper_map.get(part) if isinstance(operator, dict) else operator
+                comp_val = comp_map.get(part) if isinstance(compression, dict) else compression
+                results[part] = self._flash_single(
+                    img, partition=part, operator=cast(Operator | None, op_val), compression=comp_val
+                )
+
+            return results
+
+        if isinstance(operator, dict):
+            raise ArgumentError("operator mapping provided for single image flash")
+        if isinstance(compression, dict):
+            raise ArgumentError("compression mapping provided for single image flash")
+
+        return self._flash_single(path, partition=partition, operator=operator, compression=compression)
 
     def dump(
         self,
@@ -648,7 +727,7 @@ class StorageMuxClient(DriverClient):
             """Disconnect storage"""
             self.off()
 
-        @base.command()
+        @base.command
         @click.argument("file")
         def write_local_file(file):
             self.write_local_file(file)
