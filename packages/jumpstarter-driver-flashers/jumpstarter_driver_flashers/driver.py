@@ -17,6 +17,8 @@ class BaseFlasher(Driver):
     """driver for Jumpstarter"""
 
     flasher_bundle: str = field(default="quay.io/jumpstarter-dev/jumpstarter-flasher-test:latest")
+    variant: None | str = field(default=None)
+    manifest: str = field(default="manifest.yaml")
     cache_dir: str = field(default="/var/lib/jumpstarter/flasher")
     tftp_dir: str = field(default="/var/lib/tftpboot")
     http_dir: str = field(default="/var/www/html")
@@ -56,7 +58,6 @@ class BaseFlasher(Driver):
 
         # bundles that have already been downloaded in the current session
         self._downloaded = {}
-        self._use_dtb = None  # use default dtb unless set by client
 
     @classmethod
     def client(cls) -> str:
@@ -84,7 +85,7 @@ class BaseFlasher(Driver):
             self.logger.info(f"Setting up initram in tftp: {initram_path}")
             await self.tftp.storage.copy_exporter_file(initram_path, initram_path.name)
 
-        dtb_path = await self._get_file_path(manifest.get_dtb_file(self._use_dtb)) if manifest.spec.dtb else None
+        dtb_path = await self._get_file_path(manifest.get_dtb_file(self.variant)) if manifest.spec.dtb else None
         if dtb_path:
             self.logger.info(f"Setting up dtb in tftp: {dtb_path}")
             await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
@@ -98,12 +99,16 @@ class BaseFlasher(Driver):
     async def use_dtb_variant(self, variant):
         """Provide a different dtb reference from the flasher bundle"""
         manifest = await self.get_flasher_manifest()
-        if manifest.get_dtb_file(variant) is None:
+        # Check if the variant exists in the manifest
+        if not manifest.spec.dtb or variant not in manifest.spec.dtb.variants:
+            variant_list = []
+            if manifest.spec.dtb:
+                variant_list = list(manifest.spec.dtb.variants.keys())
             raise ValueError(
                 f"DTB variant {variant} not found in the flasher bundle, "
-                f"available variants are: {list(manifest.spec.dtb.variants.keys())}"
+                f"available variants are: {variant_list}."
             )
-        self._use_dtb = variant
+        self.variant = variant
 
     def set_kernel(self, handle):
         """Provide a different kernel from client"""
@@ -152,11 +157,11 @@ class BaseFlasher(Driver):
     @export
     async def get_flasher_manifest_yaml(self) -> str:
         """Return the manifest yaml as a string for client side consumption"""
-        with open(await self._get_file_path("manifest.yaml")) as f:
+        with open(await self._get_file_path(self.manifest)) as f:
             return f.read()
 
     async def get_flasher_manifest(self) -> FlasherBundleManifestV1Alpha1:
-        filename = await self._get_file_path("manifest.yaml")
+        filename = await self._get_file_path(self.manifest)
         return FlasherBundleManifestV1Alpha1.from_file(filename)
 
     @export
@@ -177,7 +182,11 @@ class BaseFlasher(Driver):
     async def get_dtb_filename(self) -> str:
         """Return the dtb filename"""
         manifest = await self.get_flasher_manifest()
-        return Path(manifest.get_dtb_file(self._use_dtb)).name
+        dtb_file = manifest.get_dtb_file(self.variant)
+        if dtb_file:
+            return Path(manifest.get_dtb_file(self.variant)).name
+        else:
+            return ""
 
     @export
     async def get_dtb_address(self) -> str:
@@ -197,6 +206,11 @@ class BaseFlasher(Driver):
         manifest = await self.get_flasher_manifest()
         return manifest.get_initram_address()
 
+    @export
+    async def get_bootcmd(self) -> str:
+        """Return the bootcmd"""
+        manifest = await self.get_flasher_manifest()
+        return manifest.get_boot_cmd(self.variant)
 
 @dataclass(kw_only=True)
 class TIJ784S4Flasher(BaseFlasher):
