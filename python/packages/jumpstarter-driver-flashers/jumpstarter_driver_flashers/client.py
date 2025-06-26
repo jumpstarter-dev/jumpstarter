@@ -467,7 +467,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         @base.command()
         @click.argument("file")
-        @click.option("--partition", type=str)
+        @click.option("--target", type=str)
         @click.option("--os-image-checksum", help="SHA256 checksum of OS image (direct value)")
         @click.option(
             "--os-image-checksum-file",
@@ -479,7 +479,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @debug_console_option
         def flash(
             file,
-            partition,
+            target,
             os_image_checksum,
             os_image_checksum_file,
             console_debug,
@@ -495,7 +495,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.set_console_debug(console_debug)
             self.flash(
                 file,
-                partition=partition,
+                partition=target,
                 force_exporter_http=force_exporter_http,
                 force_flash_bundle=force_flash_bundle,
             )

@@ -663,7 +663,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
             path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="wb", compression=compression) as handle:
-            return self.call("dump", handle, partition)
+            return self.call("dump", handle, target)
 
 
 class StorageMuxClient(DriverClient):
@@ -758,13 +758,13 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
         """Dump image from DUT"""
-        if partition is not None:
-            raise ArgumentError(f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+        if target is not None:
+            raise ArgumentError(f"target is not supported for StorageMuxFlasherClient, {target} provided")
 
         self.call("host")
 
