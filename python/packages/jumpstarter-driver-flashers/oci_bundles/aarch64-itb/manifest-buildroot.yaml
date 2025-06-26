@@ -35,3 +35,14 @@ spec:
   kernel:
     file: data/buildroot.itb
     address: "0x90000000"
+
+  dtb:
+    default: j784s4
+    address: "0x88000000"
+    variants:
+      j784s4:
+        bootcmd: "bootm 0x90000000#j784s4"
+      am69:
+        bootcmd: "bootm 0x90000000#am69"
+      custom:
+        bootcmd "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"

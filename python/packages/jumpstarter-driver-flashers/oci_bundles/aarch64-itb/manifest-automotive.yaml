@@ -18,3 +18,13 @@ spec:
   kernel:
     file: data/automotive.itb
     address: "0x58000000"
+  dtb:
+    default: s4sk
+    address: "0x48000000"
+    variants:
+      spider:
+        bootcmd: "bootm 0x58000000#spider"
+      s4sk:
+        bootcmd: "bootm 0x58000000#s4sk"
+      custom:
+        bootcmd "bootm 0x58000000:kernel 0x58000000:initrd 0x48000000"
