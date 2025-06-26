@@ -1,0 +1,39 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: qc
+endpoint: <endpoint>
+tls:
+  ca: ""
+  insecure: true
+token: <token>
+export:
+  storage:
+    type: "jumpstarter_driver_ridesx.driver.RideSXDriver"
+    config:
+      log_level: "DEBUG"
+    children:
+      serial:
+        type: "jumpstarter_driver_pyserial.driver.PySerial"
+        config:
+          log_level: "DEBUG"
+          url: "/dev/ttyACM0"
+          baudrate: 115200
+  power:
+    type: "jumpstarter_driver_ridesx.driver.RideSXPowerDriver"
+    config:
+      log_level: "DEBUG"
+    children:
+      serial:
+        type: "jumpstarter_driver_pyserial.driver.PySerial"
+        config:
+          log_level: "DEBUG"
+          url: "/dev/ttyACM0"
+          baudrate: 115200
+  serial:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      log_level: "DEBUG"
+      url: "/dev/ttyUSB1"
+      baudrate: 115200
