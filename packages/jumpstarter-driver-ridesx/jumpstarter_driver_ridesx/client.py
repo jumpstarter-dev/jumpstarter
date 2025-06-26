@@ -5,8 +5,7 @@ from typing import Dict, Optional
 
 import click
 from jumpstarter_driver_composite.client import CompositeClient
-from jumpstarter_driver_opendal.client import operator_for_path
-from jumpstarter_driver_opendal.common import PathBuf
+from jumpstarter_driver_opendal.client import FlasherClient, operator_for_path
 from jumpstarter_driver_power.client import PowerClient
 from opendal import Operator
 
@@ -14,7 +13,7 @@ PROMPT = "CMD >> "
 
 
 @dataclass(kw_only=True)
-class RideSXClient(CompositeClient):
+class RideSXClient(FlasherClient, CompositeClient):
     """Client for RideSX"""
 
     def __post_init__(self):
@@ -27,23 +26,20 @@ class RideSXClient(CompositeClient):
         if operator is None:
             path_buf, operator, operator_scheme = operator_for_path(file_path)
         else:
-            path_buf = PathBuf(file_path)
+            path_buf = Path(file_path)
             operator_scheme = "unknown"
 
-        if isinstance(path_buf, Path):
-            filename = path_buf.name
-        else:
-            filename = Path(str(path_buf)).name
+        filename = Path(path_buf).name
 
-        if self.storage.exists(filename):
-            self.logger.info(f"File {filename} already exists in storage, skipping upload")
-        else:
+        if self._should_upload_file(self.storage, filename, path_buf, operator):
             if operator_scheme == "http":
                 self.logger.info(f"Downloading {file_path} to storage as {filename}")
             else:
                 self.logger.info(f"Uploading {file_path} to storage as {filename}")
 
             self.storage.write_from_path(filename, path_buf, operator=operator)
+        else:
+            self.logger.info(f"File {filename} already exists in storage with matching hash, skipping upload")
 
         return filename
 
@@ -78,14 +74,26 @@ class RideSXClient(CompositeClient):
 
         return flash_result
 
-    def flash(self, partitions: Dict[str, str], operators: Optional[Dict[str, Operator]] = None):
-        """Flash partitions to the device"""
+    def flash(
+        self,
+        path: str | Dict[str, str],
+        *,
+        partition: str | None = None,
+        operator: Operator | Dict[str, Operator] | None = None,
+        compression=None,
+    ):
+        if isinstance(path, dict):
+            partitions = path
+            operators = operator if isinstance(operator, dict) else None
+        else:
+            if partition is None:
+                raise ValueError("'partition' must be provided")
+            partitions = {partition: path}
+            operators = {partition: operator} if isinstance(operator, Operator) else None
+
         self.logger.info("Starting RideSX flash operation")
 
         self.boot_to_fastboot()
-
-        self.logger.info("waiting for fastboot mode to be ready...")
-        time.sleep(3)
 
         result = self.flash_images(partitions, operators)
 
@@ -93,47 +101,14 @@ class RideSXClient(CompositeClient):
         return result
 
     def cli(self):
+        generic_cli = FlasherClient.cli(self)
+
         @click.group()
         def storage():
-            """Storage operations"""
             pass
 
-        @storage.command()
-        @click.option("--partition", "-p", multiple=True, help="Partition to flash in format partition:file")
-        def flash(partition):
-            """Flash partitions to device.
-
-            Examples:
-                j storage flash --partition aboot:/path/to/aboot.img --partition rootfs:/path/to/rootfs.img
-                j storage flash -p boot:boot.img -p system:system.img -p userdata:userdata.img
-            """
-            if not partition:
-                click.echo("Error: At least one --partition must be provided")
-                click.echo("Usage: j storage flash --partition <partition>:<file> [--partition <partition>:<file> ...]")
-                raise click.Abort()
-
-            partitions = {}
-
-            for part_spec in partition:
-                if ":" not in part_spec:
-                    click.echo(f"Error: Invalid partition format '{part_spec}'. Expected format: partition:file")
-                    raise click.Abort()
-
-                partition_name, file_path = part_spec.split(":", 1)
-                if not partition_name or not file_path:
-                    click.echo(
-                        f"Error: Invalid partition format '{part_spec}'. Both partition and file must be specified"
-                    )
-                    raise click.Abort()
-
-                partitions[partition_name] = file_path
-
-            try:
-                self.flash(partitions)
-                click.echo("Flash operation completed successfully")
-            except Exception as e:
-                click.echo(f"Flash operation failed: {e}")
-                raise click.Abort() from e
+        for name, cmd in generic_cli.commands.items():
+            storage.add_command(cmd, name=name)
 
         return storage
 

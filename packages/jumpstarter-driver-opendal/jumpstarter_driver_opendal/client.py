@@ -6,6 +6,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -514,10 +515,10 @@ class FlasherClientInterface(metaclass=ABCMeta):
     @abstractmethod
     def flash(
         self,
-        path: PathBuf,
+        path: PathBuf | dict[str, PathBuf],
         *,
-        partition: str | None = None,
-        operator: Operator | None = None,
+        target: str | None = None,
+        operator: Operator | dict[str, Operator] | None = None,
         compression: Compression | None = None,
     ):
         """Flash image to DUT"""
@@ -528,7 +529,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
@@ -542,45 +543,118 @@ class FlasherClientInterface(metaclass=ABCMeta):
             pass
 
         @base.command()
-        @click.argument("file")
-        @click.option("--partition", type=str)
+        @click.argument("file", nargs=-1, required=False)
+        @click.option(
+            "--target",
+            "-t",
+            "target_specs",
+            multiple=True,
+            help="name:file",
+        )
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
-        def flash(file, partition, compression):
-            """Flash image to DUT from file"""
-            self.flash(file, partition=partition, compression=compression)
+        def flash(file, target_specs, compression):
+            if target_specs:
+                mapping: dict[str, str] = {}
+                for spec in target_specs:
+                    if ":" not in spec:
+                        raise click.ClickException(f"Invalid target spec '{spec}', expected name:file")
+                    name, img = spec.split(":", 1)
+                    mapping[name] = img
+                self.flash(cast(dict[str, PathBuf], mapping), compression=compression)
+                return
+
+            if not file:
+                raise click.ClickException("FILE argument is required unless --target/-t is used")
+
+            self.flash(file[0], target=None, compression=compression)
 
         @base.command()
         @click.argument("file")
-        @click.option("--partition", type=str)
+        @click.option("--target", type=str)
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
-        def dump(file, partition, compression):
+        def dump(file, target, compression):
             """Dump image from DUT to file"""
-            self.dump(file, partition=partition, compression=compression)
+            self.dump(file, target=target, compression=compression)
 
         return base
 
 
 class FlasherClient(FlasherClientInterface, DriverClient):
-    def flash(
+    def _should_upload_file(self, storage, filename: str, src_path: PathBuf, src_operator: Operator) -> bool:
+        """Check if file should be uploaded by comparing existence and hash."""
+        if not storage.exists(filename):
+            return True
+
+        try:
+            import hashlib
+
+            m = hashlib.sha256()
+            with src_operator.open(src_path, "rb") as f:
+                while True:
+                    data = f.read(size=65536)
+                    if len(data) == 0:
+                        break
+                    m.update(data)
+            src_hash = m.hexdigest()
+
+            storage_hash = storage.hash(filename)
+
+            if storage_hash == src_hash:
+                return False
+            else:
+                return True
+        except Exception:
+            return True
+
+    def _flash_single(
         self,
-        path: PathBuf,
+        image: PathBuf,
         *,
-        partition: str | None = None,
-        operator: Operator | None = None,
-        compression: Compression | None = None,
+        target: str | None,
+        operator: Operator | None,
+        compression: Compression | None,
     ):
         """Flash image to DUT"""
         if operator is None:
-            path, operator, _ = operator_for_path(path)
+            image, operator, _ = operator_for_path(image)
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb", compression=compression) as handle:
-            return self.call("flash", handle, partition)
+        with OpendalAdapter(client=self, operator=operator, path=image, mode="rb", compression=compression) as handle:
+            return self.call("flash", handle, target)
+
+    def flash(
+        self,
+        path: PathBuf | dict[str, PathBuf],
+        *,
+        target: str | None = None,
+        operator: Operator | dict[str, Operator] | None = None,
+        compression: Compression | None = None,
+    ):
+        if isinstance(path, dict):
+            if target is not None:
+                raise ArgumentError("'target' parameter is not valid when flashing multiple images")
+
+            results: dict[str, object] = {}
+
+            oper_map = operator if isinstance(operator, dict) else {}
+
+            for part, img in path.items():
+                op_val = oper_map.get(part) if isinstance(operator, dict) else operator
+                results[part] = self._flash_single(
+                    img, target=part, operator=cast(Operator | None, op_val), compression=compression
+                )
+
+            return results
+
+        if isinstance(operator, dict):
+            raise ArgumentError("operator mapping provided for single image flash")
+
+        return self._flash_single(path, target=target, operator=operator, compression=compression)
 
     def dump(
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
@@ -589,7 +663,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
             path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self, operator=operator, path=path, mode="wb", compression=compression) as handle:
-            return self.call("dump", handle, partition)
+            return self.call("dump", handle, target)
 
 
 class StorageMuxClient(DriverClient):
@@ -648,7 +722,7 @@ class StorageMuxClient(DriverClient):
             """Disconnect storage"""
             self.off()
 
-        @base.command()
+        @base.command
         @click.argument("file")
         def write_local_file(file):
             self.write_local_file(file)
@@ -661,13 +735,13 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
         """Flash image to DUT"""
-        if partition is not None:
-            raise ArgumentError(f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+        if target is not None:
+            raise ArgumentError(f"target is not supported for StorageMuxFlasherClient, {target} provided")
 
         self.host()
 
@@ -684,13 +758,13 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self,
         path: PathBuf,
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | None = None,
         compression: Compression | None = None,
     ):
         """Dump image from DUT"""
-        if partition is not None:
-            raise ArgumentError(f"partition is not supported for StorageMuxFlasherClient, {partition} provided")
+        if target is not None:
+            raise ArgumentError(f"target is not supported for StorageMuxFlasherClient, {target} provided")
 
         self.call("host")
 
