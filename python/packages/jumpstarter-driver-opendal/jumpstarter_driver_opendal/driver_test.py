@@ -139,13 +139,13 @@ def test_driver_opendal_presign(tmp_path):
         )
 
 
-@pytest.mark.parametrize("partition", [None, "uboot"])
-def test_driver_flasher(tmp_path, partition):
+@pytest.mark.parametrize("target", [None, "uboot"])
+def test_driver_flasher(tmp_path, target):
     with serve(MockFlasher()) as flasher:
         (tmp_path / "disk.img").write_bytes(b"hello")
 
-        flasher.flash(tmp_path / "disk.img", partition=partition)
-        flasher.dump(tmp_path / "dump.img", partition=partition)
+        flasher.flash(tmp_path / "disk.img", target=target)
+        flasher.dump(tmp_path / "dump.img", target=target)
 
         assert (tmp_path / "dump.img").read_bytes() == b"hello"
 
