@@ -412,8 +412,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             if self._console_debug:
                 console.logfile_read = sys.stdout.buffer
 
-            self.logger.info(f"Running boot command: {manifest.spec.bootcmd}")
-            console.send(manifest.spec.bootcmd + "\n")
+            bootcmd = self.call("get_bootcmd")
+
+            self.logger.info(f"Running boot command: {bootcmd}")
+            console.send(bootcmd + "\n")
 
             # if manifest has login details, we need to login
             if manifest.spec.login.username:

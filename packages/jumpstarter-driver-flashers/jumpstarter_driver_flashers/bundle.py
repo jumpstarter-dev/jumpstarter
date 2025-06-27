@@ -1,5 +1,5 @@
 import os
-from typing import Literal, Optional
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -9,12 +9,14 @@ class FileAddress(BaseModel):
     file: str
     address: str
 
-
 class DtbVariant(BaseModel):
+    bootcmd: None | str = None
+    file: None | str = None
+
+class Dtb(BaseModel):
     default: str
     address: str
-    variants: dict[str, str]
-
+    variants: dict[str, DtbVariant]
 
 class FlasherLogin(BaseModel):
     login_prompt: str
@@ -25,15 +27,15 @@ class FlasherLogin(BaseModel):
 
 class FlashBundleSpecV1Alpha1(BaseModel):
     manufacturer: str
-    link: Optional[str]
+    link: None | str
     bootcmd: str
     shelltype: Literal["busybox"] = Field(default="busybox")
     login: FlasherLogin = Field(default_factory=lambda: FlasherLogin(login_prompt="login:", prompt="#"))
     default_target: str
     targets: dict[str, str]
     kernel: FileAddress
-    initram: Optional[FileAddress] = None
-    dtb: Optional[DtbVariant] = None
+    initram: None | FileAddress = None
+    dtb: None | Dtb = None
     preflash_commands: list[str] = Field(default_factory=list)
 
 
@@ -56,10 +58,33 @@ class FlasherBundleManifestV1Alpha1(BaseModel):
         if not self.spec.dtb:
             return None
 
+        # if no variant is provided, use the default variant name from the manifest
         if not variant:
             variant = self.spec.dtb.default
 
-        return self.spec.dtb.variants.get(variant)
+        # look for the variant struct in this manifest
+        variant_struct = self.spec.dtb.variants.get(variant)
+        if variant_struct:
+            return variant_struct.file
+        else:
+            raise ValueError(f"DTB variant {variant} not found in the manifest.")
+
+    def get_boot_cmd(self, variant: str | None = None) -> str:
+        if not self.spec.dtb:
+            return self.spec.bootcmd
+        # if no variant is provided, use the default variant name from the manifest
+        if not variant:
+            variant = self.spec.dtb.default
+        # look for the variant struct in this manifest
+        variant_struct = self.spec.dtb.variants.get(variant)
+        if variant_struct:
+            # If variant has a custom bootcmd, use it; otherwise fall back to default
+            if variant_struct.bootcmd:
+                return variant_struct.bootcmd
+            else:
+                return self.spec.bootcmd
+        else:
+            raise ValueError(f"DTB variant {variant} not found in the manifest.")
 
     def get_kernel_address(self) -> str:
         return self.spec.kernel.address

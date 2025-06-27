@@ -1,0 +1,2 @@
+# rename Renesas S4 main interface tsn0 to eth0 to unify setup
+SUBSYSTEM=="net", ACTION=="add", KERNEL=="tsn0", NAME="eth0"
