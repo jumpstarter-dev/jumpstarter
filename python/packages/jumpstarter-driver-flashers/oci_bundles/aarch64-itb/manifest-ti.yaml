@@ -33,7 +33,7 @@ spec:
 #   file: my.dtb
 #   address: "0x88000000"
   kernel:
-    file: data/buildroot.itb
+    file: data/flasher-buildroot.itb
     address: "0x90000000"
 
   dtb:
@@ -45,4 +45,4 @@ spec:
       am69:
         bootcmd: "bootm 0x90000000#am69"
       custom:
-        bootcmd "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"
+        bootcmd: "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"

@@ -16,10 +16,10 @@ spec:
   targets:
     emmc: "/dev/mmcblk0"
   kernel:
-    file: data/automotive.itb
+    file: data/flasher-automotive.itb
     address: "0x58000000"
   dtb:
-    default: s4sk
+    default: spider
     address: "0x48000000"
     variants:
       spider:
@@ -27,4 +27,4 @@ spec:
       s4sk:
         bootcmd: "bootm 0x58000000#s4sk"
       custom:
-        bootcmd "bootm 0x58000000:kernel 0x58000000:initrd 0x48000000"
+        bootcmd: "bootm 0x58000000:kernel 0x58000000:initrd 0x48000000"
