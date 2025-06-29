@@ -1,3 +1,4 @@
+import hashlib
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -63,7 +64,6 @@ class ISCSIServerClient(CompositeClient):
         """
         return self.call("get_target_iqn")
 
-
     def add_lun(self, name: str, file_path: str, size_mb: int = 0, is_block: bool = False) -> str:
         """
         Add a new LUN to the iSCSI target
@@ -103,7 +103,60 @@ class ISCSIServerClient(CompositeClient):
         """
         return self.call("list_luns")
 
-    def upload_image(self, dst_name: str, src: PathBuf, size_mb: int = 0, operator: Optional[Operator] = None) -> str:
+    def _calculate_file_hash(self, file_path: str, operator: Optional[Operator] = None) -> str:
+        """Calculate SHA256 hash of a file"""
+        if operator is None:
+            hash_obj = hashlib.sha256()
+            with open(file_path, "rb") as f:
+                while chunk := f.read(8192):
+                    hash_obj.update(chunk)
+            return hash_obj.hexdigest()
+        else:
+            from jumpstarter_driver_opendal.client import operator_for_path
+
+            path, op, _ = operator_for_path(file_path)
+            hash_obj = hashlib.sha256()
+            with op.open(str(path), "rb") as f:
+                while chunk := f.read(8192):
+                    hash_obj.update(chunk)
+            return hash_obj.hexdigest()
+
+    def _files_are_identical(self, src: PathBuf, dst_path: str, operator: Optional[Operator] = None) -> bool:
+        """Check if source and destination files are identical"""
+        try:
+            if not self.storage.exists(dst_path):
+                return False
+
+            dst_stat = self.storage.stat(dst_path)
+            dst_size = dst_stat.content_length
+
+            if operator is None:
+                src_size = os.path.getsize(str(src))
+            else:
+                from jumpstarter_driver_opendal.client import operator_for_path
+
+                path, op, _ = operator_for_path(src)
+                src_size = op.stat(str(path)).content_length
+
+            if src_size != dst_size:
+                return False
+
+            src_hash = self._calculate_file_hash(str(src), operator)
+            dst_hash = self.storage.hash(dst_path, "sha256")
+
+            return src_hash == dst_hash
+
+        except Exception:
+            return False
+
+    def upload_image(
+        self,
+        dst_name: str,
+        src: PathBuf,
+        size_mb: int = 0,
+        operator: Optional[Operator] = None,
+        force_upload: bool = False,
+    ) -> str:
         """
         Upload an image file and expose it as a LUN
 
@@ -112,6 +165,7 @@ class ISCSIServerClient(CompositeClient):
             src (PathBuf): Source file path to read from
             size_mb (int): Size in MB if creating a new image. If 0 will use source file size.
             operator (Operator): Optional OpenDAL operator to use for reading
+            force_upload (bool): If True, skip file comparison and force upload
 
         Returns:
             str: Target IQN for connecting to the LUN
@@ -119,22 +173,21 @@ class ISCSIServerClient(CompositeClient):
         Raises:
             ISCSIError: If the operation fails
         """
-        # Ensure size_mb is an integer
         size_mb = int(size_mb)
-
-        # Upload the file using OpenDAL
         dst_path = f"{dst_name}.img"
-        self.storage.write_from_path(dst_path, src, operator)
 
-        # If size not specified, get it from the uploaded file
+        if not force_upload and self._files_are_identical(src, dst_path, operator):
+            print(f"File {dst_path} already exists and is identical to source. Skipping upload.")
+        else:
+            print(f"Uploading {src} to {dst_path}...")
+            self.storage.write_from_path(dst_path, src, operator)
+
         if size_mb <= 0:
             src_path = os.path.join(self.storage._storage.root_dir, dst_path)
             size_mb = os.path.getsize(src_path) // (1024 * 1024)
             if size_mb <= 0:
-                size_mb = 1  # Minimum 1MB
+                size_mb = 1
 
-        # Add it as a LUN with explicit size
         self.add_lun(dst_name, dst_path, size_mb)
 
-        # Return the full connection string
         return self.get_target_iqn()

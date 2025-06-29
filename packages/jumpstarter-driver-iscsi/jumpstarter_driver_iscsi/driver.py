@@ -117,7 +117,6 @@ class ISCSI(Driver):
             self.logger.warning(f"Error checking for existing target: {e}")
 
         if not target_exists:
-            # Create a new target
             self.logger.info(f"Creating new target: {self._iqn}")
             fabric_modules = {m.name: m for m in list(self._rtsroot.fabric_modules)}
             iscsi_fabric = fabric_modules.get("iscsi")
@@ -212,6 +211,58 @@ class ISCSI(Driver):
         """
         return self._iqn
 
+    def _validate_lun_inputs(self, name: str, size_mb: int) -> int:
+        """Validate LUN inputs and return validated size_mb"""
+        if name in self._luns:
+            raise ISCSIError(f"LUN with name {name} already exists")
+        try:
+            return int(size_mb)
+        except (TypeError, ValueError) as e:
+            raise ISCSIError("size_mb must be an integer value") from e
+
+    def _get_full_path(self, file_path: str, is_block: bool) -> str:
+        """Get the full path for the LUN file or block device"""
+        if is_block:
+            if not os.path.isabs(file_path):
+                raise ISCSIError("For block devices, file_path must be an absolute path")
+            return file_path
+        else:
+            full_path = os.path.join(self.root_dir, file_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            return full_path
+
+    def _create_file_storage_object(self, name: str, full_path: str, size_mb: int) -> tuple:
+        """Create file-backed storage object and return (storage_obj, final_size_mb)"""
+        if not os.path.exists(full_path):
+            if size_mb <= 0:
+                raise ISCSIError("size_mb must be > 0 for new file-backed LUNs")
+            size_bytes = size_mb * 1024 * 1024
+            with open(full_path, "wb") as f:
+                f.truncate(size_bytes)
+            self.logger.info(f"Created new file {full_path} with size {size_mb}MB")
+        else:
+            current_size = os.path.getsize(full_path)
+            if size_mb <= 0:
+                size_bytes = current_size
+                size_mb = size_bytes // (1024 * 1024)
+                self.logger.info(f"Using existing file size: {size_mb}MB")
+            else:
+                size_bytes = size_mb * 1024 * 1024
+                if current_size != size_bytes:
+                    if current_size < size_bytes:
+                        with open(full_path, "ab") as f:
+                            f.truncate(size_bytes)
+                        self.logger.info(
+                            f"Extended file {full_path} from {current_size / (1024 * 1024):.1f}MB to {size_mb}MB"
+                        )
+                    else:
+                        self.logger.warning(
+                            f"File {full_path} is larger ({current_size / (1024 * 1024):.1f}MB) "
+                            f"than requested size ({size_mb}MB). "
+                            "Using requested size for LUN but file won't be truncated."
+                        )
+        return FileIOStorageObject(name, full_path, size=size_bytes), size_mb
+
     @export
     def add_lun(self, name: str, file_path: str, size_mb: int = 0, is_block: bool = False) -> str:
         """
@@ -232,21 +283,8 @@ class ISCSI(Driver):
         Raises:
             ISCSIError: On error or if the file_path is invalid.
         """
-        if name in self._luns:
-            raise ISCSIError(f"LUN with name {name} already exists")
-        try:
-            size_mb = int(size_mb)
-        except (TypeError, ValueError) as e:
-            raise ISCSIError("size_mb must be an integer value") from e
-
-        # Use the provided file_path directly for block devices and ensure it is absolute
-        if is_block:
-            if not os.path.isabs(file_path):
-                raise ISCSIError("For block devices, file_path must be an absolute path")
-            full_path = file_path
-        else:
-            full_path = os.path.join(self.root_dir, file_path)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        size_mb = self._validate_lun_inputs(name, size_mb)
+        full_path = self._get_full_path(file_path, is_block)
 
         try:
             if is_block:
@@ -254,32 +292,8 @@ class ISCSI(Driver):
                     raise ISCSIError(f"Block device {full_path} does not exist")
                 storage_obj = BlockStorageObject(name, full_path)
             else:
-                if not os.path.exists(full_path):
-                    if size_mb <= 0:
-                        raise ISCSIError("size_mb must be > 0 for new file-backed LUNs")
-                    size_bytes = size_mb * 1024 * 1024
-                    with open(full_path, "wb") as f:
-                        f.truncate(size_bytes)
-                    self.logger.info(f"Created new file {full_path} with size {size_mb}MB")
-                else:
-                    current_size = os.path.getsize(full_path)
-                    if size_mb <= 0:
-                        size_bytes = current_size
-                        size_mb = size_bytes // (1024 * 1024)
-                        self.logger.info(f"Using existing file size: {size_mb}MB")
-                    else:
-                        size_bytes = size_mb * 1024 * 1024
-                        if current_size != size_bytes:
-                            if current_size < size_bytes:
-                                with open(full_path, "ab") as f:
-                                    f.truncate(size_bytes)
-                                self.logger.info(f"Extended file {full_path} from {current_size/(1024*1024):.1f}MB to {size_mb}MB")
-                            else:
-                                self.logger.warning(
-                                    f"File {full_path} is larger ({current_size/(1024*1024):.1f}MB) than requested size ({size_mb}MB). "
-                                    "Using requested size for LUN but file won't be truncated."
-                                )
-                storage_obj = FileIOStorageObject(name, full_path, size=size_bytes)
+                storage_obj, size_mb = self._create_file_storage_object(name, full_path, size_mb)
+
             lun = LUN(self._tpg, 0, storage_obj)
             self._storage_objects[name] = storage_obj
             self._luns[name] = lun
