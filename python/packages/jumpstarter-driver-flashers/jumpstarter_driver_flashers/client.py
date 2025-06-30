@@ -117,7 +117,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         with self._services_up():
             with self._busybox() as console:
                 manifest = self.manifest
-                target = partition or manifest.spec.default_target
+                target = partition or self.call("get_default_target") or manifest.spec.default_target
                 if not target:
                     raise ArgumentError("No partition or default target specified")
 

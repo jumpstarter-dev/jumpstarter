@@ -26,6 +26,7 @@ members = [
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-qemu",
     "jumpstarter-driver-raspberrypi",
+    "jumpstarter-driver-ridesx",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-shell",
     "jumpstarter-driver-snmp",
@@ -1074,6 +1075,7 @@ dependencies = [
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu" },
     { name = "jumpstarter-driver-raspberrypi" },
+    { name = "jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell" },
     { name = "jumpstarter-driver-snmp" },
@@ -1107,6 +1109,7 @@ requires-dist = [
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
     { name = "jumpstarter-driver-raspberrypi", editable = "packages/jumpstarter-driver-raspberrypi" },
+    { name = "jumpstarter-driver-ridesx", editable = "packages/jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire", editable = "packages/jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
     { name = "jumpstarter-driver-snmp", editable = "packages/jumpstarter-driver-snmp" },
@@ -1761,6 +1764,34 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-ridesx"
+source = { editable = "packages/jumpstarter-driver-ridesx" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-pyserial" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]

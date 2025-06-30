@@ -19,6 +19,7 @@ class BaseFlasher(Driver):
     flasher_bundle: str = field(default="quay.io/jumpstarter-dev/jumpstarter-flasher-test:latest")
     variant: None | str = field(default=None)
     manifest: str = field(default="manifest.yaml")
+    default_target: None | str = field(default=None)
     cache_dir: str = field(default="/var/lib/jumpstarter/flasher")
     tftp_dir: str = field(default="/var/lib/tftpboot")
     http_dir: str = field(default="/var/www/html")
@@ -62,6 +63,11 @@ class BaseFlasher(Driver):
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_flashers.client.BaseFlasherClient"
+
+    @export
+    async def get_default_target(self):
+        """Return the default target"""
+        return self.default_target
 
     @export
     async def setup_flasher_bundle(self, force_flash_bundle: str | None = None):
