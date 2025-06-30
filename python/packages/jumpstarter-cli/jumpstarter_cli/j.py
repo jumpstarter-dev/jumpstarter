@@ -9,6 +9,7 @@ from anyio.from_thread import BlockingPortal
 from jumpstarter_cli_common.exceptions import async_handle_exceptions, leaf_exceptions
 from jumpstarter_cli_common.signal import signal_handler
 
+from rich import traceback
 from jumpstarter.utils.env import env_async
 
 
@@ -43,6 +44,7 @@ async def j_async():
 
 
 def j():
+    traceback.install()
     run(j_async)
 
 
