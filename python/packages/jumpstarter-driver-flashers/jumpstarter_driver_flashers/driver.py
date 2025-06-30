@@ -80,13 +80,15 @@ class BaseFlasher(Driver):
         self.logger.info(f"Setting up kernel in tftp: {kernel_path}")
         await self.tftp.storage.copy_exporter_file(kernel_path, kernel_path.name)
 
-        initram_path = await self._get_file_path(manifest.spec.initram.file) if manifest.spec.initram else None
-        if initram_path:
+        initram_file = manifest.get_initram_file()
+        if initram_file:
+            initram_path = await self._get_file_path(initram_file)
             self.logger.info(f"Setting up initram in tftp: {initram_path}")
             await self.tftp.storage.copy_exporter_file(initram_path, initram_path.name)
 
-        dtb_path = await self._get_file_path(manifest.get_dtb_file(self.variant)) if manifest.spec.dtb else None
-        if dtb_path:
+        dtb_file = manifest.get_dtb_file(self.variant) if manifest.spec.dtb else None
+        if dtb_file:
+            dtb_path = await self._get_file_path(dtb_file)
             self.logger.info(f"Setting up dtb in tftp: {dtb_path}")
             await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
 
@@ -151,6 +153,8 @@ class BaseFlasher(Driver):
         This function will ensure that the bundle is downloaded into cache, and
         then return the path to the requested file in the cache directory.
         """
+        if filename is None:
+            raise ValueError("filename cannot be None")
         bundle_dir = await anyio.to_thread.run_sync(self._download_to_cache)
         return Path(bundle_dir) / filename
 
@@ -184,7 +188,7 @@ class BaseFlasher(Driver):
         manifest = await self.get_flasher_manifest()
         dtb_file = manifest.get_dtb_file(self.variant)
         if dtb_file:
-            return Path(manifest.get_dtb_file(self.variant)).name
+            return Path(dtb_file).name
         else:
             return ""
 
