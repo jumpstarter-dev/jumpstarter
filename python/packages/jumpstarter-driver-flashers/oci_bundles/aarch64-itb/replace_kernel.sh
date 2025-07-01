@@ -15,8 +15,8 @@ KMOD=(
 
 [ $# -ne 1 ] && { echo "$0 [target_overlay_dir]"; exit 1; }
 ODIR=$1
-mkdir -p /kernel-automotive
-pushd /kernel-automotive
+mkdir -p ./kernel-automotive
+pushd ./kernel-automotive
 
 url="https://cbs.centos.org/kojifiles/packages/kernel-automotive"
 url="$url/$(echo $KVER | sed -r 's|-|/|; s|\.([^.]*)$|/\1|')"
@@ -51,9 +51,9 @@ popd
 
 echo "installing modules into overlay dir ..."
 mkdir -p $ODIR/lib/modules $ODIR/etc/init.d || exit 1
-sed -nr 's|^insmod ||p' < /kernel-automotive/modlist | while read mod; do
+sed -nr 's|^insmod ||p' < ./kernel-automotive/modlist | while read mod; do
 	mkdir -p "$ODIR$(dirname $mod)"
-	zstd -d "/kernel-automotive$mod.zst" -o "$ODIR$mod"
+	zstd -d "./kernel-automotive$mod.zst" -o "$ODIR$mod"
 done
 
 echo "adding modules start-up script to overlay ..."
@@ -62,7 +62,7 @@ cat >$script <<EOF
 #!/bin/sh
 
 if [ "\$1" = "start" ]; then
-$(cat /kernel-automotive/modlist)
+$(cat ./kernel-automotive/modlist)
 fi
 EOF
 chmod +x $script

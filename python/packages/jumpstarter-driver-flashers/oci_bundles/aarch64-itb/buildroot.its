@@ -7,7 +7,7 @@
 	images {
 		kernel {
 			description = "buildroot Kernel";
-			data = /incbin/("/buildroot/output/images/Image");
+			data = /incbin/("./buildroot/output/images/Image");
 			type = "kernel";
 			arch = "arm64";
 			os = "linux";
@@ -20,7 +20,7 @@
 		};
 		initrd {
 			description = "Initrd";
-			data = /incbin/("/buildroot/output/images/rootfs.cpio.lzo");
+			data = /incbin/("./buildroot/output/images/rootfs.cpio.lzo");
 			type = "ramdisk";
 			arch = "arm64";
 			os = "linux";
@@ -31,7 +31,7 @@
 		};
 		fdt-j784s4 {
 			description = "DTB TI J784S4EVM";
-			data = /incbin/("/buildroot/output/images/k3-j784s4-evm.dtb");
+			data = /incbin/("./buildroot/output/images/k3-j784s4-evm.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
@@ -42,7 +42,7 @@
 		};
 		fdt-am69 {
 			description = "DTB TI SK-AM69";
-			data = /incbin/("/buildroot/output/images/k3-am69-sk.dtb");
+			data = /incbin/("./buildroot/output/images/k3-am69-sk.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
