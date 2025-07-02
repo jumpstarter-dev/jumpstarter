@@ -117,7 +117,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         with self._services_up():
             with self._busybox() as console:
                 manifest = self.manifest
-                target = partition or manifest.spec.default_target
+                target = partition or self.call("get_default_target") or manifest.spec.default_target
                 if not target:
                     raise ArgumentError("No partition or default target specified")
 
@@ -401,19 +401,28 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             if manifest.get_initram_file():
                 initram_filename = Path(manifest.get_initram_file()).name
                 initram_address = manifest.get_initram_address()
-                self.uboot.run_command(f"tftpboot {initram_address} {initram_filename}", timeout=120)
+                if initram_address:
+                    self.uboot.run_command(f"tftpboot {initram_address} {initram_filename}", timeout=120)
 
-            if manifest.get_dtb_file():
-                dtb_filename = Path(manifest.get_dtb_file()).name
-                dtb_address = manifest.get_dtb_address()
-                self.uboot.run_command(f"tftpboot {dtb_address} {dtb_filename}", timeout=120)
+            try:
+                dtb_file = manifest.get_dtb_file()
+                if dtb_file:
+                    dtb_filename = Path(dtb_file).name
+                    dtb_address = manifest.get_dtb_address()
+                    if dtb_address:
+                        self.uboot.run_command(f"tftpboot {dtb_address} {dtb_filename}", timeout=120)
+            except ValueError:
+                # DTB variant not found, skip DTB loading
+                pass
 
         with self.serial.pexpect() as console:
             if self._console_debug:
                 console.logfile_read = sys.stdout.buffer
 
-            self.logger.info(f"Running boot command: {manifest.spec.bootcmd}")
-            console.send(manifest.spec.bootcmd + "\n")
+            bootcmd = self.call("get_bootcmd")
+
+            self.logger.info(f"Running boot command: {bootcmd}")
+            console.send(bootcmd + "\n")
 
             # if manifest has login details, we need to login
             if manifest.spec.login.username:
