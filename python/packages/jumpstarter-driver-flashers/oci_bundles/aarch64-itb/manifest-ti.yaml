@@ -5,7 +5,9 @@ metadata:
 spec:
   manufacturer: Texas Instruments
   link: "https://www.ti.com/tool/PROCESSOR-SDK-J784S4"
-  bootcmd: "booti 0x82000000 - 0x84000000"
+# boot using the default configuration built-in flasher.itb, j784s4
+# you can boot included alternative configurations, e.g. for SK-AM69 use "bootm 0x90000000#am69"
+  bootcmd: "bootm 0x90000000"
   shelltype: "busybox"
   login:
     login_prompt: "login:"
@@ -24,12 +26,23 @@ spec:
 #  preflash_commands:
 #    - "dd if=/dev/zero of=/dev/mmcblk0 bs=512 count=34"
 #    - "dd if=/dev/zero of=/dev/mmcblk1 bs=512 count=34"
+#
+# supply custom DTB by loading your own re-using the included kernel and initrd by e.g:
+# bootcmd: "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"
+# dtb:
+#   file: my.dtb
+#   address: "0x88000000"
   kernel:
-    file: data/J784S4XEVM.flasher.img
-    address: "0x82000000"
+    file: data/flasher-buildroot.itb
+    address: "0x90000000"
+
   dtb:
-    default: k3-j784s4-evm
-    address: "0x84000000"
+    default: j784s4
+    address: "0x88000000"
     variants:
-      k3-j784s4-evm:
-        file: data/dtbs/k3-j784s4-evm.dtb
+      j784s4:
+        bootcmd: "bootm 0x90000000#j784s4"
+      am69:
+        bootcmd: "bootm 0x90000000#am69"
+      custom:
+        bootcmd: "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"

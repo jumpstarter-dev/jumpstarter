@@ -1,0 +1,40 @@
+[project]
+name = "jumpstarter-driver-ridesx"
+dynamic = ["version", "urls"]
+description = "Jumpstarter driver for Qualcomm RideSX"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter",
+    "jumpstarter-driver-opendal",
+    "jumpstarter-driver-pyserial",
+]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../' }
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_ridesx"]
+
+[tool.uv.sources]
+#asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"

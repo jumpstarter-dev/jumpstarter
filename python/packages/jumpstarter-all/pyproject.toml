@@ -25,6 +25,7 @@ dependencies = [
   "jumpstarter-driver-pyserial",
   "jumpstarter-driver-qemu",
   "jumpstarter-driver-raspberrypi",
+  "jumpstarter-driver-ridesx",
   "jumpstarter-driver-sdwire",
   "jumpstarter-driver-shell",
   "jumpstarter-driver-snmp",
