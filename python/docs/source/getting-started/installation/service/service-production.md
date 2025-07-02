@@ -47,53 +47,6 @@ Choose one of these TLS termination approaches:
 gRPC over HTTP/1.1 is not supported. Ensure your ingress controller supports HTTP/2 and is properly configured for gRPC traffic.
 ```
 
-### Ingress Controller Configuration Examples
-
-Different ingress controllers require specific annotations for gRPC traffic:
-
-**NGINX Ingress Controller:**
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
-    nginx.ingress.kubernetes.io/grpc-backend: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # If using cert-manager
-```
-
-**AWS Load Balancer Controller (ALB):**
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  annotations:
-    kubernetes.io/ingress.class: alb
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/backend-protocol-version: GRPC
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:region:account:certificate/cert-id
-```
-
-**Istio Gateway:**
-```yaml
-apiVersion: networking.istio.io/v1beta1
-kind: Gateway
-metadata:
-  name: jumpstarter-gateway
-spec:
-  servers:
-  - port:
-      number: 443
-      name: https-grpc
-      protocol: HTTPS
-    tls:
-      mode: SIMPLE
-      credentialName: jumpstarter-tls-secret
-```
-
 ## Install with Helm
 
 Install Jumpstarter on a Kubernetes/OpenShift cluster using Helm:
