@@ -50,7 +50,7 @@ def test_driver_uboot_console(uboot_image):
             }
         )
     ) as root:
-        root.qemu.flasher.flash(uboot_image, partition="bios")
+        root.qemu.flasher.flash(uboot_image, target="bios")
 
         uboot = root.uboot
 
