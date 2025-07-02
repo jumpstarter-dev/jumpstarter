@@ -12,8 +12,6 @@ Before installing in production, ensure you have:
 - Administrator access to your cluster (required for CRD installation)
 - Domain name for service endpoints
 - Ingress controller installed (for Kubernetes) or Routes configured (for OpenShift)
-- TLS certificates for your domain (or cert-manager for automatic certificate management)
-
 ```{note}
 `global.baseDomain` creates these service hostnames with `jumpstarter.example.com`:
 - `grpc.jumpstarter.example.com`
