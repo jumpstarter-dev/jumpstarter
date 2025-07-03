@@ -45,6 +45,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-arm qemu-system-x86
 
+      - name: Install libgpiod-dev (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgpiod-dev liblgpio-dev
+
       - name: Install Qemu (macOS)
         if: runner.os == 'macOS'
         run: |

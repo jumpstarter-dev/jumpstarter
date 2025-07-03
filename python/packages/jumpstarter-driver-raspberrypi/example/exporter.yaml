@@ -1,0 +1,20 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: shell-exporter
+  namespace: default
+export:
+  gpio:
+    type: jumpstarter_driver_raspberrypi.driver.DigitalOutput
+    config:
+      pin: 23
+      drive: open_drain
+      bias: pull_up
+      initial_value: "off"
+
+  gpioin:
+    type: jumpstarter_driver_raspberrypi.driver.DigitalInput
+    config:
+      pin: 24
+      bias: pull_up
+      active_low: True
