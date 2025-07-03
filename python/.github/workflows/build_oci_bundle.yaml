@@ -1,0 +1,30 @@
+name: Build and push buildroot-based flasher OCI bundle
+on:
+  workflow_dispatch:
+
+jobs:
+  build-fits:
+    runs-on: ubuntu-24.04-arm
+    container: fedora:42
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run build_fits.sh
+        run: |
+          cd packages/jumpstarter-driver-flashers/oci_bundles/aarch64-itb
+          ./build_fits.sh
+
+      - name: Upload FIT artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIT-images
+          path: packages/jumpstarter-driver-flashers/oci_bundles/aarch64-itb/data/*.itb
+
+      - name: Run build_bundle.sh for aarch64-itb
+        run: |
+          podman login quay.io -u jumpstarter-dev+jumpstarter_ci --password-stdin <<< "${{ secrets.QUAY_TOKEN }}"
+          cd packages/jumpstarter-driver-flashers/oci_bundles
+          ./build_bundle.sh quay.io/jumpstarter-dev/jumpstarter-flasher-aarch64-itb:latest aarch64-itb
