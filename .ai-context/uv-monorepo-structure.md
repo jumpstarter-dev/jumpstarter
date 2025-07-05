@@ -105,8 +105,13 @@ To run the Jumpstarter CLI tool with `uv`, use `uv run jmp`.
 
 ## Creating Driver Packages
 
-To create a new driver package, run the following command to generate a new driver package:
+To create a new driver package, use the `make create-driver` template command:
 
 ```bash
-./__templates__/create_driver.sh driver_package DriverClass "Your Name" "your.email@example.com"
+make create-driver DRIVER_NAME=my_driver DRIVER_CLASS=MyDriver
 ```
+
+This will prompt you with defaults from your git config:
+
+- Author name (default: your git config user.name)
+- Author email (default: your git config user.email)

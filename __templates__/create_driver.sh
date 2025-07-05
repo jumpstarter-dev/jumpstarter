@@ -7,18 +7,85 @@ set -euxv
 # $3: author name
 # $4: author email
 
-# check if the number of parameters is correct
-if [ "$#" -ne 4 ]; then
-    echo "Illegal number of parameters"
-    echo "Usage: create_driver.sh <driver_name> <driver_class> <author_name> <author_email>"
-    echo "Example: create_driver.sh mydriver MyDriver \"John Something\" john@somewhere.com"
+# Function to prompt for input with default value
+prompt_with_default() {
+    local prompt="$1"
+    local default="$2"
+    local varname="$3"
+    
+    if [ -n "$default" ]; then
+        echo "$prompt (default: $default):"
+        read input
+        eval "$varname=\"\${input:-$default}\""
+    else
+        echo "$prompt:"
+        read input
+        eval "$varname=\"$input\""
+    fi
+}
+
+# Handle different parameter scenarios
+if [ "$#" -eq 4 ]; then
+    # All parameters provided
+    export DRIVER_NAME=$1
+    export DRIVER_CLASS=$2
+    export AUTHOR_NAME=$3
+    export AUTHOR_EMAIL=$4
+elif [ "$#" -eq 2 ]; then
+    # Only driver name and class provided, auto-detect author info
+    export DRIVER_NAME=$1
+    export DRIVER_CLASS=$2
+    
+    # Try to get author info from git config
+    GIT_NAME=$(git config user.name 2>/dev/null || echo "")
+    GIT_EMAIL=$(git config user.email 2>/dev/null || echo "")
+    
+    prompt_with_default "Author name" "$GIT_NAME" "AUTHOR_NAME"
+    prompt_with_default "Author email" "$GIT_EMAIL" "AUTHOR_EMAIL"
+    
+    export AUTHOR_NAME
+    export AUTHOR_EMAIL
+elif [ "$#" -eq 0 ]; then
+    # Interactive mode - prompt for everything
+    echo "Driver name (use underscores, e.g., my_usb_device):"
+    read DRIVER_NAME
+    
+    echo "Driver class name (PascalCase, e.g., MyUsbDevice):"
+    read DRIVER_CLASS
+    
+    # Try to get author info from git config
+    GIT_NAME=$(git config user.name 2>/dev/null || echo "")
+    GIT_EMAIL=$(git config user.email 2>/dev/null || echo "")
+    
+    prompt_with_default "Author name" "$GIT_NAME" "AUTHOR_NAME"
+    prompt_with_default "Author email" "$GIT_EMAIL" "AUTHOR_EMAIL"
+    
+    export DRIVER_NAME
+    export DRIVER_CLASS
+    export AUTHOR_NAME
+    export AUTHOR_EMAIL
+else
+    echo "Usage:"
+    echo "  create_driver.sh <driver_name> <driver_class> <author_name> <author_email>  # Full specification"
+    echo "  create_driver.sh <driver_name> <driver_class>                               # Auto-detect author from git config"
+    echo "  create_driver.sh                                                            # Interactive mode"
+    echo ""
+    echo "Examples:"
+    echo "  create_driver.sh mydriver MyDriver \"John Something\" john@somewhere.com"
+    echo "  create_driver.sh mydriver MyDriver  # Will use git config for author info"
+    echo "  create_driver.sh                    # Interactive prompts"
     exit 1
 fi
 
-export DRIVER_NAME=$1
-export DRIVER_CLASS=$2
-export AUTHOR_NAME=$3
-export AUTHOR_EMAIL=$4
+# Validate required parameters
+if [ -z "$DRIVER_NAME" ] || [ -z "$DRIVER_CLASS" ] || [ -z "$AUTHOR_NAME" ] || [ -z "$AUTHOR_EMAIL" ]; then
+    echo "Error: All parameters are required"
+    echo "Driver name: '$DRIVER_NAME'"
+    echo "Driver class: '$DRIVER_CLASS'"
+    echo "Author name: '$AUTHOR_NAME'"
+    echo "Author email: '$AUTHOR_EMAIL'"
+    exit 1
+fi
 
 
 # Convert driver name to kebab case for directory name

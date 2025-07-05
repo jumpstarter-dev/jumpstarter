@@ -86,54 +86,13 @@ sync:
 	uv sync --all-packages --all-extras
 
 create-driver:
-	@driver_name="$(DRIVER_NAME)"; \
-	driver_class="$(DRIVER_CLASS)"; \
-	author_name="$(AUTHOR_NAME)"; \
-	author_email="$(AUTHOR_EMAIL)"; \
-	\
-	if [ -z "$$driver_name" ]; then \
-		echo "Driver name (use underscores, e.g., my_usb_device):"; \
-		read driver_name; \
-		if [ -z "$$driver_name" ]; then \
-			echo "Error: Driver name is required"; \
-			exit 1; \
-		fi; \
-	fi; \
-	\
-	if [ -z "$$driver_class" ]; then \
-		echo "Driver class name (PascalCase, e.g., MyUsbDevice):"; \
-		read driver_class; \
-		if [ -z "$$driver_class" ]; then \
-			echo "Error: Driver class name is required"; \
-			exit 1; \
-		fi; \
-	fi; \
-	\
-	if [ -z "$$author_name" ]; then \
-		echo "Author name:"; \
-		read author_name; \
-		if [ -z "$$author_name" ]; then \
-			echo "Error: Author name is required"; \
-			exit 1; \
-		fi; \
-	fi; \
-	\
-	if [ -z "$$author_email" ]; then \
-		echo "Author email:"; \
-		read author_email; \
-		if [ -z "$$author_email" ]; then \
-			echo "Error: Author email is required"; \
-			exit 1; \
-		fi; \
-	fi; \
-	\
-	echo "Creating driver: $$driver_name"; \
-	./__templates__/create_driver.sh "$$driver_name" "$$driver_class" "$$author_name" "$$author_email"; \
-	echo "Driver '$$driver_name' created successfully!"; \
-	echo "Next steps:"; \
-	echo "  1. Edit the driver implementation in packages/jumpstarter-driver-$$(echo $$driver_name | sed 's/_/-/g')/jumpstarter_driver_$$driver_name/driver.py"; \
-	echo "  2. Update the README.md with driver-specific documentation"; \
-	echo "  3. Run tests: make pkg-test-jumpstarter-driver-$$(echo $$driver_name | sed 's/_/-/g')"
+	@if [ -n "$(DRIVER_NAME)" ] && [ -n "$(DRIVER_CLASS)" ] && [ -n "$(AUTHOR_NAME)" ] && [ -n "$(AUTHOR_EMAIL)" ]; then \
+		./__templates__/create_driver.sh "$(DRIVER_NAME)" "$(DRIVER_CLASS)" "$(AUTHOR_NAME)" "$(AUTHOR_EMAIL)"; \
+	elif [ -n "$(DRIVER_NAME)" ] && [ -n "$(DRIVER_CLASS)" ]; then \
+		./__templates__/create_driver.sh "$(DRIVER_NAME)" "$(DRIVER_CLASS)"; \
+	else \
+		./__templates__/create_driver.sh; \
+	fi
 
 clean-venv:
 	-rm -rf ./.venv

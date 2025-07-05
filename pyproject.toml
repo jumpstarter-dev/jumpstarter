@@ -2,6 +2,7 @@
 members = ["packages/*", "examples/*"]
 
 [tool.uv.sources]
+hatch-pin-jumpstarter = { workspace = true }
 jumpstarter = { workspace = true }
 jumpstarter-cli = { workspace = true }
 jumpstarter-cli-admin = { workspace = true }
@@ -15,19 +16,19 @@ jumpstarter-driver-energenie = { workspace = true }
 jumpstarter-driver-flashers = { workspace = true }
 jumpstarter-driver-http = { workspace = true }
 jumpstarter-driver-http-power = { workspace = true }
-jumpstarter-driver-raspberrypi = { workspace = true }
-jumpstarter-driver-ridesx = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 jumpstarter-driver-probe-rs = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }
 jumpstarter-driver-qemu = { workspace = true }
+jumpstarter-driver-raspberrypi = { workspace = true }
+jumpstarter-driver-ridesx = { workspace = true }
 jumpstarter-driver-sdwire = { workspace = true }
+jumpstarter-driver-shell = { workspace = true }
+jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-tasmota = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
-jumpstarter-driver-snmp = { workspace = true }
-jumpstarter-driver-shell = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }
@@ -35,8 +36,6 @@ jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-protocol = { workspace = true }
 jumpstarter-testing = { workspace = true }
-hatch-pin-jumpstarter = { workspace = true }
-
 [dependency-groups]
 docs = [
     "sphinx<8.1.0",
