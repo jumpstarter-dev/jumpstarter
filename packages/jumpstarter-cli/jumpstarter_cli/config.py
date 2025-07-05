@@ -6,6 +6,9 @@ from .config_exporter import config_exporter
 
 @click.group
 def config():
+    """
+    Manage local configurations
+    """
     pass
 
 
