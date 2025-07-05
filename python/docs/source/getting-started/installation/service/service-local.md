@@ -1,6 +1,6 @@
 # Local Installation
 
-For local development and testing, you can install Jumpstarter on local Kubernetes clusters using tools like kind or minikube. This is ideal for getting started quickly or for CI/CD pipelines.
+For local development and testing, you can install Jumpstarter on local Kubernetes clusters using tools like kind or minikube. This is ideal for learning about the distributed service quickly or for creating CI/CD pipelines to validate your own Jumpstarter drivers.
 
 ## Prerequisites
 
