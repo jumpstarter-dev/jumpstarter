@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
@@ -15,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from jumpstarter.common.grpc import translate_grpc_exceptions
 
 
-def parse_identifier(identifier: str, kind: str) -> (str, str):
+def parse_identifier(identifier: str, kind: str) -> tuple[str, str]:
     segments = identifier.split("/")
     if len(segments) != 4:
         raise ValueError("incorrect number of segments in identifier, expecting 4, got {}".format(len(segments)))
@@ -26,15 +27,15 @@ def parse_identifier(identifier: str, kind: str) -> (str, str):
     return segments[1], segments[3]
 
 
-def parse_client_identifier(identifier: str) -> (str, str):
+def parse_client_identifier(identifier: str) -> tuple[str, str]:
     return parse_identifier(identifier, "clients")
 
 
-def parse_exporter_identifier(identifier: str) -> (str, str):
+def parse_exporter_identifier(identifier: str) -> tuple[str, str]:
     return parse_identifier(identifier, "exporters")
 
 
-def parse_lease_identifier(identifier: str) -> (str, str):
+def parse_lease_identifier(identifier: str) -> tuple[str, str]:
     return parse_identifier(identifier, "leases")
 
 
@@ -129,6 +130,66 @@ class Lease(BaseModel):
     def rich_add_names(self, names):
         names.append(self.name)
 
+    def get_status(self) -> str:
+        """Get the lease status based on conditions"""
+        if not self.conditions:
+            return "Unknown"
+
+        latest_condition = self.conditions[-1]
+
+        if latest_condition.type == "Ready" and latest_condition.status == "True":
+            return "Active"
+        elif latest_condition.type == "Ready" and latest_condition.status == "False":
+            return "Waiting"
+        elif latest_condition.type == "Expired":
+            return "Expired"
+        else:
+            return latest_condition.reason if latest_condition.reason else "Unknown"
+
+
+class WithLease(BaseModel):
+    exporter: Exporter
+    lease: Lease | None = None
+
+    @classmethod
+    def rich_add_columns(cls, table):
+        table.add_column("NAME")
+        table.add_column("LABELS")
+        table.add_column("LEASED BY")
+        table.add_column("LEASE STATUS")
+
+    def rich_add_rows(self, table):
+        lease_client = ""
+        lease_status = "Available"
+
+        if self.lease and self.lease.exporter == self.exporter.name:
+            lease_client = self.lease.client
+            lease_status = self.lease.get_status()
+
+        table.add_row(
+            self.exporter.name,
+            ",".join(("{}={}".format(i[0], i[1]) for i in self.exporter.labels.items())),
+            lease_client,
+            lease_status,
+        )
+
+    def rich_add_names(self, names):
+        self.exporter.rich_add_names(names)
+
+    def model_dump_json(self, **kwargs):
+        json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
+        data = {
+            "exporter": self.exporter.model_dump(mode="json"),
+            "lease": self.lease.model_dump(mode="json") if self.lease else None,
+        }
+        return json.dumps(data, **json_kwargs)
+
+    def model_dump(self, **kwargs):
+        return {
+            "exporter": self.exporter.model_dump(mode="json"),
+            "lease": self.lease.model_dump(mode="json") if self.lease else None,
+        }
+
 
 class ExporterList(BaseModel):
     exporters: list[Exporter]
@@ -152,6 +213,49 @@ class ExporterList(BaseModel):
     def rich_add_names(self, names):
         for exporter in self.exporters:
             exporter.rich_add_names(names)
+
+
+class WithLeaseList(BaseModel):
+    """List of exporters with lease information"""
+
+    exporters_with_leases: list[WithLease]
+    next_page_token: str | None = Field(exclude=True)
+
+    @classmethod
+    def rich_add_columns(cls, table):
+        WithLease.rich_add_columns(table)
+
+    def rich_add_rows(self, table):
+        for exporter_with_lease in self.exporters_with_leases:
+            exporter_with_lease.rich_add_rows(table)
+
+    def rich_add_names(self, names):
+        for exporter_with_lease in self.exporters_with_leases:
+            exporter_with_lease.rich_add_names(names)
+
+    def model_dump_json(self, **kwargs):
+        json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
+        data = {
+            "exporters": [
+                {
+                    "exporter": ewl.exporter.model_dump(mode="json"),
+                    "lease": ewl.lease.model_dump(mode="json") if ewl.lease else None,
+                }
+                for ewl in self.exporters_with_leases
+            ]
+        }
+        return json.dumps(data, **json_kwargs)
+
+    def model_dump(self, **kwargs):
+        return {
+            "exporters": [
+                {
+                    "exporter": ewl.exporter.model_dump(mode="json"),
+                    "lease": ewl.lease.model_dump(mode="json") if ewl.lease else None,
+                }
+                for ewl in self.exporters_with_leases
+            ]
+        }
 
 
 class LeaseList(BaseModel):

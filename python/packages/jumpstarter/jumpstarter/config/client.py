@@ -18,7 +18,7 @@ from .common import CONFIG_PATH, ObjectMeta
 from .env import JMP_LEASE
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
-from jumpstarter.client.grpc import ClientService
+from jumpstarter.client.grpc import ClientService, WithLease, WithLeaseList
 from jumpstarter.common.exceptions import ConfigurationError, FileNotFoundError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 
@@ -114,9 +114,30 @@ class ClientConfigV1Alpha1(BaseSettings):
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
+        include_leases: bool = False,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+        exporters_response = await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+
+        if not include_leases:
+            return exporters_response
+
+        leases_response = await svc.ListLeases()
+        lease_map = {}
+        for lease in leases_response.leases:
+            if lease.exporter and lease.effective_begin_time:
+                if lease.conditions:
+                    latest_condition = lease.conditions[-1]
+                    if latest_condition.type == "Ready" and latest_condition.status == "True":
+                        lease_map[lease.exporter] = lease
+
+        exporters_with_leases = []
+        for exporter in exporters_response.exporters:
+            lease = lease_map.get(exporter.name)
+            exporters_with_leases.append(WithLease(exporter=exporter, lease=lease))
+        return WithLeaseList(
+            exporters_with_leases=exporters_with_leases, next_page_token=exporters_response.next_page_token
+        )
 
     @_blocking_compat
     async def create_lease(
