@@ -25,6 +25,6 @@ jobs:
 
       - name: Run build_bundle.sh for aarch64-itb
         run: |
-          podman login quay.io -u jumpstarter-dev+jumpstarter_ci --password-stdin <<< "${{ secrets.QUAY_TOKEN }}"
-          cd packages/jumpstarter-driver-flashers/oci_bundles
+          cd packages/jumpstarter-driver-flashers/oci_bundles && dnf install -y oras
+          oras login quay.io -u jumpstarter-dev+jumpstarter_ci --password-stdin <<< "${{ secrets.QUAY_TOKEN }}"
           ./build_bundle.sh quay.io/jumpstarter-dev/jumpstarter-flasher-aarch64-itb:latest aarch64-itb
