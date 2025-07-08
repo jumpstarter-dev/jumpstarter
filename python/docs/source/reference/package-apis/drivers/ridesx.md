@@ -25,6 +25,7 @@ The RideSX driver supports two main components:
 Example configuration for the RideSX driver:
 
 ```yaml
+export:
   storage:
     type: "jumpstarter_driver_ridesx.driver.RideSXDriver"
     config:
@@ -49,17 +50,6 @@ Example configuration for the RideSX driver:
     config:
       url: "/dev/serial/by-id/usb-FTDI_Qualcomm_AIR_8775_AI208U7YXA-if01-port01"
       baudrate: 115200
-
-```
-
-### CLI usage
-
-```console
-$ jmp shell -l board=qc-ridesx4
-# Flash the device using the artifacts from automotive-image-builder, this uses 3 partition file systems
-$$ j storage flash --target system_a:rootfs.simg --target system_b:qm_var.simg --target boot_a:aboot.img
-$$ j power on
-$$ j serial start-console
 ```
 
 ### Config parameters
@@ -98,18 +88,21 @@ Both drivers require:
     :members: on, off, cycle, rescue, serial
 ```
 
-## Usage Examples
+## Examples
 
-### Flash Single Partition
+### CLI usage
 
-```{testcode}
-# Flash a single partition
-ridesx_client.flash("/path/to/boot.img", partition="boot")
+```console
+$ jmp shell -l board=qc-ridesx4
+# Flash the device using the artifacts from automotive-image-builder, this uses 3 partition file systems
+$$ j storage flash --target system_a:rootfs.simg --target system_b:qm_var.simg --target boot_a:aboot.img
+$$ j power on
+$$ j serial start-console
 ```
 
 ### Flash Multiple Partitions
 
-```{testcode}
+```python
 # Flash multiple partitions
 partitions = {
     "boot": "/path/to/boot.img",
@@ -119,18 +112,9 @@ partitions = {
 ridesx_client.flash(partitions)
 ```
 
-### Flash with Compressed Images
-
-The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`):
-
-```{testcode}
-# Flash compressed images - decompression is automatic
-ridesx_client.flash("/path/to/boot.img.gz", partition="boot")
-```
-
 ### Power Control
 
-```{testcode}
+```python
 # Turn device power on
 ridesx_power_client.on()
 
@@ -140,11 +124,3 @@ ridesx_power_client.off()
 # Power cycle the device
 ridesx_power_client.cycle(wait=5)  # Wait 5 seconds between off/on
 ```
-
-## Features
-
-- **Fastboot Support**: Automatically detects fastboot devices and flashes partitions
-- **Compression Handling**: Supports automatic decompression of `.gz`, `.gzip`, and `.xz` files
-- **Power Control**: Serial-based power control with on/off/cycle operations
-- **Storage Management**: Built-in storage for firmware images with upload/download capabilities
-- **Serial Communication**: Direct access to underlying serial interface for custom commands

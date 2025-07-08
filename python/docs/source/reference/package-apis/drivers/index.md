@@ -71,6 +71,7 @@ Drivers for debugging and programming devices:
   virtualization platform
 * **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader
   interface
+* **[RideSX](ridesx.md)** (`jumpstarter-driver-ridesx`) - Flashing and power management for Qualcomm RideSX devices
 
 ### Utility Drivers
 
@@ -94,6 +95,7 @@ probe-rs.md
 pyserial.md
 qemu.md
 raspberrypi.md
+ridesx.md
 sdwire.md
 shell.md
 snmp.md
