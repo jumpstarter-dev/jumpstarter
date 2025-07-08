@@ -157,20 +157,25 @@ class WithLease(BaseModel):
         table.add_column("LABELS")
         table.add_column("LEASED BY")
         table.add_column("LEASE STATUS")
+        table.add_column("START TIME")
 
     def rich_add_rows(self, table):
         lease_client = ""
         lease_status = "Available"
+        start_time = ""
 
         if self.lease and self.lease.exporter == self.exporter.name:
             lease_client = self.lease.client
             lease_status = self.lease.get_status()
+            if self.lease.effective_begin_time:
+                start_time = self.lease.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
 
         table.add_row(
             self.exporter.name,
             ",".join(("{}={}".format(i[0], i[1]) for i in self.exporter.labels.items())),
             lease_client,
             lease_status,
+            start_time,
         )
 
     def rich_add_names(self, names):
