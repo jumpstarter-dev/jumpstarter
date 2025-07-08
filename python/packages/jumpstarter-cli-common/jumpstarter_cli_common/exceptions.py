@@ -4,7 +4,7 @@ from types import TracebackType
 
 import click
 
-from jumpstarter.common.exceptions import JumpstarterException
+from jumpstarter.common.exceptions import ConnectionError, JumpstarterException
 
 
 class ClickExceptionRed(click.ClickException):
@@ -44,6 +44,32 @@ def handle_exceptions(func):
             raise
 
     return wrapped
+
+
+def handle_exceptions_with_reauthentication(login_func):
+    """Decorator to handle exceptions in blocking functions."""
+    def decorator(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except ConnectionError as e:
+                if "expired" in str(e).lower():
+                    click.echo(click.style("Token is expired, triggering re-authentication", fg="red"))
+                    config = e.get_config()
+                    login_func(config)
+                    raise ClickExceptionRed("Please try again now") from None
+                else:
+                    raise ClickExceptionRed(str(e)) from None
+            except JumpstarterException as e:
+                raise ClickExceptionRed(str(e)) from None
+            except click.ClickException:
+                raise  # if it was already a click exception from the cli commands, just re-raise it
+            except Exception:
+                raise
+        return wrapped
+
+    return decorator
 
 
 # https://peps.python.org/pep-0785/#reference-implementation

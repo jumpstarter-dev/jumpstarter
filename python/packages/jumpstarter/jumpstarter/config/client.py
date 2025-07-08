@@ -11,7 +11,14 @@ from typing import Annotated, ClassVar, Literal, Optional, Self
 import grpc
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .common import CONFIG_PATH, ObjectMeta
@@ -19,7 +26,11 @@ from .env import JMP_LEASE
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService, WithLease, WithLeaseList
-from jumpstarter.common.exceptions import ConfigurationError, FileNotFoundError
+from jumpstarter.common.exceptions import (
+    ConfigurationError,
+    ConnectionError,
+    FileNotFoundError,
+)
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 
 
@@ -35,6 +46,20 @@ def _blocking_compat(f):
 
     return wrapper
 
+
+def _handle_connection_error(f):
+    @wraps(f)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await f(*args, **kwargs)
+        except ConnectionError as e:
+            if "token is expired" in str(e):
+                # args[0] should be self for instance methods
+                e.set_config(args[0])
+            raise e
+        except Exception:
+            raise
+    return wrapper
 
 class ClientConfigV1Alpha1Drivers(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="JMP_DRIVERS_")
@@ -101,6 +126,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 yield lease
 
     @_blocking_compat
+    @_handle_connection_error
     async def get_exporter(
         self,
         name: str,
@@ -108,7 +134,9 @@ class ClientConfigV1Alpha1(BaseSettings):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.GetExporter(name=name)
 
+
     @_blocking_compat
+    @_handle_connection_error
     async def list_exporters(
         self,
         page_size: int | None = None,
@@ -139,7 +167,10 @@ class ClientConfigV1Alpha1(BaseSettings):
             exporters_with_leases=exporters_with_leases, next_page_token=exporters_response.next_page_token
         )
 
+
+
     @_blocking_compat
+    @_handle_connection_error
     async def create_lease(
         self,
         selector: str,
@@ -152,6 +183,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         )
 
     @_blocking_compat
+    @_handle_connection_error
     async def delete_lease(
         self,
         name: str,
@@ -162,6 +194,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         )
 
     @_blocking_compat
+    @_handle_connection_error
     async def list_leases(
         self,
         page_size: int | None = None,
@@ -176,6 +209,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         )
 
     @_blocking_compat
+    @_handle_connection_error
     async def update_lease(
         self,
         name,
@@ -183,6 +217,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.UpdateLease(name=name, duration=duration)
+
 
     @asynccontextmanager
     async def lease_async(
@@ -198,8 +233,8 @@ class ClientConfigV1Alpha1(BaseSettings):
         lease_name = lease_name or os.environ.get(JMP_LEASE, "")
         # when no lease name is provided, release the lease on exit
         release_lease = lease_name == ""
-
-        async with Lease(
+        try:
+            async with Lease(
             channel=await self.channel(),
             namespace=self.metadata.namespace,
             name=lease_name,
@@ -211,8 +246,17 @@ class ClientConfigV1Alpha1(BaseSettings):
             release=release_lease,
             tls_config=self.tls,
             grpc_options=self.grpcOptions,
-        ) as lease:
-            yield lease
+            ) as lease:
+                yield lease
+
+        # this replicates _handle_connection_error, the decorator doesn't work with asynccontextmanager
+        except ConnectionError as e:
+            if "token is expired" in str(e):
+                # args[0] should be self for instance methods
+                e.set_config(self)
+            raise e
+        except Exception:
+            raise
 
     @classmethod
     def from_file(cls, path: os.PathLike):
