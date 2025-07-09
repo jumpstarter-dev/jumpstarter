@@ -18,13 +18,15 @@ def get():
 @opt_config(exporter=False)
 @opt_selector
 @opt_output_all
+@click.option("--with", "with_options", multiple=True, help="Include additional information (e.g., 'leases')")
 @handle_exceptions
-def get_exporters(config, selector: str | None, output: OutputType):
+def get_exporters(config, selector: str | None, output: OutputType, with_options: tuple[str, ...]):
     """
     Display one or many exporters
     """
 
-    exporters = config.list_exporters(filter=selector)
+    include_leases = "leases" in with_options
+    exporters = config.list_exporters(filter=selector, include_leases=include_leases)
 
     model_print(exporters, output)
 
