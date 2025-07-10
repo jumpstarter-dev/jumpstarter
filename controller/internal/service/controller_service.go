@@ -264,6 +264,10 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	}
 }
 
+// Status is a stream of status updates for the exporter.
+// It is used to:
+//   - Notify the exporter of the current status of the lease
+//   - Track the exporter's last seen time
 func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerService_StatusServer) error {
 	ctx := stream.Context()
 	logger := log.FromContext(ctx)
@@ -294,9 +298,13 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	defer ticker.Stop()
 
+	// use this to track that we are getting updates from the k8s watcher
+	var watchedLastSeen *metav1.Time
+
 	online := func() {
 		original := client.MergeFrom(exporter.DeepCopy())
 		exporter.Status.LastSeen = metav1.Now()
+
 		if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
 			logger.Error(err, "unable to update exporter status.lastSeen")
 		}
@@ -317,11 +325,28 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 			logger.Info("Status stream terminated normally")
 			return nil
 		case <-ticker.C:
+			// the k8s watchers sometimes stop functioning silently, so we need to detect it
+			// by comparing the last seen time from the k8s watcher with the last seen time
+			// from the exporter object we set in the online() function
+			if watchedLastSeen != nil && !watchedLastSeen.Equal(&exporter.Status.LastSeen) {
+				logger.Info("The exporter watcher seems to have stopped, terminating status stream")
+				return fmt.Errorf("last seen time mismatch")
+			}
 			online()
-		case result := <-watcher.ResultChan():
+		case result, ok := <-watcher.ResultChan():
+			// Check if the watch channel has been closed
+			if !ok {
+				logger.Info("Watch channel closed, terminating status stream")
+				return fmt.Errorf("watch channel closed")
+			}
+
 			switch result.Type {
 			case watch.Added, watch.Modified, watch.Deleted:
 				exporter = result.Object.(*jumpstarterdevv1alpha1.Exporter)
+				// track the last seen time from the k8s watcher, so we can detect if
+				// the watcher stops functioning
+				watchedLastSeen = exporter.Status.LastSeen.DeepCopy()
+
 				leased := exporter.Status.LeaseRef != nil
 				leaseName := (*string)(nil)
 				clientName := (*string)(nil)
