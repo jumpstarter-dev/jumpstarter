@@ -7,7 +7,7 @@
 	images {
 		kernel {
 			description = "kernel-automotive";
-			data = /incbin/("/kernel-automotive/vmlinuz");
+			data = /incbin/("./kernel-automotive/vmlinuz");
 			type = "kernel";
 			arch = "arm64";
 			os = "linux";
@@ -20,7 +20,7 @@
 		};
 		fdt-spider {
 			description = "DTB Renesas 8779f0-spider";
-			data = /incbin/("/kernel-automotive/dtb/renesas/r8a779f0-spider.dtb");
+			data = /incbin/("./kernel-automotive/dtb/renesas/r8a779f0-spider.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
@@ -32,7 +32,7 @@
 		};
 		fdt-s4sk {
 			description = "DTB Renesas r8a779f4-s4sk";
-			data = /incbin/("/kernel-automotive/dtb/renesas/r8a779f4-s4sk.dtb");
+			data = /incbin/("./kernel-automotive/dtb/renesas/r8a779f4-s4sk.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
@@ -44,7 +44,7 @@
 		};
 		initrd {
 			description = "Initrd";
-			data = /incbin/("/buildroot/output/images/rootfs.cpio.lzo");
+			data = /incbin/("/var/tmp/buildroot/output/images/rootfs.cpio.lzo");
 			type = "ramdisk";
 			arch = "arm64";
 			os = "linux";

@@ -3,9 +3,10 @@ from datetime import timedelta
 
 import click
 from jumpstarter_cli_common.config import opt_config
-from jumpstarter_cli_common.exceptions import handle_exceptions
+from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 
 from .common import opt_duration_partial, opt_selector
+from .login import relogin_client
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -20,7 +21,7 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 @opt_selector
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
 # end client specific
-@handle_exceptions
+@handle_exceptions_with_reauthentication(relogin_client)
 def shell(config, command: tuple[str, ...], lease_name, selector, duration):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
