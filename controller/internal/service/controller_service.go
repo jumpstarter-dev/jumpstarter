@@ -38,6 +38,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
+	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
@@ -64,6 +65,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
+	"google.golang.org/protobuf/proto"
 )
 
 // ControllerService exposes a gRPC service
@@ -319,6 +321,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 		online()
 	}
 
+	var lastPbStatusResponse *pb.StatusResponse
 	for {
 		select {
 		case <-ctx.Done():
@@ -370,10 +373,15 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 					LeaseName:  leaseName,
 					ClientName: clientName,
 				}
-				logger.Info("Sending status update to exporter", "status", fmt.Sprintf("%+v", &status))
-				if err = stream.Send(&status); err != nil {
-					logger.Error(err, "Failed to send status update to exporter")
-					return err
+				if proto.Equal(lastPbStatusResponse, &status) {
+					jlog.Verbose(logger, "Not sending status update to exporter, it is the same as the last one")
+				} else {
+					logger.Info("Sending status update to exporter", "status", fmt.Sprintf("%+v", &status))
+					if err = stream.Send(&status); err != nil {
+						logger.Error(err, "Failed to send status update to exporter")
+						return err
+					}
+					lastPbStatusResponse = proto.Clone(&status).(*pb.StatusResponse)
 				}
 			case watch.Error:
 				logger.Error(fmt.Errorf("%+v", result.Object), "Received error when watching exporter")
