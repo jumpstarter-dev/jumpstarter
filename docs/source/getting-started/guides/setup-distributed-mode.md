@@ -27,7 +27,7 @@ connection between an exporter and client without physical hardware.
 
 You need the [service](../../introduction/service.md) running in a Kubernetes
 cluster with admin access. For installation instructions, refer to the
-[installation guide](../installation/service.md).
+[installation guide](../installation/service/index.md).
 
 ## Instructions
 

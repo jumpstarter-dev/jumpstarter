@@ -26,7 +26,7 @@ from jumpstarter.config.user import UserConfigV1Alpha1
 
 @click.group(cls=AliasedGroup)
 def delete():
-    """Create Jumpstarter Kubernetes objects"""
+    """Delete Jumpstarter Kubernetes objects"""
 
 
 @delete.command("client")
