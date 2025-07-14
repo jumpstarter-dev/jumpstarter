@@ -30,6 +30,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
+
+	_ "google.golang.org/grpc/encoding/gzip"
 )
 
 func main() {
