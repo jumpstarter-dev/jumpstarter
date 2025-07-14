@@ -1,6 +1,6 @@
 name: Trigger Packages Index Generation
 
-"on":
+on:
   push:
     branches:
       - main
