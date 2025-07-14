@@ -22,10 +22,16 @@ jobs:
     runs-on: ubuntu-latest
     if: env.TRIGGER == 'true'
     steps:
+      - uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5 # v2.0.2
+        id: app-token
+        with:
+          app-id: ${{ secrets.JUMPSTARTER_BACKPORT_BOT_APP_ID }}
+          private-key: ${{ secrets.JUMPSTARTER_BACKPORT_BOT_PRIVATE_KEY }}
+
       - name: Trigger packages repository index generation
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           repository: jumpstarter-dev/packages
           event-type: generate-index
           client-payload: |
