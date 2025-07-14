@@ -76,11 +76,11 @@ def launch_shell(
         return process.wait()
 
     if shell_name.endswith("bash"):
+        PS1=f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} "
         env = common_env | {
-            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
+            'PROMPT_COMMAND': f'PS1="{PS1}"',
         }
-        cmd = [shell, "--norc", "--noprofile"]
-        process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+        process = Popen(shell, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
         return process.wait()
 
     elif shell_name == "fish":
