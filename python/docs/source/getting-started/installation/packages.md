@@ -24,12 +24,12 @@ Install directly using our installer from github:
 
 For the latest release:
 ```{code-block} console
-curl -fsSL https://raw.githubusercontent.com/jumpstarter/jumpstarter/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/install.sh | bash
 ```
 
 Or with explicit source specification (main branch example)
 ```{code-block} console
-curl -fsSL https://raw.githubusercontent.com/jumpstarter/jumpstarter/main/install.sh | bash -s -- -s main
+curl -fsSL https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/install.sh | bash -s -- -s main
 ```
 
 ##### Local Installation
