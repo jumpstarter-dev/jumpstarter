@@ -17,7 +17,88 @@ Jumpstarter includes the following installable Python packages:
 The [Jumpstarter Python packages](https://pkg.jumpstarter.dev/) provide all the
 tools you need to interact with hardware locally.
 
-#### Prerequisites
+#### Using the Installer
+##### Quick Install (Recommended)
+
+Install directly using our installer from github:
+
+For the latest release:
+```{code-block} console
+curl -fsSL https://raw.githubusercontent.com/jumpstarter/jumpstarter/main/install.sh | bash
+```
+
+Or with explicit source specification (main branch example)
+```{code-block} console
+curl -fsSL https://raw.githubusercontent.com/jumpstarter/jumpstarter/main/install.sh | bash -s -- -s main
+```
+
+##### Local Installation
+
+If you have the repository cloned locally:
+
+| Installation Type | Command | Description |
+|------------------|---------|-------------|
+| Stable release (recommended) | `./install.sh` | Install stable release 0.6 |
+| Stable release (explicit) | `./install.sh -s release-0.6` | Install stable release 0.6 explicitly |
+| Development version | `./install.sh -s main` | Install latest development version |
+| Release candidate | `./install.sh -s rc` | Install latest release candidate (when available) |
+| Custom directory | `./install.sh -d /opt/jumpstarter` | Install to custom directory |
+
+##### Installation Directory Structure
+
+After installation, the following structure is created:
+
+```
+~/.local/jumpstarter/
+├── venv/                    # Python virtual environment
+├── bin/                     # Command symlinks
+│   ├── jmp
+│   └── j
+└── set                      # Environment activation script
+```
+
+##### Activating the Environment
+
+Activate for current session, adjust ~/.local/jumpstarter if you picked a custom install directory.
+```{code-block} console
+source ~/.local/jumpstarter/set
+```
+
+Or add to your shell profile for permanent activation, adjust ~/.local/jumpstarter if you picked a custom install directory.
+```{code-block} console
+echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
+```
+
+##### Command Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-s, --source SOURCE` | Installation source (release-0.6, latest, rc, main) | `release-0.6` |
+| `-d, --dir DIR` | Installation directory | `~/.local/jumpstarter` |
+| `-h, --help` | Show help message | - |
+
+##### Prerequisites
+
+- Python 3.11 or higher
+- pip3
+- bash shell
+
+
+##### Uninstalling
+
+To completely remove Jumpstarter, adjust if you picked a custom install directory.
+
+```{code-block} console
+# Remove installation directory
+rm -rf ~/.local/jumpstarter
+
+# Remove from shell profile (if added)
+# Edit ~/.bashrc, ~/.zshrc, etc. and remove the source line
+```
+
+#### Using pip
+
+##### Prerequisites
 
 - Python {{requires_python}}
 - A package manager such as [`pip`](https://pip.pypa.io/en/stable/installation/) or [`uv`](https://docs.astral.sh/uv/getting-started/installation).
@@ -86,13 +167,13 @@ indexes:
 | [main](https://pkg.jumpstarter.dev/main/)              | Index tracking the main branch, equivalent to installing from sources |
 | [release-0.6](https://pkg.jumpstarter.dev/release-0.6) | Index tracking a stable branch                                        |
 
-### Installing from Source
+#### Installing from Source
 
 Jumpstarter is in active development with frequent feature additions. We
 conduct thorough testing and recommend installing the latest version from the
 `main` branch.
 
-#### Prerequisites
+##### Prerequisites
 
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation) - A modern Python package manager for monorepos.
 - `make` - The make build tool.
@@ -121,7 +202,7 @@ $ source .venv/bin/activate
 $ jmp version
 ```
 
-### Run in a Container
+#### Run in a Container
 
 If you prefer not to install packages locally, you can run Jumpstarter from a container using [Docker](https://docker.com) or [Podman](https://podman.io).
 
