@@ -1,46 +1,66 @@
 from concurrent.futures import ThreadPoolExecutor
 
-from gpiozero import Device
-from gpiozero.pins.mock import MockFactory
-
-from jumpstarter_driver_raspberrypi.driver import DigitalInput, DigitalOutput
+from jumpstarter_driver_raspberrypi.driver import DigitalInput, DigitalOutput, PowerSwitch, lgpio
 
 from jumpstarter.common.utils import serve
 
-Device.pin_factory = MockFactory()
+
+def _pin_state(handle: int, pin: int) -> int:
+    """Helper to fetch a pin's logic level from the lgpio"""
+
+    return lgpio._pin_state.get((handle, pin), 0)  # type: ignore[attr-defined]
 
 
 def test_drivers_gpio_digital_output():
-    pin_factory = MockFactory()
-    Device.pin_factory = pin_factory
     pin_number = 1
-    mock_pin = pin_factory.pin(pin_number)
-
     instance = DigitalOutput(pin=pin_number)
 
-    assert not mock_pin.state
+    assert _pin_state(0, pin_number) == 0
 
     with serve(instance) as client:
-        client.off()
-        assert not mock_pin.state
+        client.off()  # type: ignore[attr-defined]
+        assert _pin_state(0, pin_number) == 0
 
-        client.on()
-        assert mock_pin.state
+        client.on()  # type: ignore[attr-defined]
+        assert _pin_state(0, pin_number) == 1
 
-        client.off()
-        assert not mock_pin.state
-
-    mock_pin.assert_states([False, True, False])
+        client.off()  # type: ignore[attr-defined]
+        assert _pin_state(0, pin_number) == 0
 
 
 def test_drivers_gpio_digital_input():
-    instance = DigitalInput(pin=4)
+    pin_number = 4
+    instance = DigitalInput(pin=pin_number)
+
+    lgpio._pin_state[(0, pin_number)] = 0  # type: ignore[attr-defined]
 
     with serve(instance) as client:
         with ThreadPoolExecutor() as pool:
-            pool.submit(client.wait_for_active)
-            instance.device.pin.drive_high()
+            fut = pool.submit(client.wait_for_active, timeout=1.0)  # type: ignore[attr-defined]
+            lgpio._pin_state[(0, pin_number)] = 1  # type: ignore[attr-defined]
+            fut.result(timeout=1.5)
 
         with ThreadPoolExecutor() as pool:
-            pool.submit(client.wait_for_inactive)
-            instance.device.pin.drive_low()
+            fut = pool.submit(client.wait_for_inactive, timeout=1.0)  # type: ignore[attr-defined]
+            lgpio._pin_state[(0, pin_number)] = 0  # type: ignore[attr-defined]
+            fut.result(timeout=1.5)
+
+
+def test_drivers_gpio_power_switch_open_drain():
+    pin_number = 2
+    instance = PowerSwitch(pin=pin_number, open_drain=True)
+
+    assert _pin_state(0, pin_number) == 0
+
+    with serve(instance) as client:
+        client.off()  # type: ignore[attr-defined]
+        assert _pin_state(0, pin_number) == 0
+
+        client.on()  # type: ignore[attr-defined]
+        assert _pin_state(0, pin_number) == 1
+
+        client.off()  # type: ignore[attr-defined]
+        assert _pin_state(0, pin_number) == 0
+
+        client.cycle()  # type: ignore[attr-defined]
+        assert _pin_state(0, pin_number) == 1
