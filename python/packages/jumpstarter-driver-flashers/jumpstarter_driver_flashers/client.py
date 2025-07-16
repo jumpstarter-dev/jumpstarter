@@ -101,7 +101,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             # Start the storage write operation in the background
             storage_thread = threading.Thread(
                 target=self._transfer_bg_thread,
-                args=(path, operator, operator_scheme, os_image_checksum, self.http.storage, error_queue),
+                args=(path, operator, operator_scheme, os_image_checksum, self.http.storage, error_queue, image_url),
                 name="storage_transfer",
             )
             storage_thread.start()
@@ -244,6 +244,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         known_hash: str | None,
         to_storage: OpendalClient,
         error_queue,
+        original_url: str | None = None,
     ):
         """Transfer image to storage in the background
         Args:
@@ -252,6 +253,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             to_storage: Storage operator to write the image to
             error_queue: Queue to put exceptions in if any
             known_hash: Known hash of the image
+            original_url: Original URL for HTTP fallback
         """
         self.logger.info(f"Writing image to storage in the background: {src_path}")
         try:
@@ -277,7 +279,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.logger.info(f"Uploading image to storage: {filename}")
             to_storage.write_from_path(filename, src_path, src_operator)
 
-            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path, file_hash)
+            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path, file_hash, original_url)
             metadata_file = filename + ".metadata"
             to_storage.write_bytes(metadata_file, metadata_json.encode(errors="ignore"))
 
@@ -299,14 +301,44 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return m.hexdigest()
 
-    def _create_metadata_and_json(self, src_operator, src_path, file_hash=None) -> tuple[Metadata, str]:
+    def _create_metadata_and_json(
+        self, src_operator, src_path, file_hash=None, original_url=None
+    ) -> tuple[Metadata | None, str]:
         """Create a metadata json string from a metadata object"""
-        metadata = src_operator.stat(src_path)
-        metadata_dict = {
-            "path": str(src_path),
-            "content_length": metadata.content_length,
-            "etag": metadata.etag,
-        }
+        metadata = None
+        metadata_dict = {"path": str(src_path)}
+
+        try:
+            metadata = src_operator.stat(src_path)
+            metadata_dict.update(
+                {
+                    "content_length": metadata.content_length,
+                    "etag": metadata.etag,
+                }
+            )
+        except Exception as e:
+            # TODO(bennyz): remove when opendal issue is sorted out
+            # https://github.com/apache/opendal/discussions/6418
+            # fallback to request if we're using a custom certificate
+
+            if original_url and original_url.startswith(("http://", "https://")):
+                try:
+                    import requests
+
+                    response = requests.head(original_url)
+
+                    http_metadata = {}
+                    if "content-length" in response.headers:
+                        http_metadata["content_length"] = int(response.headers["content-length"])
+                    if "etag" in response.headers:
+                        http_metadata["etag"] = response.headers["etag"]
+
+                    metadata_dict.update(http_metadata)
+                    self.logger.info("Successfully got HTTP metadata using requests fallback")
+                except Exception as http_e:
+                    self.logger.error(f"Error getting HTTP metadata with requests fallback: {http_e}")
+            else:
+                self.logger.error(f"Error getting metadata: {e}")
 
         if file_hash:
             metadata_dict["hash"] = file_hash
