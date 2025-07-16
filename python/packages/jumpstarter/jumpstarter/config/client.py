@@ -103,6 +103,8 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     drivers: ClientConfigV1Alpha1Drivers = Field(default_factory=ClientConfigV1Alpha1Drivers)
 
+    shell_use_profiles: bool = False
+
     async def channel(self):
         if self.endpoint is None or self.token is None:
             raise ConfigurationError("endpoint or token not set in client config")

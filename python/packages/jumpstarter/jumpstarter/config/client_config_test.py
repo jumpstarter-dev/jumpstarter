@@ -212,6 +212,7 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
   unsafe: false
+shell_use_profiles: false
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -219,6 +220,7 @@ drivers:
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
+        shell_use_profiles=False,
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
@@ -248,6 +250,7 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
   unsafe: false
+shell_use_profiles: false
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -255,6 +258,7 @@ drivers:
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
+        shell_use_profiles=False,
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
@@ -280,6 +284,7 @@ grpcOptions: {}
 drivers:
   allow: []
   unsafe: true
+shell_use_profiles: false
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -287,6 +292,7 @@ drivers:
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
+        shell_use_profiles=False,
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):

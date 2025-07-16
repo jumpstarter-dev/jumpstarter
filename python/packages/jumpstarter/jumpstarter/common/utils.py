@@ -51,6 +51,7 @@ def launch_shell(
     context: str,
     allow: list[str],
     unsafe: bool,
+    use_profiles: bool,
     *,
     command: tuple[str, ...] | None = None,
 ) -> int:
@@ -76,11 +77,14 @@ def launch_shell(
         return process.wait()
 
     if shell_name.endswith("bash"):
-        PS1=f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} "
         env = common_env | {
-            'PROMPT_COMMAND': f'PS1="{PS1}"',
+            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
         }
-        process = Popen(shell, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+
+        cmd = [shell]
+        if not use_profiles:
+            cmd.extend(['--norc','--noprofile'])
+        process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
         return process.wait()
 
     elif shell_name == "fish":

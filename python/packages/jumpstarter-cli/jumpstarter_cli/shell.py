@@ -51,6 +51,7 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
                                         "remote",
                                         config.drivers.allow,
                                         config.drivers.unsafe,
+                                        config.shell_use_profiles,
                                         command=command,
                                     )
                         else:
@@ -59,6 +60,7 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
                                 "remote",
                                 config.drivers.allow,
                                 config.drivers.unsafe,
+                                config.shell_use_profiles,
                                 command=command,
                             )
 
@@ -72,5 +74,6 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
                     "local",
                     allow=[],
                     unsafe=True,
+                    use_profiles=False,
                     command=command,
                 )
