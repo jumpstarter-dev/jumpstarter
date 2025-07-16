@@ -34,9 +34,3 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           repository: jumpstarter-dev/packages
           event-type: generate-index
-          client-payload: |
-            {
-              "ref": "${{ github.ref }}",
-              "sha": "${{ github.sha }}",
-              "repository": "${{ github.repository }}"
-            }
