@@ -20,9 +20,10 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 @click.option("--lease", "lease_name")
 @opt_selector
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
+@click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
 # end client specific
 @handle_exceptions_with_reauthentication(relogin_client)
-def shell(config, command: tuple[str, ...], lease_name, selector, duration):
+def shell(config, command: tuple[str, ...], lease_name, selector, duration, exporter_logs):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
 
@@ -42,13 +43,24 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration):
             with config.lease(selector=selector, lease_name=lease_name, duration=duration) as lease:
                 with lease.serve_unix() as path:
                     with lease.monitor():
-                        exit_code = launch_shell(
-                            path,
-                            "remote",
-                            config.drivers.allow,
-                            config.drivers.unsafe,
-                            command=command,
-                        )
+                        if exporter_logs:
+                            with lease.connect() as client:
+                                with client.log_stream():
+                                    exit_code = launch_shell(
+                                        path,
+                                        "remote",
+                                        config.drivers.allow,
+                                        config.drivers.unsafe,
+                                        command=command,
+                                    )
+                        else:
+                            exit_code = launch_shell(
+                                path,
+                                "remote",
+                                config.drivers.allow,
+                                config.drivers.unsafe,
+                                command=command,
+                            )
 
             sys.exit(exit_code)
 
