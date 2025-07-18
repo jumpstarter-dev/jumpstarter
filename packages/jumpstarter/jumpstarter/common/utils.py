@@ -51,6 +51,7 @@ def launch_shell(
     context: str,
     allow: list[str],
     unsafe: bool,
+    use_profiles: bool,
     *,
     command: tuple[str, ...] | None = None,
 ) -> int:
@@ -79,7 +80,10 @@ def launch_shell(
         env = common_env | {
             "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
         }
-        cmd = [shell, "--norc", "--noprofile"]
+
+        cmd = [shell]
+        if not use_profiles:
+            cmd.extend(['--norc','--noprofile'])
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
         return process.wait()
 
