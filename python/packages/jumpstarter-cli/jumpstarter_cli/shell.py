@@ -60,7 +60,7 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
                                 "remote",
                                 config.drivers.allow,
                                 config.drivers.unsafe,
-                                config.shell_use_profiles,
+                                config.shell.use_profiles,
                                 command=command,
                             )
 

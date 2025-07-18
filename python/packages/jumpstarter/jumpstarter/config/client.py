@@ -24,6 +24,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from .common import CONFIG_PATH, ObjectMeta
 from .env import JMP_LEASE
 from .grpc import call_credentials
+from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.client.grpc import ClientService, WithLease, WithLeaseList
 from jumpstarter.common.exceptions import (
@@ -103,7 +104,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     drivers: ClientConfigV1Alpha1Drivers = Field(default_factory=ClientConfigV1Alpha1Drivers)
 
-    shell_use_profiles: bool = False
+    shell: ShellConfigV1Alpha1 = Field(default_factory=ShellConfigV1Alpha1)
 
     async def channel(self):
         if self.endpoint is None or self.token is None:

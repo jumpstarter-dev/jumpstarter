@@ -8,7 +8,7 @@ import yaml
 from pydantic import ValidationError
 
 from jumpstarter.common.exceptions import FileNotFoundError
-from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
+from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ShellConfigV1Alpha1
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
 
@@ -212,7 +212,8 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
   unsafe: false
-shell_use_profiles: false
+shell:
+  use_profiles: false
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -220,7 +221,7 @@ shell_use_profiles: false
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
-        shell_use_profiles=False,
+        shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "_get_path", return_value=Path(f.name)) as _get_path_mock:
@@ -250,7 +251,8 @@ drivers:
   - jumpstarter.drivers.*
   - vendorpackage.*
   unsafe: false
-shell_use_profiles: false
+shell:
+  use_profiles: false
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -258,7 +260,7 @@ shell_use_profiles: false
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*", "vendorpackage.*"], unsafe=False),
-        shell_use_profiles=False,
+        shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
@@ -284,7 +286,8 @@ grpcOptions: {}
 drivers:
   allow: []
   unsafe: true
-shell_use_profiles: false
+shell:
+  use_profiles: false
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -292,7 +295,7 @@ shell_use_profiles: false
         endpoint="jumpstarter.my-lab.com:1443",
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
-        shell_use_profiles=False,
+        shell=ShellConfigV1Alpha1(use_profiles=False),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
