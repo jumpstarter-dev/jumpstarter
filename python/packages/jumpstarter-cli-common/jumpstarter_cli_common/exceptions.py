@@ -48,6 +48,7 @@ def handle_exceptions(func):
 
 def handle_exceptions_with_reauthentication(login_func):
     """Decorator to handle exceptions in blocking functions."""
+
     def decorator(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
@@ -67,6 +68,7 @@ def handle_exceptions_with_reauthentication(login_func):
                 raise  # if it was already a click exception from the cli commands, just re-raise it
             except Exception:
                 raise
+
         return wrapped
 
     return decorator
