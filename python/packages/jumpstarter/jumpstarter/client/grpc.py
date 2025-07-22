@@ -138,7 +138,7 @@ class Lease(BaseModel):
         latest_condition = self.conditions[-1]
 
         if latest_condition.type == "Ready" and latest_condition.status == "True":
-            return "Active"
+            return "In-Use"
         elif latest_condition.type == "Ready" and latest_condition.status == "False":
             return "Waiting"
         elif latest_condition.type == "Expired":
