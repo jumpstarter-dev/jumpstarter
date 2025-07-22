@@ -13,6 +13,8 @@ from jumpstarter_kubernetes import (
 )
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
+from jumpstarter_cli_admin.test_utils import json_equal
+
 from .create import create
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
@@ -183,7 +185,7 @@ def test_create_client(
     # With JSON output
     result = runner.invoke(create, ["client", CLIENT_NAME, "--nointeractive", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == CLIENT_JSON
+    assert json_equal(result.output, CLIENT_JSON)
     mock_save_client.assert_not_called()
     mock_save_client.reset_mock()
 
@@ -348,7 +350,7 @@ def test_create_exporter(
         create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--nointeractive", "--output", "json"]
     )
     assert result.exit_code == 0
-    assert result.output == EXPORTER_JSON
+    assert json_equal(result.output, EXPORTER_JSON)
     save_exporter_mock.assert_not_called()
     save_exporter_mock.reset_mock()
 

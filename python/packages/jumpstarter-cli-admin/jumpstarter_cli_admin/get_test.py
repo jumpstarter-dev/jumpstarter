@@ -21,6 +21,8 @@ from jumpstarter_kubernetes import (
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
 
+from jumpstarter_cli_admin.test_utils import json_equal
+
 from .get import get
 
 
@@ -95,7 +97,7 @@ def test_get_client(_load_kube_config_mock, get_client_mock: AsyncMock):
     get_client_mock.return_value = TEST_CLIENT
     result = runner.invoke(get, ["client", "test", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == TEST_CLIENT_JSON
+    assert json_equal(result.output, TEST_CLIENT_JSON)
     get_client_mock.reset_mock()
 
     # Get a single client YAML output
@@ -247,7 +249,7 @@ def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock):
     list_clients_mock.return_value = CLIENTS_LIST
     result = runner.invoke(get, ["clients", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == CLIENTS_LIST_JSON
+    assert json_equal(result.output, CLIENTS_LIST_JSON)
     list_clients_mock.reset_mock()
 
     # List clients YAML output
@@ -275,7 +277,7 @@ def test_get_clients(_load_kube_config_mock, list_clients_mock: AsyncMock):
     list_clients_mock.return_value = V1Alpha1ClientList(items=[])
     result = runner.invoke(get, ["clients", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == CLIENTS_LIST_EMPTY_JSON
+    assert json_equal(result.output, CLIENTS_LIST_EMPTY_JSON)
     list_clients_mock.reset_mock()
 
     # No clients found YAML output
@@ -352,7 +354,7 @@ def test_get_exporter(_load_kube_config_mock, get_exporter_mock: AsyncMock):
     get_exporter_mock.return_value = TEST_EXPORTER
     result = runner.invoke(get, ["exporter", "test", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == TEST_EXPORTER_JSON
+    assert json_equal(result.output, TEST_EXPORTER_JSON)
     get_exporter_mock.reset_mock()
 
     # Get a single exporter YAML output
@@ -467,7 +469,7 @@ def test_get_exporter_devices(_load_kube_config_mock, get_exporter_mock: AsyncMo
     get_exporter_mock.return_value = TEST_EXPORTER_DEVICES
     result = runner.invoke(get, ["exporter", "test", "--devices", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == TEST_EXPORTER_DEVICES_JSON
+    assert json_equal(result.output, TEST_EXPORTER_DEVICES_JSON)
     get_exporter_mock.reset_mock()
 
     # Returns exporter YAML output
@@ -612,7 +614,7 @@ def test_get_exporters(_load_kube_config_mock, list_exporters_mock: AsyncMock):
     list_exporters_mock.return_value = EXPORTERS_LIST
     result = runner.invoke(get, ["exporters", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == EXPORTERS_LIST_JSON
+    assert json_equal(result.output, EXPORTERS_LIST_JSON)
     list_exporters_mock.reset_mock()
 
     # List exporters YAML output
@@ -780,7 +782,7 @@ def test_get_exporters_devices(_load_kube_config_mock, list_exporters_mock: Asyn
     list_exporters_mock.return_value = EXPORTER_DEVICES_LIST
     result = runner.invoke(get, ["exporters", "--devices", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == EXPORTERS_DEVICES_LIST_JSON
+    assert json_equal(result.output, EXPORTERS_DEVICES_LIST_JSON)
     list_exporters_mock.reset_mock()
 
     # List exporters YAML output
@@ -971,7 +973,7 @@ def test_get_lease(_load_kube_config_mock, get_lease_mock: AsyncMock):
     get_lease_mock.return_value = FINISHED_LEASE
     result = runner.invoke(get, ["lease", "82a8ac0d-d7ff-4009-8948-18a3c5c607b2", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == FINISHED_LEASE_JSON
+    assert json_equal(result.output, FINISHED_LEASE_JSON)
     get_lease_mock.reset_mock()
 
     # Get a finished lease YAML output
@@ -1173,7 +1175,7 @@ def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     list_leases_mock.return_value = V1Alpha1LeaseList(items=[IN_PROGRESS_LEASE, FINISHED_LEASE])
     result = runner.invoke(get, ["leases", "--output", "json"])
     assert result.exit_code == 0
-    assert result.output == LEASES_LIST_JSON
+    assert json_equal(result.output, LEASES_LIST_JSON)
     list_leases_mock.reset_mock()
 
     # Found leases YAML output
