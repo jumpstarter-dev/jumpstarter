@@ -83,7 +83,7 @@ def launch_shell(
 
         cmd = [shell]
         if not use_profiles:
-            cmd.extend(['--norc','--noprofile'])
+            cmd.extend(["--norc", "--noprofile"])
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
         return process.wait()
 
@@ -109,7 +109,16 @@ def launch_shell(
         env = common_env | {
             "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
         }
-        cmd = [shell, "--no-rcs"]
+
+        if "HISTFILE" not in env:
+            env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
+
+        cmd = [shell]
+        if not use_profiles:
+            cmd.append("--no-rcs")
+
+        cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
+
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
         return process.wait()
 
