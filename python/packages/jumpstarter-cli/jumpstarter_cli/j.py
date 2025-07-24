@@ -19,8 +19,7 @@ async def j_async():
         async with BlockingPortal() as portal:
             with ExitStack() as stack:
                 async with env_async(portal, stack) as client:
-                    async with client.log_stream_async():
-                        await to_thread.run_sync(lambda: client.cli()(standalone_mode=False))
+                    await to_thread.run_sync(lambda: client.cli()(standalone_mode=False))
 
     try:
         async with create_task_group() as tg:
