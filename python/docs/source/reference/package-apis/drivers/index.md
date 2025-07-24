@@ -50,6 +50,7 @@ Drivers that control storage devices and manage data:
   Layer
 * **[SD Wire](sdwire.md)** (`jumpstarter-driver-sdwire`) - SD card switching
   utilities
+* **[iSCSI](iscsi.md)** (`jumpstarter-driver-iscsi`) - iSCSI server to serve LUNs
 
 ### Media Drivers
 
@@ -88,6 +89,7 @@ energenie.md
 flashers.md
 http.md
 http-power.md
+iscsi.md
 network.md
 opendal.md
 power.md

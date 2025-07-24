@@ -29,6 +29,7 @@ jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
+jumpstarter-driver-iscsi = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }
 jumpstarter-imagehash = { workspace = true }
