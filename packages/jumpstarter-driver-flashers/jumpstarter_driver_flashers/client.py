@@ -12,6 +12,7 @@ from queue import Queue
 from urllib.parse import urlparse
 
 import click
+import requests
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
 from jumpstarter_driver_opendal.common import PathBuf
@@ -68,6 +69,17 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 pass
             yield self.serial
 
+    def _validate_http_url(self, url: str) -> None:
+        """Validate that an HTTP URL is reachable before starting flash process"""
+        self.logger.info(f"Validating HTTP URL accessibility from host: {url}")
+        try:
+            response = requests.head(url, timeout=10, allow_redirects=True)
+            response.raise_for_status()
+            self.logger.info(f"HTTP URL validation successful: {url}")
+        except Exception as e:
+            self.logger.error(f"URL validation failed: {e}")
+            raise
+
     def flash(
         self,
         path: PathBuf,
@@ -82,7 +94,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         skip_exporter_http = False
         image_url = ""
         operator_scheme = None
+        # initrmafs cannot handle https yet, fallback to using the exporter's http server
         if path.startswith("http://") and not force_exporter_http:
+            self._validate_http_url(path)
             # busybox can handle the http from a remote directly, unless target is isolated
             image_url = path
             skip_exporter_http = True
@@ -172,11 +186,26 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
         # Flash the image
         decompress_cmd = _get_decompression_command(path)
+
+        console.sendline(f'wget --spider --server-response --timeout=30 "{image_url}"')
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+        wget_output = console.before.decode(errors="ignore").strip()
+        if wget_output:
+            self.logger.info("URL pre-check response:\n%s", wget_output)
+
+        console.sendline("echo $?")
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        url_status = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+        if url_status != 0:
+            raise RuntimeError(f"Unable to access {image_url} (wget exit status {url_status})")
+
         flash_cmd = (
             f'( wget -q -O - "{image_url}" | '
             f"{decompress_cmd} "
             f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
         )
+
         console.sendline(flash_cmd)
         console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
 
@@ -209,6 +238,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     last_pos = current_bytes
                     last_time = current_time
             time.sleep(1)
+
         self.logger.info("Flushing buffers")
         console.sendline("sync")
         console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_SYNC)
@@ -323,8 +353,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
             if original_url and original_url.startswith(("http://", "https://")):
                 try:
-                    import requests
-
                     response = requests.head(original_url)
 
                     http_metadata = {}
