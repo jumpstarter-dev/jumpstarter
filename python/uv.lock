@@ -19,6 +19,7 @@ members = [
     "jumpstarter-driver-flashers",
     "jumpstarter-driver-http",
     "jumpstarter-driver-http-power",
+    "jumpstarter-driver-iscsi",
     "jumpstarter-driver-network",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-power",
@@ -1527,6 +1528,40 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-iscsi"
+source = { editable = "packages/jumpstarter-driver-iscsi" }
+dependencies = [
+    { name = "anyio" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-opendal" },
+    { name = "rtslib-fb" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "rtslib-fb" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3442,6 +3477,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/da/8a/22b7beea3ee0d44b1916c0c1cb0ee3af23b700b6da9f04991899d0c555d4/rsa-4.9.1.tar.gz", hash = "sha256:e7bdbfdb5497da4c07dfd35530e1a902659db6ff241e39d9953cad06ebd0ae75", size = 29034 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/8d/0133e4eb4beed9e425d9a98ed6e081a55d195481b7632472be1af08d2f6b/rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762", size = 34696 },
+]
+
+[[package]]
+name = "rtslib-fb"
+version = "2.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyudev" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cc/8b/950adb039913cb55d42d154411a527c5df8bca2d18ba450a9b94741215f6/rtslib_fb-2.2.3.tar.gz", hash = "sha256:c1053889b572fde4c0a9b468b508e4e838781364a60f4746e9c5f92aef459de6", size = 45629 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e4/c5/2ecc91e593a8987fc4d2dfcc0ff6a1f611358e1e1763324e40a5564a7954/rtslib_fb-2.2.3-py3-none-any.whl", hash = "sha256:759b65a93ac4ee88fb367e5cdf153a745c1c045b197fef4da3abefc3ccfe5ff1", size = 49449 },
 ]
 
 [[package]]
