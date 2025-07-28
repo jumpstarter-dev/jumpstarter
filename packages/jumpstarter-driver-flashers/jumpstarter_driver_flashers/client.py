@@ -69,17 +69,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 pass
             yield self.serial
 
-    def _validate_http_url(self, url: str) -> None:
-        """Validate that an HTTP URL is reachable before starting flash process"""
-        self.logger.info(f"Validating HTTP URL accessibility from host: {url}")
-        try:
-            response = requests.head(url, timeout=10, allow_redirects=True)
-            response.raise_for_status()
-            self.logger.info(f"HTTP URL validation successful: {url}")
-        except Exception as e:
-            self.logger.error(f"URL validation failed: {e}")
-            raise
-
     def flash(
         self,
         path: PathBuf,
@@ -96,7 +85,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         operator_scheme = None
         # initrmafs cannot handle https yet, fallback to using the exporter's http server
         if path.startswith("http://") and not force_exporter_http:
-            self._validate_http_url(path)
             # busybox can handle the http from a remote directly, unless target is isolated
             image_url = path
             skip_exporter_http = True
@@ -191,14 +179,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
         wget_output = console.before.decode(errors="ignore").strip()
-        if wget_output:
-            self.logger.info("URL pre-check response:\n%s", wget_output)
 
         console.sendline("echo $?")
         console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         url_status = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
         if url_status != 0:
-            raise RuntimeError(f"Unable to access {image_url} (wget exit status {url_status})")
+            raise RuntimeError(f"Unable to access {image_url} (wget exit status {url_status}), output: {wget_output}")
 
         flash_cmd = (
             f'( wget -q -O - "{image_url}" | '
