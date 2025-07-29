@@ -10,11 +10,12 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "jumpstarter-driver-power", "gpiozero>=2.0.1", "click>=8.1.7.2"]
+dependencies = ["jumpstarter", "jumpstarter-driver-power", "click>=8.1.7.2", "lgpio; platform_system == 'Linux'"]
 
 [project.entry-points."jumpstarter.drivers"]
 DigitalInput = "jumpstarter_driver_raspberrypi.driver:DigitalInput"
 DigitalOutput = "jumpstarter_driver_raspberrypi.driver:DigitalOutput"
+PowerSwitch = "jumpstarter_driver_raspberrypi.driver:PowerSwitch"
 
 [dependency-groups]
 dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0"]
