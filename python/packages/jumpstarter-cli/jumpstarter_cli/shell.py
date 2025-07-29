@@ -39,6 +39,15 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
     match config:
         case ClientConfigV1Alpha1():
             exit_code = 0
+            def _launch_remote_shell(path: str) -> int:
+                return launch_shell(
+                    path,
+                    "remote",
+                    config.drivers.allow,
+                    config.drivers.unsafe,
+                    config.shell.use_profiles,
+                    command=command,
+                )
 
             with config.lease(selector=selector, lease_name=lease_name, duration=duration) as lease:
                 with lease.serve_unix() as path:
@@ -46,24 +55,10 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
                         if exporter_logs:
                             with lease.connect() as client:
                                 with client.log_stream():
-                                    exit_code = launch_shell(
-                                        path,
-                                        "remote",
-                                        config.drivers.allow,
-                                        config.drivers.unsafe,
-                                        config.shell_use_profiles,
-                                        command=command,
-                                    )
+                                    exit_code = _launch_remote_shell(path)
                         else:
-                            exit_code = launch_shell(
-                                path,
-                                "remote",
-                                config.drivers.allow,
-                                config.drivers.unsafe,
-                                config.shell.use_profiles,
-                                command=command,
-                            )
-
+                            exit_code = _launch_remote_shell(path)
+            # we exit here to make sure that all the with clauses unwind
             sys.exit(exit_code)
 
         case ExporterConfigV1Alpha1():
