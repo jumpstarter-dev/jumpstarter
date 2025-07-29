@@ -12,6 +12,7 @@ from queue import Queue
 from urllib.parse import urlparse
 
 import click
+import requests
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
 from jumpstarter_driver_opendal.common import PathBuf
@@ -82,6 +83,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         skip_exporter_http = False
         image_url = ""
         operator_scheme = None
+        # initrmafs cannot handle https yet, fallback to using the exporter's http server
         if path.startswith("http://") and not force_exporter_http:
             # busybox can handle the http from a remote directly, unless target is isolated
             image_url = path
@@ -101,7 +103,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             # Start the storage write operation in the background
             storage_thread = threading.Thread(
                 target=self._transfer_bg_thread,
-                args=(path, operator, operator_scheme, os_image_checksum, self.http.storage, error_queue),
+                args=(path, operator, operator_scheme, os_image_checksum, self.http.storage, error_queue, image_url),
                 name="storage_transfer",
             )
             storage_thread.start()
@@ -172,11 +174,24 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
         # Flash the image
         decompress_cmd = _get_decompression_command(path)
+
+        console.sendline(f'wget --spider --server-response --timeout=30 "{image_url}"')
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+        wget_output = console.before.decode(errors="ignore").strip()
+
+        console.sendline("echo $?")
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        url_status = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+        if url_status != 0:
+            raise RuntimeError(f"Unable to access {image_url} (wget exit status {url_status}), output: {wget_output}")
+
         flash_cmd = (
             f'( wget -q -O - "{image_url}" | '
             f"{decompress_cmd} "
             f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
         )
+
         console.sendline(flash_cmd)
         console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
 
@@ -209,6 +224,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     last_pos = current_bytes
                     last_time = current_time
             time.sleep(1)
+
         self.logger.info("Flushing buffers")
         console.sendline("sync")
         console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_SYNC)
@@ -244,6 +260,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         known_hash: str | None,
         to_storage: OpendalClient,
         error_queue,
+        original_url: str | None = None,
     ):
         """Transfer image to storage in the background
         Args:
@@ -252,6 +269,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             to_storage: Storage operator to write the image to
             error_queue: Queue to put exceptions in if any
             known_hash: Known hash of the image
+            original_url: Original URL for HTTP fallback
         """
         self.logger.info(f"Writing image to storage in the background: {src_path}")
         try:
@@ -277,7 +295,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.logger.info(f"Uploading image to storage: {filename}")
             to_storage.write_from_path(filename, src_path, src_operator)
 
-            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path, file_hash)
+            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path, file_hash, original_url)
             metadata_file = filename + ".metadata"
             to_storage.write_bytes(metadata_file, metadata_json.encode(errors="ignore"))
 
@@ -299,14 +317,42 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return m.hexdigest()
 
-    def _create_metadata_and_json(self, src_operator, src_path, file_hash=None) -> tuple[Metadata, str]:
+    def _create_metadata_and_json(
+        self, src_operator, src_path, file_hash=None, original_url=None
+    ) -> tuple[Metadata | None, str]:
         """Create a metadata json string from a metadata object"""
-        metadata = src_operator.stat(src_path)
-        metadata_dict = {
-            "path": str(src_path),
-            "content_length": metadata.content_length,
-            "etag": metadata.etag,
-        }
+        metadata = None
+        metadata_dict = {"path": str(src_path)}
+
+        try:
+            metadata = src_operator.stat(src_path)
+            metadata_dict.update(
+                {
+                    "content_length": metadata.content_length,
+                    "etag": metadata.etag,
+                }
+            )
+        except Exception as e:
+            # TODO(bennyz): remove when opendal issue is sorted out
+            # https://github.com/apache/opendal/discussions/6418
+            # fallback to request if we're using a custom certificate
+
+            if original_url and original_url.startswith(("http://", "https://")):
+                try:
+                    response = requests.head(original_url)
+
+                    http_metadata = {}
+                    if "content-length" in response.headers:
+                        http_metadata["content_length"] = int(response.headers["content-length"])
+                    if "etag" in response.headers:
+                        http_metadata["etag"] = response.headers["etag"]
+
+                    metadata_dict.update(http_metadata)
+                    self.logger.info("Successfully got HTTP metadata using requests fallback")
+                except Exception as http_e:
+                    self.logger.error(f"Error getting HTTP metadata with requests fallback: {http_e}")
+            else:
+                self.logger.error(f"Error getting metadata: {e}")
 
         if file_hash:
             metadata_dict["hash"] = file_hash
