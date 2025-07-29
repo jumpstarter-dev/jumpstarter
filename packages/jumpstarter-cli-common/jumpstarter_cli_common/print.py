@@ -16,11 +16,11 @@ def model_print(  # noqa: C901
 
     match output:
         case OutputMode.JSON:
-            console.print(
-                model.model_dump_json(
-                    indent=4,
+            console.print_json(
+                data=model.model_dump_json(
                     by_alias=True,
-                )
+                ),
+                indent=4,
             )
         case OutputMode.YAML:
             console.print(

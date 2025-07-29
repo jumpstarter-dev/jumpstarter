@@ -9,14 +9,17 @@ class FileAddress(BaseModel):
     file: str
     address: str
 
+
 class DtbVariant(BaseModel):
     bootcmd: None | str = None
     file: None | str = None
+
 
 class Dtb(BaseModel):
     default: str
     address: str
     variants: dict[str, DtbVariant]
+
 
 class FlasherLogin(BaseModel):
     login_prompt: str

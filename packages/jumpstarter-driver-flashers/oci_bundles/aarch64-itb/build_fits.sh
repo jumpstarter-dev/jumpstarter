@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 
 # run only in a container
 if [[ -z "$container" && ! -f /.dockerenv ]]; then
-    exec podman run --rm -it -v $(pwd):/host -w /host fedora:42 "$0" "$@"
+    exec podman run --rm -it -v $(pwd):/host:Z -w /host fedora:42 "$0" "$@"
 else
 	set -euo pipefail
 	BUILDROOT_DIR="/var/tmp/buildroot"

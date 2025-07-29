@@ -37,6 +37,7 @@ def complete_flasher(temp_dirs):
         },
     )
 
+
 def test_missing_serial(temp_dirs):
     cache, http, tftp = temp_dirs
     with pytest.raises(ConfigurationError):
@@ -140,4 +141,3 @@ def test_drivers_flashers_get_bootcmd_invalid_variant(complete_flasher):
         # Set an invalid variant
         with pytest.raises(DriverInvalidArgument):
             client.call("use_dtb_variant", "noexists")
-

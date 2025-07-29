@@ -77,13 +77,12 @@ def test_import_client(_load_kube_config_mock, get_client_config_mock: AsyncMock
     save_client_config_mock.assert_called_once_with(INSECURE_TLS_CLIENT_CONFIG, None)
     save_client_config_mock.reset_mock()
 
-   # Save with prompts no interactive prompts and insecure tls cert
+    # Save with prompts no interactive prompts and insecure tls cert
     result = runner.invoke(import_res, ["client", CLIENT_NAME, "--nointeractive", "--insecure-tls-config"])
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
     save_client_config_mock.assert_called_once_with(INSECURE_TLS_CLIENT_CONFIG, None)
     save_client_config_mock.reset_mock()
-
 
     # Save with prompts accept insecure = N
     result = runner.invoke(import_res, ["client", CLIENT_NAME, "--insecure-tls-config"], input="n\n")

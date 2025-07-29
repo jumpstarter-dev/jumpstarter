@@ -50,6 +50,7 @@ Drivers that control storage devices and manage data:
   Layer
 * **[SD Wire](sdwire.md)** (`jumpstarter-driver-sdwire`) - SD card switching
   utilities
+* **[iSCSI](iscsi.md)** (`jumpstarter-driver-iscsi`) - iSCSI server to serve LUNs
 
 ### Media Drivers
 
@@ -71,6 +72,7 @@ Drivers for debugging and programming devices:
   virtualization platform
 * **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader
   interface
+* **[RideSX](ridesx.md)** (`jumpstarter-driver-ridesx`) - Flashing and power management for Qualcomm RideSX devices
 
 ### Utility Drivers
 
@@ -87,6 +89,7 @@ energenie.md
 flashers.md
 http.md
 http-power.md
+iscsi.md
 network.md
 opendal.md
 power.md
@@ -94,6 +97,7 @@ probe-rs.md
 pyserial.md
 qemu.md
 raspberrypi.md
+ridesx.md
 sdwire.md
 shell.md
 snmp.md

@@ -1,9 +1,10 @@
 import click
 from jumpstarter_cli_common.config import opt_config
-from jumpstarter_cli_common.exceptions import handle_exceptions
+from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 from jumpstarter_cli_common.opt import OutputMode, OutputType, opt_output_name_only
 
 from .common import opt_selector
+from .login import relogin_client
 
 
 @click.group()
@@ -19,7 +20,7 @@ def delete():
 @opt_selector
 @click.option("--all", "all", is_flag=True)
 @opt_output_name_only
-@handle_exceptions
+@handle_exceptions_with_reauthentication(relogin_client)
 def delete_leases(config, name: str, selector: str | None, all: bool, output: OutputType):
     """
     Delete leases

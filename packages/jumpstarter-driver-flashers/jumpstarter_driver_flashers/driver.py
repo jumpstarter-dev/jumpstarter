@@ -113,8 +113,7 @@ class BaseFlasher(Driver):
             if manifest.spec.dtb:
                 variant_list = list(manifest.spec.dtb.variants.keys())
             raise ValueError(
-                f"DTB variant {variant} not found in the flasher bundle, "
-                f"available variants are: {variant_list}."
+                f"DTB variant {variant} not found in the flasher bundle, available variants are: {variant_list}."
             )
         self.variant = variant
 
@@ -221,6 +220,7 @@ class BaseFlasher(Driver):
         """Return the bootcmd"""
         manifest = await self.get_flasher_manifest()
         return manifest.get_boot_cmd(self.variant)
+
 
 @dataclass(kw_only=True)
 class TIJ784S4Flasher(BaseFlasher):
