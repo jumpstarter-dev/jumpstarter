@@ -4,6 +4,7 @@ from typing import Literal, Optional
 
 
 def helm_installed(name: str) -> bool:
+    """Check if Helm is installed and available in the PATH."""
     return shutil.which(name) is not None
 
 
