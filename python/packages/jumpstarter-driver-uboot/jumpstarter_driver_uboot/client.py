@@ -75,22 +75,32 @@ class UbootConsoleClient(CompositeClient):
         self.p.expect_exact(self.prompt, timeout=timeout)
         return self.p.before
 
-    def run_command_checked(self, cmd: str, timeout: int = 60, check=True) -> list[str]:
+    def run_command_checked(self, cmd: str, timeout: int = 60, check=True, tries=1) -> list[str]:
         """
         Run command in the U-Boot console and check the exit code
         """
 
-        self.logger.info(f"Running command checked: {cmd}")
-        output = self.run_command("{}; echo $?".format(cmd), _internal_log=False)
-        parsed = output.strip().decode().splitlines()
+        while tries > 0:
+            tries-=1
+            self.logger.info(f"Running command checked: {cmd}")
+            output = self.run_command("{}; echo $?".format(cmd), _internal_log=False)
+            parsed = output.strip().decode().splitlines()
 
-        if len(parsed) < 2:
-            raise RuntimeError("Insufficient lines returned from command execution, raw output: {}".format(output))
+            if len(parsed) < 2:
+                raise RuntimeError("Insufficient lines returned from command execution, raw output: {}".format(output))
 
-        try:
-            retval = int(parsed[-1])
-        except ValueError:
-            raise ValueError("Failed to parse command return value: {}", parsed[-1]) from None
+            try:
+                retval = int(parsed[-1])
+            except ValueError:
+                raise ValueError("Failed to parse command return value: {}", parsed[-1]) from None
+
+            if retval == 0:
+                break
+            else:
+                self.logger.debug(f"Command failed, {tries} tries left")
+                if not tries:
+                    break
+                self.run_command("sleep 2", _internal_log=False)
 
         if check and retval != 0:
             raise RuntimeError("Command failed with return value: {}, output: {}".format(retval, output))
@@ -106,7 +116,7 @@ class UbootConsoleClient(CompositeClient):
 
         autoload = self.get_env("autoload", timeout=timeout)
         self.set_env("autoload", "no")
-        self.run_command_checked("dhcp", timeout=timeout)
+        self.run_command_checked("dhcp", timeout=timeout, tries=3)
         self.set_env("autoload", autoload)
 
         ipaddr = self.get_env("ipaddr")
