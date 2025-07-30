@@ -3,14 +3,19 @@ name = "jumpstarter-driver-raspberrypi"
 dynamic = ["version", "urls"]
 description = ""
 authors = [
-  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
-  { name = "Nick Cao", email = "ncao@redhat.com" },
-  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+    { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+    { name = "Nick Cao", email = "ncao@redhat.com" },
+    { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
 ]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "jumpstarter-driver-power", "click>=8.1.7.2", "lgpio; platform_system == 'Linux'"]
+dependencies = [
+    "jumpstarter",
+    "jumpstarter-driver-power",
+    "click>=8.1.7.2",
+    #"lgpio; platform_system == 'Linux'" TODO: restore once jumpstarter container image can be built
+]
 
 [project.entry-points."jumpstarter.drivers"]
 DigitalInput = "jumpstarter_driver_raspberrypi.driver:DigitalInput"
