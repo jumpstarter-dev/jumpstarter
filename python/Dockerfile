@@ -1,13 +1,13 @@
 FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:latest AS uv
 
-FROM --platform=$BUILDPLATFORM fedora:42 AS builder
+FROM --platform=$BUILDPLATFORM fedora:40 AS builder
 RUN dnf install -y make git && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 COPY --from=uv /uv /uvx /bin/
 
-FROM fedora:42 AS product
-RUN dnf install -y python3 ustreamer libusb1 android-tools && \
+FROM fedora:40 AS product
+RUN dnf install -y python3 ustreamer libusb1 android-tools python3-devel swig gcc libgpiod-devel  && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -17,6 +17,7 @@ ADD . /src
 RUN make -C /src build
 
 FROM product
+RUN PYPI=1 uv pip install lgpio --system --no-cache-dir
 RUN --mount=from=wheels,source=/src/dist,target=/dist \
     uv venv /jumpstarter && \
     VIRTUAL_ENV=/jumpstarter uv pip install /dist/*.whl
