@@ -1,4 +1,3 @@
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -126,31 +125,16 @@ class RideSXPowerClient(PowerClient):
 
     def on(self) -> None:
         """Turn device power on"""
-        with self.serial.pexpect() as p:
-            self.logger.info("Turning power on...")
-            p.send(b"devicePower 1\r")
-            p.expect_exact("ok", timeout=5.0)
-            p.expect_exact("CMD >> ", timeout=2.0)
-            self.logger.info("power turned on")
+        self.call("on")
 
     def off(self) -> None:
         """Turn device power off"""
-        with self.serial.pexpect() as p:
-            self.logger.info("Turning power off...")
-            p.send(b"devicePower 0\r")
-            p.expect_exact("ok", timeout=5.0)
-            p.expect_exact("CMD >> ", timeout=2.0)
-            self.logger.info("power turned off")
+        self.call("off")
 
     def cycle(self, wait: int = 2):
         """Power cycle the device"""
-        self.logger.info(f"Starting power cycle sequence with {wait}s wait time")
-        self.off()
-        self.logger.info(f"Waiting {wait} seconds...")
-        time.sleep(wait)
-        self.on()
-        self.logger.info("Power cycle sequence complete")
+        self.call("cycle", wait)
 
     def rescue(self) -> None:
         """Rescue mode"""
-        raise NotImplementedError("Rescue mode not available for RideSX")
+        self.call("rescue")
