@@ -19,7 +19,7 @@ def get():
 @opt_config(exporter=False)
 @opt_selector
 @opt_output_all
-@click.option("--with", "with_options", multiple=True, help="Include additional information (e.g., 'leases')")
+@click.option("--with", "with_options", multiple=True, help="Include additional information (e.g., 'leases', 'online')")
 @handle_exceptions_with_reauthentication(relogin_client)
 def get_exporters(config, selector: str | None, output: OutputType, with_options: tuple[str, ...]):
     """
@@ -27,7 +27,8 @@ def get_exporters(config, selector: str | None, output: OutputType, with_options
     """
 
     include_leases = "leases" in with_options
-    exporters = config.list_exporters(filter=selector, include_leases=include_leases)
+    include_online = "online" in with_options
+    exporters = config.list_exporters(filter=selector, include_leases=include_leases, include_online=include_online)
 
     model_print(exporters, output)
 
