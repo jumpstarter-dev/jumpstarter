@@ -228,6 +228,38 @@ class RideSXDriver(Driver):
                 await asyncio.sleep(delay)
         self.logger.info("device should now be in fastboot mode")
 
+    async def _send_power_command(self, command: str):
+        """Send a power command to the device via serial"""
+        serial = self.children["serial"]
+        async with serial.connect() as stream:
+            self.logger.info(f"Executing power command: {command}")
+            await stream.send(f"{command}\r".encode())
+            data = b""
+            while b"ok" not in data:
+                chunk = await stream.receive()
+                data += chunk
+            self.logger.debug(f"Command {command} acknowledged with 'ok'")
+
+    @export
+    async def power_on(self):
+        """Turn device power on"""
+        self.logger.info("Turning device power on")
+        await self._send_power_command("devicePower 1")
+
+    @export
+    async def power_off(self):
+        """Turn device power off"""
+        self.logger.info("Turning device power off")
+        await self._send_power_command("devicePower 0")
+
+    @export
+    async def power_cycle(self, delay: float = 1.0):
+        """Power cycle the device"""
+        self.logger.info(f"Power cycling device with {delay}s delay")
+        await self.power_off()
+        await asyncio.sleep(delay)
+        await self.power_on()
+
 
 @dataclass(kw_only=True)
 class RideSXPowerDriver(Driver):
@@ -243,3 +275,40 @@ class RideSXPowerDriver(Driver):
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_ridesx.client.RideSXPowerClient"
+
+    async def _send_power_command(self, command: str):
+        """Send a power command to the device via serial"""
+        serial = self.children["serial"]
+        async with serial.connect() as stream:
+            self.logger.info(f"Executing power command: {command}")
+            await stream.send(f"{command}\r".encode())
+            data = b""
+            while b"ok" not in data:
+                chunk = await stream.receive()
+                data += chunk
+            self.logger.debug(f"Command {command} acknowledged with 'ok'")
+
+    @export
+    async def on(self):
+        """Turn device power on"""
+        self.logger.info("Turning device power on")
+        await self._send_power_command("devicePower 1")
+
+    @export
+    async def off(self):
+        """Turn device power off"""
+        self.logger.info("Turning device power off")
+        await self._send_power_command("devicePower 0")
+
+    @export
+    async def cycle(self, delay: float = 2):
+        """Power cycle the device"""
+        self.logger.info(f"Power cycling device with {delay}s delay")
+        await self.off()
+        await asyncio.sleep(delay)
+        await self.on()
+
+    @export
+    async def rescue(self):
+        """Rescue mode - not implemented for RideSX"""
+        raise NotImplementedError("Rescue mode not available for RideSX")
