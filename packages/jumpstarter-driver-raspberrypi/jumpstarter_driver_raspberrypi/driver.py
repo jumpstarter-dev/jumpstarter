@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 
 try:
-    import lgpio  # type: ignore[import-not-found]
+    import gpiod
 except ImportError as err:
-    raise ImportError("lgpio is not installed, lgpio might not be supported on your platform") from err
+    raise ImportError("gpiod is not installed, gpiod might not be supported on your platform, " +
+                      "please install python3-gpiod") from err
 
 from jumpstarter_driver_power.driver import PowerInterface
 
@@ -18,20 +18,23 @@ class _GPIOBase(Driver):
     """Base GPIO"""
 
     pin: int
-    _h: int = field(init=False, repr=False)
+    _chip: gpiod.Chip = field(init=False, repr=False)
+    _request: gpiod.LineRequest = field(init=False, repr=False)
 
-    _CHIP_NUM: int = 0
+    _CHIP_PATH: str = "/dev/gpiochip0"
 
     def __post_init__(self):
         self.pin = int(str(self.pin).lstrip("GPIO"))
-        self._h = lgpio.gpiochip_open(self._CHIP_NUM)
+        self._chip = gpiod.Chip(self._CHIP_PATH)
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
     def close(self):
         try:
-            lgpio.gpio_free(self._h, self.pin)
-            lgpio.gpiochip_close(self._h)
+            if hasattr(self, '_request') and self._request:
+                self._request.release()
+            if hasattr(self, '_chip') and self._chip:
+                self._chip.close()
         except Exception:
             pass
         super().close()
@@ -39,7 +42,7 @@ class _GPIOBase(Driver):
     @export
     def read_pin(self) -> int:
         """Read current pin state"""
-        return lgpio.gpio_read(self._h, self.pin)
+        return int(self._request.get_value(self.pin))
 
 
 @dataclass(kw_only=True)
@@ -47,7 +50,7 @@ class DigitalOutput(_GPIOBase):
     """Single GPIO output"""
 
     pin: int | str
-    open_drain: bool = True
+    mode: str
 
     @classmethod
     def client(cls) -> str:
@@ -56,21 +59,40 @@ class DigitalOutput(_GPIOBase):
     def __post_init__(self):
         super().__post_init__()
 
-        if self.open_drain:
-            lgpio.gpio_claim_output(self._h, self.pin, 1, lgpio.SET_OPEN_DRAIN)
+        drive = gpiod.line.Drive.PUSH_PULL
+
+        if self.mode == "open_drain":
+            drive = gpiod.line.Drive.OPEN_DRAIN
+        elif self.mode in ["push_pull", ""]:
+            drive = gpiod.line.Drive.PUSH_PULL
+        elif self.mode == "open_source":
+            drive = gpiod.line.Drive.OPEN_SOURCE
         else:
-            lgpio.gpio_claim_output(self._h, self.pin, 0)
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+        # Configure line settings for output
+        settings = gpiod.LineSettings(
+            direction=gpiod.line.Direction.OUTPUT,
+            drive=drive,
+            output_value=gpiod.line.Value.INACTIVE
+        )
+
+        # Request the line
+        self._request = self._chip.request_lines(
+            config={self.pin: settings},
+            consumer="jumpstarter-raspberrypi"
+        )
 
     @export
     def off(self) -> None:
         """Drive the pin low"""
-        lgpio.gpio_write(self._h, self.pin, 0)
+        self._request.set_value(self.pin, gpiod.line.Value.INACTIVE)
         self.logger.info(f"GPIO{self.pin} off() -> pin reads: {self.read_pin()}")
 
     @export
     def on(self) -> None:
         """Release (open-drain) or drive high"""
-        lgpio.gpio_write(self._h, self.pin, 1)
+        self._request.set_value(self.pin, gpiod.line.Value.ACTIVE)
         self.logger.info(f"GPIO{self.pin} on() -> pin reads: {self.read_pin()}")
 
 
@@ -86,47 +108,58 @@ class DigitalInput(_GPIOBase):
 
     def __post_init__(self):
         super().__post_init__()
-        lgpio.gpio_claim_input(self._h, self.pin)
+
+        # Configure line settings for input with edge detection
+        settings = gpiod.LineSettings(
+            direction=gpiod.line.Direction.INPUT,
+            edge_detection=gpiod.line.Edge.BOTH  # Detect both rising and falling edges
+        )
+
+        # Request the line
+        self._request = self._chip.request_lines(
+            config={self.pin: settings},
+            consumer="jumpstarter-raspberrypi"
+        )
 
     @export
     def wait_for_active(self, timeout: float | None = None):
-        """Block until the line reads high"""
-
-        self._wait_for(level=1, timeout=timeout)
+        """Block until the line reads high (rising edge)"""
+        self._wait_for_edge(gpiod.EdgeEvent.Type.RISING_EDGE, timeout)
 
     @export
     def wait_for_inactive(self, timeout: float | None = None):
-        """Block until the line reads low"""
+        """Block until the line reads low (falling edge)"""
+        self._wait_for_edge(gpiod.EdgeEvent.Type.FALLING_EDGE, timeout)
 
-        self._wait_for(level=0, timeout=timeout)
-
-    def _wait_for(self, *, level: int, timeout: float | None):
-        deadline: float | None = None if timeout is None else time.time() + timeout
+    def _wait_for_edge(self, edge_type: gpiod.EdgeEvent.Type, timeout: float | None):
+        """Wait for a specific edge event using non-blocking edge detection"""
 
         while True:
-            if lgpio.gpio_read(self._h, self.pin) == level:
-                return
+            # Wait for edge events to become available
+            if not self._request.wait_edge_events(timeout):
+                raise TimeoutError(f"Timed out waiting for GPIO{self.pin} edge event")
 
-            if deadline is not None and time.time() >= deadline:
-                raise TimeoutError(f"Timed out waiting for GPIO{self.pin} to reach level {level}")
+            # Read the edge events
+            events = self._request.read_edge_events()
 
-            time.sleep(0.001)
+            # Check if any of the events match our target edge type
+            for event in events:
+                if event.line_offset == self.pin and event.event_type == edge_type:
+                    return
 
 
 @dataclass(kw_only=True)
 class PowerSwitch(PowerInterface, DigitalOutput):
-    open_drain: bool = False
+    mode: str = "push_pull"
 
     @export
     def on(self) -> None:
         """Switch on the power"""
-
         DigitalOutput.on(self)
 
     @export
     def off(self) -> None:
         """Switch off the power"""
-
         DigitalOutput.off(self)
 
     @export
