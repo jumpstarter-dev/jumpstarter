@@ -26,7 +26,7 @@ from .env import JMP_LEASE
 from .grpc import call_credentials
 from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
-from jumpstarter.client.grpc import ClientService, WithLease, WithLeaseList
+from jumpstarter.client.grpc import ClientService, Exporter
 from jumpstarter.common.exceptions import (
     ConfigurationError,
     ConnectionError,
@@ -60,7 +60,9 @@ def _handle_connection_error(f):
             raise e
         except Exception:
             raise
+
     return wrapper
+
 
 class ClientConfigV1Alpha1Drivers(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="JMP_DRIVERS_")
@@ -137,7 +139,6 @@ class ClientConfigV1Alpha1(BaseSettings):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.GetExporter(name=name)
 
-
     @_blocking_compat
     @_handle_connection_error
     async def list_exporters(
@@ -146,9 +147,13 @@ class ClientConfigV1Alpha1(BaseSettings):
         page_token: str | None = None,
         filter: str | None = None,
         include_leases: bool = False,
+        include_online: bool = False,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         exporters_response = await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+
+        # Set the include_online flag for display purposes
+        exporters_response.include_online = include_online
 
         if not include_leases:
             return exporters_response
@@ -165,12 +170,18 @@ class ClientConfigV1Alpha1(BaseSettings):
         exporters_with_leases = []
         for exporter in exporters_response.exporters:
             lease = lease_map.get(exporter.name)
-            exporters_with_leases.append(WithLease(exporter=exporter, lease=lease))
-        return WithLeaseList(
-            exporters_with_leases=exporters_with_leases, next_page_token=exporters_response.next_page_token
-        )
-
-
+            exporter_with_lease = Exporter(
+                namespace=exporter.namespace,
+                name=exporter.name,
+                labels=exporter.labels,
+                online=exporter.online,
+                lease=lease,
+            )
+            exporters_with_leases.append(exporter_with_lease)
+        exporters_response.include_online = include_online
+        exporters_response.include_leases = True
+        exporters_response.exporters = exporters_with_leases
+        return exporters_response
 
     @_blocking_compat
     @_handle_connection_error
@@ -221,7 +232,6 @@ class ClientConfigV1Alpha1(BaseSettings):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.UpdateLease(name=name, duration=duration)
 
-
     @asynccontextmanager
     async def lease_async(
         self,
@@ -238,17 +248,17 @@ class ClientConfigV1Alpha1(BaseSettings):
         release_lease = lease_name == ""
         try:
             async with Lease(
-            channel=await self.channel(),
-            namespace=self.metadata.namespace,
-            name=lease_name,
-            selector=selector,
-            duration=duration,
-            portal=portal,
-            allow=self.drivers.allow,
-            unsafe=self.drivers.unsafe,
-            release=release_lease,
-            tls_config=self.tls,
-            grpc_options=self.grpcOptions,
+                channel=await self.channel(),
+                namespace=self.metadata.namespace,
+                name=lease_name,
+                selector=selector,
+                duration=duration,
+                portal=portal,
+                allow=self.drivers.allow,
+                unsafe=self.drivers.unsafe,
+                release=release_lease,
+                tls_config=self.tls,
+                grpc_options=self.grpcOptions,
             ) as lease:
                 yield lease
 
