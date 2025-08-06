@@ -67,6 +67,7 @@ message Exporter {
 
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
   map<string, string> labels = 2;
+  bool online = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message Lease {
