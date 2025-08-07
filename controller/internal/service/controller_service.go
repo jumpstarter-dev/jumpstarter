@@ -122,7 +122,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate exporter")
+		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return nil, err
 	}
 
