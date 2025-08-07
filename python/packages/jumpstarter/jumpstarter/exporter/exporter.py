@@ -27,15 +27,17 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     lease_name: str = field(init=False, default="")
     tls: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, str] = field(default_factory=dict)
+    registered: bool = field(init=False, default=False)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
-        logger.info("Unregistering exporter with controller")
-        await controller.Unregister(
-            jumpstarter_pb2.UnregisterRequest(
-                reason="TODO",
+        if self.registered:
+            controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
+            logger.info("Unregistering exporter with controller")
+            await controller.Unregister(
+                jumpstarter_pb2.UnregisterRequest(
+                    reason="TODO",
+                )
             )
-        )
 
     async def __handle(self, path, endpoint, token, tls_config, grpc_options):
         try:
@@ -65,6 +67,7 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                             reports=response.reports,
                         )
                     )
+                    self.registered = True
                 yield path
 
     async def handle(self, lease_name, tg):
