@@ -11,6 +11,18 @@ from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
 
 
+async def _send_power_command(serial, logger, command: str):
+    """Send a power command to the device via serial"""
+    async with serial.connect() as stream:
+        logger.info(f"Executing power command: {command}")
+        await stream.send(f"{command}\r".encode())
+        data = b""
+        while b"ok" not in data:
+            chunk = await stream.receive()
+            data += chunk
+        logger.debug(f"Command {command} acknowledged with 'ok'")
+
+
 @dataclass(kw_only=True)
 class RideSXDriver(Driver):
     """RideSX Driver"""
@@ -228,32 +240,20 @@ class RideSXDriver(Driver):
                 await asyncio.sleep(delay)
         self.logger.info("device should now be in fastboot mode")
 
-    async def _send_power_command(self, command: str):
-        """Send a power command to the device via serial"""
-        serial = self.children["serial"]
-        async with serial.connect() as stream:
-            self.logger.info(f"Executing power command: {command}")
-            await stream.send(f"{command}\r".encode())
-            data = b""
-            while b"ok" not in data:
-                chunk = await stream.receive()
-                data += chunk
-            self.logger.debug(f"Command {command} acknowledged with 'ok'")
-
     @export
     async def power_on(self):
         """Turn device power on"""
         self.logger.info("Turning device power on")
-        await self._send_power_command("devicePower 1")
+        await _send_power_command(self.children["serial"], self.logger, "devicePower 1")
 
     @export
     async def power_off(self):
         """Turn device power off"""
         self.logger.info("Turning device power off")
-        await self._send_power_command("devicePower 0")
+        await _send_power_command(self.children["serial"], self.logger, "devicePower 0")
 
     @export
-    async def power_cycle(self, delay: float = 1.0):
+    async def power_cycle(self, delay: float = 2):
         """Power cycle the device"""
         self.logger.info(f"Power cycling device with {delay}s delay")
         await self.power_off()
@@ -276,29 +276,17 @@ class RideSXPowerDriver(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_ridesx.client.RideSXPowerClient"
 
-    async def _send_power_command(self, command: str):
-        """Send a power command to the device via serial"""
-        serial = self.children["serial"]
-        async with serial.connect() as stream:
-            self.logger.info(f"Executing power command: {command}")
-            await stream.send(f"{command}\r".encode())
-            data = b""
-            while b"ok" not in data:
-                chunk = await stream.receive()
-                data += chunk
-            self.logger.debug(f"Command {command} acknowledged with 'ok'")
-
     @export
     async def on(self):
         """Turn device power on"""
         self.logger.info("Turning device power on")
-        await self._send_power_command("devicePower 1")
+        await _send_power_command(self.children["serial"], self.logger, "devicePower 1")
 
     @export
     async def off(self):
         """Turn device power off"""
         self.logger.info("Turning device power off")
-        await self._send_power_command("devicePower 0")
+        await _send_power_command(self.children["serial"], self.logger, "devicePower 0")
 
     @export
     async def cycle(self, delay: float = 2):
