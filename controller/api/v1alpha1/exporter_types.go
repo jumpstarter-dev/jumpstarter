@@ -44,8 +44,8 @@ type ExporterStatus struct {
 type ExporterConditionType string
 
 const (
-	ExporterConditionTypeRegistered LeaseConditionType = "Registered"
-	ExporterConditionTypeOnline     LeaseConditionType = "Online"
+	ExporterConditionTypeRegistered ExporterConditionType = "Registered"
+	ExporterConditionTypeOnline     ExporterConditionType = "Online"
 )
 
 // +kubebuilder:object:root=true

@@ -5,6 +5,7 @@ import (
 
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
+	"k8s.io/apimachinery/pkg/api/meta"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -23,9 +24,13 @@ func (e *Exporter) Usernames(prefix string) []string {
 }
 
 func (e *Exporter) ToProtobuf() *cpb.Exporter {
+	// get online status from conditions
+	isOnline := meta.IsStatusConditionTrue(e.Status.Conditions, string(ExporterConditionTypeOnline))
+
 	return &cpb.Exporter{
 		Name:   utils.UnparseExporterIdentifier(kclient.ObjectKeyFromObject(e)),
 		Labels: e.Labels,
+		Online: isOnline,
 	}
 }
 
