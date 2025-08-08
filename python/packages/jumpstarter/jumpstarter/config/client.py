@@ -178,7 +178,6 @@ class ClientConfigV1Alpha1(BaseSettings):
                 lease=lease,
             )
             exporters_with_leases.append(exporter_with_lease)
-        exporters_response.include_online = include_online
         exporters_response.include_leases = True
         exporters_response.exporters = exporters_with_leases
         return exporters_response
