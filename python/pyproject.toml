@@ -15,7 +15,7 @@ jumpstarter-driver-energenie = { workspace = true }
 jumpstarter-driver-flashers = { workspace = true }
 jumpstarter-driver-http = { workspace = true }
 jumpstarter-driver-http-power = { workspace = true }
-jumpstarter-driver-raspberrypi = { workspace = true }
+jumpstarter-driver-gpiod = { workspace = true }
 jumpstarter-driver-ridesx = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }

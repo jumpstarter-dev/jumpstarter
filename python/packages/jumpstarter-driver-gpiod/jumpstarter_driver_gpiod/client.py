@@ -1,8 +1,17 @@
 from dataclasses import dataclass
+from enum import Enum
 
 import click
 
 from jumpstarter.client import DriverClient
+
+
+class PinState(Enum):
+    ACTIVE = 1
+    INACTIVE = 0
+
+    def __str__(self):
+        return self.name.lower()
 
 
 @dataclass(kw_only=True)
@@ -21,7 +30,7 @@ class DigitalOutputClient(DriverClient):
 
     def read(self):
         """Read gpio state."""
-        return self.call("read_pin")
+        return PinState(int(self.call("read_pin")))
 
     def cli(self):
         @click.group()
@@ -63,7 +72,7 @@ class DigitalInputClient(DriverClient):
         self.call("wait_for_edge", edge_type, timeout)
 
     def read(self):
-        return self.call("read_pin")
+        return PinState(int(self.call("read_pin")))
 
     def cli(self):
         @click.group()

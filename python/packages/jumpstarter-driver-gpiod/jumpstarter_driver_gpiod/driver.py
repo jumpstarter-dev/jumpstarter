@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 try:
@@ -9,6 +10,8 @@ except ImportError:
 
 from jumpstarter_driver_power.driver import PowerInterface
 
+from jumpstarter_driver_gpiod.client import PinState
+
 from jumpstarter.driver import Driver, export
 
 
@@ -16,18 +19,18 @@ from jumpstarter.driver import Driver, export
 class _GPIOBase(Driver):
     """Base GPIO"""
 
-    pin: int
+    line: int
+    device: str
     _chip: gpiod.Chip = field(init=False, repr=False)
     _line: gpiod.LineRequest = field(init=False, repr=False)
-
-    _CHIP_PATH: str = "/dev/gpiochip0"
 
     def __post_init__(self):
         if gpiod is None:
             raise ImportError("gpiod is not installed, gpiod might not be supported on your platform, "
                             "please install python3-gpiod")
-        self.pin = int(str(self.pin).lstrip("GPIO"))
-        self._chip = gpiod.Chip(self._CHIP_PATH)
+        self.line = self.line
+        self._chip = gpiod.Chip(self.device)
+        self._line_name = self._chip.get_line_info(self.line).name
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
@@ -44,11 +47,11 @@ class _GPIOBase(Driver):
     @export
     def read_pin(self):
         """Read current pin state"""
-        value = self._line.get_value(self.pin)
+        value = self._line.get_value(self.line)
         if value == gpiod.line.Value.ACTIVE:
-            return "active"
+            return PinState.ACTIVE
         else:
-            return "inactive"
+            return PinState.INACTIVE
 
     def _line_settings(self):
         drive = gpiod.line.Drive.PUSH_PULL
@@ -84,8 +87,8 @@ class _GPIOBase(Driver):
 @dataclass(kw_only=True)
 class DigitalOutput(_GPIOBase):
     """Single GPIO output"""
-
-    pin: int | str
+    device: str = field(default="/dev/gpiochip0")
+    line: int
     drive: str | None = field(default=None)
     active_low: bool = field(default=False)
     bias: str | None = field(default=None)
@@ -93,7 +96,7 @@ class DigitalOutput(_GPIOBase):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter_driver_raspberrypi.client.DigitalOutputClient"
+        return "jumpstarter_driver_gpiod.client.DigitalOutputClient"
 
     def __post_init__(self):
         super().__post_init__()
@@ -101,12 +104,12 @@ class DigitalOutput(_GPIOBase):
         # Configure line settings for output
         settings = self._output_line_settings()
 
-        self.logger.debug(f"GPIO{self.pin} settings: {settings}")
+        self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
 
         # Request the line
         self._line = self._chip.request_lines(
-            config={self.pin: settings},
-            consumer="jumpstarter-raspberrypi"
+            config={self.line: settings},
+            consumer="jumpstarter-gpiod"
         )
 
     def _output_line_settings(self):
@@ -136,28 +139,29 @@ class DigitalOutput(_GPIOBase):
     @export
     def off(self) -> None:
         """Set the pin to inactive state"""
-        self._line.set_value(self.pin, gpiod.line.Value.INACTIVE)
-        self.logger.info(f"GPIO{self.pin} off() -> pin reads: {self.read_pin()}")
+        self._line.set_value(self.line, gpiod.line.Value.INACTIVE)
+        self.logger.info(f"line {self.line} ({self._line_name}) off() -> pin reads: {self.read_pin()}")
 
     @export
     def on(self) -> None:
         """Set the pin to active state"""
-        self._line.set_value(self.pin, gpiod.line.Value.ACTIVE)
-        self.logger.info(f"GPIO{self.pin} on() -> pin reads: {self.read_pin()}")
+        self._line.set_value(self.line, gpiod.line.Value.ACTIVE)
+        self.logger.info(f"line {self.line} ({self._line_name}) on() -> pin reads: {self.read_pin()}")
 
 
 @dataclass(kw_only=True)
 class DigitalInput(_GPIOBase):
     """Simple GPIO input"""
 
-    pin: int | str
+    device: str = field(default="/dev/gpiochip0")
+    line: int
     drive: str | None = field(default=None)
     active_low: bool = field(default=False)
     bias: str | None = field(default=None)
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter_driver_raspberrypi.client.DigitalInputClient"
+        return "jumpstarter_driver_gpiod.client.DigitalInputClient"
 
     def __post_init__(self):
         super().__post_init__()
@@ -165,12 +169,12 @@ class DigitalInput(_GPIOBase):
         # Configure line settings for input with edge detection
         settings = self._input_line_settings()
 
-        self.logger.debug(f"GPIO{self.pin} settings: {settings}")
+        self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
 
         # Request the line
         self._line = self._chip.request_lines(
-            config={self.pin: settings},
-            consumer="jumpstarter-raspberrypi"
+            config={self.line: settings},
+            consumer="jumpstarter-gpiod"
         )
 
     def _input_line_settings(self):
@@ -182,7 +186,7 @@ class DigitalInput(_GPIOBase):
     @export
     def wait_for_active(self, timeout: float | None = None):
         """Block until the line reads high (rising edge)"""
-        if self.read_pin() == "active":
+        if self.read_pin() == PinState.ACTIVE:
             return
         self._wait_for_edge(gpiod.EdgeEvent.Type.RISING_EDGE, timeout)
 
@@ -202,24 +206,24 @@ class DigitalInput(_GPIOBase):
     @export
     def wait_for_inactive(self, timeout: float | None = None):
         """Block until the line reads low (falling edge)"""
-        if self.read_pin() == "inactive":
+        if self.read_pin() == PinState.INACTIVE:
             return
         self._wait_for_edge(gpiod.EdgeEvent.Type.FALLING_EDGE, timeout)
 
     def _wait_for_edge(self, edge_type: gpiod.EdgeEvent.Type, timeout: float | None):
         """Wait for a specific edge event using non-blocking edge detection"""
-
+        deadline = time.time() + (timeout or 1e9)
         while True:
-            # Wait for edge events to become available
-            if not self._line.wait_edge_events(timeout):
-                raise TimeoutError(f"Timed out waiting for GPIO{self.pin} edge event")
+            remaining = deadline - time.time()
+            if remaining <= 0 or not self._line.wait_edge_events(remaining):
+                raise TimeoutError(f"Timed out waiting for line {self.line} edge event")
 
             # Read the edge events
             events = self._line.read_edge_events()
 
             # Check if any of the events match our target edge type
             for event in events:
-                if event.line_offset == self.pin and event.event_type == edge_type:
+                if event.line_offset == self.line and event.event_type == edge_type:
                     return
 
 

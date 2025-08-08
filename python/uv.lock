@@ -26,7 +26,7 @@ members = [
     "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-qemu",
-    "jumpstarter-driver-raspberrypi",
+    "jumpstarter-driver-gpiod",
     "jumpstarter-driver-ridesx",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-shell",
@@ -1071,7 +1071,7 @@ dependencies = [
     { name = "jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu" },
-    { name = "jumpstarter-driver-raspberrypi" },
+    { name = "jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell" },
@@ -1105,7 +1105,7 @@ requires-dist = [
     { name = "jumpstarter-driver-probe-rs", editable = "packages/jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
-    { name = "jumpstarter-driver-raspberrypi", editable = "packages/jumpstarter-driver-raspberrypi" },
+    { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-ridesx", editable = "packages/jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire", editable = "packages/jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
@@ -1768,8 +1768,8 @@ dev = [
 ]
 
 [[package]]
-name = "jumpstarter-driver-raspberrypi"
-source = { editable = "packages/jumpstarter-driver-raspberrypi" }
+name = "jumpstarter-driver-gpiod"
+source = { editable = "packages/jumpstarter-driver-gpiod" }
 dependencies = [
     { name = "click" },
     { name = "gpiod", marker = "sys_platform == 'linux'" },
