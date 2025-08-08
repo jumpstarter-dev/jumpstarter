@@ -220,28 +220,33 @@ class ExporterList(BaseModel):
 
     def model_dump_json(self, **kwargs):
         json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
-        data = {
-            "exporters": [
-                {
-                    "exporter": ewl.exporter.model_dump(mode="json"),
-                    "lease": ewl.lease.model_dump(mode="json") if ewl.lease else None,
-                }
-                for ewl in self.exporters_with_leases
-            ]
-        }
+        if self.include_leases:
+            data = {
+                "exporters": [
+                    {
+                        "exporter": exporter.model_dump(mode="json", exclude={"lease"}),
+                        "lease": lease.model_dump(mode="json") if (lease := exporter.lease) else None,
+                    }
+                    for exporter in self.exporters
+                ]
+            }
+        else:
+            data = {"exporters": [exporter.model_dump(mode="json") for exporter in self.exporters]}
         return json.dumps(data, **json_kwargs)
 
     def model_dump(self, **kwargs):
-        return {
-            "exporters": [
-                {
-                    "exporter": ewl.exporter.model_dump(mode="json"),
-                    "lease": ewl.lease.model_dump(mode="json") if ewl.lease else None,
-                }
-                for ewl in self.exporters_with_leases
-            ]
-        }
-
+        if self.include_leases:
+            return {
+                "exporters": [
+                    {
+                        "exporter": exporter.model_dump(mode="json", exclude={"lease"}),
+                        "lease": lease.model_dump(mode="json") if (lease := exporter.lease) else None,
+                    }
+                    for exporter in self.exporters
+                ]
+            }
+        else:
+            return {"exporters": [exporter.model_dump(mode="json") for exporter in self.exporters]}
 
 class LeaseList(BaseModel):
     leases: list[Lease]
