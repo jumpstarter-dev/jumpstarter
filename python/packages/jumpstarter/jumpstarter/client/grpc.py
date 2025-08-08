@@ -42,7 +42,7 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
     row_data.append(exporter.name)
     if options.show_online:
         row_data.append("yes" if exporter.online else "no")
-    row_data.append(",".join(("{}={}".format(k, v) for k, v in exporter.labels.items())))
+    row_data.append(",".join(("{}={}".format(k, v) for k, v in sorted(exporter.labels.items()))))
     if options.show_leases:
         if lease_info:
             lease_client, lease_status, start_time = lease_info
