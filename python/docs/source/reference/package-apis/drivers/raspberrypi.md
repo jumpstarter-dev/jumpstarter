@@ -1,1 +1,0 @@
-../../../../../packages/jumpstarter-driver-raspberrypi/README.md

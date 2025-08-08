@@ -15,8 +15,8 @@ function:
 Drivers that control the power state and basic operation of devices:
 
 * **[Power](power.md)** (`jumpstarter-driver-power`) - Power control for devices
-* **[Raspberry Pi](raspberrypi.md)** (`jumpstarter-driver-raspberrypi`) -
-  Raspberry Pi hardware control
+* **[gpiod](gpiod.md)** (`jumpstarter-driver-gpiod`) -
+  gpiod hardware control
 * **[Yepkit](yepkit.md)** (`jumpstarter-driver-yepkit`) - Yepkit hardware
   control
 * **[DUT Link](dutlink.md)** (`jumpstarter-driver-dutlink`) - [DUT Link
@@ -96,7 +96,7 @@ power.md
 probe-rs.md
 pyserial.md
 qemu.md
-raspberrypi.md
+gpiod.md
 ridesx.md
 sdwire.md
 shell.md
