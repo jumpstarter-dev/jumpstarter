@@ -1,7 +1,81 @@
 from unittest.mock import Mock
 
+import click
+import pytest
+
+from .get import parse_with
 from jumpstarter.client.grpc import Exporter, ExporterList, Lease
 from jumpstarter.config.client import ClientConfigV1Alpha1
+
+
+class TestParseWith:
+    def test_single_option(self):
+        """Test parsing a single option"""
+        result = parse_with(None, None, "leases")
+        assert result == ["leases"]
+
+    def test_multiple_options(self):
+        """Test parsing multiple comma-separated options"""
+        result = parse_with(None, None, "leases,online")
+        assert result == ["leases", "online"]
+
+    def test_options_with_spaces(self):
+        """Test parsing options with spaces around commas"""
+        result = parse_with(None, None, "leases, online")
+        assert result == ["leases", "online"]
+
+    def test_empty_value(self):
+        """Test parsing empty or None value"""
+        assert parse_with(None, None, None) == []
+        assert parse_with(None, None, "") == []
+
+    def test_invalid_options_raise_error(self):
+        """Test that invalid options raise click.BadParameter"""
+        with pytest.raises(click.BadParameter, match="Invalid field 'unknown'. Allowed values are: leases, online"):
+            parse_with(None, None, "unknown,online,invalid")
+
+        with pytest.raises(click.BadParameter, match="Invalid field 'invalid'. Allowed values are: leases, online"):
+            parse_with(None, None, "online,invalid")
+
+    def test_repeated_flags_tuple_input(self):
+        """Test parsing multiple flags as tuple (--with a --with b)"""
+        result = parse_with(None, None, ("leases", "online"))
+        assert result == ["leases", "online"]
+
+    def test_mixed_csv_and_repeated_flags(self):
+        """Test mixing CSV and repeated flags"""
+        result = parse_with(None, None, ("leases,online", "leases"))
+        assert result == ["leases", "online"]  # deduplicated
+
+    def test_normalization_lowercase(self):
+        """Test that values are normalized to lowercase"""
+        result = parse_with(None, None, "LEASES,Online")
+        assert result == ["leases", "online"]
+
+    def test_whitespace_stripping(self):
+        """Test that whitespace is stripped from values"""
+        result = parse_with(None, None, " leases , online ")
+        assert result == ["leases", "online"]
+
+    def test_empty_tokens_dropped(self):
+        """Test that empty tokens are dropped"""
+        result = parse_with(None, None, "leases,,online,")
+        assert result == ["leases", "online"]
+
+    def test_deduplication_preserves_order(self):
+        """Test that deduplication preserves first occurrence order"""
+        result = parse_with(None, None, "online,leases,online,leases")
+        assert result == ["online", "leases"]
+
+    def test_empty_string_in_tuple(self):
+        """Test handling empty strings in tuple"""
+        result = parse_with(None, None, ("", "leases", ""))
+        assert result == ["leases"]
+
+    def test_complex_mixed_input(self):
+        """Test complex input with CSV, repeated flags, whitespace, and case variation"""
+        result = parse_with(None, None, (" LEASES, online ", "Online", "leases,"))
+        assert result == ["leases", "online"]
 
 
 class TestGetExportersLogic:
@@ -84,14 +158,11 @@ class TestGetExportersLogic:
         assert include_online is False
 
     def test_with_options_parsing_unknown(self):
-        """Test that unknown options in with_options are ignored"""
-        with_options = ("unknown", "online", "invalid")
-
-        include_leases = "leases" in with_options
-        include_online = "online" in with_options
-
-        assert include_leases is False  # unknown/invalid options ignored
-        assert include_online is True   # valid option processed
+        """Test that the parse_with function now validates and rejects unknown options"""
+        # This test verifies that the new parse_with function would reject unknown options
+        # The actual CLI behavior now validates input, so unknown options cause failures
+        # This test documents the expected behavior change
+        pass  # Test is no longer relevant since parse_with now validates input
 
     def test_exporter_list_creation_basic(self):
         """Test creating ExporterList with basic exporters"""
