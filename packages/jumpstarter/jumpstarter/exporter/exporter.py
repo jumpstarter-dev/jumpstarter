@@ -28,16 +28,27 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     tls: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, str] = field(default_factory=dict)
     registered: bool = field(init=False, default=False)
-
     async def __aexit__(self, exc_type, exc_value, traceback):
-        if self.registered:
-            controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
-            logger.info("Unregistering exporter with controller")
-            await controller.Unregister(
-                jumpstarter_pb2.UnregisterRequest(
-                    reason="TODO",
-                )
-            )
+        import anyio
+
+        try:
+            if self.registered:
+                logger.info("Unregistering exporter with controller")
+                try:
+                    with anyio.move_on_after(10):  # 10 second timeout
+                        controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
+                        await controller.Unregister(
+                            jumpstarter_pb2.UnregisterRequest(
+                                reason="Exporter shutdown",
+                            )
+                        )
+                        logger.info("Controller unregistration completed successfully")
+                except Exception as e:
+                    logger.error("Error during controller unregistration: %s", e, exc_info=True)
+
+        except Exception as e:
+            logger.error("Error during exporter cleanup: %s", e, exc_info=True)
+            # Don't re-raise to avoid masking the original exception
 
     async def __handle(self, path, endpoint, token, tls_config, grpc_options):
         try:
@@ -106,6 +117,9 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                 )
 
     async def serve(self):  # noqa: C901
+        """
+        Serve the exporter.
+        """
         # initial registration
         async with self.session():
             pass
