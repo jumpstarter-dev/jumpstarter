@@ -158,6 +158,8 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     async def serve(self):
         # dynamic import to avoid circular imports
+        from anyio import CancelScope
+
         from jumpstarter.exporter import Exporter
 
         async def channel_factory():
@@ -170,13 +172,20 @@ class ExporterConfigV1Alpha1(BaseModel):
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
-        async with Exporter(
-            channel_factory=channel_factory,
-            device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
-            tls=self.tls,
-            grpc_options=self.grpcOptions,
-        ) as exporter:
+        exporter = None
+        try:
+            exporter = Exporter(
+                channel_factory=channel_factory,
+                device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
+                tls=self.tls,
+                grpc_options=self.grpcOptions,
+            )
             await exporter.serve()
+        finally:
+            # Shield all cleanup operations from abrupt cancellation for clean shutdown
+            if exporter:
+                with CancelScope(shield=True):
+                    await exporter.__aexit__(None, None, None)
 
 
 class ExporterConfigListV1Alpha1(BaseModel):
