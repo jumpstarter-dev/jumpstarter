@@ -2,80 +2,103 @@ from unittest.mock import Mock
 
 import click
 import pytest
+from jumpstarter_cli_common.opt import parse_comma_separated
 
-from .get import parse_with
 from jumpstarter.client.grpc import Exporter, ExporterList, Lease
 from jumpstarter.config.client import ClientConfigV1Alpha1
 
 
 class TestParseWith:
+    """Test the generic parse_comma_separated function with --with specific validation."""
+
+    @property
+    def allowed_values(self):
+        """Allowed values for --with option"""
+        return {"leases", "online"}
+
     def test_single_option(self):
         """Test parsing a single option"""
-        result = parse_with(None, None, "leases")
+        result = parse_comma_separated(None, None, "leases", self.allowed_values)
         assert result == ["leases"]
 
     def test_multiple_options(self):
         """Test parsing multiple comma-separated options"""
-        result = parse_with(None, None, "leases,online")
+        result = parse_comma_separated(None, None, "leases,online", self.allowed_values)
         assert result == ["leases", "online"]
 
     def test_options_with_spaces(self):
         """Test parsing options with spaces around commas"""
-        result = parse_with(None, None, "leases, online")
+        result = parse_comma_separated(None, None, "leases, online", self.allowed_values)
         assert result == ["leases", "online"]
 
     def test_empty_value(self):
         """Test parsing empty or None value"""
-        assert parse_with(None, None, None) == []
-        assert parse_with(None, None, "") == []
+        assert parse_comma_separated(None, None, None, self.allowed_values) == []
+        assert parse_comma_separated(None, None, "", self.allowed_values) == []
 
     def test_invalid_options_raise_error(self):
         """Test that invalid options raise click.BadParameter"""
-        with pytest.raises(click.BadParameter, match="Invalid field 'unknown'. Allowed values are: leases, online"):
-            parse_with(None, None, "unknown,online,invalid")
+        with pytest.raises(
+            click.BadParameter,
+            match="Invalid value\\(s\\) \\['unknown', 'invalid'\\]. Allowed values are: leases, online"
+        ):
+            parse_comma_separated(None, None, "unknown,online,invalid", self.allowed_values)
 
-        with pytest.raises(click.BadParameter, match="Invalid field 'invalid'. Allowed values are: leases, online"):
-            parse_with(None, None, "online,invalid")
+        with pytest.raises(
+            click.BadParameter,
+            match="Invalid value\\(s\\) \\['invalid'\\]. Allowed values are: leases, online"
+        ):
+            parse_comma_separated(None, None, "online,invalid", self.allowed_values)
 
     def test_repeated_flags_tuple_input(self):
         """Test parsing multiple flags as tuple (--with a --with b)"""
-        result = parse_with(None, None, ("leases", "online"))
+        result = parse_comma_separated(None, None, ("leases", "online"), self.allowed_values)
         assert result == ["leases", "online"]
 
     def test_mixed_csv_and_repeated_flags(self):
         """Test mixing CSV and repeated flags"""
-        result = parse_with(None, None, ("leases,online", "leases"))
+        result = parse_comma_separated(None, None, ("leases,online", "leases"), self.allowed_values)
         assert result == ["leases", "online"]  # deduplicated
 
     def test_normalization_lowercase(self):
         """Test that values are normalized to lowercase"""
-        result = parse_with(None, None, "LEASES,Online")
+        result = parse_comma_separated(None, None, "LEASES,Online", self.allowed_values)
         assert result == ["leases", "online"]
 
     def test_whitespace_stripping(self):
         """Test that whitespace is stripped from values"""
-        result = parse_with(None, None, " leases , online ")
+        result = parse_comma_separated(None, None, " leases , online ", self.allowed_values)
         assert result == ["leases", "online"]
 
     def test_empty_tokens_dropped(self):
         """Test that empty tokens are dropped"""
-        result = parse_with(None, None, "leases,,online,")
+        result = parse_comma_separated(None, None, "leases,,online,", self.allowed_values)
         assert result == ["leases", "online"]
 
     def test_deduplication_preserves_order(self):
         """Test that deduplication preserves first occurrence order"""
-        result = parse_with(None, None, "online,leases,online,leases")
+        result = parse_comma_separated(None, None, "online,leases,online,leases", self.allowed_values)
         assert result == ["online", "leases"]
 
     def test_empty_string_in_tuple(self):
         """Test handling empty strings in tuple"""
-        result = parse_with(None, None, ("", "leases", ""))
+        result = parse_comma_separated(None, None, ("", "leases", ""), self.allowed_values)
         assert result == ["leases"]
 
     def test_complex_mixed_input(self):
         """Test complex input with CSV, repeated flags, whitespace, and case variation"""
-        result = parse_with(None, None, (" LEASES, online ", "Online", "leases,"))
+        result = parse_comma_separated(None, None, (" LEASES, online ", "Online", "leases,"), self.allowed_values)
         assert result == ["leases", "online"]
+
+    def test_no_validation_mode(self):
+        """Test that arbitrary values are accepted when allowed_values=None"""
+        result = parse_comma_separated(None, None, "arbitrary,values,anything", None)
+        assert result == ["arbitrary", "values", "anything"]
+
+    def test_case_normalization_disabled(self):
+        """Test that case normalization can be disabled"""
+        result = parse_comma_separated(None, None, "LEASES,Online", {"LEASES", "Online"}, normalize_case=False)
+        assert result == ["LEASES", "Online"]
 
 
 class TestGetExportersLogic:
