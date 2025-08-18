@@ -220,33 +220,33 @@ class ExporterList(BaseModel):
 
     def model_dump_json(self, **kwargs):
         json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
-        if self.include_leases:
-            data = {
-                "exporters": [
-                    {
-                        "exporter": exporter.model_dump(mode="json", exclude={"lease"}),
-                        "lease": lease.model_dump(mode="json") if (lease := exporter.lease) else None,
-                    }
-                    for exporter in self.exporters
-                ]
-            }
-        else:
-            data = {"exporters": [exporter.model_dump(mode="json") for exporter in self.exporters]}
+
+        # Determine which fields to exclude
+        exclude_fields = set()
+        if not self.include_leases:
+            exclude_fields.add("lease")
+        if not self.include_online:
+            exclude_fields.add("online")
+
+        data = {
+            "exporters": [
+                exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters
+            ]
+        }
         return json.dumps(data, **json_kwargs)
 
     def model_dump(self, **kwargs):
-        if self.include_leases:
-            return {
-                "exporters": [
-                    {
-                        "exporter": exporter.model_dump(mode="json", exclude={"lease"}),
-                        "lease": lease.model_dump(mode="json") if (lease := exporter.lease) else None,
-                    }
-                    for exporter in self.exporters
-                ]
-            }
-        else:
-            return {"exporters": [exporter.model_dump(mode="json") for exporter in self.exporters]}
+        exclude_fields = set()
+        if not self.include_leases:
+            exclude_fields.add("lease")
+        if not self.include_online:
+            exclude_fields.add("online")
+
+        return {
+            "exporters": [
+                exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters
+            ]
+        }
 
 class LeaseList(BaseModel):
     leases: list[Lease]
