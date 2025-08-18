@@ -124,3 +124,111 @@ opt_output_path_only = click.option(
 opt_nointeractive = click.option(
     "--nointeractive", is_flag=True, default=False, help="Disable interactive prompts (for use in scripts)."
 )
+
+
+def _normalize_tokens(items: list[str], normalize_case: bool) -> list[str]:
+    """Extract and normalize tokens from comma-separated values."""
+    tokens = (
+        token.strip().lower() if normalize_case else token.strip()
+        for item in items
+        for token in item.split(',')
+    )
+    return [token for token in tokens if token]
+
+
+def _deduplicate_tokens(tokens: list[str]) -> list[str]:
+    """Remove duplicates while preserving order."""
+    return list(dict.fromkeys(tokens))
+
+
+def _validate_tokens(tokens: list[str], allowed_values: set[str], ctx, param) -> None:
+    """Validate tokens against allowed values."""
+    invalid = [t for t in tokens if t not in allowed_values]
+    if invalid:
+        allowed_list = ", ".join(sorted(allowed_values))
+        raise click.BadParameter(
+            f"Invalid value(s) {invalid}. Allowed values are: {allowed_list}",
+            ctx=ctx,
+            param=param
+        )
+
+
+def parse_comma_separated(
+    ctx: click.Context,
+    param: click.Parameter,
+    value: str | tuple[str, ...] | None,
+    allowed_values: set[str] | None = None,
+    normalize_case: bool = True
+) -> list[str]:
+    """Generic comma-separated value parser with validation and normalization.
+
+    Supports both CSV format ("a,b") and repeated flags ("a" "b" from --flag a --flag b).
+    Normalizes by stripping whitespace, optionally lowercasing, deduplicating while preserving order.
+    Optionally validates against allowed values and raises click.BadParameter on invalid tokens.
+
+    Args:
+        ctx: Click context
+        param: Click parameter
+        value: Input value(s) - string for CSV or tuple for repeated flags
+        allowed_values: Set of allowed values for validation (None = no validation)
+        normalize_case: Whether to convert values to lowercase
+
+    Returns:
+        List of normalized, deduplicated values
+
+    Raises:
+        click.BadParameter: If validation fails with invalid tokens
+    """
+    if not value:
+        return []
+
+    # Handle both single string and tuple (from multiple flag usage)
+    items = [value] if isinstance(value, str) else list(value)
+
+    # Process tokens through the pipeline
+    all_tokens = _normalize_tokens(items, normalize_case)
+    unique_tokens = _deduplicate_tokens(all_tokens)
+
+    # Validate if allowed values are specified
+    if allowed_values is not None:
+        _validate_tokens(unique_tokens, allowed_values, ctx, param)
+
+    return unique_tokens
+
+
+def opt_comma_separated(
+    name: str,
+    allowed_values: set[str] | None = None,
+    normalize_case: bool = True,
+    help_text: str | None = None
+):
+    """Create a click option for comma-separated values with optional validation.
+
+    Args:
+        name: Option name (e.g. "with" creates --with option)
+        allowed_values: Set of allowed values for validation (None = no validation)
+        normalize_case: Whether to convert values to lowercase
+        help_text: Custom help text (auto-generated if None)
+
+    Returns:
+        Click option decorator
+    """
+
+    def callback(ctx, param, value):
+        return parse_comma_separated(ctx, param, value, allowed_values, normalize_case)
+
+    # Auto-generate help text if not provided
+    if help_text is None:
+        if allowed_values:
+            allowed_list = ", ".join(sorted(allowed_values))
+            help_text = f"Comma-separated values. Allowed: {allowed_list} (comma-separated or repeated)"
+        else:
+            help_text = "Comma-separated values (comma-separated or repeated)"
+
+    return click.option(
+        f"--{name}",
+        f"{name}_options",
+        callback=callback,
+        multiple=True,
+        help=help_text
+    )
