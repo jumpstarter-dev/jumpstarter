@@ -16,6 +16,43 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from jumpstarter.common.grpc import translate_grpc_exceptions
 
 
+@dataclass
+class WithOptions:
+    show_online: bool = False
+    show_leases: bool = False
+
+
+def add_display_columns(table, options: WithOptions = None):
+    if options is None:
+        options = WithOptions()
+    table.add_column("NAME")
+    if options.show_online:
+        table.add_column("ONLINE")
+    table.add_column("LABELS")
+    if options.show_leases:
+        table.add_column("LEASED BY")
+        table.add_column("LEASE STATUS")
+        table.add_column("START TIME")
+
+
+def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: tuple[str, str, str] | None = None):
+    if options is None:
+        options = WithOptions()
+    row_data = []
+    row_data.append(exporter.name)
+    if options.show_online:
+        row_data.append("yes" if exporter.online else "no")
+    row_data.append(",".join(("{}={}".format(k, v) for k, v in sorted(exporter.labels.items()))))
+    if options.show_leases:
+        if lease_info:
+            lease_client, lease_status, start_time = lease_info
+        else:
+            lease_client, lease_status, start_time = "", "Available", ""
+        row_data.extend([lease_client, lease_status, start_time])
+
+    table.add_row(*row_data)
+
+
 def parse_identifier(identifier: str, kind: str) -> tuple[str, str]:
     segments = identifier.split("/")
     if len(segments) != 4:
@@ -43,22 +80,30 @@ class Exporter(BaseModel):
     namespace: str
     name: str
     labels: dict[str, str]
+    online: bool = False
+    lease: Lease | None = None
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.Exporter) -> Exporter:
         namespace, name = parse_exporter_identifier(data.name)
-        return cls(namespace=namespace, name=name, labels=data.labels)
+        return cls(namespace=namespace, name=name, labels=data.labels, online=data.online)
 
     @classmethod
-    def rich_add_columns(cls, table):
-        table.add_column("NAME")
-        table.add_column("LABELS")
+    def rich_add_columns(cls, table, options: WithOptions = None):
+        add_display_columns(table, options)
 
-    def rich_add_rows(self, table):
-        table.add_row(
-            self.name,
-            ",".join(("{}={}".format(i[0], i[1]) for i in self.labels.items())),
-        )
+    def rich_add_rows(self, table, options: WithOptions = None):
+        lease_info = None
+        if options and options.show_leases and self.lease:
+            lease_client = self.lease.client
+            lease_status = self.lease.get_status()
+            start_time = ""
+            if self.lease.effective_begin_time:
+                start_time = self.lease.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
+            lease_info = (lease_client, lease_status, start_time)
+        elif options and options.show_leases:
+            lease_info = ("", "Available", "")
+        add_exporter_row(table, self, options, lease_info)
 
     def rich_add_names(self, names):
         names.append(self.name)
@@ -147,58 +192,11 @@ class Lease(BaseModel):
             return latest_condition.reason if latest_condition.reason else "Unknown"
 
 
-class WithLease(BaseModel):
-    exporter: Exporter
-    lease: Lease | None = None
-
-    @classmethod
-    def rich_add_columns(cls, table):
-        table.add_column("NAME")
-        table.add_column("LABELS")
-        table.add_column("LEASED BY")
-        table.add_column("LEASE STATUS")
-        table.add_column("START TIME")
-
-    def rich_add_rows(self, table):
-        lease_client = ""
-        lease_status = "Available"
-        start_time = ""
-
-        if self.lease and self.lease.exporter == self.exporter.name:
-            lease_client = self.lease.client
-            lease_status = self.lease.get_status()
-            if self.lease.effective_begin_time:
-                start_time = self.lease.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
-
-        table.add_row(
-            self.exporter.name,
-            ",".join(("{}={}".format(i[0], i[1]) for i in self.exporter.labels.items())),
-            lease_client,
-            lease_status,
-            start_time,
-        )
-
-    def rich_add_names(self, names):
-        self.exporter.rich_add_names(names)
-
-    def model_dump_json(self, **kwargs):
-        json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
-        data = {
-            "exporter": self.exporter.model_dump(mode="json"),
-            "lease": self.lease.model_dump(mode="json") if self.lease else None,
-        }
-        return json.dumps(data, **json_kwargs)
-
-    def model_dump(self, **kwargs):
-        return {
-            "exporter": self.exporter.model_dump(mode="json"),
-            "lease": self.lease.model_dump(mode="json") if self.lease else None,
-        }
-
-
 class ExporterList(BaseModel):
     exporters: list[Exporter]
     next_page_token: str | None = Field(exclude=True)
+    include_online: bool = Field(default=False, exclude=True)
+    include_leases: bool = Field(default=False, exclude=True)
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.ListExportersResponse) -> ExporterList:
@@ -207,61 +205,48 @@ class ExporterList(BaseModel):
             next_page_token=data.next_page_token,
         )
 
-    @classmethod
-    def rich_add_columns(cls, table):
-        Exporter.rich_add_columns(table)
+    def rich_add_columns(self, table):
+        options = WithOptions(show_online=self.include_online, show_leases=self.include_leases)
+        Exporter.rich_add_columns(table, options)
 
     def rich_add_rows(self, table):
+        options = WithOptions(show_online=self.include_online, show_leases=self.include_leases)
         for exporter in self.exporters:
-            exporter.rich_add_rows(table)
+            exporter.rich_add_rows(table, options)
 
     def rich_add_names(self, names):
         for exporter in self.exporters:
             exporter.rich_add_names(names)
 
-
-class WithLeaseList(BaseModel):
-    """List of exporters with lease information"""
-
-    exporters_with_leases: list[WithLease]
-    next_page_token: str | None = Field(exclude=True)
-
-    @classmethod
-    def rich_add_columns(cls, table):
-        WithLease.rich_add_columns(table)
-
-    def rich_add_rows(self, table):
-        for exporter_with_lease in self.exporters_with_leases:
-            exporter_with_lease.rich_add_rows(table)
-
-    def rich_add_names(self, names):
-        for exporter_with_lease in self.exporters_with_leases:
-            exporter_with_lease.rich_add_names(names)
-
     def model_dump_json(self, **kwargs):
         json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
+
+        # Determine which fields to exclude
+        exclude_fields = set()
+        if not self.include_leases:
+            exclude_fields.add("lease")
+        if not self.include_online:
+            exclude_fields.add("online")
+
         data = {
             "exporters": [
-                {
-                    "exporter": ewl.exporter.model_dump(mode="json"),
-                    "lease": ewl.lease.model_dump(mode="json") if ewl.lease else None,
-                }
-                for ewl in self.exporters_with_leases
+                exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters
             ]
         }
         return json.dumps(data, **json_kwargs)
 
     def model_dump(self, **kwargs):
+        exclude_fields = set()
+        if not self.include_leases:
+            exclude_fields.add("lease")
+        if not self.include_online:
+            exclude_fields.add("online")
+
         return {
             "exporters": [
-                {
-                    "exporter": ewl.exporter.model_dump(mode="json"),
-                    "lease": ewl.lease.model_dump(mode="json") if ewl.lease else None,
-                }
-                for ewl in self.exporters_with_leases
+                exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters
             ]
         }
-
 
 class LeaseList(BaseModel):
     leases: list[Lease]
