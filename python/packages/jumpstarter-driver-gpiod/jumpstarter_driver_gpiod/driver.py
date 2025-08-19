@@ -26,8 +26,9 @@ class _GPIOBase(Driver):
 
     def __post_init__(self):
         if gpiod is None:
-            raise ImportError("gpiod is not installed, gpiod might not be supported on your platform, "
-                            "please install python3-gpiod")
+            raise ImportError(
+                "gpiod is not installed, gpiod might not be supported on your platform, please install python3-gpiod"
+            )
         self.line = self.line
         self._chip = gpiod.Chip(self.device)
         self._line_name = self._chip.get_line_info(self.line).name
@@ -36,9 +37,9 @@ class _GPIOBase(Driver):
 
     def close(self):
         try:
-            if hasattr(self, '_line') and self._line:
+            if hasattr(self, "_line") and self._line:
                 self._line.release()
-            if hasattr(self, '_chip') and self._chip:
+            if hasattr(self, "_chip") and self._chip:
                 self._chip.close()
         except Exception:
             pass
@@ -87,6 +88,7 @@ class _GPIOBase(Driver):
 @dataclass(kw_only=True)
 class DigitalOutput(_GPIOBase):
     """Single GPIO output"""
+
     device: str = field(default="/dev/gpiochip0")
     line: int
     drive: str | None = field(default=None)
@@ -107,10 +109,7 @@ class DigitalOutput(_GPIOBase):
         self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
 
         # Request the line
-        self._line = self._chip.request_lines(
-            config={self.line: settings},
-            consumer="jumpstarter-gpiod"
-        )
+        self._line = self._chip.request_lines(config={self.line: settings}, consumer="jumpstarter-gpiod")
 
     def _output_line_settings(self):
         settings = self._line_settings()
@@ -123,16 +122,17 @@ class DigitalOutput(_GPIOBase):
         elif self.drive == "open_source":
             settings.drive = gpiod.line.Drive.OPEN_SOURCE
         else:
-            raise ValueError(f"Invalid drive: {self.drive}, must be one of: " +
-                             "open_drain, push_pull, open_source")
+            raise ValueError(f"Invalid drive: {self.drive}, must be one of: " + "open_drain, push_pull, open_source")
 
         if self.initial_value in ["active", "on", True]:
             settings.output_value = gpiod.line.Value.ACTIVE
         elif self.initial_value in ["inactive", "off", False, None]:
             settings.output_value = gpiod.line.Value.INACTIVE
         else:
-            raise ValueError(f"Invalid initial_value: {self.initial_value}, must be one of: " +
-                             "inactive, active, on, off, True, False")
+            raise ValueError(
+                f"Invalid initial_value: {self.initial_value}, must be one of: "
+                + "inactive, active, on, off, True, False"
+            )
 
         return settings
 
@@ -172,10 +172,7 @@ class DigitalInput(_GPIOBase):
         self.logger.debug(f"line {self.line} ({self._line_name}) settings: {settings}")
 
         # Request the line
-        self._line = self._chip.request_lines(
-            config={self.line: settings},
-            consumer="jumpstarter-gpiod"
-        )
+        self._line = self._chip.request_lines(config={self.line: settings}, consumer="jumpstarter-gpiod")
 
     def _input_line_settings(self):
         settings = self._line_settings()
@@ -199,8 +196,7 @@ class DigitalInput(_GPIOBase):
         elif edge_type == "falling":
             edge = gpiod.EdgeEvent.Type.FALLING_EDGE
         else:
-            raise ValueError(f"Invalid edge type: {edge_type}, must be one of: "+
-                             "rising, falling")
+            raise ValueError(f"Invalid edge type: {edge_type}, must be one of: " + "rising, falling")
         self._wait_for_edge(edge, timeout)
 
     @export
@@ -240,4 +236,3 @@ class PowerSwitch(PowerInterface, DigitalOutput):
     def off(self) -> None:
         """Switch off the power"""
         DigitalOutput.off(self)
-

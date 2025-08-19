@@ -46,11 +46,7 @@ def setup_gpiod_mocks(mock_gpiod, line_number=18, line_name=None):
 def digital_output_client():
     """Create a DigitalOutputClient instance with mocked dependencies"""
     # Mock the required attributes
-    client = DigitalOutputClient(
-        stub=MagicMock(),
-        portal=MagicMock(),
-        stack=MagicMock()
-    )
+    client = DigitalOutputClient(stub=MagicMock(), portal=MagicMock(), stack=MagicMock())
     client.uuid = "test-uuid"
     return client
 
@@ -59,11 +55,7 @@ def digital_output_client():
 def digital_input_client():
     """Create a DigitalInputClient instance with mocked dependencies"""
     # Mock the required attributes
-    client = DigitalInputClient(
-        stub=MagicMock(),
-        portal=MagicMock(),
-        stack=MagicMock()
-    )
+    client = DigitalInputClient(stub=MagicMock(), portal=MagicMock(), stack=MagicMock())
     client.uuid = "test-uuid"
     return client
 
@@ -74,21 +66,21 @@ class TestDigitalOutputClient:
     def test_on_method(self, digital_output_client):
         """Test the on() method"""
         # Mock the call method
-        with patch.object(digital_output_client, 'call') as mock_call:
+        with patch.object(digital_output_client, "call") as mock_call:
             digital_output_client.on()
             mock_call.assert_called_once_with("on")
 
     def test_off_method(self, digital_output_client):
         """Test the off() method"""
         # Mock the call method
-        with patch.object(digital_output_client, 'call') as mock_call:
+        with patch.object(digital_output_client, "call") as mock_call:
             digital_output_client.off()
             mock_call.assert_called_once_with("off")
 
     def test_read_method(self, digital_output_client):
         """Test the read() method"""
         # Mock the call method
-        with patch.object(digital_output_client, 'call', return_value=1) as mock_call:
+        with patch.object(digital_output_client, "call", return_value=1) as mock_call:
             result = digital_output_client.read()
             mock_call.assert_called_once_with("read_pin")
             assert result.value == 1
@@ -99,10 +91,10 @@ class TestDigitalOutputClient:
         cli_group = digital_output_client.cli()
 
         # Verify it's a click group with expected commands
-        assert hasattr(cli_group, 'commands')
-        assert 'on' in cli_group.commands
-        assert 'off' in cli_group.commands
-        assert 'read' in cli_group.commands
+        assert hasattr(cli_group, "commands")
+        assert "on" in cli_group.commands
+        assert "off" in cli_group.commands
+        assert "read" in cli_group.commands
 
 
 class TestDigitalInputClient:
@@ -111,21 +103,21 @@ class TestDigitalInputClient:
     def test_wait_for_active_method(self, digital_input_client):
         """Test the wait_for_active() method"""
         # Mock the call method
-        with patch.object(digital_input_client, 'call') as mock_call:
+        with patch.object(digital_input_client, "call") as mock_call:
             digital_input_client.wait_for_active(timeout=5.0)
             mock_call.assert_called_once_with("wait_for_active", 5.0)
 
     def test_wait_for_inactive_method(self, digital_input_client):
         """Test the wait_for_inactive() method"""
         # Mock the call method
-        with patch.object(digital_input_client, 'call') as mock_call:
+        with patch.object(digital_input_client, "call") as mock_call:
             digital_input_client.wait_for_inactive(timeout=5.0)
             mock_call.assert_called_once_with("wait_for_inactive", 5.0)
 
     def test_read_method(self, digital_input_client):
         """Test the read() method"""
         # Mock the call method
-        with patch.object(digital_input_client, 'call', return_value=0) as mock_call:
+        with patch.object(digital_input_client, "call", return_value=0) as mock_call:
             result = digital_input_client.read()
             mock_call.assert_called_once_with("read_pin")
             assert result.value == 0
@@ -136,16 +128,16 @@ class TestDigitalInputClient:
         cli_group = digital_input_client.cli()
 
         # Verify it's a click group with expected commands
-        assert hasattr(cli_group, 'commands')
-        assert 'read' in cli_group.commands
-        assert 'wait-for-active' in cli_group.commands  # Note: uses hyphens, not underscores
-        assert 'wait-for-inactive' in cli_group.commands  # Note: uses hyphens, not underscores
+        assert hasattr(cli_group, "commands")
+        assert "read" in cli_group.commands
+        assert "wait-for-active" in cli_group.commands  # Note: uses hyphens, not underscores
+        assert "wait-for-inactive" in cli_group.commands  # Note: uses hyphens, not underscores
 
 
 class TestDriverMethods:
     """Test the driver methods using mocking"""
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_digital_output_initialization(self, mock_gpiod):
         """Test DigitalOutput driver initialization with mocked gpiod"""
         # Set up common mocks
@@ -154,13 +146,7 @@ class TestDriverMethods:
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalOutput
 
-        driver = DigitalOutput(
-            line=18,
-            drive="push_pull",
-            active_low=False,
-            bias="pull_up",
-            initial_value="inactive"
-        )
+        driver = DigitalOutput(line=18, drive="push_pull", active_low=False, bias="pull_up", initial_value="inactive")
 
         # Verify gpiod.Chip was called
         mock_gpiod.Chip.assert_called_once_with("/dev/gpiochip0")
@@ -174,7 +160,7 @@ class TestDriverMethods:
         # Verify pin was processed correctly
         assert driver.line == 18
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_digital_input_initialization(self, mock_gpiod):
         """Test DigitalInput driver initialization with mocked gpiod"""
         # Set up common mocks
@@ -183,12 +169,7 @@ class TestDriverMethods:
         # Import and test the driver
         from jumpstarter_driver_gpiod.driver import DigitalInput
 
-        driver = DigitalInput(
-            line=17,
-            drive=None,
-            active_low=False,
-            bias="pull_up"
-        )
+        driver = DigitalInput(line=17, drive=None, active_low=False, bias="pull_up")
 
         # Verify gpiod.Chip was called
         mock_gpiod.Chip.assert_called_once_with("/dev/gpiochip0")
@@ -202,7 +183,7 @@ class TestDriverMethods:
         # Verify line was processed correctly
         assert driver.line == 17
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_digital_output_methods(self, mock_gpiod):
         """Test DigitalOutput driver methods with mocked gpiod"""
         # Set up common mocks
@@ -232,7 +213,7 @@ class TestDriverMethods:
         assert result.value == 0
         assert str(result) == "inactive"
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_digital_input_methods(self, mock_gpiod):
         """Test DigitalInput driver methods with mocked gpiod"""
         # Set up common mocks
@@ -286,7 +267,7 @@ class TestDriverMethods:
 class TestErrorHandling:
     """Test error handling scenarios"""
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_gpiod_import_error(self, mock_gpiod):
         """Test handling of gpiod import error by mocking the import to fail"""
         # Mock the import to raise an ImportError
@@ -296,6 +277,7 @@ class TestErrorHandling:
         # The actual import error handling is done at module level, so we test it differently
         try:
             from jumpstarter_driver_gpiod.driver import DigitalOutput
+
             # If we get here, the import succeeded (which is expected in our test environment)
             # We'll just verify that the driver can be imported
             assert DigitalOutput is not None
@@ -303,7 +285,7 @@ class TestErrorHandling:
             # This would happen if gpiod is not available
             assert "gpiod is not installed" in str(e)
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_chip_open_error(self, mock_gpiod):
         """Test handling of chip open error"""
         mock_gpiod.Chip.side_effect = Exception("Cannot open chip")
@@ -313,7 +295,7 @@ class TestErrorHandling:
         with pytest.raises(Exception, match="Cannot open chip"):
             DigitalOutput(line=18)
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_line_request_error(self, mock_gpiod):
         """Test handling of line request error"""
         # Set up common mocks
@@ -327,7 +309,7 @@ class TestErrorHandling:
         with pytest.raises(Exception, match="Cannot request line"):
             DigitalOutput(line=18)
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_invalid_drive_value(self, mock_gpiod):
         """Test initialization with invalid drive value"""
         # Set up common mocks
@@ -338,7 +320,7 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="Invalid drive: invalid_drive"):
             DigitalOutput(line=18, drive="invalid_drive")
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_invalid_bias_value(self, mock_gpiod):
         """Test initialization with invalid bias value"""
         # Set up common mocks
@@ -349,7 +331,7 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="Invalid bias: invalid_bias"):
             DigitalOutput(line=18, bias="invalid_bias")
 
-    @patch('jumpstarter_driver_gpiod.driver.gpiod')
+    @patch("jumpstarter_driver_gpiod.driver.gpiod")
     def test_invalid_initial_value(self, mock_gpiod):
         """Test initialization with invalid initial value"""
         # Set up common mocks
