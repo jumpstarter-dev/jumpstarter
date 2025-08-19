@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import click
+from jumpstarter_driver_power.client import PowerClient
 
 from jumpstarter.client import DriverClient
 
@@ -15,7 +16,7 @@ class PinState(Enum):
 
 
 @dataclass(kw_only=True)
-class DigitalOutputClient(DriverClient):
+class DigitalOutputClient(PowerClient):
     """
     A client for handling digital output operations on GPIO pins.
     """
@@ -37,6 +38,9 @@ class DigitalOutputClient(DriverClient):
         def gpio():
             """GPIO power control commands."""
             pass
+
+        for cmd in super().cli().commands.values():
+            gpio.add_command(cmd)
 
         @gpio.command()
         def on():
@@ -91,7 +95,6 @@ class DigitalInputClient(DriverClient):
         def wait_for_edge(edge_type: str, timeout: str | None = None):
             """Wait for edge"""
             self.wait_for_edge(edge_type, float(timeout))
-
 
         @gpio.command()
         @click.option("--timeout", "-t", default="3600", help="Timeout in seconds")
