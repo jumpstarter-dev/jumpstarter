@@ -12,35 +12,38 @@ from jumpstarter_cli_common.exceptions import handle_exceptions
 logger = logging.getLogger(__name__)
 
 
-def _handle_child(exporter):
+def _handle_child(config):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():
         received_signal = 0
         signal_handled = False
+        exporter = None
 
-        async def signal_handler(cancel_func):
+        async def signal_handler():
             nonlocal received_signal, signal_handled
 
             with open_signal_receiver(signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT) as signals:
                 async for sig in signals:
                     if signal_handled:
                         continue  # Ignore duplicate signals
-                    signal_handled = True
                     received_signal = sig
                     logger.info("CHILD: Received %d (%s)", received_signal, signal.Signals(received_signal).name)
-                    # Cancel exporter task group(leaves signal handler running)
-                    cancel_func()
+                    if exporter:
+                        # Terminate exporter. SIGHUP waits until current lease is let go. Later SIGTERM still overrides
+                        if received_signal != signal.SIGHUP:
+                            signal_handled = True
+                        exporter.stop(wait_for_lease_exit=received_signal == signal.SIGHUP)
 
-        # Run signal handler and exporter with separate task groups
+                # Start signal handler first, then create exporter
         async with create_task_group() as signal_tg:
-            exporter_tg = None
 
-            async def run_exporter():
-                nonlocal exporter_tg
+            # Start signal handler immediately
+            signal_tg.start_soon(signal_handler)
+
+            # Create exporter and run it
+            async with config.create_exporter() as exporter:
                 try:
-                    async with create_task_group() as tg:
-                        exporter_tg = tg
-                        await exporter.serve()
+                    await exporter.serve()
                 except* Exception as excgroup:
                     from jumpstarter_cli_common.exceptions import leaf_exceptions
                     for exc in leaf_exceptions(excgroup):
@@ -50,11 +53,6 @@ def _handle_child(exporter):
                                 err=True,
                             )
 
-            async def signal_handler_wrapper():
-                await signal_handler(lambda: exporter_tg.cancel_scope.cancel() if exporter_tg else None)
-
-            signal_tg.start_soon(signal_handler_wrapper)
-            await run_exporter()
             # Cancel the signal handler after exporter completes
             signal_tg.cancel_scope.cancel()
 
@@ -82,8 +80,8 @@ def _handle_parent(pid):
     if os.WIFEXITED(status):
         # Interpret child exit code
         child_exit_code = os.WEXITSTATUS(status)
-        if child_exit_code == 0 or child_exit_code == signal.SIGHUP:
-            return None  # restart child (exception/unexpected or SIGHUP)
+        if child_exit_code == 0:
+            return None  # restart child (unexpected exit/exception)
         else:
             # Child indicates termination (signal number)
             return 128 + child_exit_code  # Return standard Unix exit code
@@ -94,7 +92,7 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
-def _serve_with_exc_handling(exporter):
+def _serve_with_exc_handling(config):
     while True:
         pid = os.fork()
 
@@ -102,7 +100,7 @@ def _serve_with_exc_handling(exporter):
             if (exit_code := _handle_parent(pid)) is not None:
                 return exit_code
         else:
-            _handle_child(exporter)
+            _handle_child(config)
             sys.exit(1) # should never happen
 
 

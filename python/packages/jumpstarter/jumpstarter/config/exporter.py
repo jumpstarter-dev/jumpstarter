@@ -156,7 +156,9 @@ class ExporterConfigV1Alpha1(BaseModel):
             with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
                 yield path
 
-    async def serve(self):
+    @asynccontextmanager
+    async def create_exporter(self):
+        """Create and manage an exporter instance with proper lifecycle."""
         # dynamic import to avoid circular imports
         from anyio import CancelScope
 
@@ -165,7 +167,6 @@ class ExporterConfigV1Alpha1(BaseModel):
         async def channel_factory():
             if self.endpoint is None or self.token is None:
                 raise ConfigurationError("endpoint or token not set in exporter config")
-
             credentials = grpc.composite_channel_credentials(
                 await ssl_channel_credentials(self.endpoint, self.tls),
                 call_credentials("Exporter", self.metadata, self.token),
@@ -173,6 +174,7 @@ class ExporterConfigV1Alpha1(BaseModel):
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
         exporter = None
+        entered = False
         try:
             exporter = Exporter(
                 channel_factory=channel_factory,
@@ -180,12 +182,19 @@ class ExporterConfigV1Alpha1(BaseModel):
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
             )
-            await exporter.serve()
+            # Initialize the exporter (registration, etc.)
+            await exporter.__aenter__()
+            entered = True
+            yield exporter
         finally:
             # Shield all cleanup operations from abrupt cancellation for clean shutdown
-            if exporter:
+            if exporter and entered:
                 with CancelScope(shield=True):
                     await exporter.__aexit__(None, None, None)
+
+    async def serve(self):
+        async with self.create_exporter() as exporter:
+            await exporter.serve()
 
 
 class ExporterConfigListV1Alpha1(BaseModel):

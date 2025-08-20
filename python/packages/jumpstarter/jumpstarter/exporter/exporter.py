@@ -1,10 +1,11 @@
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 
 import grpc
 from anyio import connect_unix, create_memory_object_stream, create_task_group, sleep
+from anyio.abc import TaskGroup
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -22,12 +23,31 @@ logger = logging.getLogger(__name__)
 
 @dataclass(kw_only=True)
 class Exporter(AbstractAsyncContextManager, Metadata):
-    channel_factory: Callable[[], grpc.aio.Channel]
+    channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
     device_factory: Callable[[], Driver]
     lease_name: str = field(init=False, default="")
     tls: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, str] = field(default_factory=dict)
     registered: bool = field(init=False, default=False)
+    _stop_requested: bool = field(init=False, default=False)
+    _started: bool = field(init=False, default=False)
+    _tg: TaskGroup | None = field(init=False, default=None)
+
+    def stop(self, wait_for_lease_exit=False):
+        """Signal the exporter to stop.
+
+        Args:
+            wait_for_lease_exit (bool): If True, wait for the current lease to exit before stopping.
+        """
+
+        # Stop immediately if not started yet or if immediate stop is requested
+        if (not self._started or not wait_for_lease_exit) and self._tg is not None:
+            logger.info("Stopping exporter immediately")
+            self._tg.cancel_scope.cancel()
+        elif not self._stop_requested:
+            self._stop_requested = True
+            logger.info("Exporter marked for stop upon lease exit")
+
     async def __aexit__(self, exc_type, exc_value, traceback):
         import anyio
 
@@ -128,7 +148,6 @@ class Exporter(AbstractAsyncContextManager, Metadata):
         # initial registration
         async with self.session():
             pass
-        started = False
         status_tx, status_rx = create_memory_object_stream()
 
         async def status(retries=5, backoff=3):
@@ -153,18 +172,23 @@ class Exporter(AbstractAsyncContextManager, Metadata):
                     retries_left = retries
 
         async with create_task_group() as tg:
+            self._tg = tg
             tg.start_soon(status)
             async for status in status_rx:
                 if self.lease_name != "" and self.lease_name != status.lease_name:
                     self.lease_name = status.lease_name
                     logger.info("Lease status changed, killing existing connections")
-                    tg.cancel_scope.cancel()
+                    self.stop()
                     break
                 self.lease_name = status.lease_name
-                if not started and self.lease_name != "":
-                    started = True
+                if not self._started and self.lease_name != "":
+                    self._started = True
                     tg.start_soon(self.handle, self.lease_name, tg)
                 if status.leased:
                     logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
                 else:
                     logger.info("Currently not leased")
+                    if self._stop_requested:
+                        self.stop()
+                        break
+        self._tg = None
