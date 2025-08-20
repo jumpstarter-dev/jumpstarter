@@ -1,16 +1,15 @@
 import logging
+from collections.abc import AsyncGenerator, Generator
 from contextlib import (
-    AbstractAsyncContextManager,
-    AbstractContextManager,
     ExitStack,
     asynccontextmanager,
     contextmanager,
 )
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Self
 
-from anyio import create_task_group, fail_after, sleep
+from anyio import AsyncContextManagerMixin, ContextManagerMixin, create_task_group, fail_after, sleep
 from anyio.from_thread import BlockingPortal
 from grpc.aio import Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
-class Lease(AbstractContextManager, AbstractAsyncContextManager):
+class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     channel: Channel
     duration: timedelta
     selector: str
@@ -48,7 +47,6 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
 
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.svc = ClientService(channel=self.channel, namespace=self.namespace)
-        self.manager = self.portal.wrap_async_context_manager(self)
 
     async def _create(self):
         logger.debug("Creating lease request for selector %s for duration %s", self.selector, self.duration)
@@ -127,23 +125,19 @@ class Lease(AbstractContextManager, AbstractAsyncContextManager):
 
                 await sleep(1)
 
-    async def __aenter__(self):
-        return await self.request_async()
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    @asynccontextmanager
+    async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
+        yield await self.request_async()
         if self.release:
             logger.info("Releasing Lease %s", self.name)
             await self.svc.DeleteLease(
                 name=self.name,
             )
 
-    def __enter__(self):
-        # wraps the async context manager enter
-        return self.manager.__enter__()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        # wraps the async context manager exit
-        return self.manager.__exit__(exc_type, exc_value, traceback)
+    @contextmanager
+    def __contextmanager__(self) -> Generator[Self]:
+        with self.portal.wrap_async_context_manager(self) as value:
+            yield value
 
     async def handle_async(self, stream):
         logger.debug("Connecting to Lease with name %s", self.name)
