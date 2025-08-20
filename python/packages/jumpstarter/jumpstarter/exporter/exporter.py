@@ -1,10 +1,19 @@
 import logging
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Self
 
 import grpc
-from anyio import connect_unix, create_memory_object_stream, create_task_group, sleep
+from anyio import (
+    AsyncContextManagerMixin,
+    CancelScope,
+    connect_unix,
+    create_memory_object_stream,
+    create_task_group,
+    sleep,
+    move_on_after,
+)
 from anyio.abc import TaskGroup
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import (
@@ -22,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
-class Exporter(AbstractAsyncContextManager, Metadata):
+class Exporter(AsyncContextManagerMixin, Metadata):
     channel_factory: Callable[[], Awaitable[grpc.aio.Channel]]
     device_factory: Callable[[], Driver]
     lease_name: str = field(init=False, default="")
@@ -48,32 +57,34 @@ class Exporter(AbstractAsyncContextManager, Metadata):
             self._stop_requested = True
             logger.info("Exporter marked for stop upon lease exit")
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        import anyio
-
+    @asynccontextmanager
+    async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
         try:
-            if self.registered:
-                logger.info("Unregistering exporter with controller")
-                try:
-                    with anyio.move_on_after(10):  # 10 second timeout
-                        channel = await self.channel_factory()
-                        try:
-                            controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-                            await controller.Unregister(
-                                jumpstarter_pb2.UnregisterRequest(
-                                    reason="Exporter shutdown",
+            yield self
+        finally:
+            try:
+                if self.registered:
+                    logger.info("Unregistering exporter with controller")
+                    try:
+                        with move_on_after(10):  # 10 second timeout
+                            channel = await self.channel_factory()
+                            try:
+                                controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
+                                await controller.Unregister(
+                                    jumpstarter_pb2.UnregisterRequest(
+                                        reason="Exporter shutdown",
+                                    )
                                 )
-                            )
-                            logger.info("Controller unregistration completed successfully")
-                        finally:
-                            with anyio.CancelScope(shield=True):
-                                await channel.close()
-                except Exception as e:
-                    logger.error("Error during controller unregistration: %s", e, exc_info=True)
+                                logger.info("Controller unregistration completed successfully")
+                            finally:
+                                with CancelScope(shield=True):
+                                    await channel.close()
+                    except Exception as e:
+                        logger.error("Error during controller unregistration: %s", e, exc_info=True)
 
-        except Exception as e:
-            logger.error("Error during exporter cleanup: %s", e, exc_info=True)
-            # Don't re-raise to avoid masking the original exception
+            except Exception as e:
+                logger.error("Error during exporter cleanup: %s", e, exc_info=True)
+                # Don't re-raise to avoid masking the original exception
 
     async def __handle(self, path, endpoint, token, tls_config, grpc_options):
         try:
