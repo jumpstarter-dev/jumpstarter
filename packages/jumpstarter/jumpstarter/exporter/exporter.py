@@ -1,10 +1,11 @@
 import logging
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Self
 
 import grpc
-from anyio import connect_unix, create_memory_object_stream, create_task_group, sleep
+from anyio import AsyncContextManagerMixin, connect_unix, create_memory_object_stream, create_task_group, sleep
 from google.protobuf import empty_pb2
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
-class Exporter(AbstractAsyncContextManager, Metadata):
+class Exporter(AsyncContextManagerMixin, Metadata):
     channel_factory: Callable[[], grpc.aio.Channel]
     device_factory: Callable[[], Driver]
     lease_name: str = field(init=False, default="")
@@ -29,15 +30,19 @@ class Exporter(AbstractAsyncContextManager, Metadata):
     grpc_options: dict[str, str] = field(default_factory=dict)
     registered: bool = field(init=False, default=False)
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        if self.registered:
-            controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
-            logger.info("Unregistering exporter with controller")
-            await controller.Unregister(
-                jumpstarter_pb2.UnregisterRequest(
-                    reason="TODO",
+    @asynccontextmanager
+    async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
+        try:
+            yield self
+        finally:
+            if self.registered:
+                controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
+                logger.info("Unregistering exporter with controller")
+                await controller.Unregister(
+                    jumpstarter_pb2.UnregisterRequest(
+                        reason="TODO",
+                    )
                 )
-            )
 
     async def __handle(self, path, endpoint, token, tls_config, grpc_options):
         try:

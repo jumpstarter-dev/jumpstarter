@@ -1,8 +1,11 @@
-from contextlib import AbstractContextManager
+from collections.abc import Generator
+from contextlib import contextmanager
 from ipaddress import IPv6Address, ip_address
 from threading import Event
+from typing import Any
 
 import click
+from anyio import ContextManagerMixin
 
 from .adapters import DbusAdapter, TcpPortforwardAdapter, UnixPortforwardAdapter
 from .driver import DbusNetwork
@@ -62,13 +65,11 @@ class NetworkClient(DriverClient):
         return base
 
 
-class DbusNetworkClient(NetworkClient, AbstractContextManager):
-    def __enter__(self):
-        self.adapter = DbusAdapter(client=self)
-        self.adapter.__enter__()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.adapter.__exit__(exc_type, exc_value, traceback)
+class DbusNetworkClient(NetworkClient, ContextManagerMixin):
+    @contextmanager
+    def __contextmanager__(self) -> Generator[Any]:
+        with DbusAdapter(client=self) as value:
+            yield value
 
     @property
     def kind(self):
