@@ -42,11 +42,13 @@ class Session(
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
-        logging.getLogger().addHandler(self._logging_handler)
-        self.root_device.reset()
-        yield self
-        self.root_device.close()
-        logging.getLogger().removeHandler(self._logging_handler)
+        try:
+            logging.getLogger().addHandler(self._logging_handler)
+            self.root_device.reset()
+            yield self
+        finally:
+            self.root_device.close()
+            logging.getLogger().removeHandler(self._logging_handler)
 
     def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)

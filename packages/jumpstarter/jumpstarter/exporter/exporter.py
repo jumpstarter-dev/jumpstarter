@@ -32,15 +32,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
-        yield self
-        if self.registered:
-            controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
-            logger.info("Unregistering exporter with controller")
-            await controller.Unregister(
-                jumpstarter_pb2.UnregisterRequest(
-                    reason="TODO",
+        try:
+            yield self
+        finally:
+            if self.registered:
+                controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
+                logger.info("Unregistering exporter with controller")
+                await controller.Unregister(
+                    jumpstarter_pb2.UnregisterRequest(
+                        reason="TODO",
+                    )
                 )
-            )
 
     async def __handle(self, path, endpoint, token, tls_config, grpc_options):
         try:
