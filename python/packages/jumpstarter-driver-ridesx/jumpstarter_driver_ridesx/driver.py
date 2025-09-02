@@ -54,10 +54,6 @@ class RideSXDriver(Driver):
 
         decompressed_file = compressed_file.parent / decompressed_name
 
-        if decompressed_file.exists():
-            self.logger.info(f"decompressed file already exists: {decompressed_name}")
-            return decompressed_file
-
         self.logger.info(f"decompressing {compressed_file.name} to {decompressed_name}")
 
         decompress_cmd = self._get_decompression_command(compressed_file.name)
