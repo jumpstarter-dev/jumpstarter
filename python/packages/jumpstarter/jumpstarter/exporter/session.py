@@ -44,8 +44,18 @@ class Session(
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.root_device.close()
-        logging.getLogger().removeHandler(self._logging_handler)
+        try:
+            self.root_device.close()
+        except Exception as e:
+            # Get driver name from report for more descriptive logging
+            try:
+                report = self.root_device.report()
+                driver_name = report.labels.get('jumpstarter.dev/name', self.root_device.__class__.__name__)
+            except Exception:
+                driver_name = self.root_device.__class__.__name__
+            logger.error("Error closing driver %s: %s", driver_name, e, exc_info=True)
+        finally:
+            logging.getLogger().removeHandler(self._logging_handler)
 
     def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)
