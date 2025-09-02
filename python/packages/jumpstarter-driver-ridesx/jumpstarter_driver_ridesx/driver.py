@@ -11,18 +11,6 @@ from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
 
 
-async def _send_power_command(serial, logger, command: str):
-    """Send a power command to the device via serial"""
-    async with serial.connect() as stream:
-        logger.info(f"Executing power command: {command}")
-        await stream.send(f"{command}\r".encode())
-        data = b""
-        while b"ok" not in data:
-            chunk = await stream.receive()
-            data += chunk
-        logger.debug(f"Command {command} acknowledged with 'ok'")
-
-
 @dataclass(kw_only=True)
 class RideSXDriver(Driver):
     """RideSX Driver"""
@@ -208,15 +196,21 @@ class RideSXDriver(Driver):
         """Boot device to fastboot mode"""
         self.logger.info("Booting device to fastboot mode")
         commands = [
-            ("devicePower 0", 0.5),
-            ("ttl outputBit 1 0", 0.5),
-            ("gpio volup 0", 0.05),
-            ("ttl outputBit 2 1", 0.1),
+            # power off
+            ("devicePower 0", 0),
+            ("gpio vbusdis1 0", 0),
+            ("usbDevicePower 1", 0),
+            ("ttl outputBit 1 0", 0),
+            ("gpio volup 0", 0),
+            ("ttl outputBit 2 1", 0),
             ("ttl outputBit 4 0", 0.5),
+            # power on
             ("devicePower 1", 0.9),
+            ("usbDevicePower 1", 0),
+            ("gpio vbusdis1 0", 0.03),
             ("ttl outputBit 1 1", 0.8),
-            ("ttl outputBit 1 0", 8.1),
-            ("ttl outputBit 2 0", 0),
+            ("ttl outputBit 1 0", 8),
+            ("ttl outputBit 2 0", 0.5),
         ]
         serial = self.children["serial"]
         async with serial.connect() as stream:
@@ -235,26 +229,6 @@ class RideSXDriver(Driver):
                 self.logger.debug(f"prompt returned after command: {command}")
                 await asyncio.sleep(delay)
         self.logger.info("device should now be in fastboot mode")
-
-    @export
-    async def power_on(self):
-        """Turn device power on"""
-        self.logger.info("Turning device power on")
-        await _send_power_command(self.children["serial"], self.logger, "devicePower 1")
-
-    @export
-    async def power_off(self):
-        """Turn device power off"""
-        self.logger.info("Turning device power off")
-        await _send_power_command(self.children["serial"], self.logger, "devicePower 0")
-
-    @export
-    async def power_cycle(self, delay: float = 2):
-        """Power cycle the device"""
-        self.logger.info(f"Power cycling device with {delay}s delay")
-        await self.power_off()
-        await asyncio.sleep(delay)
-        await self.power_on()
 
 
 @dataclass(kw_only=True)
@@ -276,13 +250,23 @@ class RideSXPowerDriver(Driver):
     async def on(self):
         """Turn device power on"""
         self.logger.info("Turning device power on")
-        await _send_power_command(self.children["serial"], self.logger, "devicePower 1")
+        commands = [
+            ("devicePower 1", 0.9),
+            ("usbDevicePower 1", 0),
+            ("gpio vbusdis1 0", 0.03),
+        ]
+        await _send_power_commands_sequence(self.children["serial"], self.logger, commands)
 
     @export
     async def off(self):
         """Turn device power off"""
         self.logger.info("Turning device power off")
-        await _send_power_command(self.children["serial"], self.logger, "devicePower 0")
+        commands = [
+            ("gpio vbusdis1 0", 0),
+            ("usbDevicePower 1", 0),
+            ("devicePower 0", 0.5),
+        ]
+        await _send_power_commands_sequence(self.children["serial"], self.logger, commands)
 
     @export
     async def cycle(self, delay: float = 2):
@@ -296,3 +280,23 @@ class RideSXPowerDriver(Driver):
     async def rescue(self):
         """Rescue mode - not implemented for RideSX"""
         raise NotImplementedError("Rescue mode not available for RideSX")
+
+
+async def _send_power_command(serial, logger, command: str):
+    """Send a power command to the device via serial"""
+    async with serial.connect() as stream:
+        logger.info(f"Executing power command: {command}")
+        await stream.send(f"{command}\r".encode())
+        data = b""
+        while b"ok" not in data:
+            chunk = await stream.receive()
+            data += chunk
+        logger.debug(f"Command {command} acknowledged with 'ok'")
+
+
+async def _send_power_commands_sequence(serial, logger, commands):
+    """Send a sequence of power commands with delays"""
+    for command, delay in commands:
+        await _send_power_command(serial, logger, command)
+        if delay > 0:
+            await asyncio.sleep(delay)
