@@ -11,8 +11,8 @@ from anyio import (
     connect_unix,
     create_memory_object_stream,
     create_task_group,
-    sleep,
     move_on_after,
+    sleep,
 )
 from anyio.abc import TaskGroup
 from google.protobuf import empty_pb2
