@@ -127,12 +127,15 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
-        yield await self.request_async()
-        if self.release:
-            logger.info("Releasing Lease %s", self.name)
-            await self.svc.DeleteLease(
-                name=self.name,
-            )
+        value = await self.request_async()
+        try:
+            yield value
+        finally:
+            if self.release:
+                logger.info("Releasing Lease %s", self.name)
+                await self.svc.DeleteLease(
+                    name=self.name,
+                )
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
