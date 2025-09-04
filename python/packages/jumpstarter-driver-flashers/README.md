@@ -124,6 +124,8 @@ Options:
   --force-exporter-http          Force use of exporter HTTP
   --force-flash-bundle TEXT      Force use of a specific flasher OCI bundle
   --console-debug                Enable console debug mode
+  --cacert FILE                  CA certificate to use for HTTPS
+  --insecure-tls                 Skip TLS certificate verification
   --help                         Show this message and exit.
 ```
 

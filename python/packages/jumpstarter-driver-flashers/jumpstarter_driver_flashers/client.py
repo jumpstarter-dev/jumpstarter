@@ -78,17 +78,20 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         os_image_checksum: str | None = None,
         force_exporter_http: bool = False,
         force_flash_bundle: str | None = None,
+        cacert_file: str | None = None,
+        insecure_tls: bool = False,
     ):
         """Flash image to DUT"""
-        skip_exporter_http = False
+        should_download_to_httpd = True
         image_url = ""
         operator_scheme = None
         # initrmafs cannot handle https yet, fallback to using the exporter's http server
-        if path.startswith("http://") and not force_exporter_http:
-            # busybox can handle the http from a remote directly, unless target is isolated
+        if path.startswith(("http://", "https://")) and not force_exporter_http:
+            # the flasher image can handle the http(s) from a remote directly, unless target is isolated
             image_url = path
-            skip_exporter_http = True
+            should_download_to_httpd = False
         else:
+            # use the exporter's http server for the flasher image, we should download it first
             if operator is None:
                 path, operator, operator_scheme = operator_for_path(path)
             image_url = self.http.get_url() + "/" + path.name
@@ -96,7 +99,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # start counting time for the flash operation
         start_time = time.time()
 
-        if not skip_exporter_http:
+        if should_download_to_httpd:
             # Create a queue to handle exceptions from the thread
             error_queue = Queue()
 
@@ -113,7 +116,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self.call("setup_flasher_bundle", force_flash_bundle)
 
         # Early exit if there was an error in the background thread
-        if not skip_exporter_http and not error_queue.empty():
+        if should_download_to_httpd and not error_queue.empty():
             raise error_queue.get()
 
         with self._services_up():
@@ -142,16 +145,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 console.sendline("udhcpc")
                 console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
-                if not skip_exporter_http:
-                    # Wait for the storage write operation to complete before proceeding
-                    self.logger.info("Waiting until the http image preparation in storage is completed")
-                    storage_thread.join()
+                stored_cacert = None
+                if should_download_to_httpd:
+                    self._wait_for_storage_thread(storage_thread, error_queue)
+                else:
+                    stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
 
-                    # Check if there were any exceptions in the background thread
-                    if not error_queue.empty():
-                        raise error_queue.get()
 
-                self._flash_with_progress(console, manifest, path, image_url, target_device)
+                self._flash_with_progress(console, manifest, path, image_url, target_device,
+                                          insecure_tls, stored_cacert)
 
                 total_time = time.time() - start_time
                 # total time in minutes:seconds
@@ -162,7 +164,64 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 self.logger.info("Powering off target")
                 self.power.off()
 
-    def _flash_with_progress(self, console, manifest, path, image_url, target_path):
+    def _setup_flasher_ssl(self, console, manifest, cacert_file: str | None) -> str | None:
+        """Setup SSL configuration for the flasher.
+
+        Args:
+            console: Console object for device interaction
+            manifest: Flasher manifest containing login prompt
+            cacert_file: Path to CA certificate file
+
+        Returns:
+            Path to stored CA certificate in the DUT flasher, or None if no certificate was provided
+
+        Raises:
+            RuntimeError: If there's an error reading the CA certificate file
+        """
+        # make sure that the remote system has the right time without using NTP
+        # otherwise SSL certificate verification will fail
+        self.logger.info("Setting the remote DUT time to match the local system time")
+        current_timestamp = int(time.time())
+        console.sendline(f"date -s @{current_timestamp}")
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+        if cacert_file:
+            cacert = b""
+            try:
+                with open(cacert_file, "rb") as f:
+                    cacert = f.read()
+            except OSError as e:
+                self.logger.error(f"Error reading CA certificate file: {e}")
+                raise RuntimeError(f"Error reading CA certificate file: {e}") from e
+            self.logger.info("Storing the CA certificate in the remote DUT flasher")
+            # write the contents of cacert to /tmp/cacert.crt on the remote target through console
+            stored_cacert = "/tmp/cacert.crt"
+            console.sendline(f"cat > {stored_cacert} << EOF")
+            console.sendline(cacert)
+            console.sendline("\nEOF")
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            return stored_cacert
+
+        return None
+
+    def _curl_tls_args(self, insecure_tls: bool, stored_cacert: str | None) -> str:
+        """Generate TLS arguments for curl command.
+
+        Args:
+            insecure_tls: Whether to use insecure TLS
+            stored_cacert: Path to the stored CA certificate in the DUT flasher
+
+        Returns:
+            String containing TLS arguments for curl command
+        """
+        tls_args = ""
+        if insecure_tls:
+            tls_args += "-k "
+        if stored_cacert:
+            tls_args += f"--cacert {stored_cacert} "
+        return tls_args.strip()
+
+    def _flash_with_progress(self, console, manifest, path, image_url, target_path, insecure_tls, stored_cacert):
         """Flash image to target device with progress monitoring.
 
         Args:
@@ -171,32 +230,30 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             path: Path to the source image
             image_url: URL to download the image from
             target_path: Target device path to flash to
+            insecure_tls: Whether to use insecure TLS
+            stored_cacert: Path to the stored CA certificate in the DUT flasher
         """
-        # Flash the image
+
+        # Calculate decompress and tls arguments for curl
+        prompt = manifest.spec.login.prompt
         decompress_cmd = _get_decompression_command(path)
+        tls_args = self._curl_tls_args(insecure_tls, stored_cacert)
 
-        console.sendline(f'wget --spider --server-response --timeout=30 "{image_url}"')
-        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        # Check if the image URL is accessible using curl and the TLS arguments
+        self._check_url_access(console, prompt, image_url, tls_args)
 
-        wget_output = console.before.decode(errors="ignore").strip()
-
-        console.sendline("echo $?")
-        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-        url_status = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
-        if url_status != 0:
-            raise RuntimeError(f"Unable to access {image_url} (wget exit status {url_status}), output: {wget_output}")
-
+        # Flash the image, we run curl -> decompress -> dd in the background, so we can monitor dd's progress
         flash_cmd = (
-            f'( wget -q -O - "{image_url}" | '
+            f'( curl -fsSL {tls_args} "{image_url}" | '
             f"{decompress_cmd} "
             f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
         )
-
         console.sendline(flash_cmd)
-        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
 
+        # monitor the dd process to understand flashing progrses
         console.sendline("pidof dd")
-        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         dd_pid = console.before.decode(errors="ignore").splitlines()[1].strip()
 
         # Initialize progress tracking variables
@@ -205,7 +262,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         while True:
             console.sendline(f"cat /proc/{dd_pid}/fdinfo/1")
-            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
             if "No such file or directory" in console.before.decode(errors="ignore"):
                 break
             data = console.before.decode(errors="ignore")
@@ -215,7 +272,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 current_time = time.time()
                 elapsed = current_time - last_time
 
-                if elapsed >= 1.0:  # Update speed every second
+                if elapsed >= 5.0:  # Update speed every 5 seconds
                     bytes_diff = current_bytes - last_pos
                     speed_mb = (bytes_diff / (1024 * 1024)) / elapsed
                     total_mb = current_bytes / (1024 * 1024)
@@ -227,7 +284,28 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         self.logger.info("Flushing buffers")
         console.sendline("sync")
-        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_SYNC)
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_SYNC)
+
+    def _check_url_access(self, console, prompt, image_url: str, tls_args: str):
+        """Check if the image URL is accessible using curl.
+
+        Args:
+            console: Console object for device interaction
+            prompt: Login prompt for console
+            image_url: URL to check accessibility for
+            tls_args: TLS arguments for curl command
+
+        Raises:
+            RuntimeError: If the URL is not accessible
+        """
+        console.sendline(f'curl --location --max-time 30 --fail -sS -r 0-0 -o /dev/null {tls_args} "{image_url}"')
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        curl_output = console.before.decode(errors="ignore").strip()
+        console.sendline("echo $?")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        url_status = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+        if url_status != 0:
+            raise RuntimeError(f"Unable to access {image_url} (curl exit status {url_status}), output: {curl_output}")
 
     def _get_target_device(self, target: str, manifest: FlasherBundleManifestV1Alpha1, console) -> str:
         """Get the target device path from the manifest, resolving block devices if needed.
@@ -252,6 +330,24 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return target_path
 
+    def _wait_for_storage_thread(self, storage_thread, error_queue):
+        """Wait for the storage write operation to complete and check for exceptions.
+
+        Args:
+            storage_thread: The background thread handling storage operations
+            error_queue: Queue containing any exceptions from the background thread
+
+        Raises:
+            Exception: Any exception that occurred in the background thread
+        """
+        # Wait for the storage write operation to complete before proceeding
+        self.logger.info("Waiting until the http image preparation in storage is completed")
+        storage_thread.join()
+
+        # Check if there were any exceptions in the background thread
+        if not error_queue.empty():
+            raise error_queue.get()
+
     def _transfer_bg_thread(
         self,
         src_path: PathBuf,
@@ -262,7 +358,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         error_queue,
         original_url: str | None = None,
     ):
-        """Transfer image to storage in the background
+        """Transfer image to exporter storage in the background
         Args:
             src_path: Path to the source image
             src_operator: Operator to read the source image
@@ -531,6 +627,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         )
         @click.option("--force-exporter-http", is_flag=True, help="Force use of exporter HTTP")
         @click.option("--force-flash-bundle", type=str, help="Force use of a specific flasher OCI bundle")
+        @click.option("--cacert", type=click.Path(exists=True, dir_okay=False), help="CA certificate to use for HTTPS")
+        @click.option("--insecure-tls", is_flag=True, help="Skip TLS certificate verification")
         @debug_console_option
         def flash(
             file,
@@ -540,6 +638,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             console_debug,
             force_exporter_http,
             force_flash_bundle,
+            cacert,
+            insecure_tls,
         ):
             """Flash image to DUT from file"""
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
@@ -553,6 +653,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 partition=target,
                 force_exporter_http=force_exporter_http,
                 force_flash_bundle=force_flash_bundle,
+                cacert_file=cacert,
+                insecure_tls=insecure_tls,
             )
 
         @base.command()
