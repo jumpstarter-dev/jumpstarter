@@ -1,3 +1,4 @@
+import sys
 from dataclasses import dataclass
 
 import click
@@ -13,8 +14,8 @@ class ShellClient(DriverClient):
     Client interface for Shell driver.
 
     This client dynamically checks that the method is configured
-    on the driver, and if it is, it will call it and get the results
-    in the form of (stdout, stderr, returncode).
+    on the driver, and if it is, it will call it with live streaming output.
+    Output chunks are displayed as they arrive.
     """
 
     def _check_method_exists(self, method):
@@ -26,7 +27,17 @@ class ShellClient(DriverClient):
     ## capture any method calls dynamically
     def __getattr__(self, name):
         self._check_method_exists(name)
-        return lambda *args, **kwargs: tuple(self.call("call_method", name, kwargs, *args))
+        def execute(*args, **kwargs):
+            returncode = 0
+            for stdout, stderr, code in self.streamingcall("call_method", name, kwargs, *args):
+                if stdout:
+                    print(stdout, end='', flush=True)
+                if stderr:
+                    print(stderr, end='', file=sys.stderr, flush=True)
+                if code is not None:
+                    returncode = code
+            return returncode
+        return execute
 
     def cli(self):
         """Create CLI interface for dynamically configured shell methods"""
@@ -64,14 +75,7 @@ class ShellClient(DriverClient):
                 else:
                     raise click.BadParameter(f"Invalid --env value '{env_var}'. Use KEY=VALUE.")
 
-            # Call the method
-            stdout, stderr, returncode = self.call("call_method", method_name, env_dict, *args)
-
-            # Display results
-            if stdout:
-                click.echo(stdout, nl=not stdout.endswith("\n"))
-            if stderr:
-                click.echo(stderr, err=True, nl=not stderr.endswith("\n"))
+            returncode = getattr(self, method_name)(*args, **env_dict)
 
             # Exit with the same return code as the shell command
             if returncode != 0:

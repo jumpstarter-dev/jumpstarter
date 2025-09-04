@@ -1,7 +1,26 @@
+
 import pytest
 
 from .driver import Shell
 from jumpstarter.common.utils import serve
+
+
+def _collect_streaming_output(client, method_name, env_vars=None, *args):
+    """Helper function to collect streaming output for testing"""
+    stdout_parts = []
+    stderr_parts = []
+    final_returncode = None
+
+    env_vars = env_vars or {}
+    for stdout_chunk, stderr_chunk, returncode in client.streamingcall("call_method", method_name, env_vars, *args):
+        if stdout_chunk:
+            stdout_parts.append(stdout_chunk)
+        if stderr_chunk:
+            stderr_parts.append(stderr_chunk)
+        if returncode is not None:
+            final_returncode = returncode
+
+    return "".join(stdout_parts), "".join(stderr_parts), final_returncode
 
 
 @pytest.fixture
@@ -21,23 +40,38 @@ def client():
 
 
 def test_normal_args(client):
-    assert client.echo("hello") == ("hello\n", "", 0)
+    stdout, stderr, returncode = _collect_streaming_output(client, "echo", {}, "hello")
+    assert stdout == "hello\n"
+    assert stderr == ""
+    assert returncode == 0
 
 
 def test_env_vars(client):
-    assert client.env(ENV1="world") == ("world\n", "", 0)
+    stdout, stderr, returncode = _collect_streaming_output(client, "env", {"ENV1": "world"})
+    assert stdout == "world\n"
+    assert stderr == ""
+    assert returncode == 0
 
 
 def test_multi_line_scripts(client):
-    assert client.multi_line("a", "b", "c") == ("a\nb\nc\n", "", 0)
+    stdout, stderr, returncode = _collect_streaming_output(client, "multi_line", {}, "a", "b", "c")
+    assert stdout == "a\nb\nc\n"
+    assert stderr == ""
+    assert returncode == 0
 
 
 def test_return_codes(client):
-    assert client.exit1() == ("", "", 1)
+    stdout, stderr, returncode = _collect_streaming_output(client, "exit1")
+    assert stdout == ""
+    assert stderr == ""
+    assert returncode == 1
 
 
 def test_stderr(client):
-    assert client.stderr("error") == ("", "error\n", 0)
+    stdout, stderr, returncode = _collect_streaming_output(client, "stderr", {}, "error")
+    assert stdout == ""
+    assert stderr == "error\n"
+    assert returncode == 0
 
 
 def test_unknown_method(client):
