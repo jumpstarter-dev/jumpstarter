@@ -1,12 +1,14 @@
 import logging
 from collections import deque
-from contextlib import AbstractContextManager, asynccontextmanager, contextmanager, suppress
+from collections.abc import Generator
+from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass, field
 from logging.handlers import QueueHandler
+from typing import Self
 from uuid import UUID
 
 import grpc
-from anyio import Event, TypedAttributeLookupError, sleep
+from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, sleep
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -30,7 +32,7 @@ class Session(
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
     Metadata,
-    AbstractContextManager,
+    ContextManagerMixin,
 ):
     root_device: Driver
     mapping: dict[UUID, Driver]
@@ -38,24 +40,25 @@ class Session(
     _logging_queue: deque = field(init=False)
     _logging_handler: QueueHandler = field(init=False)
 
-    def __enter__(self):
+    @contextmanager
+    def __contextmanager__(self) -> Generator[Self]:
         logging.getLogger().addHandler(self._logging_handler)
         self.root_device.reset()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
         try:
-            self.root_device.close()
-        except Exception as e:
-            # Get driver name from report for more descriptive logging
-            try:
-                report = self.root_device.report()
-                driver_name = report.labels.get('jumpstarter.dev/name', self.root_device.__class__.__name__)
-            except Exception:
-                driver_name = self.root_device.__class__.__name__
-            logger.error("Error closing driver %s: %s", driver_name, e, exc_info=True)
+            yield self
         finally:
-            logging.getLogger().removeHandler(self._logging_handler)
+            try:
+                self.root_device.close()
+            except Exception as e:
+                # Get driver name from report for more descriptive logging
+                try:
+                    report = self.root_device.report()
+                    driver_name = report.labels.get("jumpstarter.dev/name", self.root_device.__class__.__name__)
+                except Exception:
+                    driver_name = self.root_device.__class__.__name__
+                logger.error("Error closing driver %s: %s", driver_name, e, exc_info=True)
+            finally:
+                logging.getLogger().removeHandler(self._logging_handler)
 
     def __init__(self, *args, root_device, **kwargs):
         super().__init__(*args, **kwargs)

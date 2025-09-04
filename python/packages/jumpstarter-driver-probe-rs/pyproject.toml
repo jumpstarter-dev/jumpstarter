@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [{ name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }]
 requires-python = ">=3.11"
 dependencies = [
-    "anyio>=4.6.2.post1",
+    "anyio>=4.10.0",
     "click>=8.1.7.2",
     "jumpstarter",
     "jumpstarter-driver-opendal",

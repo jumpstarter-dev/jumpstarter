@@ -11,7 +11,7 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "oras>=0.2.25",
-    "anyio>=4.6.2.post1",
+    "anyio>=4.10.0",
     "jumpstarter",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-pyserial",

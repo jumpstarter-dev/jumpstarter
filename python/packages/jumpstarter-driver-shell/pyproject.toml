@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }]
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["anyio>=4.6.2.post1", "jumpstarter"]
+dependencies = ["anyio>=4.10.0", "jumpstarter"]
 
 [project.entry-points."jumpstarter.drivers"]
 Shell = "jumpstarter_driver_shell.driver:Shell"
