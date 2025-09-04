@@ -59,6 +59,7 @@ class Global(BaseModel):
 class Mode(Enum):
     ingress = "ingress"
     route = "route"
+    nodeport = "nodeport"
 
 
 class Mode1(Enum):
