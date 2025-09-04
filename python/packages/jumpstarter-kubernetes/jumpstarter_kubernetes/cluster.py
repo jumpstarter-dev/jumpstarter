@@ -97,9 +97,6 @@ async def create_minikube_cluster(
     if extra_args is None:
         extra_args = []
 
-    if not any(arg.startswith("--cpus") for arg in extra_args):
-        extra_args.append("--cpus=4")
-
     if not minikube_installed(minikube):
         raise RuntimeError(f"{minikube} is not installed or not found in PATH.")
 
@@ -112,6 +109,13 @@ async def create_minikube_cluster(
         else:
             if not await delete_minikube_cluster(minikube, cluster_name):
                 return False
+
+    has_cpus_flag = any(a == "--cpus" or a.startswith("--cpus=") for a in extra_args)
+    if not has_cpus_flag:
+        rc, out, _ = await run_command([minikube, "config", "get", "cpus"])
+        has_config_cpus = rc == 0 and out.strip().isdigit() and int(out.strip()) > 0
+        if not has_config_cpus:
+            extra_args.append("--cpus=4")
 
     command = [
         minikube,
