@@ -97,6 +97,9 @@ async def create_minikube_cluster(
     if extra_args is None:
         extra_args = []
 
+    if not any(arg.startswith("--cpus") for arg in extra_args):
+        extra_args.append("--cpus=4")
+
     if not minikube_installed(minikube):
         raise RuntimeError(f"{minikube} is not installed or not found in PATH.")
 
