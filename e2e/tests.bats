@@ -6,6 +6,9 @@ setup() {
 }
 
 wait_for_exporter() {
+  # After a lease operation the exporter is disconnecting from controller and reconnecting.
+  # The disconnect can take a short while so let's avoid catching the pre-disconnect state and early return
+  sleep 2
   kubectl -n default wait --timeout 20m --for=condition=Online --for=condition=Registered \
     exporters.jumpstarter.dev/test-exporter-oidc
   kubectl -n default wait --timeout 20m --for=condition=Online --for=condition=Registered \
