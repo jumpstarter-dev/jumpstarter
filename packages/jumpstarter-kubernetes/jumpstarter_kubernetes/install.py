@@ -55,8 +55,6 @@ async def install_helm_chart(
         args.append("--kube-context")
         args.append(context)
 
-    print("\n".join(args))
-
     # Attempt to install Jumpstarter using Helm
     process = await asyncio.create_subprocess_exec(*args)
     await process.wait()
