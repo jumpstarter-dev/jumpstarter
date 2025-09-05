@@ -110,6 +110,17 @@ async def create_minikube_cluster(
             if not await delete_minikube_cluster(minikube, cluster_name):
                 return False
 
+    has_cpus_flag = any(a == "--cpus" or a.startswith("--cpus=") for a in extra_args)
+    if not has_cpus_flag:
+        try:
+            rc, out, _ = await run_command([minikube, "config", "get", "cpus"])
+            has_config_cpus = rc == 0 and out.strip().isdigit() and int(out.strip()) > 0
+        except RuntimeError:
+            # If we cannot query minikube (e.g., not installed in test env), default CPUs
+            has_config_cpus = False
+        if not has_config_cpus:
+            extra_args.append("--cpus=4")
+
     command = [
         minikube,
         "start",
@@ -180,9 +191,7 @@ nodes:
     command = [kind, "create", "cluster", "--name", cluster_name, "--config=/dev/stdin"]
     command.extend(extra_args)
 
-    kind_process = await asyncio.create_subprocess_exec(
-        *command, stdin=asyncio.subprocess.PIPE
-    )
+    kind_process = await asyncio.create_subprocess_exec(*command, stdin=asyncio.subprocess.PIPE)
 
     await kind_process.communicate(input=cluster_config.encode())
 
