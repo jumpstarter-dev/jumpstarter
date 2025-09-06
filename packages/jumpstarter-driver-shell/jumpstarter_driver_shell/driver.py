@@ -138,6 +138,7 @@ class Shell(Driver):
         cmd = self.shell + [script, method] + list(args)
 
         # Start the process with pipes for streaming and new process group
+        self.logger.debug( f"running {method} with cmd: {cmd} and env: {combined_env} " f"and args: {args}")
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -152,7 +153,6 @@ class Shell(Driver):
 
         # Read output in real-time
         while process.returncode is None:
-            self.logger.debug(f"running {method} with cmd: {cmd} and env: {combined_env} and args: {args}")
             if asyncio.get_event_loop().time() - start_time > self.timeout:
                 # Send SIGTERM to entire process group for graceful termination
                 try:
