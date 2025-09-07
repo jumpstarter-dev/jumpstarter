@@ -6,21 +6,12 @@ on:
       - main
       - release-*
     tags:
-      - '*'
-
-env:
-  TRIGGER: >
-    ${{
-      github.repository_owner == 'jumpstarter-dev' &&
-      (github.ref == 'refs/heads/main' ||
-       startsWith(github.ref, 'refs/tags/') ||
-       startsWith(github.ref, 'refs/heads/release-'))
-    }}
+      - "*"
 
 jobs:
   trigger-packages-index:
     runs-on: ubuntu-latest
-    if: env.TRIGGER == 'true'
+    if: ${{ github.repository_owner == 'jumpstarter-dev' }}
     steps:
       - uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5 # v2.0.2
         id: app-token
