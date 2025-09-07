@@ -17,6 +17,7 @@ members = [
     "jumpstarter-driver-dutlink",
     "jumpstarter-driver-energenie",
     "jumpstarter-driver-flashers",
+    "jumpstarter-driver-gpiod",
     "jumpstarter-driver-http",
     "jumpstarter-driver-http-power",
     "jumpstarter-driver-iscsi",
@@ -26,7 +27,6 @@ members = [
     "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-qemu",
-    "jumpstarter-driver-gpiod",
     "jumpstarter-driver-ridesx",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-shell",
@@ -176,16 +176,16 @@ wheels = [
 
 [[package]]
 name = "anyio"
-version = "4.9.0"
+version = "4.10.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "idna" },
     { name = "sniffio" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/95/7d/4c1bd541d4dffa1b52bd83fb8527089e097a106fc90b467a7313b105f840/anyio-4.9.0.tar.gz", hash = "sha256:673c0c244e15788651a4ff38710fea9675823028a6f08a5eda409e0c9840a028", size = 190949, upload-time = "2025-03-17T00:02:54.77Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/b4/636b3b65173d3ce9a38ef5f0522789614e590dab6a8d505340a4efe4c567/anyio-4.10.0.tar.gz", hash = "sha256:3f3fae35c96039744587aa5b8371e7e8e603c0702999535961dd336026973ba6", size = 213252, upload-time = "2025-08-04T08:54:26.451Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a1/ee/48ca1a7c89ffec8b6a0c5d02b89c305671d5ffd8d3c94acf8b8c408575bb/anyio-4.9.0-py3-none-any.whl", hash = "sha256:9f76d541cad6e36af7beb62e978876f3b41e3e04f2c1fbf0884604c0a9c4d93c", size = 100916, upload-time = "2025-03-17T00:02:52.713Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/12/e5e0282d673bb9746bacfb6e2dba8719989d3660cdb2ea79aee9a9651afb/anyio-4.10.0-py3-none-any.whl", hash = "sha256:60e474ac86736bbfd6f210f7a61218939c318f43f9972497381f1c5e930ed3d1", size = 107213, upload-time = "2025-08-04T08:54:24.882Z" },
 ]
 
 [[package]]
@@ -1064,6 +1064,7 @@ dependencies = [
     { name = "jumpstarter-driver-corellium" },
     { name = "jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-flashers" },
+    { name = "jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http" },
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal" },
@@ -1071,7 +1072,6 @@ dependencies = [
     { name = "jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu" },
-    { name = "jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell" },
@@ -1098,6 +1098,7 @@ requires-dist = [
     { name = "jumpstarter-driver-corellium", editable = "packages/jumpstarter-driver-corellium" },
     { name = "jumpstarter-driver-dutlink", editable = "packages/jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-flashers", editable = "packages/jumpstarter-driver-flashers" },
+    { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -1105,7 +1106,6 @@ requires-dist = [
     { name = "jumpstarter-driver-probe-rs", editable = "packages/jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
-    { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-ridesx", editable = "packages/jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire", editable = "packages/jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
@@ -1412,7 +1412,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
 ]
@@ -1447,7 +1447,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -1462,6 +1462,36 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-gpiod"
+source = { editable = "packages/jumpstarter-driver-gpiod" }
+dependencies = [
+    { name = "click" },
+    { name = "gpiod", marker = "sys_platform == 'linux'" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-power" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "gpiod", marker = "sys_platform == 'linux'" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
 [[package]]
@@ -1484,7 +1514,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -1516,7 +1546,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
 ]
@@ -1547,7 +1577,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -1679,7 +1709,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -1768,36 +1798,6 @@ dev = [
 ]
 
 [[package]]
-name = "jumpstarter-driver-gpiod"
-source = { editable = "packages/jumpstarter-driver-gpiod" }
-dependencies = [
-    { name = "click" },
-    { name = "gpiod", marker = "sys_platform == 'linux'" },
-    { name = "jumpstarter" },
-    { name = "jumpstarter-driver-power" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.1.7.2" },
-    { name = "gpiod", marker = "sys_platform == 'linux'" },
-    { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-]
-
-[[package]]
 name = "jumpstarter-driver-ridesx"
 source = { editable = "packages/jumpstarter-driver-ridesx" }
 dependencies = [
@@ -1871,7 +1871,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
 
@@ -1936,7 +1936,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "paho-mqtt", specifier = ">=2.1.0" },
@@ -1970,7 +1970,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -2065,7 +2065,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.6.2.post1" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "pyusb", specifier = ">=1.2.1" },

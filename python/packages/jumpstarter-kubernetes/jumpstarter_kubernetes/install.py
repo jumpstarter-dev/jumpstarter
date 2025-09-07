@@ -21,8 +21,6 @@ async def install_helm_chart(
     context: Optional[str],
     helm: Optional[str] = "helm",
 ):
-    grpc_port = grpc_endpoint.split(":")[1]
-    router_port = router_endpoint.split(":")[1]
     args = [
         helm,
         "upgrade",
@@ -42,10 +40,6 @@ async def install_helm_chart(
         "global.metrics.enabled=false",
         "--set",
         f"jumpstarter-controller.grpc.nodeport.enabled={'true' if mode == 'nodeport' else 'false'}",
-        "--set",
-        f"jumpstarter-controller.grpc.nodeport.port={grpc_port}",
-        "--set",
-        f"jumpstarter-controller.grpc.nodeport.routerPort={router_port}",
         "--set",
         f"jumpstarter-controller.grpc.mode={mode}",
         "--version",
