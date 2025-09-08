@@ -10,6 +10,7 @@ dependencies = [
     "jumpstarter",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-opendal",
+    "click>=8.1.8",
     "rtslib-fb",
 ]
 
