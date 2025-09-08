@@ -80,6 +80,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         force_flash_bundle: str | None = None,
         cacert_file: str | None = None,
         insecure_tls: bool = False,
+        headers: dict[str, str] | None = None,
     ):
         """Flash image to DUT"""
         should_download_to_httpd = True
@@ -93,7 +94,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         else:
             # use the exporter's http server for the flasher image, we should download it first
             if operator is None:
-                path, operator, operator_scheme = operator_for_path(path)
+                if path.startswith(("http://", "https://")) and headers:
+                    parsed = urlparse(path)
+                    operator = Operator(
+                        "http", root="/", endpoint=f"{parsed.scheme}://{parsed.netloc}", headers=headers
+                    )
+                    operator_scheme = "http"
+                    path = urlparse(path).path
+                else:
+                    path, operator, operator_scheme = operator_for_path(path)
             image_url = self.http.get_url() + "/" + path.name
 
         # start counting time for the flash operation
@@ -151,9 +160,17 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 else:
                     stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
 
-
-                self._flash_with_progress(console, manifest, path, image_url, target_device,
-                                          insecure_tls, stored_cacert)
+                header_args = self._curl_header_args(headers)
+                self._flash_with_progress(
+                    console,
+                    manifest,
+                    path,
+                    image_url,
+                    target_device,
+                    insecure_tls,
+                    stored_cacert,
+                    header_args,
+                )
 
                 total_time = time.time() - start_time
                 # total time in minutes:seconds
@@ -221,7 +238,30 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             tls_args += f"--cacert {stored_cacert} "
         return tls_args.strip()
 
-    def _flash_with_progress(self, console, manifest, path, image_url, target_path, insecure_tls, stored_cacert):
+    def _curl_header_args(self, headers: dict[str, str] | None) -> str:
+        """Generate header arguments for curl command."""
+        if not headers:
+            return ""
+        parts: list[str] = []
+        for k, v in headers.items():
+            k = str(k).strip()
+            v = str(v)
+            if not k:
+                continue
+            parts.append(f"-H '{k}: {v}'")
+        return " ".join(parts)
+
+    def _flash_with_progress(
+        self,
+        console,
+        manifest,
+        path,
+        image_url,
+        target_path,
+        insecure_tls,
+        stored_cacert,
+        header_args: str,
+    ):
         """Flash image to target device with progress monitoring.
 
         Args:
@@ -240,11 +280,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         tls_args = self._curl_tls_args(insecure_tls, stored_cacert)
 
         # Check if the image URL is accessible using curl and the TLS arguments
-        self._check_url_access(console, prompt, image_url, tls_args)
+        self._check_url_access(console, prompt, image_url, tls_args, header_args)
 
         # Flash the image, we run curl -> decompress -> dd in the background, so we can monitor dd's progress
         flash_cmd = (
-            f'( curl -fsSL {tls_args} "{image_url}" | '
+            f'( curl -fsSL {tls_args} {header_args} "{image_url}" | '
             f"{decompress_cmd} "
             f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
         )
@@ -286,7 +326,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         console.sendline("sync")
         console.expect(prompt, timeout=EXPECT_TIMEOUT_SYNC)
 
-    def _check_url_access(self, console, prompt, image_url: str, tls_args: str):
+    def _check_url_access(self, console, prompt, image_url: str, tls_args: str, header_args: str):
         """Check if the image URL is accessible using curl.
 
         Args:
@@ -298,7 +338,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         Raises:
             RuntimeError: If the URL is not accessible
         """
-        console.sendline(f'curl --location --max-time 30 --fail -sS -r 0-0 -o /dev/null {tls_args} "{image_url}"')
+        console.sendline(
+            f'curl --location --max-time 30 --fail -sS -r 0-0 -o /dev/null {tls_args} {header_args} "{image_url}"'
+        )
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         curl_output = console.before.decode(errors="ignore").strip()
         console.sendline("echo $?")
@@ -414,7 +456,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return m.hexdigest()
 
     def _create_metadata_and_json(
-        self, src_operator, src_path, file_hash=None, original_url=None
+        self, src_operator, src_path, file_hash=None, original_url=None, headers: dict[str, str] | None = None
     ) -> tuple[Metadata | None, str]:
         """Create a metadata json string from a metadata object"""
         metadata = None
@@ -435,7 +477,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
             if original_url and original_url.startswith(("http://", "https://")):
                 try:
-                    response = requests.head(original_url)
+                    if headers:
+                        response = requests.head(original_url, headers=headers)
+                    else:
+                        response = requests.head(original_url)
 
                     http_metadata = {}
                     if "content-length" in response.headers:
@@ -610,6 +655,33 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self._manifest = FlasherBundleManifestV1Alpha1.from_string(yaml_str)
         return self._manifest
 
+    def _parse_headers(self, headers: list[str]) -> dict[str, str]:
+        """Parse header strings into a dict
+
+        Args:
+            headers: List of header strings in 'Key: Value' format
+
+        Returns:
+            Dictionary mapping header keys to values
+
+        Raises:
+            click.ClickException: If header format is invalid
+        """
+        header_map = {}
+        for h in headers:
+            if ":" not in h:
+                raise click.ClickException(f"Invalid header format: {h!r}. Expected 'Key: Value'.")
+
+            key, value = h.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+
+            if not key:
+                raise click.ClickException(f"Invalid header key in: {h!r}")
+
+            header_map[key] = value
+        return header_map
+
     def cli(self):
         @click.group
         def base():
@@ -629,6 +701,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option("--force-flash-bundle", type=str, help="Force use of a specific flasher OCI bundle")
         @click.option("--cacert", type=click.Path(exists=True, dir_okay=False), help="CA certificate to use for HTTPS")
         @click.option("--insecure-tls", is_flag=True, help="Skip TLS certificate verification")
+        @click.option(
+            "--header",
+            "header",
+            multiple=True,
+            help="Custom HTTP header in 'Key: Value' format",
+        )
         @debug_console_option
         def flash(
             file,
@@ -640,6 +718,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             force_flash_bundle,
             cacert,
             insecure_tls,
+            header,
         ):
             """Flash image to DUT from file"""
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
@@ -648,6 +727,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     self.logger.info(f"Read checksum from file: {os_image_checksum}")
 
             self.set_console_debug(console_debug)
+
+            headers = self._parse_headers(header) if header else None
+
             self.flash(
                 file,
                 partition=target,
@@ -655,6 +737,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 force_flash_bundle=force_flash_bundle,
                 cacert_file=cacert,
                 insecure_tls=insecure_tls,
+                headers=headers,
             )
 
         @base.command()
