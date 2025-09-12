@@ -216,7 +216,9 @@ async def create_exporter(
     default="oci://quay.io/jumpstarter-dev/helm/jumpstarter",
 )
 @click.option("--chart-name", type=str, help="The name of the chart installation", default="jumpstarter")
-@click.option("-n", "--namespace", type=str, help="Namespace to install Jumpstarter components in", default="jumpstarter-lab")
+@click.option(
+    "-n", "--namespace", type=str, help="Namespace to install Jumpstarter components in", default="jumpstarter-lab"
+)
 @click.option("-i", "--ip", type=str, help="IP address of your host machine", default=None)
 @click.option("-b", "--basedomain", type=str, help="Base domain of the Jumpstarter service", default=None)
 @click.option("-g", "--grpc-endpoint", type=str, help="The gRPC endpoint to use for the Jumpstarter API", default=None)

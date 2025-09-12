@@ -1,8 +1,9 @@
 import asyncio
+import json
 import os
 import shutil
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import click
 from jumpstarter_kubernetes import (
@@ -16,9 +17,44 @@ from jumpstarter_kubernetes import (
     minikube_installed,
 )
 from jumpstarter_kubernetes.cluster import kind_cluster_exists, minikube_cluster_exists, run_command
+from pydantic import BaseModel
 
 from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
+
+
+class JumpstarterInfo(BaseModel):
+    """Information about Jumpstarter installation in a cluster"""
+
+    installed: bool
+    version: Optional[str] = None
+    namespace: Optional[str] = None
+    chart_name: Optional[str] = None
+    status: Optional[str] = None
+    has_crds: bool = False
+    error: Optional[str] = None
+
+
+class ClusterInfo(BaseModel):
+    """Information about a Kubernetes cluster"""
+
+    name: str
+    cluster: str
+    server: str
+    user: str
+    namespace: str
+    is_current: bool
+    type: Literal["kind", "minikube", "remote"]
+    accessible: bool
+    version: Optional[str] = None
+    jumpstarter: JumpstarterInfo
+    error: Optional[str] = None
+
+
+class ClusterList(BaseModel):
+    """List of clusters"""
+
+    clusters: List[ClusterInfo]
 
 
 def _detect_container_runtime() -> str:
@@ -538,7 +574,7 @@ async def delete_cluster_by_name(cluster_name: str, cluster_type: Optional[str] 
     # Confirm deletion unless force is specified
     if not force:
         if not click.confirm(
-            f'⚠️  WARNING: This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
+            f'⚠️  WARNING: This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'  # noqa: E501
         ):
             click.echo("Cluster deletion cancelled.")
             return
@@ -611,8 +647,18 @@ async def create_cluster_and_install(
 
         # Install Helm chart
         await _install_jumpstarter_helm_chart(
-            chart, chart_name, namespace, actual_basedomain, actual_grpc, actual_router,
-            "nodeport", version, kubeconfig, context, helm, actual_ip
+            chart,
+            chart_name,
+            namespace,
+            actual_basedomain,
+            actual_grpc,
+            actual_router,
+            "nodeport",
+            version,
+            kubeconfig,
+            context,
+            helm,
+            actual_ip,
         )
 
 
@@ -629,6 +675,293 @@ async def create_cluster_only(
 ) -> None:
     """Create a cluster without installing Jumpstarter"""
     await create_cluster_and_install(
-        cluster_type, force_recreate_cluster, cluster_name, kind_extra_args, minikube_extra_args,
-        kind, minikube, custom_certs, install_jumpstarter=False
+        cluster_type,
+        force_recreate_cluster,
+        cluster_name,
+        kind_extra_args,
+        minikube_extra_args,
+        kind,
+        minikube,
+        custom_certs,
+        install_jumpstarter=False,
     )
+
+
+async def list_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, Any]]:
+    """List all available kubectl contexts"""
+    try:
+        # Get config view with contexts
+        cmd = [kubectl, "config", "view", "-o", "json"]
+        returncode, stdout, stderr = await run_command(cmd)
+
+        if returncode != 0:
+            raise click.ClickException(f"Failed to get kubectl contexts: {stderr}")
+
+        config = json.loads(stdout)
+        contexts = []
+
+        current_context = config.get("current-context", "")
+
+        for ctx in config.get("contexts", []):
+            context_name = ctx.get("name", "")
+            context_info = ctx.get("context", {})
+            cluster_name = context_info.get("cluster", "")
+            user = context_info.get("user", "")
+            namespace = context_info.get("namespace", "default")
+
+            # Get cluster info
+            cluster_info = {}
+            for cluster in config.get("clusters", []):
+                if cluster.get("name") == cluster_name:
+                    cluster_info = cluster.get("cluster", {})
+                    break
+
+            contexts.append(
+                {
+                    "name": context_name,
+                    "cluster": cluster_name,
+                    "user": user,
+                    "namespace": namespace,
+                    "server": cluster_info.get("server", ""),
+                    "is_current": context_name == current_context,
+                }
+            )
+
+        return contexts
+
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"Failed to parse kubectl config: {e}") from e
+    except Exception as e:
+        raise click.ClickException(f"Error listing kubectl contexts: {e}") from e
+
+
+async def detect_cluster_type(context_name: str, server_url: str, minikube: str = "minikube") -> str:  # noqa: C901
+    """Detect if cluster is Kind, Minikube, or Remote"""
+    # Check for Kind cluster
+    if "kind-" in context_name or context_name.startswith("kind"):
+        return "kind"
+
+    # Check for localhost/127.0.0.1 which usually indicates local cluster
+    if any(host in server_url.lower() for host in ["localhost", "127.0.0.1", "0.0.0.0"]):
+        # Try to determine if it's minikube by checking minikube status
+        try:
+            # Extract profile name if it looks like minikube
+            if "minikube" in context_name.lower():
+                profile_name = context_name
+                if profile_name.startswith("minikube"):
+                    # Default minikube profile
+                    if profile_name == "minikube":
+                        profile_name = "minikube"
+                    else:
+                        # Custom profile, extract name after minikube-
+                        profile_name = profile_name.replace("minikube-", "").replace("minikube", "")
+                        if not profile_name:
+                            profile_name = "minikube"
+
+                # Check if this is a running minikube cluster
+                cmd = [minikube, "status", "-p", profile_name]
+                returncode, _, _ = await run_command(cmd)
+                if returncode == 0:
+                    return "minikube"
+
+            # If localhost but not minikube, could be kind or other local cluster
+            if "kind" in context_name.lower() or server_url.endswith(":6443"):
+                return "kind"
+            else:
+                return "minikube"  # Default for local clusters
+        except RuntimeError:
+            # If minikube command fails, assume kind for localhost clusters
+            return "kind"
+
+    # Check for minikube in context name
+    if "minikube" in context_name.lower():
+        return "minikube"
+
+    # Everything else is remote
+    return "remote"
+
+
+async def check_jumpstarter_installation(  # noqa: C901
+    context: str, namespace: Optional[str] = None, helm: str = "helm", kubectl: str = "kubectl"
+) -> JumpstarterInfo:
+    """Check if Jumpstarter is installed in the cluster"""
+    result_data = {
+        "installed": False,
+        "version": None,
+        "namespace": None,
+        "chart_name": None,
+        "status": None,
+        "has_crds": False,
+        "error": None,
+    }
+
+    try:
+        # Check for Helm installation first
+        helm_cmd = [helm, "list", "--all-namespaces", "-o", "json", "--kube-context", context]
+        returncode, stdout, _ = await run_command(helm_cmd)
+
+        if returncode == 0:
+            releases = json.loads(stdout)
+            for release in releases:
+                # Look for Jumpstarter chart
+                if "jumpstarter" in release.get("chart", "").lower():
+                    result_data["installed"] = True
+                    result_data["version"] = release.get("app_version") or release.get("chart", "").split("-")[-1]
+                    result_data["namespace"] = release.get("namespace")
+                    result_data["chart_name"] = release.get("name")
+                    result_data["status"] = release.get("status")
+                    break
+
+        # Check for Jumpstarter CRDs as secondary verification
+        try:
+            crd_cmd = [kubectl, "--context", context, "get", "crd", "-o", "json"]
+            returncode, stdout, _ = await run_command(crd_cmd)
+
+            if returncode == 0:
+                crds = json.loads(stdout)
+                jumpstarter_crds = []
+                for item in crds.get("items", []):
+                    name = item.get("metadata", {}).get("name", "")
+                    if "jumpstarter.dev" in name:
+                        jumpstarter_crds.append(name)
+
+                if jumpstarter_crds:
+                    result_data["has_crds"] = True
+                    if not result_data["installed"]:
+                        # CRDs exist but no Helm release found - manual installation?
+                        result_data["installed"] = True
+                        result_data["version"] = "unknown"
+                        result_data["namespace"] = namespace or "unknown"
+                        result_data["status"] = "manual-install"
+        except RuntimeError:
+            pass  # CRD check failed, continue with Helm results
+
+    except json.JSONDecodeError as e:
+        result_data["error"] = f"Failed to parse Helm output: {e}"
+    except RuntimeError as e:
+        result_data["error"] = f"Failed to check Helm releases: {e}"
+    except Exception as e:
+        result_data["error"] = f"Unexpected error: {e}"
+
+    return JumpstarterInfo(**result_data)
+
+
+async def get_cluster_info(
+    context: str, kubectl: str = "kubectl", helm: str = "helm", minikube: str = "minikube"
+) -> ClusterInfo:
+    """Get comprehensive cluster information"""
+    try:
+        contexts = await list_kubectl_contexts(kubectl)
+        context_info = None
+
+        for ctx in contexts:
+            if ctx["name"] == context:
+                context_info = ctx
+                break
+
+        if not context_info:
+            return ClusterInfo(
+                name=context,
+                cluster="unknown",
+                server="unknown",
+                user="unknown",
+                namespace="unknown",
+                is_current=False,
+                type="remote",
+                accessible=False,
+                jumpstarter=JumpstarterInfo(installed=False),
+                error=f"Context '{context}' not found",
+            )
+
+        # Detect cluster type
+        cluster_type = await detect_cluster_type(context_info["name"], context_info["server"], minikube)
+
+        # Check if cluster is accessible
+        try:
+            version_cmd = [kubectl, "--context", context, "version", "-o", "json"]
+            returncode, stdout, _ = await run_command(version_cmd)
+            cluster_accessible = returncode == 0
+            cluster_version = None
+
+            if cluster_accessible:
+                try:
+                    version_info = json.loads(stdout)
+                    cluster_version = version_info.get("serverVersion", {}).get("gitVersion", "unknown")
+                except (json.JSONDecodeError, KeyError):
+                    cluster_version = "unknown"
+        except RuntimeError:
+            cluster_accessible = False
+            cluster_version = None
+
+        # Check Jumpstarter installation
+        if cluster_accessible:
+            jumpstarter_info = await check_jumpstarter_installation(context, None, helm, kubectl)
+        else:
+            jumpstarter_info = JumpstarterInfo(installed=False, error="Cluster not accessible")
+
+        return ClusterInfo(
+            name=context_info["name"],
+            cluster=context_info["cluster"],
+            server=context_info["server"],
+            user=context_info["user"],
+            namespace=context_info["namespace"],
+            is_current=context_info["is_current"],
+            type=cluster_type,
+            accessible=cluster_accessible,
+            version=cluster_version,
+            jumpstarter=jumpstarter_info,
+        )
+
+    except Exception as e:
+        return ClusterInfo(
+            name=context,
+            cluster="unknown",
+            server="unknown",
+            user="unknown",
+            namespace="unknown",
+            is_current=False,
+            type="remote",
+            accessible=False,
+            jumpstarter=JumpstarterInfo(installed=False),
+            error=f"Failed to get cluster info: {e}",
+        )
+
+
+async def list_clusters(
+    cluster_type_filter: str = "all",
+    kubectl: str = "kubectl",
+    helm: str = "helm",
+    kind: str = "kind",
+    minikube: str = "minikube",
+) -> ClusterList:
+    """List all Kubernetes clusters with Jumpstarter status"""
+    try:
+        contexts = await list_kubectl_contexts(kubectl)
+        cluster_infos = []
+
+        for context in contexts:
+            cluster_info = await get_cluster_info(context["name"], kubectl, helm, minikube)
+
+            # Filter by type if specified
+            if cluster_type_filter != "all" and cluster_info.type != cluster_type_filter:
+                continue
+
+            cluster_infos.append(cluster_info)
+
+        return ClusterList(clusters=cluster_infos)
+
+    except Exception as e:
+        # Return empty list with error in the first cluster
+        error_cluster = ClusterInfo(
+            name="error",
+            cluster="error",
+            server="error",
+            user="error",
+            namespace="error",
+            is_current=False,
+            type="remote",
+            accessible=False,
+            jumpstarter=JumpstarterInfo(installed=False),
+            error=f"Failed to list clusters: {e}",
+        )
+        return ClusterList(clusters=[error_cluster])
