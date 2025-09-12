@@ -1,30 +1,32 @@
+{{ range $k, $v := .Values.grpc.additionalRouters }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jumpstarter-router
-  namespace: {{ default .Release.Namespace .Values.namespace }}
+  name: jumpstarter-router-{{ $k }}
+  namespace: {{ default $.Release.Namespace $.Values.namespace }}
   labels:
-    control-plane: controller-router
+    control-plane: controller-router-{{ $k }}
     app.kubernetes.io/name: jumpstarter-controller
-  {{ if .Values.global.timestamp }}
-    deployment.timestamp: {{ .Values.global.timestamp | quote }}
-  {{ end }}
+    {{ if $.Values.global.timestamp }}
+    deployment.timestamp: {{ $.Values.global.timestamp | quote }}
+    {{ end }}
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     matchLabels:
-      control-plane: controller-router
+      control-plane: controller-router-{{ $k }}
   replicas: 1
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: router
-        configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") . | sha256sum }}
+        configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") $ | sha256sum }}
       labels:
-        control-plane: controller-router
-      {{ if .Values.global.timestamp }}
-        deployment.timestamp: {{ .Values.global.timestamp | quote }}
+        control-plane: controller-router-{{ $k }}
+      {{ if $.Values.global.timestamp }}
+        deployment.timestamp: {{ $.Values.global.timestamp | quote }}
       {{ end }}
     spec:
       # TODO(user): Uncomment the following code to configure the nodeAffinity expression
@@ -47,6 +49,10 @@ spec:
       #             operator: In
       #             values:
       #               - linux
+      {{ if $v.nodeSelector }}
+      nodeSelector:
+        {{ $v.nodeSelector | toYaml | indent 1 }}
+      {{ end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -56,12 +62,12 @@ spec:
           - /router
         env:
         - name: GRPC_ROUTER_ENDPOINT
-          {{ if .Values.grpc.routerEndpoint }}
-          value: {{ .Values.grpc.routerEndpoint }}
-          {{ else if .Values.routerHostname }}
-          value: {{ .Values.routerHostname }}:{{ .Values.grpc.tls.port }}
+          {{ if $v.endpoint }}
+          value : {{ $v.endpoint }}
+          {{ else if $v.hostname }}
+          value: {{ $v.hostname }}:{{ $.Values.grpc.tls.port }}
           {{ else }}
-          value: router.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
+          value: router-{{ $k }}.{{ $.Values.global.baseDomain }}:{{ $.Values.grpc.tls.port }}
           {{ end }}
         - name: ROUTER_KEY
           valueFrom:
@@ -73,14 +79,26 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
 
-        image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}
-        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        image: {{ $.Values.image }}:{{ default $.Chart.AppVersion $.Values.tag }}
+        imagePullPolicy: {{ $.Values.imagePullPolicy }}
         name: router
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
             - "ALL"
+        # livenessProbe:
+        #   httpGet:
+        #     path: /healthz
+        #     port: 8081
+        #   initialDelaySeconds: 15
+        #   periodSeconds: 20
+        # readinessProbe:
+        #   httpGet:
+        #     path: /readyz
+        #     port: 8081
+        #   initialDelaySeconds: 5
+        #   periodSeconds: 10
         resources:
           limits:
             cpu: 2000m
@@ -90,3 +108,4 @@ spec:
             memory: 256Mi
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
+{{ end }}
