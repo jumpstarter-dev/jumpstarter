@@ -116,26 +116,17 @@ async def get_lease(
 @click.option(
     "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
 )
-@click.option("--check-connectivity", is_flag=True, help="Test Jumpstarter connectivity (slower)")
+@click.option("--connect", "-c", is_flag=True, help="Check connectivity to controller and router services")
 @click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
 @click.option("--helm", type=str, help="Path or name of helm executable", default="helm")
 @click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
 @click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
 @opt_output_all
 @blocking
-async def get_clusters(
-    type: str, check_connectivity: bool, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType
-):
+async def get_clusters(type: str, connect: bool, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType):
     """List all Kubernetes clusters with Jumpstarter status"""
     try:
-        cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
-
-        # Add connectivity check if requested
-        if check_connectivity:
-            for cluster_info in cluster_list.items:
-                if cluster_info.accessible and cluster_info.jumpstarter.installed:
-                    # TODO: Add connectivity test here
-                    pass
+        cluster_list = await list_clusters(type, kubectl, helm, kind, minikube, connect)
 
         # Use model_print for all output formats
         model_print(cluster_list, output)

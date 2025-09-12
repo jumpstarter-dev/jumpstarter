@@ -19,6 +19,7 @@ from jumpstarter_kubernetes import (
 from jumpstarter_kubernetes.cluster import kind_cluster_exists, minikube_cluster_exists, run_command
 from jumpstarter_kubernetes.clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 
+from .cluster_connectivity import check_controller_connectivity, check_router_connectivity
 from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
@@ -717,6 +718,7 @@ async def detect_cluster_type(context_name: str, server_url: str, minikube: str 
 
     # Check for minikube VM IP ranges (192.168.x.x, 172.x.x.x) and typical minikube ports
     import re
+
     minikube_pattern_1 = re.search(r"192\.168\.\d+\.\d+:(8443|443)", server_url)
     minikube_pattern_2 = re.search(r"172\.\d+\.\d+\.\d+:(8443|443)", server_url)
     if minikube_pattern_1 or minikube_pattern_2:
@@ -727,6 +729,7 @@ async def detect_cluster_type(context_name: str, server_url: str, minikube: str 
             returncode, stdout, _ = await run_command(cmd)
             if returncode == 0:
                 import json
+
                 try:
                     profiles = json.loads(stdout)
                     # If we have any valid minikube profiles, this is likely minikube
@@ -753,6 +756,13 @@ async def check_jumpstarter_installation(  # noqa: C901
         "status": None,
         "has_crds": False,
         "error": None,
+        "basedomain": None,
+        "controller_endpoint": None,
+        "router_endpoint": None,
+        "controller_reachable": None,
+        "router_reachable": None,
+        "connectivity_error": None,
+        "connectivity_checked": False,
     }
 
     try:
@@ -770,6 +780,45 @@ async def check_jumpstarter_installation(  # noqa: C901
                     result_data["namespace"] = release.get("namespace")
                     result_data["chart_name"] = release.get("name")
                     result_data["status"] = release.get("status")
+
+                    # Try to get Helm values to extract basedomain and endpoints
+                    try:
+                        values_cmd = [
+                            helm,
+                            "get",
+                            "values",
+                            release.get("name"),
+                            "-n",
+                            release.get("namespace"),
+                            "-o",
+                            "json",
+                            "--kube-context",
+                            context,
+                        ]
+                        values_returncode, values_stdout, _ = await run_command(values_cmd)
+
+                        if values_returncode == 0:
+                            values = json.loads(values_stdout)
+
+                            # Extract basedomain
+                            basedomain = values.get("global", {}).get("baseDomain")
+                            if basedomain:
+                                result_data["basedomain"] = basedomain
+                                # Construct default endpoints from basedomain
+                                result_data["controller_endpoint"] = f"grpc.{basedomain}:8082"
+                                result_data["router_endpoint"] = f"router.{basedomain}:8083"
+
+                            # Check for explicit endpoints in values
+                            controller_config = values.get("jumpstarter-controller", {}).get("grpc", {})
+                            if controller_config.get("endpoint"):
+                                result_data["controller_endpoint"] = controller_config["endpoint"]
+                            if controller_config.get("routerEndpoint"):
+                                result_data["router_endpoint"] = controller_config["routerEndpoint"]
+
+                    except (json.JSONDecodeError, RuntimeError):
+                        # Failed to get Helm values, but we still have basic info
+                        pass
+
                     break
 
         # Check for Jumpstarter CRDs as secondary verification
@@ -807,7 +856,11 @@ async def check_jumpstarter_installation(  # noqa: C901
 
 
 async def get_cluster_info(
-    context: str, kubectl: str = "kubectl", helm: str = "helm", minikube: str = "minikube"
+    context: str,
+    kubectl: str = "kubectl",
+    helm: str = "helm",
+    minikube: str = "minikube",
+    check_connectivity: bool = False,
 ) -> V1Alpha1ClusterInfo:
     """Get comprehensive cluster information"""
     try:
@@ -856,6 +909,35 @@ async def get_cluster_info(
         # Check Jumpstarter installation
         if cluster_accessible:
             jumpstarter_info = await check_jumpstarter_installation(context, None, helm, kubectl)
+
+            # Perform connectivity checks if requested and Jumpstarter is installed
+            if check_connectivity and jumpstarter_info.installed and jumpstarter_info.controller_endpoint:
+                jumpstarter_info.connectivity_checked = True
+
+                try:
+                    # Check controller connectivity
+                    if jumpstarter_info.controller_endpoint:
+                        controller_reachable, controller_error = await check_controller_connectivity(
+                            jumpstarter_info.controller_endpoint
+                        )
+                        jumpstarter_info.controller_reachable = controller_reachable
+                        if controller_error and not jumpstarter_info.connectivity_error:
+                            jumpstarter_info.connectivity_error = f"Controller: {controller_error}"
+
+                    # Check router connectivity
+                    if jumpstarter_info.router_endpoint:
+                        router_reachable, router_error = await check_router_connectivity(
+                            jumpstarter_info.router_endpoint
+                        )
+                        jumpstarter_info.router_reachable = router_reachable
+                        if router_error:
+                            if jumpstarter_info.connectivity_error:
+                                jumpstarter_info.connectivity_error += f"; Router: {router_error}"
+                            else:
+                                jumpstarter_info.connectivity_error = f"Router: {router_error}"
+
+                except Exception as e:
+                    jumpstarter_info.connectivity_error = f"Connectivity check failed: {str(e)}"
         else:
             jumpstarter_info = V1Alpha1JumpstarterInstance(installed=False, error="Cluster not accessible")
 
@@ -893,6 +975,7 @@ async def list_clusters(
     helm: str = "helm",
     kind: str = "kind",
     minikube: str = "minikube",
+    check_connectivity: bool = False,
 ) -> V1Alpha1ClusterList:
     """List all Kubernetes clusters with Jumpstarter status"""
     try:
@@ -900,7 +983,7 @@ async def list_clusters(
         cluster_infos = []
 
         for context in contexts:
-            cluster_info = await get_cluster_info(context["name"], kubectl, helm, minikube)
+            cluster_info = await get_cluster_info(context["name"], kubectl, helm, minikube, check_connectivity)
 
             # Filter by type if specified
             if cluster_type_filter != "all" and cluster_info.type != cluster_type_filter:
