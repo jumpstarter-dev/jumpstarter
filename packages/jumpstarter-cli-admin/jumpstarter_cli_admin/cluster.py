@@ -1,3 +1,5 @@
+import asyncio
+import os
 import shutil
 from pathlib import Path
 from typing import Literal, Optional
@@ -15,25 +17,111 @@ from jumpstarter_kubernetes.cluster import run_command
 
 
 def _detect_container_runtime() -> str:
-    """Detect available container runtime (docker or podman) for Kind"""
+    """Detect available container runtime for Kind"""
     if shutil.which("docker"):
         return "docker"
     elif shutil.which("podman"):
         return "podman"
+    elif shutil.which("nerdctl"):
+        return "nerdctl"
     else:
-        raise click.ClickException("Neither docker nor podman found in PATH. Kind requires a container runtime.")
+        raise click.ClickException(
+            "No supported container runtime found in PATH. Kind requires docker, podman, or nerdctl."
+        )
+
+
+async def _detect_kind_provider(cluster_name: str) -> tuple[str, str]:
+    """Detect Kind provider and return (runtime, node_name)"""
+    runtime = _detect_container_runtime()
+
+    # Try to detect the actual node name by listing containers/pods
+    possible_names = [
+        f"{cluster_name}-control-plane",
+        f"kind-{cluster_name}-control-plane",
+        f"{cluster_name}-worker",
+        f"kind-{cluster_name}-worker",
+    ]
+
+    # Special case for default cluster name
+    if cluster_name == "kind":
+        possible_names.insert(0, "kind-control-plane")
+
+    for node_name in possible_names:
+        try:
+            # Check if container/node exists
+            check_cmd = [runtime, "inspect", node_name]
+            returncode, _, _ = await run_command(check_cmd)
+            if returncode == 0:
+                return runtime, node_name
+        except RuntimeError:
+            continue
+
+    # Fallback to standard naming
+    if cluster_name == "kind":
+        return runtime, "kind-control-plane"
+    else:
+        return runtime, f"{cluster_name}-control-plane"
+
+
+async def _inject_certs_via_ssh(cluster_name: str, custom_certs: str) -> None:
+    """Inject certificates via SSH (fallback method for VMs or other backends)"""
+    cert_path = Path(custom_certs)
+    if not cert_path.exists():
+        raise click.ClickException(f"Certificate file not found: {custom_certs}")
+
+    try:
+        # Try using docker exec with SSH-like approach
+        node_name = f"{cluster_name}-control-plane"
+        if cluster_name == "kind":
+            node_name = "kind-control-plane"
+
+        # Copy cert file to a temp location in the container
+        temp_cert_path = f"/tmp/custom-ca-{os.getpid()}.crt"
+
+        # Read cert content and write it to the container
+        with open(cert_path, "r") as f:
+            cert_content = f.read()
+
+        # Write cert content to container
+        write_cmd = ["docker", "exec", node_name, "sh", "-c", f"cat > {temp_cert_path}"]
+        process = await asyncio.create_subprocess_exec(
+            *write_cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate(input=cert_content.encode())
+
+        if process.returncode != 0:
+            raise RuntimeError(f"Failed to write certificate: {stderr.decode()}")
+
+        # Move cert to proper location
+        mv_cmd = ["docker", "exec", node_name, "mv", temp_cert_path, "/usr/local/share/ca-certificates/custom-ca.crt"]
+        returncode, _, stderr = await run_command(mv_cmd)
+        if returncode != 0:
+            raise RuntimeError(f"Failed to move certificate: {stderr}")
+
+        # Update CA certificates
+        update_cmd = ["docker", "exec", node_name, "update-ca-certificates"]
+        returncode, _, stderr = await run_command(update_cmd)
+        if returncode != 0:
+            raise RuntimeError(f"Failed to update CA certificates: {stderr}")
+
+        # Restart containerd
+        restart_cmd = ["docker", "exec", node_name, "systemctl", "restart", "containerd"]
+        returncode, _, stderr = await run_command(restart_cmd)
+        if returncode != 0:
+            # Try alternative restart methods
+            restart_cmd2 = ["docker", "exec", node_name, "pkill", "-HUP", "containerd"]
+            returncode2, _, _ = await run_command(restart_cmd2)
+            if returncode2 != 0:
+                click.echo("Warning: Could not restart containerd, certificates may not be fully applied")
+
+        click.echo("Successfully injected custom CA certificates via SSH method")
+
+    except Exception as e:
+        raise click.ClickException(f"Failed to inject certificates via SSH method: {e}") from e
 
 
 async def _inject_certs_in_kind(custom_certs: str, cluster_name: str) -> None:
     """Inject custom CA certificates into a running Kind cluster"""
-    runtime = _detect_container_runtime()
-    container_name = f"kind-{cluster_name}"
-
-    if cluster_name == "kind":
-        container_name = "kind-control-plane"
-    else:
-        container_name = f"{cluster_name}-control-plane"
-
     cert_path = Path(custom_certs)
     if not cert_path.exists():
         raise click.ClickException(f"Certificate file not found: {custom_certs}")
@@ -41,46 +129,172 @@ async def _inject_certs_in_kind(custom_certs: str, cluster_name: str) -> None:
     click.echo(f"Injecting custom CA certificates into Kind cluster '{cluster_name}'...")
 
     try:
-        # Copy certificate bundle to the Kind container
-        copy_cmd = [runtime, "cp", str(cert_path), f"{container_name}:/usr/local/share/ca-certificates/custom-ca.crt"]
-        returncode, _, stderr = await run_command(copy_cmd)
-        if returncode != 0:
-            raise click.ClickException(f"Failed to copy certificates to Kind container: {stderr}")
+        # First, try to detect the Kind provider and node name
+        runtime, container_name = await _detect_kind_provider(cluster_name)
 
-        # Update CA certificates in the container
-        update_cmd = [runtime, "exec", container_name, "update-ca-certificates"]
-        returncode, _, stderr = await run_command(update_cmd)
-        if returncode != 0:
-            raise click.ClickException(f"Failed to update CA certificates in Kind container: {stderr}")
+        click.echo(f"Detected Kind runtime: {runtime}, node: {container_name}")
 
-        # Restart containerd to apply changes
-        restart_cmd = [runtime, "exec", container_name, "systemctl", "restart", "containerd"]
-        returncode, _, stderr = await run_command(restart_cmd)
-        if returncode != 0:
-            raise click.ClickException(f"Failed to restart containerd in Kind container: {stderr}")
+        # Try direct container approach first
+        try:
+            # Copy certificate bundle to the Kind container
+            copy_cmd = [
+                runtime,
+                "cp",
+                str(cert_path),
+                f"{container_name}:/usr/local/share/ca-certificates/custom-ca.crt",
+            ]
+            returncode, _, stderr = await run_command(copy_cmd)
+            if returncode != 0:
+                raise RuntimeError(f"Failed to copy certificates: {stderr}")
 
-        click.echo("Successfully injected custom CA certificates into Kind cluster")
+            # Update CA certificates in the container
+            update_cmd = [runtime, "exec", container_name, "update-ca-certificates"]
+            returncode, _, stderr = await run_command(update_cmd)
+            if returncode != 0:
+                raise RuntimeError(f"Failed to update CA certificates: {stderr}")
 
-    except RuntimeError as e:
+            # Restart containerd to apply changes
+            restart_cmd = [runtime, "exec", container_name, "systemctl", "restart", "containerd"]
+            returncode, _, stderr = await run_command(restart_cmd)
+            if returncode != 0:
+                # Try alternative restart methods for different container runtimes
+                click.echo("Trying alternative containerd restart method...")
+                restart_cmd2 = [runtime, "exec", container_name, "pkill", "-HUP", "containerd"]
+                returncode2, _, _ = await run_command(restart_cmd2)
+                if returncode2 != 0:
+                    click.echo("Warning: Could not restart containerd, certificates may not be fully applied")
+
+            click.echo("Successfully injected custom CA certificates into Kind cluster")
+            return
+
+        except RuntimeError as e:
+            click.echo(f"Direct container method failed: {e}")
+            click.echo("Trying SSH-based fallback method...")
+
+            # Fallback to SSH-based injection
+            await _inject_certs_via_ssh(cluster_name, custom_certs)
+            return
+
+    except Exception as e:
         raise click.ClickException(f"Failed to inject certificates into Kind cluster: {e}") from e
 
 
-async def _prepare_minikube_certs(custom_certs: str) -> str:
-    """Prepare custom CA certificates for Minikube by copying to ~/.minikube/certs/"""
+async def _detect_minikube_driver(cluster_name: str) -> str:
+    """Detect the Minikube driver being used"""
+    try:
+        # Try to get driver from minikube profile
+        profile_cmd = ["minikube", "profile", "list", "-o", "json"]
+        returncode, stdout, stderr = await run_command(profile_cmd)
+
+        if returncode == 0:
+            import json
+
+            try:
+                profiles = json.loads(stdout)
+                # Look for our cluster in the valid profiles
+                for profile in profiles.get("valid", []):
+                    if profile.get("Name") == cluster_name:
+                        driver = profile.get("Config", {}).get("Driver", "")
+                        if driver:
+                            return driver
+            except (json.JSONDecodeError, KeyError, AttributeError):
+                pass
+
+        # Fallback: try to get driver from config
+        config_cmd = ["minikube", "config", "get", "driver", "-p", cluster_name]
+        returncode, stdout, _ = await run_command(config_cmd)
+        if returncode == 0 and stdout.strip():
+            return stdout.strip()
+
+        # Final fallback: assume docker (most common)
+        return "docker"
+
+    except RuntimeError:
+        return "docker"  # Default fallback
+
+
+async def _inject_certs_via_minikube_ssh(cluster_name: str, custom_certs: str) -> None:
+    """Inject certificates into Minikube using SSH for VM-based drivers"""
     cert_path = Path(custom_certs)
     if not cert_path.exists():
         raise click.ClickException(f"Certificate file not found: {custom_certs}")
 
-    minikube_certs_dir = Path.home() / ".minikube" / "certs"
-    minikube_certs_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # Copy certificate to Minikube VM
+        click.echo("Copying certificate to Minikube VM via SSH...")
 
-    # Copy the certificate bundle to minikube certs directory
-    dest_cert_path = minikube_certs_dir / "custom-ca.crt"
+        # Use minikube ssh to copy the certificate
+        with open(cert_path, "r") as f:
+            cert_content = f.read()
 
-    click.echo(f"Copying custom CA certificates to {dest_cert_path}...")
-    shutil.copy2(cert_path, dest_cert_path)
+        # Write cert content via minikube ssh
+        ssh_cmd = [
+            "minikube",
+            "ssh",
+            "-p",
+            cluster_name,
+            "--",
+            "sudo",
+            "tee",
+            "/usr/local/share/ca-certificates/custom-ca.crt",
+        ]
+        process = await asyncio.create_subprocess_exec(
+            *ssh_cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate(input=cert_content.encode())
 
-    return str(dest_cert_path)
+        if process.returncode != 0:
+            raise RuntimeError(f"Failed to copy certificate via SSH: {stderr.decode()}")
+
+        # Update CA certificates
+        update_cmd = ["minikube", "ssh", "-p", cluster_name, "--", "sudo", "update-ca-certificates"]
+        returncode, _, stderr = await run_command(update_cmd)
+        if returncode != 0:
+            raise RuntimeError(f"Failed to update CA certificates: {stderr}")
+
+        # Restart containerd/docker daemon
+        restart_cmd = ["minikube", "ssh", "-p", cluster_name, "--", "sudo", "systemctl", "restart", "containerd"]
+        returncode, _, _ = await run_command(restart_cmd)
+        if returncode != 0:
+            # Try restarting docker instead
+            restart_cmd2 = ["minikube", "ssh", "-p", cluster_name, "--", "sudo", "systemctl", "restart", "docker"]
+            returncode2, _, _ = await run_command(restart_cmd2)
+            if returncode2 != 0:
+                click.echo("Warning: Could not restart container runtime, certificates may not be fully applied")
+
+        click.echo("Successfully injected custom CA certificates into Minikube via SSH")
+
+    except Exception as e:
+        raise click.ClickException(f"Failed to inject certificates via Minikube SSH: {e}") from e
+
+
+async def _prepare_minikube_certs(custom_certs: str, cluster_name: str) -> str:
+    """Prepare custom CA certificates for Minikube"""
+    cert_path = Path(custom_certs)
+    if not cert_path.exists():
+        raise click.ClickException(f"Certificate file not found: {custom_certs}")
+
+    # Detect Minikube driver
+    driver = await _detect_minikube_driver(cluster_name)
+    click.echo(f"Detected Minikube driver: {driver}")
+
+    # For container-based drivers, use the standard approach
+    if driver in ["docker", "podman", "containerd"]:
+        minikube_certs_dir = Path.home() / ".minikube" / "certs"
+        minikube_certs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy the certificate bundle to minikube certs directory
+        dest_cert_path = minikube_certs_dir / "custom-ca.crt"
+
+        click.echo(f"Copying custom CA certificates to {dest_cert_path}...")
+        shutil.copy2(cert_path, dest_cert_path)
+
+        return str(dest_cert_path)
+
+    # For VM-based drivers, we'll inject via SSH after cluster creation
+    else:
+        click.echo(f"VM-based driver detected ({driver}), certificates will be injected via SSH after cluster creation")
+        return custom_certs  # Return original path for later SSH injection
 
 
 def _auto_detect_cluster_type() -> Literal["kind"] | Literal["minikube"]:
@@ -143,7 +357,7 @@ async def _create_kind_cluster(
                 raise click.ClickException(f"Failed to create Kind cluster: {e}") from e
 
 
-async def _create_minikube_cluster(
+async def _create_minikube_cluster(  # noqa: C901
     minikube: str,
     cluster_name: str,
     minikube_extra_args: str,
@@ -158,11 +372,18 @@ async def _create_minikube_cluster(
     extra_args_list = minikube_extra_args.split() if minikube_extra_args.strip() else []
 
     # Prepare custom certificates for Minikube if provided
+    needs_ssh_injection = False
     if custom_certs:
-        await _prepare_minikube_certs(custom_certs)
-        # Add --embed-certs flag to ensure certificates are embedded
-        if "--embed-certs" not in extra_args_list:
-            extra_args_list.append("--embed-certs")
+        await _prepare_minikube_certs(custom_certs, cluster_name)
+
+        # For container-based drivers, add --embed-certs flag
+        driver = await _detect_minikube_driver(cluster_name) if minikube_installed(minikube) else "docker"
+        if driver in ["docker", "podman", "containerd"]:
+            if "--embed-certs" not in extra_args_list:
+                extra_args_list.append("--embed-certs")
+        else:
+            # For VM-based drivers, we'll inject via SSH after cluster creation
+            needs_ssh_injection = True
 
     try:
         await create_minikube_cluster(minikube, cluster_name, extra_args_list, force_recreate_cluster)
@@ -170,9 +391,17 @@ async def _create_minikube_cluster(
             click.echo(f'Successfully recreated Minikube cluster "{cluster_name}"')
         else:
             click.echo(f'Successfully created Minikube cluster "{cluster_name}"')
+
+        # Inject certificates via SSH for VM-based drivers
+        if custom_certs and needs_ssh_injection:
+            await _inject_certs_via_minikube_ssh(cluster_name, custom_certs)
+
     except RuntimeError as e:
         if "already exists" in str(e) and not force_recreate_cluster:
             click.echo(f'Minikube cluster "{cluster_name}" already exists, continuing...')
+            # Still inject certificates if cluster exists and SSH injection is needed
+            if custom_certs and needs_ssh_injection:
+                await _inject_certs_via_minikube_ssh(cluster_name, custom_certs)
         else:
             if force_recreate_cluster:
                 raise click.ClickException(f"Failed to recreate Minikube cluster: {e}") from e
