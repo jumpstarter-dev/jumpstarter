@@ -132,52 +132,12 @@ async def get_clusters(
 
         # Add connectivity check if requested
         if check_connectivity:
-            for cluster_info in cluster_list.clusters:
+            for cluster_info in cluster_list.items:
                 if cluster_info.accessible and cluster_info.jumpstarter.installed:
                     # TODO: Add connectivity test here
                     pass
 
-        if output is None:
-            # Table format
-            if not cluster_list.clusters:
-                click.echo("No clusters found.")
-                return
-
-            # Print header (kubectl style)
-            header = (
-                f"{'CURRENT':<8} {'NAME':<25} {'TYPE':<10} {'STATUS':<12} "
-                f"{'JUMPSTARTER':<12} {'VERSION':<10} {'NAMESPACE'}"
-            )
-            click.echo(header)
-
-            for info in cluster_list.clusters:
-                # Current indicator
-                current = "*" if info.is_current else ""
-                current = current[:7]
-
-                name = info.name[:24]
-                cluster_type = info.type[:9]
-                status = "Running" if info.accessible else "Stopped"
-                status = status[:11]
-
-                jumpstarter = "Yes" if info.jumpstarter.installed else "No"
-                if info.jumpstarter.error:
-                    jumpstarter = "Error"
-                jumpstarter = jumpstarter[:11]
-
-                version = info.jumpstarter.version or "-"
-                version = version[:9]
-
-                namespace = info.jumpstarter.namespace or "-"
-                # Don't truncate namespace - let it display fully
-
-                row = (
-                    f"{current:<8} {name:<25} {cluster_type:<10} {status:<12} "
-                    f"{jumpstarter:<12} {version:<10} {namespace}"
-                )
-                click.echo(row)
-        else:
-            # JSON/YAML format using model_print
-            model_print(cluster_list, output)
+        # Use model_print for all output formats
+        model_print(cluster_list, output)
     except Exception as e:
         click.echo(f"Error listing clusters: {e}", err=True)

@@ -17,44 +17,10 @@ from jumpstarter_kubernetes import (
     minikube_installed,
 )
 from jumpstarter_kubernetes.cluster import kind_cluster_exists, minikube_cluster_exists, run_command
-from pydantic import BaseModel
+from jumpstarter_kubernetes.clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 
 from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
-
-
-class JumpstarterInfo(BaseModel):
-    """Information about Jumpstarter installation in a cluster"""
-
-    installed: bool
-    version: Optional[str] = None
-    namespace: Optional[str] = None
-    chart_name: Optional[str] = None
-    status: Optional[str] = None
-    has_crds: bool = False
-    error: Optional[str] = None
-
-
-class ClusterInfo(BaseModel):
-    """Information about a Kubernetes cluster"""
-
-    name: str
-    cluster: str
-    server: str
-    user: str
-    namespace: str
-    is_current: bool
-    type: Literal["kind", "minikube", "remote"]
-    accessible: bool
-    version: Optional[str] = None
-    jumpstarter: JumpstarterInfo
-    error: Optional[str] = None
-
-
-class ClusterList(BaseModel):
-    """List of clusters"""
-
-    clusters: List[ClusterInfo]
 
 
 def _detect_container_runtime() -> str:
@@ -741,41 +707,35 @@ async def detect_cluster_type(context_name: str, server_url: str, minikube: str 
     if "kind-" in context_name or context_name.startswith("kind"):
         return "kind"
 
-    # Check for localhost/127.0.0.1 which usually indicates local cluster
-    if any(host in server_url.lower() for host in ["localhost", "127.0.0.1", "0.0.0.0"]):
-        # Try to determine if it's minikube by checking minikube status
-        try:
-            # Extract profile name if it looks like minikube
-            if "minikube" in context_name.lower():
-                profile_name = context_name
-                if profile_name.startswith("minikube"):
-                    # Default minikube profile
-                    if profile_name == "minikube":
-                        profile_name = "minikube"
-                    else:
-                        # Custom profile, extract name after minikube-
-                        profile_name = profile_name.replace("minikube-", "").replace("minikube", "")
-                        if not profile_name:
-                            profile_name = "minikube"
-
-                # Check if this is a running minikube cluster
-                cmd = [minikube, "status", "-p", profile_name]
-                returncode, _, _ = await run_command(cmd)
-                if returncode == 0:
-                    return "minikube"
-
-            # If localhost but not minikube, could be kind or other local cluster
-            if "kind" in context_name.lower() or server_url.endswith(":6443"):
-                return "kind"
-            else:
-                return "minikube"  # Default for local clusters
-        except RuntimeError:
-            # If minikube command fails, assume kind for localhost clusters
-            return "kind"
-
-    # Check for minikube in context name
+    # Check for minikube in context name first
     if "minikube" in context_name.lower():
         return "minikube"
+
+    # Check for localhost/127.0.0.1 which usually indicates Kind
+    if any(host in server_url.lower() for host in ["localhost", "127.0.0.1", "0.0.0.0"]):
+        return "kind"
+
+    # Check for minikube VM IP ranges (192.168.x.x, 172.x.x.x) and typical minikube ports
+    import re
+    minikube_pattern_1 = re.search(r"192\.168\.\d+\.\d+:(8443|443)", server_url)
+    minikube_pattern_2 = re.search(r"172\.\d+\.\d+\.\d+:(8443|443)", server_url)
+    if minikube_pattern_1 or minikube_pattern_2:
+        # Try to verify it's actually minikube by checking if any minikube cluster exists
+        try:
+            # Get list of minikube profiles
+            cmd = [minikube, "profile", "list", "-o", "json"]
+            returncode, stdout, _ = await run_command(cmd)
+            if returncode == 0:
+                import json
+                try:
+                    profiles = json.loads(stdout)
+                    # If we have any valid minikube profiles, this is likely minikube
+                    if profiles.get("valid") and len(profiles["valid"]) > 0:
+                        return "minikube"
+                except (json.JSONDecodeError, KeyError):
+                    pass
+        except RuntimeError:
+            pass
 
     # Everything else is remote
     return "remote"
@@ -783,7 +743,7 @@ async def detect_cluster_type(context_name: str, server_url: str, minikube: str 
 
 async def check_jumpstarter_installation(  # noqa: C901
     context: str, namespace: Optional[str] = None, helm: str = "helm", kubectl: str = "kubectl"
-) -> JumpstarterInfo:
+) -> V1Alpha1JumpstarterInstance:
     """Check if Jumpstarter is installed in the cluster"""
     result_data = {
         "installed": False,
@@ -843,12 +803,12 @@ async def check_jumpstarter_installation(  # noqa: C901
     except Exception as e:
         result_data["error"] = f"Unexpected error: {e}"
 
-    return JumpstarterInfo(**result_data)
+    return V1Alpha1JumpstarterInstance(**result_data)
 
 
 async def get_cluster_info(
     context: str, kubectl: str = "kubectl", helm: str = "helm", minikube: str = "minikube"
-) -> ClusterInfo:
+) -> V1Alpha1ClusterInfo:
     """Get comprehensive cluster information"""
     try:
         contexts = await list_kubectl_contexts(kubectl)
@@ -860,7 +820,7 @@ async def get_cluster_info(
                 break
 
         if not context_info:
-            return ClusterInfo(
+            return V1Alpha1ClusterInfo(
                 name=context,
                 cluster="unknown",
                 server="unknown",
@@ -869,7 +829,7 @@ async def get_cluster_info(
                 is_current=False,
                 type="remote",
                 accessible=False,
-                jumpstarter=JumpstarterInfo(installed=False),
+                jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
                 error=f"Context '{context}' not found",
             )
 
@@ -897,9 +857,9 @@ async def get_cluster_info(
         if cluster_accessible:
             jumpstarter_info = await check_jumpstarter_installation(context, None, helm, kubectl)
         else:
-            jumpstarter_info = JumpstarterInfo(installed=False, error="Cluster not accessible")
+            jumpstarter_info = V1Alpha1JumpstarterInstance(installed=False, error="Cluster not accessible")
 
-        return ClusterInfo(
+        return V1Alpha1ClusterInfo(
             name=context_info["name"],
             cluster=context_info["cluster"],
             server=context_info["server"],
@@ -913,7 +873,7 @@ async def get_cluster_info(
         )
 
     except Exception as e:
-        return ClusterInfo(
+        return V1Alpha1ClusterInfo(
             name=context,
             cluster="unknown",
             server="unknown",
@@ -922,7 +882,7 @@ async def get_cluster_info(
             is_current=False,
             type="remote",
             accessible=False,
-            jumpstarter=JumpstarterInfo(installed=False),
+            jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
             error=f"Failed to get cluster info: {e}",
         )
 
@@ -933,7 +893,7 @@ async def list_clusters(
     helm: str = "helm",
     kind: str = "kind",
     minikube: str = "minikube",
-) -> ClusterList:
+) -> V1Alpha1ClusterList:
     """List all Kubernetes clusters with Jumpstarter status"""
     try:
         contexts = await list_kubectl_contexts(kubectl)
@@ -948,11 +908,11 @@ async def list_clusters(
 
             cluster_infos.append(cluster_info)
 
-        return ClusterList(clusters=cluster_infos)
+        return V1Alpha1ClusterList(items=cluster_infos)
 
     except Exception as e:
         # Return empty list with error in the first cluster
-        error_cluster = ClusterInfo(
+        error_cluster = V1Alpha1ClusterInfo(
             name="error",
             cluster="error",
             server="error",
@@ -961,7 +921,7 @@ async def list_clusters(
             is_current=False,
             type="remote",
             accessible=False,
-            jumpstarter=JumpstarterInfo(installed=False),
+            jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
             error=f"Failed to list clusters: {e}",
         )
-        return ClusterList(clusters=[error_cluster])
+        return V1Alpha1ClusterList(items=[error_cluster])
