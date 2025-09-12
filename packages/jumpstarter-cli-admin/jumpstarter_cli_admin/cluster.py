@@ -10,10 +10,15 @@ from jumpstarter_kubernetes import (
     create_minikube_cluster,
     delete_kind_cluster,
     delete_minikube_cluster,
+    helm_installed,
+    install_helm_chart,
     kind_installed,
     minikube_installed,
 )
-from jumpstarter_kubernetes.cluster import run_command
+from jumpstarter_kubernetes.cluster import kind_cluster_exists, minikube_cluster_exists, run_command
+
+from .controller import get_latest_compatible_controller_version
+from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
 
 def _detect_container_runtime() -> str:
@@ -179,11 +184,11 @@ async def _inject_certs_in_kind(custom_certs: str, cluster_name: str) -> None:
         raise click.ClickException(f"Failed to inject certificates into Kind cluster: {e}") from e
 
 
-async def _detect_minikube_driver(cluster_name: str) -> str:
+async def _detect_minikube_driver(minikube: str, cluster_name: str) -> str:
     """Detect the Minikube driver being used"""
     try:
         # Try to get driver from minikube profile
-        profile_cmd = ["minikube", "profile", "list", "-o", "json"]
+        profile_cmd = [minikube, "profile", "list", "-o", "json"]
         returncode, stdout, stderr = await run_command(profile_cmd)
 
         if returncode == 0:
@@ -201,7 +206,7 @@ async def _detect_minikube_driver(cluster_name: str) -> str:
                 pass
 
         # Fallback: try to get driver from config
-        config_cmd = ["minikube", "config", "get", "driver", "-p", cluster_name]
+        config_cmd = [minikube, "config", "get", "driver", "-p", cluster_name]
         returncode, stdout, _ = await run_command(config_cmd)
         if returncode == 0 and stdout.strip():
             return stdout.strip()
@@ -213,88 +218,125 @@ async def _detect_minikube_driver(cluster_name: str) -> str:
         return "docker"  # Default fallback
 
 
-async def _inject_certs_via_minikube_ssh(cluster_name: str, custom_certs: str) -> None:
-    """Inject certificates into Minikube using SSH for VM-based drivers"""
+async def _prepare_minikube_certs(custom_certs: str) -> str:
+    """Prepare custom CA certificates for Minikube by copying to ~/.minikube/certs/"""
     cert_path = Path(custom_certs)
     if not cert_path.exists():
         raise click.ClickException(f"Certificate file not found: {custom_certs}")
 
-    try:
-        # Copy certificate to Minikube VM
-        click.echo("Copying certificate to Minikube VM via SSH...")
+    # Always copy certificates to minikube certs directory for --embed-certs to work
+    minikube_certs_dir = Path.home() / ".minikube" / "certs"
+    minikube_certs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Use minikube ssh to copy the certificate
-        with open(cert_path, "r") as f:
-            cert_content = f.read()
+    # Copy the certificate bundle to minikube certs directory
+    dest_cert_path = minikube_certs_dir / "custom-ca.crt"
 
-        # Write cert content via minikube ssh
-        ssh_cmd = [
-            "minikube",
-            "ssh",
-            "-p",
-            cluster_name,
-            "--",
-            "sudo",
-            "tee",
-            "/usr/local/share/ca-certificates/custom-ca.crt",
-        ]
-        process = await asyncio.create_subprocess_exec(
-            *ssh_cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate(input=cert_content.encode())
+    click.echo(f"Copying custom CA certificates to {dest_cert_path}...")
+    shutil.copy2(cert_path, dest_cert_path)
 
-        if process.returncode != 0:
-            raise RuntimeError(f"Failed to copy certificate via SSH: {stderr.decode()}")
-
-        # Update CA certificates
-        update_cmd = ["minikube", "ssh", "-p", cluster_name, "--", "sudo", "update-ca-certificates"]
-        returncode, _, stderr = await run_command(update_cmd)
-        if returncode != 0:
-            raise RuntimeError(f"Failed to update CA certificates: {stderr}")
-
-        # Restart containerd/docker daemon
-        restart_cmd = ["minikube", "ssh", "-p", cluster_name, "--", "sudo", "systemctl", "restart", "containerd"]
-        returncode, _, _ = await run_command(restart_cmd)
-        if returncode != 0:
-            # Try restarting docker instead
-            restart_cmd2 = ["minikube", "ssh", "-p", cluster_name, "--", "sudo", "systemctl", "restart", "docker"]
-            returncode2, _, _ = await run_command(restart_cmd2)
-            if returncode2 != 0:
-                click.echo("Warning: Could not restart container runtime, certificates may not be fully applied")
-
-        click.echo("Successfully injected custom CA certificates into Minikube via SSH")
-
-    except Exception as e:
-        raise click.ClickException(f"Failed to inject certificates via Minikube SSH: {e}") from e
+    return str(dest_cert_path)
 
 
-async def _prepare_minikube_certs(custom_certs: str, cluster_name: str) -> str:
-    """Prepare custom CA certificates for Minikube"""
-    cert_path = Path(custom_certs)
-    if not cert_path.exists():
-        raise click.ClickException(f"Certificate file not found: {custom_certs}")
-
-    # Detect Minikube driver
-    driver = await _detect_minikube_driver(cluster_name)
-    click.echo(f"Detected Minikube driver: {driver}")
-
-    # For container-based drivers, use the standard approach
-    if driver in ["docker", "podman", "containerd"]:
-        minikube_certs_dir = Path.home() / ".minikube" / "certs"
-        minikube_certs_dir.mkdir(parents=True, exist_ok=True)
-
-        # Copy the certificate bundle to minikube certs directory
-        dest_cert_path = minikube_certs_dir / "custom-ca.crt"
-
-        click.echo(f"Copying custom CA certificates to {dest_cert_path}...")
-        shutil.copy2(cert_path, dest_cert_path)
-
-        return str(dest_cert_path)
-
-    # For VM-based drivers, we'll inject via SSH after cluster creation
+async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_name: str) -> str:
+    """Get IP address for cluster type"""
+    if cluster_type == "minikube":
+        if not minikube_installed(minikube):
+            raise click.ClickException("minikube is not installed (or not in your PATH)")
+        try:
+            ip = await get_minikube_ip(cluster_name, minikube)
+        except Exception as e:
+            raise click.ClickException(f"Could not determine Minikube IP address.\n{e}") from e
     else:
-        click.echo(f"VM-based driver detected ({driver}), certificates will be injected via SSH after cluster creation")
-        return custom_certs  # Return original path for later SSH injection
+        ip = get_ip_address()
+        if ip == "0.0.0.0":
+            raise click.ClickException("Could not determine IP address, use --ip <IP> to specify an IP address")
+
+    return ip
+
+
+async def _configure_endpoints(
+    cluster_type: Optional[str],
+    minikube: str,
+    cluster_name: str,
+    ip: Optional[str],
+    basedomain: Optional[str],
+    grpc_endpoint: Optional[str],
+    router_endpoint: Optional[str],
+) -> tuple[str, str, str, str]:
+    """Configure endpoints for Jumpstarter installation"""
+    if ip is None:
+        ip = await get_ip_generic(cluster_type, minikube, cluster_name)
+    if basedomain is None:
+        basedomain = f"jumpstarter.{ip}.nip.io"
+    if grpc_endpoint is None:
+        grpc_endpoint = f"grpc.{basedomain}:8082"
+    if router_endpoint is None:
+        router_endpoint = f"router.{basedomain}:8083"
+
+    return ip, basedomain, grpc_endpoint, router_endpoint
+
+
+async def _install_jumpstarter_helm_chart(
+    chart: str,
+    name: str,
+    namespace: str,
+    basedomain: str,
+    grpc_endpoint: str,
+    router_endpoint: str,
+    mode: str,
+    version: str,
+    kubeconfig: Optional[str],
+    context: Optional[str],
+    helm: str,
+    ip: str,
+) -> None:
+    """Install Jumpstarter Helm chart"""
+    click.echo(f'Installing Jumpstarter service v{version} in namespace "{namespace}" with Helm\n')
+    click.echo(f"Chart URI: {chart}")
+    click.echo(f"Chart Version: {version}")
+    click.echo(f"IP Address: {ip}")
+    click.echo(f"Basedomain: {basedomain}")
+    click.echo(f"Service Endpoint: {grpc_endpoint}")
+    click.echo(f"Router Endpoint: {router_endpoint}")
+    click.echo(f"gRPC Mode: {mode}\n")
+
+    await install_helm_chart(
+        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm
+    )
+
+    click.echo(f'Installed Helm release "{name}" in namespace "{namespace}"')
+
+
+async def _detect_existing_cluster_type(cluster_name: str) -> Optional[Literal["kind"] | Literal["minikube"]]:
+    """Detect which type of cluster exists with the given name"""
+    kind_exists = False
+    minikube_exists = False
+
+    # Check if Kind cluster exists
+    if kind_installed("kind"):
+        try:
+            kind_exists = await kind_cluster_exists("kind", cluster_name)
+        except RuntimeError:
+            kind_exists = False
+
+    # Check if Minikube cluster exists
+    if minikube_installed("minikube"):
+        try:
+            minikube_exists = await minikube_cluster_exists("minikube", cluster_name)
+        except RuntimeError:
+            minikube_exists = False
+
+    if kind_exists and minikube_exists:
+        raise click.ClickException(
+            f'Both Kind and Minikube clusters named "{cluster_name}" exist. '
+            "Please specify --kind or --minikube to choose which one to delete."
+        )
+    elif kind_exists:
+        return "kind"
+    elif minikube_exists:
+        return "minikube"
+    else:
+        return None
 
 
 def _auto_detect_cluster_type() -> Literal["kind"] | Literal["minikube"]:
@@ -372,18 +414,11 @@ async def _create_minikube_cluster(  # noqa: C901
     extra_args_list = minikube_extra_args.split() if minikube_extra_args.strip() else []
 
     # Prepare custom certificates for Minikube if provided
-    needs_ssh_injection = False
     if custom_certs:
-        await _prepare_minikube_certs(custom_certs, cluster_name)
-
-        # For container-based drivers, add --embed-certs flag
-        driver = await _detect_minikube_driver(cluster_name) if minikube_installed(minikube) else "docker"
-        if driver in ["docker", "podman", "containerd"]:
-            if "--embed-certs" not in extra_args_list:
-                extra_args_list.append("--embed-certs")
-        else:
-            # For VM-based drivers, we'll inject via SSH after cluster creation
-            needs_ssh_injection = True
+        await _prepare_minikube_certs(custom_certs)
+        # Always add --embed-certs for container drivers, we'll detect actual driver later
+        if "--embed-certs" not in extra_args_list:
+            extra_args_list.append("--embed-certs")
 
     try:
         await create_minikube_cluster(minikube, cluster_name, extra_args_list, force_recreate_cluster)
@@ -392,16 +427,9 @@ async def _create_minikube_cluster(  # noqa: C901
         else:
             click.echo(f'Successfully created Minikube cluster "{cluster_name}"')
 
-        # Inject certificates via SSH for VM-based drivers
-        if custom_certs and needs_ssh_injection:
-            await _inject_certs_via_minikube_ssh(cluster_name, custom_certs)
-
     except RuntimeError as e:
         if "already exists" in str(e) and not force_recreate_cluster:
             click.echo(f'Minikube cluster "{cluster_name}" already exists, continuing...')
-            # Still inject certificates if cluster exists and SSH injection is needed
-            if custom_certs and needs_ssh_injection:
-                await _inject_certs_via_minikube_ssh(cluster_name, custom_certs)
         else:
             if force_recreate_cluster:
                 raise click.ClickException(f"Failed to recreate Minikube cluster: {e}") from e
@@ -484,7 +512,47 @@ async def _handle_cluster_deletion(kind: Optional[str], minikube: Optional[str],
         await _delete_minikube_cluster(minikube or "minikube", cluster_name)
 
 
-async def create_cluster_only(
+async def delete_cluster_by_name(cluster_name: str, cluster_type: Optional[str] = None, force: bool = False) -> None:  # noqa: C901
+    """Delete a cluster by name, with auto-detection if type not specified"""
+
+    # If cluster type is specified, validate and use it
+    if cluster_type:
+        if cluster_type == "kind":
+            if not kind_installed("kind"):
+                raise click.ClickException("Kind is not installed")
+            if not await kind_cluster_exists("kind", cluster_name):
+                raise click.ClickException(f'Kind cluster "{cluster_name}" does not exist')
+        elif cluster_type == "minikube":
+            if not minikube_installed("minikube"):
+                raise click.ClickException("Minikube is not installed")
+            if not await minikube_cluster_exists("minikube", cluster_name):
+                raise click.ClickException(f'Minikube cluster "{cluster_name}" does not exist')
+    else:
+        # Auto-detect cluster type
+        detected_type = await _detect_existing_cluster_type(cluster_name)
+        if detected_type is None:
+            raise click.ClickException(f'No cluster named "{cluster_name}" found')
+        cluster_type = detected_type
+        click.echo(f'Auto-detected {cluster_type} cluster "{cluster_name}"')
+
+    # Confirm deletion unless force is specified
+    if not force:
+        if not click.confirm(
+            f'⚠️  WARNING: This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
+        ):
+            click.echo("Cluster deletion cancelled.")
+            return
+
+    # Delete the cluster
+    if cluster_type == "kind":
+        await _delete_kind_cluster("kind", cluster_name)
+    elif cluster_type == "minikube":
+        await _delete_minikube_cluster("minikube", cluster_name)
+
+    click.echo(f'Successfully deleted {cluster_type} cluster "{cluster_name}"')
+
+
+async def create_cluster_and_install(
     cluster_type: Literal["kind"] | Literal["minikube"],
     force_recreate_cluster: bool,
     cluster_name: str,
@@ -493,8 +561,20 @@ async def create_cluster_only(
     kind: str,
     minikube: str,
     custom_certs: Optional[str] = None,
+    install_jumpstarter: bool = True,
+    helm: str = "helm",
+    chart: str = "oci://quay.io/jumpstarter-dev/helm/jumpstarter",
+    chart_name: str = "jumpstarter",
+    namespace: str = "jumpstarter-lab",
+    version: Optional[str] = None,
+    kubeconfig: Optional[str] = None,
+    context: Optional[str] = None,
+    ip: Optional[str] = None,
+    basedomain: Optional[str] = None,
+    grpc_endpoint: Optional[str] = None,
+    router_endpoint: Optional[str] = None,
 ) -> None:
-    """Create a cluster without installing Jumpstarter"""
+    """Create a cluster and optionally install Jumpstarter"""
 
     if force_recreate_cluster:
         click.echo(f'⚠️  WARNING: Force recreating cluster "{cluster_name}" will destroy ALL data in the cluster!')
@@ -507,9 +587,48 @@ async def create_cluster_only(
             click.echo("Cluster recreation cancelled.")
             raise click.Abort()
 
+    # Create the cluster
     if cluster_type == "kind":
         await _create_kind_cluster(kind, cluster_name, kind_extra_args, force_recreate_cluster, custom_certs)
     elif cluster_type == "minikube":
         await _create_minikube_cluster(
             minikube, cluster_name, minikube_extra_args, force_recreate_cluster, custom_certs
         )
+
+    # Install Jumpstarter if requested
+    if install_jumpstarter:
+        if not helm_installed(helm):
+            raise click.ClickException(f"helm is not installed (or not in your PATH): {helm}")
+
+        # Configure endpoints
+        actual_ip, actual_basedomain, actual_grpc, actual_router = await _configure_endpoints(
+            cluster_type, minikube, cluster_name, ip, basedomain, grpc_endpoint, router_endpoint
+        )
+
+        # Get version if not specified
+        if version is None:
+            version = await get_latest_compatible_controller_version()
+
+        # Install Helm chart
+        await _install_jumpstarter_helm_chart(
+            chart, chart_name, namespace, actual_basedomain, actual_grpc, actual_router,
+            "nodeport", version, kubeconfig, context, helm, actual_ip
+        )
+
+
+# Backwards compatibility function
+async def create_cluster_only(
+    cluster_type: Literal["kind"] | Literal["minikube"],
+    force_recreate_cluster: bool,
+    cluster_name: str,
+    kind_extra_args: str,
+    minikube_extra_args: str,
+    kind: str,
+    minikube: str,
+    custom_certs: Optional[str] = None,
+) -> None:
+    """Create a cluster without installing Jumpstarter"""
+    await create_cluster_and_install(
+        cluster_type, force_recreate_cluster, cluster_name, kind_extra_args, minikube_extra_args,
+        kind, minikube, custom_certs, install_jumpstarter=False
+    )

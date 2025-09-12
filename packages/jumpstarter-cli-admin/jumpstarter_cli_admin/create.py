@@ -19,7 +19,7 @@ from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
-from .cluster import _validate_cluster_type, create_cluster_only
+from .cluster import _validate_cluster_type, create_cluster_and_install
 from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,
@@ -203,6 +203,27 @@ async def create_exporter(
     type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
     help="Path to custom CA certificate bundle file to inject into the cluster",
 )
+@click.option(
+    "--skip-install",
+    is_flag=True,
+    help="Skip installing Jumpstarter after creating the cluster",
+)
+@click.option("--helm", type=str, help="Path or name of a helm executable", default="helm")
+@click.option(
+    "--chart",
+    type=str,
+    help="The URL of a Jumpstarter helm chart to install",
+    default="oci://quay.io/jumpstarter-dev/helm/jumpstarter",
+)
+@click.option("--chart-name", type=str, help="The name of the chart installation", default="jumpstarter")
+@click.option("-n", "--namespace", type=str, help="Namespace to install Jumpstarter components in", default="jumpstarter-lab")
+@click.option("-i", "--ip", type=str, help="IP address of your host machine", default=None)
+@click.option("-b", "--basedomain", type=str, help="Base domain of the Jumpstarter service", default=None)
+@click.option("-g", "--grpc-endpoint", type=str, help="The gRPC endpoint to use for the Jumpstarter API", default=None)
+@click.option("-r", "--router-endpoint", type=str, help="The gRPC endpoint to use for the router", default=None)
+@click.option("-v", "--version", help="The version of the service to install", default=None)
+@opt_kubeconfig
+@opt_context
 @opt_nointeractive
 @opt_output_all
 @blocking
@@ -214,6 +235,18 @@ async def create_cluster(
     kind_extra_args: str,
     minikube_extra_args: str,
     custom_certs: Optional[str],
+    skip_install: bool,
+    helm: str,
+    chart: str,
+    chart_name: str,
+    namespace: str,
+    ip: Optional[str],
+    basedomain: Optional[str],
+    grpc_endpoint: Optional[str],
+    router_endpoint: Optional[str],
+    version: Optional[str],
+    kubeconfig: Optional[str],
+    context: Optional[str],
     nointeractive: bool,
     output: OutputType,
 ):
@@ -223,9 +256,12 @@ async def create_cluster(
     if output is None:
         if kind is None and minikube is None:
             click.echo(f"Auto-detected {cluster_type} as the cluster type")
-        click.echo(f'Creating {cluster_type} cluster "{name}"...')
+        if skip_install:
+            click.echo(f'Creating {cluster_type} cluster "{name}"...')
+        else:
+            click.echo(f'Creating {cluster_type} cluster "{name}" and installing Jumpstarter...')
 
-    await create_cluster_only(
+    await create_cluster_and_install(
         cluster_type,
         force_recreate,
         name,
@@ -234,7 +270,22 @@ async def create_cluster(
         kind or "kind",
         minikube or "minikube",
         custom_certs,
+        install_jumpstarter=not skip_install,
+        helm=helm,
+        chart=chart,
+        chart_name=chart_name,
+        namespace=namespace,
+        version=version,
+        kubeconfig=kubeconfig,
+        context=context,
+        ip=ip,
+        basedomain=basedomain,
+        grpc_endpoint=grpc_endpoint,
+        router_endpoint=router_endpoint,
     )
 
     if output is None:
-        click.echo(f'Cluster "{name}" is ready for Jumpstarter installation.')
+        if skip_install:
+            click.echo(f'Cluster "{name}" is ready for Jumpstarter installation.')
+        else:
+            click.echo(f'Cluster "{name}" created and Jumpstarter installed successfully!')
