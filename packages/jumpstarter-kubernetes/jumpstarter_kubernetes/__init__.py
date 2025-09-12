@@ -7,6 +7,7 @@ from .cluster import (
     kind_installed,
     minikube_installed,
 )
+from .clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from .exporters import (
     ExportersV1Alpha1Api,
     V1Alpha1Exporter,
@@ -34,6 +35,9 @@ __all__ = [
     "V1Alpha1Client",
     "V1Alpha1ClientList",
     "V1Alpha1ClientStatus",
+    "V1Alpha1ClusterInfo",
+    "V1Alpha1ClusterList",
+    "V1Alpha1JumpstarterInstance",
     "ExportersV1Alpha1Api",
     "V1Alpha1Exporter",
     "V1Alpha1ExporterList",

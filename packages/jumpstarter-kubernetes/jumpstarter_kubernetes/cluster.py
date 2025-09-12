@@ -126,7 +126,7 @@ async def create_minikube_cluster(
         "start",
         "--profile",
         cluster_name,
-        "--extra-config=apiserver.service-node-port-range=8000-9000",
+        "--extra-config=apiserver.service-node-port-range=30000-32767",
     ]
     command.extend(extra_args)
 

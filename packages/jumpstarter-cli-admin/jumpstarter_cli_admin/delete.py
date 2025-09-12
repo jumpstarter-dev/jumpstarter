@@ -15,6 +15,7 @@ from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
+from .cluster import delete_cluster_by_name
 from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,
@@ -124,3 +125,46 @@ async def delete_exporter(
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
+
+
+@delete.command("cluster")
+@click.argument("name", type=str, required=False, default="jumpstarter-lab")
+@click.option("--kind", is_flag=False, flag_value="kind", default=None, help="Delete a local Kind cluster")
+@click.option(
+    "--minikube",
+    is_flag=False,
+    flag_value="minikube",
+    default=None,
+    help="Delete a local Minikube cluster",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt and force deletion",
+)
+@opt_output_name_only
+@blocking
+async def delete_cluster(
+    name: str,
+    kind: Optional[str],
+    minikube: Optional[str],
+    force: bool,
+    output: NameOutputType,
+):
+    """Delete a Kubernetes cluster (auto-detects Kind or Minikube)"""
+
+    # Determine cluster type from options
+    cluster_type = None
+    if kind is not None:
+        cluster_type = "kind"
+    elif minikube is not None:
+        cluster_type = "minikube"
+
+    try:
+        await delete_cluster_by_name(name, cluster_type, force)
+        if output is not None:
+            # For name-only output, just print the cluster name
+            click.echo(name)
+    except click.ClickException:
+        # Re-raise ClickExceptions to preserve the error message
+        raise

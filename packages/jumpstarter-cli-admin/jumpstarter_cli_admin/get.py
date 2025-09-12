@@ -19,6 +19,7 @@ from jumpstarter_kubernetes import (
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
+from .cluster import list_clusters
 from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,
@@ -109,3 +110,25 @@ async def get_lease(
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
+
+
+@get.command("clusters")
+@click.option(
+    "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
+)
+@click.option("--connect", "-c", is_flag=True, help="Check connectivity to controller and router services")
+@click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
+@click.option("--helm", type=str, help="Path or name of helm executable", default="helm")
+@click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
+@click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
+@opt_output_all
+@blocking
+async def get_clusters(type: str, connect: bool, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType):
+    """List all Kubernetes clusters with Jumpstarter status"""
+    try:
+        cluster_list = await list_clusters(type, kubectl, helm, kind, minikube, connect)
+
+        # Use model_print for all output formats
+        model_print(cluster_list, output)
+    except Exception as e:
+        click.echo(f"Error listing clusters: {e}", err=True)
