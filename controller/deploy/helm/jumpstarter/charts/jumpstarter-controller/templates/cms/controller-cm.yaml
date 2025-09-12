@@ -31,9 +31,9 @@ data:
       {{ if $v.endpoint }}
       endpoint: {{ $v.endpoint }}
       {{ else if $v.hostname }}
-      endpoint: {{ $v.hostname }}:{{ .Values.grpc.tls.port }}
+      endpoint: {{ $v.hostname }}:{{ $.Values.grpc.tls.port }}
       {{ else }}
-      endpoint: router-{{ $k }}.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
+      endpoint: router-{{ $k }}.{{ $.Values.global.baseDomain }}:{{ $.Values.grpc.tls.port }}
       {{ end }}
       {{ if $v.labels }}
       labels:
