@@ -16,7 +16,7 @@ spec:
   {{ if $v.hostname }}
   host: {{ $v.hostname }}
   {{ else }}
-  host: router-{{ $k }}.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
+  host: router-{{ $k }}.{{ $.Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
   {{ end }}
   port:
     targetPort: 8083
