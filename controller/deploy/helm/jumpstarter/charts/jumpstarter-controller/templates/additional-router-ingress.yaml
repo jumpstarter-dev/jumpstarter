@@ -15,14 +15,14 @@ metadata:
   name: jumpstarter-router-ingress-{{ $k }}
   namespace: {{ default $.Release.Namespace $.Values.namespace }}
 spec:
-  {{ if .Values.grpc.ingress.class }}
-  ingressClassName: {{ .Values.grpc.ingress.class }}
+  {{ if $.Values.grpc.ingress.class }}
+  ingressClassName: {{ $.Values.grpc.ingress.class }}
   {{ end }}
   rules:
   {{ if $v.hostname }}
   - host: {{ $v.hostname }}
   {{ else }}
-  - host: router-{{ $k }}.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
+  - host: router-{{ $k }}.{{ $.Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
   {{ end }}
     http:
       paths:
@@ -38,7 +38,7 @@ spec:
       {{ if $v.hostname }}
       - {{ $v.hostname }}
       {{ else }}
-      - router-{{ $k }}.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
+      - router-{{ $k }}.{{ $.Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
       {{ end }}
     {{ if $.Values.grpc.tls.routerCertSecret }}
     secretName: {{ $.Values.grpc.tls.routerCertSecret }}
