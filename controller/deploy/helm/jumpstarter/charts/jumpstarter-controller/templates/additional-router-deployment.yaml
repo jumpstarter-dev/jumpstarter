@@ -63,11 +63,11 @@ spec:
         env:
         - name: GRPC_ROUTER_ENDPOINT
           {{ if $v.endpoint }}
-          value : {{ $v.endpoint }}
+          value: {{ $v.endpoint }}
           {{ else if $v.hostname }}
-          value: {{ $v.hostname }}:{{ $.Values.grpc.tls.port }}
+          value: {{ $v.hostname }}:{{ default 443 $.Values.grpc.tls.port }}
           {{ else }}
-          value: router-{{ $k }}.{{ $.Values.global.baseDomain }}:{{ $.Values.grpc.tls.port }}
+          value: router-{{ $k }}.{{ $.Values.global.baseDomain | required "set .global.baseDomain, or provide grpc.additionalRouters[...].endpoint/hostname" }}:{{ default 443 $.Values.grpc.tls.port }}
           {{ end }}
         - name: ROUTER_KEY
           valueFrom:
