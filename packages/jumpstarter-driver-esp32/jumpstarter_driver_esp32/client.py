@@ -29,13 +29,13 @@ class ESP32Client(DriverClient):
         self.logger.info("Erasing flash... this may take a while")
         return self.call("erase_flash")
 
-    def flash_firmware(self, operator: Operator, path: str, address: int = 0x10000) -> str:
+    def flash_firmware(self, operator: Operator, path: str, address: int = 0x1000) -> str:
         """Flash firmware to the ESP32
 
         Args:
             operator: OpenDAL operator for file access
             path: Path to firmware file
-            address: Flash address (default: 0x10000 for app partition)
+            address: Flash address
         """
         if address < 0:
             raise ArgumentError("Flash address must be non-negative")
@@ -43,7 +43,7 @@ class ESP32Client(DriverClient):
         with OpendalAdapter(client=self, operator=operator, path=path) as handle:
             return self.call("flash_firmware", handle, address)
 
-    def flash_firmware_file(self, filepath: str, address: int = 0x10000) -> str:
+    def flash_firmware_file(self, filepath: str, address: int = 0x1000) -> str:
         """Flash a local firmware file to the ESP32"""
         absolute = Path(filepath).resolve()
         if not absolute.exists():
