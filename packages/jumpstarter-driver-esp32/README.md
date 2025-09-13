@@ -34,3 +34,44 @@ export:
 | boot_pin     | GPIO pin number for boot mode control (if connected)                 | int  | no       | null        |
 
 ## API Reference
+
+```{autoclass} jumpstarter_driver_esp32.driver.ESP32
+:members:
+```
+
+# Examples
+
+```{testcode}
+from jumpstarter.common.utils import env
+from jumpstarter.config.client import ClientConfigV1Alpha1
+
+def main():
+    try:
+        # Try to use existing JUMPSTARTER_HOST environment variable
+        with env() as client:
+            run_esp32_example(client)
+    except RuntimeError:
+        # Fallback to creating a lease (requires jumpstarter configuration)
+        config = ClientConfigV1Alpha1.load("default")
+        with config.lease(selector="driver=esp32") as lease:
+            with lease.connect() as client:
+                run_esp32_example(client)
+
+def run_esp32_example(client):
+    esp32 = client.esp32
+
+    # Get chip information
+    info = esp32.chip_info()
+    print(f"Connected to {info['chip_revision']}")
+    print(f"MAC Address: {info['mac_address']}")
+
+    # Flash firmware
+    result = esp32.flash_firmware_file("firmware.bin", address=0x10000)
+    print(result)
+
+    # Reset device to run new firmware
+    esp32.reset()
+
+if __name__ == "__main__":
+    main()
+```
