@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-import os
 from jumpstarter.common.utils import env
-from jumpstarter.config.client import ClientConfigV1Alpha1
+
 
 def main():
     with env() as client:
