@@ -21,6 +21,11 @@ export:
       port: "/dev/ttyUSB0"
       baudrate: 115200
       chip: "esp32"
+  serial:
+      type: jumpstarter_driver_pyserial.driver.PySerial
+      config:
+        url: "/dev/ttyUSB0"
+        baudrate: 115200
 ```
 
 ### Config parameters
@@ -41,37 +46,6 @@ export:
 
 # Examples
 
-```{testcode}
-from jumpstarter.common.utils import env
-from jumpstarter.config.client import ClientConfigV1Alpha1
-
-def main():
-    try:
-        # Try to use existing JUMPSTARTER_HOST environment variable
-        with env() as client:
-            run_esp32_example(client)
-    except RuntimeError:
-        # Fallback to creating a lease (requires jumpstarter configuration)
-        config = ClientConfigV1Alpha1.load("default")
-        with config.lease(selector="driver=esp32") as lease:
-            with lease.connect() as client:
-                run_esp32_example(client)
-
-def run_esp32_example(client):
-    esp32 = client.esp32
-
-    # Get chip information
-    info = esp32.chip_info()
-    print(f"Connected to {info['chip_revision']}")
-    print(f"MAC Address: {info['mac_address']}")
-
-    # Flash firmware
-    result = esp32.flash_firmware_file("firmware.bin", address=0x10000)
-    print(result)
-
-    # Reset device to run new firmware
-    esp32.reset()
-
-if __name__ == "__main__":
-    main()
+```shell
+$ j esp32 flash ESP32_GENERIC-20250911-v1.26.1.bin -a 0x1000
 ```
