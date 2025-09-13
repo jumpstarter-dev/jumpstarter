@@ -102,7 +102,7 @@ class ESP32Client(DriverClient):
             else:
                 return int(float(address))
         except (ValueError, TypeError):
-            return 0x10000  # Default fallback
+            return 0x1000
 
     def _parse_size(self, size):
         """Parse size string to integer"""
@@ -174,7 +174,7 @@ class ESP32Client(DriverClient):
 
         @base.command()
         @click.argument("firmware_file", type=click.Path(exists=True))
-        @click.option("--address", "-a", default="0x10000", type=str, help="Flash address (hex or decimal)")
+        @click.option("--address", "-a", default="0x1000", type=str, help="Flash address (hex or decimal)")
         def flash(firmware_file, address):
             """Flash firmware to the device"""
             self._flash_command(firmware_file, address)
