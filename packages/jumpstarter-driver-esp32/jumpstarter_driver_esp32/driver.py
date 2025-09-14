@@ -124,8 +124,10 @@ class ESP32(Driver):
             return await to_thread.run_sync(_flash_firmware)
 
     @export
-    def read_flash(self, address: int, size: int) -> bytes:
+    def read_flash(self, address: int, size: int) -> str:
         """Read flash contents from specified address"""
+        import base64
+
         address = int(address)
         size = int(size)
         if address < 0:
@@ -135,7 +137,14 @@ class ESP32(Driver):
 
         esp = self._connect_esp()
         try:
-            return esp.read_flash(address, size)
+            if not esp.IS_STUB:
+                esp = esp.run_stub()
+
+            data = esp.read_flash(address, size)
+
+            esp.hard_reset()
+
+            return base64.b64encode(data).decode('ascii')
         finally:
             if hasattr(esp, "_port") and esp._port:
                 esp._port.close()

@@ -57,12 +57,16 @@ class ESP32Client(DriverClient):
             address: Flash address to read from
             size: Number of bytes to read
         """
+        import base64
+
         if address < 0:
             raise ArgumentError("Flash address must be non-negative")
         if size <= 0:
             raise ArgumentError("Size must be positive")
 
-        return self.call("read_flash", address, size)
+        encoded_data = self.call("read_flash", address, size)
+
+        return base64.b64decode(encoded_data)
 
     def enter_bootloader(self) -> str:
         """Enter bootloader mode"""
