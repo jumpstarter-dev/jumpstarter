@@ -82,6 +82,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         cacert_file: str | None = None,
         insecure_tls: bool = False,
         headers: dict[str, str] | None = None,
+        bearer_token: str | None = None,
     ):
         """Flash image to DUT"""
         should_download_to_httpd = True
@@ -95,13 +96,17 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         else:
             # use the exporter's http server for the flasher image, we should download it first
             if operator is None:
-                if path.startswith(("http://", "https://")) and headers:
+                if path.startswith(("http://", "https://")) and bearer_token:
                     parsed = urlparse(path)
+                    self.logger.info(f"Using Bearer token authentication for {parsed.netloc}")
                     operator = Operator(
-                        "http", root="/", endpoint=f"{parsed.scheme}://{parsed.netloc}", headers=headers
+                        "http",
+                        root="/",
+                        endpoint=f"{parsed.scheme}://{parsed.netloc}",
+                        token=bearer_token
                     )
                     operator_scheme = "http"
-                    path = urlparse(path).path
+                    path = Path(urlparse(path).path)
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
             image_url = self.http.get_url() + "/" + path.name
@@ -161,7 +166,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 else:
                     stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
 
-                header_args = self._curl_header_args(headers)
+                all_headers = headers.copy() if headers else {}
+                if bearer_token:
+                    all_headers["Authorization"] = f"Bearer {bearer_token}"
+                header_args = self._curl_header_args(all_headers)
                 self._flash_with_progress(
                     console,
                     manifest,
@@ -240,7 +248,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return tls_args.strip()
 
     def _curl_header_args(self, headers: dict[str, str] | None) -> str:
-        """Generate header arguments for curl command."""
+        """Generate header arguments for curl command"""
         if not headers:
             return ""
         parts: list[str] = []
@@ -708,6 +716,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             multiple=True,
             help="Custom HTTP header in 'Key: Value' format",
         )
+        @click.option(
+            "--bearer",
+            type=str,
+            help="Bearer token for HTTP authentication",
+        )
         @debug_console_option
         def flash(
             file,
@@ -720,6 +733,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             cacert,
             insecure_tls,
             header,
+            bearer,
         ):
             """Flash image to DUT from file"""
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
@@ -739,6 +753,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 cacert_file=cacert,
                 insecure_tls=insecure_tls,
                 headers=headers,
+                bearer_token=bearer,
             )
 
         @base.command()
