@@ -199,7 +199,7 @@ async def create_exporter(
 @click.option("--kind-extra-args", type=str, help="Extra arguments for the Kind cluster creation", default="")
 @click.option("--minikube-extra-args", type=str, help="Extra arguments for the Minikube cluster creation", default="")
 @click.option(
-    "--custom-certs",
+    "--extra-certs",
     type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
     help="Path to custom CA certificate bundle file to inject into the cluster",
 )
@@ -236,7 +236,7 @@ async def create_cluster(
     force_recreate: bool,
     kind_extra_args: str,
     minikube_extra_args: str,
-    custom_certs: Optional[str],
+    extra_certs: Optional[str],
     skip_install: bool,
     helm: str,
     chart: str,
@@ -271,7 +271,7 @@ async def create_cluster(
         minikube_extra_args,
         kind or "kind",
         minikube or "minikube",
-        custom_certs,
+        extra_certs,
         install_jumpstarter=not skip_install,
         helm=helm,
         chart=chart,

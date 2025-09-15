@@ -19,7 +19,6 @@ from jumpstarter_kubernetes import (
 from jumpstarter_kubernetes.cluster import kind_cluster_exists, minikube_cluster_exists, run_command
 from jumpstarter_kubernetes.clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 
-from .cluster_connectivity import check_controller_connectivity, check_router_connectivity
 from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
@@ -370,7 +369,7 @@ def _validate_cluster_type(kind: Optional[str], minikube: Optional[str]) -> Lite
 
 
 async def _create_kind_cluster(
-    kind: str, cluster_name: str, kind_extra_args: str, force_recreate_cluster: bool, custom_certs: Optional[str] = None
+    kind: str, cluster_name: str, kind_extra_args: str, force_recreate_cluster: bool, extra_certs: Optional[str] = None
 ) -> None:
     if not kind_installed(kind):
         raise click.ClickException("kind is not installed (or not in your PATH)")
@@ -386,15 +385,15 @@ async def _create_kind_cluster(
             click.echo(f'Successfully created Kind cluster "{cluster_name}"')
 
         # Inject custom certificates if provided
-        if custom_certs:
-            await _inject_certs_in_kind(custom_certs, cluster_name)
+        if extra_certs:
+            await _inject_certs_in_kind(extra_certs, cluster_name)
 
     except RuntimeError as e:
         if "already exists" in str(e) and not force_recreate_cluster:
             click.echo(f'Kind cluster "{cluster_name}" already exists, continuing...')
             # Still inject certificates if cluster exists and custom_certs provided
-            if custom_certs:
-                await _inject_certs_in_kind(custom_certs, cluster_name)
+            if extra_certs:
+                await _inject_certs_in_kind(extra_certs, cluster_name)
         else:
             if force_recreate_cluster:
                 raise click.ClickException(f"Failed to recreate Kind cluster: {e}") from e
@@ -407,7 +406,7 @@ async def _create_minikube_cluster(  # noqa: C901
     cluster_name: str,
     minikube_extra_args: str,
     force_recreate_cluster: bool,
-    custom_certs: Optional[str] = None,
+    extra_certs: Optional[str] = None,
 ) -> None:
     if not minikube_installed(minikube):
         raise click.ClickException("minikube is not installed (or not in your PATH)")
@@ -417,8 +416,8 @@ async def _create_minikube_cluster(  # noqa: C901
     extra_args_list = minikube_extra_args.split() if minikube_extra_args.strip() else []
 
     # Prepare custom certificates for Minikube if provided
-    if custom_certs:
-        await _prepare_minikube_certs(custom_certs)
+    if extra_certs:
+        await _prepare_minikube_certs(extra_certs)
         # Always add --embed-certs for container drivers, we'll detect actual driver later
         if "--embed-certs" not in extra_args_list:
             extra_args_list.append("--embed-certs")
@@ -563,7 +562,7 @@ async def create_cluster_and_install(
     minikube_extra_args: str,
     kind: str,
     minikube: str,
-    custom_certs: Optional[str] = None,
+    extra_certs: Optional[str] = None,
     install_jumpstarter: bool = True,
     helm: str = "helm",
     chart: str = "oci://quay.io/jumpstarter-dev/helm/jumpstarter",
@@ -592,10 +591,10 @@ async def create_cluster_and_install(
 
     # Create the cluster
     if cluster_type == "kind":
-        await _create_kind_cluster(kind, cluster_name, kind_extra_args, force_recreate_cluster, custom_certs)
+        await _create_kind_cluster(kind, cluster_name, kind_extra_args, force_recreate_cluster, extra_certs)
     elif cluster_type == "minikube":
         await _create_minikube_cluster(
-            minikube, cluster_name, minikube_extra_args, force_recreate_cluster, custom_certs
+            minikube, cluster_name, minikube_extra_args, force_recreate_cluster, extra_certs
         )
 
     # Install Jumpstarter if requested
@@ -759,10 +758,6 @@ async def check_jumpstarter_installation(  # noqa: C901
         "basedomain": None,
         "controller_endpoint": None,
         "router_endpoint": None,
-        "controller_reachable": None,
-        "router_reachable": None,
-        "connectivity_error": None,
-        "connectivity_checked": False,
     }
 
     try:
@@ -909,35 +904,6 @@ async def get_cluster_info(
         # Check Jumpstarter installation
         if cluster_accessible:
             jumpstarter_info = await check_jumpstarter_installation(context, None, helm, kubectl)
-
-            # Perform connectivity checks if requested and Jumpstarter is installed
-            if check_connectivity and jumpstarter_info.installed and jumpstarter_info.controller_endpoint:
-                jumpstarter_info.connectivity_checked = True
-
-                try:
-                    # Check controller connectivity
-                    if jumpstarter_info.controller_endpoint:
-                        controller_reachable, controller_error = await check_controller_connectivity(
-                            jumpstarter_info.controller_endpoint
-                        )
-                        jumpstarter_info.controller_reachable = controller_reachable
-                        if controller_error and not jumpstarter_info.connectivity_error:
-                            jumpstarter_info.connectivity_error = f"Controller: {controller_error}"
-
-                    # Check router connectivity
-                    if jumpstarter_info.router_endpoint:
-                        router_reachable, router_error = await check_router_connectivity(
-                            jumpstarter_info.router_endpoint
-                        )
-                        jumpstarter_info.router_reachable = router_reachable
-                        if router_error:
-                            if jumpstarter_info.connectivity_error:
-                                jumpstarter_info.connectivity_error += f"; Router: {router_error}"
-                            else:
-                                jumpstarter_info.connectivity_error = f"Router: {router_error}"
-
-                except Exception as e:
-                    jumpstarter_info.connectivity_error = f"Connectivity check failed: {str(e)}"
         else:
             jumpstarter_info = V1Alpha1JumpstarterInstance(installed=False, error="Cluster not accessible")
 
