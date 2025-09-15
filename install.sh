@@ -12,7 +12,7 @@ NC="$(tput sgr0)" # No Color
 INSTALL_DIR="${HOME}/.local/jumpstarter"
 VENV_DIR="${INSTALL_DIR}/venv"
 SET_SCRIPT="${INSTALL_DIR}/set"
-DEFAULT_SOURCE="release-0.6"
+DEFAULT_SOURCE="release-0.7"
 
 # Function to print colored output
 print_info() {
