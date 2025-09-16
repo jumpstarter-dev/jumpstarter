@@ -89,6 +89,8 @@ class AsyncDriverClient(
             response = await self.stub.DriverCall(request)
         except AioRpcError as e:
             match e.code():
+                case StatusCode.NOT_FOUND:
+                    raise DriverMethodNotImplemented(e.details()) from None
                 case StatusCode.UNIMPLEMENTED:
                     raise DriverMethodNotImplemented(e.details()) from None
                 case StatusCode.INVALID_ARGUMENT:
