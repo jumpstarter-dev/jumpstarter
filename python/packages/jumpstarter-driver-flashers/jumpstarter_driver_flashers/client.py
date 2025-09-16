@@ -254,16 +254,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             tls_args += f"--cacert {stored_cacert} "
         return tls_args.strip()
 
-    def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
-        all_headers = headers.copy() if headers else {}
-        if bearer_token:
-            if any(k.lower() == "authorization" for k in all_headers.keys()):
-                self.logger.warning("Authorization header provided - ignoring bearer token")
-            else:
-                all_headers["Authorization"] = f"Bearer {bearer_token}"
-
-        return self._curl_header_args(all_headers)
-
     def _curl_header_args(self, headers: dict[str, str] | None) -> str:
         """Generate header arguments for curl command"""
         if not headers:
@@ -691,28 +681,14 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self._manifest = FlasherBundleManifestV1Alpha1.from_string(yaml_str)
         return self._manifest
 
-    def _parse_headers(self, headers: list[str]) -> dict[str, str]:
-        """Parse header strings into a dict
-        Args:
-            headers: List of header strings in 'Key: Value' format
-        Returns:
-            Dictionary mapping header keys to values
-        Raises:
-            click.ClickException: If header format is invalid
-        """
+    def _validate_header_dict(self, header_map: dict[str, str]) -> dict[str, str]:
         token_re = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
-        header_map: dict[str, str] = {}
         seen: set[str] = set()
-        for h in headers:
-            if ":" not in h:
-                raise click.ClickException(f"Invalid header format: {h!r}. Expected 'Key: Value'.")
-
-            key, value = h.split(":", 1)
+        for key, value in header_map.items():
             key = key.strip()
             value = value.strip()
-
             if not key:
-                raise click.ClickException(f"Invalid header key in: {h!r}")
+                raise click.ClickException(f"Invalid header key: '{key}'")
 
             if not token_re.match(key):
                 raise click.ClickException(f"Invalid header name '{key}': must be an HTTP token (RFC7230)")
@@ -722,9 +698,29 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             if kl in seen:
                 raise click.ClickException(f"Duplicate header '{key}'")
             seen.add(kl)
-            header_map[key] = value
-
         return header_map
+
+    def _parse_headers(self, headers: list[str]) -> dict[str, str]:
+        header_map: dict[str, str] = {}
+        for h in headers:
+            if ":" not in h:
+                raise click.ClickException(f"Invalid header format: {h!r}. Expected 'Key: Value'.")
+
+            key, value = h.split(":", 1)
+            header_map[key.strip()] = value.strip()
+
+        return self._validate_header_dict(header_map)
+
+    def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
+        all_headers = headers.copy() if headers else {}
+        if bearer_token:
+            if any(k.lower() == "authorization" for k in all_headers.keys()):
+                self.logger.warning("Authorization header provided - ignoring bearer token")
+            else:
+                all_headers["Authorization"] = f"Bearer {bearer_token}"
+
+        validated_headers = self._validate_header_dict(all_headers)
+        return self._curl_header_args(validated_headers)
 
     def _validate_bearer_token(self, token: str | None) -> str | None:
         if token is None:
