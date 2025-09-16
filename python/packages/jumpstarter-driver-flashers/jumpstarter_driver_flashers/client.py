@@ -83,6 +83,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         headers: dict[str, str] | None = None,
         bearer_token: str | None = None,
     ):
+        if bearer_token:
+            bearer_token = self._validate_bearer_token(bearer_token)
+
         """Flash image to DUT"""
         should_download_to_httpd = True
         image_url = ""
@@ -99,10 +102,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     parsed = urlparse(path)
                     self.logger.info(f"Using Bearer token authentication for {parsed.netloc}")
                     operator = Operator(
-                        "http",
-                        root="/",
-                        endpoint=f"{parsed.scheme}://{parsed.netloc}",
-                        token=bearer_token
+                        "http", root="/", endpoint=f"{parsed.scheme}://{parsed.netloc}", token=bearer_token
                     )
                     operator_scheme = "http"
                     path = Path(urlparse(path).path)
@@ -165,10 +165,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 else:
                     stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
 
-                all_headers = headers.copy() if headers else {}
-                if bearer_token:
-                    all_headers["Authorization"] = f"Bearer {bearer_token}"
-                header_args = self._curl_header_args(all_headers)
+                header_args = self._prepare_headers(headers, bearer_token)
                 self._flash_with_progress(
                     console,
                     manifest,
@@ -246,17 +243,29 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             tls_args += f"--cacert {stored_cacert} "
         return tls_args.strip()
 
+    def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
+        all_headers = headers.copy() if headers else {}
+        if bearer_token:
+            all_headers["Authorization"] = f"Bearer {bearer_token}"
+        return self._curl_header_args(all_headers)
+
     def _curl_header_args(self, headers: dict[str, str] | None) -> str:
         """Generate header arguments for curl command"""
         if not headers:
             return ""
+
         parts: list[str] = []
+
+        def _sq(s: str) -> str:
+            return s.replace("'", "'\"'\"'")
+
         for k, v in headers.items():
             k = str(k).strip()
-            v = str(v)
+            v = str(v).strip()
             if not k:
                 continue
-            parts.append(f"-H '{k}: {v}'")
+            parts.append(f"-H '{_sq(k)}: {_sq(v)}'")
+
         return " ".join(parts)
 
     def _flash_with_progress(
@@ -665,13 +674,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
     def _parse_headers(self, headers: list[str]) -> dict[str, str]:
         """Parse header strings into a dict
-
         Args:
             headers: List of header strings in 'Key: Value' format
-
         Returns:
             Dictionary mapping header keys to values
-
         Raises:
             click.ClickException: If header format is invalid
         """
@@ -799,3 +805,22 @@ def _get_decompression_command(filename_or_url) -> str:
     elif filename.endswith(".xz"):
         return "xzcat |"
     return ""
+
+
+def _validate_bearer_token(self, token: str | None) -> str | None:
+    if token is None:
+        return None
+
+    token = token.strip()
+    if not token:
+        raise click.ClickException("Bearer token cannot be empty")
+
+    # RFC 6750 allows token68 format (base64url-encoded) or other token formats
+    # Basic validation: printable ASCII excluding whitespace and special chars that could cause issues
+    if not all(32 < ord(c) < 127 and c not in ' "\\' for c in token):
+        raise click.ClickException("Bearer token contains invalid characters")
+
+    if len(token) > 4096:
+        raise click.ClickException("Bearer token is too long (max 4096 characters)")
+
+    return token
