@@ -90,6 +90,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """Flash image to DUT"""
         should_download_to_httpd = True
         image_url = ""
+        original_http_url = None
         operator_scheme = None
         # initrmafs cannot handle https yet, fallback to using the exporter's http server
         if path.startswith(("http://", "https://")) and not force_exporter_http:
@@ -102,11 +103,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 if path.startswith(("http://", "https://")) and bearer_token:
                     parsed = urlparse(path)
                     self.logger.info(f"Using Bearer token authentication for {parsed.netloc}")
+                    original_http_url = path
                     operator = Operator(
                         "http", root="/", endpoint=f"{parsed.scheme}://{parsed.netloc}", token=bearer_token
                     )
                     operator_scheme = "http"
-                    path = Path(urlparse(path).path)
+                    path = Path(parsed.path)
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
             image_url = self.http.get_url() + "/" + path.name
@@ -121,7 +123,16 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             # Start the storage write operation in the background
             storage_thread = threading.Thread(
                 target=self._transfer_bg_thread,
-                args=(path, operator, operator_scheme, os_image_checksum, self.http.storage, error_queue, image_url),
+                args=(
+                    path,
+                    operator,
+                    operator_scheme,
+                    os_image_checksum,
+                    self.http.storage,
+                    error_queue,
+                    original_http_url,
+                    headers,
+                ),
                 name="storage_transfer",
             )
             storage_thread.start()
@@ -247,7 +258,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
         all_headers = headers.copy() if headers else {}
         if bearer_token:
-            all_headers["Authorization"] = f"Bearer {bearer_token}"
+            if any(k.lower() == "authorization" for k in all_headers.keys()):
+                self.logger.warning("Authorization header provided - ignoring bearer token")
+            else:
+                all_headers["Authorization"] = f"Bearer {bearer_token}"
+
         return self._curl_header_args(all_headers)
 
     def _curl_header_args(self, headers: dict[str, str] | None) -> str:
@@ -417,6 +432,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         to_storage: OpendalClient,
         error_queue,
         original_url: str | None = None,
+        headers: dict[str, str] | None = None,
     ):
         """Transfer image to exporter storage in the background
         Args:
@@ -426,6 +442,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             error_queue: Queue to put exceptions in if any
             known_hash: Known hash of the image
             original_url: Original URL for HTTP fallback
+            headers: HTTP headers for requests
         """
         self.logger.info(f"Writing image to storage in the background: {src_path}")
         try:
@@ -451,7 +468,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self.logger.info(f"Uploading image to storage: {filename}")
             to_storage.write_from_path(filename, src_path, src_operator)
 
-            metadata, metadata_json = self._create_metadata_and_json(src_operator, src_path, file_hash, original_url)
+            metadata, metadata_json = self._create_metadata_and_json(
+                src_operator, src_path, file_hash, original_url, headers
+            )
             metadata_file = filename + ".metadata"
             to_storage.write_bytes(metadata_file, metadata_json.encode(errors="ignore"))
 
@@ -682,7 +701,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         Raises:
             click.ClickException: If header format is invalid
         """
-        header_map = {}
+        token_re = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+        header_map: dict[str, str] = {}
+        seen: set[str] = set()
         for h in headers:
             if ":" not in h:
                 raise click.ClickException(f"Invalid header format: {h!r}. Expected 'Key: Value'.")
@@ -694,8 +715,35 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             if not key:
                 raise click.ClickException(f"Invalid header key in: {h!r}")
 
+            if not token_re.match(key):
+                raise click.ClickException(f"Invalid header name '{key}': must be an HTTP token (RFC7230)")
+            if any(c in ("\r", "\n") for c in key) or any(c in ("\r", "\n") for c in value):
+                raise click.ClickException("Header names/values must not contain CR/LF")
+            kl = key.lower()
+            if kl in seen:
+                raise click.ClickException(f"Duplicate header '{key}'")
+            seen.add(kl)
             header_map[key] = value
+
         return header_map
+
+    def _validate_bearer_token(self, token: str | None) -> str | None:
+        if token is None:
+            return None
+
+        token = token.strip()
+        if not token:
+            raise click.ClickException("Bearer token cannot be empty")
+
+        # RFC 6750 allows token68 format (base64url-encoded) or other token formats
+        # Basic validation: printable ASCII excluding whitespace and special chars that could cause issues
+        if not all(32 < ord(c) < 127 and c not in ' "\\' for c in token):
+            raise click.ClickException("Bearer token contains invalid characters")
+
+        if len(token) > 4096:
+            raise click.ClickException("Bearer token is too long (max 4096 characters)")
+
+        return token
 
     def cli(self):
         @driver_click_group(self)
@@ -806,22 +854,3 @@ def _get_decompression_command(filename_or_url) -> str:
     elif filename.endswith(".xz"):
         return "xzcat |"
     return ""
-
-
-def _validate_bearer_token(self, token: str | None) -> str | None:
-    if token is None:
-        return None
-
-    token = token.strip()
-    if not token:
-        raise click.ClickException("Bearer token cannot be empty")
-
-    # RFC 6750 allows token68 format (base64url-encoded) or other token formats
-    # Basic validation: printable ASCII excluding whitespace and special chars that could cause issues
-    if not all(32 < ord(c) < 127 and c not in ' "\\' for c in token):
-        raise click.ClickException("Bearer token contains invalid characters")
-
-    if len(token) > 4096:
-        raise click.ClickException("Bearer token is too long (max 4096 characters)")
-
-    return token
