@@ -79,6 +79,7 @@ Drivers for debugging and programming devices:
 General-purpose utility drivers:
 
 * **[Shell](shell.md)** (`jumpstarter-driver-shell`) - Shell command execution
+* **[TMT](tmt.md)** (`jumpstarter-driver-tmt`) - TMT (Test Management Tool) wrapper driver
 
 ```{toctree}
 :hidden:
@@ -102,6 +103,7 @@ sdwire.md
 shell.md
 snmp.md
 tasmota.md
+tmt.md
 tftp.md
 uboot.md
 ustreamer.md
