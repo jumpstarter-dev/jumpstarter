@@ -69,7 +69,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 pass
             yield self.serial
 
-    def flash(
+    def flash(  # noqa: C901
         self,
         path: PathBuf,
         *,
@@ -85,6 +85,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     ):
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
+
+        if headers:
+            headers = self._validate_header_dict(headers)
 
         """Flash image to DUT"""
         should_download_to_httpd = True
@@ -688,15 +691,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             key = key.strip()
             value = value.strip()
             if not key:
-                raise click.ClickException(f"Invalid header key: '{key}'")
+                raise ArgumentError(f"Invalid header key: '{key}'")
 
             if not token_re.match(key):
-                raise click.ClickException(f"Invalid header name '{key}': must be an HTTP token (RFC7230)")
+                raise ArgumentError(f"Invalid header name '{key}': must be an HTTP token (RFC7230)")
             if any(c in ("\r", "\n") for c in key) or any(c in ("\r", "\n") for c in value):
-                raise click.ClickException("Header names/values must not contain CR/LF")
+                raise ArgumentError("Header names/values must not contain CR/LF")
             kl = key.lower()
             if kl in seen:
-                raise click.ClickException(f"Duplicate header '{key}'")
+                raise ArgumentError(f"Duplicate header '{key}'")
             seen.add(kl)
         return header_map
 
@@ -709,7 +712,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             key, value = h.split(":", 1)
             header_map[key.strip()] = value.strip()
 
-        return self._validate_header_dict(header_map)
+        try:
+            return self._validate_header_dict(header_map)
+        except ArgumentError as e:
+            raise click.ClickException(str(e)) from e
 
     def _prepare_headers(self, headers: dict[str, str] | None, bearer_token: str | None) -> str:
         all_headers = headers.copy() if headers else {}
@@ -719,8 +725,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             else:
                 all_headers["Authorization"] = f"Bearer {bearer_token}"
 
-        validated_headers = self._validate_header_dict(all_headers)
-        return self._curl_header_args(validated_headers)
+        if bearer_token and "Authorization" not in (headers or {}):
+            auth_header = {"Authorization": all_headers["Authorization"]}
+            self._validate_header_dict(auth_header)
+
+        return self._curl_header_args(all_headers)
 
     def _validate_bearer_token(self, token: str | None) -> str | None:
         if token is None:
