@@ -2,6 +2,7 @@ import click
 import pytest
 
 from .client import BaseFlasherClient
+from jumpstarter.common.exceptions import ArgumentError
 
 
 class MockFlasherClient(BaseFlasherClient):
@@ -13,6 +14,9 @@ class MockFlasherClient(BaseFlasherClient):
         self.logger = type(
             "MockLogger", (), {"warning": lambda msg: None, "info": lambda msg: None, "error": lambda msg: None}
         )()
+
+    def close(self):
+        pass
 
 
 def test_validate_bearer_token_fails_invalid():
@@ -37,3 +41,11 @@ def test_curl_header_args_handles_quotes():
     assert "'\"'\"'" in result
     assert result.startswith("-H '")
     assert result.endswith("'")
+
+
+def test_flash_fails_with_invalid_headers():
+    """Test flash method fails early with invalid headers"""
+    client = MockFlasherClient()
+
+    with pytest.raises(ArgumentError, match="Invalid header name 'Invalid Header': must be an HTTP token"):
+        client.flash("test.raw", headers={"Invalid Header": "value"})
