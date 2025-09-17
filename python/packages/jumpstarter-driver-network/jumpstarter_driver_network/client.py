@@ -2,7 +2,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from ipaddress import IPv6Address, ip_address
 from threading import Event
-from typing import Any
+from typing import Any, Tuple
+from urllib.parse import urlparse
 
 import click
 from anyio import ContextManagerMixin
@@ -10,9 +11,14 @@ from anyio import ContextManagerMixin
 from .adapters import DbusAdapter, TcpPortforwardAdapter, UnixPortforwardAdapter
 from .driver import DbusNetwork
 from jumpstarter.client import DriverClient
+from jumpstarter.client.core import DriverMethodNotImplemented
 
 
 class NetworkClient(DriverClient):
+
+    def address(self):
+        return self.call("address")
+
     def cli(self):
         @click.group
         def base():
@@ -62,8 +68,34 @@ class NetworkClient(DriverClient):
 
                 Event().wait()
 
-        return base
+        @base.command()
+        @click.option("--host", is_flag=True)
+        @click.option("--port", is_flag=True)
+        def address(host, port):
+            """
+            Direct TCP connection to remote network
+            """
+            try:
+                addr = self.address()
+                if not host and not port or host and port:
+                    # Strip any URL scheme for clean display
+                    clean_addr = _strip_scheme(addr)
+                    click.echo(clean_addr)
+                else:
+                    # Parse address safely to handle IPv6
+                    parsed_host, parsed_port = _parse_address(addr)
+                    click.echo(parsed_host if host else parsed_port)
+            except ValueError as e:
+                raise click.ClickException(
+                    f"enable_address mode is not true in the exporter configuration: {e}"
+                ) from e
+            except DriverMethodNotImplemented as e:
+                raise click.ClickException(
+                    "This exporter does not support direct connection yet, update exporter to 0.7.1 or later"
+                ) from e
 
+
+        return base
 
 class DbusNetworkClient(NetworkClient, ContextManagerMixin):
     @contextmanager
@@ -74,3 +106,57 @@ class DbusNetworkClient(NetworkClient, ContextManagerMixin):
     @property
     def kind(self):
         return self.labels[DbusNetwork.KIND_LABEL]
+
+
+def _parse_address(addr: str) -> Tuple[str, str]:
+    """Parse a host:port address string, handling IPv6 addresses correctly.
+
+    Uses urllib.parse.urlparse for robust parsing of network addresses.
+
+    Returns:
+        Tuple of (host, port) as strings
+
+    Examples:
+        "127.0.0.1:8080" -> ("127.0.0.1", "8080")
+        "[::1]:8080" -> ("::1", "8080")
+        "localhost:8080" -> ("localhost", "8080")
+    """
+    # Add a dummy scheme to make it a valid URL for urlparse
+    if not addr.startswith(("http://", "https://", "tcp://", "udp://")):
+        addr = f"tcp://{addr}"
+
+    parsed = urlparse(addr)
+    host = parsed.hostname or ""
+    port = str(parsed.port) if parsed.port else ""
+
+    return host, port
+
+
+def _strip_scheme(addr: str) -> str:
+    """Remove URL scheme from address string for clean display.
+
+    Uses urllib.parse.urlparse to properly handle various URL formats.
+
+    Returns:
+        Address string without scheme prefix
+
+    Examples:
+        "tcp://127.0.0.1:8080" -> "127.0.0.1:8080"
+        "udp://[::1]:8080" -> "[::1]:8080"
+        "127.0.0.1:8080" -> "127.0.0.1:8080"
+    """
+    # Handle IPv6 addresses in brackets specially
+    if "://[" in addr and "]" in addr:
+        # Find the scheme separator and the closing bracket
+        scheme_end = addr.find("://")
+        if scheme_end != -1:
+            # Extract everything after "://"
+            return addr[scheme_end + 3:]
+
+    # For other cases, use urlparse
+    parsed = urlparse(addr)
+    # Reconstruct the address without scheme
+    if parsed.port:
+        return f"{parsed.hostname}:{parsed.port}"
+    else:
+        return parsed.hostname or addr
