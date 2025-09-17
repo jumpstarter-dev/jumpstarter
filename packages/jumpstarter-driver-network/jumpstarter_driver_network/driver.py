@@ -18,7 +18,60 @@ from anyio._backends._asyncio import SocketStream, StreamProtocol
 from anyio.streams.stapled import StapledObjectStream
 
 from .streams.websocket import WebsocketClientStream
-from jumpstarter.driver import Driver, exportstream
+from jumpstarter.driver import Driver, export, exportstream
+
+
+def _is_ipv6_address(host: str) -> bool:
+    """Check if the given host string is an IPv6 address."""
+    try:
+        socket.inet_pton(socket.AF_INET6, host)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _is_ipv4_address(host: str) -> bool:
+    """Check if the given host string is an IPv4 address."""
+    try:
+        socket.inet_pton(socket.AF_INET, host)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _resolve_hostname(host: str) -> str:
+    """Resolve hostname to IP address. Returns the original host if resolution fails."""
+    # If it's already an IP address, return as-is
+    if _is_ipv4_address(host) or _is_ipv6_address(host):
+        return host
+
+    try:
+        # Try to resolve the hostname
+        # getaddrinfo returns a list of tuples, we want the first IP address
+        addr_info = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        if addr_info:
+            # Get the first resolved address (ip address)
+            resolved_ip = addr_info[0][4][0]
+            return resolved_ip
+    except (OSError, socket.gaierror):
+        # If resolution fails, return the original hostname
+        pass
+
+    return host
+
+
+def _format_address(host: str, port: int) -> str:
+    """Format host and port as an address string, handling IPv6 addresses correctly.
+
+    Resolves hostnames to their IP addresses when possible.
+    """
+    # Resolve hostname to IP address
+    resolved_host = _resolve_hostname(host)
+
+    if _is_ipv6_address(resolved_host):
+        return f"[{resolved_host}]:{port}"
+    else:
+        return f"{resolved_host}:{port}"
 
 
 class NetworkInterface(metaclass=ABCMeta):
@@ -51,6 +104,7 @@ class TcpNetwork(NetworkInterface, Driver):
 
     host: str
     port: int
+    enable_address: bool = True
 
     @exportstream
     @asynccontextmanager
@@ -59,6 +113,12 @@ class TcpNetwork(NetworkInterface, Driver):
         async with await connect_tcp(remote_host=self.host, remote_port=self.port) as stream:
             yield stream
 
+    @export
+    async def address(self):
+        if self.enable_address:
+            return "tcp://" + _format_address(self.host, self.port)
+        else:
+            raise ValueError("enable_address mode is not true in the exporter configuration")
 
 @dataclass(kw_only=True)
 class UdpNetwork(NetworkInterface, Driver):
@@ -77,6 +137,7 @@ class UdpNetwork(NetworkInterface, Driver):
 
     host: str
     port: int
+    enable_address: bool = True
 
     @exportstream
     @asynccontextmanager
@@ -84,6 +145,13 @@ class UdpNetwork(NetworkInterface, Driver):
         self.logger.debug("Connecting UDP host=%s port=%d", self.host, self.port)
         async with await create_connected_udp_socket(remote_host=self.host, remote_port=self.port) as stream:
             yield stream
+
+    @export
+    async def address(self):
+        if self.enable_address:
+            return "udp://" + _format_address(self.host, self.port)
+        else:
+            raise ValueError("enable_address mode is not true in the exporter configuration")
 
 
 @dataclass(kw_only=True)
@@ -245,12 +313,13 @@ class WebsocketNetwork(NetworkInterface, Driver):
     Handles websocket connections from a given url.
     '''
     url: str
+    enable_address: bool = True
 
     @exportstream
     @asynccontextmanager
     async def connect(self):
         '''
-        Create a websocket connection to `self.url` and srreams its output.
+        Create a websocket connection to `self.url` and streams its output.
         '''
         self.logger.info("Connecting to %s", self.url)
 
@@ -259,3 +328,10 @@ class WebsocketNetwork(NetworkInterface, Driver):
                 yield stream
 
         self.logger.info("Disconnected from %s", self.url)
+
+    @export
+    async def address(self):
+        if self.enable_address:
+            return self.url
+        else:
+            raise ValueError("enable_address mode is not true in the exporter configuration")
