@@ -10,11 +10,7 @@ from jumpstarter_kubernetes import (
     uninstall_helm_chart,
 )
 
-from .cluster import (
-    _handle_cluster_creation,
-    _handle_cluster_deletion,
-    _validate_cluster_type,
-)
+from .cluster import _validate_cluster_type
 from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
@@ -123,20 +119,6 @@ async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_nam
     default=None,
     help="Use default settings for a local Minikube cluster",
 )
-@click.option("--create-cluster", is_flag=True, help="Create a local Kind or Minikube cluster if it does not exist")
-@click.option(
-    "--force-recreate-cluster",
-    is_flag=True,
-    help="Force recreate the cluster if it already exists (WARNING: This will destroy all data in the cluster)",
-)
-@click.option("--cluster-name", type=str, help="The name of the local cluster to create", default="jumpstarter-lab")
-@click.option("--kind-extra-args", type=str, help="Extra arguments for the Kind cluster creation", default="")
-@click.option("--minikube-extra-args", type=str, help="Extra arguments for the Minikube cluster creation", default="")
-@click.option(
-    "--custom-certs",
-    type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
-    help="Path to custom CA certificate bundle file to inject into the cluster",
-)
 @click.option("-v", "--version", help="The version of the service to install", default=None)
 @opt_kubeconfig
 @opt_context
@@ -153,12 +135,6 @@ async def install(
     mode: Literal["nodeport"] | Literal["ingress"] | Literal["route"],
     kind: Optional[str],
     minikube: Optional[str],
-    create_cluster: bool,
-    force_recreate_cluster: bool,
-    cluster_name: str,
-    kind_extra_args: str,
-    minikube_extra_args: str,
-    custom_certs: Optional[str],
     version: str,
     kubeconfig: Optional[str],
     context: Optional[str],
@@ -168,20 +144,8 @@ async def install(
 
     cluster_type = _validate_cluster_type(kind, minikube)
 
-    await _handle_cluster_creation(
-        create_cluster,
-        cluster_type,
-        force_recreate_cluster,
-        cluster_name,
-        kind_extra_args,
-        minikube_extra_args,
-        kind or "kind",
-        minikube or "minikube",
-        custom_certs,
-    )
-
     ip, basedomain, grpc_endpoint, router_endpoint = await _configure_endpoints(
-        cluster_type, minikube or "minikube", cluster_name, ip, basedomain, grpc_endpoint, router_endpoint
+        cluster_type, minikube or "minikube", "jumpstarter-lab", ip, basedomain, grpc_endpoint, router_endpoint
     )
 
     if version is None:
@@ -223,18 +187,6 @@ async def ip(
 @click.option(
     "-n", "--namespace", type=str, help="Namespace to install Jumpstarter components in", default="jumpstarter-lab"
 )
-@click.option("--delete-cluster", is_flag=True, help="Delete the local cluster after uninstalling")
-@click.option(
-    "--kind", is_flag=False, flag_value="kind", default=None, help="Delete the local Kind cluster after uninstalling"
-)
-@click.option(
-    "--minikube",
-    is_flag=False,
-    flag_value="minikube",
-    default=None,
-    help="Delete the local Minikube cluster after uninstalling",
-)
-@click.option("--cluster-name", type=str, help="The name of the local cluster to delete", default="jumpstarter-lab")
 @opt_kubeconfig
 @opt_context
 @blocking
@@ -242,10 +194,6 @@ async def uninstall(
     helm: str,
     name: str,
     namespace: str,
-    delete_cluster: bool,
-    kind: Optional[str],
-    minikube: Optional[str],
-    cluster_name: str,
     kubeconfig: Optional[str],
     context: Optional[str],
 ):
@@ -257,6 +205,3 @@ async def uninstall(
     await uninstall_helm_chart(name, namespace, kubeconfig, context, helm)
 
     click.echo(f'Uninstalled Helm release "{name}" from namespace "{namespace}"')
-
-    if delete_cluster:
-        await _handle_cluster_deletion(kind, minikube, cluster_name)
