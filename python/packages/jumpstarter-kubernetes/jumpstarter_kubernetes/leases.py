@@ -79,7 +79,7 @@ class V1Alpha1Lease(JsonBaseModel):
 
     @classmethod
     def rich_add_columns(cls, table):
-        table.add_column("NAME")
+        table.add_column("NAME", no_wrap=True)
         table.add_column("CLIENT")
         table.add_column("SELECTOR")
         table.add_column("EXPORTER")
