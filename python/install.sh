@@ -1,12 +1,25 @@
 #!/bin/bash
 set -e
 
-# Colors for output
-RED="$(tput setaf 1)"
-GREEN="$(tput setaf 2)"
-YELLOW="$(tput setaf 3)"
-BLUE="$(tput setaf 4)"
-NC="$(tput sgr0)" # No Color
+# Define color outputs
+# Check if colors should be enabled based on:
+# 1. NO_COLOR environment variable (https://no-color.org/)
+# 2. Terminal capability (TERM set and tput works)
+# 3. Interactive terminal (isatty check [ -t 1 ])
+if [ -z "${NO_COLOR:-}" ] && [ -n "${TERM:-}" ] && command -v tput >/dev/null 2>&1 && tput setaf 1 >/dev/null 2>&1 && [ -t 1 ]; then
+    RED="$(tput setaf 1)"
+    GREEN="$(tput setaf 2)"
+    YELLOW="$(tput setaf 3)"
+    BLUE="$(tput setaf 4)"
+    NC="$(tput sgr0)" # No Color
+else
+    # Fallback for CI environments, non-interactive terminals, or when NO_COLOR is set
+    RED=""
+    GREEN=""
+    YELLOW=""
+    BLUE=""
+    NC=""
+fi
 
 # Default values
 INSTALL_DIR="${HOME}/.local/jumpstarter"
