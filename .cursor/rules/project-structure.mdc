@@ -140,3 +140,23 @@ examples/
 - **Version source**: VCS (Git) with root-level version management
 - **Distribution**: Individual packages published separately
 - **Workspace**: UV manages dependencies across all packages
+
+## Running tests
+
+When running tests you should use the `make pkg-test-<package_name>` command.
+
+## Running type checking
+
+When running type checking you should use the `make pkg-ty-<package_name>` command,
+never invoke pytest manually. Use this because it will be more reliable and
+install the right dependencies.
+
+## Running linting
+
+When running linting you should use the `make lint-fix`command.
+
+## Running python manually
+
+If you need to run python code manually to check if it works, you should use `uv run python3`
+to make sure you get the venv from uv, you may need to run `make sync` first to get all
+the dependencies in place.
