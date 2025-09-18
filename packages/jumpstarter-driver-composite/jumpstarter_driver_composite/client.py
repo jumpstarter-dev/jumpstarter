@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import inspect
 
 import click
 
@@ -23,6 +24,11 @@ class CompositeClient(DriverClient):
 
         for k, v in self.children.items():
             if hasattr(v, "cli"):
-                base.add_command(v.cli(), k)
+                # Check if the cli method accepts a click_group parameter
+                sig = inspect.signature(v.cli)
+                if "click_group" in sig.parameters:
+                    base.add_command(v.cli(click_group=base), k)
+                else:
+                    base.add_command(v.cli(), k)
 
         return base
