@@ -95,14 +95,11 @@ class PrefixedClaimOrExpression1(BaseModel):
 
     claim: str
     prefix: str
-    expression: Optional[str] = None
 
 
 class PrefixedClaimOrExpression2(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    claim: Optional[str] = None
-    prefix: str
     expression: str
 
 

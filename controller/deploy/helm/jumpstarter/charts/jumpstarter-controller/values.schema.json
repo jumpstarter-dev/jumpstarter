@@ -763,18 +763,6 @@
         "prefix": {
           "title": "Prefix",
           "type": "string"
-        },
-        "expression": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Expression"
         }
       },
       "required": [
@@ -787,29 +775,12 @@
     "PrefixedClaimOrExpression2": {
       "additionalProperties": false,
       "properties": {
-        "claim": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Claim"
-        },
-        "prefix": {
-          "title": "Prefix",
-          "type": "string"
-        },
         "expression": {
           "title": "Expression",
           "type": "string"
         }
       },
       "required": [
-        "prefix",
         "expression"
       ],
       "title": "PrefixedClaimOrExpression2",
