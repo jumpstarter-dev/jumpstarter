@@ -1,0 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: esp32
+spec:
+  export:
+    esp32:
+      type: jumpstarter_driver_esp32.driver.ESP32
+      config:
+        port: "/dev/ttyUSB0"
+        baudrate: 115200
+        chip: "esp32"
+        # Optional GPIO pins for hardware control
+        # reset_pin: 2
+        # boot_pin: 0
