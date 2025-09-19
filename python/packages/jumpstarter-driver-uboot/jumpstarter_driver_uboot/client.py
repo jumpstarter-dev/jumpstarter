@@ -71,7 +71,7 @@ class UbootConsoleClient(CompositeClient):
             self.logger.info(f"Running command: {cmd}")
         if not hasattr(self, "p"):
             raise RuntimeError("Not in a reboot_to_console context")
-        self.p.sendline("")
+        self.p.sendline("#") # just sending "\n" re-executes the last command. "#" should be a harmless no-op
         self.p.expect_exact(self.prompt, timeout=timeout)
         self.p.sendline(cmd)
         self.p.expect_exact(self.prompt, timeout=timeout)
