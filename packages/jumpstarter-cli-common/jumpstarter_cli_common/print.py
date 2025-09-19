@@ -17,7 +17,8 @@ def model_print(  # noqa: C901
     match output:
         case OutputMode.JSON:
             console.print_json(
-                data=model.model_dump_json(
+                data=model.model_dump(
+                    mode="json",
                     by_alias=True,
                 ),
                 indent=4,
