@@ -87,7 +87,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         if self.name:
             logger.debug("using existing lease via env or flag %s", self.name)
             existing_lease = await self.get()
-            if existing_lease.selector != self.selector:
+            if self.selector is not None and existing_lease.selector != self.selector:
                 logger.warning(
                     "Existing lease from env or flag %s has selector '%s' but requested selector is '%s'. "
                     "Creating a new lease instead",
