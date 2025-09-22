@@ -19,6 +19,7 @@ else
 	cp buildroot_defconfig  "${BUILDROOT_DIR}/configs/"
 	cp -R overlay "${BUILDROOT_DIR}"
 	( cd "${BUILDROOT_DIR}"; make buildroot_defconfig && make )
+	dtc s32g3.dts -o s32g3.dtb
 	mkimage -f buildroot.its data/flasher-buildroot.itb
 	rm -rf "${BUILDROOT_DIR}/overlay"
 
