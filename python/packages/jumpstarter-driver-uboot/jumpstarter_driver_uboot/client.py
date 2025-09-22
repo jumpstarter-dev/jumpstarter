@@ -46,7 +46,9 @@ class UbootConsoleClient(CompositeClient):
             for _ in range(100):  # TODO: configurable retries
                 try:
                     p.send(ESC)
-                    p.expect_exact(self.prompt, timeout=0.1)
+                    # in case of "bootmenu" there are all sort of escape sequences in the output so try to
+                    # catch prompt without any leading newlines, hoping it's not in the menu text somewhere
+                    p.expect_exact(self.prompt.lstrip("\n"), timeout=0.1)
                 except pexpect.TIMEOUT:
                     continue
 
@@ -69,7 +71,7 @@ class UbootConsoleClient(CompositeClient):
             self.logger.info(f"Running command: {cmd}")
         if not hasattr(self, "p"):
             raise RuntimeError("Not in a reboot_to_console context")
-        self.p.sendline("")
+        self.p.sendline("#") # just sending "\n" re-executes the last command. "#" should be a harmless no-op
         self.p.expect_exact(self.prompt, timeout=timeout)
         self.p.sendline(cmd)
         self.p.expect_exact(self.prompt, timeout=timeout)
