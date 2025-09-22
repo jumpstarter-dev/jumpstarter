@@ -1,0 +1,45 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: FlashBundleManifest
+metadata:
+  name: nxp-s32g-vnd-rdb3
+spec:
+  manufacturer: NXP
+  link: "https://www.nxp.com/part/S32G-VNP-RDB3"
+# boot using the default configuration built-in flasher.itb, s32g3
+  bootcmd: "bootm 0x90000000#s32g3"
+  shelltype: "busybox"
+  login:
+    login_prompt: "login:"
+    username: "root"
+    prompt: "#"
+  default_target: "usd"
+  targets:
+    usd: "/sys/devices/platform/soc\@0/402f0000.mmc"
+#    usd: "/sys/class/block/mmcblk0"
+# removed for now, even if it's our documented procedure, if
+# the board is configured to boot from sd or emmc (and not SPI), and
+# the flashing of the final image fails, it will result in an un-bootable
+# system -> lab admin going to the site and re-flashing SD, this can
+# only be avoided by using something like sdwire
+#
+#  preflash_commands:
+#    - "dd if=/dev/zero of=/dev/mmcblk0 bs=512 count=34"
+#    - "dd if=/dev/zero of=/dev/mmcblk1 bs=512 count=34"
+#
+# supply custom DTB by loading your own re-using the included kernel and initrd by e.g:
+# bootcmd: "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"
+# dtb:
+#   file: my.dtb
+#   address: "0x88000000"
+  kernel:
+    file: data/flasher-buildroot.itb
+    address: "0x90000000"
+
+  dtb:
+    default: s32g3
+    address: "0x88000000"
+    variants:
+      s32g3:
+        bootcmd: "bootm 0x90000000#s32g3"
+      custom:
+        bootcmd: "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"
