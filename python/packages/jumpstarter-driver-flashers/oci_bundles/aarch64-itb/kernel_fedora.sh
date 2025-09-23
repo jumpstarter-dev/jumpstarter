@@ -20,6 +20,7 @@ if [ "$(uname -m)" != "aarch64" ]; then
   exit 1
 fi
 unzboot /usr/lib/modules/$KVER/vmlinuz vmlinuz
+lz4 -12 vmlinuz vmlinuz.lz4
 ln -sfn /lib/modules/$KVER/dtb dtb
 echo "building required modules list ..."
 for mod in ${KMOD[@]}; do

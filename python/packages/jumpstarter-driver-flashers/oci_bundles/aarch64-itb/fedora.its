@@ -7,11 +7,11 @@
 	images {
 		kernel {
 			description = "buildroot Kernel";
-			data = /incbin/("./kernel-fedora/vmlinuz");
+			data = /incbin/("./kernel-fedora/vmlinuz.lz4");
 			type = "kernel";
 			arch = "arm64";
 			os = "linux";
-			compression = "none";
+			compression = "lz4";
 			load = <0x80000000>;
 			entry = <0x80000000>;
 			hash {
@@ -20,7 +20,7 @@
 		};
 		initrd {
 			description = "Initrd";
-			data = /incbin/("/var/tmp/buildroot/output/images/rootfs.cpio.lzo");
+			data = /incbin/("/var/tmp/buildroot/output/images/rootfs.cpio.lz4");
 			type = "ramdisk";
 			arch = "arm64";
 			os = "linux";
