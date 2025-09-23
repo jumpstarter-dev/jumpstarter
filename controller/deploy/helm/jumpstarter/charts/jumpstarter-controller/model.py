@@ -233,7 +233,7 @@ class Grpc1(BaseModel):
         None, description="Hostname for the controller to use for the controller gRPC"
     )
     routerHostname: Optional[str] = Field(
-        None, description="Hostname for the controller to use for the controller gRPC"
+        None, description="Hostname for the router to use for the router gRPC"
     )
     endpoint: Optional[str] = Field(
         None,
@@ -243,11 +243,22 @@ class Grpc1(BaseModel):
         None,
         description="The endpoints are passed down to the services to know where to announce the endpoints to the clients",
     )
+    additionalRouters: dict[str, Router] | None = Field(
+        None, description="Additional routers to deploy"
+    )
     ingress: Optional[Ingress] = None
     route: Optional[Route] = None
     nodeport: Optional[Nodeport] = None
     mode: Optional[Mode] = None
     tls: Optional[Tls] = None
+
+
+class Router(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hostname: str | None = None
+    endpoint: str | None = None
+    labels: dict[str, str] | None = None
+    nodeSelector: dict[str, str] | None = None
 
 
 class Model(BaseModel):

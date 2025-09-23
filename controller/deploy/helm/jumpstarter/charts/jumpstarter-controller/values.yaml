@@ -10,6 +10,7 @@ grpc:
   endpoint: ""
   routerEndpoint: ""
 
+  additionalRouters: {}
 
   tls:
     enabled: false

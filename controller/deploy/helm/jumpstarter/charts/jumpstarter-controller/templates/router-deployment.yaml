@@ -10,7 +10,6 @@ metadata:
     deployment.timestamp: {{ .Values.global.timestamp | quote }}
   {{ end }}
   annotations:
-    configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") . | sha256sum }}
     argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
@@ -21,6 +20,7 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: router
+        configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") . | sha256sum }}
       labels:
         control-plane: controller-router
       {{ if .Values.global.timestamp }}

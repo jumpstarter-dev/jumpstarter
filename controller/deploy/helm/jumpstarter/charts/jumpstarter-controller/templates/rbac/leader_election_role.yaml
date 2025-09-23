@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
   name: leader-election-role
-  namespace: {{ .Values.namespace }}
+  namespace: {{ default .Release.Namespace .Values.namespace }}
 rules:
 - apiGroups:
   - ""
