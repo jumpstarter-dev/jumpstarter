@@ -11,7 +11,7 @@ else
 
 	dnf install --setopt=install_weak_deps=false -y git make gcc gcc-c++ which file diffutils \
 		wget cpio rsync bc lzop zip patch perl tar qemu-system-aarch64 qemu-img unzboot \
-		uboot-tools kmod awk zstd kernel dtc rpm-build
+		uboot-tools kmod awk zstd lz4  kernel dtc rpm-build
 
 	# FIXME remove in Fedora 43
 	# until unzboot is updated, use the build directly
