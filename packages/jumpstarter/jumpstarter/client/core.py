@@ -12,6 +12,7 @@ from google.protobuf import empty_pb2
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
+from rich.logging import RichHandler
 
 from jumpstarter.common import Metadata
 from jumpstarter.common.exceptions import JumpstarterException
@@ -72,8 +73,7 @@ class AsyncDriverClient(
 
         # add default handler
         if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter("%(name)s - %(levelname)s - %(message)s"))
+            handler = RichHandler()
             self.logger.addHandler(handler)
 
     async def call_async(self, method, *args):
