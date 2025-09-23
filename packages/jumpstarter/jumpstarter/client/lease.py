@@ -85,7 +85,18 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         :raises TimeoutError: if lease is not ready after timeout
         """
         if self.name:
-            logger.debug("Using existing lease %s", self.name)
+            logger.debug("using existing lease via env or flag %s", self.name)
+            existing_lease = await self.get()
+            if self.selector is not None and existing_lease.selector != self.selector:
+                logger.warning(
+                    "Existing lease from env or flag %s has selector '%s' but requested selector is '%s'. "
+                    "Creating a new lease instead",
+                    self.name,
+                    existing_lease.selector,
+                    self.selector,
+                )
+                self.name = None
+                await self._create()
         else:
             await self._create()
         return await self._acquire()

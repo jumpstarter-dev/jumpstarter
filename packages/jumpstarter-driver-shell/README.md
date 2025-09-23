@@ -63,3 +63,53 @@ methods will be generated dynamically, and they will be available as follows:
 
     :returns: A tuple(stdout, stderr, return_code)
 ```
+
+## CLI Usage
+
+The shell driver also provides a CLI when using `jmp shell`. All configured methods become available as CLI commands, except for methods starting with `_` which are considered private and hidden from the end user:
+
+```console
+$ jmp shell --exporter shell-exporter
+$ j shell
+Usage: j shell [OPTIONS] COMMAND [ARGS]...
+
+  Shell command executor
+
+Commands:
+  env_var  Execute the env_var shell method
+  ls       Execute the ls shell method
+  method2  Execute the method2 shell method
+  method3  Execute the method3 shell method
+```
+
+### CLI Command Usage
+
+Each configured method becomes a CLI command with the following options:
+
+```console
+$ j shell ls --help
+Usage: j shell ls [OPTIONS] [ARGS]...
+
+  Execute the ls shell method
+
+Options:
+  -e, --env TEXT  Environment variables in KEY=VALUE format
+  --help          Show this message and exit.
+```
+
+### Examples
+
+```console
+# Execute simple commands
+$ j shell ls
+file1.txt  file2.txt  directory/
+
+# Pass arguments to shell methods
+$ j shell method3 "first arg" "second arg"
+Hello World first arg
+Hello World second arg
+
+# Set environment variables
+$ j shell env_var arg1 arg2 --env ENV_VAR=myvalue
+arg1,arg2,myvalue
+```

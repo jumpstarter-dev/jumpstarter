@@ -1,7 +1,8 @@
 # Network drivers
 
 `jumpstarter-driver-network` provides functionality for interacting with network
-servers and connections.
+servers and connections, redirecting DUT network services to the client handling
+the lease.
 
 ## Installation
 
@@ -19,8 +20,18 @@ export:
   network:
     type: jumpstarter_driver_network.driver.TcpNetwork
     config:
-      # Add required parameters here
+      host: 192.168.1.2
+      port: 5201
+      enable_address: true
 ```
+
+### Config parameters
+
+| Parameter     | Description                                         | Type  | Required | Default            |
+| ------------- | --------------------------------------------------- | ----- | -------- | ------------------ |
+| host          | Hostname or IP address of the DUT                   | str   | yes      |                    |
+| port          | Port number of the DUT service to connect to        | int   | yes      |                    |
+| enable_address | Whether to enable address mode (reporting the address of the client) | bool  | no | true   |
 
 ## API Reference
 
