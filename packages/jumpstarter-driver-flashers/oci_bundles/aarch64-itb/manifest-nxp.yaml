@@ -31,7 +31,7 @@ spec:
 #   file: my.dtb
 #   address: "0x88000000"
   kernel:
-    file: data/flasher-buildroot.itb
+    file: data/flasher-fedora.itb
     address: "0x90000000"
 
   dtb:
