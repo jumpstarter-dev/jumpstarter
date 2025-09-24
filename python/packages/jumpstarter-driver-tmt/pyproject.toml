@@ -1,0 +1,44 @@
+[project]
+name = "jumpstarter-driver-tmt"
+dynamic = ["version", "urls"]
+description = "Add your description here"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Miguel Angel Ajo Pelayo", email = "miguelangel@ajo.es" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.10.0",
+    "jumpstarter",
+    "jumpstarter-driver-network",
+    "jumpstarter-driver-composite",
+]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = ""
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_tmt"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]
