@@ -28,7 +28,7 @@ else
 	mkimage -f fedora.its data/flasher-fedora.itb
 	rm -rf "${BUILDROOT_DIR}/overlay"
 
-	# replace kernel with kernel-automotive and rebuild
+	# replace kernel with kernel-automotive and rebuild. Beware the $BUILDROOT_DIR/output/target is reused!
 	cp -R overlay "${BUILDROOT_DIR}"
 	./kernel_automotive.sh "${BUILDROOT_DIR}/overlay"
 	( cd "${BUILDROOT_DIR}" && make )

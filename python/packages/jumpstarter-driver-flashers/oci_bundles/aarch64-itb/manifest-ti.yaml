@@ -7,6 +7,9 @@ spec:
   link: "https://www.ti.com/tool/PROCESSOR-SDK-J784S4"
 # boot using the default configuration built-in flasher.itb, j784s4
 # you can boot included alternative configurations, e.g. for SK-AM69 use "bootm 0x90000000#am69"
+# NOTE that for bootm to work with larger kernels (like the fedora kernel in flasher-fedora.itb require larger CONFIG_BOOTM_LEN
+# Using workaround to extract images manually and boot using booti instead
+# FIXME beware - this relies on kernel being the first image and header being 0xd4 bytes large.
   bootcmd: "bootm 0x90000000"
   shelltype: "busybox"
   login:
@@ -41,8 +44,8 @@ spec:
     address: "0x88000000"
     variants:
       j784s4:
-        bootcmd: "bootm 0x90000000#j784s4"
+        bootcmd: "unlz4 0x900000d4 0x80000000 0x8000000; imxtract 0x90000000 fdt-j784s4 0x88000000; imxtract 0x90000000 initrd 0x89000000; booti 0x80000000 0x89000000:0x7000000 0x88000000"
       am69:
-        bootcmd: "bootm 0x90000000#am69"
+        bootcmd: "unlz4 0x900000d4 0x80000000 0x8000000; imxtract 0x90000000 fdt-am69 0x88000000; imxtract 0x90000000 initrd 0x89000000; booti 0x80000000 0x89000000:0x7000000 0x88000000"
       custom:
-        bootcmd: "bootm 0x90000000:kernel 0x90000000:initrd 0x88000000"
+        bootcmd: "unlz4 0x900000d4 0x80000000 0x8000000; imxtract 0x90000000 initrd 0x89000000; booti 0x80000000 0x89000000:0x7000000 0x88000000"
