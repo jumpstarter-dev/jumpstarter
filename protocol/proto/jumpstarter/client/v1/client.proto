@@ -68,6 +68,16 @@ message Exporter {
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
   map<string, string> labels = 2;
   bool online = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+  ExporterStatus status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+enum ExporterStatus {
+  EXPORTER_STATUS_UNSPECIFIED = 0;
+  EXPORTER_STATUS_OFFLINE = 1;
+  EXPORTER_STATUS_AVAILABLE = 2;
+  EXPORTER_STATUS_BEFORE_LEASE_HOOK = 3;
+  EXPORTER_STATUS_LEASE_READY = 4;
+  EXPORTER_STATUS_AFTER_LEASE_HOOK = 5;
 }
 
 message Lease {
