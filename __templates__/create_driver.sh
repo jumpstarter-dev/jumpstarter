@@ -11,7 +11,7 @@ set -euxv
 if [ "$#" -ne 4 ]; then
     echo "Illegal number of parameters"
     echo "Usage: create_driver.sh <driver_name> <driver_class> <author_name> <author_email>"
-    echo "Example: create_driver.sh mydriver MyDriver \"John Something\" john@somewhere.com"
+    echo "Example: create_driver.sh my-driver MyDriver \"John Something\" john@somewhere.com"
     exit 1
 fi
 
@@ -19,6 +19,9 @@ export DRIVER_NAME=$1
 export DRIVER_CLASS=$2
 export AUTHOR_NAME=$3
 export AUTHOR_EMAIL=$4
+
+# Convert hyphens to underscores for Python module name
+export DRIVER_MODULE_NAME=$(echo "${DRIVER_NAME}" | sed 's/-/_/g')
 
 # MacOS has a different syntax for sed -i, we either use gsed (GNU sed) or apply the right -i syntax
 if command -v gsed &> /dev/null; then
@@ -31,7 +34,7 @@ fi
 
 # create the driver directory
 DRIVER_DIRECTORY=packages/jumpstarter-driver-${DRIVER_NAME}
-MODULE_DIRECTORY=${DRIVER_DIRECTORY}/jumpstarter_driver_${DRIVER_NAME}
+MODULE_DIRECTORY=${DRIVER_DIRECTORY}/jumpstarter_driver_${DRIVER_MODULE_NAME}
 # create the module directories
 mkdir -p ${MODULE_DIRECTORY}
 mkdir -p ${DRIVER_DIRECTORY}/examples
@@ -61,7 +64,7 @@ Example configuration:
 ```yaml
 export:
   ${DRIVER_NAME}:
-    type: jumpstarter_driver_${DRIVER_NAME}.driver.${DRIVER_CLASS}
+    type: jumpstarter_driver_${DRIVER_MODULE_NAME}.driver.${DRIVER_CLASS}
     config:
       # Add required config parameters here
 ```
@@ -71,7 +74,7 @@ export:
 Add API documentation here.
 EOF
 # Need to expand variables after EOF to prevent early expansion
-$sed_cmd "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g" "${README_FILE}"
+$sed_cmd "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g; s/\${DRIVER_MODULE_NAME}/${DRIVER_MODULE_NAME}/g" "${README_FILE}"
 echo "README.md file content:"
 cat "${README_FILE}"
 
