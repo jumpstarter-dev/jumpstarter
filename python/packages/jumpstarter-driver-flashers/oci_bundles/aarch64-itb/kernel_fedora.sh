@@ -78,15 +78,16 @@ done
 echo "updating module deps ..."
 depmod --errsyms --filesyms /lib/modules/$KVER/System.map --basedir $1 $KVER
 
-# relying on udev now
-#echo "adding modules start-up script to overlay ..."
-#script=$ODIR/etc/init.d/S01modules
-#cat >$script <<EOF
-##!/bin/sh
-#
-#if [ "\$1" = "start" ]; then
-#$(cat ./kernel-fedora/modlist)
-#fi
-#EOF
-#chmod +x $script
+echo "adding modules start-up script to overlay ..."
+script=$ODIR/etc/init.d/S01modules
+cat >$script <<EOF
+#!/bin/sh
+
+if [ "\$1" = "start" ]; then
+  if dmesg | head | grep -i S32G-VNP-RDB3; then
+    modprobe micrel
+  fi
+fi
+EOF
+chmod +x $script
 
