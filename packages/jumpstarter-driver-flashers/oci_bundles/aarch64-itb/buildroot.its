@@ -51,6 +51,17 @@
 				algo = "sha256";
 			};
 		};
+		fdt-s32g3 {
+			description = "DTB NXP S32G-VNP-RDB3";
+			data = /incbin/("./s32g3.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x88000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
 	};
 
 	configurations {
@@ -68,6 +79,15 @@
 			description = "Boot TI SK-AM69";
 			kernel = "kernel";
 			fdt = "fdt-am69";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+		s32g3 {
+			description = "Boot NXP S32G-VNP-RDB3";
+			kernel = "kernel";
+			fdt = "fdt-s32g3";
 			ramdisk = "initrd";
 			hash {
 				algo = "sha256";
