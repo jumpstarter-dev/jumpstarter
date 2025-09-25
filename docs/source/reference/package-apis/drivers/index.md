@@ -80,6 +80,7 @@ General-purpose utility drivers:
 
 * **[Shell](shell.md)** (`jumpstarter-driver-shell`) - Shell command execution
 * **[TMT](tmt.md)** (`jumpstarter-driver-tmt`) - TMT (Test Management Tool) wrapper driver
+* **[SSH](ssh.md)** (`jumpstarter-driver-ssh`) - SSH wrapper driver
 
 ```{toctree}
 :hidden:
@@ -101,6 +102,7 @@ gpiod.md
 ridesx.md
 sdwire.md
 shell.md
+ssh.md
 snmp.md
 tasmota.md
 tmt.md
