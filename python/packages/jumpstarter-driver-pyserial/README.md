@@ -21,15 +21,17 @@ export:
     config:
       url: "/dev/ttyUSB0"
       baudrate: 115200
+      cps: 10  # Optional: throttle to 10 characters per second
 ```
 
 ### Config parameters
 
-| Parameter      | Description                                                                                                                                          | Type | Required | Default |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- | ------- |
-| url            | The serial port to connect to, in [pyserial format](https://pyserial.readthedocs.io/en/latest/url_handlers.html)                                     | str  | yes      |         |
-| baudrate       | The baudrate to use for the serial connection                                                                                                        | int  | no       | 115200  |
-| check_existing | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool | no       | True    |
+| Parameter      | Description                                                                                                                                          | Type  | Required | Default |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------- | ------- |
+| url            | The serial port to connect to, in [pyserial format](https://pyserial.readthedocs.io/en/latest/url_handlers.html)                                     | str   | yes      |         |
+| baudrate       | The baudrate to use for the serial connection                                                                                                        | int   | no       | 115200  |
+| check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
+| cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 
 ## API Reference
 
