@@ -1,0 +1,27 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+// Shared types used across multiple Jumpstarter services
+
+// Exporter status information
+enum ExporterStatus {
+  EXPORTER_STATUS_UNSPECIFIED = 0;       // Unspecified exporter status
+  EXPORTER_STATUS_OFFLINE = 1;           // Exporter is offline
+  EXPORTER_STATUS_AVAILABLE = 2;         // Exporter is available to be leased
+  EXPORTER_STATUS_BEFORE_LEASE_HOOK = 3; // Exporter is executing before lease hook(s)
+  EXPORTER_STATUS_LEASE_READY = 4;       // Exporter is leased and ready to accept commands
+  EXPORTER_STATUS_AFTER_LEASE_HOOK = 5;  // Exporter is executing after lease hook(s)
+  EXPORTER_STATUS_ERROR = 6;             // Exporter is in an error state and cannot accept leases
+}
+
+// Source of log stream messages
+enum LogSource {
+  LOG_SOURCE_UNSPECIFIED = 0;       // Unspecified log source
+  LOG_SOURCE_DRIVER = 1;            // Driver/device logs
+  LOG_SOURCE_BEFORE_LEASE_HOOK = 2; // beforeLease hook execution logs
+  LOG_SOURCE_AFTER_LEASE_HOOK = 3;  // afterLease hook execution logs
+  LOG_SOURCE_SYSTEM = 4;            // System/exporter logs
+}
