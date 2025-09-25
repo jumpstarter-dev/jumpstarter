@@ -14,8 +14,7 @@ spec:
     prompt: "#"
   default_target: "usd"
   targets:
-    usd: "/sys/devices/platform/soc\@0/402f0000.mmc"
-#    usd: "/sys/class/block/mmcblk0"
+    usd: "/dev/mmcblk0"
 # removed for now, even if it's our documented procedure, if
 # the board is configured to boot from sd or emmc (and not SPI), and
 # the flashing of the final image fails, it will result in an un-bootable
@@ -32,7 +31,7 @@ spec:
 #   file: my.dtb
 #   address: "0x88000000"
   kernel:
-    file: data/flasher-buildroot.itb
+    file: data/flasher-fedora.itb
     address: "0x90000000"
 
   dtb:
