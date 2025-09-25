@@ -23,7 +23,7 @@ service ControllerService {
   rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
 
   // Exporter status report
-  // Allows exporters to report their own status
+  // Allows exporters to report their own status to the controller
   rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 
   // Exporter listening
@@ -116,7 +116,7 @@ message AuditStreamRequest {
 
 message ReportStatusRequest {
   ExporterStatus status = 1;
-  optional string status_message = 2;  // Optional human-readable status detail
+  optional string message = 2;  // Optional human-readable status message
 }
 
 message ReportStatusResponse {}
@@ -130,12 +130,7 @@ service ExporterService {
   rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
   rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
   rpc Reset(ResetRequest) returns (ResetResponse);
-
-  // Get current exporter status
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
-
-  // Stream status updates
-  rpc StatusStream(StatusStreamRequest) returns (stream StatusStreamResponse);
 }
 
 message GetReportResponse {
@@ -225,13 +220,5 @@ message GetStatusRequest {}
 
 message GetStatusResponse {
   ExporterStatus status = 1;
-  optional string status_message = 2;
-}
-
-message StatusStreamRequest {}
-
-message StatusStreamResponse {
-  ExporterStatus status = 1;
-  optional string status_message = 2;
-  optional google.protobuf.Timestamp timestamp = 3;
+  optional string message = 2;
 }

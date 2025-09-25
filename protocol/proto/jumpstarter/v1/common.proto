@@ -8,13 +8,14 @@ package jumpstarter.v1;
 
 // Exporter status information
 enum ExporterStatus {
-  EXPORTER_STATUS_UNSPECIFIED = 0;       // Unspecified exporter status
-  EXPORTER_STATUS_OFFLINE = 1;           // Exporter is offline
-  EXPORTER_STATUS_AVAILABLE = 2;         // Exporter is available to be leased
-  EXPORTER_STATUS_BEFORE_LEASE_HOOK = 3; // Exporter is executing before lease hook(s)
-  EXPORTER_STATUS_LEASE_READY = 4;       // Exporter is leased and ready to accept commands
-  EXPORTER_STATUS_AFTER_LEASE_HOOK = 5;  // Exporter is executing after lease hook(s)
-  EXPORTER_STATUS_ERROR = 6;             // Exporter is in an error state and cannot accept leases
+  EXPORTER_STATUS_UNSPECIFIED = 0;              // Unspecified exporter status
+  EXPORTER_STATUS_OFFLINE = 1;                  // Exporter is offline
+  EXPORTER_STATUS_AVAILABLE = 2;                // Exporter is available to be leased
+  EXPORTER_STATUS_BEFORE_LEASE_HOOK = 3;        // Exporter is executing before lease hook(s)
+  EXPORTER_STATUS_LEASE_READY = 4;              // Exporter is leased and ready to accept commands
+  EXPORTER_STATUS_AFTER_LEASE_HOOK = 5;         // Exporter is executing after lease hook(s)
+  EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED = 6; // Exporter before lease hook failed
+  EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED = 7;  // Exporter after lease hook failed
 }
 
 // Source of log stream messages
