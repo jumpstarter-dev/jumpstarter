@@ -61,7 +61,7 @@ def _handle_child(config):
                         # Terminate exporter. SIGHUP waits until current lease is let go. Later SIGTERM still overrides
                         if received_signal != signal.SIGHUP:
                             signal_handled = True
-                        exporter.stop(wait_for_lease_exit=received_signal == signal.SIGHUP)
+                        exporter.stop(wait_for_lease_exit=received_signal == signal.SIGHUP, should_unregister=True)
 
                 # Start signal handler first, then create exporter
         async with create_task_group() as signal_tg:
