@@ -25,7 +25,11 @@ class RideSXDriver(Driver):
             raise ConfigurationError("'serial' instance is required")
 
         Path(self.storage_dir).mkdir(parents=True, exist_ok=True)
-        self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.storage_dir})
+        self.children["storage"] = Opendal(
+            scheme="fs",
+            kwargs={"root": self.storage_dir},
+            remove_created_on_close=True  # Clean up temporary firmware files on close
+        )
 
     @classmethod
     def client(cls) -> str:
