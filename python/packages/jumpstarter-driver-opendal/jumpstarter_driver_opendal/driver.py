@@ -23,6 +23,7 @@ from jumpstarter.driver import Driver, export
 class Opendal(Driver):
     scheme: str
     kwargs: dict[str, str]
+    remove_created_on_close: bool = False
 
     _operator: AsyncOperator = field(init=False)
     _fds: dict[UUID, AsyncFile] = field(init=False, default_factory=dict)
@@ -246,7 +247,54 @@ class Opendal(Driver):
             if self._created_dirs:
                 self.logger.debug("Created directories: %s", sorted(self._created_dirs))
 
+        # Remove created resources if requested
+        if self.remove_created_on_close:
+            self._cleanup_created_resources()
+
         super().close()
+
+    def _cleanup_created_resources(self):
+        """Remove all created files and directories."""
+        # Only support filesystem cleanup for now (scheme == "fs")
+        if self.scheme != "fs":
+            self.logger.warning(f"Cleanup not supported for scheme '{self.scheme}' - only 'fs' is supported")
+            return
+
+        import os
+        import shutil
+
+        # Get root path from kwargs
+        root_path = self.kwargs.get("root", "/")
+
+        # Remove files first
+        for file_path in self._created_files:
+            try:
+                full_path = os.path.join(root_path, file_path.lstrip("/"))
+                if os.path.exists(full_path) and os.path.isfile(full_path):
+                    os.remove(full_path)
+                    self.logger.debug(f"Removed created file: {file_path}")
+                else:
+                    self.logger.debug(f"File already removed or not found: {file_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to remove file {file_path}: {e}")
+
+        # Remove directories (in reverse order to handle nested dirs)
+        for dir_path in sorted(self._created_dirs, reverse=True):
+            try:
+                full_path = os.path.join(root_path, dir_path.lstrip("/"))
+                if os.path.exists(full_path) and os.path.isdir(full_path):
+                    # Only remove if empty
+                    try:
+                        os.rmdir(full_path)
+                        self.logger.debug(f"Removed created directory: {dir_path}")
+                    except OSError:
+                        # Directory not empty, try to remove recursively if it was created by us
+                        shutil.rmtree(full_path)
+                        self.logger.debug(f"Removed created directory tree: {dir_path}")
+                else:
+                    self.logger.debug(f"Directory already removed or not found: {dir_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to remove directory {dir_path}: {e}")
 
 
 class FlasherInterface(metaclass=ABCMeta):
