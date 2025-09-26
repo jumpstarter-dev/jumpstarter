@@ -183,7 +183,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: exporter.Generation,
 			Reason:             "Seen",
-			Message:            "Lase seen less than 1 minute ago",
+			Message:            "Last seen less than 1 minute ago",
 		})
 		// marking the exporter online, requeue after 30 seconds
 		requeueAfter = time.Second * 30
