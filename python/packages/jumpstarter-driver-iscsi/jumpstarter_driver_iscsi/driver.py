@@ -46,6 +46,7 @@ class ISCSI(Driver):
     target_name: str = "target1"
     host: str = field(default="")
     port: int = 3260
+    remove_created_on_close: bool = False  # Keep disk images persistent by default
 
     _rtsroot: Optional[RTSRoot] = field(init=False, default=None)
     _target: Optional[Target] = field(init=False, default=None)
@@ -60,7 +61,11 @@ class ISCSI(Driver):
 
         os.makedirs(self.root_dir, exist_ok=True)
 
-        self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
+        self.children["storage"] = Opendal(
+            scheme="fs",
+            kwargs={"root": self.root_dir},
+            remove_created_on_close=self.remove_created_on_close
+        )
         self.storage = self.children["storage"]
 
         if self.host == "":

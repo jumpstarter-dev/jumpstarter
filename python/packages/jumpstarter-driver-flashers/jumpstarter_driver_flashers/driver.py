@@ -31,11 +31,11 @@ class BaseFlasher(Driver):
         # Ensure required children are present if not already instantiated
         # in configuration
         if "tftp" not in self.children:
-            self.children["tftp"] = Tftp(root_dir=self.tftp_dir)
+            self.children["tftp"] = Tftp(root_dir=self.tftp_dir, remove_created_on_close=True)
         self.tftp = self.children["tftp"]
 
         if "http" not in self.children:
-            self.children["http"] = HttpServer(root_dir=self.http_dir)
+            self.children["http"] = HttpServer(root_dir=self.http_dir, remove_created_on_close=True)
         self.http = self.children["http"]
 
         # Ensure required children are present, the following are not auto-created

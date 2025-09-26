@@ -41,18 +41,24 @@ export:
     config:
       root_dir: "/var/lib/iscsi"
       target_name: "demo"
+      remove_created_on_close: false  # Keep disk images persistent (default)
       # When size_mb is 0 a pre-existing file size is used.
 ```
 
 ### Config parameters
 
-| Parameter   | Description                                                                  | Type | Required | Default                           |
-| ----------- | ---------------------------------------------------------------------------- | ---- | -------- | --------------------------------- |
-| `root_dir`  | Directory where image files will be stored.                                 | str  | no       | `/var/lib/iscsi`                  |
-| `iqn_prefix`| IQN prefix to use when building the target IQN.                              | str  | no       | `iqn.2024-06.dev.jumpstarter`     |
-| `target_name`| The target name appended to the IQN prefix.                                 | str  | no       | `target1`                         |
-| `host`      | IP address to bind the target to.  Empty string will auto-detect default IP. | str  | no       | *auto*                            |
-| `port`      | TCP port the target listens on.                                              | int  | no       | `3260`                            |
+| Parameter               | Description                                                      | Type | Required | Default                       |
+| ----------------------- | ---------------------------------------------------------------- | ---- | -------- | ----------------------------- |
+| `root_dir`              | Directory where image files will be stored                      | str  | no       | `/var/lib/iscsi`              |
+| `iqn_prefix`            | IQN prefix to use when building the target IQN                  | str  | no       | `iqn.2024-06.dev.jumpstarter` |
+| `target_name`           | The target name appended to the IQN prefix                      | str  | no       | `target1`                     |
+| `host`                  | IP address to bind the target to. Empty string will auto-detect | str  | no       | *auto*                        |
+| `port`                  | TCP port the target listens on                                  | int  | no       | `3260`                        |
+| `remove_created_on_close`| Automatically remove created files/directories when driver closes| bool | no       | false                         |
+
+### File Management
+
+The iSCSI server driver automatically tracks disk image files and directories created during the session. By default, `remove_created_on_close` is set to `false` to preserve disk images that are typically reused across test sessions. Set to `true` if you want temporary disk images to be cleaned up automatically.
 
 ## API Reference
 

@@ -39,6 +39,7 @@ class Tftp(Driver):
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default="")
     port: int = 69
+    remove_created_on_close: bool = True  # Clean up temporary boot files by default
     server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: Optional[threading.Thread] = field(init=False, default=None)
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
@@ -51,7 +52,11 @@ class Tftp(Driver):
 
         os.makedirs(self.root_dir, exist_ok=True)
 
-        self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
+        self.children["storage"] = Opendal(
+            scheme="fs",
+            kwargs={"root": self.root_dir},
+            remove_created_on_close=self.remove_created_on_close
+        )
         self.storage = self.children["storage"]
 
         if self.host == "":
