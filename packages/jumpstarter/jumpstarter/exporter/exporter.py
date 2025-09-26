@@ -7,11 +7,9 @@ from typing import Self
 import grpc
 from anyio import (
     AsyncContextManagerMixin,
-    CancelScope,
     connect_unix,
     create_memory_object_stream,
     create_task_group,
-    move_on_after,
     sleep,
 )
 from anyio.abc import TaskGroup
@@ -61,30 +59,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
         try:
             yield self
+            # no need to unregister, it will be done by the lease
+            # this context manager is kept because it's likely to be used on the hooks
+            # mechanism, otherwise remove it later now it's a no-op
+            # TODO(mangelajo): remove this if not necessary anymore once hooks are implemented
         finally:
-            try:
-                if self.registered:
-                    logger.info("Unregistering exporter with controller")
-                    try:
-                        with move_on_after(10):  # 10 second timeout
-                            channel = await self.channel_factory()
-                            try:
-                                controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
-                                await controller.Unregister(
-                                    jumpstarter_pb2.UnregisterRequest(
-                                        reason="Exporter shutdown",
-                                    )
-                                )
-                                logger.info("Controller unregistration completed successfully")
-                            finally:
-                                with CancelScope(shield=True):
-                                    await channel.close()
-                    except Exception as e:
-                        logger.error("Error during controller unregistration: %s", e, exc_info=True)
-
-            except Exception as e:
-                logger.error("Error during exporter cleanup: %s", e, exc_info=True)
-                # Don't re-raise to avoid masking the original exception
+            logger.info("Exporter is exiting")
 
     async def __handle(self, path, endpoint, token, tls_config, grpc_options):
         try:
