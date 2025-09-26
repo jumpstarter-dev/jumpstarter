@@ -9,6 +9,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "jumpstarter/v1/kubernetes.proto";
+import "jumpstarter/v1/common.proto";
 
 // A service where a exporter can connect to make itself available
 service ControllerService {
@@ -20,6 +21,10 @@ service ControllerService {
   // we will eventually have a mechanism to tell the router this token
   // has been invalidated
   rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+
+  // Exporter status report
+  // Allows exporters to report their own status to the controller
+  rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 
   // Exporter listening
   // Returns stream tokens for accepting incoming client connections
@@ -59,7 +64,7 @@ message RegisterRequest {
 }
 
 message DriverInstanceReport {
-  string uuid = 1; // a unique id within the expoter
+  string uuid = 1; // a unique id within the exporter
   optional string parent_uuid = 2; // optional, if device has a parent device
   map<string, string> labels = 3;
 }
@@ -109,6 +114,13 @@ message AuditStreamRequest {
   string message = 4;
 }
 
+message ReportStatusRequest {
+  ExporterStatus status = 1;
+  optional string message = 2;  // Optional human-readable status message
+}
+
+message ReportStatusResponse {}
+
 // A service a exporter can share locally to be used without a server
 // Channel/Call credentials are used to authenticate the client, and routing to the right exporter
 service ExporterService {
@@ -118,6 +130,7 @@ service ExporterService {
   rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
   rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
   rpc Reset(ResetRequest) returns (ResetResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
 }
 
 message GetReportResponse {
@@ -163,6 +176,7 @@ message LogStreamResponse {
   string uuid = 1;
   string severity = 2;
   string message = 3;
+  optional LogSource source = 4;  // New optional field
 }
 
 message ResetRequest {}
@@ -200,4 +214,11 @@ message ListLeasesRequest {}
 
 message ListLeasesResponse {
   repeated string names = 1;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  ExporterStatus status = 1;
+  optional string message = 2;
 }
