@@ -5,3 +5,5 @@ config:
   scheme: "fs"
   kwargs:
     root: "/tmp/jumpstarter"
+  # Optional: automatically remove created files/directories when driver closes
+  remove_created_on_close: false

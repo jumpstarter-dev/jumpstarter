@@ -18,6 +18,52 @@ Example configuration:
 :language: yaml
 ```
 
+### Configuration Parameters
+
+- **`scheme`** (required): The storage service type (e.g., "fs", "s3", "gcs"). See [OpenDAL services](https://docs.rs/opendal/latest/opendal/services/index.html) for supported options.
+- **`kwargs`** (required): Service-specific configuration parameters passed to the OpenDAL operator.
+- **`remove_created_on_close`** (optional, default: `false`): When enabled, automatically removes all files and directories created during the session when the driver is closed.
+
+### File/Directory Tracking and Cleanup
+
+The OpenDAL driver tracks all files and directories created during a session:
+
+- **File Creation**: Files opened in write mode (`"wb"`, `"w"`, `"ab"`, `"a"`) are tracked as created
+- **Directory Creation**: Directories created via `create_dir()` are tracked
+- **Cleanup Behavior**: When `remove_created_on_close: true`, all tracked files and directories are automatically removed when the driver closes
+- **Cleanup Support**: Currently only supports filesystem cleanup (`scheme: "fs"`)
+
+#### Tracking API
+
+The driver provides methods to inspect what has been created:
+
+```python
+# Get list of created files
+created_files = await driver.get_created_files()
+
+# Get list of created directories
+created_dirs = await driver.get_created_directories()
+
+# Get both as a tuple: (directories, files)
+dirs, files = await driver.get_all_created_resources()
+```
+
+#### Use Cases
+
+**Temporary File Management:**
+```yaml
+# Enable cleanup for temporary storage
+remove_created_on_close: true
+```
+
+**Persistent Storage:**
+```yaml
+# Disable cleanup to preserve files (default)
+remove_created_on_close: false
+```
+
+**Note:** Pre-existing files that are written to are treated as "created" since they may be remnants from failed cleanup operations.
+
 ## API Reference
 
 ### Examples

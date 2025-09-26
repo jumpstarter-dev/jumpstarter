@@ -118,5 +118,61 @@ def test_opendal_tracking_methods(tmp_path, unused_tcp_port):
         assert filename in created_files
         assert created_dirs == []
 
-
         client.stop()
+
+
+def test_opendal_cleanup_on_close(tmp_path):
+    """Test that OpenDAL driver can optionally remove created files on close."""
+    from jumpstarter_driver_opendal.driver import Opendal
+
+    # Create two separate directories
+    cleanup_dir = tmp_path / "cleanup_test"
+    no_cleanup_dir = tmp_path / "no_cleanup_test"
+    cleanup_dir.mkdir()
+    no_cleanup_dir.mkdir()
+
+    # Test files
+    cleanup_filename = "cleanup_test.txt"
+    no_cleanup_filename = "no_cleanup_test.txt"
+
+    # Test 1: Driver with cleanup enabled
+    cleanup_driver = Opendal(
+        scheme="fs",
+        kwargs={"root": str(cleanup_dir)},
+        remove_created_on_close=True
+    )
+
+    # Manually create a file to simulate tracking
+    cleanup_driver._created_files.add(cleanup_filename)
+    test_file_path = cleanup_dir / cleanup_filename
+    test_file_path.write_text("test content")
+
+    # Verify file exists
+    assert test_file_path.exists()
+
+    # Close driver (should trigger cleanup)
+    cleanup_driver.close()
+
+    # Verify file was removed
+    assert not test_file_path.exists(), "File should have been removed by cleanup"
+
+    # Test 2: Driver with cleanup disabled (default)
+    no_cleanup_driver = Opendal(
+        scheme="fs",
+        kwargs={"root": str(no_cleanup_dir)},
+        remove_created_on_close=False
+    )
+
+    # Manually create a file to simulate tracking
+    no_cleanup_driver._created_files.add(no_cleanup_filename)
+    test_file_path2 = no_cleanup_dir / no_cleanup_filename
+    test_file_path2.write_text("test content")
+
+    # Verify file exists
+    assert test_file_path2.exists()
+
+    # Close driver (should NOT trigger cleanup)
+    no_cleanup_driver.close()
+
+    # Verify file still exists
+    assert test_file_path2.exists(), "File should remain without cleanup"
