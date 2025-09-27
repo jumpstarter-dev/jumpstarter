@@ -3,15 +3,16 @@ from unittest.mock import patch
 import click
 import pytest
 from click.testing import CliRunner
-
-from jumpstarter_cli_admin.install import (
-    _configure_endpoints,
+from jumpstarter_kubernetes import (
     _create_kind_cluster,
     _create_minikube_cluster,
     _delete_kind_cluster,
     _delete_minikube_cluster,
     _handle_cluster_creation,
-    _handle_cluster_deletion,
+)
+
+from jumpstarter_cli_admin.install import (
+    _configure_endpoints,
     _validate_cluster_type,
     _validate_prerequisites,
     get_ip_generic,
@@ -125,7 +126,7 @@ class TestClusterCreation:
             )
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install._create_kind_cluster")
+    @patch("jumpstarter_kubernetes.cluster._create_kind_cluster")
     async def test_handle_cluster_creation_kind(self, mock_create_kind):
         await _handle_cluster_creation(
             create_cluster=True,
@@ -138,10 +139,10 @@ class TestClusterCreation:
             minikube="minikube",
         )
 
-        mock_create_kind.assert_called_once_with("kind", "test-cluster", "--verbosity=1", False)
+        mock_create_kind.assert_called_once_with("kind", "test-cluster", "--verbosity=1", False, None)
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install._create_minikube_cluster")
+    @patch("jumpstarter_kubernetes.cluster._create_minikube_cluster")
     async def test_handle_cluster_creation_minikube(self, mock_create_minikube):
         await _handle_cluster_creation(
             create_cluster=True,
@@ -154,11 +155,11 @@ class TestClusterCreation:
             minikube="minikube",
         )
 
-        mock_create_minikube.assert_called_once_with("minikube", "test-cluster", "--memory=4096", False)
+        mock_create_minikube.assert_called_once_with("minikube", "test-cluster", "--memory=4096", False, None)
 
     @pytest.mark.asyncio
     @patch("jumpstarter_cli_admin.install.click.confirm")
-    @patch("jumpstarter_cli_admin.install._create_kind_cluster")
+    @patch("jumpstarter_kubernetes.cluster._create_kind_cluster")
     async def test_handle_cluster_creation_force_recreate_confirmed(self, mock_create_kind, mock_confirm):
         mock_confirm.return_value = True
 
@@ -174,7 +175,7 @@ class TestClusterCreation:
         )
 
         mock_confirm.assert_called_once()
-        mock_create_kind.assert_called_once_with("kind", "test-cluster", "", True)
+        mock_create_kind.assert_called_once_with("kind", "test-cluster", "", True, None)
 
     @pytest.mark.asyncio
     @patch("jumpstarter_cli_admin.install.click.confirm")
@@ -198,8 +199,8 @@ class TestSpecificClusterCreation:
     """Test specific cluster creation functions."""
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.kind_installed")
-    @patch("jumpstarter_cli_admin.install.create_kind_cluster")
+    @patch("jumpstarter_kubernetes.cluster.kind_installed")
+    @patch("jumpstarter_kubernetes.cluster.create_kind_cluster")
     async def test_create_kind_cluster_success(self, mock_create_kind, mock_kind_installed):
         mock_kind_installed.return_value = True
         mock_create_kind.return_value = True
@@ -209,7 +210,7 @@ class TestSpecificClusterCreation:
         mock_create_kind.assert_called_once_with("kind", "test-cluster", ["--verbosity=1"], False)
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.kind_installed")
+    @patch("jumpstarter_kubernetes.cluster.kind_installed")
     async def test_create_kind_cluster_not_installed(self, mock_kind_installed):
         mock_kind_installed.return_value = False
 
@@ -217,8 +218,8 @@ class TestSpecificClusterCreation:
             await _create_kind_cluster("kind", "test-cluster", "", False)
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.kind_installed")
-    @patch("jumpstarter_cli_admin.install.create_kind_cluster")
+    @patch("jumpstarter_kubernetes.cluster.kind_installed")
+    @patch("jumpstarter_kubernetes.cluster.create_kind_cluster")
     async def test_create_kind_cluster_failure(self, mock_create_kind, mock_kind_installed):
         mock_kind_installed.return_value = True
         mock_create_kind.side_effect = RuntimeError("Creation failed")
@@ -227,8 +228,8 @@ class TestSpecificClusterCreation:
             await _create_kind_cluster("kind", "test-cluster", "", False)
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.minikube_installed")
-    @patch("jumpstarter_cli_admin.install.create_minikube_cluster")
+    @patch("jumpstarter_kubernetes.cluster.minikube_installed")
+    @patch("jumpstarter_kubernetes.cluster.create_minikube_cluster")
     async def test_create_minikube_cluster_success(self, mock_create_minikube, mock_minikube_installed):
         mock_minikube_installed.return_value = True
         mock_create_minikube.return_value = True
@@ -238,7 +239,7 @@ class TestSpecificClusterCreation:
         mock_create_minikube.assert_called_once_with("minikube", "test-cluster", ["--memory=4096"], False)
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.minikube_installed")
+    @patch("jumpstarter_kubernetes.cluster.minikube_installed")
     async def test_create_minikube_cluster_not_installed(self, mock_minikube_installed):
         mock_minikube_installed.return_value = False
 
@@ -302,14 +303,12 @@ class TestInstallCommand:
     @patch("jumpstarter_cli_admin.install.helm_installed")
     @patch("jumpstarter_cli_admin.install._validate_cluster_type")
     @patch("jumpstarter_cli_admin.install._configure_endpoints")
-    @patch("jumpstarter_cli_admin.install._handle_cluster_creation")
     @patch("jumpstarter_cli_admin.install.install_helm_chart")
     @patch("jumpstarter_cli_admin.install.get_latest_compatible_controller_version")
     def test_install_command_success_minimal(
         self,
         mock_get_version,
         mock_install_helm,
-        mock_handle_cluster,
         mock_configure_endpoints,
         mock_validate_cluster,
         mock_helm_installed,
@@ -344,14 +343,12 @@ class TestInstallCommand:
     @patch("jumpstarter_cli_admin.install.helm_installed")
     @patch("jumpstarter_cli_admin.install._validate_cluster_type")
     @patch("jumpstarter_cli_admin.install._configure_endpoints")
-    @patch("jumpstarter_cli_admin.install._handle_cluster_creation")
     @patch("jumpstarter_cli_admin.install.install_helm_chart")
     @patch("jumpstarter_cli_admin.install.get_latest_compatible_controller_version")
-    def test_install_command_with_kind_create_cluster(
+    def test_install_command_with_kind_options(
         self,
         mock_get_version,
         mock_install_helm,
-        mock_handle_cluster,
         mock_configure_endpoints,
         mock_validate_cluster,
         mock_helm_installed,
@@ -367,26 +364,22 @@ class TestInstallCommand:
         mock_get_version.return_value = "1.0.0"
         mock_install_helm.return_value = None
 
-        result = self.runner.invoke(install, ["--kind", "kind", "--create-cluster"])
+        result = self.runner.invoke(install, ["--kind", "kind"])
 
         assert result.exit_code == 0
-        mock_handle_cluster.assert_called_once()
-        # Verify cluster creation was called with correct parameters
-        args = mock_handle_cluster.call_args[0]  # positional args
-        assert args[0] is True  # create_cluster
-        assert args[1] == "kind"  # cluster_type
+        mock_install_helm.assert_called_once()
+        # Verify that kind cluster type was detected
+        mock_validate_cluster.assert_called_once_with("kind", None)
 
     @patch("jumpstarter_cli_admin.install.helm_installed")
     @patch("jumpstarter_cli_admin.install._validate_cluster_type")
     @patch("jumpstarter_cli_admin.install._configure_endpoints")
-    @patch("jumpstarter_cli_admin.install._handle_cluster_creation")
     @patch("jumpstarter_cli_admin.install.install_helm_chart")
     @patch("jumpstarter_cli_admin.install.get_latest_compatible_controller_version")
     def test_install_command_with_custom_options(
         self,
         mock_get_version,
         mock_install_helm,
-        mock_handle_cluster,
         mock_configure_endpoints,
         mock_validate_cluster,
         mock_helm_installed,
@@ -407,10 +400,6 @@ class TestInstallCommand:
             [
                 "--minikube",
                 "minikube",
-                "--create-cluster",
-                "--cluster-name",
-                "custom-cluster",
-                "--force-recreate-cluster",
                 "--ip",
                 "10.0.0.1",
                 "--basedomain",
@@ -419,34 +408,29 @@ class TestInstallCommand:
                 "grpc.custom.example.com:9000",
                 "--router-endpoint",
                 "router.custom.example.com:9001",
-                "--minikube-extra-args",
-                "--memory=4096",
             ],
         )
 
         assert result.exit_code == 0
 
-        # Verify cluster creation was called with custom parameters
-        cluster_args = mock_handle_cluster.call_args[0]  # positional args
-        assert cluster_args[3] == "custom-cluster"  # cluster_name
-        assert cluster_args[2] is True  # force_recreate_cluster
-        assert cluster_args[5] == "--memory=4096"  # minikube_extra_args
+        # Verify installation was called
+        mock_install_helm.assert_called_once()
 
         # Verify endpoint configuration was called with custom values
+        mock_configure_endpoints.assert_called_once()
         endpoint_args = mock_configure_endpoints.call_args[0]  # positional args
-        assert endpoint_args[2] == "custom-cluster"  # cluster_name
+        assert endpoint_args[3] == "10.0.0.1"  # ip
+        assert endpoint_args[4] == "custom.example.com"  # basedomain
 
     @patch("jumpstarter_cli_admin.install.helm_installed")
     @patch("jumpstarter_cli_admin.install._validate_cluster_type")
     @patch("jumpstarter_cli_admin.install._configure_endpoints")
-    @patch("jumpstarter_cli_admin.install._handle_cluster_creation")
     @patch("jumpstarter_cli_admin.install.install_helm_chart")
     @patch("jumpstarter_cli_admin.install.get_latest_compatible_controller_version")
     def test_install_command_helm_installation_failure(
         self,
         mock_get_version,
         mock_install_helm,
-        mock_handle_cluster,
         mock_configure_endpoints,
         mock_validate_cluster,
         mock_helm_installed,
@@ -472,7 +456,6 @@ class TestInstallCommand:
 
         assert result.exit_code == 0
         assert "Install Jumpstarter" in result.output or "Usage:" in result.output
-        assert "--create-cluster" in result.output
         assert "--kind" in result.output
         assert "--minikube" in result.output
 
@@ -481,8 +464,8 @@ class TestClusterDeletion:
     """Test cluster deletion logic."""
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.kind_installed")
-    @patch("jumpstarter_cli_admin.install.delete_kind_cluster")
+    @patch("jumpstarter_kubernetes.cluster.kind_installed")
+    @patch("jumpstarter_kubernetes.cluster.delete_kind_cluster")
     async def test_delete_kind_cluster_success(self, mock_delete_kind, mock_kind_installed):
         mock_kind_installed.return_value = True
         mock_delete_kind.return_value = True
@@ -492,7 +475,7 @@ class TestClusterDeletion:
         mock_delete_kind.assert_called_once_with("kind", "test-cluster")
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.kind_installed")
+    @patch("jumpstarter_kubernetes.cluster.kind_installed")
     async def test_delete_kind_cluster_not_installed(self, mock_kind_installed):
         mock_kind_installed.return_value = False
 
@@ -500,8 +483,8 @@ class TestClusterDeletion:
             await _delete_kind_cluster("kind", "test-cluster")
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.kind_installed")
-    @patch("jumpstarter_cli_admin.install.delete_kind_cluster")
+    @patch("jumpstarter_kubernetes.cluster.kind_installed")
+    @patch("jumpstarter_kubernetes.cluster.delete_kind_cluster")
     async def test_delete_kind_cluster_failure(self, mock_delete_kind, mock_kind_installed):
         mock_kind_installed.return_value = True
         mock_delete_kind.side_effect = RuntimeError("Deletion failed")
@@ -510,8 +493,8 @@ class TestClusterDeletion:
             await _delete_kind_cluster("kind", "test-cluster")
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.minikube_installed")
-    @patch("jumpstarter_cli_admin.install.delete_minikube_cluster")
+    @patch("jumpstarter_kubernetes.cluster.minikube_installed")
+    @patch("jumpstarter_kubernetes.cluster.delete_minikube_cluster")
     async def test_delete_minikube_cluster_success(self, mock_delete_minikube, mock_minikube_installed):
         mock_minikube_installed.return_value = True
         mock_delete_minikube.return_value = True
@@ -521,7 +504,7 @@ class TestClusterDeletion:
         mock_delete_minikube.assert_called_once_with("minikube", "test-cluster")
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.minikube_installed")
+    @patch("jumpstarter_kubernetes.cluster.minikube_installed")
     async def test_delete_minikube_cluster_not_installed(self, mock_minikube_installed):
         mock_minikube_installed.return_value = False
 
@@ -529,64 +512,14 @@ class TestClusterDeletion:
             await _delete_minikube_cluster("minikube", "test-cluster")
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install.minikube_installed")
-    @patch("jumpstarter_cli_admin.install.delete_minikube_cluster")
+    @patch("jumpstarter_kubernetes.cluster.minikube_installed")
+    @patch("jumpstarter_kubernetes.cluster.delete_minikube_cluster")
     async def test_delete_minikube_cluster_failure(self, mock_delete_minikube, mock_minikube_installed):
         mock_minikube_installed.return_value = True
         mock_delete_minikube.side_effect = RuntimeError("Deletion failed")
 
         with pytest.raises(click.ClickException, match="Failed to delete Minikube cluster"):
             await _delete_minikube_cluster("minikube", "test-cluster")
-
-    @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install._validate_cluster_type")
-    async def test_handle_cluster_deletion_no_cluster_type(self, mock_validate_cluster):
-        mock_validate_cluster.return_value = None
-
-        # Should return early without doing anything
-        await _handle_cluster_deletion(None, None, "test-cluster")
-
-        mock_validate_cluster.assert_called_once_with(None, None)
-
-    @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install._validate_cluster_type")
-    @patch("jumpstarter_cli_admin.install.click.confirm")
-    @patch("jumpstarter_cli_admin.install._delete_kind_cluster")
-    async def test_handle_cluster_deletion_kind_confirmed(self, mock_delete_kind, mock_confirm, mock_validate_cluster):
-        mock_validate_cluster.return_value = "kind"
-        mock_confirm.return_value = True
-
-        await _handle_cluster_deletion("kind", None, "test-cluster")
-
-        mock_confirm.assert_called_once()
-        mock_delete_kind.assert_called_once_with("kind", "test-cluster")
-
-    @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install._validate_cluster_type")
-    @patch("jumpstarter_cli_admin.install.click.confirm")
-    async def test_handle_cluster_deletion_cancelled(self, mock_confirm, mock_validate_cluster):
-        mock_validate_cluster.return_value = "kind"
-        mock_confirm.return_value = False
-
-        await _handle_cluster_deletion("kind", None, "test-cluster")
-
-        mock_confirm.assert_called_once()
-        # No deletion should occur
-
-    @pytest.mark.asyncio
-    @patch("jumpstarter_cli_admin.install._validate_cluster_type")
-    @patch("jumpstarter_cli_admin.install.click.confirm")
-    @patch("jumpstarter_cli_admin.install._delete_minikube_cluster")
-    async def test_handle_cluster_deletion_minikube_confirmed(
-        self, mock_delete_minikube, mock_confirm, mock_validate_cluster
-    ):
-        mock_validate_cluster.return_value = "minikube"
-        mock_confirm.return_value = True
-
-        await _handle_cluster_deletion(None, "minikube", "test-cluster")
-
-        mock_confirm.assert_called_once()
-        mock_delete_minikube.assert_called_once_with("minikube", "test-cluster")
 
 
 class TestUninstallCommand:
@@ -617,25 +550,7 @@ class TestUninstallCommand:
 
     @patch("jumpstarter_cli_admin.install.helm_installed")
     @patch("jumpstarter_cli_admin.install.uninstall_helm_chart")
-    @patch("jumpstarter_cli_admin.install._handle_cluster_deletion")
-    def test_uninstall_command_with_cluster_deletion(
-        self, mock_handle_deletion, mock_uninstall_helm, mock_helm_installed
-    ):
-        mock_helm_installed.return_value = True
-        mock_uninstall_helm.return_value = None
-
-        result = self.runner.invoke(uninstall, ["--delete-cluster", "--kind", "kind"])
-
-        assert result.exit_code == 0
-        mock_uninstall_helm.assert_called_once()
-        mock_handle_deletion.assert_called_once_with("kind", None, "jumpstarter-lab")
-
-    @patch("jumpstarter_cli_admin.install.helm_installed")
-    @patch("jumpstarter_cli_admin.install.uninstall_helm_chart")
-    @patch("jumpstarter_cli_admin.install._handle_cluster_deletion")
-    def test_uninstall_command_with_custom_options(
-        self, mock_handle_deletion, mock_uninstall_helm, mock_helm_installed
-    ):
+    def test_uninstall_command_with_custom_options(self, mock_uninstall_helm, mock_helm_installed):
         mock_helm_installed.return_value = True
         mock_uninstall_helm.return_value = None
 
@@ -648,17 +563,11 @@ class TestUninstallCommand:
                 "custom-name",
                 "--namespace",
                 "custom-namespace",
-                "--delete-cluster",
-                "--minikube",
-                "custom-minikube",
-                "--cluster-name",
-                "custom-cluster",
             ],
         )
 
         assert result.exit_code == 0
         mock_uninstall_helm.assert_called_once_with("custom-name", "custom-namespace", None, None, "custom-helm")
-        mock_handle_deletion.assert_called_once_with(None, "custom-minikube", "custom-cluster")
 
     @patch("jumpstarter_cli_admin.install.helm_installed")
     @patch("jumpstarter_cli_admin.install.uninstall_helm_chart")
@@ -671,25 +580,10 @@ class TestUninstallCommand:
         assert result.exit_code != 0
         assert result.exception  # Should have an exception
 
-    @patch("jumpstarter_cli_admin.install.helm_installed")
-    @patch("jumpstarter_cli_admin.install.uninstall_helm_chart")
-    @patch("jumpstarter_cli_admin.install._handle_cluster_deletion")
-    def test_uninstall_command_cluster_deletion_only(
-        self, mock_handle_deletion, mock_uninstall_helm, mock_helm_installed
-    ):
-        mock_helm_installed.return_value = True
-        mock_uninstall_helm.return_value = None
-
-        result = self.runner.invoke(uninstall, ["--delete-cluster", "--kind", "kind", "--cluster-name", "test-cluster"])
-
-        assert result.exit_code == 0
-        mock_handle_deletion.assert_called_once_with("kind", None, "test-cluster")
-
     def test_uninstall_command_help(self):
         result = self.runner.invoke(uninstall, ["--help"])
 
         assert result.exit_code == 0
         assert "Uninstall" in result.output or "Usage:" in result.output
-        assert "--delete-cluster" in result.output
-        assert "--kind" in result.output
-        assert "--minikube" in result.output
+        assert "--helm" in result.output
+        assert "--name" in result.output

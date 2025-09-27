@@ -11,6 +11,10 @@ dependencies = [
   "pydantic>=2.8.2",
   "kubernetes>=31.0.0",
   "kubernetes-asyncio>=31.1.0",
+  "aiohttp>=3.11.18",
+  "click>=8.0.0",
+  "semver~=2.13",
+  "packaging>=25.0",
 ]
 
 [dependency-groups]

@@ -1,17 +1,12 @@
 import aiohttp
 import click
 import semver
-from jumpstarter_cli_common.version import get_client_version
 from packaging.version import Version
 
 
-async def get_latest_compatible_controller_version(
-    client_version: str | None = None,
-):
-    if client_version is None:
-        client_version = Version(get_client_version())
-    else:
-        client_version = Version(client_version)
+async def get_latest_compatible_controller_version(client_version: str):
+    """Get the latest compatible controller version for a given client version"""
+    client_version = Version(client_version)
 
     async with aiohttp.ClientSession(
         raise_for_status=True,
