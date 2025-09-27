@@ -79,8 +79,8 @@ class TestGetKubectlContexts:
         kubectl_config = {
             "current-context": "test-context",
             "contexts": [
-                {"name": "test-context", "context": {"cluster": "test-cluster"}},
-                {"name": "prod-context", "context": {"cluster": "prod-cluster"}},
+                {"name": "test-context", "context": {"cluster": "test-cluster", "user": "test-user"}},
+                {"name": "prod-context", "context": {"cluster": "prod-cluster", "user": "prod-user"}},
             ],
             "clusters": [
                 {"name": "test-cluster", "cluster": {"server": "https://test.example.com:6443"}},
@@ -96,12 +96,14 @@ class TestGetKubectlContexts:
             "name": "test-context",
             "cluster": "test-cluster",
             "server": "https://test.example.com:6443",
+            "user": "test-user",
             "current": True,
         }
         assert result[1] == {
             "name": "prod-context",
             "cluster": "prod-cluster",
             "server": "https://prod.example.com:6443",
+            "user": "prod-user",
             "current": False,
         }
 
@@ -306,7 +308,7 @@ class TestListClusters:
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_cluster_info")
     async def test_list_clusters_success(self, mock_get_cluster_info, mock_get_contexts):
         contexts = [
-            {"name": "test-context", "cluster": "test-cluster", "server": "https://test.example.com", "current": True}
+            {"name": "test-context", "cluster": "test-cluster", "server": "https://test.example.com", "user": "test-user", "current": True}
         ]
         mock_get_contexts.return_value = contexts
 

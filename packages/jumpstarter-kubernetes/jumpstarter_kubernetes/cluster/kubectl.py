@@ -42,6 +42,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
         for ctx in context_list:
             context_name = ctx.get("name", "")
             cluster_name = ctx.get("context", {}).get("cluster", "")
+            user_name = ctx.get("context", {}).get("user", "")
 
             # Get cluster server URL
             server_url = ""
@@ -55,6 +56,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
                     "name": context_name,
                     "cluster": cluster_name,
                     "server": server_url,
+                    "user": user_name,
                     "current": context_name == current_context,
                 }
             )
@@ -90,7 +92,13 @@ async def check_jumpstarter_installation(  # noqa: C901
         returncode, stdout, _ = await run_command(helm_cmd)
 
         if returncode == 0:
-            releases = json.loads(stdout)
+            # Extract JSON from output (handle case where warnings are printed before JSON)
+            json_start = stdout.find('[')
+            if json_start >= 0:
+                json_output = stdout[json_start:]
+                releases = json.loads(json_output)
+            else:
+                releases = json.loads(stdout)  # Fallback to original parsing
             for release in releases:
                 # Look for Jumpstarter chart
                 if "jumpstarter" in release.get("chart", "").lower():
@@ -117,7 +125,13 @@ async def check_jumpstarter_installation(  # noqa: C901
                         values_returncode, values_stdout, _ = await run_command(values_cmd)
 
                         if values_returncode == 0:
-                            values = json.loads(values_stdout)
+                            # Extract JSON from values output (handle warnings)
+                            json_start = values_stdout.find('{')
+                            if json_start >= 0:
+                                json_output = values_stdout[json_start:]
+                                values = json.loads(json_output)
+                            else:
+                                values = json.loads(values_stdout)  # Fallback
 
                             # Extract basedomain
                             basedomain = values.get("global", {}).get("baseDomain")
@@ -146,7 +160,13 @@ async def check_jumpstarter_installation(  # noqa: C901
             returncode, stdout, _ = await run_command(crd_cmd)
 
             if returncode == 0:
-                crds = json.loads(stdout)
+                # Extract JSON from CRD output (handle warnings)
+                json_start = stdout.find('{')
+                if json_start >= 0:
+                    json_output = stdout[json_start:]
+                    crds = json.loads(json_output)
+                else:
+                    crds = json.loads(stdout)  # Fallback
                 jumpstarter_crds = []
                 for item in crds.get("items", []):
                     name = item.get("metadata", {}).get("name", "")
