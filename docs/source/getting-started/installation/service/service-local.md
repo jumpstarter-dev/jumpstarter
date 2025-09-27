@@ -36,8 +36,11 @@ The admin CLI can automatically create a local cluster and install Jumpstarter w
 
 By default, Jumpstarter will try to detect which local cluster tools are installed:
 
+```{tip}
+By default, Jumpstarter will use `kind` if available, use the `--minikube` argument to force Jumpstarter to use minikube instead.
+```
+
 ```{code-block} console
-# Kind will be used first if available
 $ jmp admin create cluster
 ```
 
@@ -47,22 +50,33 @@ However, you can also explicitly specify a local cluster tool:
 ```{code-block} console
 $ jmp admin create cluster --kind
 ```
+
+Additional options for cluster creation:
+
+- Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
+- `--kind <PATH>`: Path to the kind binary to use for cluster management
+- `--helm <PATH>`: Path to the Helm binary to install the Jumpstarter service with
+- `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
+- `--kind-extra-args`: Pass additional arguments to kind cluster creation
+- `--skip-install`: Create the cluster without installing Jumpstarter
+- `--extra-certs <PATH>`: Path to custom CA certificate bundle file to inject into the cluster
 ````
 
 ````{tab} minikube
 ```{code-block} console
 $ jmp admin create cluster --minikube
 ```
-````
 
 Additional options for cluster creation:
 
 - Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
+- `--minikube <PATH>`: Path to the minikube binary to use for cluster management
+- `--helm <PATH>`: Path to the Helm binary to install the Jumpstarter service with
 - `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
-- `--kind-extra-args`: Pass additional arguments to kind cluster creation
 - `--minikube-extra-args`: Pass additional arguments to minikube cluster creation
 - `--skip-install`: Create the cluster without installing Jumpstarter
-- `--extra-certs`: Path to custom CA certificate bundle file to inject into the cluster
+- `--extra-certs <PATH>`: Path to custom CA certificate bundle file to inject into the cluster
+````
 
 To set a custom cluster name:
 
