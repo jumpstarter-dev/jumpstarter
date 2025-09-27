@@ -267,6 +267,12 @@ async def create_cluster(
         else:
             click.echo(f'Creating {cluster_type} cluster "{name}" and installing Jumpstarter...')
 
+    # Auto-detect version if not specified and installing Jumpstarter
+    if not skip_install and version is None:
+        from jumpstarter_cli_common.version import get_client_version
+        from jumpstarter_kubernetes import get_latest_compatible_controller_version
+        version = await get_latest_compatible_controller_version(get_client_version())
+
     await create_cluster_and_install(
         cluster_type,
         force_recreate,
