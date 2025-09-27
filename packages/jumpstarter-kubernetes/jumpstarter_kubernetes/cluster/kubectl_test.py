@@ -182,7 +182,7 @@ class TestCheckJumpstarterInstallation:
         mock_run_command.side_effect = [
             (0, json.dumps(helm_releases), ""),  # helm list success
             (0, '{"items": []}', ""),  # kubectl get namespaces
-            (0, '{"items": []}', "")   # kubectl get crds
+            (0, '{"items": []}', ""),  # kubectl get crds
         ]
 
         result = await check_jumpstarter_installation("test-context")
@@ -230,7 +230,7 @@ class TestCheckJumpstarterInstallation:
     async def test_check_jumpstarter_installation_custom_namespace(self, mock_run_command):
         mock_run_command.side_effect = [
             (0, "[]", ""),  # helm list
-            (0, '{"items": []}', "")   # kubectl get crds
+            (0, '{"items": []}', ""),  # kubectl get crds
         ]
 
         await check_jumpstarter_installation("test-context", namespace="custom-ns")
@@ -256,7 +256,7 @@ class TestGetClusterInfo:
                 "cluster": "test-cluster",
                 "server": "https://test.example.com",
                 "user": "test-user",
-                "current": False
+                "current": False,
             }
         ]
 
@@ -308,7 +308,13 @@ class TestListClusters:
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_cluster_info")
     async def test_list_clusters_success(self, mock_get_cluster_info, mock_get_contexts):
         contexts = [
-            {"name": "test-context", "cluster": "test-cluster", "server": "https://test.example.com", "user": "test-user", "current": True}
+            {
+                "name": "test-context",
+                "cluster": "test-cluster",
+                "server": "https://test.example.com",
+                "user": "test-user",
+                "current": True,
+            }
         ]
         mock_get_contexts.return_value = contexts
 
