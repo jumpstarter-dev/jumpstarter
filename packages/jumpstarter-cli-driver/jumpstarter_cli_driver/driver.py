@@ -17,7 +17,7 @@ def list_drivers():
             pad_edge=None,
         )
 
-        table.add_column("NAME")
+        table.add_column("NAME", no_wrap=True)
         table.add_column("TYPE")
 
         for driver in drivers:

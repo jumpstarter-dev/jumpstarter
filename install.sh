@@ -1,18 +1,31 @@
 #!/bin/bash
 set -e
 
-# Colors for output
-RED="$(tput setaf 1)"
-GREEN="$(tput setaf 2)"
-YELLOW="$(tput setaf 3)"
-BLUE="$(tput setaf 4)"
-NC="$(tput sgr0)" # No Color
+# Define color outputs
+# Check if colors should be enabled based on:
+# 1. NO_COLOR environment variable (https://no-color.org/)
+# 2. Terminal capability (TERM set and tput works)
+# 3. Interactive terminal (isatty check [ -t 1 ])
+if [ -z "${NO_COLOR:-}" ] && [ -n "${TERM:-}" ] && command -v tput >/dev/null 2>&1 && tput setaf 1 >/dev/null 2>&1 && [ -t 1 ]; then
+    RED="$(tput setaf 1)"
+    GREEN="$(tput setaf 2)"
+    YELLOW="$(tput setaf 3)"
+    BLUE="$(tput setaf 4)"
+    NC="$(tput sgr0)" # No Color
+else
+    # Fallback for CI environments, non-interactive terminals, or when NO_COLOR is set
+    RED=""
+    GREEN=""
+    YELLOW=""
+    BLUE=""
+    NC=""
+fi
 
 # Default values
 INSTALL_DIR="${HOME}/.local/jumpstarter"
 VENV_DIR="${INSTALL_DIR}/venv"
 SET_SCRIPT="${INSTALL_DIR}/set"
-DEFAULT_SOURCE="release-0.6"
+DEFAULT_SOURCE="release-0.7"
 
 # Function to print colored output
 print_info() {
@@ -39,9 +52,9 @@ Jumpstarter Installer
 Usage: $0 [OPTIONS]
 
 OPTIONS:
-    -s, --source SOURCE    Installation source (default: release-0.6)
+    -s, --source SOURCE    Installation source (default: release-0.7)
                           Available sources:
-                          - release-0.6: Stable release 0.6 (recommended)
+                          - release-0.7: Stable release 0.7 (recommended)
                           - latest: Latest stable release (when available)
                           - rc: Latest release candidate (when available)
                           - main: Latest development version
@@ -49,8 +62,8 @@ OPTIONS:
     -h, --help            Show this help message
 
 EXAMPLES:
-    $0                    # Install stable release 0.6 (recommended)
-    $0 -s release-0.6    # Install stable release 0.6
+    $0                    # Install stable release 0.7 (recommended)
+    $0 -s release-0.7    # Install stable release 0.7
     $0 -s main           # Install latest development version
     $0 -s rc             # Install latest release candidate (when available)
     $0 -d /opt/jumpstarter  # Install to custom directory
@@ -78,7 +91,7 @@ get_index_url() {
             ;;
         *)
                     print_error "Invalid source: ${source}"
-        print_error "Available sources: latest, rc, main, release-0.6"
+        print_error "Available sources: latest, rc, main, release-<major.minor> (e.g., ${DEFAULT_SOURCE})"
             exit 1
             ;;
     esac
