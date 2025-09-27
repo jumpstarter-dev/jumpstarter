@@ -1,9 +1,9 @@
 """Minikube cluster management operations."""
 
-import asyncio
 import shutil
 from typing import List, Optional
 
+from .common import run_command, run_command_with_output
 from jumpstarter.common.ipaddr import get_minikube_ip
 
 
@@ -12,25 +12,6 @@ def minikube_installed(minikube: str) -> bool:
     return shutil.which(minikube) is not None
 
 
-async def run_command(cmd: list[str]) -> tuple[int, str, str]:
-    """Run a command and return exit code, stdout, stderr"""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        return process.returncode, stdout.decode().strip(), stderr.decode().strip()
-    except FileNotFoundError as e:
-        raise RuntimeError(f"Command not found: {cmd[0]}") from e
-
-
-async def run_command_with_output(cmd: list[str]) -> int:
-    """Run a command with real-time output streaming and return exit code"""
-    try:
-        process = await asyncio.create_subprocess_exec(*cmd)
-        return await process.wait()
-    except FileNotFoundError as e:
-        raise RuntimeError(f"Command not found: {cmd[0]}") from e
 
 
 async def minikube_cluster_exists(minikube: str, cluster_name: str) -> bool:

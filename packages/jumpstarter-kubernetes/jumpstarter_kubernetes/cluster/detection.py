@@ -1,6 +1,5 @@
 """Cluster detection and type identification logic."""
 
-import asyncio
 import json
 import re
 import shutil
@@ -8,20 +7,9 @@ from typing import Literal, Optional
 
 import click
 
+from .common import run_command
 from .kind import kind_cluster_exists, kind_installed
 from .minikube import minikube_cluster_exists, minikube_installed
-
-
-async def run_command(cmd: list[str]) -> tuple[int, str, str]:
-    """Run a command and return exit code, stdout, stderr"""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        return process.returncode, stdout.decode().strip(), stderr.decode().strip()
-    except FileNotFoundError as e:
-        raise RuntimeError(f"Command not found: {cmd[0]}") from e
 
 
 def detect_container_runtime() -> str:

@@ -1,10 +1,10 @@
 """Common utilities and types for cluster operations."""
 
+import asyncio
 import os
 from typing import Literal, Optional
 
 import click
-
 
 ClusterType = Literal["kind"] | Literal["minikube"]
 
@@ -41,3 +41,24 @@ def validate_cluster_name(cluster_name: str) -> str:
     if not cluster_name or not cluster_name.strip():
         raise click.ClickException("Cluster name cannot be empty")
     return format_cluster_name(cluster_name)
+
+
+async def run_command(cmd: list[str]) -> tuple[int, str, str]:
+    """Run a command and return exit code, stdout, stderr."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        return process.returncode, stdout.decode().strip(), stderr.decode().strip()
+    except FileNotFoundError as e:
+        raise RuntimeError(f"Command not found: {cmd[0]}") from e
+
+
+async def run_command_with_output(cmd: list[str]) -> int:
+    """Run a command with real-time output streaming and return exit code."""
+    try:
+        process = await asyncio.create_subprocess_exec(*cmd)
+        return await process.wait()
+    except FileNotFoundError as e:
+        raise RuntimeError(f"Command not found: {cmd[0]}") from e

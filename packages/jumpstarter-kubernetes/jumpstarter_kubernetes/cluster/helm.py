@@ -1,7 +1,8 @@
 """Helm chart management operations."""
 
-import click
 from typing import Optional
+
+import click
 
 from ..install import install_helm_chart
 

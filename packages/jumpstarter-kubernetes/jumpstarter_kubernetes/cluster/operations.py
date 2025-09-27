@@ -1,17 +1,13 @@
 """High-level cluster operations and orchestration."""
 
-import asyncio
 import os
-import tempfile
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 import click
-from jumpstarter_cli_common.version import get_client_version
 
-from ..controller import get_latest_compatible_controller_version
 from ..install import helm_installed
-from .common import ClusterType, validate_cluster_name
+from .common import ClusterType, run_command_with_output, validate_cluster_name
 from .detection import auto_detect_cluster_type, detect_existing_cluster_type
 from .endpoints import configure_endpoints
 from .helm import install_jumpstarter_helm_chart
@@ -28,6 +24,7 @@ async def inject_certs_in_kind(extra_certs: str, cluster_name: str) -> None:
 
     # Detect Kind provider info
     from .detection import detect_kind_provider
+
     runtime, node_name = await detect_kind_provider(cluster_name)
 
     click.echo(f"Injecting certificates from {extra_certs_path} into Kind cluster...")
@@ -35,8 +32,7 @@ async def inject_certs_in_kind(extra_certs: str, cluster_name: str) -> None:
     # Copy certificates into the Kind node
     copy_cmd = [runtime, "cp", extra_certs_path, f"{node_name}:/usr/local/share/ca-certificates/extra-certs.crt"]
 
-    process = await asyncio.create_subprocess_exec(*copy_cmd)
-    returncode = await process.wait()
+    returncode = await run_command_with_output(copy_cmd)
 
     if returncode != 0:
         raise click.ClickException(f"Failed to copy certificates to Kind node: {node_name}")
@@ -44,8 +40,7 @@ async def inject_certs_in_kind(extra_certs: str, cluster_name: str) -> None:
     # Update ca-certificates in the node
     update_cmd = [runtime, "exec", node_name, "update-ca-certificates"]
 
-    process = await asyncio.create_subprocess_exec(*update_cmd)
-    returncode = await process.wait()
+    returncode = await run_command_with_output(update_cmd)
 
     if returncode != 0:
         raise click.ClickException("Failed to update certificates in Kind node")
@@ -66,12 +61,13 @@ async def prepare_minikube_certs(extra_certs: str) -> None:
 
     # Copy the certificate file to minikube certs directory
     import shutil
+
     cert_dest = minikube_certs_dir / "ca.crt"
 
     # If ca.crt already exists, append to it
     if cert_dest.exists():
-        with open(extra_certs_path, 'r') as src, open(cert_dest, 'a') as dst:
-            dst.write('\n')
+        with open(extra_certs_path, "r") as src, open(cert_dest, "a") as dst:
+            dst.write("\n")
             dst.write(src.read())
     else:
         shutil.copy2(extra_certs_path, cert_dest)
@@ -192,7 +188,7 @@ def validate_cluster_type_selection(kind: Optional[str], minikube: Optional[str]
         return auto_detect_cluster_type()
 
 
-async def delete_cluster_by_name(cluster_name: str, cluster_type: Optional[str] = None, force: bool = False) -> None:
+async def delete_cluster_by_name(cluster_name: str, cluster_type: Optional[str] = None, force: bool = False) -> None:  # noqa: C901
     """Delete a cluster by name, with auto-detection if type not specified."""
     # Validate cluster name
     cluster_name = validate_cluster_name(cluster_name)
@@ -220,7 +216,7 @@ async def delete_cluster_by_name(cluster_name: str, cluster_type: Optional[str] 
     # Confirm deletion unless force is specified
     if not force:
         if not click.confirm(
-            f'⚠️  WARNING: This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
+            f'This will permanently delete the "{cluster_name}" {cluster_type} cluster and ALL its data. Continue?'
         ):
             click.echo("Cluster deletion cancelled.")
             return
@@ -275,7 +271,9 @@ async def create_cluster_and_install(
     if cluster_type == "kind":
         await create_kind_cluster_wrapper(kind, cluster_name, kind_extra_args, force_recreate_cluster, extra_certs)
     elif cluster_type == "minikube":
-        await create_minikube_cluster_wrapper(minikube, cluster_name, minikube_extra_args, force_recreate_cluster, extra_certs)
+        await create_minikube_cluster_wrapper(
+            minikube, cluster_name, minikube_extra_args, force_recreate_cluster, extra_certs
+        )
 
     # Install Jumpstarter if requested
     if install_jumpstarter:
@@ -287,9 +285,9 @@ async def create_cluster_and_install(
             cluster_type, minikube, cluster_name, ip, basedomain, grpc_endpoint, router_endpoint
         )
 
-        # Get version if not specified
+        # Version is required when installing Jumpstarter
         if version is None:
-            version = await get_latest_compatible_controller_version(get_client_version())
+            raise click.ClickException("Version must be specified when installing Jumpstarter")
 
         # Install Helm chart
         await install_jumpstarter_helm_chart(
@@ -356,6 +354,7 @@ async def _handle_cluster_creation(
         try:
             # This makes the patch at jumpstarter_cli_admin.install.click.confirm work
             import jumpstarter_cli_admin.install as admin_install
+
             confirm_func = admin_install.click.confirm
         except (ImportError, AttributeError):
             confirm_func = click.confirm
@@ -366,10 +365,12 @@ async def _handle_cluster_creation(
     if cluster_type == "kind":
         # Import here to avoid circular imports
         from jumpstarter_kubernetes.cluster import _create_kind_cluster
+
         await _create_kind_cluster(kind, cluster_name, kind_extra_args, force_recreate_cluster, extra_certs)
     elif cluster_type == "minikube":
         # Import here to avoid circular imports
         from jumpstarter_kubernetes.cluster import _create_minikube_cluster
+
         await _create_minikube_cluster(minikube, cluster_name, minikube_extra_args, force_recreate_cluster, extra_certs)
 
 

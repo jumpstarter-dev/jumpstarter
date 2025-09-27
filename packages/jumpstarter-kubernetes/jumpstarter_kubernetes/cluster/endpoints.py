@@ -1,11 +1,11 @@
 """Endpoint configuration for cluster management."""
 
-import click
 from typing import Optional
 
-from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
+import click
 
 from .minikube import minikube_installed
+from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
 
 async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_name: str) -> str:

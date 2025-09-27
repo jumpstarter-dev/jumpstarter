@@ -1,24 +1,12 @@
 """Kubectl operations for cluster management."""
 
-import asyncio
 import json
 from typing import Dict, List, Optional
 
 import click
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
-
-
-async def run_command(cmd: list[str]) -> tuple[int, str, str]:
-    """Run a command and return exit code, stdout, stderr"""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        return process.returncode, stdout.decode().strip(), stderr.decode().strip()
-    except FileNotFoundError as e:
-        raise RuntimeError(f"Command not found: {cmd[0]}") from e
+from .common import run_command
 
 
 async def check_kubernetes_access(context: Optional[str] = None, kubectl: str = "kubectl") -> bool:
@@ -62,12 +50,14 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
                     server_url = cluster.get("cluster", {}).get("server", "")
                     break
 
-            contexts.append({
-                "name": context_name,
-                "cluster": cluster_name,
-                "server": server_url,
-                "current": context_name == current_context
-            })
+            contexts.append(
+                {
+                    "name": context_name,
+                    "cluster": cluster_name,
+                    "server": server_url,
+                    "current": context_name == current_context,
+                }
+            )
 
         return contexts
 
@@ -77,7 +67,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
         raise click.ClickException(f"Error listing kubectl contexts: {e}") from e
 
 
-async def check_jumpstarter_installation(
+async def check_jumpstarter_installation(  # noqa: C901
     context: str, namespace: Optional[str] = None, helm: str = "helm", kubectl: str = "kubectl"
 ) -> V1Alpha1JumpstarterInstance:
     """Check if Jumpstarter is installed in the cluster."""
@@ -215,6 +205,7 @@ async def get_cluster_info(
 
         # Detect cluster type
         from .detection import detect_cluster_type
+
         cluster_type = await detect_cluster_type(context_info["name"], context_info["server"], minikube)
 
         # Check if cluster is accessible
