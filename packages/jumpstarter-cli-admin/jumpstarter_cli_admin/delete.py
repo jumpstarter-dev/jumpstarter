@@ -11,11 +11,10 @@ from jumpstarter_cli_common.opt import (
     opt_nointeractive,
     opt_output_name_only,
 )
-from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api
+from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, delete_cluster_by_name
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
-from .cluster import delete_cluster_by_name
 from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,

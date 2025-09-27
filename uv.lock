@@ -1167,12 +1167,9 @@ dev = [
 name = "jumpstarter-cli-admin"
 source = { editable = "packages/jumpstarter-cli-admin" }
 dependencies = [
-    { name = "aiohttp" },
     { name = "grpcio-reflection" },
     { name = "jumpstarter-cli-common" },
     { name = "jumpstarter-kubernetes" },
-    { name = "packaging" },
-    { name = "semver" },
 ]
 
 [package.dev-dependencies]
@@ -1185,12 +1182,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.11.18" },
     { name = "grpcio-reflection", specifier = ">=1.60.0" },
     { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
     { name = "jumpstarter-kubernetes", editable = "packages/jumpstarter-kubernetes" },
-    { name = "packaging", specifier = ">=25.0" },
-    { name = "semver", specifier = "~=2.13" },
 ]
 
 [package.metadata.requires-dev]
@@ -2158,10 +2152,14 @@ dev = [
 name = "jumpstarter-kubernetes"
 source = { editable = "packages/jumpstarter-kubernetes" }
 dependencies = [
+    { name = "aiohttp" },
+    { name = "click" },
     { name = "jumpstarter" },
     { name = "kubernetes" },
     { name = "kubernetes-asyncio" },
+    { name = "packaging" },
     { name = "pydantic" },
+    { name = "semver" },
 ]
 
 [package.dev-dependencies]
@@ -2174,10 +2172,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.11.18" },
+    { name = "click", specifier = ">=8.0.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "kubernetes", specifier = ">=31.0.0" },
     { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
+    { name = "packaging", specifier = ">=25.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
+    { name = "semver", specifier = "~=2.13" },
 ]
 
 [package.metadata.requires-dev]

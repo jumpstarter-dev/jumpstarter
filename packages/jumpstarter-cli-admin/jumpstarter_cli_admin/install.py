@@ -3,16 +3,31 @@ from typing import Literal, Optional
 import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.opt import opt_context, opt_kubeconfig
+from jumpstarter_cli_common.version import get_client_version
 from jumpstarter_kubernetes import (
+    get_latest_compatible_controller_version,
     helm_installed,
     install_helm_chart,
     minikube_installed,
     uninstall_helm_chart,
 )
 
-from .cluster import _validate_cluster_type
-from .controller import get_latest_compatible_controller_version
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
+
+
+def _validate_cluster_type(
+    kind: Optional[str], minikube: Optional[str]
+) -> Optional[Literal["kind"] | Literal["minikube"]]:
+    """Validate cluster type selection - returns None if neither is specified"""
+    if kind and minikube:
+        raise click.ClickException('You can only select one local cluster type "kind" or "minikube"')
+
+    if kind is not None:
+        return "kind"
+    elif minikube is not None:
+        return "minikube"
+    else:
+        return None
 
 
 def _validate_prerequisites(helm: str) -> None:
@@ -149,7 +164,7 @@ async def install(
     )
 
     if version is None:
-        version = await get_latest_compatible_controller_version()
+        version = await get_latest_compatible_controller_version(get_client_version())
 
     await _install_jumpstarter_helm_chart(
         chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm, ip
