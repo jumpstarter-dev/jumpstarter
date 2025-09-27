@@ -1,12 +1,20 @@
+from typing import Optional
+
 import aiohttp
 import click
 import semver
 from packaging.version import Version
 
 
-async def get_latest_compatible_controller_version(client_version: str):
+async def get_latest_compatible_controller_version(client_version: Optional[str]):  # noqa: C901
     """Get the latest compatible controller version for a given client version"""
-    client_version = Version(client_version)
+    if client_version is None:
+        # Return the latest available version when no client version is specified
+        use_fallback_only = True
+        client_version_parsed = None
+    else:
+        use_fallback_only = False
+        client_version_parsed = Version(client_version)
 
     async with aiohttp.ClientSession(
         raise_for_status=True,
@@ -35,7 +43,10 @@ async def get_latest_compatible_controller_version(client_version: str):
         except ValueError:
             continue  # ignore invalid versions
 
-        if version.major == client_version.major and version.minor == client_version.minor:
+        if use_fallback_only:
+            # When no client version specified, all versions are candidates
+            fallback.add(version)
+        elif version.major == client_version_parsed.major and version.minor == client_version_parsed.minor:
             compatible.add(version)
         else:
             fallback.add(version)
