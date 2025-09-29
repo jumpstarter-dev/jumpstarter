@@ -28,24 +28,26 @@ Example configuration:
 
 The OpenDAL driver tracks all files and directories created during a session:
 
-- **File Creation**: Files opened in write mode (`"wb"`, `"w"`, `"ab"`, `"a"`) are tracked as created
-- **Directory Creation**: Directories created via `create_dir()` are tracked
-- **Cleanup Behavior**: When `remove_created_on_close: true`, all tracked files and directories are automatically removed when the driver closes
-- **Cleanup Support**: Currently only supports filesystem cleanup (`scheme: "fs"`)
+- **File Creation**: Files opened in write modes (`"wb"`, `"w"`, `"ab"`, `"a"`)
+- **Directory Creation**: Directories created via `create_dir()`
+- **Copy Operations**: Target files/directories from `copy()` operations
+- **Rename Operations**: Target files/directories from `rename()` operations (source is removed from tracking)
 
-#### Tracking API
+**Automatic Cleanup**: The tracking is automatically updated when resources are removed:
+- **Delete Operations**: `delete()` removes the path from tracking
+- **Remove Operations**: `remove_all()` removes the path from tracking
 
-The driver provides methods to inspect what has been created:
+**Cleanup Behavior**: When `remove_created_on_close: true`, all tracked files and directories are automatically removed when the driver closes (filesystem only)
+
+### Tracking API
 
 ```python
-# Get list of created files
-created_files = await driver.get_created_files()
+# Get all created resources (files and directories)
+created_resources = await driver.get_created_resources()  # Returns set[str]
 
-# Get list of created directories
-created_dirs = await driver.get_created_directories()
-
-# Get both as a tuple: (directories, files)
-dirs, files = await driver.get_all_created_resources()
+# Example usage
+for path in created_resources:
+    print(f"Created: {path}")
 ```
 
 #### Use Cases
