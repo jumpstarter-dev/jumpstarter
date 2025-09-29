@@ -1,4 +1,5 @@
 import logging
+import sys
 from functools import partial
 from typing import Literal, Optional
 
@@ -9,8 +10,14 @@ from rich.logging import RichHandler
 
 def _opt_log_level_callback(ctx, param, value):
     traceback.install()
+    # there is no way to determine if the command is invoked for jmp run or something else at this
+    # point based on ctx and params, so we just look at sys.argv
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        # on a exporter run we don't want to use RichHandler for logs, just plain logs for the system journal
+        basicConfig = partial(logging.basicConfig)
+    else:
+        basicConfig = partial(logging.basicConfig, handlers=[RichHandler()])
 
-    basicConfig = partial(logging.basicConfig, handlers=[RichHandler()])
     if value:
         basicConfig(level=value.upper())
     else:
