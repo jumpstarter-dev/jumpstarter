@@ -28,6 +28,7 @@ jumpstarter-driver-tasmota = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
+jumpstarter-driver-ssh = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-iscsi = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
