@@ -12,6 +12,7 @@ dependencies = [
     "jumpstarter-driver-opendal",
     "click>=8.1.8",
     "rtslib-fb",
+    "requests>=2.32.5"
 ]
 
 [tool.hatch.version]

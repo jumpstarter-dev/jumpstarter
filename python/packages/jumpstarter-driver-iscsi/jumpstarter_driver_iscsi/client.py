@@ -104,7 +104,7 @@ class ISCSIServerClient(CompositeClient):
                     delete=False,
                 ) as tf:
                     temp_path = tf.name
-                    with requests.get(file, stream=True, headers=header_map) as resp:
+                    with requests.get(file, stream=True, headers=header_map, timeout=60) as resp:
                         resp.raise_for_status()
                         for chunk in resp.iter_content(chunk_size=65536):
                             if chunk:
