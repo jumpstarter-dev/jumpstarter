@@ -6,4 +6,5 @@ config:
   kwargs:
     root: "/tmp/jumpstarter"
   # Optional: automatically remove created files/directories when driver closes
+  # Note: all tracked paths are normalized by stripping leading/trailing slashes
   remove_created_on_close: false

@@ -6,7 +6,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import List, cast
+from typing import cast
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -395,34 +395,14 @@ class OpendalClient(DriverClient):
         return self.call("capability")
 
     @validate_call(validate_return=True)
-    def get_created_files(self) -> List[str]:
+    def get_created_resources(self) -> set[str]:
         """
-        Get list of files that have been created during this session.
+        Get set of all paths that have been created during this session.
 
         Returns:
-            List[str]: List of file paths that were created
+            set[str]: Set of all paths (files and directories) that were created
         """
-        return self.call("get_created_files")
-
-    @validate_call(validate_return=True)
-    def get_created_directories(self) -> List[str]:
-        """
-        Get list of directories that have been created during this session.
-
-        Returns:
-            List[str]: List of directory paths that were created
-        """
-        return self.call("get_created_directories")
-
-    @validate_call(validate_return=True)
-    def get_all_created_resources(self) -> tuple[List[str], List[str]]:
-        """
-        Get all resources created during this session as a tuple: (created_directories, created_files).
-
-        Returns:
-            tuple[List[str], List[str]]: Tuple of (created_directories, created_files)
-        """
-        return self.call("get_all_created_resources")
+        return self.call("get_created_resources")
 
 
     def cli(self):  # noqa: C901

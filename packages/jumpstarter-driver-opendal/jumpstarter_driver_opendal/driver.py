@@ -29,9 +29,19 @@ class Opendal(Driver):
     _fds: dict[UUID, AsyncFile] = field(init=False, default_factory=dict)
     _metadata: dict[UUID, OpendalMetadata] = field(init=False, default_factory=dict)
 
-    # Track file/directory operations
-    _created_files: set[str] = field(init=False, default_factory=set)
-    _created_dirs: set[str] = field(init=False, default_factory=set)
+    # Track all created paths (files and directories)
+    _created_paths: set[str] = field(init=False, default_factory=set)
+
+    def _normalize_path(self, path: str) -> str:
+        """Normalize path by handling backslashes, dot segments, and redundant slashes."""
+        if not path:
+            return path
+
+        import posixpath
+
+        path = path.replace('\\', '/')
+        normalized = posixpath.normpath(path).strip('/')
+        return normalized if normalized != '.' else ''
 
     @classmethod
     def client(cls) -> str:
@@ -57,9 +67,9 @@ class Opendal(Driver):
         self._metadata[uuid] = metadata
         self._fds[uuid] = file
 
-        # Track file creation for any write mode (assume pre-existing files are remnants from failed cleanup)
+        # Track path creation for any write mode (assume pre-existing files are remnants from failed cleanup)
         if mode in ("wb", "w", "ab", "a"):
-            self._created_files.add(path)
+            self._created_paths.add(self._normalize_path(path))
 
         return uuid
 
@@ -140,27 +150,32 @@ class Opendal(Driver):
     @validate_call(validate_return=True)
     async def copy(self, /, source: str, target: str):
         await self._operator.copy(source, target)
+        self._created_paths.add(self._normalize_path(target))
 
     @export
     @validate_call(validate_return=True)
     async def rename(self, /, source: str, target: str):
         await self._operator.rename(source, target)
+        self._created_paths.discard(self._normalize_path(source))
+        self._created_paths.add(self._normalize_path(target))
 
     @export
     @validate_call(validate_return=True)
     async def remove_all(self, /, path: str):
         await self._operator.remove_all(path)
+        self._created_paths.discard(self._normalize_path(path))
 
     @export
     @validate_call(validate_return=True)
     async def create_dir(self, /, path: str):
         await self._operator.create_dir(path)
-        self._created_dirs.add(path)
+        self._created_paths.add(self._normalize_path(path))
 
     @export
     @validate_call(validate_return=True)
     async def delete(self, /, path: str):
         await self._operator.delete(path)
+        self._created_paths.discard(self._normalize_path(path))
 
     @export
     @validate_call(validate_return=True)
@@ -215,86 +230,64 @@ class Opendal(Driver):
                         break
                     await dst.write(bs=data)
 
-        # Always track file creation (assume pre-existing files are just uncleaned remnants)
-        self._created_files.add(target)
+        # Always track path creation (assume pre-existing files are just uncleaned remnants)
+        self._created_paths.add(self._normalize_path(target))
 
     @export
-    async def get_created_files(self) -> list[str]:
-        """Get list of files that have been created during this session."""
-        return list(self._created_files)
-
-    @export
-    async def get_created_directories(self) -> list[str]:
-        """Get list of directories that have been created during this session."""
-        return list(self._created_dirs)
-
-    @export
-    async def get_all_created_resources(self) -> tuple[list[str], list[str]]:
-        """Get all resources created during this session as a tuple: (created_directories, created_files)."""
-        return (list(self._created_dirs), list(self._created_files))
+    async def get_created_resources(self) -> set[str]:
+        """Get set of all paths that have been created during this session."""
+        return self._created_paths.copy()
 
 
     def close(self):
         """Close driver and report what was created."""
-        if self._created_files or self._created_dirs:
+        if self._created_paths:
             self.logger.debug(
-                "OpenDAL session summary - Created files: %d, Created directories: %d",
-                len(self._created_files),
-                len(self._created_dirs)
+                "OpenDAL session summary - Created paths: %d",
+                len(self._created_paths)
             )
-            if self._created_files:
-                self.logger.debug("Created files: %s", sorted(self._created_files))
-            if self._created_dirs:
-                self.logger.debug("Created directories: %s", sorted(self._created_dirs))
+            self.logger.debug("Created paths: %s", sorted(self._created_paths))
 
         # Remove created resources if requested
         if self.remove_created_on_close:
-            self._cleanup_created_resources()
+            if self.scheme == "fs":
+                self._cleanup_created_resources()
+            else:
+                self.logger.warning(f"Cleanup not supported for scheme '{self.scheme}' - only 'fs' is supported")
 
         super().close()
 
     def _cleanup_created_resources(self):
         """Remove all created files and directories."""
-        # Only support filesystem cleanup for now (scheme == "fs")
-        if self.scheme != "fs":
-            self.logger.warning(f"Cleanup not supported for scheme '{self.scheme}' - only 'fs' is supported")
-            return
 
         import os
         import shutil
 
         # Get root path from kwargs
-        root_path = self.kwargs.get("root", "/")
+        root_path = os.path.abspath(self.kwargs.get("root", "/"))
 
-        # Remove files first
-        for file_path in self._created_files:
+        # Remove all paths in reverse order (handles nested directories properly)
+        for path in sorted(self._created_paths, reverse=True):
             try:
-                full_path = os.path.join(root_path, file_path.lstrip("/"))
-                if os.path.exists(full_path) and os.path.isfile(full_path):
-                    os.remove(full_path)
-                    self.logger.debug(f"Removed created file: {file_path}")
-                else:
-                    self.logger.debug(f"File already removed or not found: {file_path}")
-            except Exception as e:
-                self.logger.error(f"Failed to remove file {file_path}: {e}")
+                # Safe-join: avoid leading '/' escaping root and re-abspath joined path
+                full_path = os.path.abspath(os.path.join(root_path, str(path).lstrip("/")))
+                # Safety check: ensure resolved path is within root_path but not the root itself
+                if full_path == root_path or not full_path.startswith(root_path + os.sep):
+                    continue
 
-        # Remove directories (in reverse order to handle nested dirs)
-        for dir_path in sorted(self._created_dirs, reverse=True):
-            try:
-                full_path = os.path.join(root_path, dir_path.lstrip("/"))
-                if os.path.exists(full_path) and os.path.isdir(full_path):
-                    # Only remove if empty
-                    try:
-                        os.rmdir(full_path)
-                        self.logger.debug(f"Removed created directory: {dir_path}")
-                    except OSError:
-                        # Directory not empty, try to remove recursively if it was created by us
-                        shutil.rmtree(full_path)
-                        self.logger.debug(f"Removed created directory tree: {dir_path}")
-                else:
-                    self.logger.debug(f"Directory already removed or not found: {dir_path}")
+                if os.path.exists(full_path):
+                    if os.path.isdir(full_path):
+                        try:
+                            os.rmdir(full_path)
+                            self.logger.debug(f"Removed created directory: {path}")
+                        except OSError:
+                            shutil.rmtree(full_path)
+                            self.logger.debug(f"Removed created directory tree: {path}")
+                    else:
+                        os.remove(full_path)
+                        self.logger.debug(f"Removed created file: {path}")
             except Exception as e:
-                self.logger.error(f"Failed to remove directory {dir_path}: {e}")
+                self.logger.error(f"Failed to remove path {path}: {e}")
 
 
 class FlasherInterface(metaclass=ABCMeta):

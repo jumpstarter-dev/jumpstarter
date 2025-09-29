@@ -52,7 +52,7 @@ export:
 | `root_dir`              | Directory where image files will be stored                      | str  | no       | `/var/lib/iscsi`              |
 | `iqn_prefix`            | IQN prefix to use when building the target IQN                  | str  | no       | `iqn.2024-06.dev.jumpstarter` |
 | `target_name`           | The target name appended to the IQN prefix                      | str  | no       | `target1`                     |
-| `host`                  | IP address to bind the target to. Empty string will auto-detect | str  | no       | *auto*                        |
+| `host`                  | IP address to bind the target to. Empty string will auto-detect | str  | no       | _auto_                        |
 | `port`                  | TCP port the target listens on                                  | int  | no       | `3260`                        |
 | `remove_created_on_close`| Automatically remove created files/directories when driver closes| bool | no       | false                         |
 
