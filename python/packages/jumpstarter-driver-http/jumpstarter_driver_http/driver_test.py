@@ -31,8 +31,6 @@ async def test_http_server(http, tmp_path):
 
     uploaded_url = http.put_file(filename, tmp_path / "src")
 
-    print(http.storage.stat(filename))
-
     files = list(http.storage.list("/"))
     assert filename in files
 
@@ -80,8 +78,8 @@ async def test_opendal_tracking_on_http_server_close(tmp_path, unused_tcp_port, 
             assert filename in files
 
             # Get the tracking info before close
-            created_files = client.storage.get_created_files()
-            assert filename in created_files
+            created_resources = client.storage.get_created_resources()
+            assert filename in created_resources
 
             client.stop()
         # When exiting the context manager, HttpServer.close() is called,
@@ -89,7 +87,7 @@ async def test_opendal_tracking_on_http_server_close(tmp_path, unused_tcp_port, 
 
     # The main functionality test is that the file was tracked as created
     # The close() method logging might not be captured due to async cleanup timing
-    # but we've verified the tracking works by checking get_created_files() above
+    # but we've verified the tracking works by checking get_created_resources() above
 
 
 def test_opendal_tracking_methods(tmp_path, unused_tcp_port):
@@ -97,11 +95,9 @@ def test_opendal_tracking_methods(tmp_path, unused_tcp_port):
     with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
         client.start()
 
-        # Initially, no files should be tracked
-        created_files = client.storage.get_created_files()
-        created_dirs = client.storage.get_created_directories()
-        assert created_files == []
-        assert created_dirs == []
+        # Initially, no resources should be tracked
+        created_resources = client.storage.get_created_resources()
+        assert created_resources == set()
 
         # Write a file (which creates it)
         filename = "direct_test.txt"
@@ -110,13 +106,8 @@ def test_opendal_tracking_methods(tmp_path, unused_tcp_port):
         client.put_file(filename, tmp_path / "src")
 
         # Check tracking
-        created_files = client.storage.get_created_files()
-        assert filename in created_files
-
-        # Test get_all_created_resources
-        created_dirs, created_files = client.storage.get_all_created_resources()
-        assert filename in created_files
-        assert created_dirs == []
+        created_resources = client.storage.get_created_resources()
+        assert filename in created_resources
 
         client.stop()
 
@@ -143,7 +134,7 @@ def test_opendal_cleanup_on_close(tmp_path):
     )
 
     # Manually create a file to simulate tracking
-    cleanup_driver._created_files.add(cleanup_filename)
+    cleanup_driver._created_paths.add(cleanup_filename)
     test_file_path = cleanup_dir / cleanup_filename
     test_file_path.write_text("test content")
 
@@ -164,7 +155,7 @@ def test_opendal_cleanup_on_close(tmp_path):
     )
 
     # Manually create a file to simulate tracking
-    no_cleanup_driver._created_files.add(no_cleanup_filename)
+    no_cleanup_driver._created_paths.add(no_cleanup_filename)
     test_file_path2 = no_cleanup_dir / no_cleanup_filename
     test_file_path2.write_text("test content")
 
