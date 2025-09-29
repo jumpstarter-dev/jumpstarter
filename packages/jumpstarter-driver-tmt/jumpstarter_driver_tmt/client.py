@@ -127,6 +127,7 @@ def replace_provision_args(logger, args, host, port, username, password, hard_re
         provision_args.append("-p")
         provision_args.append(password)
     if hard_reboot_cmd:
+        provision_args.append("--feeling-safe")
         provision_args.append("--hard-reboot")
         provision_args.append(hard_reboot_cmd)
     try:
