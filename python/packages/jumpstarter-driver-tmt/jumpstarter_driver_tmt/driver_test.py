@@ -272,7 +272,7 @@ def test_replace_provision_args_with_provision():
 
     expected = [
         "discover", "provision", "-h", "connect", "-g", "new_host", "-P", "2222",
-        "-u", "new_user", "-p", "new_pass", "--hard-reboot", "j power cycle", "prepare", "execute"
+        "-u", "new_user", "-p", "new_pass", "--feeling-safe", "--hard-reboot", "j power cycle", "prepare", "execute"
     ]
     assert result == expected
 
@@ -285,7 +285,7 @@ def test_replace_provision_args_without_username_password():
 
     expected = [
         "discover", "provision", "-h", "connect", "-g", "host", "-P", "22",
-        "--hard-reboot", "j power cycle", "prepare", "execute"
+        "--feeling-safe", "--hard-reboot", "j power cycle", "prepare", "execute"
     ]
     assert result == expected
 
@@ -301,7 +301,8 @@ def test_replace_provision_args_complex():
 
     expected = [
         "--root", ".", "-c", "tracing=off", "provision", "-h", "connect", "-g", "new_host",
-        "-P", "2222", "-u", "new_user", "-p", "new_pass", "--hard-reboot", "j power cycle", "prepare", "execute"
+        "-P", "2222", "-u", "new_user", "-p", "new_pass", "--feeling-safe", "--hard-reboot", "j power cycle", "prepare",
+        "execute"
     ]
     assert result == expected
 
@@ -314,7 +315,7 @@ def test_replace_provision_args_with_tmt_run_commands():
 
     expected = [
         "provision", "-h", "connect", "-g", "host", "-P", "22", "-u", "user", "-p", "pass",
-        "--hard-reboot", "j power cycle", "plan", "test", "execute"
+        "--feeling-safe", "--hard-reboot", "j power cycle", "plan", "test", "execute"
     ]
     assert result == expected
 
@@ -327,7 +328,7 @@ def test_replace_provision_args_with_run_command():
 
     expected = [
         "discover", "run", "test", "execute", "provision", "-h", "connect", "-g", "host",
-        "-P", "22", "-u", "user", "-p", "pass", "--hard-reboot", "j power cycle"
+        "-P", "22", "-u", "user", "-p", "pass", "--feeling-safe", "--hard-reboot", "j power cycle"
     ]
     assert result == expected
     logger.debug.assert_called_with("Run section found, adding provision arguments")
@@ -352,7 +353,7 @@ def test_replace_provision_args_with_hard_reboot():
 
     expected = [
         "discover", "provision", "-h", "connect", "-g", "host", "-P", "22",
-        "-u", "user", "-p", "pass", "--hard-reboot", "custom reboot command", "prepare", "execute"
+        "-u", "user", "-p", "pass", "--feeling-safe", "--hard-reboot", "custom reboot command", "prepare", "execute"
     ]
     assert result == expected
 
