@@ -9,7 +9,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Self
 
-from anyio import AsyncContextManagerMixin, ContextManagerMixin, create_task_group, fail_after, sleep
+from anyio import (
+    AsyncContextManagerMixin,
+    CancelScope,
+    ContextManagerMixin,
+    create_task_group,
+    fail_after,
+    sleep,
+)
 from anyio.from_thread import BlockingPortal
 from grpc.aio import Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
@@ -99,6 +106,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 await self._create()
         else:
             await self._create()
+
         return await self._acquire()
 
     async def _acquire(self):
@@ -138,15 +146,21 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
-        value = await self.request_async()
         try:
+            value = await self.request_async()
             yield value
         finally:
-            if self.release:
+            if self.release and self.name:
                 logger.info("Releasing Lease %s", self.name)
-                await self.svc.DeleteLease(
-                    name=self.name,
-                )
+                # Shield cleanup from cancellation to ensure it completes
+                with CancelScope(shield=True):
+                    try:
+                        with fail_after(30):
+                            await self.svc.DeleteLease(
+                                name=self.name,
+                            )
+                    except TimeoutError:
+                        logger.warning("Timeout while deleting lease %s during cleanup", self.name)
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
