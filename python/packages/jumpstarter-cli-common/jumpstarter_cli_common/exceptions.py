@@ -1,6 +1,7 @@
 import types
 from functools import wraps
 from types import TracebackType
+from typing import NoReturn
 
 import click
 
@@ -13,12 +14,21 @@ class ClickExceptionRed(click.ClickException):
 
 
 def async_handle_exceptions(func):
-    """Decorator to handle exceptions in async functions."""
+    """Decorator to handle exceptions in async functions, including those wrapped in BaseExceptionGroup."""
 
     @wraps(func)
     async def wrapped(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
+        except BaseExceptionGroup as eg:
+            # Handle exceptions wrapped in ExceptionGroup (e.g., from task groups)
+            for exc in leaf_exceptions(eg, fix_tracebacks=False):
+                if isinstance(exc, JumpstarterException):
+                    raise ClickExceptionRed(str(exc)) from None
+                elif isinstance(exc, click.ClickException):
+                    raise exc from None
+            # If no handled exceptions, re-raise the original group
+            raise eg
         except JumpstarterException as e:
             raise ClickExceptionRed(str(e)) from None
         except click.ClickException:
@@ -46,26 +56,48 @@ def handle_exceptions(func):
     return wrapped
 
 
+def _handle_connection_error_with_reauth(exc, login_func):
+    """Handle ConnectionError with reauthentication logic."""
+    if "expired" in str(exc).lower():
+        click.echo(click.style("Token is expired, triggering re-authentication", fg="red"))
+        config = exc.get_config()
+        login_func(config)
+        raise ClickExceptionRed("Please try again now") from None
+    else:
+        raise ClickExceptionRed(str(exc)) from None
+
+
+def _handle_single_exception_with_reauth(exc, login_func):
+    """Handle a single exception (may raise)."""
+    if isinstance(exc, ConnectionError):
+        _handle_connection_error_with_reauth(exc, login_func)
+    elif isinstance(exc, JumpstarterException):
+        raise ClickExceptionRed(str(exc)) from None
+    elif isinstance(exc, click.ClickException):
+        raise exc from None
+    # Not handled: fall through
+
+
+def _handle_exception_group_with_reauth(eg, login_func) -> NoReturn:
+    """Handle exceptions wrapped in BaseExceptionGroup."""
+    for exc in leaf_exceptions(eg, fix_tracebacks=False):
+        _handle_single_exception_with_reauth(exc, login_func)
+    # If no handled exceptions, re-raise the original group
+    raise eg
+
+
 def handle_exceptions_with_reauthentication(login_func):
-    """Decorator to handle exceptions in blocking functions."""
+    """Decorator to handle exceptions in blocking functions, including those wrapped in BaseExceptionGroup."""
 
     def decorator(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except ConnectionError as e:
-                if "expired" in str(e).lower():
-                    click.echo(click.style("Token is expired, triggering re-authentication", fg="red"))
-                    config = e.get_config()
-                    login_func(config)
-                    raise ClickExceptionRed("Please try again now") from None
-                else:
-                    raise ClickExceptionRed(str(e)) from None
-            except JumpstarterException as e:
-                raise ClickExceptionRed(str(e)) from None
-            except click.ClickException:
-                raise  # if it was already a click exception from the cli commands, just re-raise it
+            except BaseExceptionGroup as eg:
+                _handle_exception_group_with_reauth(eg, login_func)
+            except (ConnectionError, JumpstarterException, click.ClickException) as e:
+                _handle_single_exception_with_reauth(e, login_func)
             except Exception:
                 raise
 
@@ -74,7 +106,7 @@ def handle_exceptions_with_reauthentication(login_func):
     return decorator
 
 
-# https://peps.python.org/pep-0785/#reference-implementation
+# https://peps.python.org/pep-0654/
 def leaf_exceptions(self: BaseExceptionGroup, *, fix_tracebacks: bool = True) -> list[BaseException]:
     """
     Return a flat list of all 'leaf' exceptions.
