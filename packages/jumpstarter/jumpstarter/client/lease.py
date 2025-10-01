@@ -47,6 +47,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
+    exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -121,6 +122,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 # lease ready
                 if condition_true(result.conditions, "Ready"):
                     logger.debug("Lease %s acquired", self.name)
+                    self.exporter_name = result.exporter
                     return self
                 # lease unsatisfiable
                 if condition_true(result.conditions, "Unsatisfiable"):
