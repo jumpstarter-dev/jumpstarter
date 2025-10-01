@@ -83,7 +83,7 @@ def _handle_exception_group_with_reauth(eg, login_func) -> NoReturn:
     for exc in leaf_exceptions(eg, fix_tracebacks=False):
         _handle_single_exception_with_reauth(exc, login_func)
     # If no handled exceptions, re-raise the original group
-    raise
+    raise eg
 
 
 def handle_exceptions_with_reauthentication(login_func):
