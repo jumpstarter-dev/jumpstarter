@@ -38,28 +38,25 @@ async def _shell_with_signal_handling(config, selector, lease_name, duration, ex
     exit_code = 0
     cancelled_exc_class = get_cancelled_exc_class()
 
-    try:
-        async with create_task_group() as tg:
-            tg.start_soon(signal_handler, tg.cancel_scope)
+    async with create_task_group() as tg:
+        tg.start_soon(signal_handler, tg.cancel_scope)
+        try:
             try:
-                try:
-                    async with anyio.from_thread.BlockingPortal() as portal:
-                        async with config.lease_async(selector, lease_name, duration, portal) as lease:
-                            exit_code = await anyio.to_thread.run_sync(
-                                _run_shell_with_lease, lease, exporter_logs, config, command
-                            )
-                except BaseExceptionGroup as eg:
-                    for exc in eg.exceptions:
-                        if isinstance(exc, TimeoutError):
-                            raise exc from None
-                    raise
-                except cancelled_exc_class:
-                    exit_code = 2
-            finally:
-                if not tg.cancel_scope.cancel_called:
-                    tg.cancel_scope.cancel()
-    except* TimeoutError:
-        exit_code = 1
+                async with anyio.from_thread.BlockingPortal() as portal:
+                    async with config.lease_async(selector, lease_name, duration, portal) as lease:
+                        exit_code = await anyio.to_thread.run_sync(
+                            _run_shell_with_lease, lease, exporter_logs, config, command
+                        )
+            except BaseExceptionGroup as eg:
+                for exc in eg.exceptions:
+                    if isinstance(exc, TimeoutError):
+                        raise exc from None
+                raise
+            except cancelled_exc_class:
+                exit_code = 2
+        finally:
+            if not tg.cancel_scope.cancel_called:
+                tg.cancel_scope.cancel()
 
     return exit_code
 

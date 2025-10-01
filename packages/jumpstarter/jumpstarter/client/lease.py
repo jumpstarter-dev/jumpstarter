@@ -47,6 +47,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
+    acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
 
     def __post_init__(self):
@@ -115,38 +116,44 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
         Makes sure the lease is ready, and returns the lease object.
         """
-        with fail_after(60):  # TODO: configurable timeout
-            while True:
-                logger.debug("Polling Lease %s", self.name)
-                result = await self.get()
-                # lease ready
-                if condition_true(result.conditions, "Ready"):
-                    logger.debug("Lease %s acquired", self.name)
-                    self.exporter_name = result.exporter
-                    return self
-                # lease unsatisfiable
-                if condition_true(result.conditions, "Unsatisfiable"):
-                    message = condition_message(result.conditions, "Unsatisfiable")
-                    logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
-                    raise LeaseError(f"the lease cannot be satisfied: {message}")
+        try:
+            with fail_after(self.acquisition_timeout):
+                while True:
+                    logger.debug("Polling Lease %s", self.name)
+                    result = await self.get()
+                    # lease ready
+                    if condition_true(result.conditions, "Ready"):
+                        logger.debug("Lease %s acquired", self.name)
+                        self.exporter_name = result.exporter
+                        return self
+                    # lease unsatisfiable
+                    if condition_true(result.conditions, "Unsatisfiable"):
+                        message = condition_message(result.conditions, "Unsatisfiable")
+                        logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
+                        raise LeaseError(f"the lease cannot be satisfied: {message}")
 
-                # lease invalid
-                if condition_true(result.conditions, "Invalid"):
-                    message = condition_message(result.conditions, "Invalid")
-                    logger.debug( "Lease %s is invalid: %s", self.name, message)
-                    raise LeaseError(f"the lease is invalid: {message}")
+                    # lease invalid
+                    if condition_true(result.conditions, "Invalid"):
+                        message = condition_message(result.conditions, "Invalid")
+                        logger.debug("Lease %s is invalid: %s", self.name, message)
+                        raise LeaseError(f"the lease is invalid: {message}")
 
-                # lease not pending
-                if condition_false(result.conditions, "Pending"):
-                    raise LeaseError(
-                        f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either"
-                    )
+                    # lease not pending
+                    if condition_false(result.conditions, "Pending"):
+                        raise LeaseError(
+                            f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either"
+                        )
 
-                # lease released
-                if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
-                    raise LeaseError(f"lease {self.name} released")
+                    # lease released
+                    if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
+                        raise LeaseError(f"lease {self.name} released")
 
-                await sleep(5)
+                    await sleep(5)
+        except TimeoutError:
+            logger.debug(f"Lease {self.name} acquisition timed out after {self.acquisition_timeout} seconds")
+            raise LeaseError(
+                f"lease {self.name} acquisition timed out after {self.acquisition_timeout} seconds"
+            ) from None
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
