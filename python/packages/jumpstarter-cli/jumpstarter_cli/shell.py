@@ -19,7 +19,7 @@ def _run_shell_with_lease(lease, exporter_logs, config, command):
     """Run shell with lease context managers."""
     def launch_remote_shell(path: str) -> int:
         return launch_shell(
-            path, "remote", config.drivers.allow, config.drivers.unsafe,
+            path, lease.exporter_name, config.drivers.allow, config.drivers.unsafe,
             config.shell.use_profiles, command=command
         )
 
