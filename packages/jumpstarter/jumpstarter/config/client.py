@@ -86,6 +86,16 @@ class ClientConfigV1Alpha1Drivers(BaseSettings):
         return self
 
 
+class ClientConfigV1Alpha1Lease(BaseSettings):
+    """Configuration for lease operations."""
+
+    acquisition_timeout: int = Field(
+        default=7200,
+        description="Timeout in seconds for lease acquisition",
+        ge=5,  # Must be at least 5 seconds (polling interval)
+    )
+
+
 class ClientConfigV1Alpha1(BaseSettings):
     CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
 
@@ -107,6 +117,8 @@ class ClientConfigV1Alpha1(BaseSettings):
     drivers: ClientConfigV1Alpha1Drivers = Field(default_factory=ClientConfigV1Alpha1Drivers)
 
     shell: ShellConfigV1Alpha1 = Field(default_factory=ShellConfigV1Alpha1)
+
+    leases: ClientConfigV1Alpha1Lease = Field(default_factory=ClientConfigV1Alpha1Lease)
 
     async def channel(self):
         if self.endpoint is None or self.token is None:
@@ -258,6 +270,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 release=release_lease,
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
+                acquisition_timeout=self.leases.acquisition_timeout,
             ) as lease:
                 yield lease
 

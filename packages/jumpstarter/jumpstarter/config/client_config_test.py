@@ -214,6 +214,8 @@ drivers:
   unsafe: false
 shell:
   use_profiles: false
+leases:
+  acquisition_timeout: 7200
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -253,6 +255,8 @@ drivers:
   unsafe: false
 shell:
   use_profiles: false
+leases:
+  acquisition_timeout: 7200
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -288,6 +292,8 @@ drivers:
   unsafe: true
 shell:
   use_profiles: false
+leases:
+  acquisition_timeout: 7200
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
