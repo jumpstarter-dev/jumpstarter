@@ -64,7 +64,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     duration=self.duration,
                 )
             ).name
-        logger.info("Created lease request for selector %s for duration %s", self.selector, self.duration)
+        logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
 
     async def get(self):
         with translate_grpc_exceptions():
@@ -114,7 +114,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
         Makes sure the lease is ready, and returns the lease object.
         """
-        with fail_after(300):  # TODO: configurable timeout
+        with fail_after(60):  # TODO: configurable timeout
             while True:
                 logger.debug("Polling Lease %s", self.name)
                 result = await self.get()
@@ -144,7 +144,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
                     raise LeaseError(f"lease {self.name} released")
 
-                await sleep(1)
+                await sleep(5)
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
