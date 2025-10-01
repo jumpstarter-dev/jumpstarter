@@ -59,7 +59,7 @@ def launch_shell(
 
     Args:
         host: The jumpstarter host path
-        context: The context of the shell ("local" or "remote")
+        context: The context of the shell (e.g. "local" or exporter name)
         allow: List of allowed drivers
         unsafe: Whether to allow drivers outside of the allow list
     """
