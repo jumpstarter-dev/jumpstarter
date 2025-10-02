@@ -18,7 +18,7 @@ from anyio import (
     sleep,
 )
 from anyio.from_thread import BlockingPortal
-from grpc.aio import Channel
+from grpc.aio import AioRpcError, Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 
 from .exceptions import LeaseError
@@ -26,6 +26,7 @@ from jumpstarter.client import client_from_path
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
+from jumpstarter.common.exceptions import ConnectionError
 from jumpstarter.common.grpc import translate_grpc_exceptions
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
@@ -189,7 +190,33 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     @asynccontextmanager
     async def serve_unix_async(self):
         async with TemporaryUnixListener(self.handle_async) as path:
+            logger.debug("Serving Unix socket at %s", path)
+            await self._wait_for_ready_connection(path)
+            # TODO: talk to the exporter to make sure it's ready.... (once we have the hooks)
             yield path
+
+    async def _wait_for_ready_connection(self, path: str):
+        retries_left = 5
+        logger.info("Waiting for ready connection at %s", path)
+        while True:
+            try:
+                with ExitStack() as stack:
+                    async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as _:
+                        break
+            except AioRpcError as e:
+                if retries_left > 1:
+                    retries_left -= 1
+                else:
+                    logger.error("Max retries reached while waiting for ready connection at %s", path)
+                    raise ConnectionError("Max retries reached while waiting for ready connection at %s" % path) from e
+                if e.code().name == "UNAVAILABLE":
+                    logger.warning("Still waiting for connection to be ready at %s", path)
+                else:
+                    logger.warning("Waiting for ready connection to %s: %s", path, e)
+                await sleep(5)
+            except Exception as e:
+                logger.error("Unexpected error while waiting for ready connection to %s: %s", path, e)
+                raise ConnectionError("Unexpected error while waiting for ready connection to %s" % path) from e
 
     @asynccontextmanager
     async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):
