@@ -394,6 +394,17 @@ class OpendalClient(DriverClient):
         """
         return self.call("capability")
 
+    @validate_call(validate_return=True)
+    def get_created_resources(self) -> set[str]:
+        """
+        Get set of all paths that have been created during this session.
+
+        Returns:
+            set[str]: Set of all paths (files and directories) that were created
+        """
+        return self.call("get_created_resources")
+
+
     def cli(self):  # noqa: C901
         arg_path = click.argument("path", type=click.Path())
         arg_source = click.argument("source", type=click.Path())
