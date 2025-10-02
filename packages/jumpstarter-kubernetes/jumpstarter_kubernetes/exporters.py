@@ -61,13 +61,13 @@ class V1Alpha1Exporter(JsonBaseModel):
     @classmethod
     def rich_add_columns(cls, table, devices: bool = False):
         if devices:
-            table.add_column("NAME")
+            table.add_column("NAME", no_wrap=True)
             table.add_column("ENDPOINT")
             table.add_column("AGE")
             table.add_column("LABELS")
             table.add_column("UUID")
         else:
-            table.add_column("NAME")
+            table.add_column("NAME", no_wrap=True)
             table.add_column("ENDPOINT")
             table.add_column("DEVICES")
             table.add_column("AGE")

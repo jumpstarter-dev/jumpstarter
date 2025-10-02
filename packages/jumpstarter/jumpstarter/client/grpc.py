@@ -157,7 +157,7 @@ class Lease(BaseModel):
 
     @classmethod
     def rich_add_columns(cls, table):
-        table.add_column("NAME")
+        table.add_column("NAME", no_wrap=True)
         table.add_column("SELECTOR")
         table.add_column("DURATION")
         table.add_column("CLIENT")
