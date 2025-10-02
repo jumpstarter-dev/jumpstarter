@@ -27,6 +27,7 @@ class HttpServer(Driver):
     host: str | None = field(default=None)
     port: int = 8080
     timeout: int = field(default=600)
+    remove_created_on_close: bool = True  # Clean up temporary web files by default
     app: web.Application = field(init=False, default_factory=web.Application)
     runner: Optional[web.AppRunner] = field(init=False, default=None)
 
@@ -36,7 +37,11 @@ class HttpServer(Driver):
 
         os.makedirs(self.root_dir, exist_ok=True)
 
-        self.children["storage"] = Opendal(scheme="fs", kwargs={"root": self.root_dir})
+        self.children["storage"] = Opendal(
+            scheme="fs",
+            kwargs={"root": self.root_dir},
+            remove_created_on_close=self.remove_created_on_close
+        )
         self.app.router.add_routes(
             [
                 web.static("/", self.root_dir),
