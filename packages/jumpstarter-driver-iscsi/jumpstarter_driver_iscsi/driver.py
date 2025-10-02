@@ -1,5 +1,9 @@
+import bz2
+import gzip
+import lzma
 import os
 import socket
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -153,6 +157,51 @@ class ISCSI(Driver):
         self._tpg.set_attribute("generate_node_acls", "1")  # type: ignore[attr-defined]
         self._tpg.set_attribute("demo_mode_write_protect", "0")  # type: ignore[attr-defined]
 
+    def _clear_tpg_luns(self):
+        """Clear all LUNs from the current TPG"""
+        try:
+            for lun in list(self._tpg.luns):  # type: ignore[attr-defined]
+                try:
+                    storage_obj = getattr(lun, "storage_object", None)
+                except Exception:
+                    storage_obj = None
+
+                try:
+                    lun.delete()
+                finally:
+                    if storage_obj is not None:
+                        with suppress(Exception):
+                            storage_obj.delete()
+        except Exception as e:
+            self.logger.warning(f"Failed clearing existing LUNs from TPG: {e}")
+
+    def _cleanup_orphan_storage_objects(self):
+        """Clean up orphan storage objects under root_dir"""
+        try:
+            root_abs = os.path.abspath(self.root_dir)
+            for so in list(self._rtsroot.storage_objects):  # type: ignore[attr-defined]
+                try:
+                    if isinstance(so, FileIOStorageObject):
+                        udev_path = os.path.abspath(getattr(so, "udev_path", ""))
+                        if udev_path.startswith(root_abs + os.sep) or udev_path == root_abs:
+                            with suppress(Exception):
+                                so.delete()
+                except Exception:
+                    continue
+        except Exception as e:
+            self.logger.debug(f"No orphan storage object cleanup performed: {e}")
+
+    @export
+    def clear_all_luns(self):
+        """Remove all existing LUNs and their backstores, including any orphans under root_dir"""
+        if self._tpg is None:
+            self._configure_target()
+
+        self._clear_tpg_luns()
+        self._luns.clear()
+        self._storage_objects.clear()
+        self._cleanup_orphan_storage_objects()
+
     @export
     def start(self):
         """Start the iSCSI target server
@@ -233,7 +282,7 @@ class ISCSI(Driver):
         else:
             normalized_path = os.path.normpath(file_path)
 
-            if normalized_path.startswith('..') or os.path.isabs(normalized_path):
+            if normalized_path.startswith("..") or os.path.isabs(normalized_path):
                 raise ISCSIError(f"Invalid file path: {file_path}")
 
             full_path = os.path.join(self.root_dir, normalized_path)
@@ -244,6 +293,53 @@ class ISCSI(Driver):
                 raise ISCSIError(f"Path traversal attempt detected: {file_path}")
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             return full_path
+
+    def _safe_join_under_root(self, rel_path: str) -> str:
+        normalized_path = os.path.normpath(rel_path)
+        if normalized_path.startswith("..") or os.path.isabs(normalized_path):
+            raise ISCSIError(f"Invalid path: {rel_path}")
+        full_path = os.path.join(self.root_dir, normalized_path)
+        resolved_path = os.path.abspath(full_path)
+        root_path = os.path.abspath(self.root_dir)
+        if not resolved_path.startswith(root_path + os.sep) and resolved_path != root_path:
+            raise ISCSIError(f"Path traversal attempt detected: {rel_path}")
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        return full_path
+
+    @export
+    def decompress(self, src_path: str, dst_path: str, algo: str) -> None:
+        """Decompress a file under storage root into another path under storage root.
+
+        src_path and dst_path are relative to root_dir.
+        algo is one of: gz, xz, bz2
+        """
+        src_full = self._safe_join_under_root(src_path)
+        dst_full = self._safe_join_under_root(dst_path)
+
+        def _copy_stream(read_f, write_f):
+            while True:
+                chunk = read_f.read(1024 * 1024)
+                if not chunk:
+                    break
+                write_f.write(chunk)
+
+        try:
+            if algo == "gz":
+                with open(dst_full, "wb") as out_f:
+                    with gzip.open(src_full, "rb") as decomp:
+                        _copy_stream(decomp, out_f)
+            elif algo == "xz":
+                with open(dst_full, "wb") as out_f:
+                    with lzma.open(src_full, "rb") as decomp:
+                        _copy_stream(decomp, out_f)
+            elif algo == "bz2":
+                with open(dst_full, "wb") as out_f:
+                    with bz2.open(src_full, "rb") as decomp:
+                        _copy_stream(decomp, out_f)
+            else:
+                raise ISCSIError(f"Unsupported compression algo: {algo}")
+        except Exception as e:
+            raise ISCSIError(f"Decompression failed: {e}") from e
 
     def _create_file_storage_object(self, name: str, full_path: str, size_mb: int) -> tuple:
         """Create file-backed storage object and return (storage_obj, final_size_mb)"""
@@ -297,6 +393,10 @@ class ISCSI(Driver):
         Raises:
             ISCSIError: On error or if the file_path is invalid.
         """
+        if name in self._luns:
+            with suppress(Exception):
+                self.remove_lun(name)
+
         size_mb = self._validate_lun_inputs(name, size_mb)
         full_path = self._get_full_path(file_path, is_block)
 
