@@ -1,5 +1,7 @@
+import os
 import shlex
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -45,6 +47,7 @@ class SSHWrapperClient(CompositeClient):
         # Get SSH command and default username from driver
         ssh_command = self.call("get_ssh_command")
         default_username = self.call("get_default_username")
+        ssh_identity = self.call("get_ssh_identity")
 
         if direct:
             # Use direct TCP address
@@ -56,7 +59,7 @@ class SSHWrapperClient(CompositeClient):
                 if not host or not port:
                     raise ValueError(f"Invalid address format: {address}")
                 self.logger.debug(f"Using direct TCP connection for SSH - host: {host}, port: {port}")
-                return self._run_ssh_local(host, port, ssh_command, default_username, args)
+                return self._run_ssh_local(host, port, ssh_command, default_username, ssh_identity, args)
             except (DriverMethodNotImplemented, ValueError) as e:
                 self.logger.error(f"Direct address connection failed ({e}), falling back to SSH port forwarding")
                 return self.run(False, args)
@@ -69,26 +72,60 @@ class SSHWrapperClient(CompositeClient):
                 host = addr[0]
                 port = addr[1]
                 self.logger.debug(f"SSH port forward established - host: {host}, port: {port}")
-                return self._run_ssh_local(host, port, ssh_command, default_username, args)
+                return self._run_ssh_local(host, port, ssh_command, default_username, ssh_identity, args)
 
-    def _run_ssh_local(self, host, port, ssh_command, default_username, args):
+    def _run_ssh_local(self, host, port, ssh_command, default_username, ssh_identity, args):
         """Run SSH command with the given host, port, and arguments"""
-        # Build SSH command arguments
-        ssh_args = self._build_ssh_command_args(ssh_command, port, default_username, args)
+        # Create temporary identity file if needed
+        identity_file = None
+        temp_file = None
+        if ssh_identity:
+            try:
+                temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key')
+                temp_file.write(ssh_identity)
+                temp_file.close()
+                # Set proper permissions (600) for SSH key
+                os.chmod(temp_file.name, 0o600)
+                identity_file = temp_file.name
+                self.logger.debug(f"Created temporary identity file: {identity_file}")
+            except Exception as e:
+                self.logger.error(f"Failed to create temporary identity file: {e}")
+                if temp_file:
+                    try:
+                        os.unlink(temp_file.name)
+                    except Exception:
+                        pass
+                raise
 
-        # Separate SSH options from command arguments
-        ssh_options, command_args = self._separate_ssh_options_and_command_args(args)
+        try:
+            # Build SSH command arguments
+            ssh_args = self._build_ssh_command_args(ssh_command, port, default_username, identity_file, args)
 
-        # Build final SSH command
-        ssh_args = self._build_final_ssh_command(ssh_args, ssh_options, host, command_args)
+            # Separate SSH options from command arguments
+            ssh_options, command_args = self._separate_ssh_options_and_command_args(args)
 
-        # Execute the command
-        return self._execute_ssh_command(ssh_args)
+            # Build final SSH command
+            ssh_args = self._build_final_ssh_command(ssh_args, ssh_options, host, command_args)
 
-    def _build_ssh_command_args(self, ssh_command, port, default_username, args):
+            # Execute the command
+            return self._execute_ssh_command(ssh_args)
+        finally:
+            # Clean up temporary identity file
+            if identity_file:
+                try:
+                    os.unlink(identity_file)
+                    self.logger.debug(f"Cleaned up temporary identity file: {identity_file}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean up temporary identity file {identity_file}: {e}")
+
+    def _build_ssh_command_args(self, ssh_command, port, default_username, identity_file, args):
         """Build initial SSH command arguments"""
         # Split the SSH command into individual arguments
         ssh_args = shlex.split(ssh_command)
+
+        # Add identity file if provided
+        if identity_file:
+            ssh_args.extend(["-i", identity_file])
 
         # Add port if specified
         if port and port != 22:
