@@ -1,6 +1,7 @@
 name: Trigger Packages Index Generation
 
 on:
+  workflow_dispatch:
 #  TODO: disabled until we have time to set this up properly, create at token for
 #  cross-repo triggering, etc.
 #  push:
