@@ -1,4 +1,3 @@
-import inspect
 import logging
 from dataclasses import dataclass
 
@@ -50,11 +49,6 @@ class CompositeClient(DriverClient):
 
         for k, v in self.children.items():
             if hasattr(v, "cli"):
-                # Check if the cli method accepts a click_group parameter
-                sig = inspect.signature(v.cli)
-                if "click_group" in sig.parameters:
-                    base.add_command(v.cli(click_group=base), k)
-                else:
-                    base.add_command(v.cli(), k)
+                base.add_command(v.cli(), k)
 
         return base
