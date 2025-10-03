@@ -204,19 +204,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
 		}
 
-		// Filter out offline exporters
-		onlineExporters := filterOutOfflineExporters(matchingExporters.Items)
-
-		// No matching exporter online, lease unsatisfiable
-		if len(onlineExporters) == 0 {
-			lease.SetStatusUnsatisfiable(
-				"NoExporter",
-				"There are no online exporter matching the selector, but there are %d matching offline exporters",
-				len(matchingExporters.Items))
-			return nil
-		}
-
-		approvedExporters, err := r.attachMatchingPolicies(ctx, lease, onlineExporters)
+		approvedExporters, err := r.attachMatchingPolicies(ctx, lease, matchingExporters.Items)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to handle policy approval: %w", err)
 		}
@@ -224,18 +212,32 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		if len(approvedExporters) == 0 {
 			lease.SetStatusUnsatisfiable(
 				"NoAccess",
-				"While there are %d online exporters matching the selector, none of them are approved by any policy for your client",
-				len(onlineExporters))
+				"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
+				len(matchingExporters.Items),
+			)
 			return nil
 		}
+
+		onlineApprovedExporters := filterOutOfflineExporters(approvedExporters)
+		if len(onlineApprovedExporters) == 0 {
+			lease.SetStatusPending(
+				"Offline",
+				"While there are %d available exporters (i.e. %s), none of them are online",
+				len(approvedExporters),
+				approvedExporters[0].Exporter.Name,
+			)
+			result.RequeueAfter = time.Second
+			return nil
+		}
+
 		// Filter out exporters that are already leased
 		activeLeases, err := r.ListActiveLeases(ctx, lease.Namespace)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to list active leases: %w", err)
 		}
 
-		approvedExporters = attachExistingLeases(approvedExporters, activeLeases.Items)
-		orderedExporters := orderApprovedExporters(approvedExporters)
+		onlineApprovedExporters = attachExistingLeases(onlineApprovedExporters, activeLeases.Items)
+		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
 
 		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
 			lease.SetStatusUnsatisfiable("SpotAccess",
@@ -244,11 +246,13 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
-		availableExporters := filterOutLeasedExporters(orderedExporters)
+		availableExporters := filterOutLeasedExporters(onlineApprovedExporters)
 		if len(availableExporters) == 0 {
 			lease.SetStatusPending("NotAvailable",
-				"There are %d approved exporters, but all of them are already leased",
-				len(approvedExporters))
+				"There are %d approved exporters, (i.e. %s) but all of them are already leased",
+				len(onlineApprovedExporters),
+				onlineApprovedExporters[0].Exporter.Name,
+			)
 			result.RequeueAfter = time.Second
 			return nil
 		}
@@ -461,15 +465,15 @@ func filterOutLeasedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 }
 
 // filterOutOfflineExporters filters out the exporters that are not online
-func filterOutOfflineExporters(matchingExporters []jumpstarterdevv1alpha1.Exporter) []jumpstarterdevv1alpha1.Exporter {
+func filterOutOfflineExporters(approvedExporters []ApprovedExporter) []ApprovedExporter {
 	onlineExporters := slices.DeleteFunc(
-		matchingExporters,
-		func(exporter jumpstarterdevv1alpha1.Exporter) bool {
-			return !true || !meta.IsStatusConditionTrue(
-				exporter.Status.Conditions,
+		approvedExporters,
+		func(approvedExporter ApprovedExporter) bool {
+			return !meta.IsStatusConditionTrue(
+				approvedExporter.Exporter.Status.Conditions,
 				string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
 			) || !meta.IsStatusConditionTrue(
-				exporter.Status.Conditions,
+				approvedExporter.Exporter.Status.Conditions,
 				string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			)
 		},
