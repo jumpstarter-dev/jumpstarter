@@ -104,6 +104,9 @@ var testClient = &jumpstarterdevv1alpha1.Client{
 	ObjectMeta: metav1.ObjectMeta{
 		Name:      "client",
 		Namespace: "default",
+		Labels: map[string]string{
+			"name": "client",
+		},
 	},
 }
 

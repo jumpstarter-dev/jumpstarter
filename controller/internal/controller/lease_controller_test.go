@@ -150,7 +150,7 @@ var _ = Describe("Lease Controller", func() {
 	})
 
 	When("trying to lease an offline exporter", func() {
-		It("should fail right away", func() {
+		It("should set status to pending with offline reason", func() {
 			lease := leaseDutA2Sec.DeepCopy()
 
 			ctx := context.Background()
@@ -166,8 +166,133 @@ var _ = Describe("Lease Controller", func() {
 
 			Expect(meta.IsStatusConditionTrue(
 				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+			)).To(BeTrue())
+
+			// Check that the condition has the correct reason
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("Offline"))
+		})
+	})
+
+	When("trying to lease approved exporters that are offline", func() {
+		It("should set status to pending with offline reason", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			// Create a policy that approves the exporters
+			policy := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"dut": "a",
+						},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Priority: 0,
+							From: []jumpstarterdevv1alpha1.From{
+								{
+									ClientSelector: metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"name": "client",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+			// Set exporters offline while they are approved by policy
+			setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter2DutA.Name, metav1.ConditionFalse)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+			)).To(BeTrue())
+
+			// Check that the condition has the correct reason
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("Offline"))
+			Expect(condition.Message).To(ContainSubstring("none of them are online"))
+
+			// Clean up
+			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+		})
+	})
+
+	When("trying to lease exporters that match selector but are not approved by any policy", func() {
+		It("should set status to unsatisfiable with NoAccess reason", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			// Create a policy that does NOT approve the exporters (different client selector)
+			policy := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"dut": "a",
+						},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Priority: 0,
+							From: []jumpstarterdevv1alpha1.From{
+								{
+									ClientSelector: metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											"name": "different-client", // Different from testClient
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
 				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
 			)).To(BeTrue())
+
+			// Check that the condition has the correct reason
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("NoAccess"))
+			Expect(condition.Message).To(ContainSubstring("none of them are approved by any policy"))
+
+			// Clean up
+			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 		})
 	})
 
@@ -225,6 +350,12 @@ var _ = Describe("Lease Controller", func() {
 				updatedLease.Status.Conditions,
 				string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
 			)).To(BeTrue())
+
+			// Check that the condition has the correct reason and message format
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("NotAvailable"))
+			Expect(condition.Message).To(ContainSubstring("but all of them are already leased"))
 		})
 
 		It("should be acquired when a valid exporter lease times out", func() {
