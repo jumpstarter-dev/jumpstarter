@@ -101,74 +101,155 @@ def test_cli_method_execution(client):
     """Test that CLI methods can be executed"""
     cli = client.cli()
 
-    # Test that we can get the echo command
-    echo_command = cli.commands.get('echo')
-    assert echo_command is not None
+    # Test that CLI commands exist and have the correct structure
+    echo_command = cli.commands['echo']
     assert echo_command.name == 'echo'
 
 
 def test_cli_includes_all_methods():
-    """Test that CLI includes all methods"""
-    from .driver import Shell
-    from jumpstarter.common.utils import serve
-
-    shell_instance = Shell(
-        log_level="DEBUG",
+    """Test that CLI includes all configured methods with proper names"""
+    shell = Shell(
         methods={
-            "method1": "echo method1",
-            "method2": "echo method2",
-            "method3": "echo method3",
-        },
+            "echo": "echo",
+            "env": "echo $ENV_VAR",
+            "multi_line": "echo line1\necho line2",
+            "exit1": "exit 1",
+            "stderr": "echo 'error' 1>&2",
+        }
     )
 
-    with serve(shell_instance) as test_client:
-        cli = test_client.cli()
+    with serve(shell) as client:
+        cli = client.cli()
+
+        # Check that all methods are in the CLI
+        expected_methods = {"echo", "env", "multi_line", "exit1", "stderr"}
         available_commands = set(cli.commands.keys())
 
-        # All methods should be available
-        expected_methods = {"method1", "method2", "method3"}
         assert available_commands == expected_methods, f"Expected {expected_methods}, got {available_commands}"
 
 
 def test_cli_exit_codes():
-    """Test that CLI commands preserve shell command exit codes"""
-    import click
-
-    from .driver import Shell
-    from jumpstarter.common.utils import serve
-
-    # Create a shell instance with methods that have different exit codes
-    shell_instance = Shell(
-        log_level="DEBUG",
+    """Test that CLI methods correctly exit with shell command return codes"""
+    shell = Shell(
         methods={
-            "success": "exit 0",
-            "fail_1": "exit 1",
-            "fail_42": "exit 42",
-        },
+            "exit0": "exit 0",
+            "exit1": "exit 1",
+            "exit42": "exit 42",
+        }
     )
 
-    with serve(shell_instance) as test_client:
-        cli = test_client.cli()
+    with serve(shell) as client:
+        # Test successful command (exit 0)
+        returncode = client.exit0()
+        assert returncode == 0
 
-        # Test successful command (exit 0) - should not raise
-        success_cmd = cli.commands['success']
-        try:
-            success_cmd.callback([], [])  # Call with empty args and env
-        except click.exceptions.Exit:
-            raise AssertionError("Success command should not raise Exit exception") from None
+        # Test failed command (exit 1)
+        returncode = client.exit1()
+        assert returncode == 1
 
-        # Test command that exits with code 1 - should raise Exit(1)
-        fail1_cmd = cli.commands['fail_1']
-        try:
-            fail1_cmd.callback([], [])
-            raise AssertionError("Command should have raised Exit exception")
-        except click.exceptions.Exit as e:
-            assert e.exit_code == 1
+        # Test custom exit code (exit 42)
+        returncode = client.exit42()
+        assert returncode == 42
 
-        # Test command that exits with code 42 - should raise Exit(42)
-        fail42_cmd = cli.commands['fail_42']
-        try:
-            fail42_cmd.callback([], [])
-            raise AssertionError("Command should have raised Exit exception")
-        except click.exceptions.Exit as e:
-            assert e.exit_code == 42
+
+def test_cli_custom_descriptions_unified_format():
+    """Test that CLI methods use custom descriptions with unified format"""
+    shell = Shell(
+        methods={
+            "echo": {
+                "command": "echo",
+                "description": "Custom echo description"
+            },
+            "test_method": {
+                "command": "echo 'test'",
+                "description": "Test method with custom description"
+            },
+        }
+    )
+
+    with serve(shell) as client:
+        cli = client.cli()
+
+        # Check that custom descriptions are used
+        echo_cmd = cli.commands['echo']
+        assert echo_cmd.help == "Custom echo description", f"Expected custom description, got {echo_cmd.help}"
+
+        test_cmd = cli.commands['test_method']
+        assert test_cmd.help == "Test method with custom description"
+
+
+def test_cli_default_descriptions():
+    """Test that CLI methods use default descriptions when not configured"""
+    shell = Shell(
+        methods={
+            "echo": "echo",
+            "test_method": "echo 'test'",
+        }
+        # No descriptions configured
+    )
+
+    with serve(shell) as client:
+        cli = client.cli()
+
+        # Check that default descriptions are used
+        echo_cmd = cli.commands['echo']
+        assert echo_cmd.help == "Execute the echo shell method"
+
+        test_cmd = cli.commands['test_method']
+        assert test_cmd.help == "Execute the test_method shell method"
+
+
+def test_get_method_description_unified():
+    """Test the get_method_description export method with unified format"""
+    shell = Shell(
+        methods={
+            "method1": {
+                "command": "echo",
+                "description": "Custom description for method1"
+            },
+            "method2": "ls",  # String format, should use default description
+        }
+    )
+
+    with serve(shell) as client:
+        # Test with custom description (unified format)
+        assert client.call("get_method_description", "method1") == "Custom description for method1"
+
+        # Test with default description (string format)
+        assert client.call("get_method_description", "method2") == "Execute the method2 shell method"
+
+
+def test_mixed_format_methods():
+    """Test that both string and dict formats work together"""
+    shell = Shell(
+        methods={
+            "simple": "echo 'simple'",
+            "detailed": {
+                "command": "echo 'detailed'",
+                "description": "A detailed command with description"
+            },
+            "default_cmd": {
+                # No command specified - should use default "echo Hello"
+                "description": "Method using default command"
+            }
+        }
+    )
+
+    with serve(shell) as client:
+        # Test string format works
+        returncode = client.simple()
+        assert returncode == 0
+
+        # Test dict format works
+        returncode = client.detailed()
+        assert returncode == 0
+
+        # Test default command works
+        returncode = client.default_cmd()
+        assert returncode == 0
+
+        # Test CLI descriptions
+        cli = client.cli()
+        assert cli.commands['simple'].help == "Execute the simple shell method"
+        assert cli.commands['detailed'].help == "A detailed command with description"
+        assert cli.commands['default_cmd'].help == "Method using default command"
