@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import click
 import pytest
 from click.testing import CliRunner
 from jumpstarter_driver_network.driver import TcpNetwork
@@ -24,18 +23,18 @@ def test_drivers_tmt_cli():
     with serve(instance) as client:
         # Test the CLI tmt command without arguments
         runner = CliRunner()
-        cli = client.cli(click.Group())
+        cli = client.cli()
 
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, ["tmt"])
+            result = runner.invoke(cli, [])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
         # Test the CLI tmt command with arguments
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, ["tmt", "test", "arg1", "arg2"])
+            result = runner.invoke(cli, ["test", "arg1", "arg2"])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
@@ -46,12 +45,12 @@ def test_drivers_tmt_cli_with_options():
 
     with serve(instance) as client:
         runner = CliRunner()
-        cli = client.cli(click.Group())
+        cli = client.cli()
 
         # Test with --forward-ssh flag
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, ["tmt", "--forward-ssh", "test"])
+            result = runner.invoke(cli, ["--forward-ssh", "test"])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
@@ -59,7 +58,7 @@ def test_drivers_tmt_cli_with_options():
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
             result = runner.invoke(
-                cli, ["tmt", "--tmt-username", "custom_user", "--tmt-password", "custom_pass", "test"]
+                cli, ["--tmt-username", "custom_user", "--tmt-password", "custom_pass", "test"]
             )
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
@@ -67,7 +66,7 @@ def test_drivers_tmt_cli_with_options():
         # Test with custom tmt command
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0  # Success return code
-            result = runner.invoke(cli, ["tmt", "--tmt-cmd", "custom-tmt", "test"])
+            result = runner.invoke(cli, ["--tmt-cmd", "custom-tmt", "test"])
             assert result.exit_code == 0
             mock_run_tmt.assert_called_once()
 
@@ -78,12 +77,12 @@ def test_drivers_tmt_cli_error_handling():
 
     with serve(instance) as client:
         runner = CliRunner()
-        cli = client.cli(click.Group())
+        cli = client.cli()
 
         # Test CLI with non-zero return code
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 1  # Error return code
-            result = runner.invoke(cli, ["tmt", "test"])
+            result = runner.invoke(cli, ["test"])
             assert result.exit_code == 1
             mock_run_tmt.assert_called_once()
 
@@ -94,10 +93,10 @@ def test_drivers_tmt_cli_tmt_on_exporter():
 
     with serve(instance) as client:
         runner = CliRunner()
-        cli = client.cli(click.Group())
+        cli = client.cli()
 
         # Test CLI with --tmt-on-exporter flag (should abort)
-        result = runner.invoke(cli, ["tmt", "--tmt-on-exporter", "test"])
+        result = runner.invoke(cli, ["--tmt-on-exporter", "test"])
         assert result.exit_code == 1  # click.Abort() returns exit code 1
         assert "TMT will be run on the exporter" in result.output
         assert "Aborted!" in result.output
@@ -428,11 +427,11 @@ def test_drivers_tmt_cli_logging():
 
     with serve(instance) as client:
         runner = CliRunner()
-        cli = client.cli(click.Group())
+        cli = client.cli()
 
         with patch.object(client, '_run_tmt_local') as mock_run_tmt:
             mock_run_tmt.return_value = 0
             with patch.object(client.logger, 'debug') as mock_debug:
-                result = runner.invoke(cli, ["tmt", "test"])
+                result = runner.invoke(cli, ["test"])
                 assert result.exit_code == 0
                 mock_debug.assert_called_with("TMT result: 0")
