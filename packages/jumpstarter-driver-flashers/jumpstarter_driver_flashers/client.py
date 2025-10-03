@@ -750,9 +750,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return token
 
     def cli(self):
-        @click.group
+        @click.group(help=self.description or "Software-defined flasher interface")
         def base():
-            """Software-defined flasher interface"""
             pass
 
         @base.command()

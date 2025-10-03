@@ -102,7 +102,7 @@ class RideSXClient(FlasherClient, CompositeClient):
     def cli(self):
         generic_cli = FlasherClient.cli(self)
 
-        @click.group()
+        @click.group(help=self.description or "RideSX storage operations")
         def storage():
             pass
 

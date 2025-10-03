@@ -17,9 +17,8 @@ class SNMPServerClient(PowerClient):
         self.call("off")
 
     def cli(self):
-        @click.group()
+        @click.group(help=self.description or "SNMP power control commands")
         def snmp():
-            """SNMP power control commands"""
             pass
 
         for cmd in super().cli().commands.values():

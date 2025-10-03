@@ -36,9 +36,8 @@ class PySerialClient(DriverClient):
             yield adapter
 
     def cli(self):
-        @click.group
+        @click.group(help=self.description or "Serial port client")
         def base():
-            """Serial port client"""
             pass
 
         @base.command()

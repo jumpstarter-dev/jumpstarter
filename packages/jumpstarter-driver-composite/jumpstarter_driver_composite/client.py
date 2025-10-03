@@ -34,7 +34,7 @@ class CompositeClient(DriverClient):
                 v.close()
 
     def cli(self):
-        @click.group
+        @click.group(help=self.description or "Generic composite device")
         @click.option(
             "--log-level",
             "log_level",
@@ -44,7 +44,6 @@ class CompositeClient(DriverClient):
             callback=_opt_log_level_callback,
         )
         def base():
-            """Generic composite device"""
             pass
 
         for k, v in self.children.items():

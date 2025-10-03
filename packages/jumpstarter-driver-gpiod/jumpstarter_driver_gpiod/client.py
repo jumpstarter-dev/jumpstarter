@@ -34,9 +34,8 @@ class DigitalOutputClient(PowerClient):
         return PinState(int(self.call("read_pin")))
 
     def cli(self):
-        @click.group()
+        @click.group(help=self.description or "GPIO power control commands.")
         def gpio():
-            """GPIO power control commands."""
             pass
 
         for cmd in super().cli().commands.values():
@@ -79,9 +78,8 @@ class DigitalInputClient(DriverClient):
         return PinState(int(self.call("read_pin")))
 
     def cli(self):
-        @click.group()
+        @click.group(help=self.description or "GPIO input commands.")
         def gpio():
-            """GPIO input commands."""
             pass
 
         @gpio.command()

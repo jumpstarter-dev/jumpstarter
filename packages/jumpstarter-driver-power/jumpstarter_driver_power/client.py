@@ -35,9 +35,8 @@ class PowerClient(DriverClient):
             yield PowerReading.model_validate(v, strict=True)
 
     def cli(self):
-        @click.group
+        @click.group(help=self.description or "Generic power")
         def base():
-            """Generic power"""
             pass
 
         @base.command()
