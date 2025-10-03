@@ -20,8 +20,8 @@ class SSHWrapperClient(CompositeClient):
     This client provides methods to interact with SSH connections via CLI
     """
 
-    def cli(self, click_group):
-        @click_group.command(context_settings={"ignore_unknown_options": True})
+    def cli(self):
+        @click.command(context_settings={"ignore_unknown_options": True})
         @click.option("--direct", is_flag=True, help="Use direct TCP address")
         @click.argument("args", nargs=-1)
         def ssh(direct, args):
