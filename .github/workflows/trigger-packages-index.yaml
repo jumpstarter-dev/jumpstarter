@@ -1,12 +1,14 @@
 name: Trigger Packages Index Generation
 
 on:
-  push:
-    branches:
-      - main
-      - release-*
-    tags:
-      - "*"
+#  TODO: disabled until we have time to set this up properly, create at token for
+#  cross-repo triggering, etc.
+#  push:
+#    branches:
+#      - main
+#      - release-*
+#    tags:
+#      - "*"
 
 jobs:
   trigger-packages-index:
