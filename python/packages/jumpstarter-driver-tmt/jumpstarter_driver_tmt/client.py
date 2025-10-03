@@ -31,9 +31,9 @@ class TMTClient(CompositeClient):
     This client provides methods to interact with LocalTMT devices via SSH
     """
 
-    def cli(self, click_group):
+    def cli(self):
 
-        @click_group.command(context_settings={"ignore_unknown_options": True})
+        @click.command(context_settings={"ignore_unknown_options": True})
         @click.option("--forward-ssh", is_flag=True)
         @click.option("--tmt-username", default=None)
         @click.option("--tmt-password", default=None)
