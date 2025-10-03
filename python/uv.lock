@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 
 [manifest]
@@ -1079,6 +1079,7 @@ dependencies = [
     { name = "jumpstarter-driver-shell" },
     { name = "jumpstarter-driver-snmp" },
     { name = "jumpstarter-driver-tftp" },
+    { name = "jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot" },
     { name = "jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-yepkit" },
@@ -1113,6 +1114,7 @@ requires-dist = [
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
     { name = "jumpstarter-driver-snmp", editable = "packages/jumpstarter-driver-snmp" },
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
+    { name = "jumpstarter-driver-tmt", editable = "packages/jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
     { name = "jumpstarter-driver-ustreamer", editable = "packages/jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-yepkit", editable = "packages/jumpstarter-driver-yepkit" },
