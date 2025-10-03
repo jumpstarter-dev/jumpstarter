@@ -33,6 +33,9 @@ class DriverClient(AsyncDriverClient):
     portal: BlockingPortal
     stack: ExitStack
 
+    description: str | None = None
+    """Driver description from GetReport(), used for CLI help text"""
+
     def call(self, method, *args):
         """
         Invoke driver call

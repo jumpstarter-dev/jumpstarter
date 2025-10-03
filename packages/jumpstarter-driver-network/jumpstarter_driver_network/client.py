@@ -20,9 +20,8 @@ class NetworkClient(DriverClient):
         return self.call("address")
 
     def cli(self):
-        @click.group
+        @click.group(help=self.description or "Generic Network Connection")
         def base():
-            """Generic Network Connection"""
             pass
 
         @base.command()

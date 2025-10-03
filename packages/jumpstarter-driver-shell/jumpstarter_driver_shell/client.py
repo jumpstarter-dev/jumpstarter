@@ -41,9 +41,8 @@ class ShellClient(DriverClient):
 
     def cli(self):
         """Create CLI interface for dynamically configured shell methods"""
-        @click.group
+        @click.group(help=self.description or "Shell command executor")
         def base():
-            """Shell command executor"""
             pass
 
         # Get available methods from the driver
@@ -80,12 +79,12 @@ class ShellClient(DriverClient):
         except Exception:
             description = f"Execute the {method_name} shell method"
 
-        # Decorate and register the command
-        method_command.__doc__ = description
+        # Decorate and register the command with help text
         method_command = click.argument('args', nargs=-1, type=click.UNPROCESSED)(method_command)
         method_command = click.option('--env', '-e', multiple=True,
                      help='Environment variables in KEY=VALUE format')(method_command)
         method_command = group.command(
             name=method_name,
+            help=description,
             context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
         )(method_command)

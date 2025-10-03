@@ -100,6 +100,7 @@ class Session(
 
     async def GetReport(self, request, context):
         logger.debug("GetReport()")
+
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
