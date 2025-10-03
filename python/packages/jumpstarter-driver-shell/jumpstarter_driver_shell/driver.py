@@ -12,12 +12,35 @@ from jumpstarter.driver import Driver, export
 class Shell(Driver):
     """shell driver for Jumpstarter"""
 
-    # methods field is used to define the methods exported, and the shell script
-    # to be executed by each method
-    methods: dict[str, str]
+    # methods field defines the methods exported and their shell scripts
+    # Supports two formats:
+    # 1. Simple string: method_name: "command"
+    # 2. Dict with description: method_name: {command: "...", description: "...", timeout: ...}
+    methods: dict[str, str | dict[str, str | int]]
     shell: list[str] = field(default_factory=lambda: ["bash", "-c"])
     timeout: int = 300
     cwd: str | None = None
+
+    def _get_method_command(self, method: str) -> str:
+        """Extract the command string from a method configuration"""
+        method_config = self.methods[method]
+        if isinstance(method_config, str):
+            return method_config
+        return method_config.get("command", "echo Hello")
+
+    def _get_method_description(self, method: str) -> str:
+        """Extract the description from a method configuration"""
+        method_config = self.methods[method]
+        if isinstance(method_config, str):
+            return f"Execute the {method} shell method"
+        return method_config.get("description", f"Execute the {method} shell method")
+
+    def _get_method_timeout(self, method: str) -> int:
+        """Extract the timeout from a method configuration, fallback to global timeout"""
+        method_config = self.methods[method]
+        if isinstance(method_config, str):
+            return self.timeout
+        return method_config.get("timeout", self.timeout)
 
     @classmethod
     def client(cls) -> str:
@@ -30,6 +53,11 @@ class Shell(Driver):
         return methods
 
     @export
+    def get_method_description(self, method: str) -> str:
+        """Get the description for a specific method"""
+        return self._get_method_description(method)
+
+    @export
     async def call_method(self, method: str, env, *args) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """
         Execute a shell method with live streaming output.
@@ -39,12 +67,13 @@ class Shell(Driver):
         self.logger.info(f"calling {method} with args: {args} and kwargs as env: {env}")
         if method not in self.methods:
             raise ValueError(f"Method '{method}' not found in available methods: {list(self.methods.keys())}")
-        script = self.methods[method]
-        self.logger.debug(f"running script: {script}")
+        script = self._get_method_command(method)
+        timeout = self._get_method_timeout(method)
+        self.logger.debug(f"running script: {script} with timeout: {timeout}")
 
         try:
             async for stdout_chunk, stderr_chunk, returncode in self._run_inline_shell_script(
-                method, script, *args, env_vars=env
+                method, script, *args, env_vars=env, timeout=timeout
             ):
                 if stdout_chunk:
                     self.logger.debug(f"{method} stdout:\n{stdout_chunk.rstrip()}")
@@ -121,7 +150,7 @@ class Shell(Driver):
         return stdout_data, stderr_data
 
     async def _run_inline_shell_script(
-        self, method, script, *args, env_vars=None
+        self, method, script, *args, env_vars=None, timeout=None
     ) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """
         Run the given shell script with live streaming output.
@@ -130,6 +159,7 @@ class Shell(Driver):
         :param script:      The shell script contents as a string.
         :param args:        Arguments to pass to the script (mapped to $1, $2, etc. in the script).
         :param env_vars:    A dict of environment variables to make available to the script.
+        :param timeout:     Customized command timeout in seconds. If None, uses global timeout.
 
         :yields:            Tuples of (stdout_chunk, stderr_chunk, returncode).
                            returncode is None until the process completes.
@@ -151,9 +181,12 @@ class Shell(Driver):
         # Create a task to monitor the process timeout
         start_time = asyncio.get_event_loop().time()
 
+        if timeout is None:
+            timeout = self.timeout
+
         # Read output in real-time
         while process.returncode is None:
-            if asyncio.get_event_loop().time() - start_time > self.timeout:
+            if asyncio.get_event_loop().time() - start_time > timeout:
                 # Send SIGTERM to entire process group for graceful termination
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
@@ -168,7 +201,7 @@ class Shell(Driver):
                         self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
                     except (ProcessLookupError, OSError):
                         pass
-                raise subprocess.TimeoutExpired(cmd, self.timeout) from None
+                raise subprocess.TimeoutExpired(cmd, timeout) from None
 
             try:
                 stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
