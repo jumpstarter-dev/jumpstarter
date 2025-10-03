@@ -58,13 +58,6 @@ class ShellClient(DriverClient):
 
     def _add_method_command(self, group, method_name):
         """Add a Click command for a specific shell method"""
-        @group.command(
-            name=method_name,
-            context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
-        )
-        @click.argument('args', nargs=-1, type=click.UNPROCESSED)
-        @click.option('--env', '-e', multiple=True,
-                     help='Environment variables in KEY=VALUE format')
         def method_command(args, env):
             # Parse environment variables
             env_dict = {}
@@ -81,5 +74,18 @@ class ShellClient(DriverClient):
             if returncode != 0:
                 raise click.exceptions.Exit(returncode)
 
-        # Update the docstring dynamically
-        method_command.__doc__ = f"Execute the {method_name} shell method"
+        # Try to get custom description, fall back to default for older than 0.7 servers
+        try:
+            description = self.call("get_method_description", method_name)
+        except Exception:
+            description = f"Execute the {method_name} shell method"
+
+        # Decorate and register the command
+        method_command.__doc__ = description
+        method_command = click.argument('args', nargs=-1, type=click.UNPROCESSED)(method_command)
+        method_command = click.option('--env', '-e', multiple=True,
+                     help='Environment variables in KEY=VALUE format')(method_command)
+        method_command = group.command(
+            name=method_name,
+            context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
+        )(method_command)
