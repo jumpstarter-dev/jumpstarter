@@ -25,9 +25,11 @@ jumpstarter-driver-pyserial = { workspace = true }
 jumpstarter-driver-qemu = { workspace = true }
 jumpstarter-driver-sdwire = { workspace = true }
 jumpstarter-driver-tasmota = { workspace = true }
+jumpstarter-driver-tmt = { workspace = true }
 jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
+jumpstarter-driver-ssh = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-iscsi = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }

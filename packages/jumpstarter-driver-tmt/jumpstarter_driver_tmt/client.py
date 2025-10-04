@@ -31,9 +31,9 @@ class TMTClient(CompositeClient):
     This client provides methods to interact with LocalTMT devices via SSH
     """
 
-    def cli(self, click_group):
+    def cli(self):
 
-        @click_group.command(context_settings={"ignore_unknown_options": True})
+        @click.command(context_settings={"ignore_unknown_options": True})
         @click.option("--forward-ssh", is_flag=True)
         @click.option("--tmt-username", default=None)
         @click.option("--tmt-password", default=None)
@@ -127,6 +127,7 @@ def replace_provision_args(logger, args, host, port, username, password, hard_re
         provision_args.append("-p")
         provision_args.append(password)
     if hard_reboot_cmd:
+        provision_args.append("--feeling-safe")
         provision_args.append("--hard-reboot")
         provision_args.append(hard_reboot_cmd)
     try:

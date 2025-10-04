@@ -38,20 +38,23 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     tls: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, str] = field(default_factory=dict)
     registered: bool = field(init=False, default=False)
+    _unregister: bool = field(init=False, default=False)
     _stop_requested: bool = field(init=False, default=False)
     _started: bool = field(init=False, default=False)
     _tg: TaskGroup | None = field(init=False, default=None)
 
-    def stop(self, wait_for_lease_exit=False):
+    def stop(self, wait_for_lease_exit=False, should_unregister=False):
         """Signal the exporter to stop.
 
         Args:
             wait_for_lease_exit (bool): If True, wait for the current lease to exit before stopping.
+            should_unregister (bool): If True, unregister from controller. Otherwise rely on heartbeat.
         """
 
         # Stop immediately if not started yet or if immediate stop is requested
         if (not self._started or not wait_for_lease_exit) and self._tg is not None:
-            logger.info("Stopping exporter immediately")
+            logger.info("Stopping exporter immediately, unregister from controller=%s", should_unregister)
+            self._unregister = should_unregister
             self._tg.cancel_scope.cancel()
         elif not self._stop_requested:
             self._stop_requested = True
@@ -63,7 +66,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             yield self
         finally:
             try:
-                if self.registered:
+                if self.registered and self._unregister:
                     logger.info("Unregistering exporter with controller")
                     try:
                         with move_on_after(10):  # 10 second timeout
@@ -200,6 +203,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 else:
                     logger.info("Currently not leased")
                     if self._stop_requested:
-                        self.stop()
+                        self.stop(should_unregister=True)
                         break
         self._tg = None
