@@ -20,6 +20,7 @@ async def install_helm_chart(
     kubeconfig: Optional[str],
     context: Optional[str],
     helm: Optional[str] = "helm",
+    values_files: Optional[list[str]] = None,
 ):
     args = [
         helm,
@@ -54,6 +55,11 @@ async def install_helm_chart(
     if context is not None:
         args.append("--kube-context")
         args.append(context)
+
+    if values_files is not None:
+        for values_file in values_files:
+            args.append("-f")
+            args.append(values_file)
 
     # Attempt to install Jumpstarter using Helm
     process = await asyncio.create_subprocess_exec(*args)

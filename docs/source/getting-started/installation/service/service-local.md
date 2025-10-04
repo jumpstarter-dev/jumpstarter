@@ -13,9 +13,13 @@ Before installing locally, ensure you have:
 
 ## Install with Jumpstarter CLI
 
-The Jumpstarter CLI provides the `jmp admin install` command to automatically
-run Helm with the correct arguments, simplifying installation in your Kubernetes
-cluster. This is the recommended approach for getting started quickly.
+The Jumpstarter CLI provides convenient commands for local demo/test cluster management and Jumpstarter installation:
+
+- `jmp admin create cluster` - Creates a local cluster and installs Jumpstarter (recommended for getting started quickly)
+- `jmp admin delete cluster` - Deletes a local cluster completely
+- `jmp admin get clusters` - Get local clusters from a Kubeconfig
+- `jmp admin install` - Installs Jumpstarter on an existing cluster
+- `jmp admin uninstall` - Removes Jumpstarter from a cluster (but keeps the cluster)
 
 ```{warning}
 Sometimes the automatic IP address detection for will not work correctly, to check if Jumpstarter can determine your IP address, run `jmp admin ip`. If the IP address cannot be determined, use the `--ip` argument to manually set your IP address.
@@ -27,44 +31,65 @@ If you want to test Jumpstarter locally with more control over the setup, you ca
 
 [**kind**](https://kind.sigs.k8s.io/docs/user/quick-start/) (Kubernetes in Docker) is a tool for running local Kubernetes clusters using Docker or Podman containerized "nodes". It's lightweight and fast to start, making it excellent for CI/CD pipelines and quick local testing.
 
-[**minikube**](https://minikube.sigs.k8s.io/docs/start/) runs local Kubernetes clusters using VMs or container "nodes". It works across several platforms and supports different hypervisors, making it ideal for local development and testing. It's particularly useful in environments requiring untrusted certificates.
-
-```{tip}
-Consider minikube for environments requiring [untrusted certificates](https://minikube.sigs.k8s.io/docs/handbook/untrusted_certs/).
-```
+[**minikube**](https://minikube.sigs.k8s.io/docs/start/) runs local Kubernetes clusters using VMs or container "nodes". It works across several platforms and supports different hypervisors, making it ideal for local development and testing. Minikube works better if you don't have a local Docker/Podman installation.
 
 The admin CLI can automatically create a local cluster and install Jumpstarter with a single command:
 
+By default, Jumpstarter will try to detect which local cluster tools are installed:
+
+```{tip}
+By default, Jumpstarter will use `kind` if available, use the `--minikube` argument to force Jumpstarter to use minikube instead.
+```
+
+```{code-block} console
+$ jmp admin create cluster
+```
+
+However, you can also explicitly specify a local cluster tool:
+
 ````{tab} kind
 ```{code-block} console
-$ jmp admin install --kind --create-cluster
+$ jmp admin create cluster --kind
 ```
+
+Additional options for cluster creation:
+
+- Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
+- `--kind <PATH>`: Path to the kind binary to use for cluster management
+- `--helm <PATH>`: Path to the Helm binary to install the Jumpstarter service with
+- `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
+- `--kind-extra-args`: Pass additional arguments to kind cluster creation
+- `--skip-install`: Create the cluster without installing Jumpstarter
+- `--extra-certs <PATH>`: Path to custom CA certificate bundle file to inject into the cluster
 ````
 
 ````{tab} minikube
 ```{code-block} console
-$ jmp admin install --minikube --create-cluster
+$ jmp admin create cluster --minikube
 ```
-````
 
 Additional options for cluster creation:
 
-- `--cluster-name`: Specify a custom cluster name (default: `jumpstarter-lab`)
-- `--force-recreate-cluster`: Force recreate the cluster if it already exists (destroys all data)
-- `--kind-extra-args`: Pass additional arguments to kind cluster creation
+- Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
+- `--minikube <PATH>`: Path to the minikube binary to use for cluster management
+- `--helm <PATH>`: Path to the Helm binary to install the Jumpstarter service with
+- `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
 - `--minikube-extra-args`: Pass additional arguments to minikube cluster creation
+- `--skip-install`: Create the cluster without installing Jumpstarter
+- `--extra-certs <PATH>`: Path to custom CA certificate bundle file to inject into the cluster
+````
 
 To set a custom cluster name:
 
 ````{tab} kind
 ```{code-block} console
-$ jmp admin install --kind --create-cluster --cluster-name my-jumpstarter-cluster
+$ jmp admin create cluster my-jumpstarter-cluster --kind
 ```
 ````
 
 ````{tab} minikube
 ```{code-block} console
-$ jmp admin install --minikube --create-cluster --cluster-name my-jumpstarter-cluster
+$ jmp admin create cluster my-jumpstarter-cluster --minikube
 ```
 ````
 
@@ -90,28 +115,41 @@ $ jmp admin install --minikube
 
 ### Uninstall Jumpstarter
 
-Uninstall Jumpstarter with the CLI:
+Uninstall Jumpstarter from the cluster with the CLI:
 
 ```{code-block} console
 $ jmp admin uninstall
 ```
 
-To delete the local cluster when uninstalling, use the `--delete-cluster` flag:
+To delete the local cluster completely, use the cluster delete command:
 
 ````{tab} kind
 ```{code-block} console
-$ jmp admin uninstall --kind --delete-cluster
+$ jmp admin delete cluster --kind
 ```
 ````
 
 ````{tab} minikube
 ```{code-block} console
-$ jmp admin uninstall --minikube --delete-cluster
+$ jmp admin delete cluster --minikube
 ```
 ````
 
-For complete documentation of the `jmp admin install` command and all available
-options, see the [MAN pages](../../../reference/man-pages/jmp.md).
+To delete a cluster with a custom name:
+
+````{tab} kind
+```{code-block} console
+$ jmp admin delete cluster my-jumpstarter-cluster --kind
+```
+````
+
+````{tab} minikube
+```{code-block} console
+$ jmp admin delete cluster my-jumpstarter-cluster --minikube
+```
+````
+
+For complete documentation of the `jmp admin create cluster`, `jmp admin delete cluster`, `jmp admin get clusters`, and `jmp admin install` commands and all available options, see the [MAN pages](../../../reference/man-pages/jmp.md).
 
 ## Manual Local Cluster Install
 

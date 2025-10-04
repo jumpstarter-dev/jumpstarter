@@ -20,6 +20,7 @@ from jumpstarter_kubernetes import (
 )
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
+from kubernetes_asyncio.config.config_exception import ConfigException
 
 from jumpstarter_cli_admin.test_utils import json_equal
 
@@ -1197,3 +1198,139 @@ def test_get_leases(_load_kube_config_mock, list_leases_mock: AsyncMock):
     result = runner.invoke(get, ["leases"])
     assert result.exit_code == 0
     assert "No resources found" in result.output
+
+
+# Test ConfigException handling
+@patch.object(ClientsV1Alpha1Api, "get_client")
+@patch.object(ClientsV1Alpha1Api, "_load_kube_config")
+def test_get_client_config_exception(_load_kube_config_mock, get_client_mock: AsyncMock):
+    runner = CliRunner()
+    get_client_mock.side_effect = ConfigException("Invalid kubeconfig")
+    result = runner.invoke(get, ["client", "test"])
+    assert result.exit_code == 1
+    assert "kubeconfig" in result.output.lower()
+
+
+@patch.object(ExportersV1Alpha1Api, "get_exporter")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+def test_get_exporter_config_exception(_load_kube_config_mock, get_exporter_mock: AsyncMock):
+    runner = CliRunner()
+    get_exporter_mock.side_effect = ConfigException("Invalid kubeconfig")
+    result = runner.invoke(get, ["exporter", "test"])
+    assert result.exit_code == 1
+    assert "kubeconfig" in result.output.lower()
+
+
+@patch.object(LeasesV1Alpha1Api, "get_lease")
+@patch.object(LeasesV1Alpha1Api, "_load_kube_config")
+def test_get_lease_config_exception(_load_kube_config_mock, get_lease_mock: AsyncMock):
+    runner = CliRunner()
+    get_lease_mock.side_effect = ConfigException("Invalid kubeconfig")
+    result = runner.invoke(get, ["lease", "test"])
+    assert result.exit_code == 1
+    assert "kubeconfig" in result.output.lower()
+
+
+# Test get cluster commands
+@patch("jumpstarter_cli_admin.get.get_cluster_info")
+def test_get_cluster_by_name(get_cluster_info_mock: AsyncMock):
+    from jumpstarter_kubernetes import V1Alpha1ClusterInfo, V1Alpha1JumpstarterInstance
+
+    runner = CliRunner()
+    cluster_info = V1Alpha1ClusterInfo(
+        name="kind-test",
+        cluster="kind-kind-test",
+        server="https://127.0.0.1:6443",
+        user="kind-kind-test",
+        namespace="default",
+        is_current=True,
+        type="kind",
+        accessible=True,
+        version="1.28.0",
+        jumpstarter=V1Alpha1JumpstarterInstance(installed=True, version="0.1.0", namespace="jumpstarter"),
+    )
+    get_cluster_info_mock.return_value = cluster_info
+    result = runner.invoke(get, ["cluster", "kind-test"])
+    assert result.exit_code == 0
+    assert "kind-test" in result.output
+
+
+@patch("jumpstarter_cli_admin.get.get_cluster_info")
+def test_get_cluster_not_found(get_cluster_info_mock: AsyncMock):
+    from jumpstarter_kubernetes import V1Alpha1ClusterInfo, V1Alpha1JumpstarterInstance
+
+    runner = CliRunner()
+    cluster_info = V1Alpha1ClusterInfo(
+        name="nonexistent",
+        cluster="nonexistent",
+        server="",
+        user="",
+        namespace="default",
+        is_current=False,
+        type="remote",
+        accessible=False,
+        jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
+        error="context not found",
+    )
+    get_cluster_info_mock.return_value = cluster_info
+    result = runner.invoke(get, ["cluster", "nonexistent"])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower()
+
+
+@patch("jumpstarter_cli_admin.get.get_cluster_info")
+def test_get_cluster_error(get_cluster_info_mock: AsyncMock):
+    runner = CliRunner()
+    get_cluster_info_mock.side_effect = Exception("Unexpected error")
+    result = runner.invoke(get, ["cluster", "test"])
+    assert result.exit_code == 1
+    assert "error" in result.output.lower()
+
+
+@patch("jumpstarter_cli_admin.get.list_clusters")
+def test_get_clusters_list(list_clusters_mock: AsyncMock):
+    from jumpstarter_kubernetes import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
+
+    runner = CliRunner()
+    cluster_list = V1Alpha1ClusterList(
+        items=[
+            V1Alpha1ClusterInfo(
+                name="kind-test",
+                cluster="kind-kind-test",
+                server="https://127.0.0.1:6443",
+                user="kind-kind-test",
+                namespace="default",
+                is_current=True,
+                type="kind",
+                accessible=True,
+                version="1.28.0",
+                jumpstarter=V1Alpha1JumpstarterInstance(installed=True, version="0.1.0", namespace="jumpstarter"),
+            ),
+            V1Alpha1ClusterInfo(
+                name="minikube",
+                cluster="minikube",
+                server="https://192.168.49.2:8443",
+                user="minikube",
+                namespace="default",
+                is_current=False,
+                type="minikube",
+                accessible=True,
+                version="1.28.0",
+                jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
+            ),
+        ]
+    )
+    list_clusters_mock.return_value = cluster_list
+    result = runner.invoke(get, ["clusters"])
+    assert result.exit_code == 0
+    assert "kind-test" in result.output
+    assert "minikube" in result.output
+
+
+@patch("jumpstarter_cli_admin.get.list_clusters")
+def test_get_clusters_error(list_clusters_mock: AsyncMock):
+    runner = CliRunner()
+    list_clusters_mock.side_effect = Exception("Unexpected error")
+    result = runner.invoke(get, ["clusters"])
+    assert result.exit_code == 1
+    assert "error" in result.output.lower()
