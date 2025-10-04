@@ -397,6 +397,7 @@ class TestClusterDeletion:
         # Verify the callback type is SilentWithConfirmCallback by checking its behavior
         callback_arg = mock_delete.call_args[0][3]
         from jumpstarter_cli_common.callbacks import SilentWithConfirmCallback
+
         assert isinstance(callback_arg, SilentWithConfirmCallback)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
@@ -404,7 +405,9 @@ class TestClusterDeletion:
         """Test --output=name with --force uses ForceClickCallback"""
         mock_delete.return_value = None
 
-        result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "kind", "--output", "name", "--force"])
+        result = self.runner.invoke(
+            delete, ["cluster", "test-cluster", "--kind", "kind", "--output", "name", "--force"]
+        )
 
         assert result.exit_code == 0
         # Verify that force=True was passed
@@ -412,6 +415,7 @@ class TestClusterDeletion:
         # Verify the callback type is ForceClickCallback
         callback_arg = mock_delete.call_args[0][3]
         from jumpstarter_cli_common.callbacks import ForceClickCallback
+
         assert isinstance(callback_arg, ForceClickCallback)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
