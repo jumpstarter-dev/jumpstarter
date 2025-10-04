@@ -142,6 +142,8 @@ async def get_cluster(
             # List all clusters if no name provided
             cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
             model_print(cluster_list, output)
+    except click.ClickException:
+        raise
     except Exception as e:
         raise click.ClickException(f"Error getting cluster info: {e}") from e
 
@@ -163,5 +165,7 @@ async def get_clusters(type: str, kubectl: str, helm: str, kind: str, minikube: 
 
         # Use model_print for all output formats
         model_print(cluster_list, output)
+    except click.ClickException:
+        raise
     except Exception as e:
         raise click.ClickException(f"Error listing clusters: {e}") from e
