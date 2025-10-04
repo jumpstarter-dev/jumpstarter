@@ -11,11 +11,6 @@ from jumpstarter_kubernetes.cluster.operations import (
 )
 from jumpstarter_kubernetes.exceptions import ClusterNotFoundError
 
-# Note: Tests for inject_certificates, prepare_certificates, create_kind_cluster_with_options,
-# create_minikube_cluster_with_options, delete_kind_cluster_with_feedback, and
-# delete_minikube_cluster_with_feedback were removed as these functions have been moved
-# to kind.py and minikube.py modules and should be tested there
-
 
 class TestDeleteClusterByName:
     """Test cluster deletion by name."""
@@ -94,7 +89,16 @@ class TestCreateClusterOnly:
         await create_cluster_only("minikube", False, "test-cluster", "", "", "kind", "minikube")
 
         mock_create_and_install.assert_called_once_with(
-            "minikube", False, "test-cluster", "", "", "kind", "minikube", None, install_jumpstarter=False, callback=None
+            "minikube",
+            False,
+            "test-cluster",
+            "",
+            "",
+            "kind",
+            "minikube",
+            None,
+            install_jumpstarter=False,
+            callback=None,
         )
 
 
@@ -134,9 +138,7 @@ class TestCreateClusterAndInstall:
     @patch("jumpstarter_kubernetes.cluster.operations.helm_installed")
     @patch("jumpstarter_kubernetes.cluster.operations.create_kind_cluster_with_options")
     @patch("jumpstarter_kubernetes.cluster.operations.configure_endpoints")
-    async def test_create_cluster_and_install_no_version(
-        self, mock_configure, mock_create, mock_helm_installed
-    ):
+    async def test_create_cluster_and_install_no_version(self, mock_configure, mock_create, mock_helm_installed):
         from jumpstarter_kubernetes.exceptions import ClusterOperationError
 
         mock_create.return_value = None
