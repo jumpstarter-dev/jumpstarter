@@ -83,7 +83,18 @@ async def _install_jumpstarter_helm_chart(
     click.echo(f"gPRC Mode: {mode}\n")
 
     await install_helm_chart(
-        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm, values_files
+        chart,
+        name,
+        namespace,
+        basedomain,
+        grpc_endpoint,
+        router_endpoint,
+        mode,
+        version,
+        kubeconfig,
+        context,
+        helm,
+        values_files,
     )
 
     click.echo(f'Installed Helm release "{name}" in namespace "{namespace}"')
@@ -177,7 +188,19 @@ async def install(
         version = await get_latest_compatible_controller_version(get_client_version())
 
     await _install_jumpstarter_helm_chart(
-        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm, ip, list(values_files) if values_files else None
+        chart,
+        name,
+        namespace,
+        basedomain,
+        grpc_endpoint,
+        router_endpoint,
+        mode,
+        version,
+        kubeconfig,
+        context,
+        helm,
+        ip,
+        list(values_files) if values_files else None,
     )
 
 

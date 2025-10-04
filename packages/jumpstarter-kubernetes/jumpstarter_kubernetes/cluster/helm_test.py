@@ -56,7 +56,6 @@ class TestInstallJumpstarterHelmChart:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.helm.install_helm_chart")
-
     async def test_install_jumpstarter_helm_chart_with_none_values(self, mock_install_helm_chart):
         mock_install_helm_chart.return_value = None
 
@@ -95,7 +94,6 @@ class TestInstallJumpstarterHelmChart:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.helm.install_helm_chart")
-
     async def test_install_jumpstarter_helm_chart_secure_mode(self, mock_install_helm_chart):
         mock_install_helm_chart.return_value = None
 
@@ -118,7 +116,6 @@ class TestInstallJumpstarterHelmChart:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.helm.install_helm_chart")
-
     async def test_install_jumpstarter_helm_chart_custom_endpoints(self, mock_install_helm_chart):
         mock_install_helm_chart.return_value = None
 
@@ -141,10 +138,7 @@ class TestInstallJumpstarterHelmChart:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.helm.install_helm_chart")
-
-    async def test_install_jumpstarter_helm_chart_install_helm_chart_error(
-        self, mock_install_helm_chart
-    ):
+    async def test_install_jumpstarter_helm_chart_install_helm_chart_error(self, mock_install_helm_chart):
         # Test that exceptions from install_helm_chart propagate
         mock_install_helm_chart.side_effect = Exception("Helm installation failed")
 
@@ -168,7 +162,6 @@ class TestInstallJumpstarterHelmChart:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.helm.install_helm_chart")
-
     async def test_install_jumpstarter_helm_chart_minimal_params(self, mock_install_helm_chart):
         mock_install_helm_chart.return_value = None
 
@@ -189,7 +182,18 @@ class TestInstallJumpstarterHelmChart:
 
         # Verify all required parameters work with minimal values
         mock_install_helm_chart.assert_called_once_with(
-            "minimal", "min", "min-ns", "min.io", "grpc.min.io:80", "router.min.io:80", "test", "0.1.0", None, None, "h", None
+            "minimal",
+            "min",
+            "min-ns",
+            "min.io",
+            "grpc.min.io:80",
+            "router.min.io:80",
+            "test",
+            "0.1.0",
+            None,
+            None,
+            "h",
+            None,
         )
 
         # Verify appropriate echo calls were made
