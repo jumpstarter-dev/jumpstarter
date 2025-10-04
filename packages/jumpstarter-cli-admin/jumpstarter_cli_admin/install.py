@@ -71,6 +71,7 @@ async def _install_jumpstarter_helm_chart(
     context: Optional[str],
     helm: str,
     ip: str,
+    values_files: Optional[list[str]] = None,
 ) -> None:
     click.echo(f'Installing Jumpstarter service v{version} in namespace "{namespace}" with Helm\n')
     click.echo(f"Chart URI: {chart}")
@@ -82,7 +83,7 @@ async def _install_jumpstarter_helm_chart(
     click.echo(f"gPRC Mode: {mode}\n")
 
     await install_helm_chart(
-        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm
+        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm, values_files
     )
 
     click.echo(f'Installed Helm release "{name}" in namespace "{namespace}"')
@@ -135,6 +136,14 @@ async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_nam
     help="Use default settings for a local Minikube cluster",
 )
 @click.option("-v", "--version", help="The version of the service to install", default=None)
+@click.option(
+    "-f",
+    "--values-file",
+    "values_files",
+    type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
+    multiple=True,
+    help="Path to custom helm values file (can be specified multiple times)",
+)
 @opt_kubeconfig
 @opt_context
 @blocking
@@ -151,6 +160,7 @@ async def install(
     kind: Optional[str],
     minikube: Optional[str],
     version: str,
+    values_files: tuple[str, ...],
     kubeconfig: Optional[str],
     context: Optional[str],
 ):
@@ -167,7 +177,7 @@ async def install(
         version = await get_latest_compatible_controller_version(get_client_version())
 
     await _install_jumpstarter_helm_chart(
-        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm, ip
+        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm, ip, list(values_files) if values_files else None
     )
 
 

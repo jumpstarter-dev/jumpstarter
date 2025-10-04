@@ -20,6 +20,7 @@ async def install_jumpstarter_helm_chart(
     helm: str,
     ip: str,
     callback: OutputCallback = None,
+    values_files: Optional[list[str]] = None,
 ) -> None:
     """Install Jumpstarter Helm chart."""
     if callback is None:
@@ -35,7 +36,18 @@ async def install_jumpstarter_helm_chart(
     callback.progress(f"gRPC Mode: {mode}\n")
 
     await install_helm_chart(
-        chart, name, namespace, basedomain, grpc_endpoint, router_endpoint, mode, version, kubeconfig, context, helm
+        chart,
+        name,
+        namespace,
+        basedomain,
+        grpc_endpoint,
+        router_endpoint,
+        mode,
+        version,
+        kubeconfig,
+        context,
+        helm,
+        values_files,
     )
 
     callback.success(f'Installed Helm release "{name}" in namespace "{namespace}"')

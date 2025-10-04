@@ -21,7 +21,6 @@ def kind_installed(kind: str) -> bool:
     return shutil.which(kind) is not None
 
 
-
 async def kind_cluster_exists(kind: str, cluster_name: str) -> bool:
     """Check if a Kind cluster exists."""
     if not kind_installed(kind):
@@ -84,16 +83,20 @@ kubeadmConfigPatches:
     kubeletExtraArgs:
       node-labels: "ingress-ready=true"
 nodes:
+nodes:
 - role: control-plane
   extraPortMappings:
-  - containerPort: 80
+  - containerPort: 80 # ingress controller
     hostPort: 5080
     protocol: TCP
-  - containerPort: 30010
+  - containerPort: 30010 # grpc nodeport
     hostPort: 8082
     protocol: TCP
-  - containerPort: 30011
+  - containerPort: 30011 # grpc router nodeport
     hostPort: 8083
+    protocol: TCP
+  - containerPort: 32000 # dex nodeport
+    hostPort: 5556
     protocol: TCP
   - containerPort: 443
     hostPort: 5443
@@ -101,7 +104,7 @@ nodes:
 """
 
     # Write the cluster config to a temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(cluster_config)
         config_file = f.name
 
@@ -131,7 +134,7 @@ async def list_kind_clusters(kind: str) -> List[str]:
     try:
         returncode, stdout, _ = await run_command([kind, "get", "clusters"])
         if returncode == 0:
-            clusters = [line.strip() for line in stdout.split('\n') if line.strip()]
+            clusters = [line.strip() for line in stdout.split("\n") if line.strip()]
             return clusters
         return []
     except RuntimeError:
@@ -182,7 +185,7 @@ async def create_kind_cluster_with_options(
     kind_extra_args: str,
     force_recreate_cluster: bool,
     extra_certs: Optional[str] = None,
-    callback: OutputCallback = None
+    callback: OutputCallback = None,
 ) -> None:
     """Create a Kind cluster with optional certificate injection."""
     if callback is None:

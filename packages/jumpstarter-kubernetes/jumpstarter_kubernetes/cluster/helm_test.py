@@ -47,6 +47,7 @@ class TestInstallJumpstarterHelmChart:
             "/path/to/kubeconfig",
             "test-context",
             "helm",
+            None,
         )
 
         # Verify callback was called
@@ -87,6 +88,7 @@ class TestInstallJumpstarterHelmChart:
             None,
             None,
             "helm3",
+            None,
         )
 
         # Verify success message with correct values
@@ -187,7 +189,51 @@ class TestInstallJumpstarterHelmChart:
 
         # Verify all required parameters work with minimal values
         mock_install_helm_chart.assert_called_once_with(
-            "minimal", "min", "min-ns", "min.io", "grpc.min.io:80", "router.min.io:80", "test", "0.1.0", None, None, "h"
+            "minimal", "min", "min-ns", "min.io", "grpc.min.io:80", "router.min.io:80", "test", "0.1.0", None, None, "h", None
         )
 
         # Verify appropriate echo calls were made
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.helm.install_helm_chart")
+    async def test_install_jumpstarter_helm_chart_with_values_files(self, mock_install_helm_chart):
+        """Test that values_files parameter is passed through correctly."""
+        from unittest.mock import MagicMock
+
+        mock_install_helm_chart.return_value = None
+        mock_callback = MagicMock()
+
+        values_files = ["/path/to/values1.yaml", "/path/to/values2.yaml"]
+
+        await install_jumpstarter_helm_chart(
+            chart="oci://registry.example.com/jumpstarter",
+            name="jumpstarter",
+            namespace="jumpstarter-system",
+            basedomain="jumpstarter.192.168.1.100.nip.io",
+            grpc_endpoint="grpc.jumpstarter.192.168.1.100.nip.io:8082",
+            router_endpoint="router.jumpstarter.192.168.1.100.nip.io:8083",
+            mode="insecure",
+            version="1.0.0",
+            kubeconfig="/path/to/kubeconfig",
+            context="test-context",
+            helm="helm",
+            ip="192.168.1.100",
+            callback=mock_callback,
+            values_files=values_files,
+        )
+
+        # Verify that install_helm_chart was called with values_files
+        mock_install_helm_chart.assert_called_once_with(
+            "oci://registry.example.com/jumpstarter",
+            "jumpstarter",
+            "jumpstarter-system",
+            "jumpstarter.192.168.1.100.nip.io",
+            "grpc.jumpstarter.192.168.1.100.nip.io:8082",
+            "router.jumpstarter.192.168.1.100.nip.io:8083",
+            "insecure",
+            "1.0.0",
+            "/path/to/kubeconfig",
+            "test-context",
+            "helm",
+            values_files,
+        )

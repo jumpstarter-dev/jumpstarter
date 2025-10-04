@@ -230,6 +230,14 @@ async def create_exporter(
 @click.option("-g", "--grpc-endpoint", type=str, help="The gRPC endpoint to use for the Jumpstarter API", default=None)
 @click.option("-r", "--router-endpoint", type=str, help="The gRPC endpoint to use for the router", default=None)
 @click.option("-v", "--version", help="The version of the service to install", default=None)
+@click.option(
+    "-f",
+    "--values-file",
+    "values_files",
+    type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
+    multiple=True,
+    help="Path to custom helm values file (can be specified multiple times)",
+)
 @opt_kubeconfig
 @opt_context
 @opt_nointeractive
@@ -253,6 +261,7 @@ async def create_cluster(
     grpc_endpoint: Optional[str],
     router_endpoint: Optional[str],
     version: Optional[str],
+    values_files: tuple[str, ...],
     kubeconfig: Optional[str],
     context: Optional[str],
     nointeractive: bool,
@@ -303,6 +312,7 @@ async def create_cluster(
             grpc_endpoint=grpc_endpoint,
             router_endpoint=router_endpoint,
             callback=callback,
+            values_files=list(values_files) if values_files else None,
         )
     except JumpstarterKubernetesError as e:
         # Convert library exceptions to CLI exceptions

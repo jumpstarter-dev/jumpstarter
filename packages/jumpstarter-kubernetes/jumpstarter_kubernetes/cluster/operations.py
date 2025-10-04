@@ -122,6 +122,7 @@ async def create_cluster_and_install(
     grpc_endpoint: Optional[str] = None,
     router_endpoint: Optional[str] = None,
     callback: OutputCallback = None,
+    values_files: Optional[list[str]] = None,
 ) -> None:
     """Create a cluster and optionally install Jumpstarter."""
     if callback is None:
@@ -188,6 +189,7 @@ async def create_cluster_and_install(
             helm,
             actual_ip,
             callback,
+            values_files,
         )
 
 
