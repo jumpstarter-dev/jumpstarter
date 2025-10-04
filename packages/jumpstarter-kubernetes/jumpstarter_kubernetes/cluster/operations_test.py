@@ -170,3 +170,11 @@ class TestCreateClusterAndInstall:
 
         with pytest.raises(ClusterOperationError):
             await create_cluster_and_install("kind", False, "test-cluster", "", "", "kind", "minikube")
+
+    @pytest.mark.asyncio
+    async def test_create_cluster_and_install_unsupported_cluster_type(self):
+        """Test that creating a cluster with an unsupported cluster type raises ClusterTypeValidationError."""
+        with pytest.raises(ClusterTypeValidationError) as exc_info:
+            await create_cluster_and_install("remote", False, "test-cluster", "", "", "kind", "minikube")
+
+        assert "Unsupported cluster_type: remote" in str(exc_info.value)

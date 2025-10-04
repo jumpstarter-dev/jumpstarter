@@ -64,7 +64,7 @@ async def create_kind_cluster(
 
     if cluster_exists:
         if not force_recreate:
-            raise RuntimeError(f"Kind cluster '{cluster_name}' already exists.")
+            raise ClusterAlreadyExistsError(cluster_name, "kind")
         else:
             if not await delete_kind_cluster(kind, cluster_name):
                 return False

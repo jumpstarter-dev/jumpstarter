@@ -154,6 +154,8 @@ async def create_cluster_and_install(
         await create_minikube_cluster_with_options(
             minikube, cluster_name, minikube_extra_args, force_recreate_cluster, extra_certs, callback
         )
+    else:
+        raise ClusterTypeValidationError(f"Unsupported cluster_type: {cluster_type}")
 
     # Install Jumpstarter if requested
     if install_jumpstarter:

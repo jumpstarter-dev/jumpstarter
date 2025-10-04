@@ -10,6 +10,7 @@ from jumpstarter_kubernetes.cluster.kind import (
     kind_cluster_exists,
     kind_installed,
 )
+from jumpstarter_kubernetes.exceptions import ClusterAlreadyExistsError
 
 
 class TestKindInstalled:
@@ -131,8 +132,11 @@ class TestCreateKindCluster:
         mock_kind_installed.return_value = True
         mock_cluster_exists.return_value = True
 
-        with pytest.raises(RuntimeError, match="Kind cluster 'test-cluster' already exists"):
+        with pytest.raises(ClusterAlreadyExistsError) as exc_info:
             await create_kind_cluster("kind", "test-cluster")
+
+        assert exc_info.value.cluster_name == "test-cluster"
+        assert exc_info.value.cluster_type == "kind"
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
