@@ -5,7 +5,6 @@ import os
 import tempfile
 from unittest.mock import AsyncMock, patch
 
-import click
 import pytest
 
 from jumpstarter_kubernetes.cluster.common import (
@@ -47,8 +46,10 @@ class TestValidateClusterType:
         assert result is None
 
     def test_validate_cluster_type_both_raises_error(self):
+        from jumpstarter_kubernetes.exceptions import ClusterTypeValidationError
+
         with pytest.raises(
-            click.ClickException, match='You can only select one local cluster type "kind" or "minikube"'
+            ClusterTypeValidationError, match='You can only select one local cluster type "kind" or "minikube"'
         ):
             validate_cluster_type("kind", "minikube")
 
@@ -154,16 +155,22 @@ class TestValidateClusterName:
         assert result == "test-cluster"
 
     def test_validate_cluster_name_empty_raises_error(self):
-        with pytest.raises(click.ClickException, match="Cluster name cannot be empty"):
+        from jumpstarter_kubernetes.exceptions import ClusterNameValidationError
+
+        with pytest.raises(ClusterNameValidationError, match="Cluster name cannot be empty"):
             validate_cluster_name("")
 
     def test_validate_cluster_name_only_whitespace_raises_error(self):
-        with pytest.raises(click.ClickException, match="Cluster name cannot be empty"):
+        from jumpstarter_kubernetes.exceptions import ClusterNameValidationError
+
+        with pytest.raises(ClusterNameValidationError, match="Cluster name cannot be empty"):
             validate_cluster_name("   ")
 
     def test_validate_cluster_name_none_raises_error(self):
+        from jumpstarter_kubernetes.exceptions import ClusterNameValidationError
+
         # This would be caught by type checking, but test runtime behavior
-        with pytest.raises(click.ClickException, match="Cluster name cannot be empty"):
+        with pytest.raises(ClusterNameValidationError, match="Cluster name cannot be empty"):
             validate_cluster_name(None)
 
     def test_validate_cluster_name_with_special_chars(self):

@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import click
 import pytest
 
 from jumpstarter_kubernetes.cluster.detection import (
@@ -37,9 +36,11 @@ class TestDetectContainerRuntime:
 
     @patch("shutil.which")
     def test_detect_container_runtime_none_available(self, mock_which):
+        from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
+
         mock_which.return_value = None
         with pytest.raises(
-            click.ClickException,
+            ToolNotInstalledError,
             match="No supported container runtime found in PATH. Kind requires docker, podman, or nerdctl.",
         ):
             detect_container_runtime()
@@ -170,8 +171,10 @@ class TestDetectExistingClusterType:
         mock_kind_exists.return_value = True
         mock_minikube_exists.return_value = True
 
+        from jumpstarter_kubernetes.exceptions import ClusterOperationError
+
         with pytest.raises(
-            click.ClickException,
+            ClusterOperationError,
             match='Both Kind and Minikube clusters named "test-cluster" exist',
         ):
             await detect_existing_cluster_type("test-cluster")
@@ -259,8 +262,10 @@ class TestAutoDetectClusterType:
         mock_kind_installed.return_value = False
         mock_minikube_installed.return_value = False
 
+        from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
+
         with pytest.raises(
-            click.ClickException,
+            ToolNotInstalledError,
             match="Neither Kind nor Minikube is installed",
         ):
             auto_detect_cluster_type()

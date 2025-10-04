@@ -1,13 +1,5 @@
 from .clients import ClientsV1Alpha1Api, V1Alpha1Client, V1Alpha1ClientList, V1Alpha1ClientStatus
 from .cluster import (
-    _configure_endpoints,
-    _create_kind_cluster,
-    _create_minikube_cluster,
-    _delete_kind_cluster,
-    _delete_minikube_cluster,
-    _handle_cluster_creation,
-    _handle_cluster_deletion,
-    _validate_cluster_type,
     check_jumpstarter_installation,
     create_cluster_and_install,
     create_cluster_only,
@@ -23,6 +15,7 @@ from .cluster import (
     list_clusters,
     list_kubectl_contexts,
     minikube_installed,
+    validate_cluster_type_selection,
 )
 from .clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from .controller import get_latest_compatible_controller_version
@@ -86,13 +79,6 @@ __all__ = [
     "list_kubectl_contexts",
     "detect_cluster_type",
     "check_jumpstarter_installation",
-    "_validate_cluster_type",
-    "_configure_endpoints",
-    "_create_kind_cluster",
-    "_create_minikube_cluster",
-    "_delete_kind_cluster",
-    "_delete_minikube_cluster",
-    "_handle_cluster_creation",
-    "_handle_cluster_deletion",
+    "validate_cluster_type_selection",
     "get_latest_compatible_controller_version",
 ]

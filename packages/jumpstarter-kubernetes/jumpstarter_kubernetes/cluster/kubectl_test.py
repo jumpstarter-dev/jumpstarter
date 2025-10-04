@@ -97,6 +97,7 @@ class TestGetKubectlContexts:
             "cluster": "test-cluster",
             "server": "https://test.example.com:6443",
             "user": "test-user",
+            "namespace": None,
             "current": True,
         }
         assert result[1] == {
@@ -104,8 +105,29 @@ class TestGetKubectlContexts:
             "cluster": "prod-cluster",
             "server": "https://prod.example.com:6443",
             "user": "prod-user",
+            "namespace": None,
             "current": False,
         }
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_get_kubectl_contexts_with_namespace(self, mock_run_command):
+        kubectl_config = {
+            "current-context": "test-context",
+            "contexts": [
+                {
+                    "name": "test-context",
+                    "context": {"cluster": "test-cluster", "user": "test-user", "namespace": "custom-ns"},
+                }
+            ],
+            "clusters": [{"name": "test-cluster", "cluster": {"server": "https://test.example.com:6443"}}],
+        }
+        mock_run_command.return_value = (0, json.dumps(kubectl_config), "")
+
+        result = await get_kubectl_contexts()
+
+        assert len(result) == 1
+        assert result[0]["namespace"] == "custom-ns"
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
@@ -139,17 +161,21 @@ class TestGetKubectlContexts:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     async def test_get_kubectl_contexts_command_failure(self, mock_run_command):
+        from jumpstarter_kubernetes.exceptions import KubeconfigError
+
         mock_run_command.return_value = (1, "", "permission denied")
 
-        with pytest.raises(click.ClickException, match="Failed to get kubectl config: permission denied"):
+        with pytest.raises(KubeconfigError, match="Failed to get kubectl config: permission denied"):
             await get_kubectl_contexts()
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     async def test_get_kubectl_contexts_invalid_json(self, mock_run_command):
+        from jumpstarter_kubernetes.exceptions import KubeconfigError
+
         mock_run_command.return_value = (0, "invalid json", "")
 
-        with pytest.raises(click.ClickException, match="Failed to parse kubectl config"):
+        with pytest.raises(KubeconfigError, match="Failed to parse kubectl config"):
             await get_kubectl_contexts()
 
     @pytest.mark.asyncio

@@ -13,11 +13,12 @@ Before installing locally, ensure you have:
 
 ## Install with Jumpstarter CLI
 
-The Jumpstarter CLI provides convenient commands for cluster management and Jumpstarter installation:
+The Jumpstarter CLI provides convenient commands for local demo/test cluster management and Jumpstarter installation:
 
 - `jmp admin create cluster` - Creates a local cluster and installs Jumpstarter (recommended for getting started quickly)
-- `jmp admin install` - Installs Jumpstarter on an existing cluster
 - `jmp admin delete cluster` - Deletes a local cluster completely
+- `jmp admin get clusters` - Get local clusters from a Kubeconfig
+- `jmp admin install` - Installs Jumpstarter on an existing cluster
 - `jmp admin uninstall` - Removes Jumpstarter from a cluster (but keeps the cluster)
 
 ```{warning}
@@ -148,7 +149,7 @@ $ jmp admin delete cluster my-jumpstarter-cluster --minikube
 ```
 ````
 
-For complete documentation of the `jmp admin create cluster`, `jmp admin delete cluster`, and `jmp admin install` commands and all available options, see the [MAN pages](../../../reference/man-pages/jmp.md).
+For complete documentation of the `jmp admin create cluster`, `jmp admin delete cluster`, `jmp admin get clusters`, and `jmp admin install` commands and all available options, see the [MAN pages](../../../reference/man-pages/jmp.md).
 
 ## Manual Local Cluster Install
 

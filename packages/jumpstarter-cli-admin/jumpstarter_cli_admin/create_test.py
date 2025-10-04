@@ -381,7 +381,7 @@ class TestClusterCreation:
         self.runner = CliRunner()
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_kind_minimal(self, mock_validate, mock_create):
         """Test creating a Kind cluster with minimal options"""
         mock_validate.return_value = "kind"
@@ -405,7 +405,7 @@ class TestClusterCreation:
         assert args[6] == "minikube"  # minikube binary
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_minikube_minimal(self, mock_validate, mock_create):
         """Test creating a Minikube cluster with minimal options"""
         mock_validate.return_value = "minikube"
@@ -425,7 +425,7 @@ class TestClusterCreation:
         assert args[2] == "test-cluster"  # cluster_name
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_auto_detect(self, mock_validate, mock_create):
         """Test auto-detection of cluster type when neither --kind nor --minikube is specified"""
         mock_validate.return_value = "kind"  # Auto-detected as kind
@@ -438,7 +438,7 @@ class TestClusterCreation:
         mock_validate.assert_called_once_with(None, None)
         mock_create.assert_called_once()
 
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_both_types_error(self, mock_validate):
         """Test that specifying both --kind and --minikube raises an error"""
         mock_validate.side_effect = click.ClickException("You can only select one local cluster type")
@@ -450,7 +450,7 @@ class TestClusterCreation:
         mock_validate.assert_called_once_with("kind", "minikube")
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_with_jumpstarter_installation(self, mock_validate, mock_create):
         """Test creating cluster and installing Jumpstarter (default behavior)"""
         mock_validate.return_value = "kind"
@@ -468,7 +468,7 @@ class TestClusterCreation:
         assert kwargs.get("install_jumpstarter", True) is True
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_skip_install(self, mock_validate, mock_create):
         """Test creating cluster with --skip-install flag"""
         mock_validate.return_value = "kind"
@@ -486,7 +486,7 @@ class TestClusterCreation:
         assert kwargs.get("install_jumpstarter", True) is False
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_with_custom_chart(self, mock_validate, mock_create):
         """Test with custom chart and version options"""
         mock_validate.return_value = "kind"
@@ -509,7 +509,7 @@ class TestClusterCreation:
         assert kwargs.get("version") == "v1.2.3"
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_with_custom_endpoints(self, mock_validate, mock_create):
         """Test with custom IP, basedomain, and endpoints"""
         mock_validate.return_value = "kind"
@@ -535,7 +535,7 @@ class TestClusterCreation:
 
     @patch("jumpstarter_cli_admin.create.click.confirm")
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_force_recreate_confirmed(self, mock_validate, mock_create, mock_confirm):
         """Test force recreate with user confirmation"""
         mock_validate.return_value = "kind"
@@ -553,7 +553,7 @@ class TestClusterCreation:
 
     @patch("jumpstarter_cli_admin.create.click.confirm")
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_force_recreate_cancelled(self, mock_validate, mock_create, mock_confirm):
         """Test force recreate when user cancels"""
         mock_validate.return_value = "kind"
@@ -566,7 +566,7 @@ class TestClusterCreation:
         # Note: create_cluster_and_install itself handles the confirmation
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_with_extra_args(self, mock_validate, mock_create):
         """Test with extra Kind/Minikube arguments"""
         mock_validate.return_value = "kind"
@@ -587,7 +587,7 @@ class TestClusterCreation:
         assert args[4] == "--memory=4096"  # minikube_extra_args
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_with_extra_certs(self, mock_validate, mock_create):
         """Test with custom CA certificates"""
         mock_validate.return_value = "kind"
@@ -619,7 +619,7 @@ class TestClusterCreation:
             os.unlink(cert_path)
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_helm_not_installed(self, mock_validate, mock_create):
         """Test error when helm is not installed (for installation)"""
         mock_validate.return_value = "kind"
@@ -631,7 +631,7 @@ class TestClusterCreation:
         assert "helm is not installed" in result.output
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_kind_not_installed(self, mock_validate, mock_create):
         """Test error when kind is not installed"""
         mock_validate.return_value = "kind"
@@ -643,7 +643,7 @@ class TestClusterCreation:
         assert "kind is not installed" in result.output
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create._validate_cluster_type")
+    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_minikube_not_installed(self, mock_validate, mock_create):
         """Test error when minikube is not installed"""
         mock_validate.return_value = "minikube"

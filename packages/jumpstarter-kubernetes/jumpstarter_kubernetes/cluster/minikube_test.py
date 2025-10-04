@@ -42,12 +42,18 @@ class TestMinikubeClusterExists:
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_true(self, mock_run_command, mock_minikube_installed):
         mock_minikube_installed.return_value = True
-        mock_run_command.return_value = (0, "", "")
+        # Mock profile list to return a valid profile
+        mock_run_command.return_value = (
+            0,
+            '{"valid": [{"Name": "test-cluster", "Status": "Running"}], "invalid": []}',
+            ""
+        )
 
         result = await minikube_cluster_exists("minikube", "test-cluster")
 
         assert result is True
-        mock_run_command.assert_called_once_with(["minikube", "status", "-p", "test-cluster"])
+        # Should call profile list first
+        mock_run_command.assert_called_with(["minikube", "profile", "list", "-o", "json"])
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
@@ -74,7 +80,8 @@ class TestMinikubeClusterExists:
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_runtime_error(self, mock_run_command, mock_minikube_installed):
         mock_minikube_installed.return_value = True
-        mock_run_command.side_effect = RuntimeError("Command failed")
+        # RuntimeError with "profile not found" should return False
+        mock_run_command.side_effect = RuntimeError("profile not found")
 
         result = await minikube_cluster_exists("minikube", "test-cluster")
 
@@ -83,14 +90,37 @@ class TestMinikubeClusterExists:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
+    async def test_minikube_cluster_exists_stopped_cluster(self, mock_run_command, mock_minikube_installed):
+        """Test that a stopped cluster is detected as existing"""
+        mock_minikube_installed.return_value = True
+        # Mock profile list to show stopped cluster
+        mock_run_command.return_value = (
+            0,
+            '{"valid": [{"Name": "test-cluster", "Status": "Stopped"}], "invalid": []}',
+            ""
+        )
+
+        result = await minikube_cluster_exists("minikube", "test-cluster")
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
+    @patch("jumpstarter_kubernetes.cluster.minikube.run_command")
     async def test_minikube_cluster_exists_custom_binary(self, mock_run_command, mock_minikube_installed):
         mock_minikube_installed.return_value = True
-        mock_run_command.return_value = (0, "", "")
+        # Mock profile list to return a valid profile
+        mock_run_command.return_value = (
+            0,
+            '{"valid": [{"Name": "test-cluster", "Status": "Running"}], "invalid": []}',
+            ""
+        )
 
         result = await minikube_cluster_exists("custom-minikube", "test-cluster")
 
         assert result is True
-        mock_run_command.assert_called_once_with(["custom-minikube", "status", "-p", "test-cluster"])
+        # Should call profile list first
+        mock_run_command.assert_called_with(["custom-minikube", "profile", "list", "-o", "json"])
 
 
 
@@ -123,9 +153,11 @@ class TestCreateMinikubeCluster:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     async def test_create_minikube_cluster_not_installed(self, mock_minikube_installed):
+        from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
+
         mock_minikube_installed.return_value = False
 
-        with pytest.raises(RuntimeError, match="minikube is not installed"):
+        with pytest.raises(ToolNotInstalledError):
             await create_minikube_cluster("minikube", "test-cluster")
 
     @pytest.mark.asyncio
@@ -135,8 +167,9 @@ class TestCreateMinikubeCluster:
         mock_minikube_installed.return_value = True
         mock_cluster_exists.return_value = True
 
-        with pytest.raises(RuntimeError, match="Minikube cluster 'test-cluster' already exists"):
-            await create_minikube_cluster("minikube", "test-cluster")
+        # Should return True without raising error when cluster exists and force_recreate=False
+        result = await create_minikube_cluster("minikube", "test-cluster")
+        assert result is True
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
@@ -162,11 +195,13 @@ class TestCreateMinikubeCluster:
     async def test_create_minikube_cluster_command_failure(
         self, mock_run_command, mock_cluster_exists, mock_minikube_installed
     ):
+        from jumpstarter_kubernetes.exceptions import ClusterOperationError
+
         mock_minikube_installed.return_value = True
         mock_cluster_exists.return_value = False
         mock_run_command.return_value = 1
 
-        with pytest.raises(RuntimeError, match="Failed to create Minikube cluster 'test-cluster'"):
+        with pytest.raises(ClusterOperationError):
             await create_minikube_cluster("minikube", "test-cluster")
 
     @pytest.mark.asyncio
@@ -209,9 +244,11 @@ class TestDeleteMinikubeCluster:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.minikube.minikube_installed")
     async def test_delete_minikube_cluster_not_installed(self, mock_minikube_installed):
+        from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
+
         mock_minikube_installed.return_value = False
 
-        with pytest.raises(RuntimeError, match="minikube is not installed"):
+        with pytest.raises(ToolNotInstalledError):
             await delete_minikube_cluster("minikube", "test-cluster")
 
     @pytest.mark.asyncio
@@ -232,11 +269,13 @@ class TestDeleteMinikubeCluster:
     async def test_delete_minikube_cluster_failure(
         self, mock_run_command, mock_cluster_exists, mock_minikube_installed
     ):
+        from jumpstarter_kubernetes.exceptions import ClusterOperationError
+
         mock_minikube_installed.return_value = True
         mock_cluster_exists.return_value = True
         mock_run_command.return_value = 1
 
-        with pytest.raises(RuntimeError, match="Failed to delete Minikube cluster 'test-cluster'"):
+        with pytest.raises(ClusterOperationError):
             await delete_minikube_cluster("minikube", "test-cluster")
 
     @pytest.mark.asyncio

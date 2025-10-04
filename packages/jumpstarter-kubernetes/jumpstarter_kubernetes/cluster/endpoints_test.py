@@ -26,19 +26,23 @@ class TestGetIpGeneric:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.endpoints.minikube_installed")
     async def test_get_ip_generic_minikube_not_installed(self, mock_minikube_installed):
+        from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
+
         mock_minikube_installed.return_value = False
 
-        with pytest.raises(click.ClickException, match="minikube is not installed"):
+        with pytest.raises(ToolNotInstalledError, match="minikube is not installed"):
             await get_ip_generic("minikube", "minikube", "test-cluster")
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.endpoints.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_minikube_ip")
     async def test_get_ip_generic_minikube_ip_error(self, mock_get_minikube_ip, mock_minikube_installed):
+        from jumpstarter_kubernetes.exceptions import EndpointConfigurationError
+
         mock_minikube_installed.return_value = True
         mock_get_minikube_ip.side_effect = Exception("IP detection failed")
 
-        with pytest.raises(click.ClickException, match="Could not determine Minikube IP address"):
+        with pytest.raises(EndpointConfigurationError, match="Could not determine Minikube IP address"):
             await get_ip_generic("minikube", "minikube", "test-cluster")
 
     @pytest.mark.asyncio
@@ -53,9 +57,11 @@ class TestGetIpGeneric:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_address")
     async def test_get_ip_generic_kind_zero_ip(self, mock_get_ip_address):
+        from jumpstarter_kubernetes.exceptions import EndpointConfigurationError
+
         mock_get_ip_address.return_value = "0.0.0.0"
 
-        with pytest.raises(click.ClickException, match="Could not determine IP address"):
+        with pytest.raises(EndpointConfigurationError, match="Could not determine IP address"):
             await get_ip_generic("kind", "minikube", "test-cluster")
 
     @pytest.mark.asyncio

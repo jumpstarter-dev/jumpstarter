@@ -2,8 +2,7 @@
 
 from typing import Optional
 
-import click
-
+from ..exceptions import EndpointConfigurationError, ToolNotInstalledError
 from .minikube import minikube_installed
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
@@ -12,15 +11,15 @@ async def get_ip_generic(cluster_type: Optional[str], minikube: str, cluster_nam
     """Get IP address for the cluster."""
     if cluster_type == "minikube":
         if not minikube_installed(minikube):
-            raise click.ClickException("minikube is not installed (or not in your PATH)")
+            raise ToolNotInstalledError("minikube")
         try:
             ip = await get_minikube_ip(cluster_name, minikube)
         except Exception as e:
-            raise click.ClickException(f"Could not determine Minikube IP address.\n{e}") from e
+            raise EndpointConfigurationError(f"Could not determine Minikube IP address.\n{e}", "minikube") from e
     else:
         ip = get_ip_address()
         if ip == "0.0.0.0":
-            raise click.ClickException("Could not determine IP address, use --ip <IP> to specify an IP address")
+            raise EndpointConfigurationError("Could not determine IP address, use --ip <IP> to specify an IP address")
 
     return ip
 

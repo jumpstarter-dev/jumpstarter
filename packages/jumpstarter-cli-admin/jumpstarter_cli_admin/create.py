@@ -3,6 +3,7 @@ from typing import Optional
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.blocking import blocking
+from jumpstarter_cli_common.callbacks import ClickCallback
 from jumpstarter_cli_common.opt import (
     OutputType,
     confirm_insecure_tls,
@@ -18,9 +19,10 @@ from jumpstarter_cli_common.print import model_print
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
-    _validate_cluster_type,
     create_cluster_and_install,
+    validate_cluster_type_selection,
 )
+from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
@@ -257,7 +259,7 @@ async def create_cluster(
     output: OutputType,
 ):
     """Create a Kubernetes cluster for running Jumpstarter"""
-    cluster_type = _validate_cluster_type(kind, minikube)
+    cluster_type = validate_cluster_type_selection(kind, minikube)
 
     if output is None:
         if kind is None and minikube is None:
@@ -271,30 +273,40 @@ async def create_cluster(
     if not skip_install and version is None:
         from jumpstarter_cli_common.version import get_client_version
         from jumpstarter_kubernetes import get_latest_compatible_controller_version
+
         version = await get_latest_compatible_controller_version(get_client_version())
 
-    await create_cluster_and_install(
-        cluster_type,
-        force_recreate,
-        name,
-        kind_extra_args,
-        minikube_extra_args,
-        kind or "kind",
-        minikube or "minikube",
-        extra_certs,
-        install_jumpstarter=not skip_install,
-        helm=helm,
-        chart=chart,
-        chart_name=chart_name,
-        namespace=namespace,
-        version=version,
-        kubeconfig=kubeconfig,
-        context=context,
-        ip=ip,
-        basedomain=basedomain,
-        grpc_endpoint=grpc_endpoint,
-        router_endpoint=router_endpoint,
-    )
+    # Create callback for library functions
+    # Use silent mode when JSON/YAML output is requested
+    callback = ClickCallback(silent=(output is not None))
+
+    try:
+        await create_cluster_and_install(
+            cluster_type,
+            force_recreate,
+            name,
+            kind_extra_args,
+            minikube_extra_args,
+            kind or "kind",
+            minikube or "minikube",
+            extra_certs,
+            install_jumpstarter=not skip_install,
+            helm=helm,
+            chart=chart,
+            chart_name=chart_name,
+            namespace=namespace,
+            version=version,
+            kubeconfig=kubeconfig,
+            context=context,
+            ip=ip,
+            basedomain=basedomain,
+            grpc_endpoint=grpc_endpoint,
+            router_endpoint=router_endpoint,
+            callback=callback,
+        )
+    except JumpstarterKubernetesError as e:
+        # Convert library exceptions to CLI exceptions
+        raise click.ClickException(str(e)) from e
 
     if output is None:
         if skip_install:

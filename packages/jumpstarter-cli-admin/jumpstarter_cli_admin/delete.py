@@ -3,6 +3,7 @@ from typing import Optional
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.blocking import blocking
+from jumpstarter_cli_common.callbacks import ClickCallback, ForceClickCallback
 from jumpstarter_cli_common.opt import (
     NameOutputType,
     opt_context,
@@ -12,6 +13,7 @@ from jumpstarter_cli_common.opt import (
     opt_output_name_only,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, delete_cluster_by_name
+from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
@@ -159,11 +161,19 @@ async def delete_cluster(
     elif minikube is not None:
         cluster_type = "minikube"
 
+    # Create appropriate callback based on output mode and force flag
+    if output is not None:
+        # For --output=name, use silent callback
+        callback = ForceClickCallback(silent=True) if force else ClickCallback(silent=True)
+    else:
+        # For normal output, use regular callbacks
+        callback = ForceClickCallback(silent=False) if force else ClickCallback(silent=False)
+
     try:
-        await delete_cluster_by_name(name, cluster_type, force)
+        await delete_cluster_by_name(name, cluster_type, force, callback)
         if output is not None:
             # For name-only output, just print the cluster name
             click.echo(name)
-    except click.ClickException:
-        # Re-raise ClickExceptions to preserve the error message
-        raise
+    except JumpstarterKubernetesError as e:
+        # Convert library exceptions to CLI exceptions
+        raise click.ClickException(str(e)) from e

@@ -3,8 +3,6 @@
 import json
 from typing import Dict, List, Optional
 
-import click
-
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from .common import run_command
 
@@ -32,7 +30,8 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
         returncode, stdout, stderr = await run_command(cmd)
 
         if returncode != 0:
-            raise click.ClickException(f"Failed to get kubectl config: {stderr}")
+            from ..exceptions import KubeconfigError
+            raise KubeconfigError(f"Failed to get kubectl config: {stderr}")
 
         config = json.loads(stdout)
 
@@ -43,6 +42,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
             context_name = ctx.get("name", "")
             cluster_name = ctx.get("context", {}).get("cluster", "")
             user_name = ctx.get("context", {}).get("user", "")
+            namespace = ctx.get("context", {}).get("namespace")
 
             # Get cluster server URL
             server_url = ""
@@ -57,6 +57,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
                     "cluster": cluster_name,
                     "server": server_url,
                     "user": user_name,
+                    "namespace": namespace,
                     "current": context_name == current_context,
                 }
             )
@@ -64,9 +65,11 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
         return contexts
 
     except json.JSONDecodeError as e:
-        raise click.ClickException(f"Failed to parse kubectl config: {e}") from e
+        from ..exceptions import KubeconfigError
+        raise KubeconfigError(f"Failed to parse kubectl config: {e}") from e
     except Exception as e:
-        raise click.ClickException(f"Error listing kubectl contexts: {e}") from e
+        from ..exceptions import KubeconfigError
+        raise KubeconfigError(f"Error listing kubectl contexts: {e}") from e
 
 
 async def check_jumpstarter_installation(  # noqa: C901
@@ -93,7 +96,7 @@ async def check_jumpstarter_installation(  # noqa: C901
 
         if returncode == 0:
             # Extract JSON from output (handle case where warnings are printed before JSON)
-            json_start = stdout.find('[')
+            json_start = stdout.find("[")
             if json_start >= 0:
                 json_output = stdout[json_start:]
                 releases = json.loads(json_output)
@@ -126,7 +129,7 @@ async def check_jumpstarter_installation(  # noqa: C901
 
                         if values_returncode == 0:
                             # Extract JSON from values output (handle warnings)
-                            json_start = values_stdout.find('{')
+                            json_start = values_stdout.find("{")
                             if json_start >= 0:
                                 json_output = values_stdout[json_start:]
                                 values = json.loads(json_output)
@@ -161,7 +164,7 @@ async def check_jumpstarter_installation(  # noqa: C901
 
             if returncode == 0:
                 # Extract JSON from CRD output (handle warnings)
-                json_start = stdout.find('{')
+                json_start = stdout.find("{")
                 if json_start >= 0:
                     json_output = stdout[json_start:]
                     crds = json.loads(json_output)
@@ -197,7 +200,6 @@ async def get_cluster_info(
     kubectl: str = "kubectl",
     helm: str = "helm",
     minikube: str = "minikube",
-    check_connectivity: bool = False,
 ) -> V1Alpha1ClusterInfo:
     """Get comprehensive cluster information."""
     try:
@@ -285,7 +287,6 @@ async def list_clusters(
     helm: str = "helm",
     kind: str = "kind",
     minikube: str = "minikube",
-    check_connectivity: bool = False,
 ) -> V1Alpha1ClusterList:
     """List all Kubernetes clusters with Jumpstarter status."""
     try:
@@ -293,7 +294,7 @@ async def list_clusters(
         cluster_infos = []
 
         for context in contexts:
-            cluster_info = await get_cluster_info(context["name"], kubectl, helm, minikube, check_connectivity)
+            cluster_info = await get_cluster_info(context["name"], kubectl, helm, minikube)
 
             # Filter by type if specified
             if cluster_type_filter != "all" and cluster_info.type != cluster_type_filter:

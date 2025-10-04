@@ -5,8 +5,7 @@ import re
 import shutil
 from typing import Literal, Optional
 
-import click
-
+from ..exceptions import ToolNotInstalledError
 from .common import run_command
 from .kind import kind_cluster_exists, kind_installed
 from .minikube import minikube_cluster_exists, minikube_installed
@@ -21,7 +20,8 @@ def detect_container_runtime() -> str:
     elif shutil.which("nerdctl"):
         return "nerdctl"
     else:
-        raise click.ClickException(
+        raise ToolNotInstalledError(
+            "container runtime",
             "No supported container runtime found in PATH. Kind requires docker, podman, or nerdctl."
         )
 
@@ -76,9 +76,15 @@ async def detect_existing_cluster_type(cluster_name: str) -> Optional[Literal["k
             minikube_exists = False
 
     if kind_exists and minikube_exists:
-        raise click.ClickException(
-            f'Both Kind and Minikube clusters named "{cluster_name}" exist. '
-            "Please specify --kind or --minikube to choose which one to delete."
+        from ..exceptions import ClusterOperationError
+        raise ClusterOperationError(
+            "detect",
+            cluster_name,
+            "multiple",
+            Exception(
+                f'Both Kind and Minikube clusters named "{cluster_name}" exist. '
+                "Please specify --kind or --minikube to choose which one to delete."
+            )
         )
     elif kind_exists:
         return "kind"
@@ -95,7 +101,8 @@ def auto_detect_cluster_type() -> Literal["kind"] | Literal["minikube"]:
     elif minikube_installed("minikube"):
         return "minikube"
     else:
-        raise click.ClickException(
+        raise ToolNotInstalledError(
+            "kind or minikube",
             "Neither Kind nor Minikube is installed. Please install one of them:\n"
             "  • Kind: https://kind.sigs.k8s.io/docs/user/quick-start/\n"
             "  • Minikube: https://minikube.sigs.k8s.io/docs/start/"

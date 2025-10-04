@@ -1,9 +1,18 @@
 """Kind cluster management operations."""
 
+import os
+import shlex
 import shutil
 import tempfile
 from typing import List, Optional
 
+from ..callbacks import OutputCallback, SilentCallback
+from ..exceptions import (
+    CertificateError,
+    ClusterAlreadyExistsError,
+    ClusterOperationError,
+    ToolNotInstalledError,
+)
 from .common import run_command, run_command_with_output
 
 
@@ -108,7 +117,6 @@ nodes:
             raise RuntimeError(f"Failed to create Kind cluster '{cluster_name}'")
     finally:
         # Clean up the temporary config file
-        import os
         try:
             os.unlink(config_file)
         except OSError:
@@ -128,3 +136,94 @@ async def list_kind_clusters(kind: str) -> List[str]:
         return []
     except RuntimeError:
         return []
+
+
+async def inject_certificates(extra_certs: str, cluster_name: str, callback: OutputCallback = None) -> None:
+    """Inject custom certificates into a Kind cluster."""
+    if callback is None:
+        callback = SilentCallback()
+
+    # Expand ~ and environment variables before making absolute
+    expanded_path = os.path.expanduser(os.path.expandvars(extra_certs))
+    extra_certs_path = os.path.abspath(expanded_path)
+
+    if not os.path.exists(extra_certs_path):
+        raise CertificateError(f"Extra certificates file not found: {extra_certs_path}", extra_certs_path)
+
+    # Detect Kind provider info
+    from .detection import detect_kind_provider
+
+    runtime, node_name = await detect_kind_provider(cluster_name)
+
+    callback.progress(f"Injecting certificates from {extra_certs_path} into Kind cluster...")
+
+    # Copy certificates into the Kind node
+    copy_cmd = [runtime, "cp", extra_certs_path, f"{node_name}:/usr/local/share/ca-certificates/extra-certs.crt"]
+
+    returncode = await run_command_with_output(copy_cmd)
+
+    if returncode != 0:
+        raise CertificateError(f"Failed to copy certificates to Kind node: {node_name}")
+
+    # Update ca-certificates in the node
+    update_cmd = [runtime, "exec", node_name, "update-ca-certificates"]
+
+    returncode = await run_command_with_output(update_cmd)
+
+    if returncode != 0:
+        raise CertificateError("Failed to update certificates in Kind node")
+
+    callback.success("Successfully injected custom certificates into Kind cluster")
+
+
+async def create_kind_cluster_with_options(
+    kind: str,
+    cluster_name: str,
+    kind_extra_args: str,
+    force_recreate_cluster: bool,
+    extra_certs: Optional[str] = None,
+    callback: OutputCallback = None
+) -> None:
+    """Create a Kind cluster with optional certificate injection."""
+    if callback is None:
+        callback = SilentCallback()
+
+    if not kind_installed(kind):
+        raise ToolNotInstalledError("kind")
+
+    cluster_action = "Recreating" if force_recreate_cluster else "Creating"
+    callback.progress(f'{cluster_action} Kind cluster "{cluster_name}"...')
+    extra_args_list = shlex.split(kind_extra_args) if kind_extra_args.strip() else []
+
+    try:
+        await create_kind_cluster(kind, cluster_name, extra_args_list, force_recreate_cluster, callback)
+
+        # Inject custom certificates if provided
+        if extra_certs:
+            await inject_certificates(extra_certs, cluster_name, callback)
+
+    except ClusterAlreadyExistsError as e:
+        if not force_recreate_cluster:
+            callback.progress(f'Kind cluster "{cluster_name}" already exists, continuing...')
+            # Still inject certificates if cluster exists and extra_certs provided
+            if extra_certs:
+                await inject_certificates(extra_certs, cluster_name, callback)
+        else:
+            raise ClusterOperationError("recreate", cluster_name, "kind", e) from e
+    except Exception as e:
+        action = "recreate" if force_recreate_cluster else "create"
+        raise ClusterOperationError(action, cluster_name, "kind", e) from e
+
+
+async def delete_kind_cluster_with_feedback(kind: str, cluster_name: str, callback: OutputCallback = None) -> None:
+    """Delete a Kind cluster with user feedback."""
+    if callback is None:
+        callback = SilentCallback()
+
+    if not kind_installed(kind):
+        raise ToolNotInstalledError("kind")
+
+    try:
+        await delete_kind_cluster(kind, cluster_name, callback)
+    except Exception as e:
+        raise ClusterOperationError("delete", cluster_name, "kind", e) from e

@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import click
 from click.testing import CliRunner
@@ -265,7 +265,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "kind"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_minikube_with_confirmation(self, mock_delete):
@@ -275,7 +275,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster", "--minikube", "minikube"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("test-cluster", "minikube", False)
+        mock_delete.assert_called_once_with("test-cluster", "minikube", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_auto_detect(self, mock_delete):
@@ -285,7 +285,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("test-cluster", None, False)
+        mock_delete.assert_called_once_with("test-cluster", None, False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_with_force(self, mock_delete):
@@ -295,7 +295,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "kind", "--force"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("test-cluster", "kind", True)
+        mock_delete.assert_called_once_with("test-cluster", "kind", True, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_default_name(self, mock_delete):
@@ -305,7 +305,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "--kind", "kind"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("jumpstarter-lab", "kind", False)
+        mock_delete.assert_called_once_with("jumpstarter-lab", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_confirmation_cancelled(self, mock_delete):
@@ -316,7 +316,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "kind"])
 
         assert result.exit_code != 0
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_force_skips_confirmation(self, mock_delete):
@@ -327,7 +327,7 @@ class TestClusterDeletion:
 
         assert result.exit_code == 0
         # Verify force=True was passed
-        mock_delete.assert_called_once_with("test-cluster", "minikube", True)
+        mock_delete.assert_called_once_with("test-cluster", "minikube", True, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_not_found(self, mock_delete):
@@ -338,7 +338,7 @@ class TestClusterDeletion:
 
         assert result.exit_code != 0
         assert 'No cluster named "test-cluster" found' in result.output
-        mock_delete.assert_called_once_with("test-cluster", None, False)
+        mock_delete.assert_called_once_with("test-cluster", None, False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_kind_not_installed(self, mock_delete):
@@ -349,7 +349,7 @@ class TestClusterDeletion:
 
         assert result.exit_code != 0
         assert "Kind is not installed" in result.output
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_minikube_not_installed(self, mock_delete):
@@ -360,7 +360,7 @@ class TestClusterDeletion:
 
         assert result.exit_code != 0
         assert "Minikube is not installed" in result.output
-        mock_delete.assert_called_once_with("test-cluster", "minikube", False)
+        mock_delete.assert_called_once_with("test-cluster", "minikube", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_does_not_exist(self, mock_delete):
@@ -371,7 +371,7 @@ class TestClusterDeletion:
 
         assert result.exit_code != 0
         assert 'Kind cluster "test-cluster" does not exist' in result.output
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_name_output(self, mock_delete):
@@ -382,7 +382,7 @@ class TestClusterDeletion:
 
         assert result.exit_code == 0
         assert result.output.strip() == "test-cluster"
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_normal_output(self, mock_delete):
@@ -392,7 +392,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "kind"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
         # Note: Output messages are handled by delete_cluster_by_name function itself
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
@@ -405,7 +405,7 @@ class TestClusterDeletion:
 
         assert result.exit_code == 0
         # Should use kind since it's checked first in the if/elif chain
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_with_custom_binaries(self, mock_delete):
@@ -416,7 +416,7 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "my-kind"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("test-cluster", "kind", False)
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
         mock_delete.reset_mock()
 
@@ -424,4 +424,4 @@ class TestClusterDeletion:
         result = self.runner.invoke(delete, ["cluster", "test-cluster", "--minikube", "my-minikube"])
 
         assert result.exit_code == 0
-        mock_delete.assert_called_once_with("test-cluster", "minikube", False)
+        mock_delete.assert_called_once_with("test-cluster", "minikube", False, ANY)

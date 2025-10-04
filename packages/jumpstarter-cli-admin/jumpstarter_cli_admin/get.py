@@ -131,7 +131,7 @@ async def get_cluster(
     try:
         if name is not None:
             # Get specific cluster by context name
-            cluster_info = await get_cluster_info(name, kubectl, helm, minikube, check_connectivity=False)
+            cluster_info = await get_cluster_info(name, kubectl, helm, minikube)
 
             # Check if the cluster context was found
             if cluster_info.error and "not found" in cluster_info.error:
@@ -140,10 +140,10 @@ async def get_cluster(
             model_print(cluster_info, output)
         else:
             # List all clusters if no name provided
-            cluster_list = await list_clusters(type, kubectl, helm, kind, minikube, check_connectivity=False)
+            cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
             model_print(cluster_list, output)
     except Exception as e:
-        click.echo(f"Error getting cluster info: {e}", err=True)
+        raise click.ClickException(f"Error getting cluster info: {e}") from e
 
 
 @get.command("clusters")
@@ -159,9 +159,9 @@ async def get_cluster(
 async def get_clusters(type: str, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType):
     """List all Kubernetes clusters with Jumpstarter status"""
     try:
-        cluster_list = await list_clusters(type, kubectl, helm, kind, minikube, check_connectivity=False)
+        cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
 
         # Use model_print for all output formats
         model_print(cluster_list, output)
     except Exception as e:
-        click.echo(f"Error listing clusters: {e}", err=True)
+        raise click.ClickException(f"Error listing clusters: {e}") from e
