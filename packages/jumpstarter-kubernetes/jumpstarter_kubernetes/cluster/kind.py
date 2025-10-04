@@ -83,7 +83,6 @@ kubeadmConfigPatches:
     kubeletExtraArgs:
       node-labels: "ingress-ready=true"
 nodes:
-nodes:
 - role: control-plane
   extraPortMappings:
   - containerPort: 80 # ingress controller
