@@ -385,6 +385,36 @@ class TestClusterDeletion:
         mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
 
     @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
+    def test_delete_cluster_name_output_still_prompts_for_confirmation(self, mock_delete):
+        """Test --output=name without --force still prompts for confirmation (uses SilentWithConfirmCallback)"""
+        mock_delete.return_value = None
+
+        result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "kind", "--output", "name"])
+
+        assert result.exit_code == 0
+        # Verify that force=False was passed, which means confirmation should be prompted
+        mock_delete.assert_called_once_with("test-cluster", "kind", False, ANY)
+        # Verify the callback type is SilentWithConfirmCallback by checking its behavior
+        callback_arg = mock_delete.call_args[0][3]
+        from jumpstarter_cli_common.callbacks import SilentWithConfirmCallback
+        assert isinstance(callback_arg, SilentWithConfirmCallback)
+
+    @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
+    def test_delete_cluster_name_output_with_force_uses_force_callback(self, mock_delete):
+        """Test --output=name with --force uses ForceClickCallback"""
+        mock_delete.return_value = None
+
+        result = self.runner.invoke(delete, ["cluster", "test-cluster", "--kind", "kind", "--output", "name", "--force"])
+
+        assert result.exit_code == 0
+        # Verify that force=True was passed
+        mock_delete.assert_called_once_with("test-cluster", "kind", True, ANY)
+        # Verify the callback type is ForceClickCallback
+        callback_arg = mock_delete.call_args[0][3]
+        from jumpstarter_cli_common.callbacks import ForceClickCallback
+        assert isinstance(callback_arg, ForceClickCallback)
+
+    @patch("jumpstarter_cli_admin.delete.delete_cluster_by_name")
     def test_delete_cluster_normal_output(self, mock_delete):
         """Test normal output messages (mocked through delete_cluster_by_name)"""
         mock_delete.return_value = None

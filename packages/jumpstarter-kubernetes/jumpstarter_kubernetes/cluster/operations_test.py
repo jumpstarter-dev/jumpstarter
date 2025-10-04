@@ -9,7 +9,7 @@ from jumpstarter_kubernetes.cluster.operations import (
     create_cluster_only,
     delete_cluster_by_name,
 )
-from jumpstarter_kubernetes.exceptions import ClusterNotFoundError
+from jumpstarter_kubernetes.exceptions import ClusterNotFoundError, ClusterTypeValidationError
 
 
 class TestDeleteClusterByName:
@@ -65,6 +65,29 @@ class TestDeleteClusterByName:
         mock_installed.assert_called_once_with("kind")
         mock_cluster_exists.assert_called_once_with("kind", "test-cluster")
         mock_delete_kind.assert_called_once_with("kind", "test-cluster", ANY)
+
+    @pytest.mark.asyncio
+    async def test_delete_cluster_unsupported_type_explicit(self):
+        """Test that explicitly specifying an unsupported cluster type raises ClusterTypeValidationError."""
+        with pytest.raises(ClusterTypeValidationError) as exc_info:
+            await delete_cluster_by_name("test-cluster", cluster_type="remote", force=True)
+
+        assert "remote" in str(exc_info.value)
+        assert "kind" in str(exc_info.value)
+        assert "minikube" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.operations.detect_existing_cluster_type")
+    async def test_delete_cluster_unsupported_type_auto_detected(self, mock_detect):
+        """Test that auto-detecting an unsupported cluster type raises ClusterTypeValidationError."""
+        mock_detect.return_value = "remote"
+
+        with pytest.raises(ClusterTypeValidationError) as exc_info:
+            await delete_cluster_by_name("test-cluster", force=True)
+
+        assert "remote" in str(exc_info.value)
+        assert "kind" in str(exc_info.value)
+        assert "minikube" in str(exc_info.value)
 
 
 class TestCreateClusterOnly:

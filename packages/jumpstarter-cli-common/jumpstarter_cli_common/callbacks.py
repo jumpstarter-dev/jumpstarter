@@ -57,3 +57,19 @@ class ForceClickCallback(ClickCallback):
     def confirm(self, prompt: str) -> bool:
         """Always returns True (force mode skips confirmations)."""
         return True
+
+
+class SilentWithConfirmCallback(ClickCallback):
+    """Callback that suppresses output but still prompts for confirmation.
+
+    This is useful for --output=name mode where we want clean output
+    but still need user confirmation for destructive operations.
+    """
+
+    def __init__(self):
+        """Initialize silent callback that still prompts."""
+        super().__init__(silent=True)
+
+    def confirm(self, prompt: str) -> bool:
+        """Ask user for confirmation even in silent mode."""
+        return click.confirm(prompt)

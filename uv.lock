@@ -2219,7 +2219,6 @@ name = "jumpstarter-kubernetes"
 source = { editable = "packages/jumpstarter-kubernetes" }
 dependencies = [
     { name = "aiohttp" },
-    { name = "click" },
     { name = "jumpstarter" },
     { name = "kubernetes" },
     { name = "kubernetes-asyncio" },
@@ -2239,7 +2238,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.18" },
-    { name = "click", specifier = ">=8.0.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "kubernetes", specifier = ">=31.0.0" },
     { name = "kubernetes-asyncio", specifier = ">=31.1.0" },

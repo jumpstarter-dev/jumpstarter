@@ -79,7 +79,11 @@ class KubeconfigError(JumpstarterKubernetesError):
 class ClusterTypeValidationError(JumpstarterKubernetesError):
     """Raised when cluster type validation fails."""
 
-    pass
+    def __init__(self, cluster_type: str, supported_types: list = None):
+        self.cluster_type = cluster_type
+        self.supported_types = supported_types or ["kind", "minikube"]
+        message = f'Unsupported cluster type "{cluster_type}". Supported types: {", ".join(self.supported_types)}'
+        super().__init__(message)
 
 
 class ClusterNameValidationError(JumpstarterKubernetesError):

@@ -1,9 +1,10 @@
 from typing import Optional
 
 import aiohttp
-import click
 import semver
 from packaging.version import Version
+
+from .exceptions import JumpstarterKubernetesError
 
 
 async def get_latest_compatible_controller_version(client_version: Optional[str]):  # noqa: C901
@@ -19,7 +20,7 @@ async def get_latest_compatible_controller_version(client_version: Optional[str]
         try:
             client_version_parsed = Version(version_to_parse)
         except Exception as e:
-            raise click.ClickException(
+            raise JumpstarterKubernetesError(
                 f"Invalid client version '{client_version}': {e}"
             ) from e
 
@@ -33,13 +34,13 @@ async def get_latest_compatible_controller_version(client_version: Optional[str]
             ) as resp:
                 resp = await resp.json()
         except Exception as e:
-            raise click.ClickException(f"Failed to fetch controller versions: {e}") from e
+            raise JumpstarterKubernetesError(f"Failed to fetch controller versions: {e}") from e
 
     compatible = set()
     fallback = set()
 
     if not isinstance(resp, dict) or "tags" not in resp or not isinstance(resp["tags"], list):
-        raise click.ClickException("Unexpected response fetching controller version")
+        raise JumpstarterKubernetesError("Unexpected response fetching controller version")
 
     for tag in resp["tags"]:
         if not isinstance(tag, dict) or "name" not in tag:
@@ -68,7 +69,7 @@ async def get_latest_compatible_controller_version(client_version: Optional[str]
     elif fallback:
         selected_version, selected_tag = max(fallback)
     else:
-        raise ValueError("No valid controller versions found in the repository")
+        raise JumpstarterKubernetesError("No valid controller versions found in the repository")
 
     # Return the original tag string (not str(Version) or VersionInfo)
     return selected_tag

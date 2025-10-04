@@ -42,7 +42,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
             context_name = ctx.get("name", "")
             cluster_name = ctx.get("context", {}).get("cluster", "")
             user_name = ctx.get("context", {}).get("user", "")
-            namespace = ctx.get("context", {}).get("namespace")
+            namespace = ctx.get("context", {}).get("namespace") or "default"
 
             # Get cluster server URL
             server_url = ""
@@ -258,7 +258,7 @@ async def get_cluster_info(
             cluster=context_info["cluster"],
             server=context_info["server"],
             user=context_info["user"],
-            namespace=context_info.get("namespace", "default"),
+            namespace=context_info["namespace"],
             is_current=context_info["current"],
             type=cluster_type,
             accessible=cluster_accessible,

@@ -68,6 +68,9 @@ async def delete_cluster_by_name(  # noqa: C901
                 raise ToolNotInstalledError("minikube")
             if not await minikube_cluster_exists("minikube", cluster_name):
                 raise ClusterNotFoundError(cluster_name, "minikube")
+        else:
+            # Unsupported cluster type specified
+            raise ClusterTypeValidationError(cluster_type, ["kind", "minikube"])
     else:
         # Auto-detect cluster type
         detected_type = await detect_existing_cluster_type(cluster_name)
@@ -75,6 +78,10 @@ async def delete_cluster_by_name(  # noqa: C901
             raise ClusterNotFoundError(cluster_name)
         cluster_type = detected_type
         callback.progress(f'Auto-detected {cluster_type} cluster "{cluster_name}"')
+
+    # Validate cluster type is supported for deletion
+    if cluster_type not in ["kind", "minikube"]:
+        raise ClusterTypeValidationError(cluster_type, ["kind", "minikube"])
 
     # Confirm deletion unless force is specified
     if not force:

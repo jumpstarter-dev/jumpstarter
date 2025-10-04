@@ -2,10 +2,10 @@
 
 from unittest.mock import patch
 
-import click
 import pytest
 
 from jumpstarter_kubernetes.cluster.endpoints import configure_endpoints, get_ip_generic
+from jumpstarter_kubernetes.exceptions import EndpointConfigurationError
 
 
 class TestGetIpGeneric:
@@ -37,7 +37,6 @@ class TestGetIpGeneric:
     @patch("jumpstarter_kubernetes.cluster.endpoints.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_minikube_ip")
     async def test_get_ip_generic_minikube_ip_error(self, mock_get_minikube_ip, mock_minikube_installed):
-        from jumpstarter_kubernetes.exceptions import EndpointConfigurationError
 
         mock_minikube_installed.return_value = True
         mock_get_minikube_ip.side_effect = Exception("IP detection failed")
@@ -57,7 +56,6 @@ class TestGetIpGeneric:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_address")
     async def test_get_ip_generic_kind_zero_ip(self, mock_get_ip_address):
-        from jumpstarter_kubernetes.exceptions import EndpointConfigurationError
 
         mock_get_ip_address.return_value = "0.0.0.0"
 
@@ -258,9 +256,9 @@ class TestConfigureEndpoints:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.endpoints.get_ip_generic")
     async def test_configure_endpoints_ip_detection_error_propagates(self, mock_get_ip_generic):
-        mock_get_ip_generic.side_effect = click.ClickException("IP detection failed")
+        mock_get_ip_generic.side_effect = EndpointConfigurationError("IP detection failed")
 
-        with pytest.raises(click.ClickException, match="IP detection failed"):
+        with pytest.raises(EndpointConfigurationError, match="IP detection failed"):
             await configure_endpoints(
                 cluster_type="minikube",
                 minikube="minikube",

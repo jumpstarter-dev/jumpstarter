@@ -196,7 +196,7 @@ async def create_kind_cluster_with_options(
     extra_args_list = shlex.split(kind_extra_args) if kind_extra_args.strip() else []
 
     try:
-        await create_kind_cluster(kind, cluster_name, extra_args_list, force_recreate_cluster, callback)
+        await create_kind_cluster(kind, cluster_name, extra_args_list, force_recreate_cluster)
 
         # Inject custom certificates if provided
         if extra_certs:
@@ -224,6 +224,6 @@ async def delete_kind_cluster_with_feedback(kind: str, cluster_name: str, callba
         raise ToolNotInstalledError("kind")
 
     try:
-        await delete_kind_cluster(kind, cluster_name, callback)
+        await delete_kind_cluster(kind, cluster_name)
     except Exception as e:
         raise ClusterOperationError("delete", cluster_name, "kind", e) from e

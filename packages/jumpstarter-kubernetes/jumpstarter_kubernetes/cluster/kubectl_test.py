@@ -3,7 +3,6 @@
 import json
 from unittest.mock import patch
 
-import click
 import pytest
 
 from jumpstarter_kubernetes.cluster.kubectl import (
@@ -14,6 +13,7 @@ from jumpstarter_kubernetes.cluster.kubectl import (
     list_clusters,
 )
 from jumpstarter_kubernetes.clusters import V1Alpha1ClusterInfo, V1Alpha1JumpstarterInstance
+from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
 
 
 class TestCheckKubernetesAccess:
@@ -97,7 +97,7 @@ class TestGetKubectlContexts:
             "cluster": "test-cluster",
             "server": "https://test.example.com:6443",
             "user": "test-user",
-            "namespace": None,
+            "namespace": "default",
             "current": True,
         }
         assert result[1] == {
@@ -105,7 +105,7 @@ class TestGetKubectlContexts:
             "cluster": "prod-cluster",
             "server": "https://prod.example.com:6443",
             "user": "prod-user",
-            "namespace": None,
+            "namespace": "default",
             "current": False,
         }
 
@@ -282,6 +282,7 @@ class TestGetClusterInfo:
                 "cluster": "test-cluster",
                 "server": "https://test.example.com",
                 "user": "test-user",
+                "namespace": "default",
                 "current": False,
             }
         ]
@@ -304,7 +305,7 @@ class TestGetClusterInfo:
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
     async def test_get_cluster_info_inaccessible(self, mock_get_contexts):
         # Mock get_kubectl_contexts to fail
-        mock_get_contexts.side_effect = click.ClickException("Failed to get kubectl config: connection refused")
+        mock_get_contexts.side_effect = JumpstarterKubernetesError("Failed to get kubectl config: connection refused")
 
         result = await get_cluster_info("test-context")
 
@@ -317,7 +318,7 @@ class TestGetClusterInfo:
     async def test_get_cluster_info_invalid_json(self, mock_get_contexts):
         # Mock get_kubectl_contexts to fail with JSON parse error
         error_msg = "Failed to parse kubectl config: Expecting value: line 1 column 1 (char 0)"
-        mock_get_contexts.side_effect = click.ClickException(error_msg)
+        mock_get_contexts.side_effect = JumpstarterKubernetesError(error_msg)
 
         result = await get_cluster_info("test-context")
 
@@ -374,7 +375,7 @@ class TestListClusters:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
     async def test_list_clusters_context_error(self, mock_get_contexts):
-        mock_get_contexts.side_effect = click.ClickException("No kubeconfig found")
+        mock_get_contexts.side_effect = JumpstarterKubernetesError("No kubeconfig found")
 
         result = await list_clusters()
 

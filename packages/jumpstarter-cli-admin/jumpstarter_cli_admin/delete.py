@@ -3,7 +3,7 @@ from typing import Optional
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.blocking import blocking
-from jumpstarter_cli_common.callbacks import ClickCallback, ForceClickCallback
+from jumpstarter_cli_common.callbacks import ClickCallback, ForceClickCallback, SilentWithConfirmCallback
 from jumpstarter_cli_common.opt import (
     NameOutputType,
     opt_context,
@@ -163,8 +163,8 @@ async def delete_cluster(
 
     # Create appropriate callback based on output mode and force flag
     if output is not None:
-        # For --output=name, use silent callback
-        callback = ForceClickCallback(silent=True) if force else ClickCallback(silent=True)
+        # For --output=name, use silent callback that still prompts for confirmation
+        callback = ForceClickCallback(silent=True) if force else SilentWithConfirmCallback()
     else:
         # For normal output, use regular callbacks
         callback = ForceClickCallback(silent=False) if force else ClickCallback(silent=False)
