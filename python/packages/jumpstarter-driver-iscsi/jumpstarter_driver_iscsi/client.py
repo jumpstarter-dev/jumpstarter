@@ -98,18 +98,25 @@ class ISCSIServerClient(CompositeClient):
                     header_map[key] = value
 
                 parsed = urlparse(file)
-                with NamedTemporaryFile(
+                tf = NamedTemporaryFile(
                     prefix="jumpstarter-iscsi-",
                     suffix=os.path.basename(parsed.path),
                     delete=False,
-                ) as tf:
-                    temp_path = tf.name
-                    with requests.get(file, stream=True, headers=header_map, timeout=60) as resp:
+                )
+                temp_path = tf.name
+                try:
+                    with requests.get(file, stream=True, headers=header_map, timeout=(10, 60)) as resp:
                         resp.raise_for_status()
                         for chunk in resp.iter_content(chunk_size=65536):
                             if chunk:
                                 tf.write(chunk)
-                return temp_path, None, temp_path
+                    tf.close()
+                    return temp_path, None, temp_path
+                except Exception:
+                    tf.close()
+                    with contextlib.suppress(Exception):
+                        os.unlink(temp_path)
+                    raise
 
             _, src_operator, _ = operator_for_path(file)
             return file, src_operator, None

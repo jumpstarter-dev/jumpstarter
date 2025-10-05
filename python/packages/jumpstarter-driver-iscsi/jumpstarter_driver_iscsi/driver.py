@@ -5,6 +5,7 @@ import os
 import socket
 from contextlib import suppress
 from dataclasses import dataclass, field
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional
 
 from jumpstarter_driver_opendal.driver import Opendal
@@ -66,9 +67,7 @@ class ISCSI(Driver):
         os.makedirs(self.root_dir, exist_ok=True)
 
         self.children["storage"] = Opendal(
-            scheme="fs",
-            kwargs={"root": self.root_dir},
-            remove_created_on_close=self.remove_created_on_close
+            scheme="fs", kwargs={"root": self.root_dir}, remove_created_on_close=self.remove_created_on_close
         )
         self.storage = self.children["storage"]
 
@@ -306,6 +305,15 @@ class ISCSI(Driver):
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         return full_path
 
+    def _check_no_symlinks_in_path(self, path: str) -> None:
+        """Verify no path component is a symlink to prevent writing outside root."""
+        path_to_check = path
+        root_abs = os.path.abspath(self.root_dir)
+        while path_to_check != root_abs and path_to_check != os.path.dirname(path_to_check):
+            if os.path.lexists(path_to_check) and os.path.islink(path_to_check):
+                raise ISCSIError(f"Destination path contains symlink: {path_to_check}")
+            path_to_check = os.path.dirname(path_to_check)
+
     @export
     def decompress(self, src_path: str, dst_path: str, algo: str) -> None:
         """Decompress a file under storage root into another path under storage root.
@@ -315,6 +323,7 @@ class ISCSI(Driver):
         """
         src_full = self._safe_join_under_root(src_path)
         dst_full = self._safe_join_under_root(dst_path)
+        self._check_no_symlinks_in_path(dst_full)
 
         def _copy_stream(read_f, write_f):
             while True:
@@ -323,26 +332,31 @@ class ISCSI(Driver):
                     break
                 write_f.write(chunk)
 
+        tmp_path = None
         try:
-            if algo == "gz":
-                with open(dst_full, "wb") as out_f:
+            with NamedTemporaryFile(dir=os.path.dirname(dst_full), prefix=".decomp-", delete=False) as tf:
+                tmp_path = tf.name
+                if algo == "gz":
                     with gzip.open(src_full, "rb") as decomp:
-                        _copy_stream(decomp, out_f)
-            elif algo == "xz":
-                with open(dst_full, "wb") as out_f:
+                        _copy_stream(decomp, tf)
+                elif algo == "xz":
                     with lzma.open(src_full, "rb") as decomp:
-                        _copy_stream(decomp, out_f)
-            elif algo == "bz2":
-                with open(dst_full, "wb") as out_f:
+                        _copy_stream(decomp, tf)
+                elif algo == "bz2":
                     with bz2.open(src_full, "rb") as decomp:
-                        _copy_stream(decomp, out_f)
-            else:
-                raise ISCSIError(f"Unsupported compression algo: {algo}")
+                        _copy_stream(decomp, tf)
+                else:
+                    raise ISCSIError(f"Unsupported compression algo: {algo}")
+                tf.flush()
+                os.fsync(tf.fileno())
+            os.replace(tmp_path, dst_full)
         except Exception as e:
+            with suppress(Exception):
+                if tmp_path is not None:
+                    os.remove(tmp_path)
             raise ISCSIError(f"Decompression failed: {e}") from e
 
     def _create_file_storage_object(self, name: str, full_path: str, size_mb: int) -> tuple:
-        """Create file-backed storage object and return (storage_obj, final_size_mb)"""
         if not os.path.exists(full_path):
             if size_mb <= 0:
                 raise ISCSIError("size_mb must be > 0 for new file-backed LUNs")
