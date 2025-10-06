@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from collections.abc import AsyncGenerator, Generator
 from contextlib import (
     ExitStack,
@@ -20,6 +22,7 @@ from anyio import (
 from anyio.from_thread import BlockingPortal
 from grpc.aio import AioRpcError, Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
+from rich.console import Console
 
 from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
@@ -112,6 +115,17 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
         return await self._acquire()
 
+    def _update_spinner_status(self, spinner, result):
+        """Update spinner with appropriate status message based on lease conditions."""
+        if condition_true(result.conditions, "Pending"):
+            pending_message = condition_message(result.conditions, "Pending")
+            if pending_message:
+                spinner.update_status(f"Waiting for lease: {pending_message}")
+            else:
+                spinner.update_status("Waiting for lease to be ready...")
+        else:
+            spinner.update_status("Waiting for server to provide status updates...")
+
     async def _acquire(self):
         """Acquire a lease.
 
@@ -119,37 +133,50 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         """
         try:
             with fail_after(self.acquisition_timeout):
-                while True:
-                    logger.debug("Polling Lease %s", self.name)
-                    result = await self.get()
-                    # lease ready
-                    if condition_true(result.conditions, "Ready"):
-                        logger.debug("Lease %s acquired", self.name)
-                        self.exporter_name = result.exporter
-                        return self
-                    # lease unsatisfiable
-                    if condition_true(result.conditions, "Unsatisfiable"):
-                        message = condition_message(result.conditions, "Unsatisfiable")
-                        logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
-                        raise LeaseError(f"the lease cannot be satisfied: {message}")
+                with LeaseAcquisitionSpinner(self.name) as spinner:
+                    while True:
+                        logger.debug("Polling Lease %s", self.name)
+                        result = await self.get()
 
-                    # lease invalid
-                    if condition_true(result.conditions, "Invalid"):
-                        message = condition_message(result.conditions, "Invalid")
-                        logger.debug("Lease %s is invalid: %s", self.name, message)
-                        raise LeaseError(f"the lease is invalid: {message}")
+                        # lease ready
+                        if condition_true(result.conditions, "Ready"):
+                            logger.debug("Lease %s acquired", self.name)
+                            spinner.update_status(f"Lease {self.name} acquired successfully!")
+                            self.exporter_name = result.exporter
+                            break
 
-                    # lease not pending
-                    if condition_false(result.conditions, "Pending"):
-                        raise LeaseError(
-                            f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either"
-                        )
+                        # lease unsatisfiable
+                        if condition_true(result.conditions, "Unsatisfiable"):
+                            message = condition_message(result.conditions, "Unsatisfiable")
+                            logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
+                            raise LeaseError(f"the lease cannot be satisfied: {message}")
 
-                    # lease released
-                    if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
-                        raise LeaseError(f"lease {self.name} released")
+                        # lease invalid
+                        if condition_true(result.conditions, "Invalid"):
+                            message = condition_message(result.conditions, "Invalid")
+                            logger.debug("Lease %s is invalid: %s", self.name, message)
+                            raise LeaseError(f"the lease is invalid: {message}")
 
-                    await sleep(5)
+                        # lease not pending
+                        if condition_false(result.conditions, "Pending"):
+                            raise LeaseError(
+                                f"Lease {self.name} is not in pending, but it isn't in Ready or "
+                                f"Unsatisfiable state either"
+                            )
+
+                        # lease released
+                        if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
+                            raise LeaseError(f"lease {self.name} released")
+
+                        # Update spinner with appropriate status message
+                        self._update_spinner_status(spinner, result)
+
+                        # Wait in 1-second increments with tick updates for better UX
+                        for _ in range(5):
+                            await sleep(1)
+                            spinner.tick()
+            return self
+
         except TimeoutError:
             logger.debug(f"Lease {self.name} acquisition timed out after {self.acquisition_timeout} seconds")
             raise LeaseError(
@@ -269,3 +296,64 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     def monitor(self, threshold: timedelta = timedelta(minutes=5)):
         with self.portal.wrap_async_context_manager(self.monitor_async(threshold)):
             yield
+
+
+class LeaseAcquisitionSpinner:
+    """Context manager for displaying a spinner during lease acquisition."""
+
+    def __init__(self, lease_name: str | None = None):
+        self.lease_name = lease_name
+        self.console = Console()
+        self.spinner = None
+        self.start_time = None
+        self._should_show_spinner = self._is_terminal_available() and not self._is_non_interactive()
+        self._current_message = None
+
+    def _is_non_interactive(self) -> bool:
+        """Check if the user desires a NONINTERACTIVE environment."""
+        return os.environ.get("NONINTERACTIVE", "false").lower() in ["true", "1"]
+
+    def _is_terminal_available(self) -> bool:
+        """Check if we're running in a terminal/TTY."""
+        return (
+            hasattr(sys.stdout, 'isatty') and
+            sys.stdout.isatty() and
+            hasattr(sys.stderr, 'isatty') and
+            sys.stderr.isatty()
+        )
+
+    def __enter__(self):
+        self.start_time = datetime.now()
+        if self._should_show_spinner:
+            self.spinner = self.console.status(
+                f"Acquiring lease {self.lease_name or '...'}...",
+                spinner="dots",
+                spinner_style="blue"
+            )
+            self.spinner.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.spinner:
+            self.spinner.stop()
+
+    def update_status(self, message: str):
+        """Update the spinner status message."""
+        if self.spinner and self._should_show_spinner:
+            self._current_message = f"[blue]{message}[/blue]"
+            elapsed = datetime.now() - self.start_time
+            elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
+            self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
+        else:
+            # Log info message when no console is available
+            elapsed = datetime.now() - self.start_time
+            elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
+            logger.info(f"{message} ({elapsed_str})")
+
+    def tick(self):
+        """Update the spinner with current elapsed time without changing the message."""
+        if self.spinner and self._should_show_spinner and self._current_message:
+            elapsed = datetime.now() - self.start_time
+            elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
+            # Use the stored current message and update with new elapsed time
+            self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
