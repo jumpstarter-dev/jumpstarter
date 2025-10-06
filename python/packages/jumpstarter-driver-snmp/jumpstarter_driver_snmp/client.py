@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
-import click
 from jumpstarter_driver_power.client import PowerClient
+
+from jumpstarter.client.decorators import driver_click_group
 
 
 @dataclass(kw_only=True)
@@ -17,7 +18,7 @@ class SNMPServerClient(PowerClient):
         self.call("off")
 
     def cli(self):
-        @click.group()
+        @driver_click_group(self)
         def snmp():
             """SNMP power control commands"""
             pass

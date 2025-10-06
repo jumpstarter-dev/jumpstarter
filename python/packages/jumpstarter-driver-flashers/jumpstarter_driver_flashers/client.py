@@ -21,6 +21,7 @@ from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
+from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError
 
 debug_console_option = click.option("--console-debug", is_flag=True, help="Enable console debug mode")
@@ -750,7 +751,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return token
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         def base():
             """Software-defined flasher interface"""
             pass

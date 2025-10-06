@@ -5,6 +5,7 @@ import click
 
 from .common import PowerReading
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 class PowerClient(DriverClient):
@@ -35,7 +36,7 @@ class PowerClient(DriverClient):
             yield PowerReading.model_validate(v, strict=True)
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         def base():
             """Generic power"""
             pass
