@@ -7,6 +7,7 @@ from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client.core import DriverMethodNotImplemented
+from jumpstarter.client.decorators import driver_click_command
 
 
 def redact_password_in_args(args):
@@ -33,7 +34,11 @@ class TMTClient(CompositeClient):
 
     def cli(self):
 
-        @click.command(context_settings={"ignore_unknown_options": True})
+        @driver_click_command(
+            self,
+            context_settings={"ignore_unknown_options": True},
+            help="Run TMT command with arguments",
+        )
         @click.option("--forward-ssh", is_flag=True)
         @click.option("--tmt-username", default=None)
         @click.option("--tmt-password", default=None)
@@ -41,7 +46,6 @@ class TMTClient(CompositeClient):
         @click.option("--tmt-on-exporter", is_flag=True)
         @click.argument("args", nargs=-1)
         def tmt(forward_ssh, tmt_username, tmt_password, tmt_cmd, tmt_on_exporter, args):
-            """Run TMT command with arguments"""
             if tmt_on_exporter:
                 click.echo("TMT will be run on the exporter")
                 raise click.Abort("Still not implemented")

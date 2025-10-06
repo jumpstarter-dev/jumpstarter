@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import click
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 @dataclass(kw_only=True)
@@ -41,7 +42,7 @@ class ShellClient(DriverClient):
 
     def cli(self):
         """Create CLI interface for dynamically configured shell methods"""
-        @click.group
+        @driver_click_group(self)
         def base():
             """Shell command executor"""
             pass
@@ -80,12 +81,12 @@ class ShellClient(DriverClient):
         except Exception:
             description = f"Execute the {method_name} shell method"
 
-        # Decorate and register the command
-        method_command.__doc__ = description
+        # Decorate and register the command with help text
         method_command = click.argument('args', nargs=-1, type=click.UNPROCESSED)(method_command)
         method_command = click.option('--env', '-e', multiple=True,
                      help='Environment variables in KEY=VALUE format')(method_command)
         method_command = group.command(
             name=method_name,
+            help=description,
             context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
         )(method_command)

@@ -6,6 +6,7 @@ from jumpstarter_driver_opendal.adapter import OpendalAdapter
 from opendal import Operator
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError
 
 
@@ -60,7 +61,7 @@ class ProbeRsClient(DriverClient):
         return [int(data, 16) for data in data_strs]
 
     def cli(self):  # noqa: C901
-        @click.group
+        @driver_click_group(self)
         def base():
             """probe-rs client"""
             pass
