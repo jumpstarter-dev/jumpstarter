@@ -34,7 +34,7 @@ class CompositeClient(DriverClient):
                 v.close()
 
     def cli(self):
-        @click.group
+        @click_group
         @click.option(
             "--log-level",
             "log_level",
