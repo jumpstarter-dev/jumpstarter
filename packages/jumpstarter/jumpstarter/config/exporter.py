@@ -91,6 +91,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     token: str | None = Field(default=None)
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
+    description: str | None = None
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
 
     path: Path | None = Field(default=None)
@@ -152,7 +153,11 @@ class ExporterConfigV1Alpha1(BaseModel):
         from jumpstarter.exporter import Session
 
         with Session(
-            root_device=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate(),
+            root_device=ExporterConfigV1Alpha1DriverInstance(
+                type="jumpstarter_driver_composite.driver.Composite",
+                description=self.description,
+                children=self.export,
+            ).instantiate(),
         ) as session:
             async with session.serve_unix_async() as path:
                 yield path
@@ -185,7 +190,11 @@ class ExporterConfigV1Alpha1(BaseModel):
         try:
             exporter = Exporter(
                 channel_factory=channel_factory,
-                device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
+                device_factory=ExporterConfigV1Alpha1DriverInstance(
+                    type="jumpstarter_driver_composite.driver.Composite",
+                    description=self.description,
+                    children=self.export,
+                ).instantiate,
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
             )
