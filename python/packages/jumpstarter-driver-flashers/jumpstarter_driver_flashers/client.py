@@ -309,15 +309,17 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self._check_url_access(console, prompt, image_url, tls_args, header_args)
 
         # Flash the image, we run curl -> decompress -> dd in the background, so we can monitor dd's progress
+        # Use pipefail to ensure the pipeline fails if any command in the pipe fails
         flash_cmd = (
-            f'( curl -fsSL {tls_args} {header_args} "{image_url}" | '
+            f'( set -o pipefail; curl -fsSL {tls_args} {header_args} "{image_url}" | '
             f"{decompress_cmd} "
-            f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
+            f'dd of={target_path} bs=64k iflag=fullblock oflag=direct ' +
+            '&& echo "FLASH_COMPLETE" || echo "FLASH_FAILED" ) &'
         )
         console.sendline(flash_cmd)
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
 
-        # monitor the dd process to understand flashing progrses
+        # Monitor flash progress by accumulating console output and looking for completion markers
         console.sendline("pidof dd")
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         dd_pid = console.before.decode(errors="ignore").splitlines()[1].strip()
@@ -325,27 +327,66 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # Initialize progress tracking variables
         last_pos = 0
         last_time = time.time()
+        flash_start_time = time.time()
+        accumulated_output = ""
+        dd_finished_time = None
 
         while True:
+            # Check if dd process is still running for progress monitoring
             console.sendline(f"cat /proc/{dd_pid}/fdinfo/1")
             console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
             if "No such file or directory" in console.before.decode(errors="ignore"):
-                break
-            data = console.before.decode(errors="ignore")
-            match = re.search(r"pos:\s+(\d+)", data)
-            if match:
-                current_bytes = int(match.group(1))
-                current_time = time.time()
-                elapsed = current_time - last_time
+                # dd process finished, check for completion markers in accumulated output
+                if "FLASH_COMPLETE" in accumulated_output:
+                    self.logger.info("Flash operation completed successfully")
+                    break
+                elif "FLASH_FAILED" in accumulated_output:
+                    raise RuntimeError("Flash operation failed - curl or pipeline failed")
+                else:
+                    # dd finished but no completion marker found yet - wait a bit for echo to execute
+                    if dd_finished_time is None:
+                        dd_finished_time = time.time()
+                    elif time.time() - dd_finished_time > 5:  # Wait up to 5 seconds for echo
+                        raise RuntimeError("Flash operation completed without success/failure marker")
+                    # Continue checking for a few more iterations
+                    time.sleep(1)
+                    continue
+            else:
+                # dd is still running, check for progress and accumulate output
+                data = console.before.decode(errors="ignore")
+                   # Keep only the last 128 bytes to prevent memory growth
+                if len(accumulated_output) > 128:
+                    accumulated_output = accumulated_output[-128:]
 
-                if elapsed >= 5.0:  # Update speed every 5 seconds
-                    bytes_diff = current_bytes - last_pos
-                    speed_mb = (bytes_diff / (1024 * 1024)) / elapsed
-                    total_mb = current_bytes / (1024 * 1024)
-                    self.logger.info(f"Flash progress: {total_mb:.2f} MB, Speed: {speed_mb:.2f} MB/s")
+                accumulated_output += data
 
-                    last_pos = current_bytes
-                    last_time = current_time
+                # Check for completion markers in the accumulated output
+                if "FLASH_COMPLETE" in accumulated_output:
+                    self.logger.info("Flash operation completed successfully")
+                    break
+                elif "FLASH_FAILED" in accumulated_output:
+                    raise RuntimeError("Flash operation failed - curl or pipeline failed")
+
+                # Monitor dd progress
+                match = re.search(r"pos:\s+(\d+)", data)
+                if match:
+                    current_bytes = int(match.group(1))
+                    current_time = time.time()
+                    elapsed = current_time - last_time
+
+                    if elapsed >= 5.0:  # Update speed every 5 seconds
+                        bytes_diff = current_bytes - last_pos
+                        speed_mb = (bytes_diff / (1024 * 1024)) / elapsed
+                        total_mb = current_bytes / (1024 * 1024)
+                        self.logger.info(f"Flash progress: {total_mb:.2f} MB, Speed: {speed_mb:.2f} MB/s")
+
+                        last_pos = current_bytes
+                        last_time = current_time
+
+            # Check for timeout (prevent infinite loops)
+            if time.time() - flash_start_time > EXPECT_TIMEOUT_SYNC:
+                raise RuntimeError("Flash operation timed out")
+
             time.sleep(1)
 
         self.logger.info("Flushing buffers")
