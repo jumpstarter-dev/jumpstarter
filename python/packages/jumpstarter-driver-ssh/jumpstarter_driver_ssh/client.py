@@ -10,6 +10,7 @@ from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client.core import DriverMethodNotImplemented
+from jumpstarter.client.decorators import driver_click_command
 
 
 @dataclass(kw_only=True)
@@ -21,11 +22,14 @@ class SSHWrapperClient(CompositeClient):
     """
 
     def cli(self):
-        @click.command(context_settings={"ignore_unknown_options": True})
+        @driver_click_command(
+            self,
+            context_settings={"ignore_unknown_options": True},
+            help="Run SSH command with arguments",
+        )
         @click.option("--direct", is_flag=True, help="Use direct TCP address")
         @click.argument("args", nargs=-1)
         def ssh(direct, args):
-            """Run SSH command with arguments"""
             result = self.run(direct, args)
             self.logger.debug(f"SSH result: {result}")
             if result != 0:
