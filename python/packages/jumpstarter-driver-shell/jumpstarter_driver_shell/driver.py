@@ -21,19 +21,19 @@ class Shell(Driver):
     timeout: int = 300
     cwd: str | None = None
 
+    def __post_init__(self):
+        super().__post_init__()
+        # Extract descriptions from methods configuration and populate methods_description
+        for method_name, method_config in self.methods.items():
+            if isinstance(method_config, dict) and "description" in method_config:
+                self.methods_description[method_name] = method_config["description"]
+
     def _get_method_command(self, method: str) -> str:
         """Extract the command string from a method configuration"""
         method_config = self.methods[method]
         if isinstance(method_config, str):
             return method_config
         return method_config.get("command", "echo Hello")
-
-    def _get_method_description(self, method: str) -> str:
-        """Extract the description from a method configuration"""
-        method_config = self.methods[method]
-        if isinstance(method_config, str):
-            return f"Execute the {method} shell method"
-        return method_config.get("description", f"Execute the {method} shell method")
 
     def _get_method_timeout(self, method: str) -> int:
         """Extract the timeout from a method configuration, fallback to global timeout"""
@@ -51,11 +51,6 @@ class Shell(Driver):
         methods = list(self.methods.keys())
         self.logger.debug(f"get_methods called, returning methods: {methods}")
         return methods
-
-    @export
-    def get_method_description(self, method: str) -> str:
-        """Get the description for a specific method"""
-        return self._get_method_description(method)
 
     @export
     async def call_method(self, method: str, env, *args) -> AsyncGenerator[tuple[str, str, int | None], None]:
