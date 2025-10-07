@@ -75,18 +75,12 @@ class ShellClient(DriverClient):
             if returncode != 0:
                 raise click.exceptions.Exit(returncode)
 
-        # Try to get custom description, fall back to default for older than 0.7 servers
-        try:
-            description = self.call("get_method_description", method_name)
-        except Exception:
-            description = f"Execute the {method_name} shell method"
-
         # Decorate and register the command with help text
         method_command = click.argument('args', nargs=-1, type=click.UNPROCESSED)(method_command)
         method_command = click.option('--env', '-e', multiple=True,
                      help='Environment variables in KEY=VALUE format')(method_command)
         method_command = group.command(
             name=method_name,
-            help=description,
+            help=self.methods_description.get( method_name, f"Execute the {method_name} shell method"),
             context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
         )(method_command)

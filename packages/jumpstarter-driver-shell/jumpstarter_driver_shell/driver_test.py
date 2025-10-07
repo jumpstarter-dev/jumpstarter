@@ -199,24 +199,26 @@ def test_cli_default_descriptions():
         assert test_cmd.help == "Execute the test_method shell method"
 
 
-def test_get_method_description_unified():
-    """Test the get_method_description export method with unified format"""
+def test_methods_description_populated():
+    """Test that methods_description is populated from methods configuration"""
     shell = Shell(
         methods={
             "method1": {
                 "command": "echo",
                 "description": "Custom description for method1"
             },
-            "method2": "ls",  # String format, should use default description
+            "method2": "ls",  # String format, no description in methods_description
         }
     )
 
     with serve(shell) as client:
-        # Test with custom description (unified format)
-        assert client.call("get_method_description", "method1") == "Custom description for method1"
+        # Test that custom descriptions are in methods_description
+        assert "method1" in client.methods_description
+        assert client.methods_description["method1"] == "Custom description for method1"
 
-        # Test with default description (string format)
-        assert client.call("get_method_description", "method2") == "Execute the method2 shell method"
+        # Test that string-format methods are not in methods_description
+        # (will fall back to default in client)
+        assert "method2" not in client.methods_description
 
 
 def test_mixed_format_methods():
