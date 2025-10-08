@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import click
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 @dataclass(kw_only=True)
@@ -41,7 +42,7 @@ class ShellClient(DriverClient):
 
     def cli(self):
         """Create CLI interface for dynamically configured shell methods"""
-        @click.group
+        @driver_click_group(self)
         def base():
             """Shell command executor"""
             pass
@@ -58,13 +59,6 @@ class ShellClient(DriverClient):
 
     def _add_method_command(self, group, method_name):
         """Add a Click command for a specific shell method"""
-        @group.command(
-            name=method_name,
-            context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
-        )
-        @click.argument('args', nargs=-1, type=click.UNPROCESSED)
-        @click.option('--env', '-e', multiple=True,
-                     help='Environment variables in KEY=VALUE format')
         def method_command(args, env):
             # Parse environment variables
             env_dict = {}
@@ -81,5 +75,12 @@ class ShellClient(DriverClient):
             if returncode != 0:
                 raise click.exceptions.Exit(returncode)
 
-        # Update the docstring dynamically
-        method_command.__doc__ = f"Execute the {method_name} shell method"
+        # Decorate and register the command with help text
+        method_command = click.argument('args', nargs=-1, type=click.UNPROCESSED)(method_command)
+        method_command = click.option('--env', '-e', multiple=True,
+                     help='Environment variables in KEY=VALUE format')(method_command)
+        method_command = group.command(
+            name=method_name,
+            help=self.methods_description.get( method_name, f"Execute the {method_name} shell method"),
+            context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
+        )(method_command)
