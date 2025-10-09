@@ -14,7 +14,6 @@ from jumpstarter.common.exceptions import ConfigurationError, ConnectionError
 
 
 async def ssl_channel_credentials(target: str, tls_config, timeout=5):
-    configure_grpc_env()
     if tls_config.insecure or os.getenv("JUMPSTARTER_GRPC_INSECURE") == "1":
         try:
             parsed = urlparse(f"//{target}")
@@ -59,23 +58,13 @@ def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) ->
         ("grpc.lb_policy_name", "round_robin"),
         # we keep a low keepalive time to avoid idle timeouts on cloud load balancers
         ("grpc.keepalive_time_ms", 20000),
-        ("grpc.keepalive_timeout_ms", 5000),
+        ("grpc.keepalive_timeout_ms", 180000),
         ("grpc.http2.max_pings_without_data", 0),
         ("grpc.keepalive_permit_without_calls", 1),
     )
     options = dict(defaults)
     options.update(grpc_options or {})
     return tuple(options.items())
-
-
-def configure_grpc_env():
-    # disable informative logs by default, i.e.:
-    # WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-    # I0000 00:00:1739970744.889307   61962 ssl_transport_security.cc:1665] Handshake failed ...
-    if os.environ.get("GRPC_VERBOSITY") is None:
-        os.environ["GRPC_VERBOSITY"] = "ERROR"
-    if os.environ.get("GLOG_minloglevel") is None:
-        os.environ["GLOG_minloglevel"] = "2"
 
 
 @contextmanager

@@ -1,4 +1,3 @@
-import inspect
 import logging
 from dataclasses import dataclass
 
@@ -6,6 +5,7 @@ import click
 from rich import traceback
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 def _opt_log_level_callback(ctx, param, value):
@@ -35,7 +35,7 @@ class CompositeClient(DriverClient):
                 v.close()
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         @click.option(
             "--log-level",
             "log_level",
@@ -50,11 +50,6 @@ class CompositeClient(DriverClient):
 
         for k, v in self.children.items():
             if hasattr(v, "cli"):
-                # Check if the cli method accepts a click_group parameter
-                sig = inspect.signature(v.cli)
-                if "click_group" in sig.parameters:
-                    base.add_command(v.cli(click_group=base), k)
-                else:
-                    base.add_command(v.cli(), k)
+                base.add_command(v.cli(), k)
 
         return base

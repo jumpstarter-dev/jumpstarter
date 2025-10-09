@@ -7,11 +7,11 @@
 	images {
 		kernel {
 			description = "buildroot Kernel";
-			data = /incbin/("/var/tmp/buildroot/output/images/Image");
+			data = /incbin/("./kernel-fedora/vmlinuz.lz4");
 			type = "kernel";
 			arch = "arm64";
 			os = "linux";
-			compression = "none";
+			compression = "lz4";
 			load = <0x80000000>;
 			entry = <0x80000000>;
 			hash {
@@ -20,7 +20,7 @@
 		};
 		initrd {
 			description = "Initrd";
-			data = /incbin/("/var/tmp/buildroot/output/images/rootfs.cpio.lzo");
+			data = /incbin/("/var/tmp/buildroot/output/images/rootfs.cpio.lz4");
 			type = "ramdisk";
 			arch = "arm64";
 			os = "linux";
@@ -31,7 +31,7 @@
 		};
 		fdt-j784s4 {
 			description = "DTB TI J784S4EVM";
-			data = /incbin/("/var/tmp/buildroot/output/images/k3-j784s4-evm.dtb");
+			data = /incbin/("./kernel-fedora/dtb/ti/k3-j784s4-evm.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
@@ -42,7 +42,7 @@
 		};
 		fdt-am69 {
 			description = "DTB TI SK-AM69";
-			data = /incbin/("/var/tmp/buildroot/output/images/k3-am69-sk.dtb");
+			data = /incbin/("./kernel-fedora/dtb/ti/k3-am69-sk.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";

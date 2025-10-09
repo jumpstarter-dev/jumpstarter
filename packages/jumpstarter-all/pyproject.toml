@@ -30,6 +30,7 @@ dependencies = [
   "jumpstarter-driver-shell",
   "jumpstarter-driver-snmp",
   "jumpstarter-driver-tftp",
+  "jumpstarter-driver-tmt",
   "jumpstarter-driver-uboot",
   "jumpstarter-driver-ustreamer",
   "jumpstarter-driver-yepkit",

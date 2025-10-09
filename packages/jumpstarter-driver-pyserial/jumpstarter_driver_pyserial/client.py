@@ -6,6 +6,7 @@ from pexpect.fdpexpect import fdspawn
 
 from .console import Console
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 class PySerialClient(DriverClient):
@@ -36,7 +37,7 @@ class PySerialClient(DriverClient):
             yield adapter
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         def base():
             """Serial port client"""
             pass

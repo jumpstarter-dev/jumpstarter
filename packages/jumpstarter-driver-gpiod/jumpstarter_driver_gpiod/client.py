@@ -5,6 +5,7 @@ import click
 from jumpstarter_driver_power.client import PowerClient
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 class PinState(Enum):
@@ -34,7 +35,7 @@ class DigitalOutputClient(PowerClient):
         return PinState(int(self.call("read_pin")))
 
     def cli(self):
-        @click.group()
+        @driver_click_group(self)
         def gpio():
             """GPIO power control commands."""
             pass
@@ -79,7 +80,7 @@ class DigitalInputClient(DriverClient):
         return PinState(int(self.call("read_pin")))
 
     def cli(self):
-        @click.group()
+        @driver_click_group(self)
         def gpio():
             """GPIO input commands."""
             pass

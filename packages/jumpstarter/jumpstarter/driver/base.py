@@ -72,6 +72,12 @@ class Driver(
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
     """Dict of client side resources"""
 
+    description: str | None = None
+    """Custom description for the driver (shown in CLI help)"""
+
+    methods_description: dict[str, str] = field(default_factory=dict)
+    """Map of method names to their help descriptions (configurable via server config)"""
+
     log_level: str = "INFO"
     logger: logging.Logger = field(init=False)
 
@@ -206,6 +212,8 @@ class Driver(
             | self.extra_labels()
             | ({"jumpstarter.dev/client": self.client()})
             | ({"jumpstarter.dev/name": name} if name else {}),
+            description=self.description or None,
+            methods_description=self.methods_description or {},
         )
 
     def enumerate(self, *, root=None, parent=None, name=None):

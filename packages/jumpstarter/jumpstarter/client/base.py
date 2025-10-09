@@ -33,6 +33,12 @@ class DriverClient(AsyncDriverClient):
     portal: BlockingPortal
     stack: ExitStack
 
+    description: str | None = None
+    """Driver description from GetReport(), used for CLI help text"""
+
+    methods_description: dict[str, str] = field(default_factory=dict)
+    """Map of method names to their help descriptions from GetReport()"""
+
     def call(self, method, *args):
         """
         Invoke driver call
