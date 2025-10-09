@@ -11,7 +11,9 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-shell
 
 ## Configuration
 
-Example configuration:
+The shell driver supports two configuration formats for methods:
+
+### Format 1: Simple String e.g. for self-descriptive short commands
 
 ```yaml
 export:
@@ -20,12 +22,40 @@ export:
     config:
       methods:
         ls: "ls"
-        method2: "echo 'Hello World 2'"
-        #multi line method
-        method3: |
-          echo 'Hello World $1'
-          echo 'Hello World $2'
-        env_var: "echo $1,$2,$ENV_VAR"
+        echo_hello: "echo 'Hello World'"
+```
+
+### Format 2: Unified Format with Descriptions
+
+```yaml
+export:
+  shell:
+    type: jumpstarter_driver_shell.driver.Shell
+    config:
+      methods:
+        ls:
+          command: "ls -la"
+          description: "List directory contents with details"
+        deploy:
+          command: "ansible-playbook deploy.yml"
+          description: "Deploy application using Ansible"
+        # Multi-line commands work too
+        setup:
+          command: |
+            echo 'Setting up environment'
+            export PATH=$PATH:/usr/local/bin
+            ./setup.sh
+          description: "Set up the development environment"
+        # Description-only (uses default "echo Hello" command)
+        placeholder:
+          description: "Placeholder method for testing"
+        # Custom timeout for long-running operations
+        long_backup:
+          command: "tar -czf backup.tar.gz /data && rsync backup.tar.gz remote:/backups/"
+          description: "Create and sync backup (may take a while)"
+          timeout: 1800  # 30 minutes instead of default 5 minutes
+        # You can mix both formats
+        simple_echo: "echo 'simple'"
       # optional parameters
       cwd: "/tmp"
       log_level: "INFO"
@@ -33,6 +63,25 @@ export:
         - "/bin/bash"
         - "-c"
 ```
+
+### Configuration Parameters
+
+| Parameter | Description | Type | Required | Default |
+|-----------|-------------|------|----------|---------|
+| `methods` | Dictionary of methods. Values can be:<br/>- String: just the command<br/>- Dict: `{command: "...", description: "...", timeout: ...}` | `dict[str, str \| dict]` | Yes | - |
+| `cwd` | Working directory for shell commands | `str` | No | `None` |
+| `log_level` | Logging level | `str` | No | `"INFO"` |
+| `shell` | Shell command to execute scripts | `list[str]` | No | `["bash", "-c"]` |
+| `timeout` | Command timeout in seconds | `int` | No | `300` |
+
+**Method Configuration Options:**
+
+For the dict format, each method supports:
+- `command`: The shell command to execute (optional, defaults to `"echo Hello"`)
+- `description`: CLI help text (optional, defaults to `"Execute the {method_name} shell method"`)
+- `timeout`: Command-specific timeout in seconds (optional, defaults to global `timeout` value)
+
+**Note:** You can mix both formats in the same configuration - use string format for simple commands and dict format when you want custom descriptions or timeouts.
 
 ## API Reference
 
@@ -66,7 +115,11 @@ methods will be generated dynamically, and they will be available as follows:
 
 ## CLI Usage
 
-The shell driver also provides a CLI when using `jmp shell`. All configured methods become available as CLI commands, except for methods starting with `_` which are considered private and hidden from the end user:
+The shell driver also provides a CLI when using `jmp shell`. All configured methods become available as CLI commands, except for methods starting with `_` which are considered private and hidden from the end user.
+
+### CLI Help Output
+
+With unified format (custom descriptions):
 
 ```console
 $ jmp shell --exporter shell-exporter
@@ -76,10 +129,40 @@ Usage: j shell [OPTIONS] COMMAND [ARGS]...
   Shell command executor
 
 Commands:
-  env_var  Execute the env_var shell method
-  ls       Execute the ls shell method
-  method2  Execute the method2 shell method
-  method3  Execute the method3 shell method
+  deploy  Deploy application using Ansible
+  ls      List directory contents with details
+  setup   Set up the development environment
+```
+
+With simple string format (default descriptions):
+
+```console
+$ j shell
+Usage: j shell [OPTIONS] COMMAND [ARGS]...
+
+  Shell command executor
+
+Commands:
+  deploy  Execute the deploy shell method
+  ls      Execute the ls shell method
+  setup   Execute the setup shell method
+```
+
+**Mixed format example:**
+
+```yaml
+methods:
+  deploy:
+    command: "ansible-playbook deploy.yml"
+    description: "Deploy using Ansible"
+  restart: "systemctl restart myapp"  # Simple format
+```
+
+Results in:
+```console
+Commands:
+  deploy   Deploy using Ansible
+  restart  Execute the restart shell method
 ```
 
 ### CLI Command Usage

@@ -12,6 +12,7 @@ from .adapters import DbusAdapter, TcpPortforwardAdapter, UnixPortforwardAdapter
 from .driver import DbusNetwork
 from jumpstarter.client import DriverClient
 from jumpstarter.client.core import DriverMethodNotImplemented
+from jumpstarter.client.decorators import driver_click_group
 
 
 class NetworkClient(DriverClient):
@@ -20,7 +21,7 @@ class NetworkClient(DriverClient):
         return self.call("address")
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         def base():
             """Generic Network Connection"""
             pass
