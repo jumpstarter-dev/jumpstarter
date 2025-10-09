@@ -83,13 +83,13 @@ async def login(  # noqa: C901
 
             if kind.startswith("client"):
                 if unsafe is None:
-                    unsafe = click.confirm("Allow unsafe driver client imports?")
-                    if unsafe is False and allow == "":
-                        if nointeractive:
-                            raise click.UsageError("Allowed driver packages are required in non-interactive mode.")
-                        allow = click.prompt(
-                            "Enter a comma-separated list of allowed driver packages (optional)", default="", type=str
-                        )
+                    unsafe = False if nointeractive else click.confirm("Allow unsafe driver client imports?")
+                if unsafe is False and allow == "":
+                    if nointeractive:
+                        raise click.UsageError("--allow TEXT or --unsafe is required in non-interactive mode.")
+                    allow = click.prompt(
+                        "Enter a comma-separated list of allowed driver packages (optional)", default="", type=str
+                    )
 
             if kind.startswith("client"):
                 config = ClientConfigV1Alpha1(
