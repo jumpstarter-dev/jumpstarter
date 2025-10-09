@@ -77,10 +77,12 @@ Documentation recommended practices:
 - Break up text with headers, lists, and code blocks
 - Target both beginners and advanced users
 
+##
 ```{toctree}
 :maxdepth: 1
 :hidden:
 
 contributing/development-environment.md
 contributing/internals.md
+contributing/maintainers.md
 ```
