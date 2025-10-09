@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
-import click
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.client import FlasherClient, operator_for_path
 from jumpstarter_driver_power.client import PowerClient
 from opendal import Operator
+
+from jumpstarter.client.decorators import driver_click_group
 
 PROMPT = "CMD >> "
 
@@ -102,8 +103,9 @@ class RideSXClient(FlasherClient, CompositeClient):
     def cli(self):
         generic_cli = FlasherClient.cli(self)
 
-        @click.group()
+        @driver_click_group(self)
         def storage():
+            """RideSX storage operations"""
             pass
 
         for name, cmd in generic_cli.commands.items():

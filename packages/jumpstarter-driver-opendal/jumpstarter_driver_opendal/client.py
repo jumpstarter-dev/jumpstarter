@@ -19,6 +19,7 @@ from pydantic import ConfigDict, validate_call
 from .adapter import OpendalAdapter
 from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError
 from jumpstarter.streams.encoding import Compression
 
@@ -413,9 +414,10 @@ class OpendalClient(DriverClient):
         arg_dst = click.argument("dst", type=click.Path())
         opt_expire_second = click.option("--expire-second", type=int, required=True)
 
-        @click.group
+        @driver_click_group(self)
         def base():
             """Opendal Storage"""
+            pass
 
         @base.command
         @arg_path
@@ -548,7 +550,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
         ...
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         def base():
             """Generic flasher interface"""
             pass
@@ -716,7 +718,10 @@ class StorageMuxClient(DriverClient):
 
     def cli(self, base=None):
         if base is None:
-            base = click.group(lambda: None)
+            @driver_click_group(self)
+            def base():
+                """Storage operations"""
+                pass
 
         @base.command()
         def host():
