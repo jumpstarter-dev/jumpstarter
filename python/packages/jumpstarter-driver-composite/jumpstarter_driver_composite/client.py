@@ -5,6 +5,7 @@ import click
 from rich import traceback
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 def _opt_log_level_callback(ctx, param, value):
@@ -34,7 +35,7 @@ class CompositeClient(DriverClient):
                 v.close()
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         @click.option(
             "--log-level",
             "log_level",

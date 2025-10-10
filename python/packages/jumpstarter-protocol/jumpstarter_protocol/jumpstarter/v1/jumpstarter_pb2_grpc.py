@@ -26,6 +26,11 @@ class ControllerServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterResponse.FromString,
                 _registered_method=True)
+        self.ReportStatus = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/ReportStatus',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportStatusRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportStatusResponse.FromString,
+                _registered_method=True)
         self.Listen = channel.unary_stream(
                 '/jumpstarter.v1.ControllerService/Listen',
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListenRequest.SerializeToString,
@@ -84,6 +89,14 @@ class ControllerServiceServicer(object):
         Disconnecting with bye will invalidate any existing router tokens
         we will eventually have a mechanism to tell the router this token
         has been invalidated
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReportStatus(self, request, context):
+        """Exporter status report
+        Allows exporters to report their own status to the controller
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -162,6 +175,11 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.Unregister,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterResponse.SerializeToString,
+            ),
+            'ReportStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReportStatus,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportStatusRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportStatusResponse.SerializeToString,
             ),
             'Listen': grpc.unary_stream_rpc_method_handler(
                     servicer.Listen,
@@ -259,6 +277,33 @@ class ControllerService(object):
             '/jumpstarter.v1.ControllerService/Unregister',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.UnregisterResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReportStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/ReportStatus',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportStatusRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportStatusResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -522,6 +567,11 @@ class ExporterServiceStub(object):
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetResponse.FromString,
                 _registered_method=True)
+        self.GetStatus = channel.unary_unary(
+                '/jumpstarter.v1.ExporterService/GetStatus',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetStatusRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetStatusResponse.FromString,
+                _registered_method=True)
 
 
 class ExporterServiceServicer(object):
@@ -560,6 +610,12 @@ class ExporterServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ExporterServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -587,6 +643,11 @@ def add_ExporterServiceServicer_to_server(servicer, server):
                     servicer.Reset,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetResponse.SerializeToString,
+            ),
+            'GetStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetStatus,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetStatusRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetStatusResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -726,6 +787,33 @@ class ExporterService(object):
             '/jumpstarter.v1.ExporterService/Reset',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ResetResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ExporterService/GetStatus',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.GetStatusRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.GetStatusResponse.FromString,
             options,
             channel_credentials,
             insecure,

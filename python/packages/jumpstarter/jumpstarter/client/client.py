@@ -51,6 +51,7 @@ async def client_from_channel(
         report = reports[index]
 
         client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
+
         client = client_class(
             uuid=UUID(report.uuid),
             labels=report.labels,
@@ -58,6 +59,8 @@ async def client_from_channel(
             portal=portal,
             stack=stack.enter_context(ExitStack()),
             children={reports[k].labels["jumpstarter.dev/name"]: clients[k] for k in topo[index]},
+            description=getattr(report, 'description', None) or None,
+            methods_description=getattr(report, 'methods_description', {}) or {},
         )
 
         clients[index] = client
