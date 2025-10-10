@@ -32,7 +32,7 @@ def add_display_columns(table, options: WithOptions = None):
     if options.show_leases:
         table.add_column("LEASED BY")
         table.add_column("LEASE STATUS")
-        table.add_column("START TIME")
+        table.add_column("EXPECTED RELEASE")
 
 
 def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: tuple[str, str, str] | None = None):
@@ -45,10 +45,10 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
     row_data.append(",".join(("{}={}".format(k, v) for k, v in sorted(exporter.labels.items()))))
     if options.show_leases:
         if lease_info:
-            lease_client, lease_status, start_time = lease_info
+            lease_client, lease_status, expected_release = lease_info
         else:
-            lease_client, lease_status, start_time = "", "Available", ""
-        row_data.extend([lease_client, lease_status, start_time])
+            lease_client, lease_status, expected_release = "", "Available", ""
+        row_data.extend([lease_client, lease_status, expected_release])
 
     table.add_row(*row_data)
 
@@ -97,10 +97,15 @@ class Exporter(BaseModel):
         if options and options.show_leases and self.lease:
             lease_client = self.lease.client
             lease_status = self.lease.get_status()
-            start_time = ""
-            if self.lease.effective_begin_time:
-                start_time = self.lease.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
-            lease_info = (lease_client, lease_status, start_time)
+            expected_release = ""
+            if self.lease.effective_begin_time and self.lease.effective_duration:
+                release_time = self.lease.effective_begin_time + self.lease.effective_duration
+                expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
+            elif self.lease.begin_time:
+                dur = self.lease.effective_duration or self.lease.duration
+                release_time = self.lease.begin_time + dur
+                expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
+            lease_info = (lease_client, lease_status, expected_release)
         elif options and options.show_leases:
             lease_info = ("", "Available", "")
         add_exporter_row(table, self, options, lease_info)
@@ -115,6 +120,7 @@ class Lease(BaseModel):
     selector: str
     duration: timedelta
     effective_duration: timedelta | None = None
+    begin_time: datetime | None = None
     client: str
     exporter: str
     conditions: list[kubernetes_pb2.Condition]
@@ -143,6 +149,12 @@ class Lease(BaseModel):
         if data.HasField("effective_duration"):
             effective_duration = data.effective_duration.ToTimedelta()
 
+        begin_time = None
+        if data.HasField("begin_time"):
+            begin_time = data.begin_time.ToDatetime(
+                tzinfo=datetime.now().astimezone().tzinfo,
+            )
+
         effective_begin_time = None
         if data.HasField("effective_begin_time"):
             effective_begin_time = data.effective_begin_time.ToDatetime(
@@ -155,6 +167,7 @@ class Lease(BaseModel):
             selector=data.selector,
             duration=data.duration.ToTimedelta(),
             effective_duration=effective_duration,
+            begin_time=begin_time,
             client=client,
             exporter=exporter,
             effective_begin_time=effective_begin_time,
@@ -165,15 +178,31 @@ class Lease(BaseModel):
     def rich_add_columns(cls, table):
         table.add_column("NAME", no_wrap=True)
         table.add_column("SELECTOR")
+        table.add_column("BEGIN TIME")
         table.add_column("DURATION")
         table.add_column("CLIENT")
         table.add_column("EXPORTER")
 
     def rich_add_rows(self, table):
+        # Show effective_begin_time if active, otherwise show scheduled begin_time
+        begin_time = ""
+        if self.effective_begin_time:
+            begin_time = self.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
+        elif self.begin_time:
+            begin_time = self.begin_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Show effective_duration if available, otherwise show requested duration
+        duration = ""
+        if self.effective_duration:
+            duration = str(self.effective_duration)
+        elif self.duration:
+            duration = str(self.duration)
+
         table.add_row(
             self.name,
             self.selector,
-            str(self.duration),
+            begin_time,
+            duration,
             self.client,
             self.exporter,
         )
