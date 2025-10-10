@@ -563,14 +563,17 @@ func (s *ControllerService) GetLease(
 		})
 	}
 
-	return &pb.GetLeaseResponse{
-		Duration:     durationpb.New(lease.Spec.Duration.Duration),
+	resp := &pb.GetLeaseResponse{
 		Selector:     &pb.LabelSelector{MatchExpressions: matchExpressions, MatchLabels: lease.Spec.Selector.MatchLabels},
 		BeginTime:    beginTime,
 		EndTime:      endTime,
 		ExporterUuid: exporterUuid,
 		Conditions:   conditions,
-	}, nil
+	}
+	if lease.Spec.Duration != nil {
+		resp.Duration = durationpb.New(lease.Spec.Duration.Duration)
+	}
+	return resp, nil
 }
 
 func (s *ControllerService) RequestLease(
@@ -609,12 +612,14 @@ func (s *ControllerService) RequestLease(
 			ClientRef: corev1.LocalObjectReference{
 				Name: client.Name,
 			},
-			Duration: metav1.Duration{Duration: req.Duration.AsDuration()},
 			Selector: metav1.LabelSelector{
 				MatchLabels:      matchLabels,
 				MatchExpressions: matchExpressions,
 			},
 		},
+	}
+	if req.Duration != nil {
+		lease.Spec.Duration = &metav1.Duration{Duration: req.Duration.AsDuration()}
 	}
 	if err := s.Client.Create(ctx, &lease); err != nil {
 		return nil, err
