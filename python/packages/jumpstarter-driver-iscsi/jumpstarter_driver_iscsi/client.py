@@ -1,8 +1,13 @@
+import contextlib
 import hashlib
 import os
 from dataclasses import dataclass
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
+import click
+import requests
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.common import PathBuf
 from opendal import Operator
@@ -64,6 +69,62 @@ class ISCSIServerClient(CompositeClient):
         """
         return self.call("get_target_iqn")
 
+    def _normalized_name_from_file(self, path: str) -> str:
+        base = os.path.basename(path)
+        for ext in (".gz", ".xz", ".bz2"):
+            if base.endswith(ext):
+                base = base[: -len(ext)]
+                break
+        if base.endswith(".img"):
+            base = base[: -len(".img")]
+        return base or "image"
+
+    def _get_src_and_operator(
+        self, file: str, headers: tuple[str, ...]
+    ) -> tuple[str, Optional[Operator], Optional[str]]:
+        from jumpstarter_driver_opendal.client import operator_for_path
+
+        if file.startswith(("http://", "https://")):
+            if headers:
+                header_map: Dict[str, str] = {}
+                for h in headers:
+                    if ":" not in h:
+                        raise click.ClickException(f"Invalid header format: {h!r}. Expected 'Key: Value'.")
+                    key, value = h.split(":", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if not key:
+                        raise click.ClickException(f"Invalid header key in: {h!r}")
+                    header_map[key] = value
+
+                parsed = urlparse(file)
+                tf = NamedTemporaryFile(
+                    prefix="jumpstarter-iscsi-",
+                    suffix=os.path.basename(parsed.path),
+                    delete=False,
+                )
+                temp_path = tf.name
+                try:
+                    with requests.get(file, stream=True, headers=header_map, timeout=(10, 60)) as resp:
+                        resp.raise_for_status()
+                        for chunk in resp.iter_content(chunk_size=65536):
+                            if chunk:
+                                tf.write(chunk)
+                    tf.close()
+                    return temp_path, None, temp_path
+                except Exception:
+                    tf.close()
+                    with contextlib.suppress(Exception):
+                        os.unlink(temp_path)
+                    raise
+
+            _, src_operator, _ = operator_for_path(file)
+            return file, src_operator, None
+
+        file = os.path.abspath(file)
+        _, src_operator, _ = operator_for_path(file)
+        return file, src_operator, None
+
     def add_lun(self, name: str, file_path: str, size_mb: int = 0, is_block: bool = False) -> str:
         """
         Add a new LUN to the iSCSI target
@@ -112,11 +173,12 @@ class ISCSIServerClient(CompositeClient):
                     hash_obj.update(chunk)
             return hash_obj.hexdigest()
         else:
-            from jumpstarter_driver_opendal.client import operator_for_path
-
-            path, op, _ = operator_for_path(file_path)
             hash_obj = hashlib.sha256()
-            with op.open(str(path), "rb") as f:
+            if isinstance(file_path, str) and file_path.startswith(("http://", "https://")):
+                src_path = urlparse(file_path).path
+            else:
+                src_path = str(file_path)
+            with operator.open(str(src_path), "rb") as f:
                 while chunk := f.read(8192):
                     hash_obj.update(chunk)
             return hash_obj.hexdigest()
@@ -125,6 +187,7 @@ class ISCSIServerClient(CompositeClient):
         """Check if source and destination files are identical"""
         try:
             if not self.storage.exists(dst_path):
+                self.logger.info(f"{dst_path} does not exist")
                 return False
 
             dst_stat = self.storage.stat(dst_path)
@@ -133,21 +196,57 @@ class ISCSIServerClient(CompositeClient):
             if operator is None:
                 src_size = os.path.getsize(str(src))
             else:
-                from jumpstarter_driver_opendal.client import operator_for_path
-
-                path, op, _ = operator_for_path(src)
-                src_size = op.stat(str(path)).content_length
+                if isinstance(src, str) and src.startswith(("http://", "https://")):
+                    src_path = urlparse(src).path
+                else:
+                    src_path = str(src)
+                src_size = operator.stat(str(src_path)).content_length
 
             if src_size != dst_size:
+                self.logger.info(f"Source size {src_size} != destination size {dst_size}")
                 return False
 
+            self.logger.info("checking hashes")
             src_hash = self._calculate_file_hash(str(src), operator)
+            self.logger.info(f"Source hash: {src_hash}")
             dst_hash = self.storage.hash(dst_path, "sha256")
+            self.logger.info(f"Destination hash: {dst_hash}")
 
             return src_hash == dst_hash
 
         except Exception:
             return False
+
+    def _should_skip_upload(
+        self, src_path: str, dst_path: str, operator: Optional[Operator], force_upload: bool, algo: Optional[str]
+    ) -> bool:
+        if force_upload or algo is not None or not self.storage.exists(dst_path):
+            return False
+
+        self.logger.info(f"Checking if {src_path} and {dst_path} are identical")
+        if self._files_are_identical(src_path, dst_path, operator):
+            self.logger.info(f"File {dst_path} already exists and is identical to source. Skipping upload...")
+            return True
+
+        self.logger.info(f"File {dst_path} is not identical to source")
+        return False
+
+    def _upload_file(
+        self, src_path: str, dst_name: str, dst_path: str, operator: Optional[Operator], algo: Optional[str]
+    ):
+        if algo is None:
+            self.logger.info(f"Uploading {src_path} to {dst_path}...")
+            self.storage.write_from_path(dst_path, src_path, operator)
+        else:
+            ext_to_algo = {".gz": "gz", ".xz": "xz", ".bz2": "bz2"}
+            ext = next(k for k, v in ext_to_algo.items() if v == algo)
+            compressed_path = f"{dst_name}.img{ext}"
+            self.logger.info(f"Uploading {src_path} to {compressed_path}...")
+            self.storage.write_from_path(compressed_path, src_path, operator)
+            self.logger.info(f"Decompressing on exporter: {compressed_path} -> {dst_name}.img ...")
+            self.call("decompress", compressed_path, f"{dst_name}.img", algo)
+            with contextlib.suppress(Exception):
+                self.storage.delete(compressed_path)
 
     def upload_image(
         self,
@@ -176,18 +275,70 @@ class ISCSIServerClient(CompositeClient):
         size_mb = int(size_mb)
         dst_path = f"{dst_name}.img"
 
-        if not force_upload and self._files_are_identical(src, dst_path, operator):
-            print(f"File {dst_path} already exists and is identical to source. Skipping upload.")
-        else:
-            print(f"Uploading {src} to {dst_path}...")
-            self.storage.write_from_path(dst_path, src, operator)
+        src_path = str(src)
+        if operator is None and not src_path.startswith(("http://", "https://")):
+            src_path = os.path.abspath(src_path)
+
+        ext_to_algo = {".gz": "gz", ".xz": "xz", ".bz2": "bz2"}
+        algo = next((v for k, v in ext_to_algo.items() if src_path.endswith(k)), None)
+
+        if not self._should_skip_upload(src_path, dst_path, operator, force_upload, algo):
+            self._upload_file(src_path, dst_name, dst_path, operator, algo)
 
         if size_mb <= 0:
-            src_path = os.path.join(self.storage._storage.root_dir, dst_path)
-            size_mb = os.path.getsize(src_path) // (1024 * 1024)
-            if size_mb <= 0:
+            try:
+                dst_stat = self.storage.stat(dst_path)
+                size_mb = max(1, int(dst_stat.content_length) // (1024 * 1024))
+            except Exception:
                 size_mb = 1
 
         self.add_lun(dst_name, dst_path, size_mb)
-
         return self.get_target_iqn()
+
+    def cli(self):
+        base = super().cli()
+
+        @base.command()
+        @click.argument("file", type=str)
+        @click.option("--name", "name", "-n", type=str, help="LUN name (defaults to basename without extension)")
+        @click.option("--size-mb", type=int, default=0, show_default=True, help="Size in MB if creating a new image")
+        @click.option(
+            "--force-upload",
+            is_flag=True,
+            default=False,
+            help="Force uploading even if the file appears identical on the exporter",
+        )
+        @click.option(
+            "--header",
+            "headers",
+            multiple=True,
+            help="Custom HTTP header in 'Key: Value' format. Repeatable.",
+        )
+        def serve(file: str, name: Optional[str], size_mb: int, force_upload: bool, headers: tuple[str, ...]):
+            """Serve an image as an iSCSI LUN from a local path or HTTP(S) URL."""
+            self.start()
+
+            try:
+                self.call("clear_all_luns")
+            except Exception:
+                pass
+
+            if not name:
+                candidate = urlparse(file).path if file.startswith(("http://", "https://")) else file
+                name = self._normalized_name_from_file(candidate)
+
+            src_path, src_operator, temp_cleanup = self._get_src_and_operator(file, headers)
+            try:
+                iqn = self.upload_image(
+                    name, src_path, size_mb=size_mb, operator=src_operator, force_upload=force_upload
+                )
+            finally:
+                if temp_cleanup is not None:
+                    with contextlib.suppress(Exception):
+                        os.remove(temp_cleanup)
+            host = self.get_host()
+            port = self.get_port()
+
+            click.echo(f"{host}:{port} {iqn}")
+
+        return base
