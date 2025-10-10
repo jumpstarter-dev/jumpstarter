@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from google.protobuf import duration_pb2, field_mask_pb2, json_format
+from google.protobuf import duration_pb2, field_mask_pb2, json_format, timestamp_pb2
 from grpc import ChannelConnectivity
 from grpc.aio import Channel
 from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_grpc, kubernetes_pb2, router_pb2_grpc
@@ -346,18 +346,26 @@ class ClientService:
         *,
         selector: str,
         duration: timedelta,
+        begin_time: datetime | None = None,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
+
+        lease_pb = client_pb2.Lease(
+            duration=duration_pb,
+            selector=selector,
+        )
+
+        if begin_time:
+            timestamp_pb = timestamp_pb2.Timestamp()
+            timestamp_pb.FromDatetime(begin_time)
+            lease_pb.begin_time.CopyFrom(timestamp_pb)
 
         with translate_grpc_exceptions():
             lease = await self.stub.CreateLease(
                 client_pb2.CreateLeaseRequest(
                     parent="namespaces/{}".format(self.namespace),
-                    lease=client_pb2.Lease(
-                        duration=duration_pb,
-                        selector=selector,
-                    ),
+                    lease=lease_pb,
                 )
             )
         return Lease.from_protobuf(lease)
@@ -366,21 +374,37 @@ class ClientService:
         self,
         *,
         name: str,
-        duration: timedelta,
+        duration: timedelta | None = None,
+        begin_time: datetime | None = None,
     ):
-        duration_pb = duration_pb2.Duration()
-        duration_pb.FromTimedelta(duration)
+        lease_pb = client_pb2.Lease(
+            name="namespaces/{}/leases/{}".format(self.namespace, name),
+        )
+
+        update_fields = []
+
+        if duration is not None:
+            duration_pb = duration_pb2.Duration()
+            duration_pb.FromTimedelta(duration)
+            lease_pb.duration.CopyFrom(duration_pb)
+            update_fields.append("duration")
+
+        if begin_time is not None:
+            timestamp_pb = timestamp_pb2.Timestamp()
+            timestamp_pb.FromDatetime(begin_time)
+            lease_pb.begin_time.CopyFrom(timestamp_pb)
+            update_fields.append("begin_time")
+
+        if not update_fields:
+            raise ValueError("At least one of duration or begin_time must be provided")
 
         update_mask = field_mask_pb2.FieldMask()
-        update_mask.FromJsonString("duration")
+        update_mask.FromJsonString(",".join(update_fields))
 
         with translate_grpc_exceptions():
             lease = await self.stub.UpdateLease(
                 client_pb2.UpdateLeaseRequest(
-                    lease=client_pb2.Lease(
-                        name="namespaces/{}/leases/{}".format(self.namespace, name),
-                        duration=duration_pb,
-                    ),
+                    lease=lease_pb,
                     update_mask=update_mask,
                 )
             )
