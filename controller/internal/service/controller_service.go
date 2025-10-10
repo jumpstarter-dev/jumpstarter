@@ -533,7 +533,7 @@ func (s *ControllerService) GetLease(
 	}
 	var endTime *timestamppb.Timestamp
 	if lease.Status.EndTime != nil {
-		beginTime = timestamppb.New(lease.Status.EndTime.Time)
+		endTime = timestamppb.New(lease.Status.EndTime.Time)
 	}
 	var exporterUuid *string
 	if lease.Status.ExporterRef != nil {
