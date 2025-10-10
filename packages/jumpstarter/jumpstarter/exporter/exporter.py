@@ -8,6 +8,7 @@ import grpc
 from anyio import (
     AsyncContextManagerMixin,
     CancelScope,
+    Event,
     connect_unix,
     create_memory_object_stream,
     create_task_group,
@@ -21,10 +22,11 @@ from jumpstarter_protocol import (
     jumpstarter_pb2_grpc,
 )
 
-from jumpstarter.common import Metadata
+from jumpstarter.common import ExporterStatus, Metadata
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.driver import Driver
+from jumpstarter.exporter.hooks import HookContext, HookExecutor
 from jumpstarter.exporter.session import Session
 
 logger = logging.getLogger(__name__)
@@ -37,11 +39,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     lease_name: str = field(init=False, default="")
     tls: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, str] = field(default_factory=dict)
+    hook_executor: HookExecutor | None = field(default=None)
     registered: bool = field(init=False, default=False)
     _unregister: bool = field(init=False, default=False)
     _stop_requested: bool = field(init=False, default=False)
     _started: bool = field(init=False, default=False)
     _tg: TaskGroup | None = field(init=False, default=None)
+    _current_client_name: str = field(init=False, default="")
+    _pre_lease_ready: Event | None = field(init=False, default=None)
+    _current_status: ExporterStatus = field(init=False, default=ExporterStatus.OFFLINE)
+    _current_session: Session | None = field(init=False, default=None)
 
     def stop(self, wait_for_lease_exit=False, should_unregister=False):
         """Signal the exporter to stop.
@@ -60,6 +67,26 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._stop_requested = True
             logger.info("Exporter marked for stop upon lease exit")
 
+    async def _update_status(self, status: ExporterStatus, message: str = ""):
+        """Update exporter status with the controller and session."""
+        self._current_status = status
+
+        # Update session status if available
+        if self._current_session:
+            self._current_session.update_status(status, message)
+
+        try:
+            controller = jumpstarter_pb2_grpc.ControllerServiceStub(await self.channel_factory())
+            await controller.UpdateStatus(
+                jumpstarter_pb2.UpdateStatusRequest(
+                    status=status.to_proto(),
+                    status_message=message,
+                )
+            )
+            logger.info(f"Updated status to {status}: {message}")
+        except Exception as e:
+            logger.error(f"Failed to update status: {e}")
+
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
         try:
@@ -73,6 +100,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                             channel = await self.channel_factory()
                             try:
                                 controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
+                                await self._update_status(ExporterStatus.OFFLINE, "Exporter shutting down")
                                 await controller.Unregister(
                                     jumpstarter_pb2.UnregisterRequest(
                                         reason="Exporter shutdown",
@@ -105,20 +133,27 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             labels=self.labels,
             root_device=self.device_factory(),
         ) as session:
-            async with session.serve_unix_async() as path:
-                async with grpc.aio.secure_channel(
-                    f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
-                ) as channel:
-                    response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
-                    logger.info("Registering exporter with controller")
-                    await controller.Register(
-                        jumpstarter_pb2.RegisterRequest(
-                            labels=self.labels,
-                            reports=response.reports,
+            # Store session reference for status updates
+            self._current_session = session
+            try:
+                async with session.serve_unix_async() as path:
+                    async with grpc.aio.secure_channel(
+                        f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+                    ) as channel:
+                        response = await jumpstarter_pb2_grpc.ExporterServiceStub(channel).GetReport(empty_pb2.Empty())
+                        logger.info("Registering exporter with controller")
+                        await controller.Register(
+                            jumpstarter_pb2.RegisterRequest(
+                                labels=self.labels,
+                                reports=response.reports,
+                            )
                         )
-                    )
-                    self.registered = True
-                yield path
+                        self.registered = True
+                        await self._update_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
+                    yield path
+            finally:
+                # Clear session reference
+                self._current_session = None
 
     async def handle(self, lease_name, tg):
         logger.info("Listening for incoming connection requests on lease %s", lease_name)
@@ -147,6 +182,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     retries_left = retries
 
         tg.start_soon(listen)
+
+        # Wait for pre-lease hook to complete before processing connections
+        if self._pre_lease_ready is not None:
+            logger.info("Waiting for pre-lease hook to complete before accepting connections")
+            await self._pre_lease_ready.wait()
+            logger.info("Pre-lease hook completed, now accepting connections")
 
         async with self.session() as path:
             async for request in listen_rx:
@@ -190,19 +231,102 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             tg.start_soon(status)
             async for status in status_rx:
                 if self.lease_name != "" and self.lease_name != status.lease_name:
+                    # Post-lease hook for the previous lease
+                    if self.hook_executor and self._current_client_name:
+                        hook_context = HookContext(
+                            lease_name=self.lease_name,
+                            client_name=self._current_client_name,
+                        )
+                        # Shield the post-lease hook from cancellation and await it
+                        with CancelScope(shield=True):
+                            await self._update_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
+                            # Pass the current session to hook executor for logging
+                            self.hook_executor.main_session = self._current_session
+                            await self.hook_executor.execute_post_lease_hook(hook_context)
+                            await self._update_status(ExporterStatus.AVAILABLE, "Available for new lease")
+
                     self.lease_name = status.lease_name
                     logger.info("Lease status changed, killing existing connections")
+                    # Reset event for next lease
+                    self._pre_lease_ready = None
                     self.stop()
                     break
+
+                # Check for lease state transitions
+                previous_leased = hasattr(self, "_previous_leased") and self._previous_leased
+                current_leased = status.leased
+
                 self.lease_name = status.lease_name
                 if not self._started and self.lease_name != "":
                     self._started = True
+                    # Create event for pre-lease synchronization
+                    self._pre_lease_ready = Event()
                     tg.start_soon(self.handle, self.lease_name, tg)
-                if status.leased:
+
+                if current_leased:
                     logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
+                    self._current_client_name = status.client_name
+
+                    # Pre-lease hook when transitioning from unleased to leased
+                    if not previous_leased:
+                        if self.hook_executor:
+                            hook_context = HookContext(
+                                lease_name=status.lease_name,
+                                client_name=status.client_name,
+                            )
+
+                            # Start pre-lease hook asynchronously
+                            async def run_before_lease_hook(hook_ctx):
+                                try:
+                                    await self._update_status(
+                                        ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hooks"
+                                    )
+                                    # Pass the current session to hook executor for logging
+                                    self.hook_executor.main_session = self._current_session
+                                    await self.hook_executor.execute_pre_lease_hook(hook_ctx)
+                                    await self._update_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                                    logger.info("beforeLease hook completed successfully")
+                                except Exception as e:
+                                    logger.error("beforeLease hook failed: %s", e)
+                                    # Still transition to ready even if hook fails
+                                    await self._update_status(
+                                        ExporterStatus.LEASE_READY, f"Ready (beforeLease hook failed: {e})"
+                                    )
+                                finally:
+                                    # Always set the event to unblock connections
+                                    if self._pre_lease_ready:
+                                        self._pre_lease_ready.set()
+
+                            tg.start_soon(run_before_lease_hook, hook_context)
+                        else:
+                            # No hook configured, set event immediately
+                            await self._update_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                            if self._pre_lease_ready:
+                                self._pre_lease_ready.set()
                 else:
                     logger.info("Currently not leased")
+
+                    # Post-lease hook when transitioning from leased to unleased
+                    if previous_leased and self.hook_executor and self._current_client_name:
+                        hook_context = HookContext(
+                            lease_name=self.lease_name,
+                            client_name=self._current_client_name,
+                        )
+                        # Shield the post-lease hook from cancellation and await it
+                        with CancelScope(shield=True):
+                            await self._update_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
+                            # Pass the current session to hook executor for logging
+                            self.hook_executor.main_session = self._current_session
+                            await self.hook_executor.execute_post_lease_hook(hook_context)
+                            await self._update_status(ExporterStatus.AVAILABLE, "Available for new lease")
+
+                    self._current_client_name = ""
+                    # Reset event for next lease
+                    self._pre_lease_ready = None
+
                     if self._stop_requested:
                         self.stop(should_unregister=True)
                         break
+
+                self._previous_leased = current_leased
         self._tg = None
