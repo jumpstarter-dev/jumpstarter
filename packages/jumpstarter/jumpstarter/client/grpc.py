@@ -114,6 +114,7 @@ class Lease(BaseModel):
     name: str
     selector: str
     duration: timedelta
+    effective_duration: timedelta | None = None
     client: str
     exporter: str
     conditions: list[kubernetes_pb2.Condition]
@@ -138,6 +139,10 @@ class Lease(BaseModel):
         else:
             exporter = ""
 
+        effective_duration = None
+        if data.effective_duration:
+            effective_duration = data.effective_duration.ToTimedelta()
+
         effective_begin_time = None
         if data.effective_begin_time:
             effective_begin_time = data.effective_begin_time.ToDatetime(
@@ -149,6 +154,7 @@ class Lease(BaseModel):
             name=name,
             selector=data.selector,
             duration=data.duration.ToTimedelta(),
+            effective_duration=effective_duration,
             client=client,
             exporter=exporter,
             effective_begin_time=effective_begin_time,
