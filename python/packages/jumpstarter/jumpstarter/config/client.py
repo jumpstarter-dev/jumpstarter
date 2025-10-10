@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager, contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, Optional, Self
@@ -200,11 +200,13 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         selector: str,
         duration: timedelta,
+        begin_time: datetime | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
             selector=selector,
             duration=duration,
+            begin_time=begin_time,
         )
 
     @_blocking_compat
@@ -237,11 +239,12 @@ class ClientConfigV1Alpha1(BaseSettings):
     @_handle_connection_error
     async def update_lease(
         self,
-        name,
-        duration: timedelta,
+        name: str,
+        duration: timedelta | None = None,
+        begin_time: datetime | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration)
+        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time)
 
     @asynccontextmanager
     async def lease_async(
