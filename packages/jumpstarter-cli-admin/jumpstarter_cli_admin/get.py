@@ -15,6 +15,8 @@ from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
     LeasesV1Alpha1Api,
+    get_cluster_info,
+    list_clusters,
 )
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
@@ -109,3 +111,61 @@ async def get_lease(
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
+
+
+@get.command("cluster")
+@click.argument("name", type=str, required=False, default=None)
+@click.option(
+    "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
+)
+@click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
+@click.option("--helm", type=str, help="Path or name of helm executable", default="helm")
+@click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
+@click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
+@opt_output_all
+@blocking
+async def get_cluster(
+    name: Optional[str], type: str, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType
+):
+    """Get information about a specific cluster or list all clusters"""
+    try:
+        if name is not None:
+            # Get specific cluster by context name
+            cluster_info = await get_cluster_info(name, kubectl, helm, minikube)
+
+            # Check if the cluster context was found
+            if cluster_info.error and "not found" in cluster_info.error:
+                raise click.ClickException(f'Kubernetes context "{name}" not found')
+
+            model_print(cluster_info, output)
+        else:
+            # List all clusters if no name provided
+            cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
+            model_print(cluster_list, output)
+    except click.ClickException:
+        raise
+    except Exception as e:
+        raise click.ClickException(f"Error getting cluster info: {e}") from e
+
+
+@get.command("clusters")
+@click.option(
+    "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
+)
+@click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
+@click.option("--helm", type=str, help="Path or name of helm executable", default="helm")
+@click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
+@click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
+@opt_output_all
+@blocking
+async def get_clusters(type: str, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType):
+    """List all Kubernetes clusters with Jumpstarter status"""
+    try:
+        cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
+
+        # Use model_print for all output formats
+        model_print(cluster_list, output)
+    except click.ClickException:
+        raise
+    except Exception as e:
+        raise click.ClickException(f"Error listing clusters: {e}") from e

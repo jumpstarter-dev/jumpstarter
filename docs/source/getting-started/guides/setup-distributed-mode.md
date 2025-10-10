@@ -4,7 +4,7 @@ This guide walks you through the process of creating an exporter using the
 controller service, configuring drivers, and running the exporter.
 
 ```{warning}
-The jumpstarter-controller endpoints are secured by TLS. However, in release 0.6.x,
+The jumpstarter-controller endpoints are secured by TLS. However, in release 0.7.x,
 the certificates are self-signed and rotated on every restart. This means the client
 will not be able to verify the server certificate. To bypass this, you should use the
 `--insecure-tls-config` flag when creating clients and exporters. This issue will be

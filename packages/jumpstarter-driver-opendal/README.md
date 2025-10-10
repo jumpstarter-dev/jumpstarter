@@ -18,6 +18,54 @@ Example configuration:
 :language: yaml
 ```
 
+### Configuration Parameters
+
+- **`scheme`** (required): The storage service type (e.g., "fs", "s3", "gcs"). See [OpenDAL services](https://docs.rs/opendal/latest/opendal/services/index.html) for supported options.
+- **`kwargs`** (required): Service-specific configuration parameters passed to the OpenDAL operator.
+- **`remove_created_on_close`** (optional, default: `false`): When enabled, automatically removes all files and directories created during the session when the driver is closed.
+
+### File/Directory Tracking and Cleanup
+
+The OpenDAL driver tracks all files and directories created during a session:
+
+- **File Creation**: Files opened in write modes (`"wb"`, `"w"`, `"ab"`, `"a"`)
+- **Directory Creation**: Directories created via `create_dir()`
+- **Copy Operations**: Target files/directories from `copy()` operations
+- **Rename Operations**: Target files/directories from `rename()` operations (source is removed from tracking)
+
+**Automatic Cleanup**: The tracking is automatically updated when resources are removed:
+- **Delete Operations**: `delete()` removes the path from tracking
+- **Remove Operations**: `remove_all()` removes the path from tracking
+
+**Cleanup Behavior**: When `remove_created_on_close: true`, all tracked files and directories are automatically removed when the driver closes (filesystem only)
+
+### Tracking API
+
+```python
+# Get all created resources (files and directories)
+created_resources = await driver.get_created_resources()  # Returns set[str]
+
+# Example usage
+for path in created_resources:
+    print(f"Created: {path}")
+```
+
+#### Use Cases
+
+**Temporary File Management:**
+```yaml
+# Enable cleanup for temporary storage
+remove_created_on_close: true
+```
+
+**Persistent Storage:**
+```yaml
+# Disable cleanup to preserve files (default)
+remove_created_on_close: false
+```
+
+**Note:** Pre-existing files that are written to are treated as "created" since they may be remnants from failed cleanup operations.
+
 ## API Reference
 
 ### Examples
