@@ -10,7 +10,6 @@ on:
 
 env:
   REGISTRY: quay.io
-  IMAGE_NAME: jumpstarter-dev/jumpstarter-controller
   QUAY_ORG: quay.io/jumpstarter-dev
 
 jobs:
@@ -18,6 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      matrix:
+        include:
+          - image_name: jumpstarter-dev/jumpstarter-controller
+            dockerfile: Dockerfile
+            context: .
+          - image_name: jumpstarter-dev/jumpstarter-operator
+            dockerfile: deploy/operator/Dockerfile
+            context: ./deploy/operator
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,15 +42,15 @@ jobs:
       - name: Set image tags
         id: set-tags
         run: |
-          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}"
+          TAGS="${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ env.VERSION }}"
 
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ matrix.image_name }}:latest"
           fi
 
           if [[ "${{ github.ref }}" == "refs/heads/release-*" ]]; then
             RELEASE_BRANCH_NAME=$(basename "${{ github.ref }}")
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${RELEASE_BRANCH_NAME}"
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ matrix.image_name }}:${RELEASE_BRANCH_NAME}"
           fi
 
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
@@ -64,7 +72,8 @@ jobs:
         id: push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.set-tags.outputs.tags }}
           platforms: linux/amd64,linux/arm64
