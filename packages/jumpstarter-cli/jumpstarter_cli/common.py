@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import partial
 
 import click
@@ -42,5 +42,33 @@ D days, HH:MM:SS - time prefixed by X days
 D d, HH:MM:SS - time prefixed by X d
 
 See https://docs.rs/speedate/latest/speedate/ for details
+""",
+)
+
+
+class DateTimeParamType(click.ParamType):
+    name = "datetime"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, datetime):
+            return value
+
+        try:
+            return TypeAdapter(datetime).validate_python(value)
+        except ValueError:
+            self.fail(f"{value!r} is not a valid datetime", param, ctx)
+
+
+DATETIME = DateTimeParamType()
+
+opt_begin_time = click.option(
+    "--begin-time",
+    "begin_time",
+    type=DATETIME,
+    default=None,
+    help="""
+Begin time for the lease in ISO 8601 format (e.g., 2024-01-01T12:00:00 or 2024-01-01T12:00:00Z).
+If not specified, the lease tries to be acquired immediately. The lease duration always starts
+at the actual time of acquisition.
 """,
 )

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import StringIO
 from unittest.mock import Mock
 
@@ -48,7 +48,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "LABELS", "LEASED BY", "LEASE STATUS", "START TIME"]
+        assert columns == ["NAME", "LABELS", "LEASED BY", "LEASE STATUS", "EXPECTED RELEASE"]
 
     def test_with_all_columns(self):
         table = Table()
@@ -56,7 +56,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "START TIME"]
+        assert columns == ["NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "EXPECTED RELEASE"]
 
 
 class TestAddExporterRow:
@@ -91,7 +91,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, START TIME
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
 
     def test_row_with_lease_info_available(self):
         table = Table()
@@ -115,7 +115,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, START TIME
+        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
 
 
 class TestExporterList:
@@ -124,6 +124,7 @@ class TestExporterList:
         lease.client = client
         lease.get_status.return_value = status
         lease.effective_begin_time = datetime(2023, 1, 1, 10, 0, 0)
+        lease.effective_duration = timedelta(hours=1)
         return lease
 
     def test_exporter_without_lease(self):
@@ -175,7 +176,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, START TIME
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -187,7 +188,7 @@ class TestExporterList:
         assert "type=device" in output
         assert "test-client" in output
         assert "Active" in output
-        assert "2023-01-01 10:00:00" in output
+        assert "2023-01-01 11:00:00" in output  # Expected release: begin_time (10:00:00) + duration (1h)
 
     def test_exporter_without_lease_but_show_leases(self):
         exporter = Exporter(
@@ -203,7 +204,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, START TIME
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -285,7 +286,7 @@ class TestExporterList:
         exporter_offline_no_lease.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, START TIME
+        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=150)
@@ -302,7 +303,7 @@ class TestExporterList:
         assert "full-test-client" in output  # Lease client
         assert "Active" in output  # Lease status
         assert "Available" in output  # Available status for no lease
-        assert "2023-01-01 10:00:00" in output  # Lease start time
+        assert "2023-01-01 11:00:00" in output  # Expected release time (begin_time + duration)
 
     def test_exporter_lease_info_extraction(self):
         """Test that lease information is correctly extracted from lease objects"""
@@ -325,10 +326,13 @@ class TestExporterList:
         if options.show_leases and exporter.lease:
             lease_client = exporter.lease.client
             lease_status = exporter.lease.get_status()
-            start_time = exporter.lease.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
-            lease_info = (lease_client, lease_status, start_time)
+            expected_release = ""
+            if exporter.lease.effective_begin_time and exporter.lease.effective_duration:
+                release_time = exporter.lease.effective_begin_time + exporter.lease.effective_duration
+                expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
+            lease_info = (lease_client, lease_status, expected_release)
 
-            assert lease_info == ("my-client", "Expired", "2023-01-01 10:00:00")
+            assert lease_info == ("my-client", "Expired", "2023-01-01 11:00:00")
 
     def test_exporter_no_lease_info_extraction(self):
         """Test that default lease information is used when no lease exists"""

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from google.protobuf import duration_pb2, field_mask_pb2, json_format
+from google.protobuf import duration_pb2, field_mask_pb2, json_format, timestamp_pb2
 from grpc import ChannelConnectivity
 from grpc.aio import Channel
 from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_grpc, kubernetes_pb2, router_pb2_grpc
@@ -32,7 +32,7 @@ def add_display_columns(table, options: WithOptions = None):
     if options.show_leases:
         table.add_column("LEASED BY")
         table.add_column("LEASE STATUS")
-        table.add_column("START TIME")
+        table.add_column("EXPECTED RELEASE")
 
 
 def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: tuple[str, str, str] | None = None):
@@ -45,10 +45,10 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
     row_data.append(",".join(("{}={}".format(k, v) for k, v in sorted(exporter.labels.items()))))
     if options.show_leases:
         if lease_info:
-            lease_client, lease_status, start_time = lease_info
+            lease_client, lease_status, expected_release = lease_info
         else:
-            lease_client, lease_status, start_time = "", "Available", ""
-        row_data.extend([lease_client, lease_status, start_time])
+            lease_client, lease_status, expected_release = "", "Available", ""
+        row_data.extend([lease_client, lease_status, expected_release])
 
     table.add_row(*row_data)
 
@@ -97,10 +97,11 @@ class Exporter(BaseModel):
         if options and options.show_leases and self.lease:
             lease_client = self.lease.client
             lease_status = self.lease.get_status()
-            start_time = ""
-            if self.lease.effective_begin_time:
-                start_time = self.lease.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
-            lease_info = (lease_client, lease_status, start_time)
+            expected_release = ""
+            if self.lease.effective_begin_time and self.lease.effective_duration:
+                release_time = self.lease.effective_begin_time + self.lease.effective_duration
+                expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
+            lease_info = (lease_client, lease_status, expected_release)
         elif options and options.show_leases:
             lease_info = ("", "Available", "")
         add_exporter_row(table, self, options, lease_info)
@@ -114,6 +115,8 @@ class Lease(BaseModel):
     name: str
     selector: str
     duration: timedelta
+    effective_duration: timedelta | None = None
+    begin_time: datetime | None = None
     client: str
     exporter: str
     conditions: list[kubernetes_pb2.Condition]
@@ -138,6 +141,16 @@ class Lease(BaseModel):
         else:
             exporter = ""
 
+        effective_duration = None
+        if data.effective_duration:
+            effective_duration = data.effective_duration.ToTimedelta()
+
+        begin_time = None
+        if data.HasField("begin_time"):
+            begin_time = data.begin_time.ToDatetime(
+                tzinfo=datetime.now().astimezone().tzinfo,
+            )
+
         effective_begin_time = None
         if data.effective_begin_time:
             effective_begin_time = data.effective_begin_time.ToDatetime(
@@ -149,6 +162,8 @@ class Lease(BaseModel):
             name=name,
             selector=data.selector,
             duration=data.duration.ToTimedelta(),
+            effective_duration=effective_duration,
+            begin_time=begin_time,
             client=client,
             exporter=exporter,
             effective_begin_time=effective_begin_time,
@@ -159,15 +174,31 @@ class Lease(BaseModel):
     def rich_add_columns(cls, table):
         table.add_column("NAME", no_wrap=True)
         table.add_column("SELECTOR")
+        table.add_column("BEGIN TIME")
         table.add_column("DURATION")
         table.add_column("CLIENT")
         table.add_column("EXPORTER")
 
     def rich_add_rows(self, table):
+        # Show effective_begin_time if active, otherwise show scheduled begin_time
+        begin_time = ""
+        if self.effective_begin_time:
+            begin_time = self.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
+        elif self.begin_time:
+            begin_time = self.begin_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Show effective_duration if available, otherwise show requested duration
+        duration = ""
+        if self.effective_duration:
+            duration = str(self.effective_duration)
+        elif self.duration:
+            duration = str(self.duration)
+
         table.add_row(
             self.name,
             self.selector,
-            str(self.duration),
+            begin_time,
+            duration,
             self.client,
             self.exporter,
         )
@@ -340,18 +371,26 @@ class ClientService:
         *,
         selector: str,
         duration: timedelta,
+        begin_time: datetime | None = None,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
+
+        lease_pb = client_pb2.Lease(
+            duration=duration_pb,
+            selector=selector,
+        )
+
+        if begin_time:
+            timestamp_pb = timestamp_pb2.Timestamp()
+            timestamp_pb.FromDatetime(begin_time)
+            lease_pb.begin_time.CopyFrom(timestamp_pb)
 
         with translate_grpc_exceptions():
             lease = await self.stub.CreateLease(
                 client_pb2.CreateLeaseRequest(
                     parent="namespaces/{}".format(self.namespace),
-                    lease=client_pb2.Lease(
-                        duration=duration_pb,
-                        selector=selector,
-                    ),
+                    lease=lease_pb,
                 )
             )
         return Lease.from_protobuf(lease)
@@ -360,21 +399,37 @@ class ClientService:
         self,
         *,
         name: str,
-        duration: timedelta,
+        duration: timedelta | None = None,
+        begin_time: datetime | None = None,
     ):
-        duration_pb = duration_pb2.Duration()
-        duration_pb.FromTimedelta(duration)
+        lease_pb = client_pb2.Lease(
+            name="namespaces/{}/leases/{}".format(self.namespace, name),
+        )
+
+        update_fields = []
+
+        if duration is not None:
+            duration_pb = duration_pb2.Duration()
+            duration_pb.FromTimedelta(duration)
+            lease_pb.duration.CopyFrom(duration_pb)
+            update_fields.append("duration")
+
+        if begin_time is not None:
+            timestamp_pb = timestamp_pb2.Timestamp()
+            timestamp_pb.FromDatetime(begin_time)
+            lease_pb.begin_time.CopyFrom(timestamp_pb)
+            update_fields.append("begin_time")
+
+        if not update_fields:
+            raise ValueError("At least one of duration or begin_time must be provided")
 
         update_mask = field_mask_pb2.FieldMask()
-        update_mask.FromJsonString("duration")
+        update_mask.FromJsonString(",".join(update_fields))
 
         with translate_grpc_exceptions():
             lease = await self.stub.UpdateLease(
                 client_pb2.UpdateLeaseRequest(
-                    lease=client_pb2.Lease(
-                        name="namespaces/{}/leases/{}".format(self.namespace, name),
-                        duration=duration_pb,
-                    ),
+                    lease=lease_pb,
                     update_mask=update_mask,
                 )
             )
