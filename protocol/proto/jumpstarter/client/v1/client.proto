@@ -86,7 +86,7 @@ message Lease {
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE
   ];
-  google.protobuf.Duration duration = 3 [(google.api.field_behavior) = REQUIRED];
+  optional google.protobuf.Duration duration = 3;
   google.protobuf.Duration effective_duration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   optional google.protobuf.Timestamp begin_time = 5;
   optional google.protobuf.Timestamp effective_begin_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
