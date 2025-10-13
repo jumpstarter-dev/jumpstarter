@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from functools import partial
 
 import click
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 opt_selector = click.option(
     "-l",
@@ -21,7 +21,7 @@ class DurationParamType(click.ParamType):
 
         try:
             return TypeAdapter(timedelta).validate_python(value)
-        except ValueError:
+        except (ValueError, ValidationError):
             self.fail(f"{value!r} is not a valid duration", param, ctx)
 
 
@@ -51,12 +51,18 @@ class DateTimeParamType(click.ParamType):
 
     def convert(self, value, param, ctx):
         if isinstance(value, datetime):
-            return value
+            dt = value
+        else:
+            try:
+                dt = TypeAdapter(datetime).validate_python(value)
+            except (ValueError, ValidationError):
+                self.fail(f"{value!r} is not a valid datetime", param, ctx)
 
-        try:
-            return TypeAdapter(datetime).validate_python(value)
-        except ValueError:
-            self.fail(f"{value!r} is not a valid datetime", param, ctx)
+        # Normalize naive datetimes to local timezone
+        if dt.tzinfo is None:
+            dt = dt.astimezone()
+
+        return dt
 
 
 DATETIME = DateTimeParamType()
