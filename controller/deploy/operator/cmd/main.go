@@ -38,7 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/controller"
+	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/controller/jumpstarter"
+	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/controller/jumpstarter/endpoints"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -202,9 +203,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.JumpstarterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+	if err := (&jumpstarter.JumpstarterReconciler{
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		EndpointReconciler: endpoints.NewReconciler(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Jumpstarter")
 		os.Exit(1)
