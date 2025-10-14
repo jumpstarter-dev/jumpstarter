@@ -32,7 +32,7 @@ def add_display_columns(table, options: WithOptions = None):
     if options.show_leases:
         table.add_column("LEASED BY")
         table.add_column("LEASE STATUS")
-        table.add_column("EXPECTED RELEASE")
+        table.add_column("RELEASE TIME")
 
 
 def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: tuple[str, str, str] | None = None):
@@ -97,15 +97,19 @@ class Exporter(BaseModel):
         if options and options.show_leases and self.lease:
             lease_client = self.lease.client
             lease_status = self.lease.get_status()
-            expected_release = ""
-            if self.lease.effective_begin_time and self.lease.effective_duration:
-                release_time = self.lease.effective_begin_time + self.lease.effective_duration
-                expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
+            release_time = ""
+            if self.lease.effective_end_time:
+                # Ended: use actual end time
+                release_time = self.lease.effective_end_time.strftime("%Y-%m-%d %H:%M:%S")
+            elif self.lease.effective_begin_time:
+                # Active: calculate expected end
+                release_time = self.lease.effective_begin_time + self.lease.duration
+                release_time = release_time.strftime("%Y-%m-%d %H:%M:%S")
             elif self.lease.begin_time:
-                dur = self.lease.effective_duration or self.lease.duration
-                release_time = self.lease.begin_time + dur
-                expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
-            lease_info = (lease_client, lease_status, expected_release)
+                # Scheduled: calculate expected end
+                release_time = self.lease.begin_time + self.lease.duration
+                release_time = release_time.strftime("%Y-%m-%d %H:%M:%S")
+            lease_info = (lease_client, lease_status, release_time)
         elif options and options.show_leases:
             lease_info = ("", "Available", "")
         add_exporter_row(table, self, options, lease_info)
@@ -125,6 +129,7 @@ class Lease(BaseModel):
     exporter: str
     conditions: list[kubernetes_pb2.Condition]
     effective_begin_time: datetime | None = None
+    effective_end_time: datetime | None = None
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -161,6 +166,12 @@ class Lease(BaseModel):
                 tzinfo=datetime.now().astimezone().tzinfo,
             )
 
+        effective_end_time = None
+        if data.HasField("effective_end_time"):
+            effective_end_time = data.effective_end_time.ToDatetime(
+                tzinfo=datetime.now().astimezone().tzinfo,
+            )
+
         return cls(
             namespace=namespace,
             name=name,
@@ -171,6 +182,7 @@ class Lease(BaseModel):
             client=client,
             exporter=exporter,
             effective_begin_time=effective_begin_time,
+            effective_end_time=effective_end_time,
             conditions=data.conditions,
         )
 
@@ -191,12 +203,8 @@ class Lease(BaseModel):
         elif self.begin_time:
             begin_time = self.begin_time.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Show effective_duration if available, otherwise show requested duration
-        duration = ""
-        if self.effective_duration:
-            duration = str(self.effective_duration)
-        elif self.duration:
-            duration = str(self.duration)
+        # Show actual duration for ended leases, requested duration otherwise
+        duration = str(self.effective_duration if self.effective_end_time else self.duration or "")
 
         table.add_row(
             self.name,
@@ -212,6 +220,10 @@ class Lease(BaseModel):
 
     def get_status(self) -> str:
         """Get the lease status based on conditions"""
+        # Check if lease has ended (effective_end_time is set)
+        if self.effective_end_time:
+            return "Ended"
+
         if not self.conditions:
             return "Unknown"
 
