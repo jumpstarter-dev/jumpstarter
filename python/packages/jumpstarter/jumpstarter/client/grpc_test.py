@@ -48,7 +48,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "LABELS", "LEASED BY", "LEASE STATUS", "EXPECTED RELEASE"]
+        assert columns == ["NAME", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
 
     def test_with_all_columns(self):
         table = Table()
@@ -56,7 +56,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "EXPECTED RELEASE"]
+        assert columns == ["NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
 
 
 class TestAddExporterRow:
@@ -91,7 +91,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_lease_info_available(self):
         table = Table()
@@ -115,14 +115,15 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
+        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
 
 class TestExporterList:
     def create_test_lease(self, client="test-client", status="Active",
                           effective_begin_time=datetime(2023, 1, 1, 10, 0, 0),
                           effective_duration=timedelta(hours=1),
-                          begin_time=None, duration=timedelta(hours=1)):
+                          begin_time=None, duration=timedelta(hours=1),
+                          effective_end_time=None):
         lease = Mock(spec=Lease)
         lease.client = client
         lease.get_status.return_value = status
@@ -130,6 +131,7 @@ class TestExporterList:
         lease.effective_duration = effective_duration
         lease.begin_time = begin_time
         lease.duration = duration
+        lease.effective_end_time = effective_end_time
         return lease
 
     def test_exporter_without_lease(self):
@@ -181,7 +183,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -209,7 +211,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -291,7 +293,7 @@ class TestExporterList:
         exporter_offline_no_lease.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
+        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=150)
@@ -312,7 +314,11 @@ class TestExporterList:
 
     def test_exporter_lease_info_extraction(self):
         """Test that lease information is correctly extracted from lease objects"""
-        lease = self.create_test_lease(client="my-client", status="Expired")
+        lease = self.create_test_lease(
+            client="my-client",
+            status="Expired",
+            effective_end_time=datetime(2023, 1, 1, 11, 0, 0)  # Ended after 1 hour
+        )
         exporter = Exporter(
             namespace="default",
             name="test-exporter",
@@ -332,8 +338,16 @@ class TestExporterList:
             lease_client = exporter.lease.client
             lease_status = exporter.lease.get_status()
             expected_release = ""
-            if exporter.lease.effective_begin_time and exporter.lease.effective_duration:
-                release_time = exporter.lease.effective_begin_time + exporter.lease.effective_duration
+            if exporter.lease.effective_end_time:
+                # Ended: use actual end time
+                expected_release = exporter.lease.effective_end_time.strftime("%Y-%m-%d %H:%M:%S")
+            elif exporter.lease.effective_begin_time:
+                # Active: calculate expected end
+                release_time = exporter.lease.effective_begin_time + exporter.lease.duration
+                expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
+            elif exporter.lease.begin_time:
+                # Scheduled: calculate expected end
+                release_time = exporter.lease.begin_time + exporter.lease.duration
                 expected_release = release_time.strftime("%Y-%m-%d %H:%M:%S")
             lease_info = (lease_client, lease_status, expected_release)
 
@@ -384,7 +398,7 @@ class TestExporterList:
         Exporter.rich_add_columns(table, options)
         exporter.rich_add_rows(table, options)
 
-        # Should have 5 columns: NAME, LABELS, LEASED BY, LEASE STATUS, EXPECTED RELEASE
+        # Should have 5 columns: NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
         assert len(table.columns) == 5
         assert len(table.rows) == 1
 

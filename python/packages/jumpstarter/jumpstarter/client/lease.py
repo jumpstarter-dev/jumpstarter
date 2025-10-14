@@ -252,7 +252,10 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             while True:
                 lease = await self.get()
                 if lease.effective_begin_time and lease.effective_duration:
-                    end_time = lease.effective_begin_time + lease.effective_duration
+                    if lease.effective_end_time: # already ended
+                        end_time = lease.effective_end_time
+                    else:
+                        end_time = lease.effective_begin_time + lease.duration
                     remain = end_time - datetime.now().astimezone()
                     if remain < timedelta(0):
                         # lease already expired, stopping monitor
