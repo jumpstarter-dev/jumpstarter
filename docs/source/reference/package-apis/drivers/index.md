@@ -73,6 +73,7 @@ Drivers for debugging and programming devices:
 * **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader
   interface
 * **[RideSX](ridesx.md)** (`jumpstarter-driver-ridesx`) - Flashing and power management for Qualcomm RideSX devices
+* **[ESP32](esp32.md)** (`jumpstarter-driver-esp32`) - ESP32 development board support
 
 ### Utility Drivers
 
@@ -88,6 +89,7 @@ can.md
 corellium.md
 dutlink.md
 energenie.md
+esp32.md
 flashers.md
 http.md
 http-power.md
