@@ -20,6 +20,59 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// ReconcileLeaseTimeFields calculates missing time fields and validates consistency
+// between BeginTime, EndTime, and Duration. Modifies pointers in place.
+//
+// Supported lease specification patterns:
+// 1. Duration only (no BeginTime/EndTime): immediate start, runs for Duration
+//   - BeginTime set by controller when exporter acquired
+//   - EndTime = Status.BeginTime + Duration (calculated at runtime)
+//
+// 2. EndTime only: INVALID - cannot infer Duration without BeginTime or explicit Duration
+//   - Returns error: "duration is required (must specify Duration, or both BeginTime and EndTime)"
+//
+// 3. BeginTime + Duration: scheduled start at BeginTime, runs for Duration
+//   - Lease waits until BeginTime, then acquires exporter
+//   - EndTime = BeginTime + Duration (calculated at runtime)
+//
+// 4. BeginTime + EndTime: scheduled window, Duration computed from times
+//   - Duration = EndTime - BeginTime (auto-calculated here)
+//   - Validates EndTime > BeginTime (positive duration)
+//
+// 5. EndTime + Duration: scheduled end, BeginTime computed as EndTime - Duration
+//   - BeginTime = EndTime - Duration (auto-calculated here)
+//   - Useful for "finish by" scheduling
+//
+// 6. BeginTime + EndTime + Duration: all three specified, validates consistency
+//   - Validates Duration == EndTime - BeginTime
+//   - Returns error if inconsistent: "duration conflicts with begin_time and end_time"
+//
+// Note: The controller never auto-populates Spec.EndTime. It calculates expiration time
+// on-demand from available fields, keeping Spec.EndTime meaningful only when explicitly
+// set by the user. See lease_controller.go reconcileStatusEnded for expiration logic.
+func ReconcileLeaseTimeFields(beginTime, endTime **metav1.Time, duration **metav1.Duration) error {
+	if *beginTime != nil && *endTime != nil {
+		// Calculate duration from explicit begin/end times
+		calculated := (*endTime).Sub((*beginTime).Time)
+		if *duration != nil && (*duration).Duration > 0 && (*duration).Duration != calculated {
+			return fmt.Errorf("duration conflicts with begin_time and end_time")
+		}
+		*duration = &metav1.Duration{Duration: calculated}
+	} else if *endTime != nil && *duration != nil && (*duration).Duration > 0 {
+		// Calculate BeginTime from EndTime - Duration (scheduled lease ending at specific time)
+		*beginTime = &metav1.Time{Time: (*endTime).Add(-(*duration).Duration)}
+	}
+
+	// Validate final duration is positive (rejects nil, negative, zero)
+	if *duration == nil {
+		return fmt.Errorf("duration is required (must specify Duration, or both BeginTime and EndTime)")
+	}
+	if (*duration).Duration <= 0 {
+		return fmt.Errorf("duration must be positive, got %v", (*duration).Duration)
+	}
+	return nil
+}
+
 func LeaseFromProtobuf(
 	req *cpb.Lease,
 	key types.NamespacedName,
@@ -30,6 +83,22 @@ func LeaseFromProtobuf(
 		return nil, err
 	}
 
+	var beginTime, endTime *metav1.Time
+	var duration *metav1.Duration
+
+	if req.BeginTime != nil {
+		beginTime = &metav1.Time{Time: req.BeginTime.AsTime()}
+	}
+	if req.EndTime != nil {
+		endTime = &metav1.Time{Time: req.EndTime.AsTime()}
+	}
+	if req.Duration != nil {
+		duration = &metav1.Duration{Duration: req.Duration.AsDuration()}
+	}
+	if err := ReconcileLeaseTimeFields(&beginTime, &endTime, &duration); err != nil {
+		return nil, err
+	}
+
 	return &Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: key.Namespace,
@@ -37,8 +106,10 @@ func LeaseFromProtobuf(
 		},
 		Spec: LeaseSpec{
 			ClientRef: clientRef,
-			Duration:  metav1.Duration{Duration: req.Duration.AsDuration()},
+			Duration:  duration,
 			Selector:  *selector,
+			BeginTime: beginTime,
+			EndTime:   endTime,
 		},
 	}, nil
 }
@@ -60,22 +131,34 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 	}
 
 	lease := cpb.Lease{
-		Name:              fmt.Sprintf("namespaces/%s/leases/%s", l.Namespace, l.Name),
-		Selector:          metav1.FormatLabelSelector(&l.Spec.Selector),
-		Duration:          durationpb.New(l.Spec.Duration.Duration),
-		EffectiveDuration: durationpb.New(l.Spec.Duration.Duration), // TODO: implement lease renewal
-		Client:            ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
-		Conditions:        conditions,
-		// TODO: implement scheduled leases
-		BeginTime: nil,
-		EndTime:   nil,
+		Name:       fmt.Sprintf("namespaces/%s/leases/%s", l.Namespace, l.Name),
+		Selector:   metav1.FormatLabelSelector(&l.Spec.Selector),
+		Client:     ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
+		Conditions: conditions,
+	}
+	if l.Spec.Duration != nil {
+		lease.Duration = durationpb.New(l.Spec.Duration.Duration)
 	}
 
+	// Requested/planned times from Spec
+	if l.Spec.BeginTime != nil {
+		lease.BeginTime = timestamppb.New(l.Spec.BeginTime.Time)
+	}
+	if l.Spec.EndTime != nil {
+		lease.EndTime = timestamppb.New(l.Spec.EndTime.Time)
+	}
+
+	// Actual times from Status
 	if l.Status.BeginTime != nil {
 		lease.EffectiveBeginTime = timestamppb.New(l.Status.BeginTime.Time)
-	}
-	if l.Status.EndTime != nil {
-		lease.EffectiveEndTime = timestamppb.New(l.Status.EndTime.Time)
+		endTime := time.Now()
+		if l.Status.EndTime != nil {
+			endTime = l.Status.EndTime.Time
+			lease.EffectiveEndTime = timestamppb.New(endTime)
+		}
+		// Final effective duration or current one so far while active. Non-negative to handle clock skew.
+		effectiveDuration := max(endTime.Sub(l.Status.BeginTime.Time), 0)
+		lease.EffectiveDuration = durationpb.New(effectiveDuration)
 	}
 	if l.Status.ExporterRef != nil {
 		lease.Exporter = ptr.To(utils.UnparseExporterIdentifier(kclient.ObjectKey{

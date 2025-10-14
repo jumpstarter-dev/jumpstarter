@@ -82,7 +82,7 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return result, err
 	}
 
-	if err := r.reconcileStatusBeginTime(ctx, &lease); err != nil {
+	if err := r.reconcileStatusBeginEndTimes(ctx, &lease); err != nil {
 		return result, err
 	}
 
@@ -141,14 +141,24 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 			lease.Release(ctx)
 			return nil
 		} else if lease.Status.BeginTime != nil {
-			expiration := lease.Status.BeginTime.Add(lease.Spec.Duration.Duration)
+			var expiration time.Time
+			if lease.Spec.EndTime != nil {
+				// expires at Spec.EndTime when specified
+				expiration = lease.Spec.EndTime.Time
+			} else if lease.Spec.BeginTime != nil && lease.Spec.Duration != nil {
+				// expires at Spec.BeginTime + Spec.Duration - scheduled lease
+				expiration = lease.Spec.BeginTime.Add(lease.Spec.Duration.Duration)
+			} else if lease.Spec.Duration != nil {
+				// expires at actual BeginTime + Spec.Duration - immediate lease
+				expiration = lease.Status.BeginTime.Add(lease.Spec.Duration.Duration)
+			}
+
 			if expiration.Before(now) {
 				lease.Expire(ctx)
 				return nil
-			} else {
-				result.RequeueAfter = expiration.Sub(now)
-				return nil
 			}
+			result.RequeueAfter = expiration.Sub(now)
+			return nil
 		}
 
 	}
@@ -156,19 +166,16 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 }
 
 // nolint:unparam
-func (r *LeaseReconciler) reconcileStatusBeginTime(
+func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
-	logger := log.FromContext(ctx)
-
-	now := time.Now()
 	if lease.Status.BeginTime == nil && lease.Status.ExporterRef != nil {
+		logger := log.FromContext(ctx)
 		logger.Info("Updating begin time for lease", "lease", lease.Name, "exporter", lease.GetExporterName(), "client", lease.GetClientName())
+		now := time.Now()
+		lease.Status.BeginTime = &metav1.Time{Time: now}
 		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
-		lease.Status.BeginTime = &metav1.Time{
-			Time: now,
-		}
 	}
 
 	return nil
@@ -188,6 +195,20 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 	}
 
 	if lease.Status.ExporterRef == nil {
+		// For scheduled leases: only assign exporter if requested BeginTime has arrived
+		if lease.Spec.BeginTime != nil {
+			now := time.Now()
+			if lease.Spec.BeginTime.After(now) {
+				// Requested BeginTime is in the future, wait until then
+				waitDuration := lease.Spec.BeginTime.Sub(now)
+				logger.Info("Lease is scheduled for the future, waiting",
+					"lease", lease.Name,
+					"requestedBeginTime", lease.Spec.BeginTime,
+					"waitDuration", waitDuration)
+				result.RequeueAfter = waitDuration
+				return nil
+			}
+		}
 		logger.Info("Looking for a matching exporter for lease", "lease", lease.Name, "client", lease.GetClientName(), "selector", lease.Spec.Selector)
 
 		selector, err := lease.GetExporterSelector()
@@ -338,7 +359,14 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 						}
 						if clientSelector.Matches(labels.Set(jclient.Labels)) {
 							if p.MaximumDuration != nil {
-								if lease.Spec.Duration.Duration > p.MaximumDuration.Duration {
+								// Calculate requested duration (may be from explicit Duration or computed from times)
+								requestedDuration := time.Duration(0)
+								if lease.Spec.Duration != nil {
+									requestedDuration = lease.Spec.Duration.Duration
+								} else if lease.Spec.BeginTime != nil && lease.Spec.EndTime != nil {
+									requestedDuration = lease.Spec.EndTime.Sub(lease.Spec.BeginTime.Time)
+								}
+								if requestedDuration > p.MaximumDuration.Duration {
 									// TODO: we probably should keep this on the list of approved exporters
 									// but mark as excessive duration so we can report it on the status
 									// of lease if no other options exist
