@@ -195,16 +195,12 @@ class Driver(
                 ) as stream:
                     yield stream
 
-    def report(self, *, root=None, parent=None, name=None):
+    def report(self, *, parent=None, name=None):
         """
         Create DriverInstanceReport
 
         :meta private:
         """
-
-        if root is None:
-            root = self
-
         return jumpstarter_pb2.DriverInstanceReport(
             uuid=str(self.uuid),
             parent_uuid=str(parent.uuid) if parent else None,
