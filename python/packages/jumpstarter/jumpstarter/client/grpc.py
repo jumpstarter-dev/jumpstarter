@@ -370,6 +370,7 @@ class ClientService:
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
+        only_active: bool = True,
     ):
         with translate_grpc_exceptions():
             leases = await self.stub.ListLeases(
@@ -378,6 +379,7 @@ class ClientService:
                     page_size=page_size,
                     page_token=page_token,
                     filter=filter,
+                    only_active=only_active,
                 )
             )
         return LeaseList.from_protobuf(leases)
