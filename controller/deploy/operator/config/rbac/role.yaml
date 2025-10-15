@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - operator.jumpstarter.dev
+  resources:
+  - jumpstarters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - operator.jumpstarter.dev
+  resources:
+  - jumpstarters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - operator.jumpstarter.dev
+  resources:
+  - jumpstarters/status
+  verbs:
+  - get
+  - patch
+  - update

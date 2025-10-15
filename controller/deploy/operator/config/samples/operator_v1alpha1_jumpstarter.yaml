@@ -1,0 +1,9 @@
+apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: jumpstarter-sample
+spec:
+  # TODO(user): Add fields here
