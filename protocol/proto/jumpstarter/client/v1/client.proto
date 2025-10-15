@@ -140,6 +140,7 @@ message ListLeasesRequest {
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+  optional bool only_active = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message ListLeasesResponse {
