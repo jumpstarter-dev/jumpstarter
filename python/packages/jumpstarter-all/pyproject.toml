@@ -29,6 +29,7 @@ dependencies = [
   "jumpstarter-driver-sdwire",
   "jumpstarter-driver-shell",
   "jumpstarter-driver-snmp",
+  "jumpstarter-driver-ssh",
   "jumpstarter-driver-tftp",
   "jumpstarter-driver-tmt",
   "jumpstarter-driver-uboot",
