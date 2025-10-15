@@ -83,6 +83,9 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
 ##@ Build
+.PHONY: build-operator
+build-operator:
+	make -C deploy/operator build-installer docker-build
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
@@ -151,6 +154,9 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: docker-build cluster grpcurl
 	./hack/deploy_with_helm.sh
+
+deploy-with-operator: build-operator docker-build cluster grpcurl
+	./hack/deploy_with_operator.sh
 
 .PHONY: deploy-exporters
 deploy-exporters:
