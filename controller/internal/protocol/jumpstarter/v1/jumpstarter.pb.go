@@ -1856,8 +1856,8 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\x13StreamingDriverCall\x12*.jumpstarter.v1.StreamingDriverCallRequest\x1a+.jumpstarter.v1.StreamingDriverCallResponse0\x01\x12H\n" +
 	"\tLogStream\x12\x16.google.protobuf.Empty\x1a!.jumpstarter.v1.LogStreamResponse0\x01\x12D\n" +
 	"\x05Reset\x12\x1c.jumpstarter.v1.ResetRequest\x1a\x1d.jumpstarter.v1.ResetResponse\x12P\n" +
-	"\tGetStatus\x12 .jumpstarter.v1.GetStatusRequest\x1a!.jumpstarter.v1.GetStatusResponseB\xcf\x01\n" +
-	"\x12com.jumpstarter.v1B\x10JumpstarterProtoP\x01ZNgithub.com/jumpstarter-dev/jumpstarter-controller/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
+	"\tGetStatus\x12 .jumpstarter.v1.GetStatusRequest\x1a!.jumpstarter.v1.GetStatusResponseB\xe1\x01\n" +
+	"\x12com.jumpstarter.v1B\x10JumpstarterProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
 
 var (
 	file_jumpstarter_v1_jumpstarter_proto_rawDescOnce sync.Once
