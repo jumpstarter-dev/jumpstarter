@@ -24,6 +24,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ControllerService_Register_FullMethodName     = "/jumpstarter.v1.ControllerService/Register"
 	ControllerService_Unregister_FullMethodName   = "/jumpstarter.v1.ControllerService/Unregister"
+	ControllerService_ReportStatus_FullMethodName = "/jumpstarter.v1.ControllerService/ReportStatus"
 	ControllerService_Listen_FullMethodName       = "/jumpstarter.v1.ControllerService/Listen"
 	ControllerService_Status_FullMethodName       = "/jumpstarter.v1.ControllerService/Status"
 	ControllerService_Dial_FullMethodName         = "/jumpstarter.v1.ControllerService/Dial"
@@ -47,6 +48,9 @@ type ControllerServiceClient interface {
 	// we will eventually have a mechanism to tell the router this token
 	// has been invalidated
 	Unregister(ctx context.Context, in *UnregisterRequest, opts ...grpc.CallOption) (*UnregisterResponse, error)
+	// Exporter status report
+	// Allows exporters to report their own status to the controller
+	ReportStatus(ctx context.Context, in *ReportStatusRequest, opts ...grpc.CallOption) (*ReportStatusResponse, error)
 	// Exporter listening
 	// Returns stream tokens for accepting incoming client connections
 	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ListenResponse], error)
@@ -92,6 +96,16 @@ func (c *controllerServiceClient) Unregister(ctx context.Context, in *Unregister
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UnregisterResponse)
 	err := c.cc.Invoke(ctx, ControllerService_Unregister_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) ReportStatus(ctx context.Context, in *ReportStatusRequest, opts ...grpc.CallOption) (*ReportStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportStatusResponse)
+	err := c.cc.Invoke(ctx, ControllerService_ReportStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +226,9 @@ type ControllerServiceServer interface {
 	// we will eventually have a mechanism to tell the router this token
 	// has been invalidated
 	Unregister(context.Context, *UnregisterRequest) (*UnregisterResponse, error)
+	// Exporter status report
+	// Allows exporters to report their own status to the controller
+	ReportStatus(context.Context, *ReportStatusRequest) (*ReportStatusResponse, error)
 	// Exporter listening
 	// Returns stream tokens for accepting incoming client connections
 	Listen(*ListenRequest, grpc.ServerStreamingServer[ListenResponse]) error
@@ -248,6 +265,9 @@ func (UnimplementedControllerServiceServer) Register(context.Context, *RegisterR
 }
 func (UnimplementedControllerServiceServer) Unregister(context.Context, *UnregisterRequest) (*UnregisterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Unregister not implemented")
+}
+func (UnimplementedControllerServiceServer) ReportStatus(context.Context, *ReportStatusRequest) (*ReportStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportStatus not implemented")
 }
 func (UnimplementedControllerServiceServer) Listen(*ListenRequest, grpc.ServerStreamingServer[ListenResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method Listen not implemented")
@@ -326,6 +346,24 @@ func _ControllerService_Unregister_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControllerServiceServer).Unregister(ctx, req.(*UnregisterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_ReportStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).ReportStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_ReportStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).ReportStatus(ctx, req.(*ReportStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -465,6 +503,10 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ControllerService_Unregister_Handler,
 		},
 		{
+			MethodName: "ReportStatus",
+			Handler:    _ControllerService_ReportStatus_Handler,
+		},
+		{
 			MethodName: "Dial",
 			Handler:    _ControllerService_Dial_Handler,
 		},
@@ -511,6 +553,7 @@ const (
 	ExporterService_StreamingDriverCall_FullMethodName = "/jumpstarter.v1.ExporterService/StreamingDriverCall"
 	ExporterService_LogStream_FullMethodName           = "/jumpstarter.v1.ExporterService/LogStream"
 	ExporterService_Reset_FullMethodName               = "/jumpstarter.v1.ExporterService/Reset"
+	ExporterService_GetStatus_FullMethodName           = "/jumpstarter.v1.ExporterService/GetStatus"
 )
 
 // ExporterServiceClient is the client API for ExporterService service.
@@ -526,6 +569,7 @@ type ExporterServiceClient interface {
 	StreamingDriverCall(ctx context.Context, in *StreamingDriverCallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamingDriverCallResponse], error)
 	LogStream(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogStreamResponse], error)
 	Reset(ctx context.Context, in *ResetRequest, opts ...grpc.CallOption) (*ResetResponse, error)
+	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
 }
 
 type exporterServiceClient struct {
@@ -604,6 +648,16 @@ func (c *exporterServiceClient) Reset(ctx context.Context, in *ResetRequest, opt
 	return out, nil
 }
 
+func (c *exporterServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetStatusResponse)
+	err := c.cc.Invoke(ctx, ExporterService_GetStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExporterServiceServer is the server API for ExporterService service.
 // All implementations must embed UnimplementedExporterServiceServer
 // for forward compatibility.
@@ -617,6 +671,7 @@ type ExporterServiceServer interface {
 	StreamingDriverCall(*StreamingDriverCallRequest, grpc.ServerStreamingServer[StreamingDriverCallResponse]) error
 	LogStream(*emptypb.Empty, grpc.ServerStreamingServer[LogStreamResponse]) error
 	Reset(context.Context, *ResetRequest) (*ResetResponse, error)
+	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
 	mustEmbedUnimplementedExporterServiceServer()
 }
 
@@ -641,6 +696,9 @@ func (UnimplementedExporterServiceServer) LogStream(*emptypb.Empty, grpc.ServerS
 }
 func (UnimplementedExporterServiceServer) Reset(context.Context, *ResetRequest) (*ResetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Reset not implemented")
+}
+func (UnimplementedExporterServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetStatus not implemented")
 }
 func (UnimplementedExporterServiceServer) mustEmbedUnimplementedExporterServiceServer() {}
 func (UnimplementedExporterServiceServer) testEmbeddedByValue()                         {}
@@ -739,6 +797,24 @@ func _ExporterService_Reset_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ExporterService_GetStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExporterServiceServer).GetStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExporterService_GetStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExporterServiceServer).GetStatus(ctx, req.(*GetStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ExporterService_ServiceDesc is the grpc.ServiceDesc for ExporterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -757,6 +833,10 @@ var ExporterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Reset",
 			Handler:    _ExporterService_Reset_Handler,
+		},
+		{
+			MethodName: "GetStatus",
+			Handler:    _ExporterService_GetStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

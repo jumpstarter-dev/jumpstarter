@@ -219,7 +219,28 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 		return nil, err
 	}
 
-	jlease.Spec.Duration = desired.Spec.Duration
+	// BeginTime can only be updated before lease starts; only if explicitly provided
+	if req.Lease.BeginTime != nil {
+		if jlease.Status.ExporterRef != nil {
+			if jlease.Spec.BeginTime == nil || !jlease.Spec.BeginTime.Equal(desired.Spec.BeginTime) {
+				return nil, fmt.Errorf("cannot update BeginTime: lease has already started")
+			}
+		}
+		jlease.Spec.BeginTime = desired.Spec.BeginTime
+	}
+	// Update Duration only if provided; preserve existing otherwise
+	if req.Lease.Duration != nil {
+		jlease.Spec.Duration = desired.Spec.Duration
+	}
+	// Update EndTime only if provided; preserve existing otherwise
+	if req.Lease.EndTime != nil {
+		jlease.Spec.EndTime = desired.Spec.EndTime
+	}
+
+	// Recalculate missing field or validate consistency
+	if err := jumpstarterdevv1alpha1.ReconcileLeaseTimeFields(&jlease.Spec.BeginTime, &jlease.Spec.EndTime, &jlease.Spec.Duration); err != nil {
+		return nil, err
+	}
 
 	if err := s.Patch(ctx, &jlease, original); err != nil {
 		return nil, err

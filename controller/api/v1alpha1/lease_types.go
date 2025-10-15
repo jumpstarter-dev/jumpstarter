@@ -25,18 +25,26 @@ import (
 type LeaseSpec struct {
 	// The client that is requesting the lease
 	ClientRef corev1.LocalObjectReference `json:"clientRef"`
-	// The desired duration of the lease
-	Duration metav1.Duration `json:"duration"`
+	// Duration of the lease. Must be positive when provided.
+	// Can be omitted (nil) when both BeginTime and EndTime are provided,
+	// in which case it's calculated as EndTime - BeginTime.
+	Duration *metav1.Duration `json:"duration,omitempty"`
 	// The selector for the exporter to be used
 	Selector metav1.LabelSelector `json:"selector"`
 	// The release flag requests the controller to end the lease now
 	Release bool `json:"release,omitempty"`
+	// Requested start time. If omitted, lease starts when exporter is acquired.
+	// Immutable after lease starts (cannot change the past).
+	BeginTime *metav1.Time `json:"beginTime,omitempty"`
+	// Requested end time. If specified with BeginTime, Duration is calculated.
+	// Can be updated to extend or shorten active leases.
+	EndTime *metav1.Time `json:"endTime,omitempty"`
 }
 
 // LeaseStatus defines the observed state of Lease
 type LeaseStatus struct {
 	// If the lease has been acquired an exporter name is assigned
-	// and then and then it can be used, it will be empty while still pending
+	// and then it can be used, it will be empty while still pending
 	BeginTime   *metav1.Time                 `json:"beginTime,omitempty"`
 	EndTime     *metav1.Time                 `json:"endTime,omitempty"`
 	ExporterRef *corev1.LocalObjectReference `json:"exporterRef,omitempty"`
