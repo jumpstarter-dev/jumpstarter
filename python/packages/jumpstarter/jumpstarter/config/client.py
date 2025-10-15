@@ -227,12 +227,14 @@ class ClientConfigV1Alpha1(BaseSettings):
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
+        only_active: bool = True,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.ListLeases(
             page_size=page_size,
             page_token=page_token,
             filter=filter,
+            only_active=only_active,
         )
 
     @_blocking_compat
