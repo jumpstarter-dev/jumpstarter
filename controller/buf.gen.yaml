@@ -1,9 +1,12 @@
 version: v2
 managed:
   enabled: true
+  disable:
+    - module: buf.build/googleapis/googleapis
+    - module: buf.build/grpc-ecosystem/grpc-gateway
   override:
     - file_option: go_package_prefix
-      value: github.com/jumpstarter-dev/jumpstarter-controller
+      value: github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol
 plugins:
   - remote: buf.build/protocolbuffers/go
     out: internal/protocol
@@ -16,4 +19,5 @@ plugins:
     opt: paths=source_relative
 inputs:
   - git_repo: https://github.com/jumpstarter-dev/jumpstarter-protocol.git
+    branch: main
     subdir: proto

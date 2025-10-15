@@ -198,8 +198,8 @@ const file_jumpstarter_v1_router_proto_rawDesc = "" +
 	"\x0fFRAME_TYPE_PING\x10\x06\x12\x15\n" +
 	"\x11FRAME_TYPE_GOAWAY\x10\a2\\\n" +
 	"\rRouterService\x12K\n" +
-	"\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x010\x01B\xca\x01\n" +
-	"\x12com.jumpstarter.v1B\vRouterProtoP\x01ZNgithub.com/jumpstarter-dev/jumpstarter-controller/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
+	"\x06Stream\x12\x1d.jumpstarter.v1.StreamRequest\x1a\x1e.jumpstarter.v1.StreamResponse(\x010\x01B\xdc\x01\n" +
+	"\x12com.jumpstarter.v1B\vRouterProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
 
 var (
 	file_jumpstarter_v1_router_proto_rawDescOnce sync.Once

@@ -14,17 +14,17 @@
 package clientv1
 
 import (
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	v1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -442,6 +442,7 @@ type ListLeasesRequest struct {
 	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	Filter        string                 `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
+	OnlyActive    *bool                  `protobuf:"varint,5,opt,name=only_active,json=onlyActive,proto3,oneof" json:"only_active,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -502,6 +503,13 @@ func (x *ListLeasesRequest) GetFilter() string {
 		return x.Filter
 	}
 	return ""
+}
+
+func (x *ListLeasesRequest) GetOnlyActive() bool {
+	if x != nil && x.OnlyActive != nil {
+		return *x.OnlyActive
+	}
+	return false
 }
 
 type ListLeasesResponse struct {
@@ -766,13 +774,16 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"D\n" +
 	"\x0fGetLeaseRequest\x121\n" +
 	"\x04name\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\n" +
-	"\x15jumpstarter.dev/LeaseR\x04name\"\xad\x01\n" +
+	"\x15jumpstarter.dev/LeaseR\x04name\"\xe8\x01\n" +
 	"\x11ListLeasesRequest\x125\n" +
 	"\x06parent\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\x12\x15jumpstarter.dev/LeaseR\x06parent\x12 \n" +
 	"\tpage_size\x18\x02 \x01(\x05B\x03\xe0A\x01R\bpageSize\x12\"\n" +
 	"\n" +
 	"page_token\x18\x03 \x01(\tB\x03\xe0A\x01R\tpageToken\x12\x1b\n" +
-	"\x06filter\x18\x04 \x01(\tB\x03\xe0A\x01R\x06filter\"r\n" +
+	"\x06filter\x18\x04 \x01(\tB\x03\xe0A\x01R\x06filter\x12)\n" +
+	"\vonly_active\x18\x05 \x01(\bB\x03\xe0A\x01H\x00R\n" +
+	"onlyActive\x88\x01\x01B\x0e\n" +
+	"\f_only_active\"r\n" +
 	"\x12ListLeasesResponse\x124\n" +
 	"\x06leases\x18\x01 \x03(\v2\x1c.jumpstarter.client.v1.LeaseR\x06leases\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa4\x01\n" +
@@ -795,8 +806,8 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"ListLeases\x12(.jumpstarter.client.v1.ListLeasesRequest\x1a).jumpstarter.client.v1.ListLeasesResponse\"1\xdaA\x06parent\x82\xd3\xe4\x93\x02\"\x12 /v1/{parent=namespaces/*}/leases\x12\x9f\x01\n" +
 	"\vCreateLease\x12).jumpstarter.client.v1.CreateLeaseRequest\x1a\x1c.jumpstarter.client.v1.Lease\"G\xdaA\x15parent,lease,lease_id\x82\xd3\xe4\x93\x02):\x05lease\" /v1/{parent=namespaces/*}/leases\x12\xa1\x01\n" +
 	"\vUpdateLease\x12).jumpstarter.client.v1.UpdateLeaseRequest\x1a\x1c.jumpstarter.client.v1.Lease\"I\xdaA\x11lease,update_mask\x82\xd3\xe4\x93\x02/:\x05lease2&/v1/{lease.name=namespaces/*/leases/*}\x12\x81\x01\n" +
-	"\vDeleteLease\x12).jumpstarter.client.v1.DeleteLeaseRequest\x1a\x16.google.protobuf.Empty\"/\xdaA\x04name\x82\xd3\xe4\x93\x02\"* /v1/{name=namespaces/*/leases/*}B\xf0\x01\n" +
-	"\x19com.jumpstarter.client.v1B\vClientProtoP\x01ZPgithub.com/jumpstarter-dev/jumpstarter-controller/jumpstarter/client/v1;clientv1\xa2\x02\x03JCX\xaa\x02\x15Jumpstarter.Client.V1\xca\x02\x15Jumpstarter\\Client\\V1\xe2\x02!Jumpstarter\\Client\\V1\\GPBMetadata\xea\x02\x17Jumpstarter::Client::V1b\x06proto3"
+	"\vDeleteLease\x12).jumpstarter.client.v1.DeleteLeaseRequest\x1a\x16.google.protobuf.Empty\"/\xdaA\x04name\x82\xd3\xe4\x93\x02\"* /v1/{name=namespaces/*/leases/*}B\x82\x02\n" +
+	"\x19com.jumpstarter.client.v1B\vClientProtoP\x01Zbgithub.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1;clientv1\xa2\x02\x03JCX\xaa\x02\x15Jumpstarter.Client.V1\xca\x02\x15Jumpstarter\\Client\\V1\xe2\x02!Jumpstarter\\Client\\V1\\GPBMetadata\xea\x02\x17Jumpstarter::Client::V1b\x06proto3"
 
 var (
 	file_jumpstarter_client_v1_client_proto_rawDescOnce sync.Once
@@ -873,6 +884,7 @@ func file_jumpstarter_client_v1_client_proto_init() {
 		return
 	}
 	file_jumpstarter_client_v1_client_proto_msgTypes[1].OneofWrappers = []any{}
+	file_jumpstarter_client_v1_client_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

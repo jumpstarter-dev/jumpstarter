@@ -163,8 +163,8 @@ const file_jumpstarter_v1_common_proto_rawDesc = "" +
 	"\x11LOG_SOURCE_DRIVER\x10\x01\x12 \n" +
 	"\x1cLOG_SOURCE_BEFORE_LEASE_HOOK\x10\x02\x12\x1f\n" +
 	"\x1bLOG_SOURCE_AFTER_LEASE_HOOK\x10\x03\x12\x15\n" +
-	"\x11LOG_SOURCE_SYSTEM\x10\x04B\xca\x01\n" +
-	"\x12com.jumpstarter.v1B\vCommonProtoP\x01ZNgithub.com/jumpstarter-dev/jumpstarter-controller/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
+	"\x11LOG_SOURCE_SYSTEM\x10\x04B\xdc\x01\n" +
+	"\x12com.jumpstarter.v1B\vCommonProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
 
 var (
 	file_jumpstarter_v1_common_proto_rawDescOnce sync.Once

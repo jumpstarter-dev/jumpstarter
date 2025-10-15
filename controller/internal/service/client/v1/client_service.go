@@ -135,13 +135,20 @@ func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesReque
 		return nil, err
 	}
 
+	listOptions := []kclient.ListOption{
+		kclient.InNamespace(namespace),
+		kclient.MatchingLabelsSelector{Selector: selector},
+		kclient.Limit(int64(req.PageSize)),
+		kclient.Continue(req.PageToken),
+	}
+
+	// Apply active-only filter by default (when only_active is nil or true)
+	if req.OnlyActive == nil || *req.OnlyActive {
+		listOptions = append(listOptions, controller.MatchingActiveLeases())
+	}
+
 	var jleases jumpstarterdevv1alpha1.LeaseList
-	if err := s.List(ctx, &jleases, &kclient.ListOptions{
-		Namespace:     namespace,
-		LabelSelector: selector,
-		Limit:         int64(req.PageSize),
-		Continue:      req.PageToken,
-	}, controller.MatchingActiveLeases()); err != nil {
+	if err := s.List(ctx, &jleases, listOptions...); err != nil {
 		return nil, err
 	}
 
