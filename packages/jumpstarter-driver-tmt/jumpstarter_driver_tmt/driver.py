@@ -8,7 +8,7 @@ from jumpstarter.driver import Driver, export
 class TMT(Driver):
     """ driver for Jumpstarter"""
 
-    reboot_cmd: str = "j power cycle"
+    reboot_cmd: str = ""
     default_username: str = ""
     default_password: str = ""
 
