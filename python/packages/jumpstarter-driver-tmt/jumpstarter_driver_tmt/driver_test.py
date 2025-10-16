@@ -134,7 +134,7 @@ def test_drivers_tmt_run_tmt_with_forward_ssh():
                     result = client.run_tmt_local(True, "tmt", "user", "pass", ["arg1"])
                     assert result == 0
                     mock_run_tmt.assert_called_once_with(
-                        "localhost", 2222, "tmt", "user", "pass", "j power cycle", ["arg1"]
+                        "localhost", 2222, "tmt", "user", "pass", "", ["arg1"]
                     )
 
 
@@ -148,7 +148,7 @@ def test_drivers_tmt_run_tmt_with_direct_address():
             result = client.run_tmt_local(False, "tmt", "user", "pass", ["arg1"])
             assert result == 0
             mock_run_tmt.assert_called_once_with(
-                "127.0.0.1", 22, "tmt", "user", "pass", "j power cycle", ["arg1"]
+                "127.0.0.1", 22, "tmt", "user", "pass", "", ["arg1"]
             )
 
 
@@ -168,7 +168,7 @@ def test_drivers_tmt_run_tmt_fallback_to_forwarding():
                     result = client.run_tmt_local(False, "tmt", "user", "pass", ["arg1"])
                     assert result == 0
                     mock_run_tmt.assert_called_once_with(
-                        "localhost", 2222, "tmt", "user", "pass", "j power cycle", ["arg1"]
+                        "localhost", 2222, "tmt", "user", "pass", "", ["arg1"]
                     )
 
 
@@ -236,7 +236,7 @@ def test_drivers_tmt_driver_defaults():
     with serve(instance) as client:
         # Test default reboot_cmd
         reboot_cmd = client.call("get_reboot_cmd")
-        assert reboot_cmd == "j power cycle"
+        assert reboot_cmd == ""
 
         # Test default username and password
         username, password = client.call("get_default_user_pass")
