@@ -43,6 +43,8 @@ kind_load_image() {
   local image=$1
   local cluster_name=${2:-jumpstarter}
 
+  echo -e "${GREEN}Loading $1 in kind ...${NC}"
+
   # First, try to load the image directly
   if ${KIND} load docker-image "${image}" --name "${cluster_name}" 2>/dev/null; then
     echo "Image ${image} loaded successfully."

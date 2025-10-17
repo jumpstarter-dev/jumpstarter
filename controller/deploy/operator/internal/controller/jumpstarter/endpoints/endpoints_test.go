@@ -62,13 +62,13 @@ var _ = Describe("Endpoints Reconciler", func() {
 				}
 
 				svcPort := corev1.ServicePort{
-					Name:       "grpc",
+					Name:       endpointName,
 					Port:       9090,
 					TargetPort: intstr.FromInt(9090),
 					Protocol:   corev1.ProtocolTCP,
 				}
 
-				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, endpointName, svcPort)
+				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, svcPort)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify the service was created
@@ -95,13 +95,13 @@ var _ = Describe("Endpoints Reconciler", func() {
 				}
 
 				svcPort := corev1.ServicePort{
-					Name:       "grpc",
+					Name:       endpointName,
 					Port:       9090,
 					TargetPort: intstr.FromInt(9090),
 					Protocol:   corev1.ProtocolTCP,
 				}
 
-				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, endpointName, svcPort)
+				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, svcPort)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify the service was created
@@ -130,13 +130,13 @@ var _ = Describe("Endpoints Reconciler", func() {
 				}
 
 				svcPort := corev1.ServicePort{
-					Name:       "grpc",
+					Name:       endpointName,
 					Port:       9090,
 					TargetPort: intstr.FromInt(9090),
 					Protocol:   corev1.ProtocolTCP,
 				}
 
-				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, endpointName, svcPort)
+				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, svcPort)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify the service was created
@@ -165,13 +165,13 @@ var _ = Describe("Endpoints Reconciler", func() {
 				}
 
 				svcPort := corev1.ServicePort{
-					Name:       "grpc",
+					Name:       endpointName,
 					Port:       9090,
 					TargetPort: intstr.FromInt(9090),
 					Protocol:   corev1.ProtocolTCP,
 				}
 
-				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, endpointName, svcPort)
+				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, svcPort)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("both LoadBalancer and NodePort are enabled"))
 			})
@@ -190,20 +190,20 @@ var _ = Describe("Endpoints Reconciler", func() {
 				}
 
 				svcPort := corev1.ServicePort{
-					Name:       "grpc",
+					Name:       endpointName,
 					Port:       9090,
 					TargetPort: intstr.FromInt(9090),
 					Protocol:   corev1.ProtocolTCP,
 				}
 
-				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, endpointName, svcPort)
+				err := reconciler.ReconcileEndpoint(ctx, namespace, endpoint, svcPort)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Update the endpoint configuration
 				endpoint.LoadBalancer.Annotations["updated"] = "annotation"
 				endpoint.LoadBalancer.Labels["updated"] = "label"
 
-				err = reconciler.ReconcileEndpoint(ctx, namespace, endpoint, endpointName, svcPort)
+				err = reconciler.ReconcileEndpoint(ctx, namespace, endpoint, svcPort)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify the service was updated

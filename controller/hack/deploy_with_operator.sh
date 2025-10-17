@@ -17,8 +17,7 @@ else
     echo -e "${GREEN}Deploying with nodeport ...${NC}"
 fi
 
-echo -e "${GREEN}Loading the ${IMG} in kind ...${NC}"
-# load the docker image into the kind cluster
+# load the container images into the kind cluster
 kind_load_image "${IMG}"
 kind_load_image "${OPERATOR_IMG}"
 

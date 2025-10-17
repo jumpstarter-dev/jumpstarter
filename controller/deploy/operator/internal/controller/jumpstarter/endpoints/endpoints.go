@@ -50,7 +50,10 @@ func NewReconciler(client client.Client) *Reconciler {
 }
 
 // ReconcileEndpoint creates or updates a service for the given endpoint
-func (r *Reconciler) ReconcileEndpoint(ctx context.Context, namespace string, endpoint *operatorv1alpha1.Endpoint, endpointName string, svcPort corev1.ServicePort) error {
+func (r *Reconciler) ReconcileEndpoint(ctx context.Context, namespace string, endpoint *operatorv1alpha1.Endpoint, svcPort corev1.ServicePort) error {
+	// Extract endpoint name from service port name
+	endpointName := svcPort.Name
+
 	details, err := serviceDetailsForEndpoint(*endpoint)
 	if err != nil {
 		return fmt.Errorf("reconcileEndpoint: failed calculate service type for endpoint %q: %w", endpointName, err)

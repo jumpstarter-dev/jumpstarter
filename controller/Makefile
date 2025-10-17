@@ -53,6 +53,8 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 						output:crd:artifacts:config=deploy/helm/jumpstarter/crds/ \
 						output:rbac:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/
 
+	cp deploy/helm/jumpstarter/crds/* deploy/operator/config/crd/bases/
+
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./internal/..."
@@ -155,7 +157,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: docker-build cluster grpcurl
 	./hack/deploy_with_helm.sh
 
-deploy-with-operator: build-operator docker-build cluster grpcurl
+deploy-with-operator: docker-build build-operator docker-build cluster grpcurl
 	./hack/deploy_with_operator.sh
 
 .PHONY: deploy-exporters

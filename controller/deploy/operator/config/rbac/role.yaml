@@ -67,6 +67,39 @@ rules:
   - update
   - watch
 - apiGroups:
+  - jumpstarter.dev
+  resources:
+  - clients
+  - exporteraccesspolicies
+  - exporters
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - clients/finalizers
+  - exporters/finalizers
+  - leases/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - clients/status
+  - exporters/status
+  - leases/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors

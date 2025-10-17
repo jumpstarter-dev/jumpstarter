@@ -3,6 +3,11 @@
 # It should be run by config/default
 resources:
 - bases/operator.jumpstarter.dev_jumpstarters.yaml
+- bases/jumpstarter.dev_clients.yaml
+- bases/jumpstarter.dev_exporters.yaml
+- bases/jumpstarter.dev_leases.yaml
+- bases/jumpstarter.dev_exporteraccesspolicies.yaml
+
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
