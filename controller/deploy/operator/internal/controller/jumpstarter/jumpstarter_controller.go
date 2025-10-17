@@ -252,14 +252,16 @@ func (r *JumpstarterReconciler) reconcileSecrets(ctx context.Context, jumpstarte
 	log := logf.FromContext(ctx)
 
 	// Create controller secret if it doesn't exist
-	controllerSecretName := fmt.Sprintf("%s-controller-secret", jumpstarter.Name)
+	// Use fixed name to match Helm chart for migration compatibility
+	controllerSecretName := "jumpstarter-controller-secret"
 	if err := r.ensureSecretExists(ctx, jumpstarter, controllerSecretName); err != nil {
 		log.Error(err, "Failed to ensure controller secret exists", "secret", controllerSecretName)
 		return err
 	}
 
 	// Create router secret if it doesn't exist
-	routerSecretName := fmt.Sprintf("%s-router-secret", jumpstarter.Name)
+	// Use fixed name to match Helm chart for migration compatibility
+	routerSecretName := "jumpstarter-router-secret"
 	if err := r.ensureSecretExists(ctx, jumpstarter, routerSecretName); err != nil {
 		log.Error(err, "Failed to ensure router secret exists", "secret", routerSecretName)
 		return err
@@ -391,8 +393,9 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "manager",
-							Image: jumpstarter.Spec.Controller.Image,
+							Name:            "manager",
+							Image:           jumpstarter.Spec.Controller.Image,
+							ImagePullPolicy: jumpstarter.Spec.Controller.ImagePullPolicy,
 							Args: []string{
 								"--leader-elect",
 								"--health-probe-bind-address=:8081",
@@ -408,7 +411,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 									ValueFrom: &corev1.EnvVarSource{
 										SecretKeyRef: &corev1.SecretKeySelector{
 											LocalObjectReference: corev1.LocalObjectReference{
-												Name: fmt.Sprintf("%s-controller-secret", jumpstarter.Name),
+												Name: "jumpstarter-controller-secret",
 											},
 											Key: "key",
 										},
@@ -419,7 +422,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 									ValueFrom: &corev1.EnvVarSource{
 										SecretKeyRef: &corev1.SecretKeySelector{
 											LocalObjectReference: corev1.LocalObjectReference{
-												Name: fmt.Sprintf("%s-router-secret", jumpstarter.Name),
+												Name: "jumpstarter-router-secret",
 											},
 											Key: "key",
 										},
@@ -523,8 +526,9 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "router",
-							Image: jumpstarter.Spec.Routers.Image,
+							Name:            "router",
+							Image:           jumpstarter.Spec.Routers.Image,
+							ImagePullPolicy: jumpstarter.Spec.Routers.ImagePullPolicy,
 							Env: []corev1.EnvVar{
 								{
 									Name: "NAMESPACE",
