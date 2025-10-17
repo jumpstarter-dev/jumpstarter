@@ -56,6 +56,11 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+
+	// Version information - set via ldflags at build time
+	version   = "dev"
+	gitCommit = "unknown"
+	buildDate = "unknown"
 )
 
 const (
@@ -119,6 +124,13 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Print version information
+	setupLog.Info("Jumpstarter Controller starting",
+		"version", version,
+		"gitCommit", gitCommit,
+		"buildDate", buildDate,
+	)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will

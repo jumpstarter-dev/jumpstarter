@@ -39,6 +39,16 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
 
+      - name: Set build args
+        id: build-args
+        run: |
+          GIT_COMMIT=$(git rev-parse HEAD)
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          echo "git_commit=${GIT_COMMIT}" >> $GITHUB_OUTPUT
+          echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+          echo "GIT_COMMIT=${GIT_COMMIT}"
+          echo "BUILD_DATE=${BUILD_DATE}"
+
       - name: Set image tags
         id: set-tags
         run: |
@@ -79,6 +89,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            GIT_VERSION=${{ env.VERSION }}
+            GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}
+            BUILD_DATE=${{ steps.build-args.outputs.build_date }}
 
   publish-helm-charts-containers:
     needs: build-and-push-image
