@@ -95,17 +95,8 @@ spec:
   controller:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
-    replicas: 2
-    resources:
-      requests:
-        cpu: 100m
-        memory: 100Mi
-    exporterOptions:
-      offlineTimeout: 180s
+    replicas: 1
     grpc:
-      keepalive:
-        minTime: 3s
-        permitWithoutStream: true
       endpoints:
 ${CONTROLLER_ENDPOINT_CONFIG}
     authentication:
@@ -115,22 +106,12 @@ ${CONTROLLER_ENDPOINT_CONFIG}
   routers:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
-    replicas: 3
+    replicas: 1
     resources:
       requests:
         cpu: 100m
         memory: 100Mi
-    topologySpreadConstraints:
-      - topologyKey: "kubernetes.io/hostname"
-        whenUnsatisfiable: ScheduleAnyway
-        maxSkew: 1
-      - topologyKey: "kubernetes.io/zone"
-        whenUnsatisfiable: ScheduleAnyway
-        maxSkew: 1
     grpc:
-      keepalive:
-        minTime: 3s
-        permitWithoutStream: true
       endpoints:
 ${ROUTER_ENDPOINT_CONFIG}
 EOF
