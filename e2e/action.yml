@@ -87,11 +87,13 @@ runs:
         sudo mkdir -p /etc/jumpstarter/exporters
         sudo chown $USER /etc/jumpstarter/exporters
 
+        export JS_NAMESPACE="jumpstarter-lab"
+
         . .venv/bin/activate
 
         export JUMPSTARTER_GRPC_INSECURE=1
 
-        kubectl create -n default sa test-client-sa
-        kubectl create -n default sa test-exporter-sa
+        kubectl create -n "${JS_NAMESPACE}" sa test-client-sa
+        kubectl create -n "${JS_NAMESPACE}" sa test-exporter-sa
 
         bats --show-output-of-passing-tests --verbose-run "$GITHUB_ACTION_PATH"/tests.bats
