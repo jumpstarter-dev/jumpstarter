@@ -24,13 +24,6 @@ class SSHWrapper(Driver):
         if self.ssh_identity and self.ssh_identity_file:
             raise ConfigurationError("Cannot specify both ssh_identity and ssh_identity_file")
 
-        # If ssh_identity_file is provided, read it into ssh_identity
-        if self.ssh_identity_file:
-            try:
-                self.ssh_identity = Path(self.ssh_identity_file).read_text()
-            except Exception as e:
-                raise ConfigurationError(f"Failed to read ssh_identity_file '{self.ssh_identity_file}': {e}") from None
-
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_ssh.client.SSHWrapperClient"
@@ -48,4 +41,10 @@ class SSHWrapper(Driver):
     @export
     def get_ssh_identity(self):
         """Get the SSH identity key content"""
+        # If ssh_identity_file is provided, read it lazily and cache in ssh_identity
+        if self.ssh_identity is None and self.ssh_identity_file:
+            try:
+                self.ssh_identity = Path(self.ssh_identity_file).read_text()
+            except Exception as e:
+                raise ConfigurationError(f"Failed to read ssh_identity_file '{self.ssh_identity_file}': {e}") from None
         return self.ssh_identity
