@@ -28,7 +28,7 @@ class RideSXDriver(Driver):
         self.children["storage"] = Opendal(
             scheme="fs",
             kwargs={"root": self.storage_dir},
-            remove_created_on_close=True  # Clean up temporary firmware files on close
+            remove_created_on_close=True,  # Clean up temporary firmware files on close
         )
 
     @classmethod
