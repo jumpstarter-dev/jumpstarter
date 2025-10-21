@@ -745,7 +745,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return err
 	}
 
-	logger.Info("Starting Controller grpc service")
+	logger.Info("Starting Controller grpc service on port 8082")
 
 	go func() {
 		<-ctx.Done()

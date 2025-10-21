@@ -108,6 +108,15 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, desiredService *
 
 	// Service exists, check if it needs updating
 	if r.serviceNeedsUpdate(existingService, desiredService) {
+		// Preserve existing NodePorts to prevent "port already allocated" errors
+		if existingService.Spec.Type == corev1.ServiceTypeNodePort || existingService.Spec.Type == corev1.ServiceTypeLoadBalancer {
+			for i := range existingService.Spec.Ports {
+				if existingService.Spec.Ports[i].NodePort != 0 && i < len(desiredService.Spec.Ports) {
+					desiredService.Spec.Ports[i].NodePort = existingService.Spec.Ports[i].NodePort
+				}
+			}
+		}
+
 		existingService.Spec = desiredService.Spec
 		existingService.Annotations = desiredService.Annotations
 		existingService.Labels = desiredService.Labels
@@ -128,6 +137,29 @@ func (r *Reconciler) serviceNeedsUpdate(existing, desired *corev1.Service) bool 
 		len(existing.Spec.Ports) != len(desired.Spec.Ports) ||
 		!utils.MapsEqual(existing.Spec.Selector, desired.Spec.Selector) {
 		return true
+	}
+
+	// Check if port details are different
+	for i := range existing.Spec.Ports {
+		existingPort := existing.Spec.Ports[i]
+		desiredPort := desired.Spec.Ports[i]
+
+		// Compare port fields (excluding NodePort which is handled separately)
+		if existingPort.Name != desiredPort.Name ||
+			existingPort.Protocol != desiredPort.Protocol ||
+			existingPort.Port != desiredPort.Port ||
+			existingPort.TargetPort != desiredPort.TargetPort {
+			return true
+		}
+
+		// Compare AppProtocol (handle nil cases)
+		if (existingPort.AppProtocol == nil) != (desiredPort.AppProtocol == nil) {
+			return true
+		}
+		if existingPort.AppProtocol != nil && desiredPort.AppProtocol != nil &&
+			*existingPort.AppProtocol != *desiredPort.AppProtocol {
+			return true
+		}
 	}
 
 	// Check if annotations or labels are different

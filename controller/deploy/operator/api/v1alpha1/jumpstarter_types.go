@@ -381,7 +381,8 @@ type Endpoint struct {
 	// Hostname for this endpoint.
 	// Required for Route and Ingress endpoints. Optional for NodePort and LoadBalancer endpoints.
 	// When optional, the hostname is used for certificate generation and DNS resolution.
-	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+	// Supports templating with $(replica) for replica-specific hostnames.
+	// +kubebuilder:validation:Pattern=^[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?$
 	Hostname string `json:"hostname,omitempty"`
 
 	// Route configuration for OpenShift clusters.

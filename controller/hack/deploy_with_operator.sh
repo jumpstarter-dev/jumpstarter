@@ -70,14 +70,13 @@ else
         - hostname: grpc.${BASEDOMAIN}
           nodeport:
             enabled: true
-            port: 8082
+            port: 30010
 END
 )
   ROUTER_ENDPOINT_CONFIG=$(cat <<-END
-        - hostname: router.${BASEDOMAIN}
-          nodeport:
+        - nodeport:
             enabled: true
-            port: 8083
+            port: 30011
 END
 )
 fi
@@ -106,7 +105,7 @@ ${CONTROLLER_ENDPOINT_CONFIG}
   routers:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
-    replicas: 1
+    replicas: 3
     resources:
       requests:
         cpu: 100m

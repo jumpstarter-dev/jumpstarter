@@ -106,14 +106,14 @@ wait_for_jumpstarter_resources() {
     fi
   done
 
-  # Wait for router statefulset to exist
-  echo -e "${GREEN} * Waiting for router statefulset to be created ...${NC}"
+  # Wait for router deployment to exist
+  echo -e "${GREEN} * Waiting for router deployment to be created ...${NC}"
   timeout=60
-  while ! kubectl get statefulset jumpstarter-router -n "${namespace}" > /dev/null 2>&1; do
+  while ! kubectl get deployment jumpstarter-router-0 -n "${namespace}" > /dev/null 2>&1; do
     sleep 2
     timeout=$((timeout - 2))
     if [ ${timeout} -le 0 ]; then
-      echo -e "${GREEN} * Router statefulset not created after 60s, exiting ...${NC}"
+      echo -e "${GREEN} * Router deployment not created after 60s, exiting ...${NC}"
       exit 1
     fi
   done
@@ -128,7 +128,7 @@ wait_for_jumpstarter_resources() {
   echo -e "${GREEN} * Waiting for router pods to be ready ...${NC}"
   kubectl wait --namespace "${namespace}" \
     --for=condition=ready pod \
-    --selector=app=jumpstarter-router \
+    --selector=app=jumpstarter-router-0 \
     --timeout=180s
 }
 

@@ -174,8 +174,11 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: docker-build cluster grpcurl
 	./hack/deploy_with_helm.sh
 
-deploy-with-operator: docker-build build-operator docker-build cluster grpcurl
+deploy-with-operator: docker-build build-operator cluster grpcurl
 	./hack/deploy_with_operator.sh
+
+deploy-with-operator-parallel:
+	make deploy-with-operator -j5 --output-sync=target
 
 .PHONY: deploy-exporters
 deploy-exporters:

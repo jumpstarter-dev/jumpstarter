@@ -850,7 +850,8 @@ spec:
                                 Hostname for this endpoint.
                                 Required for Route and Ingress endpoints. Optional for NodePort and LoadBalancer endpoints.
                                 When optional, the hostname is used for certificate generation and DNS resolution.
-                              pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+                                Supports templating with $(replica) for replica-specific hostnames.
+                              pattern: ^[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?$
                               type: string
                             ingress:
                               description: |-
@@ -1159,7 +1160,8 @@ spec:
                                 Hostname for this endpoint.
                                 Required for Route and Ingress endpoints. Optional for NodePort and LoadBalancer endpoints.
                                 When optional, the hostname is used for certificate generation and DNS resolution.
-                              pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+                                Supports templating with $(replica) for replica-specific hostnames.
+                              pattern: ^[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?$
                               type: string
                             ingress:
                               description: |-
@@ -1335,7 +1337,8 @@ spec:
                                 Hostname for this endpoint.
                                 Required for Route and Ingress endpoints. Optional for NodePort and LoadBalancer endpoints.
                                 When optional, the hostname is used for certificate generation and DNS resolution.
-                              pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+                                Supports templating with $(replica) for replica-specific hostnames.
+                              pattern: ^[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?$
                               type: string
                             ingress:
                               description: |-
