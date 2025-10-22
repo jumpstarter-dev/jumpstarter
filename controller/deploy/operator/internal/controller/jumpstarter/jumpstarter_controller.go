@@ -414,45 +414,77 @@ func (r *JumpstarterReconciler) reconcileEndpointService(ctx context.Context, ju
 }
 
 // reconcileControllerEndpointService reconciles a controller endpoint service with proper pod selector
+// This function creates a separate service for each enabled service type (ClusterIP, NodePort, LoadBalancer)
 func (r *JumpstarterReconciler) reconcileControllerEndpointService(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, endpoint *operatorv1alpha1.Endpoint, servicePort corev1.ServicePort) error {
 	// Controller pods have fixed labels: app=jumpstarter-controller
 	// We need to create a service with selector matching those labels
-	labels := map[string]string{
+	baseLabels := map[string]string{
 		"app":        "jumpstarter-controller",
 		"controller": jumpstarter.Name,
 	}
 
-	// Determine service type and configuration from endpoint
-	serviceType := corev1.ServiceTypeClusterIP
-	annotations := make(map[string]string)
-	serviceLabels := map[string]string{}
+	// Create a service for each enabled service type
+	// This allows multiple service types to coexist for the same endpoint
+	// Note: ClusterIP uses no suffix (most common for in-cluster communication)
+	//       LoadBalancer uses "-lb" suffix, NodePort uses "-np" suffix
 
+	// LoadBalancer service
 	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
-		serviceType = corev1.ServiceTypeLoadBalancer
-		for k, v := range endpoint.LoadBalancer.Annotations {
-			annotations[k] = v
-		}
-		for k, v := range endpoint.LoadBalancer.Labels {
-			serviceLabels[k] = v
-		}
-	} else if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		serviceType = corev1.ServiceTypeNodePort
-		for k, v := range endpoint.NodePort.Annotations {
-			annotations[k] = v
-		}
-		for k, v := range endpoint.NodePort.Labels {
-			serviceLabels[k] = v
+		if err := r.createControllerService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeLoadBalancer, "-lb", baseLabels, endpoint.LoadBalancer.Annotations, endpoint.LoadBalancer.Labels); err != nil {
+			return err
 		}
 	}
 
-	// Merge service-specific labels with standard labels
-	for k, v := range labels {
+	// NodePort service
+	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
+		if err := r.createControllerService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeNodePort, "-np", baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
+			return err
+		}
+	}
+
+	// ClusterIP service (no suffix for cleaner in-cluster service names)
+	if endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled {
+		if err := r.createControllerService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeClusterIP, "", baseLabels, endpoint.ClusterIP.Annotations, endpoint.ClusterIP.Labels); err != nil {
+			return err
+		}
+	}
+
+	// If no service type is explicitly enabled, create a default ClusterIP service
+	if (endpoint.LoadBalancer == nil || !endpoint.LoadBalancer.Enabled) &&
+		(endpoint.NodePort == nil || !endpoint.NodePort.Enabled) &&
+		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) {
+
+		// TODO: Default to Route or Ingress depending of the type of cluster
+		if err := r.createControllerService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeClusterIP, "", baseLabels, nil, nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// createControllerService creates or updates a single controller service with the specified type and suffix
+func (r *JumpstarterReconciler) createControllerService(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, endpoint *operatorv1alpha1.Endpoint, servicePort corev1.ServicePort, serviceType corev1.ServiceType, nameSuffix string, baseLabels map[string]string, annotations map[string]string, extraLabels map[string]string) error {
+	// Build service name with suffix to avoid conflicts
+	serviceName := servicePort.Name + nameSuffix
+
+	// Merge labels
+	serviceLabels := make(map[string]string)
+	for k, v := range baseLabels {
 		serviceLabels[k] = v
+	}
+	for k, v := range extraLabels {
+		serviceLabels[k] = v
+	}
+
+	// Ensure annotations map is initialized
+	if annotations == nil {
+		annotations = make(map[string]string)
 	}
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        servicePort.Name,
+			Name:        serviceName,
 			Namespace:   jumpstarter.Namespace,
 			Labels:      serviceLabels,
 			Annotations: annotations,
@@ -477,6 +509,8 @@ func (r *JumpstarterReconciler) reconcileControllerEndpointService(ctx context.C
 		}
 		service.Spec.Ports = []corev1.ServicePort{servicePort}
 		service.Spec.Type = serviceType
+		service.Labels = serviceLabels
+		service.Annotations = annotations
 		return nil
 	})
 	return err
@@ -830,50 +864,113 @@ func (r *JumpstarterReconciler) buildEndpointForReplica(jumpstarter *operatorv1a
 }
 
 // reconcileRouterReplicaEndpoint reconciles service, ingress, and route for a specific router replica endpoint
+// This function creates a separate service for each enabled service type (ClusterIP, NodePort, LoadBalancer)
 func (r *JumpstarterReconciler) reconcileRouterReplicaEndpoint(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, replicaIndex int32, endpointIdx int, endpoint *operatorv1alpha1.Endpoint, servicePort corev1.ServicePort) error {
 	// Create service with proper selector pointing to the deployment pods
 	// All services for this replica select the same pods using the base app label
 	baseAppLabel := fmt.Sprintf("%s-router-%d", jumpstarter.Name, replicaIndex)
 
-	labels := map[string]string{
+	baseLabels := map[string]string{
 		"app":          "jumpstarter-router",
 		"router":       jumpstarter.Name,
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 		"endpoint-idx": fmt.Sprintf("%d", endpointIdx),
 	}
 
-	// Determine service type and configuration from endpoint
-	serviceType := corev1.ServiceTypeClusterIP
-	annotations := make(map[string]string)
+	// Create a service for each enabled service type
+	// This allows multiple service types to coexist for the same endpoint
+	// Note: ClusterIP uses no suffix (most common for in-cluster communication)
+	//       LoadBalancer uses "-lb" suffix, NodePort uses "-np" suffix
 
+	// Ingress service
+	if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
+		if err := r.createRouterService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeClusterIP, "-ing", baseAppLabel, baseLabels, endpoint.Ingress.Annotations, endpoint.Ingress.Labels); err != nil {
+			return err
+		}
+	}
+
+	// Route service
+	if endpoint.Route != nil && endpoint.Route.Enabled {
+		if err := r.createRouterService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeClusterIP, "-route", baseAppLabel, baseLabels, endpoint.Route.Annotations, endpoint.Route.Labels); err != nil {
+			return err
+		}
+	}
+
+	// LoadBalancer service
 	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
-		serviceType = corev1.ServiceTypeLoadBalancer
-		for k, v := range endpoint.LoadBalancer.Annotations {
-			annotations[k] = v
+		if err := r.createRouterService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeLoadBalancer, "-lb", baseAppLabel, baseLabels, endpoint.LoadBalancer.Annotations, endpoint.LoadBalancer.Labels); err != nil {
+			return err
 		}
-		for k, v := range endpoint.LoadBalancer.Labels {
-			labels[k] = v
+	}
+
+	// NodePort service
+	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
+		if err := r.createRouterService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeNodePort, "-np", baseAppLabel, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
+			return err
 		}
+	}
+
+	// ClusterIP service (no suffix for cleaner in-cluster service names)
+	if endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled {
+		if err := r.createRouterService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeClusterIP, "", baseAppLabel, baseLabels, endpoint.ClusterIP.Annotations, endpoint.ClusterIP.Labels); err != nil {
+			return err
+		}
+	}
+
+	// If no service type is explicitly enabled, create a default ClusterIP service
+	if (endpoint.LoadBalancer == nil || !endpoint.LoadBalancer.Enabled) &&
+		(endpoint.NodePort == nil || !endpoint.NodePort.Enabled) &&
+		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) {
+		if err := r.createRouterService(ctx, jumpstarter, endpoint, servicePort, corev1.ServiceTypeClusterIP, "", baseAppLabel, baseLabels, nil, nil); err != nil {
+			return err
+		}
+	}
+
+	// Now create ingress/route if configured
+	// Use the first service (or default) for ingress/route endpoints
+	// Priority: LoadBalancer > NodePort > ClusterIP (no suffix)
+	serviceName := servicePort.Name
+	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
+		serviceName = servicePort.Name + "-lb"
 	} else if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		serviceType = corev1.ServiceTypeNodePort
-		for k, v := range endpoint.NodePort.Annotations {
-			annotations[k] = v
-		}
-		for k, v := range endpoint.NodePort.Labels {
-			labels[k] = v
-		}
+		serviceName = servicePort.Name + "-np"
+	}
+	// ClusterIP uses base name (no suffix), so no else clause needed
+
+	servicePortForEndpoint := servicePort
+	servicePortForEndpoint.Name = serviceName
+	return r.EndpointReconciler.ReconcileEndpoint(ctx, jumpstarter.Namespace, endpoint, servicePortForEndpoint)
+}
+
+// createRouterService creates or updates a single router service with the specified type and suffix
+func (r *JumpstarterReconciler) createRouterService(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, endpoint *operatorv1alpha1.Endpoint, servicePort corev1.ServicePort, serviceType corev1.ServiceType, nameSuffix string, podSelector string, baseLabels map[string]string, annotations map[string]string, extraLabels map[string]string) error {
+	// Build service name with suffix to avoid conflicts
+	serviceName := servicePort.Name + nameSuffix
+
+	// Merge labels
+	serviceLabels := make(map[string]string)
+	for k, v := range baseLabels {
+		serviceLabels[k] = v
+	}
+	for k, v := range extraLabels {
+		serviceLabels[k] = v
+	}
+
+	// Ensure annotations map is initialized
+	if annotations == nil {
+		annotations = make(map[string]string)
 	}
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        servicePort.Name,
+			Name:        serviceName,
 			Namespace:   jumpstarter.Namespace,
-			Labels:      labels,
+			Labels:      serviceLabels,
 			Annotations: annotations,
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app": baseAppLabel, // Select pods from this replica's deployment
+				"app": podSelector, // Select pods from this replica's deployment
 			},
 			Ports: []corev1.ServicePort{servicePort},
 			Type:  serviceType,
@@ -887,27 +984,21 @@ func (r *JumpstarterReconciler) reconcileRouterReplicaEndpoint(ctx context.Conte
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
 		// Preserve existing NodePort if the service already exists
 		// This prevents "port already allocated" errors during updates
-		if len(service.Spec.Ports) > 0 && service.Spec.Ports[0].NodePort != 0 {
+		if serviceType == corev1.ServiceTypeNodePort && len(service.Spec.Ports) > 0 && service.Spec.Ports[0].NodePort != 0 {
 			// Service already exists with a NodePort, preserve it
 			servicePort.NodePort = service.Spec.Ports[0].NodePort
 		}
 
 		service.Spec.Selector = map[string]string{
-			"app": baseAppLabel,
+			"app": podSelector,
 		}
 		service.Spec.Ports = []corev1.ServicePort{servicePort}
 		service.Spec.Type = serviceType
+		service.Labels = serviceLabels
+		service.Annotations = annotations
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-
-	// Now create ingress/route if configured
-	// TODO: Create ingress/route based on endpoint configuration
-	// For now, EndpointReconciler will try to create a service (which already exists)
-	// but that's okay as it will just update it
-	return r.EndpointReconciler.ReconcileEndpoint(ctx, jumpstarter.Namespace, endpoint, servicePort)
+	return err
 }
 
 // cleanupExcessRouterDeployments deletes router deployments that exceed the current replica count
@@ -951,29 +1042,95 @@ func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Conte
 }
 
 // cleanupExcessRouterServices deletes router services that exceed the current replica count
+// or endpoint count. This ensures that when replicas or endpoints are scaled down, the
+// corresponding services are removed.
 func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
-	// Delete services with replica index >= current replica count
-	// Services are named "{jumpstarter-name}-router-{N}" by our service port naming
+	// Services can have suffixes for different service types
+	// ClusterIP has no suffix, LoadBalancer has "-lb", NodePort has "-np"
+	suffixes := []string{"", "-lb", "-np"}
+
+	// 1. Delete services for excess replicas (replica index >= current replica count)
 	for idx := jumpstarter.Spec.Routers.Replicas; idx < 100; idx++ { // reasonable upper bound
-		serviceName := fmt.Sprintf("%s-router-%d", jumpstarter.Name, idx)
-		service := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      serviceName,
-				Namespace: jumpstarter.Namespace,
-			},
+		foundAny := false
+
+		// Try to delete services for all endpoints and service types for this replica
+		for endpointIdx := 0; endpointIdx < 10; endpointIdx++ { // reasonable upper bound for endpoints
+			for _, suffix := range suffixes {
+				var serviceName string
+				if endpointIdx == 0 {
+					serviceName = fmt.Sprintf("%s-router-%d%s", jumpstarter.Name, idx, suffix)
+				} else {
+					serviceName = fmt.Sprintf("%s-router-%d-%d%s", jumpstarter.Name, idx, endpointIdx, suffix)
+				}
+
+				service := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      serviceName,
+						Namespace: jumpstarter.Namespace,
+					},
+				}
+
+				err := r.Delete(ctx, service)
+				if err != nil {
+					if !errors.IsNotFound(err) {
+						return fmt.Errorf("failed to delete excess service %s: %w", serviceName, err)
+					}
+				} else {
+					foundAny = true
+					log.Info("Deleted excess router service", "service", serviceName, "replicaIndex", idx, "endpointIdx", endpointIdx)
+				}
+			}
 		}
 
-		err := r.Delete(ctx, service)
-		if err != nil {
-			if !errors.IsNotFound(err) {
-				return fmt.Errorf("failed to delete excess service %s: %w", serviceName, err)
-			}
-			// If not found, we've gone past all excess services, can stop
+		// If we didn't find any services for this replica index, we've gone past all excess services
+		if !foundAny {
 			break
 		}
-		log.Info("Deleted excess router service", "service", serviceName, "replicaIndex", idx)
+	}
+
+	// 2. Delete services for excess endpoints within valid replicas
+	numEndpoints := len(jumpstarter.Spec.Routers.GRPC.Endpoints)
+	if numEndpoints == 0 {
+		numEndpoints = 1 // default endpoint
+	}
+
+	for replicaIdx := int32(0); replicaIdx < jumpstarter.Spec.Routers.Replicas; replicaIdx++ {
+		for endpointIdx := numEndpoints; endpointIdx < 10; endpointIdx++ { // reasonable upper bound
+			foundAny := false
+
+			for _, suffix := range suffixes {
+				var serviceName string
+				if endpointIdx == 0 {
+					serviceName = fmt.Sprintf("%s-router-%d%s", jumpstarter.Name, replicaIdx, suffix)
+				} else {
+					serviceName = fmt.Sprintf("%s-router-%d-%d%s", jumpstarter.Name, replicaIdx, endpointIdx, suffix)
+				}
+
+				service := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      serviceName,
+						Namespace: jumpstarter.Namespace,
+					},
+				}
+
+				err := r.Delete(ctx, service)
+				if err != nil {
+					if !errors.IsNotFound(err) {
+						return fmt.Errorf("failed to delete excess endpoint service %s: %w", serviceName, err)
+					}
+				} else {
+					foundAny = true
+					log.Info("Deleted excess endpoint service", "service", serviceName, "replicaIndex", replicaIdx, "endpointIdx", endpointIdx)
+				}
+			}
+
+			// If we didn't find any services for this endpoint index, we've gone past all excess endpoints
+			if !foundAny {
+				break
+			}
+		}
 	}
 
 	return nil
