@@ -32,14 +32,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/controller/jumpstarter/endpoints"
 	loglevels "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/log"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
 )
 
 // JumpstarterReconciler reconciles a Jumpstarter object
@@ -296,7 +299,10 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 
 // reconcileConfigMaps reconciles all configmaps
 func (r *JumpstarterReconciler) reconcileConfigMaps(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
-	configMap := r.createConfigMap(jumpstarter)
+	configMap, err := r.createConfigMap(jumpstarter)
+	if err != nil {
+		return fmt.Errorf("failed to create configmap: %w", err)
+	}
 
 	// Set the owner reference
 	if err := controllerutil.SetControllerReference(jumpstarter, configMap, r.Scheme); err != nil {
@@ -304,7 +310,7 @@ func (r *JumpstarterReconciler) reconcileConfigMaps(ctx context.Context, jumpsta
 	}
 
 	// Create or update the configmap
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, configMap, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, configMap, func() error {
 		// Update configmap data if needed
 		return nil
 	})
@@ -766,31 +772,24 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 }
 
 // createConfigMap creates a configmap for jumpstarter configuration
-func (r *JumpstarterReconciler) createConfigMap(jumpstarter *operatorv1alpha1.Jumpstarter) *corev1.ConfigMap {
-	// Build router configuration
-	// Default to port 443 for TLS gRPC endpoints
-	routerConfig := "default:\n"
-	if len(jumpstarter.Spec.Routers.GRPC.Endpoints) > 0 {
-		ep := jumpstarter.Spec.Routers.GRPC.Endpoints[0]
-		if ep.Address != "" {
-			routerConfig += fmt.Sprintf("  endpoint: %s:443\n", ep.Address)
-		} else {
-			routerConfig += fmt.Sprintf("  endpoint: router.%s:443\n", jumpstarter.Spec.BaseDomain)
-		}
+func (r *JumpstarterReconciler) createConfigMap(jumpstarter *operatorv1alpha1.Jumpstarter) (*corev1.ConfigMap, error) {
+	// Build config struct from spec
+	cfg := r.buildConfig(jumpstarter)
+
+	// Marshal to YAML
+	configYAML, err := yaml.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config to YAML: %w", err)
 	}
 
-	// Build config YAML
-	configYAML := `authentication:
-  internal:
-    prefix: internal
-  jwt: []
-provisioning:
-  enabled: false
-grpc:
-  keepalive:
-    minTime: "1s"
-    permitWithoutStream: true
-`
+	// Build router configuration for all replicas
+	router := r.buildRouter(jumpstarter)
+
+	// Marshal router to YAML
+	routerYAML, err := yaml.Marshal(router)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal router to YAML: %w", err)
+	}
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -802,10 +801,118 @@ grpc:
 			},
 		},
 		Data: map[string]string{
-			"config": configYAML,
-			"router": routerConfig,
+			"config": string(configYAML),
+			"router": string(routerYAML),
+		},
+	}, nil
+}
+
+// buildConfig builds the controller configuration struct from the CR spec
+func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpstarter) config.Config {
+	cfg := config.Config{
+		Provisioning: config.Provisioning{
+			Enabled: false,
+		},
+		Grpc: config.Grpc{
+			Keepalive: config.Keepalive{
+				MinTime:             "1s",
+				PermitWithoutStream: true,
+			},
 		},
 	}
+
+	// Authentication configuration
+	auth := config.Authentication{
+		JWT: jumpstarter.Spec.Controller.Authentication.JWT,
+	}
+
+	// Internal authentication
+	if jumpstarter.Spec.Controller.Authentication.Internal.Enabled {
+		prefix := jumpstarter.Spec.Controller.Authentication.Internal.Prefix
+		if prefix == "" {
+			prefix = "internal:"
+		}
+		auth.Internal.Prefix = prefix
+
+		if jumpstarter.Spec.Controller.Authentication.Internal.TokenLifetime != nil {
+			auth.Internal.TokenLifetime = jumpstarter.Spec.Controller.Authentication.Internal.TokenLifetime.Duration.String()
+		}
+	}
+
+	// Kubernetes authentication
+	if jumpstarter.Spec.Controller.Authentication.K8s.Enabled {
+		auth.K8s.Enabled = true
+	}
+
+	// Ensure JWT is an empty array, not null
+	if auth.JWT == nil {
+		auth.JWT = []apiserverv1beta1.JWTAuthenticator{}
+	}
+
+	cfg.Authentication = auth
+
+	// gRPC keepalive configuration
+	if jumpstarter.Spec.Controller.GRPC.Keepalive != nil {
+		ka := &cfg.Grpc.Keepalive
+
+		if jumpstarter.Spec.Controller.GRPC.Keepalive.MinTime != nil {
+			ka.MinTime = jumpstarter.Spec.Controller.GRPC.Keepalive.MinTime.Duration.String()
+		}
+
+		ka.PermitWithoutStream = jumpstarter.Spec.Controller.GRPC.Keepalive.PermitWithoutStream
+
+		if jumpstarter.Spec.Controller.GRPC.Keepalive.Timeout != nil {
+			ka.Timeout = jumpstarter.Spec.Controller.GRPC.Keepalive.Timeout.Duration.String()
+		}
+
+		if jumpstarter.Spec.Controller.GRPC.Keepalive.IntervalTime != nil {
+			ka.IntervalTime = jumpstarter.Spec.Controller.GRPC.Keepalive.IntervalTime.Duration.String()
+		}
+
+		if jumpstarter.Spec.Controller.GRPC.Keepalive.MaxConnectionIdle != nil {
+			ka.MaxConnectionIdle = jumpstarter.Spec.Controller.GRPC.Keepalive.MaxConnectionIdle.Duration.String()
+		}
+
+		if jumpstarter.Spec.Controller.GRPC.Keepalive.MaxConnectionAge != nil {
+			ka.MaxConnectionAge = jumpstarter.Spec.Controller.GRPC.Keepalive.MaxConnectionAge.Duration.String()
+		}
+
+		if jumpstarter.Spec.Controller.GRPC.Keepalive.MaxConnectionAgeGrace != nil {
+			ka.MaxConnectionAgeGrace = jumpstarter.Spec.Controller.GRPC.Keepalive.MaxConnectionAgeGrace.Duration.String()
+		}
+	}
+
+	return cfg
+}
+
+// buildRouter builds the router configuration with entries for all replicas
+func (r *JumpstarterReconciler) buildRouter(jumpstarter *operatorv1alpha1.Jumpstarter) config.Router {
+	router := make(config.Router)
+
+	// Create router entry for each replica
+	for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
+		// First replica is named "default" for backwards compatibility
+		routerName := "default"
+		if i > 0 {
+			routerName = fmt.Sprintf("router-%d", i)
+		}
+
+		entry := config.RouterEntry{
+			Endpoint: r.buildRouterEndpointForReplica(jumpstarter, i),
+		}
+
+		// Add labels if this is not the default router (replica 0)
+		// Additional routers get labels to distinguish them
+		if i > 0 {
+			entry.Labels = map[string]string{
+				"router-index": fmt.Sprintf("%d", i),
+			}
+		}
+
+		router[routerName] = entry
+	}
+
+	return router
 }
 
 // buildRouterEndpointForReplica builds the GRPC_ROUTER_ENDPOINT for a specific replica
