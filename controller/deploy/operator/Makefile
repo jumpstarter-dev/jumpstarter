@@ -182,7 +182,7 @@ docker-build: ## Build docker image with the manager.
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t ${IMG} .
+		-t ${IMG} ../../ -f ../../Dockerfile.operator
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -198,16 +198,16 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' ../../Dockerfile.operator > ../../Dockerfile.operator.cross
 	- $(CONTAINER_TOOL) buildx create --name jumpstarter-operator-builder
 	$(CONTAINER_TOOL) buildx use jumpstarter-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		--tag ${IMG} -f Dockerfile.cross .
+		--tag ${IMG} -f ../../Dockerfile.operator.cross ../../
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-operator-builder
-	rm Dockerfile.cross
+	rm ../../Dockerfile.operator.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
