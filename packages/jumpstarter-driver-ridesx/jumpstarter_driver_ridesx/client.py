@@ -98,6 +98,13 @@ class RideSXClient(FlasherClient, CompositeClient):
         result = self.flash_images(partitions, operators)
 
         self.logger.info("flash operation completed successfully")
+
+        if "power" in self.children:
+            self.power.off()
+            self.logger.info("device powered off")
+        else:
+            self.logger.info("device left running")
+
         return result
 
     def cli(self):
