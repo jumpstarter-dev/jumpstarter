@@ -17,3 +17,14 @@ jobs:
 
       - name: Run make deploy
         run: make deploy
+
+  deploy-with-operator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run make deploy
+        run: make deploy-with-operator
