@@ -66,13 +66,13 @@ var _ = Describe("Jumpstarter Controller", func() {
 									corev1.ResourceMemory: resource.MustParse("100Mi"),
 								},
 							},
-						GRPC: operatorv1alpha1.GRPCConfig{
-							Endpoints: []operatorv1alpha1.Endpoint{
-								{
-									Address: "controller",
+							GRPC: operatorv1alpha1.GRPCConfig{
+								Endpoints: []operatorv1alpha1.Endpoint{
+									{
+										Address: "controller",
+									},
 								},
 							},
-						},
 						},
 						Routers: operatorv1alpha1.RoutersConfig{
 							Image:           "quay.io/jumpstarter/jumpstarter:latest",
@@ -84,13 +84,13 @@ var _ = Describe("Jumpstarter Controller", func() {
 									corev1.ResourceMemory: resource.MustParse("100Mi"),
 								},
 							},
-						GRPC: operatorv1alpha1.GRPCConfig{
-							Endpoints: []operatorv1alpha1.Endpoint{
-								{
-									Address: "router",
+							GRPC: operatorv1alpha1.GRPCConfig{
+								Endpoints: []operatorv1alpha1.Endpoint{
+									{
+										Address: "router",
+									},
 								},
 							},
-						},
 						},
 					},
 				}
@@ -112,7 +112,7 @@ var _ = Describe("Jumpstarter Controller", func() {
 			controllerReconciler := &JumpstarterReconciler{
 				Client:             k8sClient,
 				Scheme:             k8sClient.Scheme(),
-				EndpointReconciler: endpoints.NewReconciler(k8sClient),
+				EndpointReconciler: endpoints.NewReconciler(k8sClient, k8sClient.Scheme()),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

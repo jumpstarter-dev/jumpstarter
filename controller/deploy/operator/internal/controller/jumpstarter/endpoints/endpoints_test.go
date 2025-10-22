@@ -41,7 +41,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 		var reconciler *Reconciler
 
 		BeforeEach(func() {
-			reconciler = NewReconciler(k8sClient)
+			reconciler = NewReconciler(k8sClient, k8sClient.Scheme())
 
 			// Create the test namespace
 			ns := &corev1.Namespace{
