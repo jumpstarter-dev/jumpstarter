@@ -376,14 +376,15 @@ type RestAPIConfig struct {
 
 // Endpoint defines a single endpoint configuration.
 // An endpoint can use one or more networking methods: Route, Ingress, NodePort, or LoadBalancer.
-// Multiple methods can be configured simultaneously for the same hostname.
+// Multiple methods can be configured simultaneously for the same address.
 type Endpoint struct {
-	// Hostname for this endpoint.
+	// Address for this endpoint in the format "hostname", "hostname:port", "IPv4", "IPv4:port", "[IPv6]", or "[IPv6]:port".
 	// Required for Route and Ingress endpoints. Optional for NodePort and LoadBalancer endpoints.
-	// When optional, the hostname is used for certificate generation and DNS resolution.
-	// Supports templating with $(replica) for replica-specific hostnames.
-	// +kubebuilder:validation:Pattern=^[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?$
-	Hostname string `json:"hostname,omitempty"`
+	// When optional, the address is used for certificate generation and DNS resolution.
+	// Supports templating with $(replica) for replica-specific addresses.
+	// Examples: "grpc.example.com", "grpc.example.com:9090", "192.168.1.1:8080", "[2001:db8::1]:8443", "router-$(replica).example.com"
+	// +kubebuilder:validation:Pattern=`^(\[[0-9a-fA-F:\.]+\]|[0-9]+(\.[0-9]+){3}|[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?)(:[0-9]+)?$`
+	Address string `json:"address,omitempty"`
 
 	// Route configuration for OpenShift clusters.
 	// Creates an OpenShift Route resource for this endpoint.

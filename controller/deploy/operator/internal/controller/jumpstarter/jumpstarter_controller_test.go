@@ -66,13 +66,13 @@ var _ = Describe("Jumpstarter Controller", func() {
 									corev1.ResourceMemory: resource.MustParse("100Mi"),
 								},
 							},
-							GRPC: operatorv1alpha1.GRPCConfig{
-								Endpoints: []operatorv1alpha1.Endpoint{
-									{
-										Hostname: "controller",
-									},
+						GRPC: operatorv1alpha1.GRPCConfig{
+							Endpoints: []operatorv1alpha1.Endpoint{
+								{
+									Address: "controller",
 								},
 							},
+						},
 						},
 						Routers: operatorv1alpha1.RoutersConfig{
 							Image:           "quay.io/jumpstarter/jumpstarter:latest",
@@ -84,13 +84,13 @@ var _ = Describe("Jumpstarter Controller", func() {
 									corev1.ResourceMemory: resource.MustParse("100Mi"),
 								},
 							},
-							GRPC: operatorv1alpha1.GRPCConfig{
-								Endpoints: []operatorv1alpha1.Endpoint{
-									{
-										Hostname: "router",
-									},
+						GRPC: operatorv1alpha1.GRPCConfig{
+							Endpoints: []operatorv1alpha1.Endpoint{
+								{
+									Address: "router",
 								},
 							},
+						},
 						},
 					},
 				}
@@ -123,4 +123,20 @@ var _ = Describe("Jumpstarter Controller", func() {
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
 	})
+})
+
+var _ = Describe("ensurePort", func() {
+	DescribeTable("should handle addresses correctly",
+		func(address, defaultPort, expected string) {
+			result := ensurePort(address, defaultPort)
+			Expect(result).To(Equal(expected))
+		},
+		Entry("hostname without port", "example.com", "443", "example.com:443"),
+		Entry("hostname with port", "example.com:8083", "443", "example.com:8083"),
+		Entry("IPv6 without port", "2001:db8::1", "443", "[2001:db8::1]:443"),
+		Entry("IPv6 with port", "[2001:db8::1]:8083", "443", "[2001:db8::1]:8083"),
+		Entry("malformed - too many colons", "host:port:extra", "443", "[host:port:extra]:443"),
+		Entry("malformed - empty string", "", "443", ":443"),
+		Entry("malformed - just colon", ":", "443", ":"),
+	)
 })

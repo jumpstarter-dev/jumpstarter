@@ -58,7 +58,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 		Context("with ClusterIP service type", func() {
 			It("should create a ClusterIP service successfully", func() {
 				endpoint := &operatorv1alpha1.Endpoint{
-					Hostname: endpointName,
+					Address: endpointName,
 				}
 
 				svcPort := corev1.ServicePort{
@@ -86,7 +86,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 		Context("with LoadBalancer service type", func() {
 			It("should create a LoadBalancer service successfully", func() {
 				endpoint := &operatorv1alpha1.Endpoint{
-					Hostname: endpointName,
+					Address: endpointName,
 					LoadBalancer: &operatorv1alpha1.LoadBalancerConfig{
 						Enabled:     true,
 						Annotations: map[string]string{"service.beta.kubernetes.io/aws-load-balancer-type": "nlb"},
@@ -120,7 +120,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 		Context("with NodePort service type", func() {
 			It("should create a NodePort service successfully", func() {
 				endpoint := &operatorv1alpha1.Endpoint{
-					Hostname: endpointName,
+					Address: endpointName,
 					NodePort: &operatorv1alpha1.NodePortConfig{
 						Enabled:     true,
 						Port:        30090,
@@ -155,7 +155,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 		Context("with invalid configuration", func() {
 			It("should return an error when both LoadBalancer and NodePort are enabled", func() {
 				endpoint := &operatorv1alpha1.Endpoint{
-					Hostname: endpointName,
+					Address: endpointName,
 					LoadBalancer: &operatorv1alpha1.LoadBalancerConfig{
 						Enabled: true,
 					},
@@ -181,7 +181,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 			It("should update the service when configuration changes", func() {
 				// Create initial service
 				endpoint := &operatorv1alpha1.Endpoint{
-					Hostname: endpointName,
+					Address: endpointName,
 					LoadBalancer: &operatorv1alpha1.LoadBalancerConfig{
 						Enabled:     true,
 						Annotations: map[string]string{"initial": "annotation"},

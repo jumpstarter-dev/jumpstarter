@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -266,7 +267,7 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 		} else {
 			// No endpoints configured, create a default service without ingress/route
 			endpoint := operatorv1alpha1.Endpoint{
-				Hostname: fmt.Sprintf("router-%d.%s", i, jumpstarter.Spec.BaseDomain),
+				Address: fmt.Sprintf("router-%d.%s", i, jumpstarter.Spec.BaseDomain),
 			}
 
 			serviceName := fmt.Sprintf("%s-router-%d", jumpstarter.Name, i)
@@ -537,8 +538,8 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 	grpcEndpoint := ""
 	if len(jumpstarter.Spec.Controller.GRPC.Endpoints) > 0 {
 		ep := jumpstarter.Spec.Controller.GRPC.Endpoints[0]
-		if ep.Hostname != "" {
-			grpcEndpoint = fmt.Sprintf("%s:443", ep.Hostname)
+		if ep.Address != "" {
+			grpcEndpoint = ensurePort(ep.Address, "443")
 		} else {
 			grpcEndpoint = fmt.Sprintf("grpc.%s:443", jumpstarter.Spec.BaseDomain)
 		}
@@ -771,8 +772,8 @@ func (r *JumpstarterReconciler) createConfigMap(jumpstarter *operatorv1alpha1.Ju
 	routerConfig := "default:\n"
 	if len(jumpstarter.Spec.Routers.GRPC.Endpoints) > 0 {
 		ep := jumpstarter.Spec.Routers.GRPC.Endpoints[0]
-		if ep.Hostname != "" {
-			routerConfig += fmt.Sprintf("  endpoint: %s:443\n", ep.Hostname)
+		if ep.Address != "" {
+			routerConfig += fmt.Sprintf("  endpoint: %s:443\n", ep.Address)
 		} else {
 			routerConfig += fmt.Sprintf("  endpoint: router.%s:443\n", jumpstarter.Spec.BaseDomain)
 		}
@@ -813,10 +814,10 @@ func (r *JumpstarterReconciler) buildRouterEndpointForReplica(jumpstarter *opera
 	// If endpoints are specified, use the first one as the primary endpoint
 	if len(jumpstarter.Spec.Routers.GRPC.Endpoints) > 0 {
 		ep := jumpstarter.Spec.Routers.GRPC.Endpoints[0]
-		hostname := ep.Hostname
-		if hostname != "" {
-			hostname = r.substituteReplica(hostname, replicaIndex)
-			return fmt.Sprintf("%s:443", hostname)
+		address := ep.Address
+		if address != "" {
+			address = r.substituteReplica(address, replicaIndex)
+			return ensurePort(address, "443")
 		}
 	}
 	// Default pattern: router-N.baseDomain
@@ -824,13 +825,28 @@ func (r *JumpstarterReconciler) buildRouterEndpointForReplica(jumpstarter *opera
 }
 
 // substituteReplica replaces $(replica) placeholder with actual replica index
-func (r *JumpstarterReconciler) substituteReplica(hostname string, replicaIndex int32) string {
-	return strings.ReplaceAll(hostname, "$(replica)", fmt.Sprintf("%d", replicaIndex))
+func (r *JumpstarterReconciler) substituteReplica(address string, replicaIndex int32) string {
+	return strings.ReplaceAll(address, "$(replica)", fmt.Sprintf("%d", replicaIndex))
 }
 
 // int64Ptr returns a pointer to an int64 value
 func int64Ptr(i int64) *int64 {
 	return &i
+}
+
+// ensurePort adds a default port to an address if it doesn't already have one
+// Handles IPv4, IPv6, and hostnames correctly using net.SplitHostPort
+func ensurePort(address, defaultPort string) string {
+	// Try to split the address into host and port
+	_, _, err := net.SplitHostPort(address)
+	if err == nil {
+		// Address already has a port, return as-is
+		return address
+	}
+
+	// No port found, need to add one
+	// net.JoinHostPort handles IPv6 addresses correctly (adds brackets if needed)
+	return net.JoinHostPort(address, defaultPort)
 }
 
 // buildServiceNameForReplicaEndpoint creates a unique service name for a router replica and endpoint
@@ -848,15 +864,15 @@ func (r *JumpstarterReconciler) buildEndpointForReplica(jumpstarter *operatorv1a
 	// Copy the base endpoint
 	endpoint := *baseEndpoint
 
-	// Set or substitute hostname
-	if endpoint.Hostname != "" {
-		endpoint.Hostname = r.substituteReplica(endpoint.Hostname, replicaIndex)
+	// Set or substitute address
+	if endpoint.Address != "" {
+		endpoint.Address = r.substituteReplica(endpoint.Address, replicaIndex)
 	} else {
-		// Default hostname pattern when none specified
+		// Default address pattern when none specified
 		if endpointIdx == 0 {
-			endpoint.Hostname = fmt.Sprintf("router-%d.%s", replicaIndex, jumpstarter.Spec.BaseDomain)
+			endpoint.Address = fmt.Sprintf("router-%d.%s", replicaIndex, jumpstarter.Spec.BaseDomain)
 		} else {
-			endpoint.Hostname = fmt.Sprintf("router-%d-%d.%s", replicaIndex, endpointIdx, jumpstarter.Spec.BaseDomain)
+			endpoint.Address = fmt.Sprintf("router-%d-%d.%s", replicaIndex, endpointIdx, jumpstarter.Spec.BaseDomain)
 		}
 	}
 

@@ -52,14 +52,14 @@ echo -e "${GREEN}Creating Jumpstarter custom resource ...${NC}"
 # Generate endpoint configuration based on networking mode
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
   CONTROLLER_ENDPOINT_CONFIG=$(cat <<-END
-        - hostname: grpc.${BASEDOMAIN}
+        - address: grpc.${BASEDOMAIN}:443
           ingress:
             enabled: true
             class: ""
 END
 )
   ROUTER_ENDPOINT_CONFIG=$(cat <<-END
-        - hostname: router.${BASEDOMAIN}
+        - address: router.${BASEDOMAIN}:443
           ingress:
             enabled: true
             class: ""
@@ -67,14 +67,17 @@ END
 )
 else
   CONTROLLER_ENDPOINT_CONFIG=$(cat <<-END
-        - hostname: grpc.${BASEDOMAIN}
+        # this is exposed by a nodeport in 30010 but mapped to 8082 on the host
+        - address: grpc.${BASEDOMAIN}:8082
           nodeport:
             enabled: true
             port: 30010
 END
 )
   ROUTER_ENDPOINT_CONFIG=$(cat <<-END
-        - nodeport:
+        # this is exposed by a nodeport in 30011 but mapped to 8083 on the host
+        - address: router.${BASEDOMAIN}:8083
+          nodeport:
             enabled: true
             port: 30011
 END
@@ -105,7 +108,7 @@ ${CONTROLLER_ENDPOINT_CONFIG}
   routers:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
-    replicas: 3
+    replicas: 1
     resources:
       requests:
         cpu: 100m
