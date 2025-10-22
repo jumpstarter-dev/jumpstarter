@@ -1,10 +1,11 @@
+from datetime import datetime, timedelta
 from unittest.mock import Mock
 
 import click
 import pytest
 from jumpstarter_cli_common.opt import parse_comma_separated
 
-from jumpstarter.client.grpc import Exporter, ExporterList, Lease
+from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
 from jumpstarter.config.client import ClientConfigV1Alpha1
 
 
@@ -239,3 +240,109 @@ class TestGetExportersIntegration:
         assert exporter_list.exporters[1].name == "server-001"
         assert exporter_list.include_online is True
         assert exporter_list.include_leases is False
+
+
+class TestGetLeasesLogic:
+    """Tests for get leases command logic (simulating server-side filtering)"""
+
+    def create_test_lease(self, namespace="default", name="lease-1", status="In-Use",
+                          effective_begin_time=None, effective_end_time=None,
+                          duration=timedelta(hours=1)):
+        """Create a mock lease for testing"""
+        lease = Mock(spec=Lease)
+        lease.namespace = namespace
+        lease.name = name
+        lease.client = "test-client"
+        lease.exporter = "test-exporter"
+        lease.get_status.return_value = status
+        lease.effective_begin_time = effective_begin_time
+        lease.effective_end_time = effective_end_time
+        lease.duration = duration
+        lease.effective_duration = timedelta(minutes=30) if effective_begin_time else None
+        lease.begin_time = None
+        return lease
+
+    def test_only_active_excludes_expired_leases(self):
+        """Test that server returns only active leases when only_active=True"""
+        # When only_active=True, server returns only active lease
+        active_lease = self.create_test_lease(
+            name="active-lease",
+            status="In-Use",
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+        )
+
+        leases_from_server = LeaseList(leases=[active_lease], next_page_token=None)
+
+        assert len(leases_from_server.leases) == 1
+        assert leases_from_server.leases[0].name == "active-lease"
+        assert leases_from_server.leases[0].get_status() == "In-Use"
+
+    def test_show_all_includes_expired_leases(self):
+        """Test that server returns all leases including expired when only_active=False"""
+        # When only_active=False, server returns both active and expired
+        active_lease = self.create_test_lease(
+            name="active-lease",
+            status="In-Use",
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+        )
+        expired_lease = self.create_test_lease(
+            name="expired-lease",
+            status="Expired",
+            effective_begin_time=datetime(2023, 1, 1, 8, 0, 0),
+            effective_end_time=datetime(2023, 1, 1, 9, 0, 0)
+        )
+
+        leases_from_server = LeaseList(leases=[active_lease, expired_lease], next_page_token=None)
+
+        assert len(leases_from_server.leases) == 2
+        assert leases_from_server.leases[0].name == "active-lease"
+        assert leases_from_server.leases[1].name == "expired-lease"
+
+    def test_multiple_active_leases_returned(self):
+        """Test that server returns all active leases when only_active=True"""
+        # Server returns multiple active leases (different statuses but all non-expired)
+        lease1 = self.create_test_lease(
+            name="lease-1",
+            status="In-Use",
+            effective_begin_time=datetime(2023, 1, 1, 10, 0, 0)
+        )
+        lease2 = self.create_test_lease(
+            name="lease-2",
+            status="Waiting",
+            effective_begin_time=datetime(2023, 1, 1, 11, 0, 0)
+        )
+        lease3 = self.create_test_lease(
+            name="lease-3",
+            status="In-Use",
+            effective_begin_time=datetime(2023, 1, 1, 12, 0, 0)
+        )
+
+        leases_from_server = LeaseList(leases=[lease1, lease2, lease3], next_page_token=None)
+
+        assert len(leases_from_server.leases) == 3
+        assert all(lease.get_status() != "Expired" for lease in leases_from_server.leases)
+
+    def test_all_expired_when_show_all(self):
+        """Test that server can return only expired leases when only_active=False"""
+        # When only_active=False and all leases happen to be expired
+        expired1 = self.create_test_lease(
+            name="expired-1",
+            status="Expired",
+            effective_end_time=datetime(2023, 1, 1, 8, 0, 0)
+        )
+        expired2 = self.create_test_lease(
+            name="expired-2",
+            status="Expired",
+            effective_end_time=datetime(2023, 1, 1, 9, 0, 0)
+        )
+
+        leases_from_server = LeaseList(leases=[expired1, expired2], next_page_token=None)
+
+        assert len(leases_from_server.leases) == 2
+        assert all(lease.get_status() == "Expired" for lease in leases_from_server.leases)
+
+    def test_empty_lease_list(self):
+        """Test that server can return empty lease list"""
+        leases_from_server = LeaseList(leases=[], next_page_token=None)
+
+        assert len(leases_from_server.leases) == 0

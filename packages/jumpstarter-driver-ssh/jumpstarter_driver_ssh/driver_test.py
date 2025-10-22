@@ -391,8 +391,16 @@ def test_ssh_identity_file_configuration():
         )
 
         # Test that the instance was created correctly
-        assert instance.ssh_identity == TEST_SSH_KEY
+        # ssh_identity should be None until first use (lazy loading)
+        assert instance.ssh_identity is None
         assert instance.ssh_identity_file == temp_file_path
+
+        # Test that get_ssh_identity() reads the file on first use
+        identity = instance.get_ssh_identity()
+        assert identity == TEST_SSH_KEY
+
+        # Test that ssh_identity is now cached
+        assert instance.ssh_identity == TEST_SSH_KEY
 
         # Test that the client class is correct
         assert instance.client() == "jumpstarter_driver_ssh.client.SSHWrapperClient"
@@ -413,13 +421,17 @@ def test_ssh_identity_validation_error():
 
 
 def test_ssh_identity_file_read_error():
-    """Test SSH wrapper raises error when ssh_identity_file cannot be read"""
+    """Test SSH wrapper raises error when ssh_identity_file cannot be read on first use"""
+    # Instance creation should succeed (lazy loading)
+    instance = SSHWrapper(
+        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
+        default_username="testuser",
+        ssh_identity_file="/nonexistent/path/to/key"
+    )
+
+    # Error should be raised when get_ssh_identity() is called
     with pytest.raises(ConfigurationError, match="Failed to read ssh_identity_file"):
-        SSHWrapper(
-            children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-            default_username="testuser",
-            ssh_identity_file="/nonexistent/path/to/key"
-        )
+        instance.get_ssh_identity()
 
 
 def test_ssh_command_with_identity_string():
