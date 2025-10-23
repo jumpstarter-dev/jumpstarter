@@ -120,7 +120,13 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, desiredService *
 				}
 			}
 		}
+		// Preserve immutable fields
+		desiredService.Spec.ClusterIP = existingService.Spec.ClusterIP
+		desiredService.Spec.ClusterIPs = existingService.Spec.ClusterIPs
+		desiredService.Spec.IPFamilies = existingService.Spec.IPFamilies
+		desiredService.Spec.IPFamilyPolicy = existingService.Spec.IPFamilyPolicy
 
+		// finally update the existing service spec
 		existingService.Spec = desiredService.Spec
 		existingService.Annotations = desiredService.Annotations
 		existingService.Labels = desiredService.Labels
