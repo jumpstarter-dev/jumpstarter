@@ -8,4 +8,5 @@ plugins:
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
 inputs:
   - git_repo: https://github.com/jumpstarter-dev/jumpstarter-protocol.git
+    branch: main
     subdir: proto
