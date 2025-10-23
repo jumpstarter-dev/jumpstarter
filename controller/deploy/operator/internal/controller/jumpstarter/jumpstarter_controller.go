@@ -45,6 +45,11 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
 )
 
+const (
+	// appProtocolH2C is the application protocol for HTTP/2 Cleartext
+	appProtocolH2C = "h2c"
+)
+
 // JumpstarterReconciler reconciles a Jumpstarter object
 type JumpstarterReconciler struct {
 	client.Client
@@ -221,7 +226,7 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 
 	// Reconcile controller services
 	for _, endpoint := range jumpstarter.Spec.Controller.GRPC.Endpoints {
-		appProtocol := "h2c"
+		appProtocol := appProtocolH2C
 		svcPort := corev1.ServicePort{
 			Name:        "controller-grpc",
 			Port:        8082,
@@ -249,7 +254,7 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 				// This allows multiple service types (NodePort, LoadBalancer, etc.) per replica
 				serviceName := r.buildServiceNameForReplicaEndpoint(jumpstarter, i, endpointIdx)
 
-				appProtocol := "h2c"
+				appProtocol := appProtocolH2C
 				svcPort := corev1.ServicePort{
 					Name:        serviceName, // Unique name per replica+endpoint
 					Port:        8083,
@@ -261,7 +266,7 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 				if endpoint.NodePort != nil && endpoint.NodePort.Enabled && endpoint.NodePort.Port > 0 {
 					// increase nodeport numbers based in replica, not perfect because it needs to be
 					// consecutive, but this is mostly for E2E testing.
-					svcPort.NodePort = endpoint.NodePort.Port + int32(i)
+					svcPort.NodePort = endpoint.NodePort.Port + i
 				}
 				if err := r.EndpointReconciler.ReconcileRouterReplicaEndpoint(ctx, jumpstarter, i, endpointIdx, &endpoint, svcPort); err != nil {
 					return err
@@ -274,7 +279,7 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 			}
 
 			serviceName := fmt.Sprintf("%s-router-%d", jumpstarter.Name, i)
-			appProtocol := "h2c"
+			appProtocol := appProtocolH2C
 			svcPort := corev1.ServicePort{
 				Name:        serviceName,
 				Port:        8083,
