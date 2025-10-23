@@ -20,9 +20,13 @@ else
 fi
 
 # Extract image repository and tag from IMG variable
-IMAGE_REPO=$(echo "${IMG}" | cut -d: -f1)
-IMAGE_TAG=$(echo "${IMG}" | cut -d: -f2)
-
+if [[ "${IMG}" == *:* ]]; then
+    IMAGE_TAG="${IMG##*:}" # everything after the last colon
+    IMAGE_REPO="${IMG%:*}" # everything before the last colon
+else # no tag specified
+    IMAGE_TAG="latest"
+    IMAGE_REPO="${IMG}"
+fi
 # Export all variables for use in scripts
 export IP
 export BASEDOMAIN
