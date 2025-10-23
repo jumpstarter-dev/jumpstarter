@@ -49,15 +49,13 @@ func NewReconciler(client client.Client, scheme *runtime.Scheme) *Reconciler {
 func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.Service, owner metav1.Object) error {
 	log := logf.FromContext(ctx)
 
-	if owner != nil {
-		if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
-			return err
-		}
-	}
-
 	existingService := &corev1.Service{}
 	existingService.Name = service.Name
 	existingService.Namespace = service.Namespace
+
+	if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
+		return err
+	}
 
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingService, func() error {
 		// Preserve immutable fields if service already exists
@@ -66,13 +64,11 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.
 			existingService.Spec = service.Spec
 			existingService.Labels = service.Labels
 			existingService.Annotations = service.Annotations
-		} else {
-			// Service exists, preserve immutable fields
-			preservedClusterIP := existingService.Spec.ClusterIP
-			preservedClusterIPs := existingService.Spec.ClusterIPs
-			preservedIPFamilies := existingService.Spec.IPFamilies
-			preservedIPFamilyPolicy := existingService.Spec.IPFamilyPolicy
+			if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
+				return err
+			}
 
+		} else {
 			// Preserve existing NodePorts to prevent "port already allocated" errors
 			if service.Spec.Type == corev1.ServiceTypeNodePort || service.Spec.Type == corev1.ServiceTypeLoadBalancer {
 				for i := range existingService.Spec.Ports {
@@ -83,15 +79,18 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.
 			}
 
 			// Update all mutable fields
-			existingService.Spec = service.Spec
+			if service.Spec.LoadBalancerClass != nil && *service.Spec.LoadBalancerClass != "" {
+				existingService.Spec.LoadBalancerClass = service.Spec.LoadBalancerClass
+			}
+			if service.Spec.ExternalTrafficPolicy != "" {
+				existingService.Spec.ExternalTrafficPolicy = service.Spec.ExternalTrafficPolicy
+			}
+
+			existingService.Spec.Ports = service.Spec.Ports
+			existingService.Spec.Selector = service.Spec.Selector
+			existingService.Spec.Type = service.Spec.Type
 			existingService.Labels = service.Labels
 			existingService.Annotations = service.Annotations
-
-			// Restore immutable fields
-			existingService.Spec.ClusterIP = preservedClusterIP
-			existingService.Spec.ClusterIPs = preservedClusterIPs
-			existingService.Spec.IPFamilies = preservedIPFamilies
-			existingService.Spec.IPFamilyPolicy = preservedIPFamilyPolicy
 		}
 
 		return nil
@@ -105,25 +104,12 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.
 		return err
 	}
 
-	// Log the operation result
-	switch op {
-	case controllerutil.OperationResultCreated:
-		log.Info("Created service",
-			"name", service.Name,
-			"namespace", service.Namespace,
-			"type", service.Spec.Type,
-			"selector", service.Spec.Selector)
-	case controllerutil.OperationResultUpdated:
-		log.Info("Updated service",
-			"name", service.Name,
-			"namespace", service.Namespace,
-			"type", service.Spec.Type,
-			"selector", service.Spec.Selector)
-	case controllerutil.OperationResultNone:
-		log.V(1).Info("Service already up to date",
-			"name", service.Name,
-			"namespace", service.Namespace)
-	}
+	log.Info("Service reconciled",
+		"name", service.Name,
+		"namespace", service.Namespace,
+		"type", service.Spec.Type,
+		"selector", service.Spec.Selector,
+		"operation", op)
 
 	return nil
 }

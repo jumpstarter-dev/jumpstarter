@@ -8,44 +8,150 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
 )
 
 // reconcileRBAC reconciles all RBAC resources (ServiceAccount, Role, RoleBinding)
 func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
-	// Create ServiceAccount
-	sa := r.createServiceAccount(jumpstarter)
-	if err := controllerutil.SetControllerReference(jumpstarter, sa, r.Scheme); err != nil {
-		return err
-	}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
-		return nil
-	}); err != nil {
+	log := logf.FromContext(ctx)
+
+	// ServiceAccount
+	desiredSA := r.createServiceAccount(jumpstarter)
+	controllerutil.SetControllerReference(jumpstarter, desiredSA, r.Scheme)
+
+	existingSA := &corev1.ServiceAccount{}
+	existingSA.Name = desiredSA.Name
+	existingSA.Namespace = desiredSA.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingSA, func() error {
+		// Check if this is a new service account or an existing one
+		if existingSA.CreationTimestamp.IsZero() {
+			// ServiceAccount is being created, copy all fields from desired
+			existingSA.Labels = desiredSA.Labels
+			existingSA.Annotations = desiredSA.Annotations
+
+			return nil
+		}
+
+		// ServiceAccount exists, check if update is needed
+		if !serviceAccountNeedsUpdate(existingSA, desiredSA) {
+			log.V(1).Info("ServiceAccount is up to date, skipping update",
+				"name", existingSA.Name,
+				"namespace", existingSA.Namespace)
+			return nil
+		}
+
+		// Update needed - apply changes
+		existingSA.Labels = desiredSA.Labels
+		existingSA.Annotations = desiredSA.Annotations
+		return controllerutil.SetControllerReference(jumpstarter, existingSA, r.Scheme)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile ServiceAccount",
+			"name", desiredSA.Name,
+			"namespace", desiredSA.Namespace)
 		return err
 	}
 
-	// Create Role
-	role := r.createRole(jumpstarter)
-	if err := controllerutil.SetControllerReference(jumpstarter, role, r.Scheme); err != nil {
-		return err
-	}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
-		return nil
-	}); err != nil {
+	log.Info("ServiceAccount reconciled",
+		"name", existingSA.Name,
+		"namespace", existingSA.Namespace,
+		"operation", op)
+
+	// Role
+	desiredRole := r.createRole(jumpstarter)
+	controllerutil.SetControllerReference(jumpstarter, desiredRole, r.Scheme)
+
+	existingRole := &rbacv1.Role{}
+	existingRole.Name = desiredRole.Name
+	existingRole.Namespace = desiredRole.Namespace
+
+	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRole, func() error {
+		// Check if this is a new role or an existing one
+		if existingRole.CreationTimestamp.IsZero() {
+			// Role is being created, copy all fields from desired
+			existingRole.Labels = desiredRole.Labels
+			existingRole.Annotations = desiredRole.Annotations
+			existingRole.Rules = desiredRole.Rules
+			return nil
+		}
+
+		// Role exists, check if update is needed
+		if !roleNeedsUpdate(existingRole, desiredRole) {
+			log.V(1).Info("Role is up to date, skipping update",
+				"name", existingRole.Name,
+				"namespace", existingRole.Namespace)
+			return nil
+		}
+
+		// Update needed - apply changes
+		existingRole.Labels = desiredRole.Labels
+		existingRole.Annotations = desiredRole.Annotations
+		existingRole.Rules = desiredRole.Rules
+		return controllerutil.SetControllerReference(jumpstarter, existingRole, r.Scheme)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile Role",
+			"name", desiredRole.Name,
+			"namespace", desiredRole.Namespace)
 		return err
 	}
 
-	// Create RoleBinding
-	roleBinding := r.createRoleBinding(jumpstarter)
-	if err := controllerutil.SetControllerReference(jumpstarter, roleBinding, r.Scheme); err != nil {
+	log.Info("Role reconciled",
+		"name", existingRole.Name,
+		"namespace", existingRole.Namespace,
+		"operation", op)
+
+	// RoleBinding
+	desiredRoleBinding := r.createRoleBinding(jumpstarter)
+	controllerutil.SetControllerReference(jumpstarter, desiredRoleBinding, r.Scheme)
+
+	existingRoleBinding := &rbacv1.RoleBinding{}
+	existingRoleBinding.Name = desiredRoleBinding.Name
+	existingRoleBinding.Namespace = desiredRoleBinding.Namespace
+
+	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRoleBinding, func() error {
+		// Check if this is a new role binding or an existing one
+		if existingRoleBinding.CreationTimestamp.IsZero() {
+			// RoleBinding is being created, copy all fields from desired
+			existingRoleBinding.Labels = desiredRoleBinding.Labels
+			existingRoleBinding.Annotations = desiredRoleBinding.Annotations
+			existingRoleBinding.Subjects = desiredRoleBinding.Subjects
+			existingRoleBinding.RoleRef = desiredRoleBinding.RoleRef
+			return nil
+		}
+
+		// RoleBinding exists, check if update is needed
+		if !roleBindingNeedsUpdate(existingRoleBinding, desiredRoleBinding) {
+			log.V(1).Info("RoleBinding is up to date, skipping update",
+				"name", existingRoleBinding.Name,
+				"namespace", existingRoleBinding.Namespace)
+			return nil
+		}
+
+		// Update needed - apply changes
+		existingRoleBinding.Labels = desiredRoleBinding.Labels
+		existingRoleBinding.Annotations = desiredRoleBinding.Annotations
+		existingRoleBinding.Subjects = desiredRoleBinding.Subjects
+		existingRoleBinding.RoleRef = desiredRoleBinding.RoleRef
+		return controllerutil.SetControllerReference(jumpstarter, existingRoleBinding, r.Scheme)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile RoleBinding",
+			"name", desiredRoleBinding.Name,
+			"namespace", desiredRoleBinding.Namespace)
 		return err
 	}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roleBinding, func() error {
-		return nil
-	}); err != nil {
-		return err
-	}
+
+	log.Info("RoleBinding reconciled",
+		"name", existingRoleBinding.Name,
+		"namespace", existingRoleBinding.Namespace,
+		"operation", op)
 
 	return nil
 }

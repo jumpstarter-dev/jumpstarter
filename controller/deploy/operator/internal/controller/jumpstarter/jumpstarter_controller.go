@@ -166,26 +166,76 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Requeue after 10 seconds to check for changes
-	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	// Requeue after 30 minutes to check for changes
+	return ctrl.Result{RequeueAfter: 30 * time.Minute}, nil
 }
 
 // reconcileControllerDeployment reconciles the controller deployment
 func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
-	deployment := r.createControllerDeployment(jumpstarter)
+	log := logf.FromContext(ctx)
+	desiredDeployment := r.createControllerDeployment(jumpstarter)
 
-	// Set the owner reference
-	if err := controllerutil.SetControllerReference(jumpstarter, deployment, r.Scheme); err != nil {
+	controllerutil.SetControllerReference(jumpstarter, desiredDeployment, r.Scheme)
+
+	existingDeployment := &appsv1.Deployment{}
+	existingDeployment.Name = desiredDeployment.Name
+	existingDeployment.Namespace = desiredDeployment.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingDeployment, func() error {
+		// Check if this is a new deployment or an existing one
+		if existingDeployment.CreationTimestamp.IsZero() {
+			// Deployment is being created, copy all fields from desired
+			existingDeployment.Labels = desiredDeployment.Labels
+			existingDeployment.Annotations = desiredDeployment.Annotations
+			existingDeployment.Spec = desiredDeployment.Spec
+			return nil
+		}
+
+		desiredDeployment.Spec.Template.Spec.DeprecatedServiceAccount = existingDeployment.Spec.Template.Spec.DeprecatedServiceAccount
+		desiredDeployment.Spec.Template.Spec.SchedulerName = existingDeployment.Spec.Template.Spec.SchedulerName
+
+		// Check if deployment needs update using compare function
+		if !deploymentNeedsUpdate(existingDeployment, desiredDeployment) {
+			log.V(1).Info("Controller deployment specs are equal, skipping update",
+				"name", existingDeployment.Name,
+				"namespace", existingDeployment.Namespace)
+			return nil
+		}
+
+		// Deployment exists, generate and log diff
+		diff, err := generateDiff(existingDeployment, desiredDeployment)
+		if err != nil {
+			log.V(1).Info("Failed to generate deployment diff", "error", err)
+		} else if diff != "" {
+			fmt.Printf("\n=== Controller deployment differences detected ===\n")
+			fmt.Printf("Name: %s\n", existingDeployment.Name)
+			fmt.Printf("Namespace: %s\n", existingDeployment.Namespace)
+			fmt.Printf("\n%s\n", diff)
+			fmt.Printf("========================================\n\n")
+		}
+
+		// Apply changes
+		existingDeployment.Labels = desiredDeployment.Labels
+		existingDeployment.Annotations = desiredDeployment.Annotations
+		existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
+		existingDeployment.Spec.Selector = desiredDeployment.Spec.Selector
+		existingDeployment.Spec.Template = desiredDeployment.Spec.Template
+		return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile controller deployment",
+			"name", desiredDeployment.Name,
+			"namespace", desiredDeployment.Namespace)
 		return err
 	}
 
-	// Create or update the deployment
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		// Update deployment spec if needed
-		return nil
-	})
+	log.Info("Controller deployment reconciled",
+		"name", existingDeployment.Name,
+		"namespace", existingDeployment.Namespace,
+		"operation", op)
 
-	return err
+	return nil
 }
 
 // reconcileRouterDeployment reconciles router deployments (one per replica)
@@ -194,21 +244,68 @@ func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, j
 
 	// Create one deployment per replica
 	for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
-		deployment := r.createRouterDeployment(jumpstarter, i)
+		desiredDeployment := r.createRouterDeployment(jumpstarter, i)
 
-		// Set the owner reference
-		if err := controllerutil.SetControllerReference(jumpstarter, deployment, r.Scheme); err != nil {
-			return err
-		}
+		controllerutil.SetControllerReference(jumpstarter, desiredDeployment, r.Scheme)
 
-		// Create or update the deployment
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-			// Update deployment spec if needed
-			return nil
+		existingDeployment := &appsv1.Deployment{}
+		existingDeployment.Name = desiredDeployment.Name
+		existingDeployment.Namespace = desiredDeployment.Namespace
+
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingDeployment, func() error {
+			// Check if this is a new deployment or an existing one
+			if existingDeployment.CreationTimestamp.IsZero() {
+				// Deployment is being created, copy all fields from desired
+				existingDeployment.Labels = desiredDeployment.Labels
+				existingDeployment.Annotations = desiredDeployment.Annotations
+				existingDeployment.Spec = desiredDeployment.Spec
+				return nil
+			}
+			desiredDeployment.Spec.Template.Spec.SchedulerName = existingDeployment.Spec.Template.Spec.SchedulerName
+			desiredDeployment.Spec.Template.Spec.DeprecatedServiceAccount = existingDeployment.Spec.Template.Spec.DeprecatedServiceAccount
+
+			if !deploymentNeedsUpdate(existingDeployment, desiredDeployment) {
+				log.V(1).Info("Router deployment specs are equal, skipping update",
+					"name", existingDeployment.Name,
+					"namespace", existingDeployment.Namespace,
+					"replica", i)
+				return nil
+			}
+			// Deployment exists, generate and log diff
+			diff, err := generateDiff(existingDeployment, desiredDeployment)
+			if err != nil {
+				log.V(1).Info("Failed to generate deployment diff", "error", err)
+			} else if diff != "" {
+				fmt.Printf("\n=== Router deployment differences detected ===\n")
+				fmt.Printf("Name: %s\n", existingDeployment.Name)
+				fmt.Printf("Namespace: %s\n", existingDeployment.Namespace)
+				fmt.Printf("Replica: %d\n", i)
+				fmt.Printf("\n%s\n", diff)
+				fmt.Printf("==============================================\n\n")
+			}
+
+			// Apply changes
+			existingDeployment.Labels = desiredDeployment.Labels
+			existingDeployment.Annotations = desiredDeployment.Annotations
+			existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
+			existingDeployment.Spec.Selector = desiredDeployment.Spec.Selector
+			existingDeployment.Spec.Template = desiredDeployment.Spec.Template
+			return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
 		})
+
 		if err != nil {
+			log.Error(err, "Failed to reconcile router deployment",
+				"name", desiredDeployment.Name,
+				"namespace", desiredDeployment.Namespace,
+				"replica", i)
 			return err
 		}
+
+		log.Info("Router deployment reconciled",
+			"name", existingDeployment.Name,
+			"namespace", existingDeployment.Namespace,
+			"replica", i,
+			"operation", op)
 	}
 
 	// Clean up deployments for scaled-down replicas
@@ -304,23 +401,56 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 
 // reconcileConfigMaps reconciles all configmaps
 func (r *JumpstarterReconciler) reconcileConfigMaps(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
-	configMap, err := r.createConfigMap(jumpstarter)
+	log := logf.FromContext(ctx)
+	desiredConfigMap, err := r.createConfigMap(jumpstarter)
 	if err != nil {
 		return fmt.Errorf("failed to create configmap: %w", err)
 	}
 
-	// Set the owner reference
-	if err := controllerutil.SetControllerReference(jumpstarter, configMap, r.Scheme); err != nil {
+	existingConfigMap := &corev1.ConfigMap{}
+	existingConfigMap.Name = desiredConfigMap.Name
+	existingConfigMap.Namespace = desiredConfigMap.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingConfigMap, func() error {
+		// Check if this is a new configmap or an existing one
+		if existingConfigMap.CreationTimestamp.IsZero() {
+			// ConfigMap is being created, copy all fields from desired
+			existingConfigMap.Labels = desiredConfigMap.Labels
+			existingConfigMap.Annotations = desiredConfigMap.Annotations
+			existingConfigMap.Data = desiredConfigMap.Data
+			existingConfigMap.BinaryData = desiredConfigMap.BinaryData
+			return controllerutil.SetControllerReference(jumpstarter, existingConfigMap, r.Scheme)
+		}
+
+		// ConfigMap exists, check if update is needed
+		if !configMapNeedsUpdate(existingConfigMap, desiredConfigMap, log) {
+			log.V(1).Info("ConfigMap is up to date, skipping update",
+				"name", existingConfigMap.Name,
+				"namespace", existingConfigMap.Namespace)
+			return nil
+		}
+
+		// Update needed - apply changes
+		existingConfigMap.Labels = desiredConfigMap.Labels
+		existingConfigMap.Annotations = desiredConfigMap.Annotations
+		existingConfigMap.Data = desiredConfigMap.Data
+		existingConfigMap.BinaryData = desiredConfigMap.BinaryData
+		return controllerutil.SetControllerReference(jumpstarter, existingConfigMap, r.Scheme)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile configmap",
+			"name", desiredConfigMap.Name,
+			"namespace", desiredConfigMap.Namespace)
 		return err
 	}
 
-	// Create or update the configmap
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, configMap, func() error {
-		// Update configmap data if needed
-		return nil
-	})
+	log.Info("ConfigMap reconciled",
+		"name", existingConfigMap.Name,
+		"namespace", existingConfigMap.Namespace,
+		"operation", op)
 
-	return err
+	return nil
 }
 
 // reconcileSecrets reconciles all secrets
@@ -454,7 +584,16 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &jumpstarter.Spec.Controller.Replicas,
+			Replicas:                &jumpstarter.Spec.Controller.Replicas,
+			ProgressDeadlineSeconds: int32Ptr(600),
+			RevisionHistoryLimit:    int32Ptr(10),
+			Strategy: appsv1.DeploymentStrategy{
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxSurge:       &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+				},
+			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
@@ -463,6 +602,9 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
+					RestartPolicy:                 corev1.RestartPolicyAlways,
+					DNSPolicy:                     corev1.DNSClusterFirst,
+					TerminationGracePeriodSeconds: int64Ptr(30),
 					Containers: []corev1.Container{
 						{
 							Name:            "manager",
@@ -504,7 +646,8 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 									Name: "NAMESPACE",
 									ValueFrom: &corev1.EnvVarSource{
 										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
+											FieldPath:  "metadata.namespace",
+											APIVersion: "v1",
 										},
 									},
 								},
@@ -517,37 +660,50 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 								{
 									ContainerPort: 8082,
 									Name:          "grpc",
+									Protocol:      corev1.ProtocolTCP,
 								},
 								{
 									ContainerPort: 8080,
 									Name:          "metrics",
+									Protocol:      corev1.ProtocolTCP,
 								},
 								{
 									ContainerPort: 8081,
 									Name:          "health",
+									Protocol:      corev1.ProtocolTCP,
 								},
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/healthz",
-										Port: intstr.FromInt(8081),
+										Path:   "/healthz",
+										Port:   intstr.FromInt(8081),
+										Scheme: corev1.URISchemeHTTP,
 									},
 								},
 								InitialDelaySeconds: 15,
 								PeriodSeconds:       20,
+								TimeoutSeconds:      1,
+								SuccessThreshold:    1,
+								FailureThreshold:    3,
 							},
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/readyz",
-										Port: intstr.FromInt(8081),
+										Path:   "/readyz",
+										Port:   intstr.FromInt(8081),
+										Scheme: corev1.URISchemeHTTP,
 									},
 								},
 								InitialDelaySeconds: 5,
 								PeriodSeconds:       10,
+								TimeoutSeconds:      1,
+								SuccessThreshold:    1,
+								FailureThreshold:    3,
 							},
-							Resources: jumpstarter.Spec.Controller.Resources,
+							Resources:                jumpstarter.Spec.Controller.Resources,
+							TerminationMessagePath:   "/dev/termination-log",
+							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: boolPtr(false),
 								Capabilities: &corev1.Capabilities{
@@ -588,8 +744,6 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 	// Build router endpoint for this specific replica
 	routerEndpoint := r.buildRouterEndpointForReplica(jumpstarter, replicaIndex)
 
-	replicas := int32(1) // Each deployment has exactly 1 replica
-
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-router-%d", jumpstarter.Name, replicaIndex),
@@ -597,7 +751,16 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
+			Replicas:                int32Ptr(1), // Each deployment for the router needs to have exactly 1 replica
+			ProgressDeadlineSeconds: int32Ptr(600),
+			RevisionHistoryLimit:    int32Ptr(10),
+			Strategy: appsv1.DeploymentStrategy{
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxSurge:       &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+				},
+			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
@@ -606,6 +769,9 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
+					RestartPolicy:                 corev1.RestartPolicyAlways,
+					DNSPolicy:                     corev1.DNSClusterFirst,
+					TerminationGracePeriodSeconds: int64Ptr(30),
 					Containers: []corev1.Container{
 						{
 							Name:            "router",
@@ -632,7 +798,8 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 									Name: "NAMESPACE",
 									ValueFrom: &corev1.EnvVarSource{
 										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
+											FieldPath:  "metadata.namespace",
+											APIVersion: "v1",
 										},
 									},
 								},
@@ -641,9 +808,22 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 								{
 									ContainerPort: 8083,
 									Name:          "grpc",
+									Protocol:      corev1.ProtocolTCP,
+								},
+								{
+									ContainerPort: 8080,
+									Name:          "metrics",
+									Protocol:      corev1.ProtocolTCP,
+								},
+								{
+									ContainerPort: 8081,
+									Name:          "health",
+									Protocol:      corev1.ProtocolTCP,
 								},
 							},
-							Resources: jumpstarter.Spec.Routers.Resources,
+							Resources:                jumpstarter.Spec.Routers.Resources,
+							TerminationMessagePath:   "/dev/termination-log",
+							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: boolPtr(false),
 								Capabilities: &corev1.Capabilities{
@@ -658,9 +838,8 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
-					ServiceAccountName:            fmt.Sprintf("%s-controller-manager", jumpstarter.Name),
-					TopologySpreadConstraints:     jumpstarter.Spec.Routers.TopologySpreadConstraints,
-					TerminationGracePeriodSeconds: int64Ptr(10),
+					ServiceAccountName:        fmt.Sprintf("%s-controller-manager", jumpstarter.Name),
+					TopologySpreadConstraints: jumpstarter.Spec.Routers.TopologySpreadConstraints,
 				},
 			},
 		},
@@ -830,6 +1009,11 @@ func (r *JumpstarterReconciler) buildRouterEndpointForReplica(jumpstarter *opera
 // substituteReplica replaces $(replica) placeholder with actual replica index
 func (r *JumpstarterReconciler) substituteReplica(address string, replicaIndex int32) string {
 	return strings.ReplaceAll(address, "$(replica)", fmt.Sprintf("%d", replicaIndex))
+}
+
+// int32Ptr returns a pointer to an int32 value
+func int32Ptr(i int32) *int32 {
+	return &i
 }
 
 // int64Ptr returns a pointer to an int64 value

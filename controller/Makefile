@@ -174,8 +174,13 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: docker-build cluster grpcurl
 	./hack/deploy_with_helm.sh
 
+.PHONY: deploy-with-operator
 deploy-with-operator: docker-build build-operator cluster grpcurl
 	./hack/deploy_with_operator.sh
+
+.PHONY: operator-logs
+operator-logs:
+	kubectl logs -n jumpstarter-operator-system -l app.kubernetes.io/name=jumpstarter-operator -f
 
 deploy-with-operator-parallel:
 	make deploy-with-operator -j5 --output-sync=target
