@@ -24,13 +24,14 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/common.proto\x12\x0ejumpstarter.v1*\xb6\x02\n\x0e\x45xporterStatus\x12\x1f\n\x1b\x45XPORTER_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n\x17\x45XPORTER_STATUS_OFFLINE\x10\x01\x12\x1d\n\x19\x45XPORTER_STATUS_AVAILABLE\x10\x02\x12%\n!EXPORTER_STATUS_BEFORE_LEASE_HOOK\x10\x03\x12\x1f\n\x1b\x45XPORTER_STATUS_LEASE_READY\x10\x04\x12$\n EXPORTER_STATUS_AFTER_LEASE_HOOK\x10\x05\x12,\n(EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED\x10\x06\x12+\n\'EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED\x10\x07*\x98\x01\n\tLogSource\x12\x1a\n\x16LOG_SOURCE_UNSPECIFIED\x10\x00\x12\x15\n\x11LOG_SOURCE_DRIVER\x10\x01\x12 \n\x1cLOG_SOURCE_BEFORE_LEASE_HOOK\x10\x02\x12\x1f\n\x1bLOG_SOURCE_AFTER_LEASE_HOOK\x10\x03\x12\x15\n\x11LOG_SOURCE_SYSTEM\x10\x04\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/common.proto\x12\x0ejumpstarter.v1*\xb6\x02\n\x0e\x45xporterStatus\x12\x1f\n\x1b\x45XPORTER_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n\x17\x45XPORTER_STATUS_OFFLINE\x10\x01\x12\x1d\n\x19\x45XPORTER_STATUS_AVAILABLE\x10\x02\x12%\n!EXPORTER_STATUS_BEFORE_LEASE_HOOK\x10\x03\x12\x1f\n\x1b\x45XPORTER_STATUS_LEASE_READY\x10\x04\x12$\n EXPORTER_STATUS_AFTER_LEASE_HOOK\x10\x05\x12,\n(EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED\x10\x06\x12+\n\'EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED\x10\x07*\x98\x01\n\tLogSource\x12\x1a\n\x16LOG_SOURCE_UNSPECIFIED\x10\x00\x12\x15\n\x11LOG_SOURCE_DRIVER\x10\x01\x12 \n\x1cLOG_SOURCE_BEFORE_LEASE_HOOK\x10\x02\x12\x1f\n\x1bLOG_SOURCE_AFTER_LEASE_HOOK\x10\x03\x12\x15\n\x11LOG_SOURCE_SYSTEM\x10\x04\x42z\n\x12\x63om.jumpstarter.v1B\x0b\x43ommonProtoP\x01\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jumpstarter.v1.common_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  DESCRIPTOR._loaded_options = None
+  _globals['DESCRIPTOR']._loaded_options = None
+  _globals['DESCRIPTOR']._serialized_options = b'\n\022com.jumpstarter.v1B\013CommonProtoP\001\242\002\003JXX\252\002\016Jumpstarter.V1\312\002\016Jumpstarter\\V1\342\002\032Jumpstarter\\V1\\GPBMetadata\352\002\017Jumpstarter::V1'
   _globals['_EXPORTERSTATUS']._serialized_start=48
   _globals['_EXPORTERSTATUS']._serialized_end=358
   _globals['_LOGSOURCE']._serialized_start=361

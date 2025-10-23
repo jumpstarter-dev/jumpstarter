@@ -8,7 +8,7 @@ help:
 	@echo ""
 	@echo "Build targets:"
 	@echo "  build              - Build all packages"
-	@echo "  generate           - Generate code from protobuf definitions"
+	@echo "  protobuf-gen       - Generate code from protobuf definitions"
 	@echo "  sync               - Sync all packages and extras"
 	@echo ""
 	@echo "Documentation targets:"
@@ -75,8 +75,18 @@ pkg-ty-all: $(addprefix pkg-ty-,$(PKG_TARGETS))
 build:
 	uv build --all --out-dir dist
 
-generate:
-	buf generate
+protobuf-gen:
+	podman run --volume "$(shell pwd):/workspace" --workdir /workspace docker.io/bufbuild/buf:latest generate
+	# Fix Python imports: convert absolute imports to relative imports
+	# In jumpstarter/client/v1: from jumpstarter.v1 import -> from ...v1 import
+	find packages/jumpstarter-protocol/jumpstarter_protocol/jumpstarter/client/v1 -name "*_pb2*.py" -type f -exec sed -i.bak \
+		-e 's|^from jumpstarter\.v1 import|from ...v1 import|g' \
+		-e 's|^from jumpstarter\.client\.v1 import|from . import|g' \
+		{} \; -exec rm {}.bak \;
+	# In jumpstarter/v1: from jumpstarter.v1 import -> from . import
+	find packages/jumpstarter-protocol/jumpstarter_protocol/jumpstarter/v1 -name "*_pb2*.py" -type f -exec sed -i.bak \
+		-e 's|^from jumpstarter\.v1 import|from . import|g' \
+		{} \; -exec rm {}.bak \;
 
 sync:
 	uv sync --all-packages --all-extras
