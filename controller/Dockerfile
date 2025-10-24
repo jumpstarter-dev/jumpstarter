@@ -34,7 +34,10 @@ RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=locked,uid=10
     -o manager cmd/main.go
 RUN  --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=locked,uid=1001,gid=0 \
      --mount=type=cache,target=/opt/app-root/src/.cache/go-build,sharing=locked,uid=1001,gid=0 \
-     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o router  cmd/router/main.go
+     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+     go build -a \
+     -ldflags "-X main.version=${GIT_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
+     -o router  cmd/router/main.go
 
 FROM registry.access.redhat.com/ubi9/ubi-micro:9.5
 WORKDIR /

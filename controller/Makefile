@@ -102,7 +102,7 @@ build-operator:
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
-	go build -o bin/router  cmd/router/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/router cmd/router/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.

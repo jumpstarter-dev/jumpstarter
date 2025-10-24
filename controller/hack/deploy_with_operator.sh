@@ -11,7 +11,7 @@ source "${SCRIPT_DIR}/deploy_vars"
 kubectl config use-context kind-jumpstarter
 
 # Install nginx ingress if in ingress mode
-if [ "${INGRESS_ENABLED}" == "true" ]; then
+if [ "${NETWORKING_MODE}" = "ingress" ]; then
     install_nginx_ingress
 else
     echo -e "${GREEN}Deploying with nodeport ...${NC}"
