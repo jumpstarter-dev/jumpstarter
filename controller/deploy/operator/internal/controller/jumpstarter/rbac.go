@@ -18,8 +18,9 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 	log := logf.FromContext(ctx)
 
 	// ServiceAccount
+	// Note: We intentionally do NOT set controller reference on ServiceAccount to prevent
+	// it from being garbage collected when the Jumpstarter CR is deleted
 	desiredSA := r.createServiceAccount(jumpstarter)
-	controllerutil.SetControllerReference(jumpstarter, desiredSA, r.Scheme)
 
 	existingSA := &corev1.ServiceAccount{}
 	existingSA.Name = desiredSA.Name
@@ -31,7 +32,6 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 			// ServiceAccount is being created, copy all fields from desired
 			existingSA.Labels = desiredSA.Labels
 			existingSA.Annotations = desiredSA.Annotations
-
 			return nil
 		}
 
@@ -46,7 +46,7 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		// Update needed - apply changes
 		existingSA.Labels = desiredSA.Labels
 		existingSA.Annotations = desiredSA.Annotations
-		return controllerutil.SetControllerReference(jumpstarter, existingSA, r.Scheme)
+		return nil
 	})
 
 	if err != nil {
