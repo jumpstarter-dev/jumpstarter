@@ -49,6 +49,22 @@ If you have questions, reach out in our Matrix chat or open an issue on GitHub.
 
 We welcome bug fixes, features, and improvements to the core codebase.
 
+
+## AI Assistants
+
+This project accepts contributions from AI assistants, although you should be careful when creating code from AI assistants,
+and figure out if the code you are submitting could infringe any licensing, for example, reusing code from other incompatible
+GPL licenses, you should do your due diligence.
+
+This project includes cursor rules to help Cursor AI understand our codebase and development patterns. When working with Cursor AI:
+
+- **Driver Creation**: If asked to create a new driver, Cursor will guide you through the process using our `create_driver.sh` script
+- **Code Style**: Cursor will follow our established patterns and conventions
+- **Testing**: Cursor will remind you to add tests and run our test suite
+
+The cursor rules are located in `.cursor/rules/` directory, with specific guidance for driver creation in `.cursor/rules/creating-new-drivers.mdc`.
+
+
 ### Contributing Drivers
 
 To create a new driver scaffold:
