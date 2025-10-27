@@ -85,6 +85,7 @@ rules:
   - jumpstarter.dev
   resources:
   - clients/finalizers
+  - exporteraccesspolicies/finalizers
   - exporters/finalizers
   - leases/finalizers
   verbs:
@@ -93,6 +94,7 @@ rules:
   - jumpstarter.dev
   resources:
   - clients/status
+  - exporteraccesspolicies/status
   - exporters/status
   - leases/status
   verbs:

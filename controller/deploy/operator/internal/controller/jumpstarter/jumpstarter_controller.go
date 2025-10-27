@@ -98,6 +98,8 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/finalizers,verbs=update
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies/finalizers,verbs=update
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile

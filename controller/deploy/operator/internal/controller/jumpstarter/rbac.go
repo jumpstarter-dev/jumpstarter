@@ -199,12 +199,12 @@ func (r *JumpstarterReconciler) createRole(jumpstarter *operatorv1alpha1.Jumpsta
 			},
 			{
 				APIGroups: []string{"jumpstarter.dev"},
-				Resources: []string{"clients/status", "exporters/status", "leases/status"},
+				Resources: []string{"clients/status", "exporters/status", "leases/status", "exporteraccesspolicies/status"},
 				Verbs:     []string{"get", "update", "patch"},
 			},
 			{
 				APIGroups: []string{"jumpstarter.dev"},
-				Resources: []string{"clients/finalizers", "exporters/finalizers", "leases/finalizers"},
+				Resources: []string{"clients/finalizers", "exporters/finalizers", "leases/finalizers", "exporteraccesspolicies/finalizers"},
 				Verbs:     []string{"update"},
 			},
 			{
