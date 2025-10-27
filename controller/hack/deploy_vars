@@ -8,13 +8,11 @@ BASEDOMAIN="jumpstarter.${IP}.nip.io"
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 OPERATOR_IMG=${OPERATOR_IMG:-quay.io/jumpstarter-dev/jumpstarter-operator:latest}
 
-# Determine networking mode and endpoints based on INGRESS_ENABLED
-if [ "${INGRESS_ENABLED}" == "true" ]; then
-    NETWORKING_MODE="ingress"
+# Determine endpoints based on NETWORKING_MODE
+if [ "${NETWORKING_MODE}" == "ingress" ]; then
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5080"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5080"
 else
-    NETWORKING_MODE="nodeport"
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eo pipefail
+set -exo pipefail
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 # Source common utilities

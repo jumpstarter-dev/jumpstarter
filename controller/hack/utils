@@ -12,7 +12,7 @@ get_script_dir() {
 # Environment variable defaults
 export KIND=${KIND:-bin/kind}
 export GRPCURL=${GRPCURL:-bin/grpcurl}
-export INGRESS_ENABLED=${INGRESS_ENABLED:-false}
+export NETWORKING_MODE=${NETWORKING_MODE:-nodeport}
 
 # Color codes for terminal output
 export GREEN='\033[0;32m'
