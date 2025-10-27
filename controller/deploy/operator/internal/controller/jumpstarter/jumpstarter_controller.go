@@ -175,8 +175,6 @@ func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Contex
 	log := logf.FromContext(ctx)
 	desiredDeployment := r.createControllerDeployment(jumpstarter)
 
-	controllerutil.SetControllerReference(jumpstarter, desiredDeployment, r.Scheme)
-
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
 	existingDeployment.Namespace = desiredDeployment.Namespace
@@ -188,7 +186,7 @@ func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Contex
 			existingDeployment.Labels = desiredDeployment.Labels
 			existingDeployment.Annotations = desiredDeployment.Annotations
 			existingDeployment.Spec = desiredDeployment.Spec
-			return nil
+			return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
 		}
 
 		desiredDeployment.Spec.Template.Spec.DeprecatedServiceAccount = existingDeployment.Spec.Template.Spec.DeprecatedServiceAccount
@@ -246,8 +244,6 @@ func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, j
 	for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
 		desiredDeployment := r.createRouterDeployment(jumpstarter, i)
 
-		controllerutil.SetControllerReference(jumpstarter, desiredDeployment, r.Scheme)
-
 		existingDeployment := &appsv1.Deployment{}
 		existingDeployment.Name = desiredDeployment.Name
 		existingDeployment.Namespace = desiredDeployment.Namespace
@@ -259,7 +255,7 @@ func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, j
 				existingDeployment.Labels = desiredDeployment.Labels
 				existingDeployment.Annotations = desiredDeployment.Annotations
 				existingDeployment.Spec = desiredDeployment.Spec
-				return nil
+				return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
 			}
 			desiredDeployment.Spec.Template.Spec.SchedulerName = existingDeployment.Spec.Template.Spec.SchedulerName
 			desiredDeployment.Spec.Template.Spec.DeprecatedServiceAccount = existingDeployment.Spec.Template.Spec.DeprecatedServiceAccount

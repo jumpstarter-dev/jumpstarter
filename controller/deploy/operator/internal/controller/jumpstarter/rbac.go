@@ -63,7 +63,6 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 
 	// Role
 	desiredRole := r.createRole(jumpstarter)
-	controllerutil.SetControllerReference(jumpstarter, desiredRole, r.Scheme)
 
 	existingRole := &rbacv1.Role{}
 	existingRole.Name = desiredRole.Name
@@ -76,7 +75,7 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 			existingRole.Labels = desiredRole.Labels
 			existingRole.Annotations = desiredRole.Annotations
 			existingRole.Rules = desiredRole.Rules
-			return nil
+			return controllerutil.SetControllerReference(jumpstarter, existingRole, r.Scheme)
 		}
 
 		// Role exists, check if update is needed
@@ -108,7 +107,6 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 
 	// RoleBinding
 	desiredRoleBinding := r.createRoleBinding(jumpstarter)
-	controllerutil.SetControllerReference(jumpstarter, desiredRoleBinding, r.Scheme)
 
 	existingRoleBinding := &rbacv1.RoleBinding{}
 	existingRoleBinding.Name = desiredRoleBinding.Name
@@ -122,7 +120,7 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 			existingRoleBinding.Annotations = desiredRoleBinding.Annotations
 			existingRoleBinding.Subjects = desiredRoleBinding.Subjects
 			existingRoleBinding.RoleRef = desiredRoleBinding.RoleRef
-			return nil
+			return controllerutil.SetControllerReference(jumpstarter, existingRoleBinding, r.Scheme)
 		}
 
 		// RoleBinding exists, check if update is needed

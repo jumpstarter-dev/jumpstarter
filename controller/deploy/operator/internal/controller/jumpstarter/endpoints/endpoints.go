@@ -53,10 +53,6 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.
 	existingService.Name = service.Name
 	existingService.Namespace = service.Namespace
 
-	if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
-		return err
-	}
-
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingService, func() error {
 		// Preserve immutable fields if service already exists
 		if existingService.CreationTimestamp.IsZero() {
@@ -64,9 +60,7 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.
 			existingService.Spec = service.Spec
 			existingService.Labels = service.Labels
 			existingService.Annotations = service.Annotations
-			if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
-				return err
-			}
+			return controllerutil.SetControllerReference(owner, existingService, r.Scheme)
 
 		} else {
 			// Preserve existing NodePorts to prevent "port already allocated" errors
@@ -91,9 +85,8 @@ func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.
 			existingService.Spec.Type = service.Spec.Type
 			existingService.Labels = service.Labels
 			existingService.Annotations = service.Annotations
+			return controllerutil.SetControllerReference(owner, existingService, r.Scheme)
 		}
-
-		return nil
 	})
 
 	if err != nil {
