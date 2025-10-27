@@ -19,10 +19,10 @@ jobs:
           controller-ref: ${{ github.ref }}
           # use the matching branch on the jumpstarter repo
           jumpstarter-ref: ${{ github.event.pull_request.base.ref }}
-  e2e-tests-28d6b1cc3b49ab9ae176918ab9709a2e2522c97e:
+  e2e-tests-release-0-7:
     runs-on: ubuntu-latest
     steps:
-      - uses: jumpstarter-dev/jumpstarter-e2e@11a5ce6734be9f089ec3ea6ebf55284616f67fe8
+      - uses: jumpstarter-dev/jumpstarter-e2e@release-0.7
         with:
           controller-ref: ${{ github.ref }}
-          jumpstarter-ref: 28d6b1cc3b49ab9ae176918ab9709a2e2522c97e
+          jumpstarter-ref: release-0.7

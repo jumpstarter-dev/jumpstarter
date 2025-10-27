@@ -135,7 +135,7 @@ func (s *RouterService) Start(ctx context.Context) error {
 		return err
 	}
 
-	log.Info("Starting grpc router service")
+	log.Info("Starting grpc router service on port 8083")
 	go func() {
 		<-ctx.Done()
 		log.Info("Stopping grpc router service")

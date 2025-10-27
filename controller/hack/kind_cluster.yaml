@@ -20,10 +20,15 @@ nodes:
   - containerPort: 30010 # grpc nodeport
     hostPort: 8082
     protocol: TCP
-  - containerPort: 30011 # grpc router nodeport
+  - containerPort: 30011 # grpc router nodeport (replica 0)
     hostPort: 8083
     protocol: TCP
-
+  - containerPort: 30012 # grpc router nodeport (replica 1)
+    hostPort: 8084
+    protocol: TCP
+  - containerPort: 30013 # grpc router nodeport (replica 2)
+    hostPort: 8085
+    protocol: TCP
   - containerPort: 443
     hostPort: 5443
     protocol: TCP

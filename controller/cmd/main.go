@@ -33,6 +33,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -55,7 +56,41 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+
+	// Version information - set via ldflags at build time
+	version   = "dev"
+	gitCommit = "unknown"
+	buildDate = "unknown"
 )
+
+const (
+	// namespaceFile is the path to the namespace file mounted by Kubernetes
+	namespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+)
+
+// getWatchNamespace returns the namespace the controller should watch.
+// It tries multiple sources in order:
+// 1. NAMESPACE environment variable (explicit configuration takes precedence)
+// 2. Namespace file (automatically mounted by Kubernetes in every pod)
+// 3. Empty string (will fail, not supported since 0.8.0)
+func getWatchNamespace() string {
+	// First check NAMESPACE environment variable (explicit configuration)
+	if ns := os.Getenv("NAMESPACE"); ns != "" {
+		setupLog.Info("Using namespace from NAMESPACE environment variable", "namespace", ns)
+		return ns
+	}
+
+	// Fall back to reading from the namespace file mounted by Kubernetes
+	if ns, err := os.ReadFile(namespaceFile); err == nil {
+		namespace := string(ns)
+		if namespace != "" {
+			setupLog.Info("Auto-detected namespace from service account", "namespace", namespace)
+			return namespace
+		}
+	}
+
+	return ""
+}
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -90,6 +125,13 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	// Print version information
+	setupLog.Info("Jumpstarter Controller starting",
+		"version", version,
+		"gitCommit", gitCommit,
+		"buildDate", buildDate,
+	)
+
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
 	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
@@ -110,7 +152,11 @@ func main() {
 		TLSOpts: tlsOpts,
 	})
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	// Get the namespace to watch. Try to auto-detect from the pod's service account,
+	// fall back to NAMESPACE environment variable, or watch all namespaces if neither is available
+	watchNamespace := getWatchNamespace()
+
+	mgrOptions := ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress:   metricsAddr,
@@ -132,7 +178,22 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
-	})
+	}
+
+	// If a specific namespace is set, configure the cache to only watch that namespace
+	if watchNamespace != "" {
+		mgrOptions.LeaderElectionNamespace = watchNamespace
+		mgrOptions.Cache = cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				watchNamespace: {},
+			},
+		}
+	} else {
+		setupLog.Error(nil, "Jumpstarter controller can only be configured to work on a single namespace since 0.8.0")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)

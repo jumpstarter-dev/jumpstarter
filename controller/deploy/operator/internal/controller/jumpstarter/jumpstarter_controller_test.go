@@ -14,20 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package jumpstarter
 
 import (
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/controller/jumpstarter/endpoints"
 )
 
 var _ = Describe("Jumpstarter Controller", func() {
@@ -51,7 +53,46 @@ var _ = Describe("Jumpstarter Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: operatorv1alpha1.JumpstarterSpec{
+						BaseDomain:     "example.com",
+						UseCertManager: true,
+						Controller: operatorv1alpha1.ControllerConfig{
+							Image:           "quay.io/jumpstarter/jumpstarter:latest",
+							ImagePullPolicy: "IfNotPresent",
+							Replicas:        1,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("100Mi"),
+								},
+							},
+							GRPC: operatorv1alpha1.GRPCConfig{
+								Endpoints: []operatorv1alpha1.Endpoint{
+									{
+										Address: "controller",
+									},
+								},
+							},
+						},
+						Routers: operatorv1alpha1.RoutersConfig{
+							Image:           "quay.io/jumpstarter/jumpstarter:latest",
+							ImagePullPolicy: "IfNotPresent",
+							Replicas:        1,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("100Mi"),
+								},
+							},
+							GRPC: operatorv1alpha1.GRPCConfig{
+								Endpoints: []operatorv1alpha1.Endpoint{
+									{
+										Address: "router",
+									},
+								},
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -69,8 +110,9 @@ var _ = Describe("Jumpstarter Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &JumpstarterReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:             k8sClient,
+				Scheme:             k8sClient.Scheme(),
+				EndpointReconciler: endpoints.NewReconciler(k8sClient, k8sClient.Scheme()),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -81,4 +123,20 @@ var _ = Describe("Jumpstarter Controller", func() {
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
 	})
+})
+
+var _ = Describe("ensurePort", func() {
+	DescribeTable("should handle addresses correctly",
+		func(address, defaultPort, expected string) {
+			result := ensurePort(address, defaultPort)
+			Expect(result).To(Equal(expected))
+		},
+		Entry("hostname without port", "example.com", "443", "example.com:443"),
+		Entry("hostname with port", "example.com:8083", "443", "example.com:8083"),
+		Entry("IPv6 without port", "2001:db8::1", "443", "[2001:db8::1]:443"),
+		Entry("IPv6 with port", "[2001:db8::1]:8083", "443", "[2001:db8::1]:8083"),
+		Entry("malformed - too many colons", "host:port:extra", "443", "[host:port:extra]:443"),
+		Entry("malformed - empty string", "", "443", ":443"),
+		Entry("malformed - just colon", ":", "443", ":"),
+	)
 })

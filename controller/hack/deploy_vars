@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Common deployment variables for Jumpstarter hack scripts
+# This file should be sourced after utils
+
+# Calculate external IP and networking configuration
+IP=$(get_external_ip)
+BASEDOMAIN="jumpstarter.${IP}.nip.io"
+IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
+OPERATOR_IMG=${OPERATOR_IMG:-quay.io/jumpstarter-dev/jumpstarter-operator:latest}
+
+# Determine networking mode and endpoints based on INGRESS_ENABLED
+if [ "${INGRESS_ENABLED}" == "true" ]; then
+    NETWORKING_MODE="ingress"
+    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5080"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5080"
+else
+    NETWORKING_MODE="nodeport"
+    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
+fi
+
+# Extract image repository and tag from IMG variable
+if [[ "${IMG}" == *:* ]]; then
+    IMAGE_TAG="${IMG##*:}" # everything after the last colon
+    IMAGE_REPO="${IMG%:*}" # everything before the last colon
+else # no tag specified
+    IMAGE_TAG="latest"
+    IMAGE_REPO="${IMG}"
+fi
+# Export all variables for use in scripts
+export IP
+export BASEDOMAIN
+export NETWORKING_MODE
+export GRPC_ENDPOINT
+export GRPC_ROUTER_ENDPOINT
+export IMAGE_REPO
+export IMAGE_TAG
+export IMG
+export OPERATOR_IMG
+

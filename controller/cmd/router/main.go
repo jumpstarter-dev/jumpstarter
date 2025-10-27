@@ -34,6 +34,13 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip"
 )
 
+var (
+	// Version information - set via ldflags at build time
+	version   = "dev"
+	gitCommit = "unknown"
+	buildDate = "unknown"
+)
+
 func main() {
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
@@ -43,6 +50,13 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	logger := ctrl.Log.WithName("router")
 	ctx := logr.NewContext(context.Background(), logger)
+
+	// Print version information
+	logger.Info("Jumpstarter Router starting",
+		"version", version,
+		"gitCommit", gitCommit,
+		"buildDate", buildDate,
+	)
 
 	cfg := ctrl.GetConfigOrDie()
 	client, err := kclient.New(cfg, kclient.Options{})

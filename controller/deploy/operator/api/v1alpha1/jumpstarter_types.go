@@ -376,13 +376,15 @@ type RestAPIConfig struct {
 
 // Endpoint defines a single endpoint configuration.
 // An endpoint can use one or more networking methods: Route, Ingress, NodePort, or LoadBalancer.
-// Multiple methods can be configured simultaneously for the same hostname.
+// Multiple methods can be configured simultaneously for the same address.
 type Endpoint struct {
-	// Hostname for this endpoint.
+	// Address for this endpoint in the format "hostname", "hostname:port", "IPv4", "IPv4:port", "[IPv6]", or "[IPv6]:port".
 	// Required for Route and Ingress endpoints. Optional for NodePort and LoadBalancer endpoints.
-	// When optional, the hostname is used for certificate generation and DNS resolution.
-	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
-	Hostname string `json:"hostname,omitempty"`
+	// When optional, the address is used for certificate generation and DNS resolution.
+	// Supports templating with $(replica) for replica-specific addresses.
+	// Examples: "grpc.example.com", "grpc.example.com:9090", "192.168.1.1:8080", "[2001:db8::1]:8443", "router-$(replica).example.com"
+	// +kubebuilder:validation:Pattern=`^(\[[0-9a-fA-F:\.]+\]|[0-9]+(\.[0-9]+){3}|[a-z0-9$]([a-z0-9\-\.\$\(\)]*[a-z0-9\)])?)(:[0-9]+)?$`
+	Address string `json:"address,omitempty"`
 
 	// Route configuration for OpenShift clusters.
 	// Creates an OpenShift Route resource for this endpoint.
@@ -403,6 +405,12 @@ type Endpoint struct {
 	// Creates a LoadBalancer service for this endpoint.
 	// Requires cloud provider support for LoadBalancer services.
 	LoadBalancer *LoadBalancerConfig `json:"loadBalancer,omitempty"`
+
+	// ClusterIP configuration for internal service access.
+	// Creates a ClusterIP service for this endpoint.
+	// Useful for internal service-to-service communication or when
+	// using a different method to expose the service externally.
+	ClusterIP *ClusterIPConfig `json:"clusterIP,omitempty"`
 }
 
 // RouteConfig defines OpenShift Route configuration.
@@ -483,6 +491,21 @@ type LoadBalancerConfig struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// Labels to add to the LoadBalancer service.
+	// Useful for monitoring, cost allocation, and resource organization.
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// ClusterIPConfig defines Kubernetes ClusterIP service configuration.
+type ClusterIPConfig struct {
+	// Enable the ClusterIP service for this endpoint.
+	// When disabled, no ClusterIP service will be created for this endpoint.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Annotations to add to the ClusterIP service.
+	// Useful for configuring service-specific behavior and load balancer options.
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// Labels to add to the ClusterIP service.
 	// Useful for monitoring, cost allocation, and resource organization.
 	Labels map[string]string `json:"labels,omitempty"`
 }

@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# Common utilities for Jumpstarter hack scripts
+
+set -eo pipefail
+
+# Script directory calculation helper
+# Usage: SCRIPT_DIR="$(get_script_dir)"
+get_script_dir() {
+  dirname "$(readlink -f "$0")"
+}
+
+# Environment variable defaults
+export KIND=${KIND:-bin/kind}
+export GRPCURL=${GRPCURL:-bin/grpcurl}
+export INGRESS_ENABLED=${INGRESS_ENABLED:-false}
+
+# Color codes for terminal output
+export GREEN='\033[0;32m'
+export NC='\033[0m' # No Color
+
+# Get external IP address
+# Returns the IP address used for outbound connections
+get_external_ip() {
+  if which ip 2>/dev/null 1>/dev/null; then
+    ip route get 1.1.1.1 | grep -oP 'src \K\S+'
+  else
+    # MacOS does not have ip, so we use route and ifconfig instead
+    INTERFACE=$(route get 1.1.1.1 | grep interface | awk '{print $2}')
+    ifconfig | grep "$INTERFACE" -A 10 | grep "inet " | grep -Fv 127.0.0.1 | awk '{print $2}' | head -n 1
+  fi
+}
+
+# Load Docker/Podman image into kind cluster
+# Function to save images to kind, with workaround for github CI and other environment issues
+# In github CI, kind gets confused and tries to pull the image from docker instead
+# of podman, so if regular docker-image fails we need to:
+#   * save it to OCI image format
+#   * then load it into kind
+# Args:
+#   $1: image name (e.g., quay.io/jumpstarter-dev/jumpstarter-controller:latest)
+#   $2: kind cluster name (default: jumpstarter)
+kind_load_image() {
+  local image=$1
+  local cluster_name=${2:-jumpstarter}
+
+  echo -e "${GREEN}Loading $1 in kind ...${NC}"
+
+  # First, try to load the image directly
+  if ${KIND} load docker-image "${image}" --name "${cluster_name}" 2>/dev/null; then
+    echo "Image ${image} loaded successfully."
+    return
+  fi
+
+  # Save to tar file
+  if podman save "${image}" | ${KIND} load image-archive /dev/stdin --name "${cluster_name}"; then
+    echo "Image loaded successfully."
+  else
+    echo "Error loading image ${image}."
+    exit 1
+  fi
+}
+
+# Install nginx ingress in kind cluster
+# This function deploys nginx ingress and waits for it to be ready
+install_nginx_ingress() {
+  echo -e "${GREEN}Deploying nginx ingress in kind ...${NC}"
+
+  lsmod | grep ip_tables || \
+    (echo "ip_tables module not loaded needed by nginx ingress, please run 'sudo modprobe ip_tables'" && exit 1)
+
+  # Deploy nginx ingress for kind
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+
+  echo -e "${GREEN}Waiting for nginx to be ready ...${NC}"
+
+  while ! kubectl get pods --namespace ingress-nginx --selector=app.kubernetes.io/component=controller > /dev/null 2>&1; do
+    sleep 1
+  done
+
+  kubectl wait --namespace ingress-nginx \
+    --for=condition=ready pod \
+    --selector=app.kubernetes.io/component=controller \
+    --timeout=90s
+
+  echo -e "${GREEN}Nginx ingress installed successfully${NC}"
+}
+
+# Wait for Jumpstarter Kubernetes resources to be created and ready
+# This is primarily used for operator deployments where resources are created asynchronously
+# Args:
+#   $1: namespace (default: jumpstarter-lab)
+wait_for_jumpstarter_resources() {
+  local namespace=${1:-jumpstarter-lab}
+  
+  echo -e "${GREEN}Waiting for Jumpstarter deployments to be ready ...${NC}"
+
+  # Wait for controller deployment to exist
+  echo -e "${GREEN} * Waiting for controller deployment to be created ...${NC}"
+  local timeout=60
+  while ! kubectl get deployment jumpstarter-controller -n "${namespace}" > /dev/null 2>&1; do
+    sleep 2
+    timeout=$((timeout - 2))
+    if [ ${timeout} -le 0 ]; then
+      echo -e "${GREEN} * Controller deployment not created after 60s, exiting ...${NC}"
+      exit 1
+    fi
+  done
+
+  # Wait for router deployment to exist
+  echo -e "${GREEN} * Waiting for router deployment to be created ...${NC}"
+  timeout=60
+  while ! kubectl get deployment jumpstarter-router-0 -n "${namespace}" > /dev/null 2>&1; do
+    sleep 2
+    timeout=$((timeout - 2))
+    if [ ${timeout} -le 0 ]; then
+      echo -e "${GREEN} * Router deployment not created after 60s, exiting ...${NC}"
+      exit 1
+    fi
+  done
+
+  # Wait for controller deployment to be ready
+  echo -e "${GREEN} * Waiting for controller deployment to be ready ...${NC}"
+  kubectl wait --namespace "${namespace}" \
+    --for=condition=available deployment/jumpstarter-controller \
+    --timeout=180s
+
+  # Wait for router statefulset to be ready
+  echo -e "${GREEN} * Waiting for router pods to be ready ...${NC}"
+  kubectl wait --namespace "${namespace}" \
+    --for=condition=ready pod \
+    --selector=app=jumpstarter-router-0 \
+    --timeout=180s
+}
+
+# Wait for gRPC endpoint to be ready
+# Args:
+#   $1: endpoint (e.g., grpc.jumpstarter.192.168.1.1.nip.io:8082)
+#   $2: timeout in seconds (default: 120)
+wait_for_grpc_endpoint() {
+  local endpoint=$1
+  local timeout=${2:-120}
+  local retries=$((timeout / 2))
+
+  echo -e "${GREEN} * Checking ${endpoint} ... ${NC}"
+  while ! ${GRPCURL} -insecure "${endpoint}" list; do
+    sleep 2
+    retries=$((retries - 1))
+    if [ ${retries} -eq 0 ]; then
+      echo -e "${GREEN} * ${endpoint} not ready after ${timeout}s, exiting ... ${NC}"
+      exit 1
+    fi
+  done
+}
+
+# Check both gRPC endpoints (controller and router) are ready
+check_grpc_endpoints() {
+  echo -e "${GREEN}Waiting for grpc endpoints to be ready:${NC}"
+  wait_for_grpc_endpoint "${GRPC_ENDPOINT}"
+  wait_for_grpc_endpoint "${GRPC_ROUTER_ENDPOINT}"
+}
+
+# Print deployment success banner
+# Args:
+#   $1: deployment method (e.g., "Helm", "operator") - optional
+print_deployment_success() {
+  local method=${1:-""}
+  local method_text=""
+  
+  if [ -n "${method}" ]; then
+    method_text=" via ${method}"
+  fi
+  
+  echo -e "${GREEN}Jumpstarter controller deployed successfully${method_text}!${NC}"
+  echo -e " gRPC        endpoint: ${GRPC_ENDPOINT}"
+  echo -e " gRPC router endpoint: ${GRPC_ROUTER_ENDPOINT}"
+}
+
