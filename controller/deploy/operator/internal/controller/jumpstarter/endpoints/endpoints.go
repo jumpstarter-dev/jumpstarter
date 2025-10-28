@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -33,15 +34,29 @@ import (
 
 // Reconciler provides endpoint reconciliation functionality
 type Reconciler struct {
-	Client client.Client
-	Scheme *runtime.Scheme
+	Client           client.Client
+	Scheme           *runtime.Scheme
+	IngressAvailable bool
+	RouteAvailable   bool
 }
 
 // NewReconciler creates a new endpoint reconciler
-func NewReconciler(client client.Client, scheme *runtime.Scheme) *Reconciler {
+func NewReconciler(client client.Client, scheme *runtime.Scheme, config *rest.Config) *Reconciler {
+	log := logf.Log.WithName("endpoints-reconciler")
+
+	// Discover API availability at initialization
+	ingressAvailable := discoverIngressAPI(config)
+	routeAvailable := discoverRouteAPI(config)
+
+	log.Info("API discovery completed",
+		"ingressAvailable", ingressAvailable,
+		"routeAvailable", routeAvailable)
+
 	return &Reconciler{
-		Client: client,
-		Scheme: scheme,
+		Client:           client,
+		Scheme:           scheme,
+		IngressAvailable: ingressAvailable,
+		RouteAvailable:   routeAvailable,
 	}
 }
 
@@ -137,6 +152,15 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 		}
 	}
 
+	// Route resource (uses ClusterIP service)
+	if endpoint.Route != nil && endpoint.Route.Enabled {
+		serviceName := servicePort.Name
+		// Create the Route resource pointing to the ClusterIP service
+		if err := r.createRouteForEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
+			return err
+		}
+	}
+
 	// LoadBalancer service
 	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
 		if err := r.createService(ctx, owner, servicePort, "-lb", corev1.ServiceTypeLoadBalancer,
@@ -220,10 +244,11 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 		}
 	}
 
-	// Route service
+	// Route resource (uses ClusterIP service)
 	if endpoint.Route != nil && endpoint.Route.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-route", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, endpoint.Route.Annotations, endpoint.Route.Labels); err != nil {
+		serviceName := servicePort.Name
+		// Create the Route resource pointing to the ClusterIP service
+		if err := r.createRouteForEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
 			return err
 		}
 	}

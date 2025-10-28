@@ -43,7 +43,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 		var owner *corev1.ConfigMap // Use ConfigMap as a simple owner object for testing
 
 		BeforeEach(func() {
-			reconciler = NewReconciler(k8sClient, k8sClient.Scheme())
+			reconciler = NewReconciler(k8sClient, k8sClient.Scheme(), cfg)
 
 			// Create the test namespace
 			ns := &corev1.Namespace{
@@ -478,7 +478,7 @@ var _ = Describe("Endpoints Reconciler", func() {
 		var owner *corev1.ConfigMap
 
 		BeforeEach(func() {
-			reconciler = NewReconciler(k8sClient, k8sClient.Scheme())
+			reconciler = NewReconciler(k8sClient, k8sClient.Scheme(), cfg)
 
 			// Create the test namespace
 			ns := &corev1.Namespace{

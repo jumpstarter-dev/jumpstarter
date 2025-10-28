@@ -7,6 +7,7 @@ require (
 	github.com/jumpstarter-dev/jumpstarter-controller v0.7.1
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
+	github.com/openshift/api v0.0.0-20251023135607-98e18dae8c7a
 	github.com/pmezard/go-difflib v1.0.0
 	k8s.io/api v0.33.0
 	k8s.io/apimachinery v0.33.0

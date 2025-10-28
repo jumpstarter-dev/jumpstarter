@@ -96,10 +96,18 @@ func extractHostname(address string) string {
 func (r *Reconciler) createIngressForEndpoint(ctx context.Context, owner metav1.Object, serviceName string, servicePort int32,
 	endpoint *operatorv1alpha1.Endpoint, baseLabels map[string]string) error {
 
+	log := logf.FromContext(ctx)
+
+	// Check if Ingress API is available in the cluster
+	if !r.IngressAvailable {
+		log.Info("Skipping ingress creation: Ingress API not available in cluster")
+		// TODO: update status of the jumpstarter object to indicate that the ingress is not available
+		return nil
+	}
+
 	// Extract hostname from address
 	hostname := extractHostname(endpoint.Address)
 	if hostname == "" {
-		log := logf.FromContext(ctx)
 		log.Info("Skipping ingress creation: no hostname in endpoint address",
 			"address", endpoint.Address)
 		return nil
