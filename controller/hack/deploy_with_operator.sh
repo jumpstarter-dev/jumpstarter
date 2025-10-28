@@ -55,14 +55,14 @@ if [ "${NETWORKING_MODE}" == "ingress" ]; then
         - address: grpc.${BASEDOMAIN}:443
           ingress:
             enabled: true
-            class: ""
+            class: "nginx"
 END
 )
   ROUTER_ENDPOINT_CONFIG=$(cat <<-END
         - address: router.${BASEDOMAIN}:443
           ingress:
             enabled: true
-            class: ""
+            class: "nginx"
 END
 )
 else

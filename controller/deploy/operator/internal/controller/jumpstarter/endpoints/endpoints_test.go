@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -254,9 +255,189 @@ var _ = Describe("Endpoints Reconciler", func() {
 			})
 		})
 
+		Context("with Ingress enabled", func() {
+			It("should create a ClusterIP service and Ingress with default nginx annotations", func() {
+				endpoint := &operatorv1alpha1.Endpoint{
+					Address: "grpc.example.com:443",
+					Ingress: &operatorv1alpha1.IngressConfig{
+						Enabled: true,
+						Class:   "nginx",
+					},
+				}
+
+				svcPort := corev1.ServicePort{
+					Name:       "controller-grpc",
+					Port:       8082,
+					TargetPort: intstr.FromInt(8082),
+					Protocol:   corev1.ProtocolTCP,
+				}
+
+				err := reconciler.ReconcileControllerEndpoint(ctx, owner, endpoint, svcPort)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify the ClusterIP service was created (used by ingress)
+				service := &corev1.Service{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "controller-grpc",
+					Namespace: namespace,
+				}, service)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(service.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+				Expect(service.Spec.Selector["app"]).To(Equal("jumpstarter-controller"))
+
+				// Verify the Ingress was created
+				ingress := &networkingv1.Ingress{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "controller-grpc-ing",
+					Namespace: namespace,
+				}, ingress)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify ingress class
+				Expect(ingress.Spec.IngressClassName).NotTo(BeNil())
+				Expect(*ingress.Spec.IngressClassName).To(Equal("nginx"))
+
+				// Verify default nginx annotations for TLS passthrough
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/ssl-redirect"]).To(Equal("true"))
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/backend-protocol"]).To(Equal("GRPC"))
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"]).To(Equal("300"))
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/proxy-send-timeout"]).To(Equal("300"))
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/ssl-passthrough"]).To(Equal("true"))
+
+				// Verify ingress rules
+				Expect(ingress.Spec.Rules).To(HaveLen(1))
+				Expect(ingress.Spec.Rules[0].Host).To(Equal("grpc.example.com"))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths).To(HaveLen(1))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name).To(Equal("controller-grpc"))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number).To(Equal(int32(8082)))
+
+				// Verify TLS config
+				Expect(ingress.Spec.TLS).To(HaveLen(1))
+				Expect(ingress.Spec.TLS[0].Hosts).To(ContainElement("grpc.example.com"))
+			})
+
+			It("should merge user annotations with defaults (user takes precedence)", func() {
+				endpoint := &operatorv1alpha1.Endpoint{
+					Address: "grpc.example.com",
+					Ingress: &operatorv1alpha1.IngressConfig{
+						Enabled: true,
+						Class:   "nginx",
+						Annotations: map[string]string{
+							"nginx.ingress.kubernetes.io/ssl-redirect": "false", // override default
+							"custom.annotation/key":                    "custom-value",
+						},
+						Labels: map[string]string{
+							"environment": "production",
+						},
+					},
+				}
+
+				svcPort := corev1.ServicePort{
+					Name:       "controller-grpc",
+					Port:       8082,
+					TargetPort: intstr.FromInt(8082),
+					Protocol:   corev1.ProtocolTCP,
+				}
+
+				err := reconciler.ReconcileControllerEndpoint(ctx, owner, endpoint, svcPort)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify the Ingress was created
+				ingress := &networkingv1.Ingress{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "controller-grpc-ing",
+					Namespace: namespace,
+				}, ingress)
+				Expect(err).NotTo(HaveOccurred())
+
+				// User annotation should override default
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/ssl-redirect"]).To(Equal("false"))
+				// Custom annotation should be present
+				Expect(ingress.Annotations["custom.annotation/key"]).To(Equal("custom-value"))
+				// Other defaults should still be present
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/backend-protocol"]).To(Equal("GRPC"))
+
+				// User labels should be present
+				Expect(ingress.Labels["environment"]).To(Equal("production"))
+			})
+
+			It("should extract hostname from various address formats", func() {
+				testCases := []struct {
+					address      string
+					expectedHost string
+				}{
+					{"grpc.example.com", "grpc.example.com"},
+					{"grpc.example.com:443", "grpc.example.com"},
+					{"grpc.example.com:8080", "grpc.example.com"},
+				}
+
+				for _, tc := range testCases {
+					endpoint := &operatorv1alpha1.Endpoint{
+						Address: tc.address,
+						Ingress: &operatorv1alpha1.IngressConfig{
+							Enabled: true,
+						},
+					}
+
+					svcPort := corev1.ServicePort{
+						Name:       "test-svc",
+						Port:       8082,
+						TargetPort: intstr.FromInt(8082),
+						Protocol:   corev1.ProtocolTCP,
+					}
+
+					err := reconciler.ReconcileControllerEndpoint(ctx, owner, endpoint, svcPort)
+					Expect(err).NotTo(HaveOccurred())
+
+					// Verify ingress was created with correct hostname
+					ingress := &networkingv1.Ingress{}
+					err = k8sClient.Get(ctx, types.NamespacedName{
+						Name:      "test-svc-ing",
+						Namespace: namespace,
+					}, ingress)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(ingress.Spec.Rules[0].Host).To(Equal(tc.expectedHost))
+
+					// Clean up
+					_ = k8sClient.Delete(ctx, ingress)
+					svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "test-svc", Namespace: namespace}}
+					_ = k8sClient.Delete(ctx, svc)
+				}
+			})
+
+			It("should not set ingress class when not specified", func() {
+				endpoint := &operatorv1alpha1.Endpoint{
+					Address: "grpc.example.com",
+					Ingress: &operatorv1alpha1.IngressConfig{
+						Enabled: true,
+						// Class not specified - will use cluster default
+					},
+				}
+
+				svcPort := corev1.ServicePort{
+					Name:       "controller-grpc",
+					Port:       8082,
+					TargetPort: intstr.FromInt(8082),
+					Protocol:   corev1.ProtocolTCP,
+				}
+
+				err := reconciler.ReconcileControllerEndpoint(ctx, owner, endpoint, svcPort)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify ingress class is nil (will use cluster default IngressClass)
+				ingress := &networkingv1.Ingress{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "controller-grpc-ing",
+					Namespace: namespace,
+				}, ingress)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ingress.Spec.IngressClassName).To(BeNil())
+			})
+		})
+
 		AfterEach(func() {
 			// Clean up created services
-			services := []string{"controller", "controller-lb", "controller-np"}
+			services := []string{"controller", "controller-lb", "controller-np", "controller-grpc", "test-svc"}
 			for _, svcName := range services {
 				service := &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
@@ -265,6 +446,18 @@ var _ = Describe("Endpoints Reconciler", func() {
 					},
 				}
 				_ = k8sClient.Delete(ctx, service)
+			}
+
+			// Clean up ingresses
+			ingresses := []string{"controller-grpc-ing", "test-svc-ing"}
+			for _, ingName := range ingresses {
+				ingress := &networkingv1.Ingress{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      ingName,
+						Namespace: namespace,
+					},
+				}
+				_ = k8sClient.Delete(ctx, ingress)
 			}
 
 			// Clean up owner
@@ -344,9 +537,61 @@ var _ = Describe("Endpoints Reconciler", func() {
 			})
 		})
 
+		Context("with Ingress enabled for router", func() {
+			It("should create a ClusterIP service and Ingress for router replica", func() {
+				endpoint := &operatorv1alpha1.Endpoint{
+					Address: "router-0.example.com",
+					Ingress: &operatorv1alpha1.IngressConfig{
+						Enabled: true,
+						Class:   "nginx",
+						Annotations: map[string]string{
+							"router.annotation": "value",
+						},
+					},
+				}
+
+				svcPort := corev1.ServicePort{
+					Name:       "router-grpc",
+					Port:       8083,
+					TargetPort: intstr.FromInt(8083),
+					Protocol:   corev1.ProtocolTCP,
+				}
+
+				err := reconciler.ReconcileRouterReplicaEndpoint(ctx, owner, replicaIdx, endpointIdx, endpoint, svcPort)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify the ClusterIP service was created
+				service := &corev1.Service{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "router-grpc",
+					Namespace: namespace,
+				}, service)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(service.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+				Expect(service.Spec.Selector["app"]).To(Equal("test-router-router-0"))
+
+				// Verify the Ingress was created
+				ingress := &networkingv1.Ingress{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "router-grpc-ing",
+					Namespace: namespace,
+				}, ingress)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify ingress configuration
+				Expect(*ingress.Spec.IngressClassName).To(Equal("nginx"))
+				Expect(ingress.Spec.Rules[0].Host).To(Equal("router-0.example.com"))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name).To(Equal("router-grpc"))
+
+				// Verify user and default annotations
+				Expect(ingress.Annotations["router.annotation"]).To(Equal("value"))
+				Expect(ingress.Annotations["nginx.ingress.kubernetes.io/ssl-passthrough"]).To(Equal("true"))
+			})
+		})
+
 		AfterEach(func() {
 			// Clean up created services
-			services := []string{"router", "router-lb", "router-np", "router-ing", "router-route"}
+			services := []string{"router", "router-lb", "router-np", "router-ing", "router-route", "router-grpc"}
 			for _, svcName := range services {
 				service := &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
@@ -355,6 +600,18 @@ var _ = Describe("Endpoints Reconciler", func() {
 					},
 				}
 				_ = k8sClient.Delete(ctx, service)
+			}
+
+			// Clean up ingresses
+			ingresses := []string{"router-grpc-ing"}
+			for _, ingName := range ingresses {
+				ingress := &networkingv1.Ingress{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      ingName,
+						Namespace: namespace,
+					},
+				}
+				_ = k8sClient.Delete(ctx, ingress)
 			}
 
 			// Clean up owner

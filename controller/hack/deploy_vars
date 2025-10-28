@@ -10,8 +10,8 @@ OPERATOR_IMG=${OPERATOR_IMG:-quay.io/jumpstarter-dev/jumpstarter-operator:latest
 
 # Determine endpoints based on NETWORKING_MODE
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
-    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5080"
-    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5080"
+    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5443"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5443"
 else
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"

@@ -28,6 +28,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/utils"
 )
 
 // Reconciler provides endpoint reconciliation functionality
@@ -127,6 +128,15 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 	// Note: ClusterIP uses no suffix (most common for in-cluster communication)
 	//       LoadBalancer uses "-lb" suffix, NodePort uses "-np" suffix
 
+	// Ingress resource (uses ClusterIP service)
+	if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
+		serviceName := servicePort.Name
+		// Create the Ingress resource pointing to the ClusterIP service
+		if err := r.createIngressForEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
+			return err
+		}
+	}
+
 	// LoadBalancer service
 	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
 		if err := r.createService(ctx, owner, servicePort, "-lb", corev1.ServiceTypeLoadBalancer,
@@ -144,9 +154,18 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 	}
 
 	// ClusterIP service (no suffix for cleaner in-cluster service names)
-	if endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled {
+	// Create ClusterIP if explicitly enabled OR if Ingress/Route need it
+	if (endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled) ||
+		(endpoint.Ingress != nil && endpoint.Ingress.Enabled) ||
+		(endpoint.Route != nil && endpoint.Route.Enabled) {
+		// Merge annotations and labels from ClusterIP config if present
+		var annotations, labels map[string]string
+		if endpoint.ClusterIP != nil {
+			annotations = endpoint.ClusterIP.Annotations
+			labels = endpoint.ClusterIP.Labels
+		}
 		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, endpoint.ClusterIP.Annotations, endpoint.ClusterIP.Labels); err != nil {
+			podSelector, baseLabels, annotations, labels); err != nil {
 			return err
 		}
 	}
@@ -154,7 +173,9 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 	// If no service type is explicitly enabled, create a default ClusterIP service
 	if (endpoint.LoadBalancer == nil || !endpoint.LoadBalancer.Enabled) &&
 		(endpoint.NodePort == nil || !endpoint.NodePort.Enabled) &&
-		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) {
+		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) &&
+		(endpoint.Ingress == nil || !endpoint.Ingress.Enabled) &&
+		(endpoint.Route == nil || !endpoint.Route.Enabled) {
 
 		// TODO: Default to Route or Ingress depending of the type of cluster
 		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
@@ -190,10 +211,11 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 	// Note: ClusterIP uses no suffix (most common for in-cluster communication)
 	//       LoadBalancer uses "-lb" suffix, NodePort uses "-np" suffix
 
-	// Ingress service
+	// Ingress resource (uses ClusterIP service)
 	if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-ing", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, endpoint.Ingress.Annotations, endpoint.Ingress.Labels); err != nil {
+		serviceName := servicePort.Name
+		// Create the Ingress resource pointing to the ClusterIP service
+		if err := r.createIngressForEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
 			return err
 		}
 	}
@@ -223,9 +245,18 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 	}
 
 	// ClusterIP service (no suffix for cleaner in-cluster service names)
-	if endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled {
+	// Create ClusterIP if explicitly enabled OR if Ingress/Route need it
+	if (endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled) ||
+		(endpoint.Ingress != nil && endpoint.Ingress.Enabled) ||
+		(endpoint.Route != nil && endpoint.Route.Enabled) {
+		// Merge annotations and labels from ClusterIP config if present
+		var annotations, labels map[string]string
+		if endpoint.ClusterIP != nil {
+			annotations = endpoint.ClusterIP.Annotations
+			labels = endpoint.ClusterIP.Labels
+		}
 		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, endpoint.ClusterIP.Annotations, endpoint.ClusterIP.Labels); err != nil {
+			podSelector, baseLabels, annotations, labels); err != nil {
 			return err
 		}
 	}
@@ -242,8 +273,7 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 		}
 	}
 
-	// TODO: Create ingress/route resources here instead of calling the deprecated ReconcileEndpoint
-	// For now, ingress and route are handled by creating ClusterIP services above
+	// Note: Ingress resources are now created above. Route resources still need to be implemented.
 
 	return nil
 }
@@ -257,14 +287,8 @@ func (r *Reconciler) createService(ctx context.Context, owner metav1.Object, ser
 	// Build service name with suffix to avoid conflicts
 	serviceName := servicePort.Name + nameSuffix
 
-	// Merge labels
-	serviceLabels := make(map[string]string)
-	for k, v := range baseLabels {
-		serviceLabels[k] = v
-	}
-	for k, v := range extraLabels {
-		serviceLabels[k] = v
-	}
+	// Merge labels (extra labels take precedence)
+	serviceLabels := utils.MergeMaps(baseLabels, extraLabels)
 
 	// Ensure annotations map is initialized
 	if annotations == nil {
