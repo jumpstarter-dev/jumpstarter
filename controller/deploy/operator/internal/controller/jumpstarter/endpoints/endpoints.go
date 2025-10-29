@@ -45,8 +45,8 @@ func NewReconciler(client client.Client, scheme *runtime.Scheme, config *rest.Co
 	log := logf.Log.WithName("endpoints-reconciler")
 
 	// Discover API availability at initialization
-	ingressAvailable := discoverIngressAPI(config)
-	routeAvailable := discoverRouteAPI(config)
+	ingressAvailable := discoverAPIResource(config, "networking.k8s.io/v1", "Ingress")
+	routeAvailable := discoverAPIResource(config, "route.openshift.io/v1", "Route")
 
 	log.Info("API discovery completed",
 		"ingressAvailable", ingressAvailable,

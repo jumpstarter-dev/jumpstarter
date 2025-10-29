@@ -22,45 +22,26 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// discoverIngressAPI checks if the Ingress API (networking.k8s.io/v1) is available in the cluster
-func discoverIngressAPI(config *rest.Config) bool {
+// discoverAPIResource checks if a specific API resource is available in the cluster
+// groupVersion should be in the format "group/version" (e.g., "networking.k8s.io/v1", "route.openshift.io/v1")
+// kind is the resource kind to look for (e.g., "Ingress", "Route")
+func discoverAPIResource(config *rest.Config, groupVersion, kind string) bool {
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
-		log.Log.Error(err, "Failed to create discovery client for Ingress API check")
+		log.Log.Error(err, "Failed to create discovery client",
+			"groupVersion", groupVersion,
+			"kind", kind)
 		return false
 	}
 
-	apiResourceList, err := discoveryClient.ServerResourcesForGroupVersion("networking.k8s.io/v1")
+	apiResourceList, err := discoveryClient.ServerResourcesForGroupVersion(groupVersion)
 	if err != nil {
-		// API group not found - Ingress not available
+		// API group not found - resource not available
 		return false
 	}
 
 	for _, resource := range apiResourceList.APIResources {
-		if resource.Kind == "Ingress" {
-			return true
-		}
-	}
-
-	return false
-}
-
-// discoverRouteAPI checks if the OpenShift Route API (route.openshift.io/v1) is available in the cluster
-func discoverRouteAPI(config *rest.Config) bool {
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		log.Log.Error(err, "Failed to create discovery client for Route API check")
-		return false
-	}
-
-	apiResourceList, err := discoveryClient.ServerResourcesForGroupVersion("route.openshift.io/v1")
-	if err != nil {
-		// API group not found - Route not available
-		return false
-	}
-
-	for _, resource := range apiResourceList.APIResources {
-		if resource.Kind == "Route" {
+		if resource.Kind == kind {
 			return true
 		}
 	}
