@@ -1660,20 +1660,22 @@ var _ = Describe("Scheduled Leases", func() {
 		It("should acquire first lease at BeginTime, then second after first is released", func() {
 			ctx := context.Background()
 
-			// Use same BeginTime for both to avoid timing races
-			sharedBeginTime := metav1.NewTime(time.Now().Truncate(time.Second).Add(1 * time.Second))
+			// Give lease1 an earlier BeginTime to ensure deterministic ordering
+			// Stagger them closely so both BeginTimes will have passed by the time we check lease2
+			lease1BeginTime := metav1.NewTime(time.Now().Truncate(time.Second).Add(1 * time.Second))
+			lease2BeginTime := metav1.NewTime(time.Now().Truncate(time.Second).Add(1*time.Second + 100*time.Millisecond))
 
 			// Both leases target dut:b (only one exporter available)
 			lease1 := leaseDutA2Sec.DeepCopy()
 			lease1.Name = lease1Name
 			lease1.Spec.Selector.MatchLabels["dut"] = "b"
-			lease1.Spec.BeginTime = &sharedBeginTime
+			lease1.Spec.BeginTime = &lease1BeginTime
 			lease1.Spec.Duration = &metav1.Duration{Duration: 10 * time.Second} // Long duration, but we'll release early
 
 			lease2 := leaseDutA2Sec.DeepCopy()
 			lease2.Name = lease2Name
 			lease2.Spec.Selector.MatchLabels["dut"] = "b"
-			lease2.Spec.BeginTime = &sharedBeginTime
+			lease2.Spec.BeginTime = &lease2BeginTime
 			lease2.Spec.Duration = &metav1.Duration{Duration: 10 * time.Second}
 
 			Expect(k8sClient.Create(ctx, lease1)).To(Succeed())
