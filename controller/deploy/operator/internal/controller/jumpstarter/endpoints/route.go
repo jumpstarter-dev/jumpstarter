@@ -18,10 +18,13 @@ package endpoints
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	routev1 "github.com/openshift/api/route/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -87,6 +90,15 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 	if hostname == "" {
 		log.Info("Skipping route creation: no hostname in endpoint address",
 			"address", endpoint.Address)
+		return nil
+	}
+
+	if errs := validation.IsDNS1123Subdomain(hostname); errs != nil {
+		log := logf.FromContext(ctx)
+		log.Error(errors.New(strings.Join(errs, ", ")), "Skipping ingress creation: invalid hostname",
+			"address", endpoint.Address,
+			"hostname", hostname)
+		// TODO: propagate error to status conditions
 		return nil
 	}
 
