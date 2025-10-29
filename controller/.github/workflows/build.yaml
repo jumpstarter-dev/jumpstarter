@@ -24,8 +24,8 @@ jobs:
             dockerfile: Dockerfile
             context: .
           - image_name: jumpstarter-dev/jumpstarter-operator
-            dockerfile: deploy/operator/Dockerfile
-            context: ./deploy/operator
+            dockerfile: Dockerfile.operator
+            context: .
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
