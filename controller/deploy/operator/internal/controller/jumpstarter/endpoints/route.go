@@ -22,6 +22,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -120,7 +121,7 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 			To: routev1.RouteTargetReference{
 				Kind:   "Service",
 				Name:   serviceName,
-				Weight: int32Ptr(100),
+				Weight: ptr.To(int32(100)),
 			},
 			TLS: &routev1.TLSConfig{
 				Termination:                   tlsTermination,
@@ -131,9 +132,4 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 	}
 
 	return r.createOrUpdateRoute(ctx, route, owner)
-}
-
-// int32Ptr returns a pointer to an int32 value
-func int32Ptr(i int32) *int32 {
-	return &i
 }
