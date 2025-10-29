@@ -2,6 +2,8 @@
 set -exo pipefail
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
+DEPLOY_JUMPSTARTER=${DEPLOY_JUMPSTARTER:-true}
+
 # Source common utilities
 source "${SCRIPT_DIR}/utils"
 
@@ -42,12 +44,17 @@ kubectl wait --namespace jumpstarter-operator-system \
   --for=condition=available deployment/jumpstarter-operator-controller-manager \
   --timeout=120s
 
+if [ "${DEPLOY_JUMPSTARTER}" != "true" ]; then
+  echo -e "${GREEN}Skipping Jumpstarter deployment ...${NC}"
+  exit 0
+else
+  echo -e  "${GREEN}Creating Jumpstarter custom resource ...${NC}"
+fi
+
 # Create namespace for Jumpstarter deployment
 echo -e "${GREEN}Creating jumpstarter-lab namespace ...${NC}"
 kubectl create namespace jumpstarter-lab --dry-run=client -o yaml | kubectl apply -f -
 
-# Generate Jumpstarter CR based on networking mode
-echo -e "${GREEN}Creating Jumpstarter custom resource ...${NC}"
 
 # Generate endpoint configuration based on networking mode
 if [ "${NETWORKING_MODE}" == "ingress" ]; then

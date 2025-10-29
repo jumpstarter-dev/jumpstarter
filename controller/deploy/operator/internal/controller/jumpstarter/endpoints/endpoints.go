@@ -129,6 +129,7 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 	// Controller pods have fixed labels: app=jumpstarter-controller
 	// We need to create a service with selector matching those labels
 	baseLabels := map[string]string{
+		"component":  "controller",
 		"app":        "jumpstarter-controller",
 		"controller": owner.GetName(),
 	}
@@ -219,7 +220,7 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 	baseAppLabel := fmt.Sprintf("%s-router-%d", owner.GetName(), replicaIndex)
 
 	baseLabels := map[string]string{
-		"app":          "jumpstarter-router",
+		"component":    "router",
 		"router":       owner.GetName(),
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 		"endpoint-idx": fmt.Sprintf("%d", endpointIdx),
