@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eo pipefail
+set -exo pipefail
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 # Source common utilities
@@ -55,14 +55,14 @@ if [ "${NETWORKING_MODE}" == "ingress" ]; then
         - address: grpc.${BASEDOMAIN}:443
           ingress:
             enabled: true
-            class: ""
+            class: "nginx"
 END
 )
   ROUTER_ENDPOINT_CONFIG=$(cat <<-END
         - address: router.${BASEDOMAIN}:443
           ingress:
             enabled: true
-            class: ""
+            class: "nginx"
 END
 )
 else
