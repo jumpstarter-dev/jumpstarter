@@ -112,7 +112,7 @@ var _ = Describe("Jumpstarter Controller", func() {
 			controllerReconciler := &JumpstarterReconciler{
 				Client:             k8sClient,
 				Scheme:             k8sClient.Scheme(),
-				EndpointReconciler: endpoints.NewReconciler(k8sClient, k8sClient.Scheme()),
+				EndpointReconciler: endpoints.NewReconciler(k8sClient, k8sClient.Scheme(), cfg),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -583,8 +584,8 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas:                &jumpstarter.Spec.Controller.Replicas,
-			ProgressDeadlineSeconds: int32Ptr(600),
-			RevisionHistoryLimit:    int32Ptr(10),
+			ProgressDeadlineSeconds: ptr.To(int32(600)),
+			RevisionHistoryLimit:    ptr.To(int32(10)),
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDeployment{
@@ -602,7 +603,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					DNSPolicy:                     corev1.DNSClusterFirst,
-					TerminationGracePeriodSeconds: int64Ptr(30),
+					TerminationGracePeriodSeconds: ptr.To(int64(30)),
 					Containers: []corev1.Container{
 						{
 							Name:            "manager",
@@ -749,9 +750,9 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			Labels:    labels,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas:                int32Ptr(1), // Each deployment for the router needs to have exactly 1 replica
-			ProgressDeadlineSeconds: int32Ptr(600),
-			RevisionHistoryLimit:    int32Ptr(10),
+			Replicas:                ptr.To(int32(1)), // Each deployment for the router needs to have exactly 1 replica
+			ProgressDeadlineSeconds: ptr.To(int32(600)),
+			RevisionHistoryLimit:    ptr.To(int32(10)),
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDeployment{
@@ -769,7 +770,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					DNSPolicy:                     corev1.DNSClusterFirst,
-					TerminationGracePeriodSeconds: int64Ptr(30),
+					TerminationGracePeriodSeconds: ptr.To(int64(30)),
 					Containers: []corev1.Container{
 						{
 							Name:            "router",
@@ -1007,16 +1008,6 @@ func (r *JumpstarterReconciler) buildRouterEndpointForReplica(jumpstarter *opera
 // substituteReplica replaces $(replica) placeholder with actual replica index
 func (r *JumpstarterReconciler) substituteReplica(address string, replicaIndex int32) string {
 	return strings.ReplaceAll(address, "$(replica)", fmt.Sprintf("%d", replicaIndex))
-}
-
-// int32Ptr returns a pointer to an int32 value
-func int32Ptr(i int32) *int32 {
-	return &i
-}
-
-// int64Ptr returns a pointer to an int64 value
-func int64Ptr(i int64) *int64 {
-	return &i
 }
 
 // ensurePort adds a default port to an address if it doesn't already have one
