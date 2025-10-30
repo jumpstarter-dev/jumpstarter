@@ -38,8 +38,8 @@ If you have the repository cloned locally:
 
 | Installation Type | Command | Description |
 |------------------|---------|-------------|
-| Stable release (recommended) | `./install.sh` | Install stable release 0.6 |
-| Stable release (explicit) | `./install.sh -s release-0.6` | Install stable release 0.6 explicitly |
+| Stable release (recommended) | `./install.sh` | Install stable release 0.7 |
+| Stable release (explicit) | `./install.sh -s release-0.7` | Install stable release 0.7 explicitly |
 | Development version | `./install.sh -s main` | Install latest development version |
 | Release candidate | `./install.sh -s rc` | Install latest release candidate (when available) |
 | Custom directory | `./install.sh -d /opt/jumpstarter` | Install to custom directory |
@@ -73,7 +73,7 @@ echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-s, --source SOURCE` | Installation source (release-0.6, latest, rc, main) | `release-0.6` |
+| `-s, --source SOURCE` | Installation source (release-0.7, latest, rc, main) | `release-0.7` |
 | `-d, --dir DIR` | Installation directory | `~/.local/jumpstarter` |
 | `-h, --help` | Show help message | - |
 
@@ -165,7 +165,7 @@ indexes:
 | ------------------------------------------------------ | --------------------------------------------------------------------- |
 | [releases](https://pkg.jumpstarter.dev/)               | Release, or release-candidate versions                                |
 | [main](https://pkg.jumpstarter.dev/main/)              | Index tracking the main branch, equivalent to installing from sources |
-| [release-0.6](https://pkg.jumpstarter.dev/release-0.6) | Index tracking a stable branch                                        |
+| [release-0.7](https://pkg.jumpstarter.dev/release-0.7) | Index tracking a stable branch                                        |
 
 #### Installing from Source
 
