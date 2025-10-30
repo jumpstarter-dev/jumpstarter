@@ -693,8 +693,13 @@ func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
 	// Get grpcurl path from environment or use default
 	grpcurlPath := os.Getenv("GRPCURL")
 	if grpcurlPath == "" {
-		grpcurlPath = "grpcurl"
+		grpcurlPath = "../../../../bin/grpcurl" // installed on the base jumpstarter-controller project
 	}
+
+	// exec grpcurl -h to verify it is available
+	cmd := exec.Command(grpcurlPath, "-h")
+	err := cmd.Run()
+	Expect(err).NotTo(HaveOccurred(), "grpcurl is not available")
 
 	checkEndpoint := func(g Gomega) {
 		cmd := exec.Command(grpcurlPath, "-insecure", endpoint, "list")

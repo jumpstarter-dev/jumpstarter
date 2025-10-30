@@ -183,7 +183,7 @@ deploy-operator: docker-build build-operator cluster grpcurl
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
 .PHONY: test-operator-e2e
-test-operator-e2e: deploy-operator
+test-operator-e2e: grpcurl deploy-operator
 	make -C deploy/operator test-e2e
 .PHONY: operator-logs
 operator-logs:
