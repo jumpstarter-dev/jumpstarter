@@ -560,6 +560,7 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, jumpstarter *o
 // createControllerDeployment creates a deployment for the controller
 func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv1.Deployment {
 	labels := map[string]string{
+		"component":  "controller",
 		"app":        "jumpstarter-controller",
 		"controller": jumpstarter.Name,
 	}
@@ -735,6 +736,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 	baseAppLabel := fmt.Sprintf("%s-router-%d", jumpstarter.Name, replicaIndex)
 
 	labels := map[string]string{
+		"component":    "router",
 		"app":          baseAppLabel, // All services for this replica select by this label
 		"router":       jumpstarter.Name,
 		"router-index": fmt.Sprintf("%d", replicaIndex),

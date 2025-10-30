@@ -178,10 +178,18 @@ deploy: docker-build cluster grpcurl
 deploy-with-operator: docker-build build-operator cluster grpcurl
 	./hack/deploy_with_operator.sh
 
+.PHONY: deploy-operator
+deploy-operator: docker-build build-operator cluster grpcurl
+	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
+
+.PHONY: test-operator-e2e
+test-operator-e2e: grpcurl deploy-operator
+	make -C deploy/operator test-e2e
 .PHONY: operator-logs
 operator-logs:
 	kubectl logs -n jumpstarter-operator-system -l app.kubernetes.io/name=jumpstarter-operator -f
 
+.PHONY: deploy-with-operator-parallel
 deploy-with-operator-parallel:
 	make deploy-with-operator -j5 --output-sync=target
 

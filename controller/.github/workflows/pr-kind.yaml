@@ -18,7 +18,7 @@ jobs:
       - name: Run make deploy
         run: make deploy
 
-  deploy-with-operator:
+  e2e-test-operator:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -27,4 +27,4 @@ jobs:
           fetch-depth: 0
 
       - name: Run make deploy
-        run: make deploy-with-operator
+        run: make test-operator-e2e
