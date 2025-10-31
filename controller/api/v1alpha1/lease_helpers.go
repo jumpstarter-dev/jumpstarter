@@ -106,6 +106,10 @@ func ParseLabelSelector(selectorStr string) (*metav1.LabelSelector, error) {
 		case selection.Equals:
 			// For exact match with single value, use matchLabels
 			if len(values) == 1 {
+				// Check if we already have an equality requirement for this key with a different value
+				if existingValue, exists := matchLabels[key]; exists && existingValue != values[0] {
+					return nil, fmt.Errorf("invalid selector: label %s cannot have multiple equality requirements with different values (%s and %s)", key, existingValue, values[0])
+				}
 				matchLabels[key] = values[0]
 			} else {
 				// Multiple values should use In operator

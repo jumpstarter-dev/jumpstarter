@@ -204,6 +204,21 @@ var _ = Describe("ParseLabelSelector", func() {
 			Expect(selector).To(BeNil())
 		})
 
+		It("should reject repeated equality requirements on the same key with different values", func() {
+			selector, err := ParseLabelSelector("a=1,a=2")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot have multiple equality requirements"))
+			Expect(err.Error()).To(ContainSubstring("a"))
+			Expect(selector).To(BeNil())
+		})
+
+		It("should accept repeated equality requirements on the same key with the same value", func() {
+			selector, err := ParseLabelSelector("a=1,a=1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selector).NotTo(BeNil())
+			Expect(selector.MatchLabels).To(HaveKeyWithValue("a", "1"))
+		})
+
 		It("should combine multiple != operators for the same key into NotIn", func() {
 			selector, err := ParseLabelSelector("key!=value1,key!=value2")
 			Expect(err).NotTo(HaveOccurred())
