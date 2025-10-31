@@ -80,7 +80,7 @@ install_nginx_ingress() {
   kubectl wait --namespace ingress-nginx \
     --for=condition=ready pod \
     --selector=app.kubernetes.io/component=controller \
-    --timeout=90s
+    --timeout=180s
 
   echo -e "${GREEN}Nginx ingress installed successfully${NC}"
 }
