@@ -1,17 +1,19 @@
 [project]
 name = "jumpstarter_driver_corellium"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = ""
 authors = [{ name = "Leonardo Rossetti", email = "lrossett@redhat.com" }]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
-  "jumpstarter",
-  "jumpstarter-driver-composite",
-  "jumpstarter-driver-power",
-  "jumpstarter-driver-network",
-  "jumpstarter-driver-pyserial",
+  "jumpstarter=={{ version }}",
+  "jumpstarter-driver-composite=={{ version }}",
+  "jumpstarter-driver-power=={{ version }}",
+  "jumpstarter-driver-network=={{ version }}",
+  "jumpstarter-driver-pyserial=={{ version }}",
   "click>=8.1.7.2",
 ]
 
@@ -21,17 +23,10 @@ Corellium = "jumpstarter_driver_corellium.driver:Corellium"
 [dependency-groups]
 dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0", "trio>=0.28.0", "requests_mock", "pytest-asyncio>=0.25.3"]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

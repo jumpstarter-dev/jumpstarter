@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-can"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = ""
 authors = [
   { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
@@ -10,7 +10,9 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "python-can>=4.5.0", "can-isotp>=2.0.6"]
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+dependencies = ["jumpstarter=={{ version }}", "python-can>=4.5.0", "can-isotp>=2.0.6"]
 
 [project.entry-points."jumpstarter.drivers"]
 Can = "jumpstarter_driver_can.driver:Can"
@@ -20,17 +22,10 @@ IsoTpSocket = "jumpstarter_driver_can.driver:IsoTpSocket"
 [dependency-groups]
 dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0"]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

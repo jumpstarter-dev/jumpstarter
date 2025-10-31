@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-network"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = ""
 authors = [
   { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
@@ -9,8 +9,10 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
-  "jumpstarter",
+  "jumpstarter=={{ version }}",
   "pexpect>=4.9.0",
   "fabric>=3.2.2",
   "wsproto>=1.2.0",
@@ -40,17 +42,10 @@ dev = [
   "websocket-client>=1.8.0",
 ]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

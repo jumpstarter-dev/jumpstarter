@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-${DRIVER_NAME}"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Add your description here"
 readme = "README.md"
 license = "Apache-2.0"
@@ -8,18 +8,15 @@ authors = [
     { name = "${AUTHOR_NAME}", email = "${AUTHOR_EMAIL}" }
 ]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "anyio>=4.10.0",
-    "jumpstarter",
+    "jumpstarter=={{ version }}",
 ]
 
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../'}
-
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source = "uv-dynamic-versioning"
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
@@ -29,11 +26,8 @@ testpaths = ["jumpstarter_driver_${DRIVER_NAME}"]
 asyncio_mode = "auto"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
-
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [

@@ -1,27 +1,24 @@
 [project]
 name = "jumpstarter-driver-iscsi"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Exporter ISCSI service driver"
 readme = "README.md"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "anyio>=4.10.0",
-    "jumpstarter",
-    "jumpstarter-driver-composite",
-    "jumpstarter-driver-opendal",
+    "jumpstarter=={{ version }}",
+    "jumpstarter-driver-composite=={{ version }}",
+    "jumpstarter-driver-opendal=={{ version }}",
     "click>=8.1.8",
     "rtslib-fb",
     "requests>=2.32.5"
 ]
 
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
-
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source = "uv-dynamic-versioning"
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -29,7 +26,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["src"]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [dependency-groups]

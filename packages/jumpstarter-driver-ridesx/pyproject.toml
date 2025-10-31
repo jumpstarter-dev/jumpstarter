@@ -1,24 +1,21 @@
 [project]
 name = "jumpstarter-driver-ridesx"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Jumpstarter driver for Qualcomm RideSX"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
-    "jumpstarter",
-    "jumpstarter-driver-opendal",
-    "jumpstarter-driver-pyserial",
+    "jumpstarter=={{ version }}",
+    "jumpstarter-driver-opendal=={{ version }}",
+    "jumpstarter-driver-pyserial=={{ version }}",
 ]
 
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
-
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source = "uv-dynamic-versioning"
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
@@ -30,11 +27,9 @@ testpaths = ["jumpstarter_driver_ridesx"]
 #asyncio_mode = "auto"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

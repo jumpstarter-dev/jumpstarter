@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-energenie"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Energenie is an advanced surge protector with power management features"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -8,10 +8,12 @@ authors = [
     { name = "Enric Balletbo i Serra", email = "eballetbo@redhat.com" }
 ]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "anyio>=4.10.0",
-    "jumpstarter",
-    "jumpstarter-driver-power"
+    "jumpstarter=={{ version }}",
+    "jumpstarter-driver-power=={{ version }}"
 ]
 
 [project.entry-points."jumpstarter.drivers"]
@@ -24,14 +26,9 @@ dev = [
     "pytest-httpserver>=1.0.0",
 ]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../'}
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"

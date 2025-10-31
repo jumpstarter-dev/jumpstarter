@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-cli-driver"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = ""
 authors = [
   { name = "Nick Cao", email = "ncao@redhat.com" },
@@ -10,7 +10,9 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter-cli-common", "click>=8.1.7.2"]
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+dependencies = ["jumpstarter-cli-common=={{ version }}", "click>=8.1.7.2"]
 
 [dependency-groups]
 dev = [
@@ -26,17 +28,10 @@ jmp-driver = "jumpstarter_cli_driver:driver"
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_cli_driver"]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"
