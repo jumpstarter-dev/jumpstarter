@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,12 +74,95 @@ func ReconcileLeaseTimeFields(beginTime, endTime **metav1.Time, duration **metav
 	return nil
 }
 
+// ParseLabelSelector parses a label selector string and converts it to metav1.LabelSelector.
+// This function supports the != operator by first parsing with labels.Parse() which supports
+// all label selector syntax including !=, then converting to metav1.LabelSelector format.
+func ParseLabelSelector(selectorStr string) (*metav1.LabelSelector, error) {
+	// First, try to parse using labels.Parse() which supports != operator
+	parsedSelector, err := labels.Parse(selectorStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse label selector: %w", err)
+	}
+
+	// Extract requirements from the parsed selector
+	requirements, selectable := parsedSelector.Requirements()
+	if !selectable {
+		return &metav1.LabelSelector{}, nil
+	}
+
+	// Convert requirements to metav1.LabelSelector format
+	matchLabels := make(map[string]string)
+	var matchExpressions []metav1.LabelSelectorRequirement
+
+	for _, req := range requirements {
+		key := req.Key()
+		operator := req.Operator()
+		values := req.ValuesUnsorted()
+
+		switch operator {
+		case selection.Equals:
+			// For exact match with single value, use matchLabels
+			if len(values) == 1 {
+				matchLabels[key] = values[0]
+			} else {
+				// Multiple values should use In operator
+				matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+					Key:      key,
+					Operator: metav1.LabelSelectorOpIn,
+					Values:   values,
+				})
+			}
+		case selection.NotEquals:
+			// != operator: convert to NotIn with single value
+			if len(values) != 1 {
+				return nil, fmt.Errorf("invalid selector: != operator requires exactly one value")
+			}
+			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+				Key:      key,
+				Operator: metav1.LabelSelectorOpNotIn,
+				Values:   values,
+			})
+		case selection.In:
+			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+				Key:      key,
+				Operator: metav1.LabelSelectorOpIn,
+				Values:   values,
+			})
+		case selection.NotIn:
+			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+				Key:      key,
+				Operator: metav1.LabelSelectorOpNotIn,
+				Values:   values,
+			})
+		case selection.Exists:
+			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+				Key:      key,
+				Operator: metav1.LabelSelectorOpExists,
+				Values:   []string{},
+			})
+		case selection.DoesNotExist:
+			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+				Key:      key,
+				Operator: metav1.LabelSelectorOpDoesNotExist,
+				Values:   []string{},
+			})
+		default:
+			return nil, fmt.Errorf("unsupported label selector operator: %v", operator)
+		}
+	}
+
+	return &metav1.LabelSelector{
+		MatchLabels:      matchLabels,
+		MatchExpressions: matchExpressions,
+	}, nil
+}
+
 func LeaseFromProtobuf(
 	req *cpb.Lease,
 	key types.NamespacedName,
 	clientRef corev1.LocalObjectReference,
 ) (*Lease, error) {
-	selector, err := metav1.ParseToLabelSelector(req.Selector)
+	selector, err := ParseLabelSelector(req.Selector)
 	if err != nil {
 		return nil, err
 	}
