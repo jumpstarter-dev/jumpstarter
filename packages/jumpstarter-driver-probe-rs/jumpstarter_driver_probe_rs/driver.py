@@ -17,6 +17,7 @@ class ProbeRs(Driver):
     chip: str | None = None
     protocol: str | None = None
     connect_under_reset: bool = False
+    speed: int | None = None
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -83,6 +84,8 @@ class ProbeRs(Driver):
             env["PROBE_RS_PROTOCOL"] = self.protocol
         if self.connect_under_reset:
             env["PROBE_RS_CONNECT_UNDER_RESET"] = "true"
+        if self.speed:
+            env["PROBE_RS_SPEED"] = str(self.speed)
         return env
 
 

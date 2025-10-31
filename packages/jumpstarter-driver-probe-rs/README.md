@@ -24,6 +24,7 @@ export:
       chip: "RP2350"
       protocol: "swd"
       connect_under_reset: false
+      speed: 4000
 ```
 
 ### Config parameters
@@ -35,6 +36,7 @@ export:
 | chip                | The target chip                                                | str             | no       |          |
 | protocol            | The target protocol                                            | "swd" or "jtag" | no       |          |
 | connect_under_reset | Connect to the target while asserting reset                    | bool            | no       | false    |
+| speed               | Connection speed in kHz                                        | int             | no       |          |
 
 ## API Reference
 
