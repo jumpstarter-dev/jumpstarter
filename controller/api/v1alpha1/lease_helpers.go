@@ -94,6 +94,9 @@ func ParseLabelSelector(selectorStr string) (*metav1.LabelSelector, error) {
 	matchLabels := make(map[string]string)
 	var matchExpressions []metav1.LabelSelectorRequirement
 
+	// Track NotEquals requirements by key so we can combine them into NotIn
+	notEqualsByKey := make(map[string][]string)
+
 	for _, req := range requirements {
 		key := req.Key()
 		operator := req.Operator()
@@ -113,15 +116,11 @@ func ParseLabelSelector(selectorStr string) (*metav1.LabelSelector, error) {
 				})
 			}
 		case selection.NotEquals:
-			// != operator: convert to NotIn with single value
+			// Accumulate != requirements for the same key to combine into NotIn
 			if len(values) != 1 {
 				return nil, fmt.Errorf("invalid selector: != operator requires exactly one value")
 			}
-			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
-				Key:      key,
-				Operator: metav1.LabelSelectorOpNotIn,
-				Values:   values,
-			})
+			notEqualsByKey[key] = append(notEqualsByKey[key], values[0])
 		case selection.In:
 			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
 				Key:      key,
@@ -149,6 +148,15 @@ func ParseLabelSelector(selectorStr string) (*metav1.LabelSelector, error) {
 		default:
 			return nil, fmt.Errorf("unsupported label selector operator: %v", operator)
 		}
+	}
+
+	// Convert accumulated NotEquals requirements to NotIn expressions
+	for key, vals := range notEqualsByKey {
+		matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
+			Key:      key,
+			Operator: metav1.LabelSelectorOpNotIn,
+			Values:   vals,
+		})
 	}
 
 	return &metav1.LabelSelector{

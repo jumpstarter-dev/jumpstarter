@@ -204,15 +204,14 @@ var _ = Describe("ParseLabelSelector", func() {
 			Expect(selector).To(BeNil())
 		})
 
-		It("should return error for malformed != operator", func() {
-			// This should fail because != requires exactly one value
-			// But labels.Parse might handle this differently, let's test
+		It("should combine multiple != operators for the same key into NotIn", func() {
 			selector, err := ParseLabelSelector("key!=value1,key!=value2")
-			// This actually parses as two separate requirements, which is valid
-			// So we need to test actual invalid syntax
-			if err != nil {
-				Expect(selector).To(BeNil())
-			}
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selector).NotTo(BeNil())
+			Expect(selector.MatchExpressions).To(HaveLen(1))
+			Expect(selector.MatchExpressions[0].Key).To(Equal("key"))
+			Expect(selector.MatchExpressions[0].Operator).To(Equal(metav1.LabelSelectorOpNotIn))
+			Expect(selector.MatchExpressions[0].Values).To(ConsistOf("value1", "value2"))
 		})
 	})
 
