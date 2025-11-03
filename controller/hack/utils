@@ -68,8 +68,7 @@ install_nginx_ingress() {
   lsmod | grep ip_tables || \
     (echo "ip_tables module not loaded needed by nginx ingress, please run 'sudo modprobe ip_tables'" && exit 1)
 
-  # Deploy nginx ingress for kind
-  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+kubectl apply -f https://github.com/kubernetes/ingress-nginx/raw/refs/heads/main/deploy/static/provider/kind/deploy.yaml
 
   echo -e "${GREEN}Waiting for nginx to be ready ...${NC}"
 

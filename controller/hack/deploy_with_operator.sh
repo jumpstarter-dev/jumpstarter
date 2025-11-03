@@ -59,14 +59,14 @@ kubectl create namespace jumpstarter-lab --dry-run=client -o yaml | kubectl appl
 # Generate endpoint configuration based on networking mode
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
   CONTROLLER_ENDPOINT_CONFIG=$(cat <<-END
-        - address: grpc.${BASEDOMAIN}:443
+        - address: grpc.${BASEDOMAIN}:5443
           ingress:
             enabled: true
             class: "nginx"
 END
 )
   ROUTER_ENDPOINT_CONFIG=$(cat <<-END
-        - address: router.${BASEDOMAIN}:443
+        - address: router.${BASEDOMAIN}:5443
           ingress:
             enabled: true
             class: "nginx"
