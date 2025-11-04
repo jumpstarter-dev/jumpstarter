@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-gpiod"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = ""
 authors = [
   { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
@@ -10,7 +10,9 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "jumpstarter-driver-power", "click>=8.1.7.2", "gpiod; platform_system == 'Linux'"]
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+dependencies = ["jumpstarter=={{ version }}", "jumpstarter-driver-power=={{ version }}", "click>=8.1.7.2", "gpiod; platform_system == 'Linux'"]
 
 [project.entry-points."jumpstarter.drivers"]
 DigitalInput = "jumpstarter_driver_gpiod.driver:DigitalInput"
@@ -20,17 +22,10 @@ PowerSwitch = "jumpstarter_driver_gpiod.driver:PowerSwitch"
 [dependency-groups]
 dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0"]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

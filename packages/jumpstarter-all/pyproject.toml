@@ -1,60 +1,55 @@
 [project]
 name = "jumpstarter-all"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Jumpstarter meta-package which will install all packages"
 authors = [{ name = "Miguel Angel Ajo", email = "majopela@redhat.com" }]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
-  "jumpstarter",
-  "jumpstarter-cli",
-  "jumpstarter-cli-admin",
-  "jumpstarter-cli-common",
-  "jumpstarter-cli-driver",
-  "jumpstarter-driver-can",
-  "jumpstarter-driver-composite",
-  "jumpstarter-driver-corellium",
-  "jumpstarter-driver-dutlink",
-  "jumpstarter-driver-flashers",
-  "jumpstarter-driver-http",
-  "jumpstarter-driver-network",
-  "jumpstarter-driver-opendal",
-  "jumpstarter-driver-power",
-  "jumpstarter-driver-probe-rs",
-  "jumpstarter-driver-pyserial",
-  "jumpstarter-driver-qemu",
-  "jumpstarter-driver-gpiod",
-  "jumpstarter-driver-ridesx",
-  "jumpstarter-driver-sdwire",
-  "jumpstarter-driver-shell",
-  "jumpstarter-driver-snmp",
-  "jumpstarter-driver-ssh",
-  "jumpstarter-driver-tftp",
-  "jumpstarter-driver-tmt",
-  "jumpstarter-driver-uboot",
-  "jumpstarter-driver-ustreamer",
-  "jumpstarter-driver-yepkit",
-  "jumpstarter-imagehash",
-  "jumpstarter-kubernetes",
-  "jumpstarter-protocol",
-  "jumpstarter-testing",
+  "jumpstarter=={{ version }}",
+  "jumpstarter-cli=={{ version }}",
+  "jumpstarter-cli-admin=={{ version }}",
+  "jumpstarter-cli-common=={{ version }}",
+  "jumpstarter-cli-driver=={{ version }}",
+  "jumpstarter-driver-can=={{ version }}",
+  "jumpstarter-driver-composite=={{ version }}",
+  "jumpstarter-driver-corellium=={{ version }}",
+  "jumpstarter-driver-dutlink=={{ version }}",
+  "jumpstarter-driver-flashers=={{ version }}",
+  "jumpstarter-driver-http=={{ version }}",
+  "jumpstarter-driver-network=={{ version }}",
+  "jumpstarter-driver-opendal=={{ version }}",
+  "jumpstarter-driver-power=={{ version }}",
+  "jumpstarter-driver-probe-rs=={{ version }}",
+  "jumpstarter-driver-pyserial=={{ version }}",
+  "jumpstarter-driver-qemu=={{ version }}",
+  "jumpstarter-driver-gpiod=={{ version }}",
+  "jumpstarter-driver-ridesx=={{ version }}",
+  "jumpstarter-driver-sdwire=={{ version }}",
+  "jumpstarter-driver-shell=={{ version }}",
+  "jumpstarter-driver-snmp=={{ version }}",
+  "jumpstarter-driver-ssh=={{ version }}",
+  "jumpstarter-driver-tftp=={{ version }}",
+  "jumpstarter-driver-tmt=={{ version }}",
+  "jumpstarter-driver-uboot=={{ version }}",
+  "jumpstarter-driver-ustreamer=={{ version }}",
+  "jumpstarter-driver-yepkit=={{ version }}",
+  "jumpstarter-imagehash=={{ version }}",
+  "jumpstarter-kubernetes=={{ version }}",
+  "jumpstarter-protocol=={{ version }}",
+  "jumpstarter-testing=={{ version }}",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_all"]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

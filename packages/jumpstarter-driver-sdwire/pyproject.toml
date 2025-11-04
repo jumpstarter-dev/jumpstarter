@@ -1,14 +1,16 @@
 [project]
 name = "jumpstarter-driver-sdwire"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = ""
 authors = [{ name = "Nick Cao", email = "ncao@redhat.com" }]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
-  "jumpstarter",
-  "jumpstarter-driver-opendal",
+  "jumpstarter=={{ version }}",
+  "jumpstarter-driver-opendal=={{ version }}",
   "pyusb>=1.2.1",
   "pyudev>=0.24.3",
 ]
@@ -19,17 +21,10 @@ SDWire = "jumpstarter_driver_sdwire.driver:SDWire"
 [dependency-groups]
 dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0"]
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

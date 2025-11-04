@@ -1,15 +1,17 @@
 [project]
 name = "jumpstarter-driver-tasmota"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Jumpstarter driver for controlling Tasmota-compatible devices via MQTT"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Nick Cao", email = "nickcao@nichi.co" }]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "anyio>=4.10.0",
-    "jumpstarter_driver_power",
-    "jumpstarter",
+    "jumpstarter_driver_power=={{ version }}",
+    "jumpstarter=={{ version }}",
     "paho-mqtt>=2.1.0",
 ]
 
@@ -18,12 +20,7 @@ TasmotaPower = "jumpstarter_driver_tasmota.driver:TasmotaPower"
 
 
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
-
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source = "uv-dynamic-versioning"
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
@@ -32,11 +29,9 @@ log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_tasmota"]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [

@@ -1,25 +1,22 @@
 [project]
 name = "jumpstarter-driver-probe-rs"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "rust probe-rs driver for jumpstarter"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Miguel Angel Ajo", email = "miguelangel@ajo.es" }]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "anyio>=4.10.0",
     "click>=8.1.7.2",
-    "jumpstarter",
-    "jumpstarter-driver-opendal",
+    "jumpstarter=={{ version }}",
+    "jumpstarter-driver-opendal=={{ version }}",
 ]
 
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
-
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source = "uv-dynamic-versioning"
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
@@ -28,11 +25,9 @@ log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_probe_rs"]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

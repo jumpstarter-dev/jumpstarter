@@ -1,26 +1,23 @@
 [project]
 name = "jumpstarter-driver-http"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Exporter HTTP service driver"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "anyio>=4.10.0",
-    "jumpstarter",
-    "jumpstarter-driver-composite",
-    "jumpstarter-driver-opendal",
+    "jumpstarter=={{ version }}",
+    "jumpstarter-driver-composite=={{ version }}",
+    "jumpstarter-driver-opendal=={{ version }}",
     "yarl>=1.18.3",
 ]
 
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
-
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source = "uv-dynamic-versioning"
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -28,7 +25,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["src"]
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
@@ -39,5 +36,3 @@ dev = [
     "pytest-asyncio>=0.24.0",
 ]
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"

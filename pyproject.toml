@@ -38,7 +38,6 @@ jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-protocol = { workspace = true }
 jumpstarter-testing = { workspace = true }
-hatch-pin-jumpstarter = { workspace = true }
 
 [dependency-groups]
 docs = [

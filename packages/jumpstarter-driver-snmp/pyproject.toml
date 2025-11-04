@@ -1,16 +1,18 @@
 [project]
 name = "jumpstarter-driver-snmp"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "SNMP driver"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "click>=8.1.8",
-    "jumpstarter",
-    "jumpstarter-driver-power",
+    "jumpstarter=={{ version }}",
+    "jumpstarter-driver-power=={{ version }}",
     "pysnmp==7.1.16",
 ]
 
@@ -31,20 +33,13 @@ log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_snmp"]
 asyncio_mode = "auto"
 
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
-
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
+source = "uv-dynamic-versioning"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"
 
 [tool.uv.sources]
 jumpstarter-driver-power = { workspace = true }

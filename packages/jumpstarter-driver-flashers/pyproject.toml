@@ -1,6 +1,6 @@
 [project]
 name = "jumpstarter-driver-flashers"
-dynamic = ["version", "urls"]
+dynamic = ["version", "dependencies"]
 description = "Jumpstarter software defined flasher driver"
 readme = "README.md"
 license = "Apache-2.0"
@@ -9,25 +9,22 @@ authors = [
     { name = "Miguel Angel Ajo", email = "majopela@redhat.com" },
 ]
 requires-python = ">=3.11"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
 dependencies = [
     "oras>=0.2.25",
     "anyio>=4.10.0",
-    "jumpstarter",
-    "jumpstarter-driver-opendal",
-    "jumpstarter-driver-pyserial",
-    "jumpstarter-driver-http",
-    "jumpstarter-driver-tftp",
-    "jumpstarter-driver-power",
-    "jumpstarter-driver-uboot",
+    "jumpstarter=={{ version }}",
+    "jumpstarter-driver-opendal=={{ version }}",
+    "jumpstarter-driver-pyserial=={{ version }}",
+    "jumpstarter-driver-http=={{ version }}",
+    "jumpstarter-driver-tftp=={{ version }}",
+    "jumpstarter-driver-power=={{ version }}",
+    "jumpstarter-driver-uboot=={{ version }}",
 ]
 
 [tool.hatch.version]
-source = "vcs"
-raw-options = { 'root' = '../../' }
-
-[tool.hatch.metadata.hooks.vcs.urls]
-Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source = "uv-dynamic-versioning"
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
@@ -40,11 +37,9 @@ jumpstarter-driver-uboot = { workspace = true }
 #asyncio_mode = "auto"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+requires = ["hatchling",  "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
-[tool.hatch.build.hooks.pin_jumpstarter]
-name = "pin_jumpstarter"
