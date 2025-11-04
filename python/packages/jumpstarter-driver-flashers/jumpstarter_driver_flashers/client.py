@@ -828,7 +828,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # make sure that the device is booted into the uboot console
         with self.uboot.reboot_to_console(debug=self._console_debug):
             # run dhcp discovery and gather details useful for later
-            self._dhcp_details = self.uboot.setup_dhcp()
+            try:
+                self._dhcp_details = self.uboot.setup_dhcp()
+            except (RuntimeError, ValueError) as e:
+                raise FlashRetryableError(f"DHCP setup failed: {e}") from e
             self.logger.info(f"discovered dhcp details: {self._dhcp_details}")
 
             # configure the environment necessary
