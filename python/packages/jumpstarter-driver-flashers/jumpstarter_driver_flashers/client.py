@@ -12,6 +12,7 @@ from queue import Queue
 from urllib.parse import urlparse
 
 import click
+import pexpect
 import requests
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
@@ -96,6 +97,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         headers: dict[str, str] | None = None,
         bearer_token: str | None = None,
         retries: int = 3,
+        method: str = "fls",
+        fls_version: str = "",
     ):
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
@@ -169,7 +172,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     self._perform_flash_operation(
                         partition, path, image_url, should_download_to_httpd,
                         storage_thread, error_queue, cacert_file, insecure_tls,
-                        headers, bearer_token
+                        headers, bearer_token, method, fls_version
                     )
                     self.logger.info(f"Flash operation succeeded on attempt {attempt + 1}")
                     break
@@ -287,6 +290,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         insecure_tls: bool,
         headers: dict[str, str] | None,
         bearer_token: str | None,
+        method: str,
+        fls_version: str,
     ):
         """Perform the actual flash operation with console setup.
 
@@ -314,8 +319,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
             # make sure that the device is connected to the network and has an IP address
-            console.sendline("udhcpc")
-            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            try:
+                console.sendline("udhcpc")
+                console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            except pexpect.TIMEOUT as e:
+                self.logger.error(f"Timeout waiting for udhcpc to complete: {e}")
+                raise FlashRetryableError("Timeout waiting for udhcpc to complete") from e
+            except Exception as e:
+                self.logger.error(f"Error running udhcpc: {e}")
+                raise FlashRetryableError(f"Error running udhcpc: {e}") from e
 
             stored_cacert = None
             if should_download_to_httpd:
@@ -325,17 +337,32 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
             header_args = self._prepare_headers(headers, bearer_token)
 
-            # Perform the actual flash operation
-            self._flash_with_progress(
-                console,
-                manifest,
-                path,
-                image_url,
-                target_device,
-                insecure_tls,
-                stored_cacert,
-                header_args,
-            )
+
+            if method == "fls":
+                self._flash_with_fls(
+                    console,
+                    manifest,
+                    path,
+                    image_url,
+                    target_device,
+                    insecure_tls,
+                    stored_cacert,
+                    header_args,
+                    fls_version,
+                )
+            elif method == "shell":
+                self._flash_with_progress(
+                    console,
+                    manifest,
+                    path,
+                    image_url,
+                    target_device,
+                    insecure_tls,
+                    stored_cacert,
+                    header_args,
+                )
+            else:
+                raise ArgumentError(f"Invalid method: {method}")
 
             console.sendline("reboot")
             time.sleep(2)
@@ -382,7 +409,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return None
 
-    def _curl_tls_args(self, insecure_tls: bool, stored_cacert: str | None) -> str:
+    def _cmdline_tls_args(self, insecure_tls: bool, stored_cacert: str | None) -> str:
         """Generate TLS arguments for curl command.
 
         Args:
@@ -418,6 +445,109 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return " ".join(parts)
 
+    def _flash_with_fls(
+        self,
+        console,
+        manifest,
+        path,
+        image_url,
+        target_path,
+        insecure_tls,
+        stored_cacert,
+        header_args: str,
+        fls_version: str,
+    ):
+        """Flash image to target device with progress monitoring.
+
+        Args:
+            console: Console object for device interaction
+            manifest: Flasher manifest containing target definitions
+            path: Path to the source image
+            image_url: URL to download the image from
+            target_path: Target device path to flash to
+            insecure_tls: Whether to use insecure TLS
+            stored_cacert: Path to the stored CA certificate in the DUT flasher
+            header_args: Header arguments for curl command
+            fls_version: Version of FLS to use
+        """
+
+        # Calculate decompress and tls arguments for curl
+        prompt = manifest.spec.login.prompt
+        tls_args = self._cmdline_tls_args(insecure_tls, stored_cacert)
+
+        if fls_version != "":
+            self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
+            # Download fls binary to the target device (until it is available on the target device)
+            fls_url = (
+                f"https://github.com/jumpstarter-dev/fls/releases/download/{fls_version}/"
+                f"fls-aarch64-linux"
+            )
+            console.sendline(f"curl -L {fls_url} -o /sbin/fls")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            console.sendline("echo $?")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+            exit_code = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+
+            if exit_code != 0:
+                raise FlashRetryableError(f"Failed to download FLS from {fls_url}, exit code: {exit_code}")
+            console.sendline("chmod +x /sbin/fls")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+        # Flash the image
+        flash_cmd = f'fls from-url -i 1.0 -n {tls_args} {header_args} --o-direct "{image_url}" {target_path}'
+        console.sendline(flash_cmd)
+
+        # Start monitoring the flash operation
+        self._monitor_fls_progress(console, prompt)
+
+        self.logger.info("Flushing buffers")
+        console.sendline("sync")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_SYNC)
+
+    def _monitor_fls_progress(self, console, prompt):
+        """Monitor FLS flash progress by printing console output as it arrives."""
+        last_printed_length = 0
+        while True:
+            try:
+                # Try to expect the prompt with a short timeout to read output incrementally
+                console.expect([prompt, pexpect.TIMEOUT], timeout=1)
+
+                # Get the output that was read - this contains all output since last match
+                # We need to track what we've already printed to avoid duplicates
+                current_output = console.before.decode(errors="ignore")
+
+                # Only process new output that we haven't seen before
+                if len(current_output) > last_printed_length:
+                    new_output = current_output[last_printed_length:]
+                    if new_output:
+                        print(new_output, end='', flush=True)
+                    last_printed_length = len(current_output)
+
+                # Check if we matched the prompt (index 0 means prompt matched)
+                if console.match_index == 0:
+                    # Prompt was matched, flash operation is complete
+                    break
+                # If match_index is 1, it means TIMEOUT was matched, so we continue the loop
+
+                if 'panicked at' in current_output:
+                    raise FlashRetryableError(f"FLS panicked: {current_output}")
+
+            except pexpect.EOF as err:
+                # End of file - connection closed
+                self.logger.error("Console connection closed unexpectedly")
+                raise FlashRetryableError("Console connection closed during flash operation") from err
+            except Exception as err:
+                self.logger.error(f"Error monitoring FLS progress: {err}")
+                raise FlashRetryableError(f"Error monitoring FLS progress: {err}") from err
+
+        # check the fls exit code
+        console.sendline("echo $?")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        exit_code = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+        if exit_code != 0:
+            raise FlashRetryableError(f"FLS flash operation failed, exit code: {exit_code}")
+
     def _flash_with_progress(
         self,
         console,
@@ -444,7 +574,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # Calculate decompress and tls arguments for curl
         prompt = manifest.spec.login.prompt
         decompress_cmd = _get_decompression_command(path)
-        tls_args = self._curl_tls_args(insecure_tls, stored_cacert)
+        tls_args = self._cmdline_tls_args(insecure_tls, stored_cacert)
 
         # Check if the image URL is accessible using curl and the TLS arguments
         self._check_url_access(console, prompt, image_url, tls_args, header_args)
@@ -828,7 +958,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # make sure that the device is booted into the uboot console
         with self.uboot.reboot_to_console(debug=self._console_debug):
             # run dhcp discovery and gather details useful for later
-            self._dhcp_details = self.uboot.setup_dhcp()
+            try:
+                self._dhcp_details = self.uboot.setup_dhcp()
+            except (RuntimeError, ValueError) as e:
+                raise FlashRetryableError(f"DHCP setup failed: {e}") from e
             self.logger.info(f"discovered dhcp details: {self._dhcp_details}")
 
             # configure the environment necessary
@@ -1013,6 +1146,18 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             default=3,
             help="Number of retry attempts for flash operation (default: 3)",
         )
+        @click.option(
+            "--method",
+            type=click.Choice(["fls", "shell"]),
+            default="fls",
+            help="Method to use for flash operation (default: fls)",
+        )
+        @click.option(
+            "--fls-version",
+            type=str,
+            default="0.1.5", # TODO(majopela): set default to "" once fls is included in our images
+            help="Download an specific fls version from the github releases",
+        )
         @debug_console_option
         def flash(
             file,
@@ -1027,6 +1172,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             header,
             bearer,
             retries,
+            method,
+            fls_version,
         ):
             """Flash image to DUT from file"""
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
@@ -1048,6 +1195,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 headers=headers,
                 bearer_token=bearer,
                 retries=retries,
+                method=method,
+                fls_version=fls_version,
             )
 
         @base.command()
