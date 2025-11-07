@@ -3,6 +3,7 @@ from functools import partial
 
 import click
 from pydantic import TypeAdapter, ValidationError
+from pytimeparse2 import parse as parse_duration
 
 opt_selector = click.option(
     "-l",
@@ -15,14 +16,59 @@ opt_selector = click.option(
 class DurationParamType(click.ParamType):
     name = "duration"
 
+    def __init__(self, minimum: timedelta | None = None):
+        super().__init__()
+        self.minimum = minimum
+
     def convert(self, value, param, ctx):
         if isinstance(value, timedelta):
-            return value
+            td = value
+        elif isinstance(value, int):
+            # Integer as seconds (backward compatibility)
+            td = timedelta(seconds=value)
+        elif isinstance(value, str):
+            # Try parsing as plain integer first (backward compatibility)
+            try:
+                int_value = int(value)
+                td = timedelta(seconds=int_value)
+            except ValueError:
+                # Parse with pytimeparse2 first (supports human-readable formats)
+                td = None
+                try:
+                    seconds = parse_duration(value)
+                    if seconds is not None:
+                        td = timedelta(seconds=seconds)
+                except (ValueError, TypeError):
+                    pass
 
-        try:
-            return TypeAdapter(timedelta).validate_python(value)
-        except (ValueError, ValidationError):
-            self.fail(f"{value!r} is not a valid duration", param, ctx)
+                # Fall back to pydantic/speedate for ISO 8601 and other formats
+                if td is None:
+                    try:
+                        td = TypeAdapter(timedelta).validate_python(value)
+                    except (ValueError, ValidationError):
+                        self.fail(
+                            (
+                                f"{value!r} is not a valid duration "
+                                "(e.g., '30m', '3h30m', '1d', '1d3h40m', 'PT1H30M', '01:30:00')"
+                            ),
+                            param,
+                            ctx,
+                        )
+        else:
+            self.fail(
+                f"{value!r} is not a valid duration (e.g., '30m', '3h30m', '1d', '1d3h40m')",
+                param,
+                ctx,
+            )
+
+        # Validate minimum if specified
+        if self.minimum is not None and td < self.minimum:
+            min_seconds = int(self.minimum.total_seconds())
+            self.fail(
+                f"{value!r} must be at least {min_seconds} seconds", param, ctx
+            )
+
+        return td
 
 
 DURATION = DurationParamType()
@@ -36,12 +82,11 @@ opt_duration_partial = partial(
 Accepted duration formats:
 
 \b
-PnYnMnDTnHnMnS - ISO 8601 duration format
-HH:MM:SS - time in hours, minutes, seconds
-D days, HH:MM:SS - time prefixed by X days
-D d, HH:MM:SS - time prefixed by X d
+Human-readable: 30m, 3h30m, 1d, 1d3h40m, etc.
+ISO 8601: PT1H30M, P1DT2H30M, etc.
+Time format: 01:30:00, 2 days, 01:30:00, etc.
 
-See https://docs.rs/speedate/latest/speedate/ for details
+See https://github.com/wroberts/pytimeparse2 for details
 """,
 )
 
@@ -66,6 +111,21 @@ class DateTimeParamType(click.ParamType):
 
 
 DATETIME = DateTimeParamType()
+
+
+ACQUISITION_TIMEOUT = DurationParamType(minimum=timedelta(seconds=5))
+
+opt_acquisition_timeout = partial(
+    click.option,
+    "--acquisition-timeout",
+    "acquisition_timeout",
+    type=ACQUISITION_TIMEOUT,
+    default=None,
+    help=(
+        "Override acquisition timeout (e.g., '30m', '3h30m', '1d', '1d3h40m', "
+        "or seconds as integer). Must be >= 5 seconds."
+    ),
+)
 
 opt_begin_time = click.option(
     "--begin-time",
