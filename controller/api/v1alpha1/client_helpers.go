@@ -3,7 +3,8 @@ package v1alpha1
 import "strings"
 
 func (c *Client) InternalSubject() string {
-	return strings.Join([]string{"client", c.Namespace, c.Name, string(c.UID)}, ":")
+	namespace, uid := getNamespaceAndUID(c.Namespace, c.UID, c.Annotations)
+	return strings.Join([]string{"client", namespace, c.Name, uid}, ":")
 }
 
 func (c *Client) Usernames(prefix string) []string {

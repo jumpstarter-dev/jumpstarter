@@ -10,7 +10,8 @@ import (
 )
 
 func (e *Exporter) InternalSubject() string {
-	return strings.Join([]string{"exporter", e.Namespace, e.Name, string(e.UID)}, ":")
+	namespace, uid := getNamespaceAndUID(e.Namespace, e.UID, e.Annotations)
+	return strings.Join([]string{"exporter", namespace, e.Name, uid}, ":")
 }
 
 func (e *Exporter) Usernames(prefix string) []string {

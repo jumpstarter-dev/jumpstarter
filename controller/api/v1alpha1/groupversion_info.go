@@ -34,3 +34,11 @@ var (
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
 )
+
+const (
+	// AnnotationMigratedNamespace is the annotation key for migrated namespace
+	AnnotationMigratedNamespace = "jumpstarter.dev/migrated-namespace"
+
+	// AnnotationMigratedUID is the annotation key for migrated UID
+	AnnotationMigratedUID = "jumpstarter.dev/migrated-uid"
+)
