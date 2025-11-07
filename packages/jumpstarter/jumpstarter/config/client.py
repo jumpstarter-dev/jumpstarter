@@ -255,6 +255,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         lease_name: str | None,
         duration: timedelta,
         portal: BlockingPortal,
+        acquisition_timeout: timedelta | None = None,
     ):
         from jumpstarter.client import Lease
 
@@ -263,6 +264,12 @@ class ClientConfigV1Alpha1(BaseSettings):
         # when no lease name is provided, release the lease on exit
         release_lease = lease_name == ""
         try:
+            # Convert timedelta to seconds for acquisition_timeout
+            acquisition_timeout_seconds = (
+                int(acquisition_timeout.total_seconds())
+                if acquisition_timeout is not None
+                else self.leases.acquisition_timeout
+            )
             async with Lease(
                 channel=await self.channel(),
                 namespace=self.metadata.namespace,
@@ -275,7 +282,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 release=release_lease,
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
-                acquisition_timeout=self.leases.acquisition_timeout,
+                acquisition_timeout=acquisition_timeout_seconds,
             ) as lease:
                 yield lease
 
