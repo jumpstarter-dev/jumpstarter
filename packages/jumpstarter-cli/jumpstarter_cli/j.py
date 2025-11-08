@@ -31,6 +31,7 @@ async def j_async():
             # Handle exceptions wrapped in ExceptionGroup (e.g., from task groups)
             if exc := find_exception_in_group(eg, EnvironmentVariableNotSetError):
                 raise ClickExceptionRed(f"Error: the j command must be used inside a jmp shell: {exc}") from eg
+            raise eg
     try:
         async with create_task_group() as tg:
             tg.start_soon(signal_handler, tg.cancel_scope)
