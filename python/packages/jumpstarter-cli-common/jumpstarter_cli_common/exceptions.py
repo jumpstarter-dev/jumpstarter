@@ -106,6 +106,26 @@ def handle_exceptions_with_reauthentication(login_func):
     return decorator
 
 
+def find_exception_in_group(
+    eg: BaseExceptionGroup, exc_type: type[BaseException], *, fix_tracebacks: bool = False
+) -> BaseException | None:
+    """
+    Find the first exception of a specific type in an ExceptionGroup.
+
+    Args:
+        eg: The ExceptionGroup to search
+        exc_type: The exception type to find
+        fix_tracebacks: Whether to fix tracebacks in leaf exceptions
+
+    Returns:
+        The first matching exception, or None if not found
+    """
+    for exc in leaf_exceptions(eg, fix_tracebacks=fix_tracebacks):
+        if isinstance(exc, exc_type):
+            return exc
+    return None
+
+
 # https://peps.python.org/pep-0654/
 def leaf_exceptions(self: BaseExceptionGroup, *, fix_tracebacks: bool = True) -> list[BaseException]:
     """
