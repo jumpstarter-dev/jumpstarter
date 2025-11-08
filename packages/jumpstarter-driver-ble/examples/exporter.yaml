@@ -1,0 +1,17 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  ble:
+    type: "jumpstarter_driver_ble.driver.BleWriteNotifyStream"
+    config:
+      address: "00:11:22:33:44:55"
+      service_uuid: "0000180a-0000-1000-8000-000000000000"
+      write_char_uuid: "0000fe41-8e22-4541-9d4c-000000000000"
+      notify_char_uuid: "0000fe42-8e22-4541-9d4c-000000000000"
+
+

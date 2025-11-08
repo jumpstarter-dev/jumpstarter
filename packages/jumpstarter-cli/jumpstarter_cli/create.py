@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import click
 from jumpstarter_cli_common.config import opt_config
@@ -6,7 +6,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 from jumpstarter_cli_common.opt import OutputType, opt_output_all
 from jumpstarter_cli_common.print import model_print
 
-from .common import opt_duration_partial, opt_selector
+from .common import opt_begin_time, opt_duration_partial, opt_selector
 from .login import relogin_client
 
 
@@ -21,9 +21,10 @@ def create():
 @opt_config(exporter=False)
 @opt_selector
 @opt_duration_partial(required=True)
+@opt_begin_time
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
-def create_lease(config, selector: str, duration: timedelta, output: OutputType):
+def create_lease(config, selector: str, duration: timedelta, begin_time: datetime | None, output: OutputType):
     """
     Create a lease
 
@@ -49,6 +50,6 @@ def create_lease(config, selector: str, duration: timedelta, output: OutputType)
 
     """
 
-    lease = config.create_lease(selector=selector, duration=duration)
+    lease = config.create_lease(selector=selector, duration=duration, begin_time=begin_time)
 
     model_print(lease, output)
