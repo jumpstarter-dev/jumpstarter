@@ -23,6 +23,9 @@ class RideSXClient(FlasherClient, CompositeClient):
         return self.call("boot_to_fastboot")
 
     def _upload_file_if_needed(self, file_path: str, operator: Operator | None = None) -> str:
+        if not file_path or not file_path.strip():
+            raise ValueError("File path cannot be empty. Please provide a valid file path.")
+
         if operator is None:
             path_buf, operator, operator_scheme = operator_for_path(file_path)
         else:
@@ -90,6 +93,13 @@ class RideSXClient(FlasherClient, CompositeClient):
                 raise ValueError("'partition' must be provided")
             partitions = {partition: path}
             operators = {partition: operator} if isinstance(operator, Operator) else None
+
+        for partition_name, file_path in partitions.items():
+            if not file_path or not file_path.strip():
+                raise ValueError(
+                    f"Partition '{partition_name}' has an empty file path. "
+                    f"Please provide a valid file path (e.g., -t {partition_name}:/path/to/image)"
+                )
 
         self.logger.info("Starting RideSX flash operation")
 
