@@ -241,33 +241,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 else:
                     logger.warning("Waiting for ready connection to %s: %s", path, e)
                 await sleep(5)
-            except ModuleNotFoundError as e:
-                module_name = str(e).split("'")[1] if "'" in str(e) else str(e).split()[-1]
-
-                if module_name.startswith("jumpstarter_"):
-                    logger.error(
-                        "Missing Jumpstarter driver module '%s' while connecting to exporter. "
-                        "This usually indicates a version mismatch between your client and the exporter.",
-                        module_name,
-                    )
-                    raise ConnectionError(
-                        f"Missing Jumpstarter driver module '{module_name}'.\n\n"
-                        "This usually indicates a version mismatch between your client and the exporter.\n"
-                        "Please try to update your client to the latest version\n"
-                    ) from e
-                else:
-                    logger.error(
-                        "Missing Python module '%s' while connecting to exporter. "
-                        "This module needs to be installed in your environment.",
-                        module_name,
-                    )
-                    raise ConnectionError(
-                        f"Missing Python module '{module_name}'.\n\n"
-                        "Please install the missing module:\n"
-                        f"  pip install {module_name}\n\n"
-                        "or if using uv:\n"
-                        f"  uv pip install {module_name}"
-                    ) from e
+            except ConnectionError:
+                raise
             except Exception as e:
                 logger.error("Unexpected error while waiting for ready connection to %s: %s", path, e)
                 raise ConnectionError("Unexpected error while waiting for ready connection to %s" % path) from e
