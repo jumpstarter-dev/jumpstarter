@@ -329,6 +329,13 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 self.logger.error(f"Error running udhcpc: {e}")
                 raise FlashRetryableError(f"Error running udhcpc: {e}") from e
 
+            # make sure that the remote system has the right time without using NTP
+            # otherwise SSL certificate verification will fail
+            self.logger.info("Setting the remote DUT time to match the local system time")
+            current_timestamp = int(time.time())
+            console.sendline(f"date -s @{current_timestamp}")
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
             stored_cacert = None
             if should_download_to_httpd:
                 self._wait_for_storage_thread(storage_thread, error_queue)
@@ -383,12 +390,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         Raises:
             RuntimeError: If there's an error reading the CA certificate file
         """
-        # make sure that the remote system has the right time without using NTP
-        # otherwise SSL certificate verification will fail
-        self.logger.info("Setting the remote DUT time to match the local system time")
-        current_timestamp = int(time.time())
-        console.sendline(f"date -s @{current_timestamp}")
-        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
         if cacert_file:
             cacert = b""
