@@ -241,6 +241,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 else:
                     logger.warning("Waiting for ready connection to %s: %s", path, e)
                 await sleep(5)
+            except ConnectionError:
+                raise
             except Exception as e:
                 logger.error("Unexpected error while waiting for ready connection to %s: %s", path, e)
                 raise ConnectionError("Unexpected error while waiting for ready connection to %s" % path) from e
@@ -252,7 +254,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             while True:
                 lease = await self.get()
                 if lease.effective_begin_time and lease.effective_duration:
-                    if lease.effective_end_time: # already ended
+                    if lease.effective_end_time:  # already ended
                         end_time = lease.effective_end_time
                     else:
                         end_time = lease.effective_begin_time + lease.duration
@@ -263,8 +265,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         break
                     # Log once when entering the threshold window
                     if threshold - timedelta(seconds=check_interval) <= remain < threshold:
-                        logger.info("Lease {} ending in {} minutes at {}".format(
-                            self.name, int((remain.total_seconds() + 30) // 60), end_time))
+                        logger.info(
+                            "Lease {} ending in {} minutes at {}".format(
+                                self.name, int((remain.total_seconds() + 30) // 60), end_time
+                            )
+                        )
                     await sleep(min(remain.total_seconds(), check_interval))
                 else:
                     await sleep(1)
@@ -317,19 +322,17 @@ class LeaseAcquisitionSpinner:
     def _is_terminal_available(self) -> bool:
         """Check if we're running in a terminal/TTY."""
         return (
-            hasattr(sys.stdout, 'isatty') and
-            sys.stdout.isatty() and
-            hasattr(sys.stderr, 'isatty') and
-            sys.stderr.isatty()
+            hasattr(sys.stdout, "isatty")
+            and sys.stdout.isatty()
+            and hasattr(sys.stderr, "isatty")
+            and sys.stderr.isatty()
         )
 
     def __enter__(self):
         self.start_time = datetime.now()
         if self._should_show_spinner:
             self.spinner = self.console.status(
-                f"Acquiring lease {self.lease_name or '...'}...",
-                spinner="dots",
-                spinner_style="blue"
+                f"Acquiring lease {self.lease_name or '...'}...", spinner="dots", spinner_style="blue"
             )
             self.spinner.start()
         return self
@@ -343,18 +346,18 @@ class LeaseAcquisitionSpinner:
         if self.spinner and self._should_show_spinner:
             self._current_message = f"[blue]{message}[/blue]"
             elapsed = datetime.now() - self.start_time
-            elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
+            elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
         else:
             # Log info message when no console is available
             elapsed = datetime.now() - self.start_time
-            elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
+            elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             logger.info(f"{message} ({elapsed_str})")
 
     def tick(self):
         """Update the spinner with current elapsed time without changing the message."""
         if self.spinner and self._should_show_spinner and self._current_message:
             elapsed = datetime.now() - self.start_time
-            elapsed_str = str(elapsed).split('.')[0]  # Remove microseconds
+            elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
             # Use the stored current message and update with new elapsed time
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
