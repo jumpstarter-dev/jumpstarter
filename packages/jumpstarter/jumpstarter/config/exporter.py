@@ -18,6 +18,33 @@ from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
 
 
+class HookInstanceConfigV1Alpha1(BaseModel):
+    """Configuration for a specific lifecycle hook."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    script: str = Field(alias="script", description="The j script to execute for this hook")
+    timeout: int = Field(default=120, description="The hook execution timeout in seconds (default: 120s)")
+    exit_code: int = Field(alias="exitCode", default=0, description="The expected exit code (default: 0)")
+    on_failure: Literal["pass", "block", "warn"] = Field(
+        default="pass",
+        alias="onFailure",
+        description=(
+            "Action to take when the expected exit code is not returned: 'pass' continues normally, "
+            "'block' takes the exporter offline and blocks leases, 'warn' continues and prints a warning"
+        ),
+    )
+
+
+class HookConfigV1Alpha1(BaseModel):
+    """Configuration for lifecycle hooks."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    before_lease: HookInstanceConfigV1Alpha1 | None = Field(default=None, alias="beforeLease")
+    after_lease: HookInstanceConfigV1Alpha1 | None = Field(default=None, alias="afterLease")
+
+
 class ExporterConfigV1Alpha1DriverInstanceProxy(BaseModel):
     ref: str
 
@@ -52,7 +79,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                     description=self.root.description,
                     methods_description=self.root.methods_description,
                     children=children,
-                    **self.root.config
+                    **self.root.config,
                 )
 
             case ExporterConfigV1Alpha1DriverInstanceComposite():
@@ -93,6 +120,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     description: str | None = None
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+    hooks: HookConfigV1Alpha1 = Field(default_factory=HookConfigV1Alpha1)
 
     path: Path | None = Field(default=None)
 
@@ -127,7 +155,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @classmethod
     def dump_yaml(self, config: Self) -> str:
-        return yaml.safe_dump(config.model_dump(mode="json", exclude={"alias", "path"}), sort_keys=False)
+        return yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), sort_keys=False)
 
     @classmethod
     def save(cls, config: Self, path: Optional[str] = None) -> Path:
@@ -138,7 +166,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         else:
             config.path = Path(path)
         with config.path.open(mode="w") as f:
-            yaml.safe_dump(config.model_dump(mode="json", exclude={"alias", "path"}), f, sort_keys=False)
+            yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), f, sort_keys=False)
         return config.path
 
     @classmethod
@@ -185,6 +213,16 @@ class ExporterConfigV1Alpha1(BaseModel):
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
+        # Create hook executor if hooks are configured
+        hook_executor = None
+        if self.hooks.before_lease or self.hooks.after_lease:
+            from jumpstarter.exporter.hooks import HookExecutor
+
+            hook_executor = HookExecutor(
+                config=self.hooks,
+                device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
+            )
+
         exporter = None
         entered = False
         try:
@@ -197,6 +235,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 ).instantiate,
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
+                hook_executor=hook_executor,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()
