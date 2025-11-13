@@ -12,6 +12,7 @@ dependencies = [
   "jumpstarter-cli-admin",
   "jumpstarter-cli-common",
   "jumpstarter-cli-driver",
+  "jumpstarter-driver-ble",
   "jumpstarter-driver-can",
   "jumpstarter-driver-composite",
   "jumpstarter-driver-corellium",

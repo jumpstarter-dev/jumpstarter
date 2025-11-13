@@ -30,6 +30,7 @@ Drivers that control the power state and basic operation of devices:
 
 Drivers that provide various communication interfaces:
 
+* **[BLE](ble.md)** (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 * **[CAN](can.md)** (`jumpstarter-driver-can`) - Controller Area Network
   communication
 * **[HTTP](http.md)** (`jumpstarter-driver-http`) - HTTP communication
@@ -84,6 +85,7 @@ General-purpose utility drivers:
 
 ```{toctree}
 :hidden:
+ble.md
 can.md
 corellium.md
 dutlink.md
