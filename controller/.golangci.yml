@@ -27,6 +27,9 @@ linters:
         path: api/*
       - linters:
           - dupl
+        path: api/.*_test\.go
+      - linters:
+          - dupl
           - lll
         path: internal/*
     paths:
