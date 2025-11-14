@@ -1,3 +1,5 @@
+from concurrent.futures import CancelledError
+
 import click
 import pytest
 
@@ -94,18 +96,15 @@ def test_categorize_exception_wraps_unknown_exceptions():
     assert result.__cause__ is error
 
 
-def test_categorize_exception_non_retryable_takes_priority_over_retryable():
-    """Test that non-retryable errors take priority in cause chain"""
+def test_categorize_exception_cancelled_error_is_non_retryable():
+    """Test that CancelledError is treated as non-retryable"""
     client = MockFlasherClient()
 
-    # Create a chain: retryable caused by non-retryable
-    non_retryable = FlashNonRetryableError("Config issue")
-    retryable = FlashRetryableError("Network error")
-    retryable.__cause__ = non_retryable
-
-    result = client._categorize_exception(retryable)
+    # CancelledError should be treated as non-retryable
+    error = CancelledError()
+    result = client._categorize_exception(error)
     assert isinstance(result, FlashNonRetryableError)
-    assert str(result) == "Config issue"
+    assert "Operation cancelled" in str(result)
 
 
 def test_categorize_exception_searches_cause_chain():
