@@ -5,6 +5,7 @@ import re
 import sys
 import threading
 import time
+from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PosixPath
@@ -232,6 +233,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         retryable = self._find_exception_in_chain(exception, FlashRetryableError)
         if retryable is not None:
             return retryable
+
+        # CancelledError is a special case that should be treated as non-retryable
+        if isinstance(exception, CancelledError):
+            return FlashNonRetryableError("Operation cancelled")
 
         # Unknown exception - log full stack trace and wrap as retryable
         self.logger.exception(
