@@ -5,6 +5,7 @@ import re
 import sys
 import threading
 import time
+from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PosixPath
@@ -177,14 +178,18 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     self.logger.info(f"Flash operation succeeded on attempt {attempt + 1}")
                     break
                 except Exception as e:
-                    # Check if this is a retryable or non-retryable error (including sub-exceptions)
-                    retryable_error = self._get_retryable_error(e)
-                    non_retryable_error = self._get_non_retryable_error(e)
+                    # Categorize the exception as retryable or non-retryable
+                    categorized_error = self._categorize_exception(e)
 
-                    if retryable_error is not None:
+                    if isinstance(categorized_error, FlashNonRetryableError):
+                        # Non-retryable error, fail immediately
+                        self.logger.error(f"Flash operation failed with non-retryable error: {categorized_error}")
+                        raise FlashError(f"Flash operation failed: {categorized_error}") from e
+                    else:
+                        # Retryable error
                         if attempt < retries:
                             self.logger.warning(
-                                f"Flash attempt {attempt + 1} failed with retryable error: {retryable_error}"
+                                f"Flash attempt {attempt + 1} failed with retryable error: {categorized_error}"
                             )
                             self.logger.info(f"Retrying flash operation (attempt {attempt + 2}/{retries + 1})")
                             # Wait a bit before retrying
@@ -193,16 +198,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                         else:
                             self.logger.error(f"Flash operation failed after {retries + 1} attempts")
                             raise FlashError(
-                                f"Flash operation failed after {retries + 1} attempts. Last error: {retryable_error}"
+                                f"Flash operation failed after {retries + 1} attempts. Last error: {categorized_error}"
                             ) from e
-                    elif non_retryable_error is not None:
-                        # Non-retryable error, fail immediately
-                        self.logger.error(f"Flash operation failed with non-retryable error: {non_retryable_error}")
-                        raise FlashError(f"Flash operation failed: {non_retryable_error}") from e
-                    else:
-                        # Unexpected error, don't retry
-                        self.logger.error(f"Flash operation failed with unexpected error: {e}")
-                        raise FlashError(f"Flash operation failed: {e}") from e
 
 
         total_time = time.time() - start_time
@@ -210,69 +207,79 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         minutes, seconds = divmod(total_time, 60)
         self.logger.info(f"Flashing completed in {int(minutes)}m {int(seconds):02d}s")
 
-    def _get_retryable_error(self, exception: Exception) -> FlashRetryableError | None:
-        """Find a retryable error in an exception (or any of its causes).
+    def _categorize_exception(self, exception: Exception) -> FlashRetryableError | FlashNonRetryableError:
+        """Categorize an exception as retryable or non-retryable.
+
+        This method searches through the exception chain (including ExceptionGroups)
+        to find FlashRetryableError or FlashNonRetryableError instances.
+
+        Priority:
+        1. FlashNonRetryableError - highest priority, fail immediately
+        2. FlashRetryableError - retry with backoff
+        3. Unknown exceptions - log full stack trace and treat as retryable
 
         Args:
-            exception: The exception to check
+            exception: The exception to categorize
 
         Returns:
-            The FlashRetryableError if found, None otherwise
+            FlashRetryableError or FlashNonRetryableError
+        """
+        # First pass: look for non-retryable errors (highest priority)
+        non_retryable = self._find_exception_in_chain(exception, FlashNonRetryableError)
+        if non_retryable is not None:
+            return non_retryable
+
+        # Second pass: look for retryable errors
+        retryable = self._find_exception_in_chain(exception, FlashRetryableError)
+        if retryable is not None:
+            return retryable
+
+        # CancelledError is a special case that should be treated as non-retryable
+        if isinstance(exception, CancelledError):
+            return FlashNonRetryableError("Operation cancelled")
+
+        # Unknown exception - log full stack trace and wrap as retryable
+        self.logger.exception(
+            f"Unknown exception encountered during flash operation, treating as retryable: "
+            f"{type(exception).__name__}: {exception}"
+        )
+        wrapped_exception = FlashRetryableError(f"Unknown error occurred: {type(exception).__name__}: {exception}")
+        wrapped_exception.__cause__ = exception
+        return wrapped_exception
+
+    def _find_exception_in_chain(self, exception: Exception, target_type: type) -> Exception | None:
+        """Find an exception of a specific type in an exception chain.
+
+        Searches through the exception, its ExceptionGroup members (if any),
+        and the cause chain recursively.
+
+        Args:
+            exception: The exception to search
+            target_type: The exception type to search for
+
+        Returns:
+            The found exception instance if found, None otherwise
         """
         # Check if this is an ExceptionGroup and look through its exceptions
         if hasattr(exception, 'exceptions'):
             for sub_exc in exception.exceptions:
-                result = self._get_retryable_error(sub_exc)
+                result = self._find_exception_in_chain(sub_exc, target_type)
                 if result is not None:
                     return result
 
         # Check the current exception
-        if isinstance(exception, FlashRetryableError):
+        if isinstance(exception, target_type):
             return exception
 
         # Check the cause chain
         current = getattr(exception, '__cause__', None)
         while current is not None:
-            if isinstance(current, FlashRetryableError):
+            if isinstance(current, target_type):
                 return current
             # Also check if the cause is an ExceptionGroup
             if hasattr(current, 'exceptions'):
                 for sub_exc in current.exceptions:
-                    result = self._get_retryable_error(sub_exc)
-                    if result is not None:
-                        return result
-            current = getattr(current, '__cause__', None)
-        return None
-
-    def _get_non_retryable_error(self, exception: Exception) -> FlashNonRetryableError | None:
-        """Find a non-retryable error in an exception (or any of its causes).
-
-        Args:
-            exception: The exception to check
-
-        Returns:
-            The FlashNonRetryableError if found, None otherwise
-        """
-        # Check if this is an ExceptionGroup and look through its exceptions
-        if hasattr(exception, 'exceptions'):
-            for sub_exc in exception.exceptions:
-                result = self._get_non_retryable_error(sub_exc)
-                if result is not None:
-                    return result
-
-        # Check the current exception
-        if isinstance(exception, FlashNonRetryableError):
-            return exception
-
-        # Check the cause chain
-        current = getattr(exception, '__cause__', None)
-        while current is not None:
-            if isinstance(current, FlashNonRetryableError):
-                return current
-            # Also check if the cause is an ExceptionGroup
-            if hasattr(current, 'exceptions'):
-                for sub_exc in current.exceptions:
-                    result = self._get_non_retryable_error(sub_exc)
+                    result = self._find_exception_in_chain(sub_exc, target_type)
                     if result is not None:
                         return result
             current = getattr(current, '__cause__', None)
@@ -1156,7 +1163,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--fls-version",
             type=str,
-            default="0.1.5", # TODO(majopela): set default to "" once fls is included in our images
+            default="0.1.9", # TODO(majopela): set default to "" once fls is included in our images
             help="Download an specific fls version from the github releases",
         )
         @debug_console_option
