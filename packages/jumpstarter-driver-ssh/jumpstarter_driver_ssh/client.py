@@ -29,6 +29,24 @@ class SSHCommandRunResult:
         )
 
 
+@dataclass
+class SSHCommandRunOptions:
+    """
+    Options for running an SSH command
+
+    Attributes:
+        direct: If True, connect directly to the host's TCP address.
+                If False, use SSH port forwarding.
+        capture_output: If True, capture stdout and stderr.
+                        If False, they are inherited from the parent process.
+        capture_as_text: If True and output is captured, decode stdout and
+                         stderr as text. Otherwise, they are captured as bytes.
+    """
+    direct: bool = False
+    capture_output: bool = True
+    capture_as_text: bool = True
+
+
 @dataclass(kw_only=True)
 class SSHWrapperClient(CompositeClient):
     """
@@ -46,7 +64,14 @@ class SSHWrapperClient(CompositeClient):
         @click.option("--direct", is_flag=True, help="Use direct TCP address")
         @click.argument("args", nargs=-1)
         def ssh(direct, args):
-            result = self.run(direct, args)
+            options = SSHCommandRunOptions(
+                direct=direct,
+                # For the CLI, we never capture output so that interactive shells
+                # and long-running commands stream their output directly.
+                capture_output=False,
+            )
+
+            result = self.run(options, args)
             self.logger.debug("SSH exit code: %s", result.return_code)
 
             if result.stdout:
@@ -69,14 +94,14 @@ class SSHWrapperClient(CompositeClient):
     async def stream_async(self, method):
         return await self.tcp.stream_async(method)
 
-    def run(self, direct, args) -> SSHCommandRunResult:
+    def run(self, options: SSHCommandRunOptions, args) -> SSHCommandRunResult:
         """Run SSH command with the given parameters and arguments"""
         # Get SSH command and default username from driver
         ssh_command = self.call("get_ssh_command")
         default_username = self.call("get_default_username")
         ssh_identity = self.call("get_ssh_identity")
 
-        if direct:
+        if options.direct:
             # Use direct TCP address
             try:
                 address = self.tcp.address()  # (format: "tcp://host:port")
@@ -86,10 +111,14 @@ class SSHWrapperClient(CompositeClient):
                 if not host or not port:
                     raise ValueError(f"Invalid address format: {address}")
                 self.logger.debug(f"Using direct TCP connection for SSH - host: {host}, port: {port}")
-                return self._run_ssh_local(host, port, ssh_command, default_username, ssh_identity, args)
+                return self._run_ssh_local(host, port, ssh_command, options, default_username, ssh_identity, args)
             except (DriverMethodNotImplemented, ValueError) as e:
                 self.logger.error(f"Direct address connection failed ({e}), falling back to SSH port forwarding")
-                return self.run(False, args)
+                return self.run(SSHCommandRunOptions(
+                    direct=False,
+                    capture_output=options.capture_output,
+                    capture_as_text=options.capture_as_text,
+                ), args)
         else:
             # Use SSH port forwarding (default behavior)
             self.logger.debug("Using SSH port forwarding for SSH connection")
@@ -98,9 +127,9 @@ class SSHWrapperClient(CompositeClient):
             ) as addr:
                 host, port = addr
                 self.logger.debug(f"SSH port forward established - host: {host}, port: {port}")
-                return self._run_ssh_local(host, port, ssh_command, default_username, ssh_identity, args)
+                return self._run_ssh_local(host, port, ssh_command, options, default_username, ssh_identity, args)
 
-    def _run_ssh_local(self, host, port, ssh_command, default_username, ssh_identity, args):
+    def _run_ssh_local(self, host, port, ssh_command, options, default_username, ssh_identity, args):
         """Run SSH command with the given host, port, and arguments"""
         # Create temporary identity file if needed
         identity_file = None
@@ -134,7 +163,7 @@ class SSHWrapperClient(CompositeClient):
             ssh_args = self._build_final_ssh_command(ssh_args, ssh_options, host, command_args)
 
             # Execute the command
-            return self._execute_ssh_command(ssh_args)
+            return self._execute_ssh_command(ssh_args, options)
         finally:
             # Clean up temporary identity file
             if identity_file:
@@ -234,10 +263,10 @@ class SSHWrapperClient(CompositeClient):
         self.logger.debug(f"Running SSH command: {ssh_args}")
         return ssh_args
 
-    def _execute_ssh_command(self, ssh_args) -> SSHCommandRunResult:
+    def _execute_ssh_command(self, ssh_args, options: SSHCommandRunOptions) -> SSHCommandRunResult:
         """Execute the SSH command and return the result"""
         try:
-            result = subprocess.run(ssh_args, capture_output=True, text=True)
+            result = subprocess.run(ssh_args, capture_output=options.capture_output, text=options.capture_as_text)
             return SSHCommandRunResult.from_completed_process(result)
         except FileNotFoundError:
             self.logger.error(
