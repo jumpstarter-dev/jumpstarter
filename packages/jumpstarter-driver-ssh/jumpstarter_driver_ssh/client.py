@@ -110,10 +110,10 @@ class SSHWrapperClient(CompositeClient):
                 port = parsed.port
                 if not host or not port:
                     raise ValueError(f"Invalid address format: {address}")
-                self.logger.debug(f"Using direct TCP connection for SSH - host: {host}, port: {port}")
+                self.logger.debug("Using direct TCP connection for SSH - host: %s, port: %s", host, port)
                 return self._run_ssh_local(host, port, ssh_command, options, default_username, ssh_identity, args)
             except (DriverMethodNotImplemented, ValueError) as e:
-                self.logger.error(f"Direct address connection failed ({e}), falling back to SSH port forwarding")
+                self.logger.error("Direct address connection failed (%s), falling back to SSH port forwarding", e)
                 return self.run(SSHCommandRunOptions(
                     direct=False,
                     capture_output=options.capture_output,
@@ -126,7 +126,7 @@ class SSHWrapperClient(CompositeClient):
                 client=self.tcp,
             ) as addr:
                 host, port = addr
-                self.logger.debug(f"SSH port forward established - host: {host}, port: {port}")
+                self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
                 return self._run_ssh_local(host, port, ssh_command, options, default_username, ssh_identity, args)
 
     def _run_ssh_local(self, host, port, ssh_command, options, default_username, ssh_identity, args):
@@ -142,9 +142,9 @@ class SSHWrapperClient(CompositeClient):
                 # Set proper permissions (600) for SSH key
                 os.chmod(temp_file.name, 0o600)
                 identity_file = temp_file.name
-                self.logger.debug(f"Created temporary identity file: {identity_file}")
+                self.logger.debug("Created temporary identity file: %s", identity_file)
             except Exception as e:
-                self.logger.error(f"Failed to create temporary identity file: {e}")
+                self.logger.error("Failed to create temporary identity file: %s", e)
                 if temp_file:
                     try:
                         os.unlink(temp_file.name)
@@ -169,9 +169,9 @@ class SSHWrapperClient(CompositeClient):
             if identity_file:
                 try:
                     os.unlink(identity_file)
-                    self.logger.debug(f"Cleaned up temporary identity file: {identity_file}")
+                    self.logger.debug("Cleaned up temporary identity file: %s", identity_file)
                 except Exception as e:
-                    self.logger.warning(f"Failed to clean up temporary identity file {identity_file}: {e}")
+                    self.logger.warning("Failed to clean up temporary identity file %s: %s", identity_file, str(e))
 
     def _build_ssh_command_args(self, ssh_command, port, default_username, identity_file, args):
         """Build initial SSH command arguments"""
@@ -243,8 +243,8 @@ class SSHWrapperClient(CompositeClient):
             i += 1
 
         # Debug output
-        self.logger.debug(f"SSH options: {ssh_options}")
-        self.logger.debug(f"Command args: {command_args}")
+        self.logger.debug("SSH options: %s", ssh_options)
+        self.logger.debug("Command args: %s", command_args)
         return ssh_options, command_args
 
 
@@ -260,7 +260,7 @@ class SSHWrapperClient(CompositeClient):
         # Add command arguments
         ssh_args.extend(command_args)
 
-        self.logger.debug(f"Running SSH command: {ssh_args}")
+        self.logger.debug("Running SSH command: %s", ssh_args)
         return ssh_args
 
     def _execute_ssh_command(self, ssh_args, options: SSHCommandRunOptions) -> SSHCommandRunResult:
@@ -270,7 +270,8 @@ class SSHWrapperClient(CompositeClient):
             return SSHCommandRunResult.from_completed_process(result)
         except FileNotFoundError:
             self.logger.error(
-                f"SSH command '{ssh_args[0]}' not found. Please ensure SSH is installed and available in PATH."
+                "SSH command '%s' not found. Please ensure SSH is installed and available in PATH.",
+                ssh_args[0],
             )
             return SSHCommandRunResult(
                 return_code=127,  # Standard exit code for "command not found"

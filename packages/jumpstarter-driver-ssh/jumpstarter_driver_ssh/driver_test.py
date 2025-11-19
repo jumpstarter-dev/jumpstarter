@@ -684,10 +684,11 @@ def test_ssh_identity_temp_file_cleanup_error():
                             mock_chmod.assert_called_once_with("/tmp/test_ssh_key_12345", 0o600)
 
                             # Verify warning was logged
-                            mock_logger.warning.assert_called_once()
-                            warning_call = mock_logger.warning.call_args[0][0]
-                            assert "Failed to clean up temporary identity file" in warning_call
-                            assert "/tmp/test_ssh_key_12345" in warning_call
+                            mock_logger.warning.assert_called_once_with(
+                                "Failed to clean up temporary identity file %s: %s",
+                                "/tmp/test_ssh_key_12345",
+                                str(mock_unlink.side_effect)
+                            )
 
                             assert result.return_code == 0
                             assert result.stdout == "some stdout"
