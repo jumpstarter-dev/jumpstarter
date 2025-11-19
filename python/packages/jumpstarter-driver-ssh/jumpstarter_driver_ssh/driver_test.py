@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from jumpstarter_driver_network.driver import TcpNetwork
 
-from jumpstarter_driver_ssh.client import SSHCommandRunResult
+from jumpstarter_driver_ssh.client import SSHCommandRunOptions, SSHCommandRunResult
 from jumpstarter_driver_ssh.driver import SSHWrapper
 
 from jumpstarter.common.exceptions import ConfigurationError
@@ -55,7 +55,7 @@ def test_ssh_command_with_default_username():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command with default username
-            result = client.run(False, ["hostname"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -87,7 +87,7 @@ def test_ssh_command_without_default_username():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command without default username
-            result = client.run(False, ["hostname"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -117,7 +117,7 @@ def test_ssh_command_with_user_override():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command with -l flag overriding default username
-            result = client.run(False, ["-l", "myuser", "hostname"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["-l", "myuser", "hostname"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -155,7 +155,7 @@ def test_ssh_command_with_port():
                 mock_adapter.return_value.__exit__.return_value = None
 
                 # Test SSH command with custom port
-                result = client.run(False, ["hostname"])
+                result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
                 assert isinstance(result, SSHCommandRunResult)
 
                 # Verify subprocess.run was called
@@ -193,7 +193,7 @@ def test_ssh_command_with_direct_flag():
             # Mock the tcp.address() method
             with patch.object(client.tcp, 'address', return_value="tcp://192.168.1.100:22"):
                 # Test SSH command with direct flag
-                result = client.run(True, ["hostname"])
+                result = client.run(SSHCommandRunOptions(direct=True), ["hostname"])
                 assert isinstance(result, SSHCommandRunResult)
 
                 # Verify subprocess.run was called
@@ -224,7 +224,7 @@ def test_ssh_command_error_handling():
             mock_run.side_effect = FileNotFoundError("SSH not found")
 
             # Test SSH command error handling
-            result = client.run(False, ["hostname"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Should return error code 127
@@ -245,7 +245,7 @@ def test_ssh_command_with_multiple_ssh_options():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command with multiple SSH options
-            result = client.run(False, [
+            result = client.run(SSHCommandRunOptions(direct=False), [
                 "-o", "StrictHostKeyChecking=no", "-i", "/path/to/key", "command", "arg1", "arg2"
             ])
             assert isinstance(result, SSHCommandRunResult)
@@ -283,7 +283,7 @@ def test_ssh_command_with_unknown_option_treated_as_command():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command with unknown option
-            result = client.run(False, ["-l", "user", "-unknown", "command", "arg1"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["-l", "user", "-unknown", "command", "arg1"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -317,7 +317,7 @@ def test_ssh_command_with_no_ssh_options():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command with no SSH options
-            result = client.run(False, ["command", "arg1", "arg2"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["command", "arg1", "arg2"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -347,7 +347,7 @@ def test_ssh_command_with_command_l_flag_does_not_interfere_with_username_inject
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command with -l flag in the command (like ls -la -l ajo)
-            result = client.run(False, ["ls", "-la", "-l", "ajo"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["ls", "-la", "-l", "ajo"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -469,7 +469,7 @@ def test_ssh_command_with_identity_string():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command with identity string
-            result = client.run(False, ["hostname"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -519,7 +519,7 @@ def test_ssh_command_with_identity_file():
                 mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
                 # Test SSH command with identity file
-                result = client.run(False, ["hostname"])
+                result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
                 assert isinstance(result, SSHCommandRunResult)
 
                 # Verify subprocess.run was called
@@ -563,7 +563,7 @@ def test_ssh_command_without_identity():
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
             # Test SSH command without identity
-            result = client.run(False, ["hostname"])
+            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
             assert isinstance(result, SSHCommandRunResult)
 
             # Verify subprocess.run was called
@@ -608,7 +608,7 @@ def test_ssh_identity_temp_file_creation_and_cleanup():
                         mock_temp_file.return_value = mock_temp_file_instance
 
                         # Test SSH command with identity
-                        result = client.run(False, ["hostname"])
+                        result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
                         assert isinstance(result, SSHCommandRunResult)
 
                         # Verify temporary file was created
@@ -644,7 +644,7 @@ def test_ssh_identity_temp_file_creation_error():
                 # Test SSH command with identity should raise an error
                 # The exception will be wrapped in an ExceptionGroup due to the context manager
                 with pytest.raises(ExceptionGroup) as exc_info:
-                    client.run(False, ["hostname"])
+                    client.run(SSHCommandRunOptions(direct=False), ["hostname"])
 
                 # Check that the original OSError is in the exception group
                 assert any(isinstance(e, OSError) and "Permission denied" in str(e) for e in exc_info.value.exceptions)
@@ -677,7 +677,7 @@ def test_ssh_identity_temp_file_cleanup_error():
 
                         # Test SSH command with identity - should still succeed but log warning
                         with patch.object(client, 'logger') as mock_logger:
-                            result = client.run(False, ["hostname"])
+                            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
                             assert isinstance(result, SSHCommandRunResult)
 
                             # Verify chmod was called
