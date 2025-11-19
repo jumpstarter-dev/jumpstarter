@@ -13,6 +13,22 @@ from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_command
 
 
+@dataclass
+class SSHCommandRunResult:
+    """Result of executing an SSH command"""
+    return_code: int
+    stdout: str | bytes
+    stderr: str | bytes
+
+    @staticmethod
+    def from_completed_process(result: subprocess.CompletedProcess) -> "SSHCommandRunResult":
+        return SSHCommandRunResult(
+            return_code=result.returncode,
+            stdout=result.stdout or "",
+            stderr=result.stderr or "",
+        )
+
+
 @dataclass(kw_only=True)
 class SSHWrapperClient(CompositeClient):
     """
@@ -31,10 +47,17 @@ class SSHWrapperClient(CompositeClient):
         @click.argument("args", nargs=-1)
         def ssh(direct, args):
             result = self.run(direct, args)
-            self.logger.debug(f"SSH result: {result}")
-            if result != 0:
-                click.get_current_context().exit(result)
-            return result
+            self.logger.debug("SSH exit code: %s", result.return_code)
+
+            if result.stdout:
+                click.echo(result.stdout, nl=False)
+            if result.stderr:
+                click.echo(result.stderr, nl=False, err=True)
+
+            if result.return_code != 0:
+                click.get_current_context().exit(result.return_code)
+
+            return result.return_code
 
         return ssh
 
@@ -46,7 +69,7 @@ class SSHWrapperClient(CompositeClient):
     async def stream_async(self, method):
         return await self.tcp.stream_async(method)
 
-    def run(self, direct, args):
+    def run(self, direct, args) -> SSHCommandRunResult:
         """Run SSH command with the given parameters and arguments"""
         # Get SSH command and default username from driver
         ssh_command = self.call("get_ssh_command")
@@ -73,8 +96,7 @@ class SSHWrapperClient(CompositeClient):
             with TcpPortforwardAdapter(
                 client=self.tcp,
             ) as addr:
-                host = addr[0]
-                port = addr[1]
+                host, port = addr
                 self.logger.debug(f"SSH port forward established - host: {host}, port: {port}")
                 return self._run_ssh_local(host, port, ssh_command, default_username, ssh_identity, args)
 
@@ -212,13 +234,17 @@ class SSHWrapperClient(CompositeClient):
         self.logger.debug(f"Running SSH command: {ssh_args}")
         return ssh_args
 
-    def _execute_ssh_command(self, ssh_args):
+    def _execute_ssh_command(self, ssh_args) -> SSHCommandRunResult:
         """Execute the SSH command and return the result"""
         try:
-            result = subprocess.run(ssh_args)
-            return result.returncode
+            result = subprocess.run(ssh_args, capture_output=True, text=True)
+            return SSHCommandRunResult.from_completed_process(result)
         except FileNotFoundError:
             self.logger.error(
                 f"SSH command '{ssh_args[0]}' not found. Please ensure SSH is installed and available in PATH."
             )
-            return 127  # Standard exit code for "command not found"
+            return SSHCommandRunResult(
+                return_code=127,  # Standard exit code for "command not found"
+                stdout="",
+                stderr=f"SSH command '{ssh_args[0]}' not found",
+            )
