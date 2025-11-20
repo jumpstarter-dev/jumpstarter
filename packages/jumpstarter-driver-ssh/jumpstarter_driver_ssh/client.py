@@ -94,6 +94,30 @@ class SSHWrapperClient(CompositeClient):
     async def stream_async(self, method):
         return await self.tcp.stream_async(method)
 
+    @property
+    def command(self) -> str:
+        """Get the base SSH command"""
+        return self.call("get_ssh_command")
+
+    @property
+    def identity(self) -> str | None:
+        """
+        Get the SSH identity (private key) as a string.
+
+        Returns:
+            The SSH identity key content, or None if not configured.
+
+        Raises:
+            ConfigurationError: If `ssh_identity_file` is configured on the
+                                driver but cannot be read.
+        """
+        return self.call("get_ssh_identity")
+
+    @property
+    def username(self) -> str:
+        """Get the default SSH username"""
+        return self.call("get_default_username")
+
     def run(self, options: SSHCommandRunOptions, args) -> SSHCommandRunResult:
         """Run SSH command with the given parameters and arguments"""
         # Get SSH command and default username from driver
