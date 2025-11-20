@@ -79,7 +79,12 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-
+        {{- if .Values.grpc.tls.controllerCertSecret }}
+        - name: EXTERNAL_CERT_PEM
+          value: /secrets/tls.crt
+        - name: EXTERNAL_KEY_PEM
+          value: /secrets/tls.key
+        {{- end }}
         image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
         name: manager
@@ -107,5 +112,17 @@ spec:
           requests:
             cpu: 1000m
             memory: 256Mi
+        {{- if .Values.grpc.tls.controllerCertSecret }}
+        volumeMounts:
+        - name: external-cert
+          mountPath: /secrets
+          readOnly: true
+        {{- end }}
+      {{- if .Values.grpc.tls.controllerCertSecret }}
+      volumes:
+      - name: external-cert
+        secret:
+          secretName: {{ .Values.grpc.tls.controllerCertSecret }}
+      {{- end }}
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
