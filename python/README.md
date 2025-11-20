@@ -34,9 +34,9 @@ pip install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-cli
 ```
 
 To install the [Jumpstarter
-Service](https://jumpstarter.dev/introduction/service.html) in your Kubernetes
+Service](https://jumpstarter.dev/main/introduction/service.html) in your Kubernetes
 cluster, see the [Service
-Installation](https://jumpstarter.dev/installation/service/index.html)
+Installation](https://jumpstarter.dev/main/getting-started/installation/index.html)
 documentation.
 
 ## Documentation
@@ -51,7 +51,7 @@ Additionally, the command line reference documentation can be viewed with `jmp
 
 Jumpstarter welcomes contributors of all levels of experience and would love to
 see you involved in the project. See the [contributing
-guide](https://jumpstarter.dev/contributing/) to get started.
+guide](https://jumpstarter.dev/main/contributing.html) to get started.
 
 ## License
 
