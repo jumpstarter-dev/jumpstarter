@@ -121,10 +121,6 @@ class SSHWrapperClient(CompositeClient):
     def run(self, options: SSHCommandRunOptions, args) -> SSHCommandRunResult:
         """Run SSH command with the given parameters and arguments"""
         # Get SSH command and default username from driver
-        ssh_command = self.call("get_ssh_command")
-        default_username = self.call("get_default_username")
-        ssh_identity = self.call("get_ssh_identity")
-
         if options.direct:
             # Use direct TCP address
             try:
@@ -135,7 +131,7 @@ class SSHWrapperClient(CompositeClient):
                 if not host or not port:
                     raise ValueError(f"Invalid address format: {address}")
                 self.logger.debug("Using direct TCP connection for SSH - host: %s, port: %s", host, port)
-                return self._run_ssh_local(host, port, ssh_command, options, default_username, ssh_identity, args)
+                return self._run_ssh_local(host, port, options, args)
             except (DriverMethodNotImplemented, ValueError) as e:
                 self.logger.error("Direct address connection failed (%s), falling back to SSH port forwarding", e)
                 return self.run(SSHCommandRunOptions(
@@ -151,11 +147,12 @@ class SSHWrapperClient(CompositeClient):
             ) as addr:
                 host, port = addr
                 self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
-                return self._run_ssh_local(host, port, ssh_command, options, default_username, ssh_identity, args)
+                return self._run_ssh_local(host, port, options, args)
 
-    def _run_ssh_local(self, host, port, ssh_command, options, default_username, ssh_identity, args):
+    def _run_ssh_local(self, host, port, options, args):
         """Run SSH command with the given host, port, and arguments"""
         # Create temporary identity file if needed
+        ssh_identity = self.identity
         identity_file = None
         temp_file = None
         if ssh_identity:
@@ -178,7 +175,7 @@ class SSHWrapperClient(CompositeClient):
 
         try:
             # Build SSH command arguments
-            ssh_args = self._build_ssh_command_args(ssh_command, port, default_username, identity_file, args)
+            ssh_args = self._build_ssh_command_args(port, identity_file, args)
 
             # Separate SSH options from command arguments
             ssh_options, command_args = self._separate_ssh_options_and_command_args(args)
@@ -197,10 +194,11 @@ class SSHWrapperClient(CompositeClient):
                 except Exception as e:
                     self.logger.warning("Failed to clean up temporary identity file %s: %s", identity_file, str(e))
 
-    def _build_ssh_command_args(self, ssh_command, port, default_username, identity_file, args):
+    def _build_ssh_command_args(self, port, identity_file, args):
         """Build initial SSH command arguments"""
         # Split the SSH command into individual arguments
-        ssh_args = shlex.split(ssh_command)
+        ssh_args = shlex.split(self.command)
+        default_username = self.username
 
         # Add identity file if provided
         if identity_file:
