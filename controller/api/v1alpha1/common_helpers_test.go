@@ -120,4 +120,3 @@ func TestGetNamespaceAndUID(t *testing.T) {
 		})
 	}
 }
-

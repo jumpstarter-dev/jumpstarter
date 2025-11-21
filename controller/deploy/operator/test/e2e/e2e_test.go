@@ -122,7 +122,7 @@ var _ = Describe("Manager", Ordered, func() {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n")
 				for _, event := range eventList.Items {
 					_, _ = fmt.Fprintf(GinkgoWriter, "%s %s %s %s\n",
-						event.LastTimestamp.Time.Format(time.RFC3339),
+						event.LastTimestamp.Format(time.RFC3339),
 						event.InvolvedObject.Name,
 						event.Reason,
 						event.Message)
