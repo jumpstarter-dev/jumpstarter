@@ -48,7 +48,7 @@ spec:
   - framework
   links:
   - name: Jumpstarter Operator
-    url: https://jumpstarter-operator.domain
+    url: https://jumpstarter.dev/main/getting-started/installation/service/index.html
   maintainers:
   - email: majopela@redhat.com
     name: Miguel Angel Ajo

@@ -18,7 +18,7 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2025-11-21T16:04:42Z"
+    createdAt: "2025-11-25T08:56:27Z"
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: jumpstarter-operator.v0.8.0
@@ -383,7 +383,7 @@ spec:
   - framework
   links:
   - name: Jumpstarter Operator
-    url: https://jumpstarter-operator.domain
+    url: https://jumpstarter.dev/main/getting-started/installation/service/index.html
   maintainers:
   - email: majopela@redhat.com
     name: Miguel Angel Ajo
