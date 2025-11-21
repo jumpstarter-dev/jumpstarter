@@ -54,9 +54,7 @@ spec:
             description: ClientStatus defines the observed state of Identity
             properties:
               credential:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
+                description: Status field for the clients
                 properties:
                   name:
                     default: ""
@@ -291,9 +289,7 @@ spec:
             description: ExporterStatus defines the observed state of Exporter
             properties:
               conditions:
-                description: |-
-                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-                  Important: Run "make" to regenerate code after modifying this file
+                description: Exporter status fields
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -2855,6 +2851,15 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes/custom-host
+  verbs:
+  - create
+  - get
+  - patch
+  - update
 - apiGroups:
   - route.openshift.io
   resources:
