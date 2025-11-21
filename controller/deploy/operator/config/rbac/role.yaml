@@ -187,6 +187,15 @@ rules:
 - apiGroups:
   - route.openshift.io
   resources:
+  - routes/custom-host
+  verbs:
+  - create
+  - get
+  - patch
+  - update
+- apiGroups:
+  - route.openshift.io
+  resources:
   - routes/status
   verbs:
   - get

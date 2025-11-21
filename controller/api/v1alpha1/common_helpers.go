@@ -19,3 +19,4 @@ func getNamespaceAndUID(namespace string, uid types.UID, annotations map[string]
 
 	return resultNamespace, resultUID
 }
+

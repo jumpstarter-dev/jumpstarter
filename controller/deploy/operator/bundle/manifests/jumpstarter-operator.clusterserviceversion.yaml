@@ -18,7 +18,7 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2025-11-20T15:54:02Z"
+    createdAt: "2025-11-21T12:01:43Z"
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: jumpstarter-operator.v0.8.0
@@ -241,6 +241,15 @@ spec:
         - apiGroups:
           - route.openshift.io
           resources:
+          - routes/custom-host
+          verbs:
+          - create
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - route.openshift.io
+          resources:
           - routes/status
           verbs:
           - get
@@ -305,10 +314,10 @@ spec:
                 resources:
                   limits:
                     cpu: 500m
-                    memory: 128Mi
+                    memory: 512Mi
                   requests:
                     cpu: 10m
-                    memory: 64Mi
+                    memory: 256Mi
                 securityContext:
                   allowPrivilegeEscalation: false
                   capabilities:
