@@ -514,8 +514,7 @@ type ClusterIPConfig struct {
 // This field is currently empty but can be extended to include status information
 // such as deployment status, endpoint URLs, and health information.
 type JumpstarterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Jumpstarter deployment status
 }
 
 // +kubebuilder:object:root=true

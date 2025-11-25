@@ -1,0 +1,59 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: jumpstarter-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: Jumpstarter is the Schema for the jumpstarters API.
+      displayName: Jumpstarter
+      kind: Jumpstarter
+      name: jumpstarters.operator.jumpstarter.dev
+      version: v1alpha1
+  description: Jumpstarter is a cloud-native framework for Hardware-in-the-Loop (HIL)
+    automation that bridges the gap between embedded development workflows and real-world
+    deployment environments. This operator installs and manages the Jumpstarter Controller,
+    which acts as the central brain for your testing infrastructure. It orchestrates
+    secure, shared access to physical hardware and virtual devices (represented as
+    "exporters") directly from your Kubernetes or OpenShift cluster.
+  displayName: Jumpstarter Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - hil
+  - hardware-in-the-loop
+  - hardware
+  - device
+  - embedded
+  - testing
+  - framework
+  links:
+  - name: Jumpstarter Operator
+    url: https://jumpstarter.dev/main/getting-started/installation/service/index.html
+  maintainers:
+  - email: majopela@redhat.com
+    name: Miguel Angel Ajo
+  maturity: alpha
+  provider:
+    name: The Jumpstarter Community
+    url: https://jumpstarter.dev
+  version: 0.0.0

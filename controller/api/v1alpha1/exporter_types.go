@@ -31,8 +31,7 @@ type ExporterSpec struct {
 
 // ExporterStatus defines the observed state of Exporter
 type ExporterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Exporter status fields
 	Conditions []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
 	Devices    []Device                     `json:"devices,omitempty"`

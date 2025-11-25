@@ -42,8 +42,7 @@ type ExporterAccessPolicySpec struct {
 
 // ExporterAccessPolicyStatus defines the observed state of ExporterAccessPolicy.
 type ExporterAccessPolicyStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Status field for the exporter access policies
 }
 
 // +kubebuilder:object:root=true
