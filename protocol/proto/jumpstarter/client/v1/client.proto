@@ -70,6 +70,7 @@ message Exporter {
   map<string, string> labels = 2;
   bool online = 3 [(google.api.field_behavior) = OUTPUT_ONLY, deprecated = true];
   jumpstarter.v1.ExporterStatus status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string status_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message Lease {
