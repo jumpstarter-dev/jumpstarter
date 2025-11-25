@@ -27,7 +27,7 @@ jobs:
             dockerfile: Dockerfile.operator
             context: .
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
-            dockerfile: bundle.Dockerfile
+            dockerfile: deploy/operator/bundle.Dockerfile
             context: deploy/operator
     steps:
       - name: Checkout repository
