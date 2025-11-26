@@ -18,6 +18,8 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"net"
 	"os"
 	"sync"
@@ -115,9 +117,32 @@ func (s *RouterService) Start(ctx context.Context) error {
 		return err
 	}
 
-	cert, err := NewSelfSignedCertificate("jumpstarter router", dnsnames, ipaddresses)
-	if err != nil {
-		return err
+	// Handle external certificate if provided via environment variables.
+	// Environment variables EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM should contain the PEM-encoded
+	// certificate and private key respectively. If both are set, they are used; otherwise
+	// a self-signed certificate is generated.
+	var cert *tls.Certificate
+	certPEMPath := os.Getenv("EXTERNAL_CERT_PEM")
+	keyPEMPath := os.Getenv("EXTERNAL_KEY_PEM")
+	if certPEMPath != "" && keyPEMPath != "" {
+		certPEMBytes, err := os.ReadFile(certPEMPath)
+		if err != nil {
+			return fmt.Errorf("failed to read external certificate file: %w", err)
+		}
+		keyPEMBytes, err := os.ReadFile(keyPEMPath)
+		if err != nil {
+			return fmt.Errorf("failed to read external key file: %w", err)
+		}
+		parsedCert, err := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
+		if err != nil {
+			return fmt.Errorf("failed to parse external certificate: %w", err)
+		}
+		cert = &parsedCert
+	} else {
+		cert, err = NewSelfSignedCertificate("jumpstarter router", dnsnames, ipaddresses)
+		if err != nil {
+			return err
+		}
 	}
 
 	server := grpc.NewServer(

@@ -60,6 +60,7 @@ class Mode(Enum):
     ingress = "ingress"
     route = "route"
     nodeport = "nodeport"
+    external = "external"  # Disable ingress and route generation
 
 
 class Mode1(Enum):

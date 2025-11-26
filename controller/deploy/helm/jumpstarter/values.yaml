@@ -112,4 +112,4 @@ jumpstarter-controller:
         routerCertSecret: ""
         controllerCertSecret: ""
 
-      mode: "route" # route or ingress
+      mode: "route" # route, ingress or external(user created)
