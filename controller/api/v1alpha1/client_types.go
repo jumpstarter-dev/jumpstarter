@@ -31,8 +31,7 @@ type ClientSpec struct {
 
 // ClientStatus defines the observed state of Identity
 type ClientStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Status field for the clients
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
 	Endpoint   string                       `json:"endpoint,omitempty"`
 }

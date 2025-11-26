@@ -84,6 +84,7 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=get;create;update;patch
 
 // Monitoring resources
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
@@ -869,7 +870,7 @@ func (r *JumpstarterReconciler) createConfigMap(jumpstarter *operatorv1alpha1.Ju
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-controller", jumpstarter.Name),
+			Name:      "jumpstarter-controller",
 			Namespace: jumpstarter.Namespace,
 			Labels: map[string]string{
 				"app":           "jumpstarter-controller",
