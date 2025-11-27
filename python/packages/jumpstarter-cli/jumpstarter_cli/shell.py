@@ -1,15 +1,66 @@
 import sys
 from datetime import timedelta
 
+import anyio
 import click
+from anyio import create_task_group, get_cancelled_exc_class
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
+from jumpstarter_cli_common.signal import signal_handler
 
-from .common import opt_duration_partial, opt_selector
+from .common import opt_acquisition_timeout, opt_duration_partial, opt_selector
 from .login import relogin_client
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+
+
+def _run_shell_with_lease(lease, exporter_logs, config, command):
+    """Run shell with lease context managers."""
+    def launch_remote_shell(path: str) -> int:
+        return launch_shell(
+            path, lease.exporter_name, config.drivers.allow, config.drivers.unsafe,
+            config.shell.use_profiles, command=command
+        )
+
+    with lease.serve_unix() as path:
+        with lease.monitor():
+            if exporter_logs:
+                with lease.connect() as client:
+                    with client.log_stream():
+                        return launch_remote_shell(path)
+            else:
+                return launch_remote_shell(path)
+
+
+async def _shell_with_signal_handling(
+    config, selector, lease_name, duration, exporter_logs, command, acquisition_timeout
+):
+    """Handle lease acquisition and shell execution with signal handling."""
+    exit_code = 0
+    cancelled_exc_class = get_cancelled_exc_class()
+
+    async with create_task_group() as tg:
+        tg.start_soon(signal_handler, tg.cancel_scope)
+        try:
+            try:
+                async with anyio.from_thread.BlockingPortal() as portal:
+                    async with config.lease_async(selector, lease_name, duration, portal, acquisition_timeout) as lease:
+                        exit_code = await anyio.to_thread.run_sync(
+                            _run_shell_with_lease, lease, exporter_logs, config, command
+                        )
+            except BaseExceptionGroup as eg:
+                for exc in eg.exceptions:
+                    if isinstance(exc, TimeoutError):
+                        raise exc from None
+                raise
+            except cancelled_exc_class:
+                exit_code = 2
+        finally:
+            if not tg.cancel_scope.cancel_called:
+                tg.cancel_scope.cancel()
+
+    return exit_code
 
 
 @click.command("shell")
@@ -21,9 +72,10 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 @opt_selector
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
 @click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
+@opt_acquisition_timeout()
 # end client specific
 @handle_exceptions_with_reauthentication(relogin_client)
-def shell(config, command: tuple[str, ...], lease_name, selector, duration, exporter_logs):
+def shell(config, command: tuple[str, ...], lease_name, selector, duration, exporter_logs, acquisition_timeout):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
 
@@ -38,27 +90,16 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
 
     match config:
         case ClientConfigV1Alpha1():
-            exit_code = 0
-            def _launch_remote_shell(path: str) -> int:
-                return launch_shell(
-                    path,
-                    "remote",
-                    config.drivers.allow,
-                    config.drivers.unsafe,
-                    config.shell.use_profiles,
-                    command=command,
-                )
-
-            with config.lease(selector=selector, lease_name=lease_name, duration=duration) as lease:
-                with lease.serve_unix() as path:
-                    with lease.monitor():
-                        if exporter_logs:
-                            with lease.connect() as client:
-                                with client.log_stream():
-                                    exit_code = _launch_remote_shell(path)
-                        else:
-                            exit_code = _launch_remote_shell(path)
-            # we exit here to make sure that all the with clauses unwind
+            exit_code = anyio.run(
+                _shell_with_signal_handling,
+                config,
+                selector,
+                lease_name,
+                duration,
+                exporter_logs,
+                command,
+                acquisition_timeout,
+            )
             sys.exit(exit_code)
 
         case ExporterConfigV1Alpha1():

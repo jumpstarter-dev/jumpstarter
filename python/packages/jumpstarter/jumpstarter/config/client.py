@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager, contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, Optional, Self
@@ -86,6 +86,16 @@ class ClientConfigV1Alpha1Drivers(BaseSettings):
         return self
 
 
+class ClientConfigV1Alpha1Lease(BaseSettings):
+    """Configuration for lease operations."""
+
+    acquisition_timeout: int = Field(
+        default=7200,
+        description="Timeout in seconds for lease acquisition",
+        ge=5,  # Must be at least 5 seconds (polling interval)
+    )
+
+
 class ClientConfigV1Alpha1(BaseSettings):
     CLIENT_CONFIGS_PATH: ClassVar[Path] = CONFIG_PATH / "clients"
 
@@ -107,6 +117,8 @@ class ClientConfigV1Alpha1(BaseSettings):
     drivers: ClientConfigV1Alpha1Drivers = Field(default_factory=ClientConfigV1Alpha1Drivers)
 
     shell: ShellConfigV1Alpha1 = Field(default_factory=ShellConfigV1Alpha1)
+
+    leases: ClientConfigV1Alpha1Lease = Field(default_factory=ClientConfigV1Alpha1Lease)
 
     async def channel(self):
         if self.endpoint is None or self.token is None:
@@ -188,11 +200,13 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         selector: str,
         duration: timedelta,
+        begin_time: datetime | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
             selector=selector,
             duration=duration,
+            begin_time=begin_time,
         )
 
     @_blocking_compat
@@ -213,23 +227,26 @@ class ClientConfigV1Alpha1(BaseSettings):
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
+        only_active: bool = True,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.ListLeases(
             page_size=page_size,
             page_token=page_token,
             filter=filter,
+            only_active=only_active,
         )
 
     @_blocking_compat
     @_handle_connection_error
     async def update_lease(
         self,
-        name,
-        duration: timedelta,
+        name: str,
+        duration: timedelta | None = None,
+        begin_time: datetime | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration)
+        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time)
 
     @asynccontextmanager
     async def lease_async(
@@ -238,6 +255,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         lease_name: str | None,
         duration: timedelta,
         portal: BlockingPortal,
+        acquisition_timeout: timedelta | None = None,
     ):
         from jumpstarter.client import Lease
 
@@ -246,6 +264,12 @@ class ClientConfigV1Alpha1(BaseSettings):
         # when no lease name is provided, release the lease on exit
         release_lease = lease_name == ""
         try:
+            # Convert timedelta to seconds for acquisition_timeout
+            acquisition_timeout_seconds = (
+                int(acquisition_timeout.total_seconds())
+                if acquisition_timeout is not None
+                else self.leases.acquisition_timeout
+            )
             async with Lease(
                 channel=await self.channel(),
                 namespace=self.metadata.namespace,
@@ -258,6 +282,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 release=release_lease,
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
+                acquisition_timeout=acquisition_timeout_seconds,
             ) as lease:
                 yield lease
 

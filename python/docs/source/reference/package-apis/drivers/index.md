@@ -30,6 +30,7 @@ Drivers that control the power state and basic operation of devices:
 
 Drivers that provide various communication interfaces:
 
+* **[BLE](ble.md)** (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 * **[CAN](can.md)** (`jumpstarter-driver-can`) - Controller Area Network
   communication
 * **[HTTP](http.md)** (`jumpstarter-driver-http`) - HTTP communication
@@ -79,9 +80,12 @@ Drivers for debugging and programming devices:
 General-purpose utility drivers:
 
 * **[Shell](shell.md)** (`jumpstarter-driver-shell`) - Shell command execution
+* **[TMT](tmt.md)** (`jumpstarter-driver-tmt`) - TMT (Test Management Tool) wrapper driver
+* **[SSH](ssh.md)** (`jumpstarter-driver-ssh`) - SSH wrapper driver
 
 ```{toctree}
 :hidden:
+ble.md
 can.md
 corellium.md
 dutlink.md
@@ -100,8 +104,10 @@ gpiod.md
 ridesx.md
 sdwire.md
 shell.md
+ssh.md
 snmp.md
 tasmota.md
+tmt.md
 tftp.md
 uboot.md
 ustreamer.md

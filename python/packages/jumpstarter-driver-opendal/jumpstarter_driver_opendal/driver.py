@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
@@ -21,10 +23,25 @@ from jumpstarter.driver import Driver, export
 class Opendal(Driver):
     scheme: str
     kwargs: dict[str, str]
+    remove_created_on_close: bool = False
 
     _operator: AsyncOperator = field(init=False)
     _fds: dict[UUID, AsyncFile] = field(init=False, default_factory=dict)
     _metadata: dict[UUID, OpendalMetadata] = field(init=False, default_factory=dict)
+
+    # Track all created paths (files and directories)
+    _created_paths: set[str] = field(init=False, default_factory=set)
+
+    def _normalize_path(self, path: str) -> str:
+        """Normalize path by handling backslashes, dot segments, and redundant slashes."""
+        if not path:
+            return path
+
+        import posixpath
+
+        path = path.replace('\\', '/')
+        normalized = posixpath.normpath(path).strip('/')
+        return normalized if normalized != '.' else ''
 
     @classmethod
     def client(cls) -> str:
@@ -43,11 +60,16 @@ class Opendal(Driver):
             metadata = await self._operator.stat(path)
         except Exception:
             metadata = None
+
         file = await self._operator.open(path, mode)
         uuid = uuid4()
 
         self._metadata[uuid] = metadata
         self._fds[uuid] = file
+
+        # Track path creation for any write mode (assume pre-existing files are remnants from failed cleanup)
+        if mode in ("wb", "w", "ab", "a"):
+            self._created_paths.add(self._normalize_path(path))
 
         return uuid
 
@@ -128,26 +150,32 @@ class Opendal(Driver):
     @validate_call(validate_return=True)
     async def copy(self, /, source: str, target: str):
         await self._operator.copy(source, target)
+        self._created_paths.add(self._normalize_path(target))
 
     @export
     @validate_call(validate_return=True)
     async def rename(self, /, source: str, target: str):
         await self._operator.rename(source, target)
+        self._created_paths.discard(self._normalize_path(source))
+        self._created_paths.add(self._normalize_path(target))
 
     @export
     @validate_call(validate_return=True)
     async def remove_all(self, /, path: str):
         await self._operator.remove_all(path)
+        self._created_paths.discard(self._normalize_path(path))
 
     @export
     @validate_call(validate_return=True)
     async def create_dir(self, /, path: str):
         await self._operator.create_dir(path)
+        self._created_paths.add(self._normalize_path(path))
 
     @export
     @validate_call(validate_return=True)
     async def delete(self, /, path: str):
         await self._operator.delete(path)
+        self._created_paths.discard(self._normalize_path(path))
 
     @export
     @validate_call(validate_return=True)
@@ -201,6 +229,65 @@ class Opendal(Driver):
                     if len(data) == 0:
                         break
                     await dst.write(bs=data)
+
+        # Always track path creation (assume pre-existing files are just uncleaned remnants)
+        self._created_paths.add(self._normalize_path(target))
+
+    @export
+    async def get_created_resources(self) -> set[str]:
+        """Get set of all paths that have been created during this session."""
+        return self._created_paths.copy()
+
+
+    def close(self):
+        """Close driver and report what was created."""
+        if self._created_paths:
+            self.logger.debug(
+                "OpenDAL session summary - Created paths: %d",
+                len(self._created_paths)
+            )
+            self.logger.debug("Created paths: %s", sorted(self._created_paths))
+
+        # Remove created resources if requested
+        if self.remove_created_on_close:
+            if self.scheme == "fs":
+                self._cleanup_created_resources()
+            else:
+                self.logger.warning(f"Cleanup not supported for scheme '{self.scheme}' - only 'fs' is supported")
+
+        super().close()
+
+    def _cleanup_created_resources(self):
+        """Remove all created files and directories."""
+
+        import os
+        import shutil
+
+        # Get root path from kwargs
+        root_path = os.path.abspath(self.kwargs.get("root", "/"))
+
+        # Remove all paths in reverse order (handles nested directories properly)
+        for path in sorted(self._created_paths, reverse=True):
+            try:
+                # Safe-join: avoid leading '/' escaping root and re-abspath joined path
+                full_path = os.path.abspath(os.path.join(root_path, str(path).lstrip("/")))
+                # Safety check: ensure resolved path is within root_path but not the root itself
+                if full_path == root_path or not full_path.startswith(root_path + os.sep):
+                    continue
+
+                if os.path.exists(full_path):
+                    if os.path.isdir(full_path):
+                        try:
+                            os.rmdir(full_path)
+                            self.logger.debug(f"Removed created directory: {path}")
+                        except OSError:
+                            shutil.rmtree(full_path)
+                            self.logger.debug(f"Removed created directory tree: {path}")
+                    else:
+                        os.remove(full_path)
+                        self.logger.debug(f"Removed created file: {path}")
+            except Exception as e:
+                self.logger.error(f"Failed to remove path {path}: {e}")
 
 
 class FlasherInterface(metaclass=ABCMeta):

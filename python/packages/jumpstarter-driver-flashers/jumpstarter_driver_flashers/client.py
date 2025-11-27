@@ -5,6 +5,7 @@ import re
 import sys
 import threading
 import time
+from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PosixPath
@@ -12,6 +13,7 @@ from queue import Queue
 from urllib.parse import urlparse
 
 import click
+import pexpect
 import requests
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
@@ -21,7 +23,20 @@ from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
-from jumpstarter.common.exceptions import ArgumentError
+from jumpstarter.client.decorators import driver_click_group
+from jumpstarter.common.exceptions import ArgumentError, JumpstarterException
+
+
+class FlashError(JumpstarterException):
+    """Base exception for flash-related errors."""
+
+
+class FlashRetryableError(FlashError):
+    """Exception for retryable flash errors (network, timeout, etc.)."""
+
+
+class FlashNonRetryableError(FlashError):
+    """Exception for non-retryable flash errors (configuration, file system, etc.)."""
 
 debug_console_option = click.option("--console-debug", is_flag=True, help="Enable console debug mode")
 
@@ -82,6 +97,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         insecure_tls: bool = False,
         headers: dict[str, str] | None = None,
         bearer_token: str | None = None,
+        retries: int = 3,
+        method: str = "fls",
+        fls_version: str = "",
     ):
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
@@ -118,10 +136,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # start counting time for the flash operation
         start_time = time.time()
 
-        if should_download_to_httpd:
-            # Create a queue to handle exceptions from the thread
-            error_queue = Queue()
+        # Initialize storage_thread and error_queue
+        storage_thread = None
+        error_queue = Queue()
 
+        if should_download_to_httpd:
             # Start the storage write operation in the background
             storage_thread = threading.Thread(
                 target=self._transfer_bg_thread,
@@ -148,38 +167,204 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             raise error_queue.get()
 
         with self._services_up():
-            with self._busybox() as console:
-                manifest = self.manifest
-                target = partition or self.call("get_default_target") or manifest.spec.default_target
-                if not target:
-                    raise ArgumentError("No partition or default target specified")
+            # Retry logic at the highest level - retry entire console setup and flash operation
+            for attempt in range(retries + 1):  # +1 for initial attempt
+                try:
+                    self._perform_flash_operation(
+                        partition, path, image_url, should_download_to_httpd,
+                        storage_thread, error_queue, cacert_file, insecure_tls,
+                        headers, bearer_token, method, fls_version
+                    )
+                    self.logger.info(f"Flash operation succeeded on attempt {attempt + 1}")
+                    break
+                except Exception as e:
+                    # Categorize the exception as retryable or non-retryable
+                    categorized_error = self._categorize_exception(e)
 
-                target_device = self._get_target_device(target, manifest, console)
+                    if isinstance(categorized_error, FlashNonRetryableError):
+                        # Non-retryable error, fail immediately
+                        self.logger.error(f"Flash operation failed with non-retryable error: {categorized_error}")
+                        raise FlashError(f"Flash operation failed: {categorized_error}") from e
+                    else:
+                        # Retryable error
+                        if attempt < retries:
+                            self.logger.warning(
+                                f"Flash attempt {attempt + 1} failed with retryable error: {categorized_error}"
+                            )
+                            self.logger.info(f"Retrying flash operation (attempt {attempt + 2}/{retries + 1})")
+                            # Wait a bit before retrying
+                            time.sleep(2 ** attempt)  # Exponential backoff
+                            continue
+                        else:
+                            self.logger.error(f"Flash operation failed after {retries + 1} attempts")
+                            raise FlashError(
+                                f"Flash operation failed after {retries + 1} attempts. Last error: {categorized_error}"
+                            ) from e
 
-                self.logger.info(f"Using target block device: {target_device}")
-                console.sendline(f"export dhcp_addr={self._dhcp_details.ip_address}")
+
+        total_time = time.time() - start_time
+        # total time in minutes:seconds
+        minutes, seconds = divmod(total_time, 60)
+        self.logger.info(f"Flashing completed in {int(minutes)}m {int(seconds):02d}s")
+
+    def _categorize_exception(self, exception: Exception) -> FlashRetryableError | FlashNonRetryableError:
+        """Categorize an exception as retryable or non-retryable.
+
+        This method searches through the exception chain (including ExceptionGroups)
+        to find FlashRetryableError or FlashNonRetryableError instances.
+
+        Priority:
+        1. FlashNonRetryableError - highest priority, fail immediately
+        2. FlashRetryableError - retry with backoff
+        3. Unknown exceptions - log full stack trace and treat as retryable
+
+        Args:
+            exception: The exception to categorize
+
+        Returns:
+            FlashRetryableError or FlashNonRetryableError
+        """
+        # First pass: look for non-retryable errors (highest priority)
+        non_retryable = self._find_exception_in_chain(exception, FlashNonRetryableError)
+        if non_retryable is not None:
+            return non_retryable
+
+        # Second pass: look for retryable errors
+        retryable = self._find_exception_in_chain(exception, FlashRetryableError)
+        if retryable is not None:
+            return retryable
+
+        # CancelledError is a special case that should be treated as non-retryable
+        if isinstance(exception, CancelledError):
+            return FlashNonRetryableError("Operation cancelled")
+
+        # Unknown exception - log full stack trace and wrap as retryable
+        self.logger.exception(
+            f"Unknown exception encountered during flash operation, treating as retryable: "
+            f"{type(exception).__name__}: {exception}"
+        )
+        wrapped_exception = FlashRetryableError(f"Unknown error occurred: {type(exception).__name__}: {exception}")
+        wrapped_exception.__cause__ = exception
+        return wrapped_exception
+
+    def _find_exception_in_chain(self, exception: Exception, target_type: type) -> Exception | None:
+        """Find an exception of a specific type in an exception chain.
+
+        Searches through the exception, its ExceptionGroup members (if any),
+        and the cause chain recursively.
+
+        Args:
+            exception: The exception to search
+            target_type: The exception type to search for
+
+        Returns:
+            The found exception instance if found, None otherwise
+        """
+        # Check if this is an ExceptionGroup and look through its exceptions
+        if hasattr(exception, 'exceptions'):
+            for sub_exc in exception.exceptions:
+                result = self._find_exception_in_chain(sub_exc, target_type)
+                if result is not None:
+                    return result
+
+        # Check the current exception
+        if isinstance(exception, target_type):
+            return exception
+
+        # Check the cause chain
+        current = getattr(exception, '__cause__', None)
+        while current is not None:
+            if isinstance(current, target_type):
+                return current
+            # Also check if the cause is an ExceptionGroup
+            if hasattr(current, 'exceptions'):
+                for sub_exc in current.exceptions:
+                    result = self._find_exception_in_chain(sub_exc, target_type)
+                    if result is not None:
+                        return result
+            current = getattr(current, '__cause__', None)
+        return None
+
+    def _perform_flash_operation(
+        self,
+        partition: str | None,
+        path: PathBuf,
+        image_url: str,
+        should_download_to_httpd: bool,
+        storage_thread: threading.Thread | None,
+        error_queue: Queue,
+        cacert_file: str | None,
+        insecure_tls: bool,
+        headers: dict[str, str] | None,
+        bearer_token: str | None,
+        method: str,
+        fls_version: str,
+    ):
+        """Perform the actual flash operation with console setup.
+
+        This method contains all the console operations that can be retried.
+        """
+        with self._busybox() as console:
+            manifest = self.manifest
+            target = partition or self.call("get_default_target") or manifest.spec.default_target
+            if not target:
+                raise ArgumentError("No partition or default target specified")
+
+            target_device = self._get_target_device(target, manifest, console)
+
+            self.logger.info(f"Using target block device: {target_device}")
+            console.sendline(f"export dhcp_addr={self._dhcp_details.ip_address}")
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            console.sendline(f"export gw_addr={self._dhcp_details.gateway}")
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+            # Preflash commands are executed before the flash operation
+            # generally used to clean up boot entries in existing devices
+            for preflash_command in manifest.spec.preflash_commands:
+                self.logger.info(f"Running preflash command: {preflash_command}")
+                console.sendline(preflash_command)
                 console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-                console.sendline(f"export gw_addr={self._dhcp_details.gateway}")
-                console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
-                # Preflash commands are executed before the flash operation
-                # generally used to clean up boot entries in existing devices
-                for preflash_command in manifest.spec.preflash_commands:
-                    self.logger.info(f"Running preflash command: {preflash_command}")
-                    console.sendline(preflash_command)
-                    console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-
-                # make sure that the device is connected to the network and has an IP address
+            # make sure that the device is connected to the network and has an IP address
+            try:
                 console.sendline("udhcpc")
                 console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            except pexpect.TIMEOUT as e:
+                self.logger.error(f"Timeout waiting for udhcpc to complete: {e}")
+                raise FlashRetryableError("Timeout waiting for udhcpc to complete") from e
+            except Exception as e:
+                self.logger.error(f"Error running udhcpc: {e}")
+                raise FlashRetryableError(f"Error running udhcpc: {e}") from e
 
-                stored_cacert = None
-                if should_download_to_httpd:
-                    self._wait_for_storage_thread(storage_thread, error_queue)
-                else:
-                    stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
+            # make sure that the remote system has the right time without using NTP
+            # otherwise SSL certificate verification will fail
+            self.logger.info("Setting the remote DUT time to match the local system time")
+            current_timestamp = int(time.time())
+            console.sendline(f"date -s @{current_timestamp}")
+            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
-                header_args = self._prepare_headers(headers, bearer_token)
+            stored_cacert = None
+            if should_download_to_httpd:
+                self._wait_for_storage_thread(storage_thread, error_queue)
+            else:
+                stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
+
+            header_args = self._prepare_headers(headers, bearer_token)
+
+
+            if method == "fls":
+                self._flash_with_fls(
+                    console,
+                    manifest,
+                    path,
+                    image_url,
+                    target_device,
+                    insecure_tls,
+                    stored_cacert,
+                    header_args,
+                    fls_version,
+                )
+            elif method == "shell":
                 self._flash_with_progress(
                     console,
                     manifest,
@@ -190,15 +375,13 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     stored_cacert,
                     header_args,
                 )
+            else:
+                raise ArgumentError(f"Invalid method: {method}")
 
-                total_time = time.time() - start_time
-                # total time in minutes:seconds
-                minutes, seconds = divmod(total_time, 60)
-                self.logger.info(f"Flashing completed in {int(minutes)}m {int(seconds):02d}s")
-                console.sendline("reboot")
-                time.sleep(2)
-                self.logger.info("Powering off target")
-                self.power.off()
+            console.sendline("reboot")
+            time.sleep(2)
+            self.logger.info("Powering off target")
+            self.power.off()
 
     def _setup_flasher_ssl(self, console, manifest, cacert_file: str | None) -> str | None:
         """Setup SSL configuration for the flasher.
@@ -214,12 +397,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         Raises:
             RuntimeError: If there's an error reading the CA certificate file
         """
-        # make sure that the remote system has the right time without using NTP
-        # otherwise SSL certificate verification will fail
-        self.logger.info("Setting the remote DUT time to match the local system time")
-        current_timestamp = int(time.time())
-        console.sendline(f"date -s @{current_timestamp}")
-        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
         if cacert_file:
             cacert = b""
@@ -240,7 +417,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return None
 
-    def _curl_tls_args(self, insecure_tls: bool, stored_cacert: str | None) -> str:
+    def _cmdline_tls_args(self, insecure_tls: bool, stored_cacert: str | None) -> str:
         """Generate TLS arguments for curl command.
 
         Args:
@@ -276,6 +453,109 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return " ".join(parts)
 
+    def _flash_with_fls(
+        self,
+        console,
+        manifest,
+        path,
+        image_url,
+        target_path,
+        insecure_tls,
+        stored_cacert,
+        header_args: str,
+        fls_version: str,
+    ):
+        """Flash image to target device with progress monitoring.
+
+        Args:
+            console: Console object for device interaction
+            manifest: Flasher manifest containing target definitions
+            path: Path to the source image
+            image_url: URL to download the image from
+            target_path: Target device path to flash to
+            insecure_tls: Whether to use insecure TLS
+            stored_cacert: Path to the stored CA certificate in the DUT flasher
+            header_args: Header arguments for curl command
+            fls_version: Version of FLS to use
+        """
+
+        # Calculate decompress and tls arguments for curl
+        prompt = manifest.spec.login.prompt
+        tls_args = self._cmdline_tls_args(insecure_tls, stored_cacert)
+
+        if fls_version != "":
+            self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
+            # Download fls binary to the target device (until it is available on the target device)
+            fls_url = (
+                f"https://github.com/jumpstarter-dev/fls/releases/download/{fls_version}/"
+                f"fls-aarch64-linux"
+            )
+            console.sendline(f"curl -L {fls_url} -o /sbin/fls")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            console.sendline("echo $?")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+            exit_code = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+
+            if exit_code != 0:
+                raise FlashRetryableError(f"Failed to download FLS from {fls_url}, exit code: {exit_code}")
+            console.sendline("chmod +x /sbin/fls")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+        # Flash the image
+        flash_cmd = f'fls from-url -i 1.0 -n {tls_args} {header_args} --o-direct "{image_url}" {target_path}'
+        console.sendline(flash_cmd)
+
+        # Start monitoring the flash operation
+        self._monitor_fls_progress(console, prompt)
+
+        self.logger.info("Flushing buffers")
+        console.sendline("sync")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_SYNC)
+
+    def _monitor_fls_progress(self, console, prompt):
+        """Monitor FLS flash progress by printing console output as it arrives."""
+        last_printed_length = 0
+        while True:
+            try:
+                # Try to expect the prompt with a short timeout to read output incrementally
+                console.expect([prompt, pexpect.TIMEOUT], timeout=1)
+
+                # Get the output that was read - this contains all output since last match
+                # We need to track what we've already printed to avoid duplicates
+                current_output = console.before.decode(errors="ignore")
+
+                # Only process new output that we haven't seen before
+                if len(current_output) > last_printed_length:
+                    new_output = current_output[last_printed_length:]
+                    if new_output:
+                        print(new_output, end='', flush=True)
+                    last_printed_length = len(current_output)
+
+                # Check if we matched the prompt (index 0 means prompt matched)
+                if console.match_index == 0:
+                    # Prompt was matched, flash operation is complete
+                    break
+                # If match_index is 1, it means TIMEOUT was matched, so we continue the loop
+
+                if 'panicked at' in current_output:
+                    raise FlashRetryableError(f"FLS panicked: {current_output}")
+
+            except pexpect.EOF as err:
+                # End of file - connection closed
+                self.logger.error("Console connection closed unexpectedly")
+                raise FlashRetryableError("Console connection closed during flash operation") from err
+            except Exception as err:
+                self.logger.error(f"Error monitoring FLS progress: {err}")
+                raise FlashRetryableError(f"Error monitoring FLS progress: {err}") from err
+
+        # check the fls exit code
+        console.sendline("echo $?")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        exit_code = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+        if exit_code != 0:
+            raise FlashRetryableError(f"FLS flash operation failed, exit code: {exit_code}")
+
     def _flash_with_progress(
         self,
         console,
@@ -302,54 +582,138 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # Calculate decompress and tls arguments for curl
         prompt = manifest.spec.login.prompt
         decompress_cmd = _get_decompression_command(path)
-        tls_args = self._curl_tls_args(insecure_tls, stored_cacert)
+        tls_args = self._cmdline_tls_args(insecure_tls, stored_cacert)
 
         # Check if the image URL is accessible using curl and the TLS arguments
         self._check_url_access(console, prompt, image_url, tls_args, header_args)
 
         # Flash the image, we run curl -> decompress -> dd in the background, so we can monitor dd's progress
+        # Use pipefail to ensure the pipeline fails if any command in the pipe fails
         flash_cmd = (
-            f'( curl -fsSL {tls_args} {header_args} "{image_url}" | '
+            f'( set -o pipefail; curl -fsSL {tls_args} {header_args} "{image_url}" | '
             f"{decompress_cmd} "
-            f"dd of={target_path} bs=64k iflag=fullblock oflag=direct) &"
+            f'dd of={target_path} bs=64k iflag=fullblock oflag=direct ' +
+            '&& echo "F""LASH_COMPLETE" || echo "F""LASH_FAILED" ) &'
         )
         console.sendline(flash_cmd)
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
 
-        # monitor the dd process to understand flashing progrses
-        console.sendline("pidof dd")
-        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-        dd_pid = console.before.decode(errors="ignore").splitlines()[1].strip()
-
-        # Initialize progress tracking variables
-        last_pos = 0
-        last_time = time.time()
-
-        while True:
-            console.sendline(f"cat /proc/{dd_pid}/fdinfo/1")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-            if "No such file or directory" in console.before.decode(errors="ignore"):
-                break
-            data = console.before.decode(errors="ignore")
-            match = re.search(r"pos:\s+(\d+)", data)
-            if match:
-                current_bytes = int(match.group(1))
-                current_time = time.time()
-                elapsed = current_time - last_time
-
-                if elapsed >= 5.0:  # Update speed every 5 seconds
-                    bytes_diff = current_bytes - last_pos
-                    speed_mb = (bytes_diff / (1024 * 1024)) / elapsed
-                    total_mb = current_bytes / (1024 * 1024)
-                    self.logger.info(f"Flash progress: {total_mb:.2f} MB, Speed: {speed_mb:.2f} MB/s")
-
-                    last_pos = current_bytes
-                    last_time = current_time
-            time.sleep(1)
+        # Start monitoring the flash operation
+        self._monitor_flash_progress(console, prompt)
 
         self.logger.info("Flushing buffers")
         console.sendline("sync")
         console.expect(prompt, timeout=EXPECT_TIMEOUT_SYNC)
+
+    def _monitor_flash_progress(self, console, prompt):
+        """Monitor flash progress by accumulating console output and looking for completion markers."""
+        # Get dd process ID for progress monitoring
+        console.sendline("pidof dd")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        pidof_output = console.before.decode(errors="ignore")
+        accumulated_output = pidof_output # just in case we get the FLASH_COMPLETE or FLASH_FAILED markers soon
+
+        # Extract the actual process ID from the output, handling potential error messages
+        lines = pidof_output.splitlines()
+        dd_pid = None
+        for line in lines:
+            line = line.strip()
+            # Look for a line that contains only digits (the process ID)
+            if line.isdigit():
+                dd_pid = line
+                break
+
+        if not dd_pid:
+            self.logger.error("Could not find dd process ID")
+            raise FlashNonRetryableError("Could not find dd process ID")
+
+        # Initialize progress tracking variables
+        last_pos = 0
+        last_time = time.time()
+        dd_finished_time = None
+
+        while True:
+            # Check if dd process is still running for progress monitoring (only if we have a valid PID)
+            if dd_pid != "0":
+                console.sendline(f"cat /proc/{dd_pid}/fdinfo/1")
+                console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+                data = console.before.decode(errors="ignore")
+            else:
+                # If we don't have a valid dd PID, just check for completion markers
+                data = ""
+
+            # Always accumulate output regardless of dd status
+            accumulated_output = self._update_accumulated_output(accumulated_output, data)
+
+            # Debug logging to help track output
+            if "FLASH_" in data:
+                self.logger.debug(f"Found FLASH marker in data: {data}")
+                self.logger.debug(f"Current accumulated output: {accumulated_output}")
+
+            # Check for completion markers in the accumulated output
+            if self._check_completion_markers(accumulated_output):
+                break
+
+            if dd_pid != "0" and "No such file or directory" in data:
+                # dd process finished, handle the completion
+                dd_finished_time = self._handle_dd_finished(dd_finished_time)
+                continue
+            elif dd_pid != "0":
+                # dd is still running, monitor progress
+                last_pos, last_time = self._update_progress_stats(data, last_pos, last_time)
+            else:
+                # No valid dd PID, just wait and check for completion markers
+                pass
+
+            time.sleep(1)
+
+    def _check_completion_markers(self, accumulated_output):
+        """Check for completion markers in accumulated output."""
+        if "FLASH_COMPLETE" in accumulated_output:
+            self.logger.info("Flash operation completed successfully")
+            return True
+        elif "FLASH_FAILED" in accumulated_output:
+            self.logger.error(f"FLASH_FAILED marker detected in output:\n{accumulated_output}")
+            raise FlashRetryableError("Flash operation failed - curl or pipeline failed")
+        return False
+
+    def _handle_dd_finished(self, dd_finished_time):
+        """Handle case when dd process has finished but no completion marker found yet."""
+        if dd_finished_time is None:
+            dd_finished_time = time.time()
+        elif time.time() - dd_finished_time > 5:  # Wait up to 5 seconds for echo
+            raise FlashNonRetryableError("Flash operation completed without success/failure marker")
+        # Continue checking for a few more iterations
+        time.sleep(1)
+        return dd_finished_time
+
+    def _update_accumulated_output(self, accumulated_output, data):
+        """Update accumulated output with new data, keeping only last 64KB."""
+        accumulated_output += data
+        # Keep only the last 64KB to prevent memory growth
+        if len(accumulated_output) > 64*1024:
+            accumulated_output = accumulated_output[-64*1024:]
+        return accumulated_output
+
+    def _update_progress_stats(self, data, last_pos, last_time):
+        """Update progress statistics and log progress if enough time has elapsed."""
+        match = re.search(r"pos:\s+(\d+)", data)
+
+        if match:
+            current_bytes = int(match.group(1))
+            current_time = time.time()
+            elapsed = current_time - last_time
+
+            if elapsed >= 5.0:  # Update speed every 5 seconds
+                bytes_diff = current_bytes - last_pos
+                speed_mb = (bytes_diff / (1024 * 1024)) / elapsed
+                total_mb = current_bytes / (1024 * 1024)
+                self.logger.info(f"Flash progress: {total_mb:.2f} MB, Speed: {speed_mb:.2f} MB/s")
+
+                last_pos = current_bytes
+                last_time = current_time
+
+        return last_pos, last_time
 
     def _check_url_access(self, console, prompt, image_url: str, tls_args: str, header_args: str):
         """Check if the image URL is accessible using curl.
@@ -372,7 +736,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         url_status = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
         if url_status != 0:
-            raise RuntimeError(f"Unable to access {image_url} (curl exit status {url_status}), output: {curl_output}")
+            raise FlashRetryableError(
+                f"Unable to access {image_url} (curl exit status {url_status}), output: {curl_output}"
+            )
 
     def _get_target_device(self, target: str, manifest: FlasherBundleManifestV1Alpha1, console) -> str:
         """Get the target device path from the manifest, resolving block devices if needed.
@@ -600,7 +966,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # make sure that the device is booted into the uboot console
         with self.uboot.reboot_to_console(debug=self._console_debug):
             # run dhcp discovery and gather details useful for later
-            self._dhcp_details = self.uboot.setup_dhcp()
+            try:
+                self._dhcp_details = self.uboot.setup_dhcp()
+            except (RuntimeError, ValueError) as e:
+                raise FlashRetryableError(f"DHCP setup failed: {e}") from e
             self.logger.info(f"discovered dhcp details: {self._dhcp_details}")
 
             # configure the environment necessary
@@ -750,7 +1119,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return token
 
     def cli(self):
-        @click.group
+        @driver_click_group(self)
         def base():
             """Software-defined flasher interface"""
             pass
@@ -779,6 +1148,24 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             type=str,
             help="Bearer token for HTTP authentication",
         )
+        @click.option(
+            "--retries",
+            type=int,
+            default=3,
+            help="Number of retry attempts for flash operation (default: 3)",
+        )
+        @click.option(
+            "--method",
+            type=click.Choice(["fls", "shell"]),
+            default="fls",
+            help="Method to use for flash operation (default: fls)",
+        )
+        @click.option(
+            "--fls-version",
+            type=str,
+            default="0.1.9", # TODO(majopela): set default to "" once fls is included in our images
+            help="Download an specific fls version from the github releases",
+        )
         @debug_console_option
         def flash(
             file,
@@ -792,6 +1179,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             insecure_tls,
             header,
             bearer,
+            retries,
+            method,
+            fls_version,
         ):
             """Flash image to DUT from file"""
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
@@ -812,6 +1202,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 insecure_tls=insecure_tls,
                 headers=headers,
                 bearer_token=bearer,
+                retries=retries,
+                method=method,
+                fls_version=fls_version,
             )
 
         @base.command()

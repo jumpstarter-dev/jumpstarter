@@ -1,12 +1,24 @@
 from .clients import ClientsV1Alpha1Api, V1Alpha1Client, V1Alpha1ClientList, V1Alpha1ClientStatus
 from .cluster import (
+    check_jumpstarter_installation,
+    create_cluster_and_install,
+    create_cluster_only,
     create_kind_cluster,
     create_minikube_cluster,
+    delete_cluster_by_name,
     delete_kind_cluster,
     delete_minikube_cluster,
+    detect_cluster_type,
+    get_cluster_info,
+    get_ip_generic,
     kind_installed,
+    list_clusters,
+    list_kubectl_contexts,
     minikube_installed,
+    validate_cluster_type_selection,
 )
+from .clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
+from .controller import get_latest_compatible_controller_version
 from .exporters import (
     ExportersV1Alpha1Api,
     V1Alpha1Exporter,
@@ -34,6 +46,9 @@ __all__ = [
     "V1Alpha1Client",
     "V1Alpha1ClientList",
     "V1Alpha1ClientStatus",
+    "V1Alpha1ClusterInfo",
+    "V1Alpha1ClusterList",
+    "V1Alpha1JumpstarterInstance",
     "ExportersV1Alpha1Api",
     "V1Alpha1Exporter",
     "V1Alpha1ExporterList",
@@ -55,4 +70,15 @@ __all__ = [
     "create_kind_cluster",
     "delete_minikube_cluster",
     "delete_kind_cluster",
+    "create_cluster_and_install",
+    "create_cluster_only",
+    "delete_cluster_by_name",
+    "get_cluster_info",
+    "list_clusters",
+    "get_ip_generic",
+    "list_kubectl_contexts",
+    "detect_cluster_type",
+    "check_jumpstarter_installation",
+    "validate_cluster_type_selection",
+    "get_latest_compatible_controller_version",
 ]

@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from collections.abc import AsyncGenerator, Generator
 from contextlib import (
     ExitStack,
@@ -9,16 +11,25 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Self
 
-from anyio import AsyncContextManagerMixin, ContextManagerMixin, create_task_group, fail_after, sleep
+from anyio import (
+    AsyncContextManagerMixin,
+    CancelScope,
+    ContextManagerMixin,
+    create_task_group,
+    fail_after,
+    sleep,
+)
 from anyio.from_thread import BlockingPortal
-from grpc.aio import Channel
+from grpc.aio import AioRpcError, Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
+from rich.console import Console
 
 from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
+from jumpstarter.common.exceptions import ConnectionError
 from jumpstarter.common.grpc import translate_grpc_exceptions
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
@@ -40,6 +51,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
+    acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
+    exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -57,7 +70,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     duration=self.duration,
                 )
             ).name
-        logger.info("Created lease request for selector %s for duration %s", self.selector, self.duration)
+        logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
 
     async def get(self):
         with translate_grpc_exceptions():
@@ -99,54 +112,94 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 await self._create()
         else:
             await self._create()
+
         return await self._acquire()
+
+    def _update_spinner_status(self, spinner, result):
+        """Update spinner with appropriate status message based on lease conditions."""
+        if condition_true(result.conditions, "Pending"):
+            pending_message = condition_message(result.conditions, "Pending")
+            if pending_message:
+                spinner.update_status(f"Waiting for lease: {pending_message}")
+            else:
+                spinner.update_status("Waiting for lease to be ready...")
+        else:
+            spinner.update_status("Waiting for server to provide status updates...")
 
     async def _acquire(self):
         """Acquire a lease.
 
         Makes sure the lease is ready, and returns the lease object.
         """
-        with fail_after(300):  # TODO: configurable timeout
-            while True:
-                logger.debug("Polling Lease %s", self.name)
-                result = await self.get()
-                # lease ready
-                if condition_true(result.conditions, "Ready"):
-                    logger.debug("Lease %s acquired", self.name)
-                    return self
-                # lease unsatisfiable
-                if condition_true(result.conditions, "Unsatisfiable"):
-                    message = condition_message(result.conditions, "Unsatisfiable")
-                    logger.debug(
-                        "Lease %s cannot be satisfied: %s",
-                        self.name,
-                        condition_message(result.conditions, "Unsatisfiable"),
-                    )
-                    raise LeaseError(f"the lease cannot be satisfied: {message}")
+        try:
+            with fail_after(self.acquisition_timeout):
+                with LeaseAcquisitionSpinner(self.name) as spinner:
+                    while True:
+                        logger.debug("Polling Lease %s", self.name)
+                        result = await self.get()
 
-                # lease not pending
-                if condition_false(result.conditions, "Pending"):
-                    raise LeaseError(
-                        f"Lease {self.name} is not in pending, but it isn't in Ready or Unsatisfiable state either"
-                    )
+                        # lease ready
+                        if condition_true(result.conditions, "Ready"):
+                            logger.debug("Lease %s acquired", self.name)
+                            spinner.update_status(f"Lease {self.name} acquired successfully!")
+                            self.exporter_name = result.exporter
+                            break
 
-                # lease released
-                if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
-                    raise LeaseError(f"lease {self.name} released")
+                        # lease unsatisfiable
+                        if condition_true(result.conditions, "Unsatisfiable"):
+                            message = condition_message(result.conditions, "Unsatisfiable")
+                            logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
+                            raise LeaseError(f"the lease cannot be satisfied: {message}")
 
-                await sleep(1)
+                        # lease invalid
+                        if condition_true(result.conditions, "Invalid"):
+                            message = condition_message(result.conditions, "Invalid")
+                            logger.debug("Lease %s is invalid: %s", self.name, message)
+                            raise LeaseError(f"the lease is invalid: {message}")
+
+                        # lease not pending
+                        if condition_false(result.conditions, "Pending"):
+                            raise LeaseError(
+                                f"Lease {self.name} is not in pending, but it isn't in Ready or "
+                                f"Unsatisfiable state either"
+                            )
+
+                        # lease released
+                        if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
+                            raise LeaseError(f"lease {self.name} released")
+
+                        # Update spinner with appropriate status message
+                        self._update_spinner_status(spinner, result)
+
+                        # Wait in 1-second increments with tick updates for better UX
+                        for _ in range(5):
+                            await sleep(1)
+                            spinner.tick()
+            return self
+
+        except TimeoutError:
+            logger.debug(f"Lease {self.name} acquisition timed out after {self.acquisition_timeout} seconds")
+            raise LeaseError(
+                f"lease {self.name} acquisition timed out after {self.acquisition_timeout} seconds"
+            ) from None
 
     @asynccontextmanager
     async def __asynccontextmanager__(self) -> AsyncGenerator[Self]:
-        value = await self.request_async()
         try:
+            value = await self.request_async()
             yield value
         finally:
-            if self.release:
+            if self.release and self.name:
                 logger.info("Releasing Lease %s", self.name)
-                await self.svc.DeleteLease(
-                    name=self.name,
-                )
+                # Shield cleanup from cancellation to ensure it completes
+                with CancelScope(shield=True):
+                    try:
+                        with fail_after(30):
+                            await self.svc.DeleteLease(
+                                name=self.name,
+                            )
+                    except TimeoutError:
+                        logger.warning("Timeout while deleting lease %s during cleanup", self.name)
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
@@ -164,28 +217,60 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     @asynccontextmanager
     async def serve_unix_async(self):
         async with TemporaryUnixListener(self.handle_async) as path:
+            logger.debug("Serving Unix socket at %s", path)
+            await self._wait_for_ready_connection(path)
+            # TODO: talk to the exporter to make sure it's ready.... (once we have the hooks)
             yield path
+
+    async def _wait_for_ready_connection(self, path: str):
+        retries_left = 5
+        logger.info("Waiting for ready connection at %s", path)
+        while True:
+            try:
+                with ExitStack() as stack:
+                    async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as _:
+                        break
+            except AioRpcError as e:
+                if retries_left > 1:
+                    retries_left -= 1
+                else:
+                    logger.error("Max retries reached while waiting for ready connection at %s", path)
+                    raise ConnectionError("Max retries reached while waiting for ready connection at %s" % path) from e
+                if e.code().name == "UNAVAILABLE":
+                    logger.warning("Still waiting for connection to be ready at %s", path)
+                else:
+                    logger.warning("Waiting for ready connection to %s: %s", path, e)
+                await sleep(5)
+            except ConnectionError:
+                raise
+            except Exception as e:
+                logger.error("Unexpected error while waiting for ready connection to %s: %s", path, e)
+                raise ConnectionError("Unexpected error while waiting for ready connection to %s" % path) from e
 
     @asynccontextmanager
     async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):
         async def _monitor():
+            check_interval = 30  # seconds - check periodically for external lease changes
             while True:
                 lease = await self.get()
-                # TODO: use effective_end_time as the authoritative source for lease end time
-                if lease.effective_begin_time:
-                    end_time = lease.effective_begin_time + lease.duration
-                    remain = end_time - datetime.now(tz=datetime.now().astimezone().tzinfo)
+                if lease.effective_begin_time and lease.effective_duration:
+                    if lease.effective_end_time:  # already ended
+                        end_time = lease.effective_end_time
+                    else:
+                        end_time = lease.effective_begin_time + lease.duration
+                    remain = end_time - datetime.now().astimezone()
                     if remain < timedelta(0):
                         # lease already expired, stopping monitor
                         logger.info("Lease {} ended at {}".format(self.name, end_time))
                         break
-                    elif remain < threshold:
-                        # lease expiring soon, check again on expected expiration time in case it's extended
-                        logger.info("Lease {} ending soon in {} at {}".format(self.name, remain, end_time))
-                        await sleep(threshold.total_seconds())
-                    else:
-                        # lease still active, check again in 5 seconds
-                        await sleep(5)
+                    # Log once when entering the threshold window
+                    if threshold - timedelta(seconds=check_interval) <= remain < threshold:
+                        logger.info(
+                            "Lease {} ending in {} minutes at {}".format(
+                                self.name, int((remain.total_seconds() + 30) // 60), end_time
+                            )
+                        )
+                    await sleep(min(remain.total_seconds(), check_interval))
                 else:
                     await sleep(1)
 
@@ -217,3 +302,62 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     def monitor(self, threshold: timedelta = timedelta(minutes=5)):
         with self.portal.wrap_async_context_manager(self.monitor_async(threshold)):
             yield
+
+
+class LeaseAcquisitionSpinner:
+    """Context manager for displaying a spinner during lease acquisition."""
+
+    def __init__(self, lease_name: str | None = None):
+        self.lease_name = lease_name
+        self.console = Console()
+        self.spinner = None
+        self.start_time = None
+        self._should_show_spinner = self._is_terminal_available() and not self._is_non_interactive()
+        self._current_message = None
+
+    def _is_non_interactive(self) -> bool:
+        """Check if the user desires a NONINTERACTIVE environment."""
+        return os.environ.get("NONINTERACTIVE", "false").lower() in ["true", "1"]
+
+    def _is_terminal_available(self) -> bool:
+        """Check if we're running in a terminal/TTY."""
+        return (
+            hasattr(sys.stdout, "isatty")
+            and sys.stdout.isatty()
+            and hasattr(sys.stderr, "isatty")
+            and sys.stderr.isatty()
+        )
+
+    def __enter__(self):
+        self.start_time = datetime.now()
+        if self._should_show_spinner:
+            self.spinner = self.console.status(
+                f"Acquiring lease {self.lease_name or '...'}...", spinner="dots", spinner_style="blue"
+            )
+            self.spinner.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.spinner:
+            self.spinner.stop()
+
+    def update_status(self, message: str):
+        """Update the spinner status message."""
+        if self.spinner and self._should_show_spinner:
+            self._current_message = f"[blue]{message}[/blue]"
+            elapsed = datetime.now() - self.start_time
+            elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
+            self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
+        else:
+            # Log info message when no console is available
+            elapsed = datetime.now() - self.start_time
+            elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
+            logger.info(f"{message} ({elapsed_str})")
+
+    def tick(self):
+        """Update the spinner with current elapsed time without changing the message."""
+        if self.spinner and self._should_show_spinner and self._current_message:
+            elapsed = datetime.now() - self.start_time
+            elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
+            # Use the stored current message and update with new elapsed time
+            self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")

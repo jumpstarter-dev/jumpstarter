@@ -33,7 +33,6 @@ TEST_LEASE = V1Alpha1Lease(
 
 
 def test_lease_dump_json():
-    print(TEST_LEASE.dump_json())
     assert (
         TEST_LEASE.dump_json()
         == """{
@@ -81,7 +80,6 @@ def test_lease_dump_json():
 
 
 def test_lease_dump_yaml():
-    print(TEST_LEASE.dump_yaml())
     assert (
         TEST_LEASE.dump_yaml()
         == """apiVersion: jumpstarter.dev/v1alpha1
