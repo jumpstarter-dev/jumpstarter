@@ -121,14 +121,19 @@ class RideSXClient(FlasherClient, CompositeClient):
         generic_cli = FlasherClient.cli(self)
 
         @driver_click_group(self)
-        def storage():
+        def base():
             """RideSX storage operations"""
             pass
 
         for name, cmd in generic_cli.commands.items():
-            storage.add_command(cmd, name=name)
+            base.add_command(cmd, name=name)
 
-        return storage
+        @base.command()
+        def boot_to_fastboot():
+            """Boot to fastboot"""
+            self.boot_to_fastboot()
+
+        return base
 
 
 @dataclass(kw_only=True)
