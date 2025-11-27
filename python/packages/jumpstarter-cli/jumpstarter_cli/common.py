@@ -6,7 +6,8 @@ from pydantic import TypeAdapter, ValidationError
 from pytimeparse2 import parse as parse_duration
 
 
-def _opt_selector_callback(ctx, param, value):
+def _opt_selector_callback(_ctx, _param, value):
+    """Combine multiple selector values into a single comma-separated string."""
     return ",".join(value) if value else None
 
 opt_selector = click.option(
