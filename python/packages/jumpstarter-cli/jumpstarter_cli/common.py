@@ -5,11 +5,17 @@ import click
 from pydantic import TypeAdapter, ValidationError
 from pytimeparse2 import parse as parse_duration
 
+
+def _opt_selector_callback(ctx, param, value):
+    return ",".join(value) if value else None
+
 opt_selector = click.option(
     "-l",
     "--selector",
+    multiple=True,
+    callback=_opt_selector_callback,
     help="Selector (label query) to filter on, supports '=', '==', and '!=' (e.g. -l key1=value1,key2=value2)."
-    " Matching objects must satisfy all of the specified label constraints.",
+    " Matching objects must satisfy all of the specified label constraints. Can be specified multiple times.",
 )
 
 
