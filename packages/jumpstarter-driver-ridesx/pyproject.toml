@@ -8,7 +8,9 @@ authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
+    "jumpstarter-driver-composite",
     "jumpstarter-driver-opendal",
+    "jumpstarter-driver-power",
     "jumpstarter-driver-pyserial",
 ]
 
@@ -25,16 +27,19 @@ addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_ridesx"]
+asyncio_mode = "auto"
 
-[tool.uv.sources]
-#asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.0.0",
+]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
