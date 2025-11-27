@@ -1812,26 +1812,32 @@ name = "jumpstarter-driver-ridesx"
 source = { editable = "packages/jumpstarter-driver-ridesx" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
