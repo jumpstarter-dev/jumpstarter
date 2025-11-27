@@ -14,7 +14,9 @@ from jumpstarter.driver import Driver, export
 @dataclass(kw_only=True)
 class RideSXDriver(Driver):
     """RideSX Driver"""
-
+    decompression_timeout: int = field(default=15 * 60) # 15 minutes
+    flash_timeout: int = field(default=30 * 60) # 30 minutes
+    continue_timeout: int = field(default=20 * 60) # 20 minutes
     storage_dir: str = field(default="/var/lib/jumpstarter/ridesx")
 
     def __post_init__(self):
@@ -74,7 +76,7 @@ class RideSXDriver(Driver):
                     stderr=subprocess.PIPE,
                     text=False,
                     check=True,
-                    timeout=600,
+                    timeout=self.decompression_timeout,
                 )
 
             if result.stderr:
@@ -168,7 +170,7 @@ class RideSXDriver(Driver):
             self.logger.debug(f"Running command: {' '.join(cmd)}")
 
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=800)
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=self.flash_timeout)
                 self.logger.info(f"Successfully flashed {partition_name}")
                 self.logger.debug(f"Flash stdout: {result.stdout}")
                 if result.stderr:
@@ -186,7 +188,7 @@ class RideSXDriver(Driver):
         cmd = ["fastboot", "-s", device_id, "continue"]
         self.logger.debug(f"Running command: {' '.join(cmd)}")
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=self.continue_timeout)
             self.logger.debug(f"Fastboot continue stdout: {result.stdout}")
             self.logger.debug(f"Fastboot continue stderr: {result.stderr}")
             self.logger.info("Fastboot continue completed successfully")
