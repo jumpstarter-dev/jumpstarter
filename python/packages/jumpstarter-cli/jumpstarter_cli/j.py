@@ -26,7 +26,9 @@ async def j_async():
             async with BlockingPortal() as portal:
                 with ExitStack() as stack:
                     async with env_async(portal, stack) as client:
-                        await to_thread.run_sync(lambda: client.cli()(standalone_mode=False))
+                        result = await to_thread.run_sync(lambda: client.cli()(standalone_mode=False))
+                        if isinstance(result, int) and result != 0:
+                            raise BaseExceptionGroup("CLI exit", [click.exceptions.Exit(result)])
         except BaseExceptionGroup as eg:
             # Handle exceptions wrapped in ExceptionGroup (e.g., from task groups)
             if exc := find_exception_in_group(eg, EnvironmentVariableNotSetError):
@@ -40,6 +42,9 @@ async def j_async():
                 await cli()
             finally:
                 tg.cancel_scope.cancel()
+    except* click.exceptions.Exit as excgroup:
+        for exc in leaf_exceptions(excgroup):
+            sys.exit(exc.exit_code)
     except* click.ClickException as excgroup:
         for exc in leaf_exceptions(excgroup):
             cast(click.ClickException, exc).show()
