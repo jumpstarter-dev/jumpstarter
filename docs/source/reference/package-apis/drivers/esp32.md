@@ -71,7 +71,7 @@ Commands:
 
 ### Getting device information
 
-```{testcode}
+```{code-block} python
 info = esp32.chip_info()
 print(f"Connected to {info['chip_revision']}")
 print(f"MAC Address: {info['mac_address']}")
@@ -80,7 +80,7 @@ print(f"Chip ID: {info['chip_id']}")
 
 ### Flashing firmware
 
-```{testcode}
+```{code-block} python
 # Flash firmware from a local file
 result = esp32.flash_firmware_file("firmware.bin", address=0x10000)
 print(result)
@@ -94,7 +94,7 @@ print(result)
 
 ### Reading flash contents
 
-```{testcode}
+```{code-block} python
 # Read 1024 bytes from address 0x0
 data = esp32.read_flash(address=0x0, size=1024)
 print(f"Read {len(data)} bytes from flash")
@@ -102,7 +102,7 @@ print(f"Read {len(data)} bytes from flash")
 
 ### Device control
 
-```{testcode}
+```{code-block} python
 # Reset the device
 result = esp32.reset()
 print(result)
@@ -141,15 +141,4 @@ $ j esp32 reset
 $ j esp32 erase
 ```
 
-```{testsetup} *
-from jumpstarter_driver_esp32.driver import ESP32
-from jumpstarter.common.utils import serve
 
-instance = serve(ESP32(port="loop://"))
-
-esp32 = instance.__enter__()
-```
-
-```{testcleanup} *
-instance.__exit__(None, None, None)
-```
