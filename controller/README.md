@@ -1,4 +1,10 @@
 # jumpstarter-router
+
+[![Build and push container image](https://github.com/jumpstarter-dev/jumpstarter-controller/actions/workflows/build.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter-controller/actions/workflows/build.yaml)
+![GitHub Release](https://img.shields.io/github/v/release/jumpstarter-dev/jumpstarter-controller)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/jumpstarter-dev/jumpstarter-controller/total)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jumpstarter-dev/jumpstarter-controller)
+
 // TODO(user): Add simple overview of use/purpose
 
 ## Description
