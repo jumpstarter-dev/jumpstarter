@@ -73,3 +73,9 @@ class ReauthenticationFailed(JumpstarterException):
     """Raised when a re-authentication fails."""
 
     pass
+
+
+class EnvironmentVariableNotSetError(JumpstarterException):
+    """Raised when a environment variable is not set."""
+
+    pass
