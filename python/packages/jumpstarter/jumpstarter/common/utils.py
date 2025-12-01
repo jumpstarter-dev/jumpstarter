@@ -54,6 +54,7 @@ def launch_shell(
     use_profiles: bool,
     *,
     command: tuple[str, ...] | None = None,
+    process_callback=None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -62,6 +63,7 @@ def launch_shell(
         context: The context of the shell (e.g. "local" or exporter name)
         allow: List of allowed drivers
         unsafe: Whether to allow drivers outside of the allow list
+        process_callback: Optional callback to receive the process object before waiting
     """
 
     shell = os.environ.get("SHELL", "bash")
@@ -74,6 +76,8 @@ def launch_shell(
 
     if command:
         process = Popen(command, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
+        if process_callback:
+            process_callback(process)
         return process.wait()
 
     if shell_name.endswith("bash"):
@@ -85,6 +89,8 @@ def launch_shell(
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+        if process_callback:
+            process_callback(process)
         return process.wait()
 
     elif shell_name == "fish":
@@ -103,6 +109,8 @@ def launch_shell(
         )
         cmd = [shell, "--init-command", fish_fn]
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
+        if process_callback:
+            process_callback(process)
         return process.wait()
 
     elif shell_name == "zsh":
@@ -120,8 +128,12 @@ def launch_shell(
         cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
 
         process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+        if process_callback:
+            process_callback(process)
         return process.wait()
 
     else:
         process = Popen([shell], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
+        if process_callback:
+            process_callback(process)
         return process.wait()

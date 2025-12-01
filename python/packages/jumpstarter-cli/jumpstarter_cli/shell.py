@@ -20,7 +20,8 @@ def _run_shell_with_lease(lease, exporter_logs, config, command):
     def launch_remote_shell(path: str) -> int:
         return launch_shell(
             path, lease.exporter_name, config.drivers.allow, config.drivers.unsafe,
-            config.shell.use_profiles, command=command
+            config.shell.use_profiles, command=command,
+            process_callback=lambda proc: setattr(lease, 'shell_process', proc)
         )
 
     with lease.serve_unix() as path:
