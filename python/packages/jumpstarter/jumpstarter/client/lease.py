@@ -141,7 +141,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         # lease ready
                         if condition_true(result.conditions, "Ready"):
                             logger.debug("Lease %s acquired", self.name)
-                            spinner.update_status(f"Lease {self.name} acquired successfully!")
+                            spinner.update_status(f"Lease {self.name} acquired successfully!", force=True)
                             self.exporter_name = result.exporter
                             break
 
@@ -314,6 +314,8 @@ class LeaseAcquisitionSpinner:
         self.start_time = None
         self._should_show_spinner = self._is_terminal_available() and not self._is_non_interactive()
         self._current_message = None
+        self._last_log_time = None
+        self._log_throttle_interval = timedelta(minutes=5)
 
     def _is_non_interactive(self) -> bool:
         """Check if the user desires a NONINTERACTIVE environment."""
@@ -341,8 +343,12 @@ class LeaseAcquisitionSpinner:
         if self.spinner:
             self.spinner.stop()
 
-    def update_status(self, message: str):
-        """Update the spinner status message."""
+    def update_status(self, message: str, force: bool = False):
+        """Update the spinner status message.
+
+        :param message: The status message to display
+        :param force: If True, always log the message even when throttling (default: False)
+        """
         if self.spinner and self._should_show_spinner:
             self._current_message = f"[blue]{message}[/blue]"
             elapsed = datetime.now() - self.start_time
@@ -350,9 +356,19 @@ class LeaseAcquisitionSpinner:
             self.spinner.update(f"{self._current_message} [dim]({elapsed_str})[/dim]")
         else:
             # Log info message when no console is available
-            elapsed = datetime.now() - self.start_time
-            elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
-            logger.info(f"{message} ({elapsed_str})")
+            # Throttle updates to at most every 5 minutes unless forced
+            now = datetime.now()
+            should_log = (
+                force
+                or self._last_log_time is None
+                or (now - self._last_log_time) >= self._log_throttle_interval
+            )
+
+            if should_log:
+                elapsed = now - self.start_time
+                elapsed_str = str(elapsed).split(".")[0]  # Remove microseconds
+                logger.info(f"{message} ({elapsed_str})")
+                self._last_log_time = now
 
     def tick(self):
         """Update the spinner with current elapsed time without changing the message."""

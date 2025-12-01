@@ -228,3 +228,103 @@ class TestLeaseAcquisitionSpinner:
         with spinner:
             assert spinner.start_time is not None
             assert isinstance(spinner.start_time, datetime)
+
+    def test_throttling_first_update_logged(self, caplog):
+        """Test that the first update is always logged when console is not available."""
+        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+            spinner = LeaseAcquisitionSpinner("test-lease")
+            spinner.start_time = datetime.now()
+
+            with caplog.at_level(logging.INFO):
+                spinner.update_status("First message")
+
+            assert "First message" in caplog.text
+            assert spinner._last_log_time is not None
+
+    def test_throttling_second_update_within_interval_not_logged(self, caplog):
+        """Test that updates within 5 minutes are not logged."""
+        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+            spinner = LeaseAcquisitionSpinner("test-lease")
+            spinner.start_time = datetime.now()
+            spinner._last_log_time = datetime.now() - timedelta(minutes=2)  # 2 minutes ago
+
+            with caplog.at_level(logging.INFO):
+                spinner.update_status("Second message")
+
+            # Should not log because only 2 minutes have passed
+            assert "Second message" not in caplog.text
+
+    def test_throttling_update_after_interval_logged(self, caplog):
+        """Test that updates after 5 minutes are logged."""
+        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+            spinner = LeaseAcquisitionSpinner("test-lease")
+            spinner.start_time = datetime.now()
+            spinner._last_log_time = datetime.now() - timedelta(minutes=6)  # 6 minutes ago
+
+            with caplog.at_level(logging.INFO):
+                spinner.update_status("After interval message")
+
+            assert "After interval message" in caplog.text
+            assert spinner._last_log_time is not None
+
+    def test_throttling_forced_update_always_logged(self, caplog):
+        """Test that forced updates are always logged regardless of throttle interval."""
+        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+            spinner = LeaseAcquisitionSpinner("test-lease")
+            spinner.start_time = datetime.now()
+            spinner._last_log_time = datetime.now() - timedelta(minutes=1)  # 1 minute ago
+
+            with caplog.at_level(logging.INFO):
+                spinner.update_status("Forced message", force=True)
+
+            assert "Forced message" in caplog.text
+            assert spinner._last_log_time is not None
+
+    def test_throttling_multiple_updates_only_logs_when_needed(self, caplog):
+        """Test that multiple rapid updates only log at appropriate intervals."""
+        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+            spinner = LeaseAcquisitionSpinner("test-lease")
+            spinner.start_time = datetime.now()
+
+            with caplog.at_level(logging.INFO):
+                # First update should be logged
+                spinner.update_status("Message 1")
+                assert "Message 1" in caplog.text
+
+                # Set last log time to recent
+                spinner._last_log_time = datetime.now() - timedelta(minutes=1)
+
+                # Second update should not be logged (within interval)
+                spinner.update_status("Message 2")
+                assert "Message 2" not in caplog.text
+
+                # Third update should not be logged (within interval)
+                spinner.update_status("Message 3")
+                assert "Message 3" not in caplog.text
+
+                # Set last log time to past the interval
+                spinner._last_log_time = datetime.now() - timedelta(minutes=6)
+
+                # Fourth update should be logged (past interval)
+                spinner.update_status("Message 4")
+                assert "Message 4" in caplog.text
+
+    def test_throttling_not_applied_when_console_available(self):
+        """Test that throttling is not applied when console is available."""
+        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+            spinner = LeaseAcquisitionSpinner("test-lease")
+            spinner.start_time = datetime.now()
+
+            mock_spinner = Mock()
+            spinner.spinner = mock_spinner
+
+            # Multiple updates should all call update() regardless of throttle
+            spinner.update_status("Message 1")
+            spinner.update_status("Message 2")
+            spinner.update_status("Message 3")
+
+            # All should be called even if we set a recent last_log_time
+            spinner._last_log_time = datetime.now() - timedelta(minutes=1)
+            spinner.update_status("Message 4")
+
+            assert mock_spinner.update.call_count == 4
