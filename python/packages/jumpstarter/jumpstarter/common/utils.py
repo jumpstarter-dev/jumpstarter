@@ -1,6 +1,9 @@
 import os
+import signal
 import sys
 from contextlib import ExitStack, asynccontextmanager, contextmanager
+from datetime import timedelta
+from functools import partial
 from subprocess import Popen
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
@@ -46,6 +49,33 @@ ANSI_RESET = "\\[\\e[0m\\]"
 PROMPT_CWD = "\\W"
 
 
+def lease_ending_handler(process: Popen, remaining_time) -> None:
+    """Lease ending handler to terminate a process when lease ends.
+
+    Args:
+        process: The process to terminate
+        remaining_time: Time remaining until lease expiration
+    """
+
+    if remaining_time <= timedelta(0):
+        try:
+            process.send_signal(signal.SIGHUP)
+        except (ProcessLookupError, OSError):
+            pass  # Process already terminated
+
+
+def _run_process(
+    cmd: list[str],
+    env: dict[str, str],
+    lease=None,
+) -> int:
+    """Helper to run a process with an option to set a lease ending callback."""
+    process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+    if lease is not None:
+        lease.lease_ending_callback = partial(lease_ending_handler, process)
+    return process.wait()
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -54,7 +84,7 @@ def launch_shell(
     use_profiles: bool,
     *,
     command: tuple[str, ...] | None = None,
-    process_callback=None,
+    lease=None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -63,7 +93,12 @@ def launch_shell(
         context: The context of the shell (e.g. "local" or exporter name)
         allow: List of allowed drivers
         unsafe: Whether to allow drivers outside of the allow list
-        process_callback: Optional callback to receive the process object before waiting
+        use_profiles: Whether to load shell profile files
+        command: Optional command to run instead of launching an interactive shell
+        lease: Optional Lease object to set up lease ending callback
+
+    Returns:
+        The exit code of the shell or command process
     """
 
     shell = os.environ.get("SHELL", "bash")
@@ -75,23 +110,16 @@ def launch_shell(
     }
 
     if command:
-        process = Popen(command, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
-        if process_callback:
-            process_callback(process)
-        return process.wait()
+        return _run_process(list(command), common_env, lease)
 
     if shell_name.endswith("bash"):
         env = common_env | {
             "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
         }
-
         cmd = [shell]
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile"])
-        process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
-        if process_callback:
-            process_callback(process)
-        return process.wait()
+        return _run_process(cmd, env, lease)
 
     elif shell_name == "fish":
         fish_fn = (
@@ -108,32 +136,20 @@ def launch_shell(
             "end"
         )
         cmd = [shell, "--init-command", fish_fn]
-        process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
-        if process_callback:
-            process_callback(process)
-        return process.wait()
+        return _run_process(cmd, common_env, lease)
 
     elif shell_name == "zsh":
         env = common_env | {
             "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
         }
-
         if "HISTFILE" not in env:
             env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
 
         cmd = [shell]
         if not use_profiles:
             cmd.append("--no-rcs")
-
         cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
-
-        process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
-        if process_callback:
-            process_callback(process)
-        return process.wait()
+        return _run_process(cmd, env, lease)
 
     else:
-        process = Popen([shell], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=common_env)
-        if process_callback:
-            process_callback(process)
-        return process.wait()
+        return _run_process([shell], common_env, lease)

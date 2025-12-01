@@ -1,7 +1,7 @@
 import logging
 import os
 import sys
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import (
     ExitStack,
     asynccontextmanager,
@@ -53,7 +53,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     grpc_options: dict[str, Any] = field(default_factory=dict)
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
-    shell_process: Any = field(default=None, init=False)  # Shell process to terminate on expiry
+    lease_ending_callback: Callable[[timedelta], None] | None = field(
+        default=None, init=False
+    )  # Called when lease is ending
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -263,9 +265,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     if remain < timedelta(0):
                         # lease already expired, stopping monitor
                         logger.info("Lease {} ended at {}".format(self.name, end_time))
-                        if self.shell_process is not None:
-                            import signal
-                            self.shell_process.send_signal(signal.SIGHUP)
+                        if self.lease_ending_callback is not None:
+                            self.lease_ending_callback(timedelta(0))
                         break
                     # Log once when entering the threshold window
                     if threshold - timedelta(seconds=check_interval) <= remain < threshold:
@@ -274,6 +275,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                                 self.name, int((remain.total_seconds() + 30) // 60), end_time
                             )
                         )
+                        # Notify callback about approaching expiration
+                        if self.lease_ending_callback is not None:
+                            self.lease_ending_callback(remain)
                     await sleep(min(remain.total_seconds(), check_interval))
                 else:
                     await sleep(1)
