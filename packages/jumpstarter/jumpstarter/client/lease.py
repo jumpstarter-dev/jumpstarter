@@ -23,6 +23,7 @@ from anyio.from_thread import BlockingPortal
 from grpc.aio import AioRpcError, Channel
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
 from rich.console import Console
+from tenacity import retry, retry_if_exception_type, wait_exponential_jitter
 
 from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
@@ -76,6 +77,24 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         with translate_grpc_exceptions():
             svc = ClientService(channel=self.channel, namespace=self.namespace)
             return await svc.GetLease(name=self.name)
+
+    @retry(
+        wait=wait_exponential_jitter(initial=1, max=120, jitter=1),
+        retry=retry_if_exception_type(ConnectionError),
+        reraise=True,
+    )
+    async def _get_with_retry(self):
+        """Get lease with exponential backoff retry on ConnectionError.
+
+        Retries with exponential backoff and jitter indefinitely when ConnectionError occurs.
+        The wait time between retries is capped at 2 minutes (120 seconds).
+        Jitter helps prevent thundering herd problems when multiple clients retry simultaneously.
+        """
+        try:
+            return await self.get()
+        except ConnectionError as e:
+            logger.error("Error while getting lease %s: %s", self.name, e)
+            raise
 
     def request(self):
         """Request a lease, or verifies a lease which was already created.
@@ -136,8 +155,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 with LeaseAcquisitionSpinner(self.name) as spinner:
                     while True:
                         logger.debug("Polling Lease %s", self.name)
-                        result = await self.get()
-
+                        result = await self._get_with_retry()
                         # lease ready
                         if condition_true(result.conditions, "Ready"):
                             logger.debug("Lease %s acquired", self.name)
