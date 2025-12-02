@@ -174,14 +174,19 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		return nil, err
 	}
 
-	name, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
+	// Use provided lease_id if specified, otherwise generate a UUIDv7
+	name := req.LeaseId
+	if name == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return nil, err
+		}
+		name = id.String()
 	}
 
 	jlease, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, types.NamespacedName{
 		Namespace: namespace,
-		Name:      name.String(),
+		Name:      name,
 	}, corev1.LocalObjectReference{
 		Name: jclient.Name,
 	})
