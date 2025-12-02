@@ -69,6 +69,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 await self.svc.CreateLease(
                     selector=self.selector,
                     duration=self.duration,
+                    lease_id=self.name,
                 )
             ).name
         logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
@@ -377,9 +378,7 @@ class LeaseAcquisitionSpinner:
             # Throttle updates to at most every 5 minutes unless forced
             now = datetime.now()
             should_log = (
-                force
-                or self._last_log_time is None
-                or (now - self._last_log_time) >= self._log_throttle_interval
+                force or self._last_log_time is None or (now - self._last_log_time) >= self._log_throttle_interval
             )
 
             if should_log:
