@@ -1,4 +1,4 @@
-# jumpstarter-router
+# jumpstarter-controller
 
 [![Build and push container image](https://github.com/jumpstarter-dev/jumpstarter-controller/actions/workflows/build.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter-controller/actions/workflows/build.yaml)
 ![GitHub Release](https://img.shields.io/github/v/release/jumpstarter-dev/jumpstarter-controller)
