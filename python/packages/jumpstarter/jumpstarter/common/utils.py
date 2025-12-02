@@ -49,11 +49,12 @@ ANSI_RESET = "\\[\\e[0m\\]"
 PROMPT_CWD = "\\W"
 
 
-def lease_ending_handler(process: Popen, remaining_time) -> None:
+def lease_ending_handler(process: Popen, lease, remaining_time) -> None:
     """Lease ending handler to terminate a process when lease ends.
 
     Args:
         process: The process to terminate
+        lease: The lease instance
         remaining_time: Time remaining until lease expiration
     """
 

@@ -53,7 +53,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     grpc_options: dict[str, Any] = field(default_factory=dict)
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
-    lease_ending_callback: Callable[[timedelta], None] | None = field(
+    lease_ending_callback: Callable[[Self, timedelta], None] | None = field(
         default=None, init=False
     )  # Called when lease is ending
 
@@ -266,7 +266,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         # lease already expired, stopping monitor
                         logger.info("Lease {} ended at {}".format(self.name, end_time))
                         if self.lease_ending_callback is not None:
-                            self.lease_ending_callback(timedelta(0))
+                            self.lease_ending_callback(self, timedelta(0))
                         break
                     # Log once when entering the threshold window
                     if threshold - timedelta(seconds=check_interval) <= remain < threshold:
@@ -277,7 +277,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         )
                         # Notify callback about approaching expiration
                         if self.lease_ending_callback is not None:
-                            self.lease_ending_callback(remain)
+                            self.lease_ending_callback(self, remain)
                     await sleep(min(remain.total_seconds(), check_interval))
                 else:
                     await sleep(1)
