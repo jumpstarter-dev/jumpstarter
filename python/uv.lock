@@ -33,6 +33,7 @@ members = [
     "jumpstarter-driver-shell",
     "jumpstarter-driver-snmp",
     "jumpstarter-driver-ssh",
+    "jumpstarter-driver-ssh-mitm",
     "jumpstarter-driver-tasmota",
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-tmt",
@@ -2132,6 +2133,40 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-ssh-mitm"
+source = { editable = "packages/jumpstarter-driver-ssh-mitm" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-ssh" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
 ]
 
 [package.metadata.requires-dev]
