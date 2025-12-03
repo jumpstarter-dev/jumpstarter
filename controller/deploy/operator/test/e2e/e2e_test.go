@@ -29,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -121,7 +122,7 @@ var _ = Describe("Manager", Ordered, func() {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n")
 				for _, event := range eventList.Items {
 					_, _ = fmt.Fprintf(GinkgoWriter, "%s %s %s %s\n",
-						event.LastTimestamp.Time.Format(time.RFC3339),
+						event.LastTimestamp.Format(time.RFC3339),
 						event.InvolvedObject.Name,
 						event.Reason,
 						event.Message)
@@ -586,6 +587,98 @@ provisioning:
 				return len(serviceList.Items)
 			}
 			Eventually(routerServicesCount, 1*time.Minute).Should(Equal(1))
+		})
+
+		It("should setup ingress for the controller and router for ingress mode", func() {
+			By("updating the Jumpstarter custom resource to enable ingress mode")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter",
+				Namespace: dynamicTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			jumpstarter.Spec.Controller.GRPC.Endpoints = []operatorv1alpha1.Endpoint{
+				{
+					Address: "grpc.jumpstarter.127.0.0.1.nip.io:5443",
+					Ingress: &operatorv1alpha1.IngressConfig{
+						Enabled: true,
+						Class:   "nginx",
+					},
+				},
+			}
+			jumpstarter.Spec.Routers.GRPC.Endpoints = []operatorv1alpha1.Endpoint{
+				{
+					Address: "router.jumpstarter.127.0.0.1.nip.io:5443",
+					Ingress: &operatorv1alpha1.IngressConfig{
+						Enabled: true,
+						Class:   "nginx",
+					},
+				},
+			}
+			err = k8sClient.Update(ctx, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the ingress for the controller was created")
+			verifyIngressForController := func(g Gomega) bool {
+				ingress := &networkingv1.Ingress{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "controller-grpc-ing",
+					Namespace: dynamicTestNamespace,
+				}, ingress)
+				if err != nil {
+					return false
+				}
+				Expect(ingress.Spec.Rules).To(HaveLen(1))
+				Expect(ingress.Spec.Rules[0].Host).To(Equal("grpc.jumpstarter.127.0.0.1.nip.io"))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths).To(HaveLen(1))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths[0].Path).To(Equal("/"))
+				Expect(*ingress.Spec.Rules[0].HTTP.Paths[0].PathType).To(Equal(networkingv1.PathTypePrefix))
+				return true
+			}
+			Eventually(verifyIngressForController, 1*time.Minute).Should(BeTrue())
+
+			By("verifying the ingress for the router was created")
+			verifyIngressForRouter := func(g Gomega) bool {
+				ingress := &networkingv1.Ingress{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-router-0-ing",
+					Namespace: dynamicTestNamespace,
+				}, ingress)
+				if err != nil {
+					return false
+				}
+				Expect(ingress.Spec.Rules).To(HaveLen(1))
+				Expect(ingress.Spec.Rules[0].Host).To(Equal("router.jumpstarter.127.0.0.1.nip.io"))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths).To(HaveLen(1))
+				Expect(ingress.Spec.Rules[0].HTTP.Paths[0].Path).To(Equal("/"))
+				Expect(*ingress.Spec.Rules[0].HTTP.Paths[0].PathType).To(Equal(networkingv1.PathTypePrefix))
+				return true
+			}
+			Eventually(verifyIngressForRouter, 1*time.Minute).Should(BeTrue())
+		})
+
+		It("should contain the right router configuration in the configmap", func() {
+			By("checking the configmap contains the right router configuration")
+			Eventually(func(g Gomega) string {
+				configmap := &corev1.ConfigMap{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: dynamicTestNamespace,
+				}, configmap)
+				g.Expect(err).NotTo(HaveOccurred())
+				return configmap.Data["router"]
+			}, 1*time.Minute).Should(ContainSubstring("router.jumpstarter.127.0.0.1.nip.io:5443"))
+		})
+
+		It("should allow access to ingress grpc endpoints", func() {
+			// TODO: fix ingress in kind (not working for helm either)
+			Skip("nginx ingress not working in kind")
+
+			By("checking endpoint grpc access to controller")
+			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:5443", 1*time.Minute)
+			By("checking endpoint grpc access to router")
+			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:5443", 1*time.Minute)
 		})
 
 		AfterAll(func() {

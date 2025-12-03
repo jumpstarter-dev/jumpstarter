@@ -17,6 +17,9 @@ nodes:
   - containerPort: 80 # ingress controller
     hostPort: 5080
     protocol: TCP
+  - containerPort: 443
+    hostPort: 5443
+    protocol: TCP
   - containerPort: 30010 # grpc nodeport
     hostPort: 8082
     protocol: TCP
@@ -29,11 +32,9 @@ nodes:
   - containerPort: 30013 # grpc router nodeport (replica 2)
     hostPort: 8085
     protocol: TCP
-  - containerPort: 443
-    hostPort: 5443
-    protocol: TCP
+
 # if we needed to mount a hostPath volume into the kind cluster, we can do it like this
 #  extraMounts:
 #  - hostPath: ./bin/e2e-certs
 #    containerPath: /tmp/e2e-certs
-  
+
