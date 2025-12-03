@@ -1,0 +1,50 @@
+[project]
+name = "jumpstarter-driver-ssh-mitm"
+dynamic = ["version", "urls"]
+description = "SSH Man-in-the-Middle driver for Jumpstarter that securely stores SSH keys on the server and proxies connections"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Miguel Angel Ajo Pelayo", email = "miguelangel@ajo.es" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.10.0",
+    "click>=8.0.0",
+    "jumpstarter",
+    "jumpstarter-driver-composite",
+    "jumpstarter-driver-network",
+    "jumpstarter-driver-ssh",
+    "paramiko>=3.0.0",
+]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_ssh_mitm"]
+asyncio_mode = "auto"
+log_cli_format = "%(levelname)s %(name)s: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]
+
