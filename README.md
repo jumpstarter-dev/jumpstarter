@@ -5,7 +5,7 @@
 [![Community Meeting](https://img.shields.io/badge/Weekly%20Meeting-Google%20Meet-blue?logo=google-meet)](https://meet.google.com/gzd-hhbd-hpu)
 
 [![E2E Tests](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/e2e.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/e2e.yaml)
-[![Run Tests](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml)
+[![Tests](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml)
 [![documentation](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/documentation.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/documentation.yaml)</br>
 [![Wheels](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/publish.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/publish.yaml)
 [![OCI bundle](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml)
