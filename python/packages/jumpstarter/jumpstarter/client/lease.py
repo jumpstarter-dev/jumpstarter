@@ -1,7 +1,7 @@
 import logging
 import os
 import sys
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import (
     ExitStack,
     asynccontextmanager,
@@ -54,6 +54,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     grpc_options: dict[str, Any] = field(default_factory=dict)
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
+    lease_ending_callback: Callable[[Self, timedelta], None] | None = field(
+        default=None, init=False
+    )  # Called when lease is ending
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -208,11 +211,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             yield value
         finally:
             if self.release and self.name:
-                logger.info("Releasing Lease %s", self.name)
                 # Shield cleanup from cancellation to ensure it completes
                 with CancelScope(shield=True):
                     try:
                         with fail_after(30):
+                            # skip the message if the lease is already expired
+                            lease = await self.get()
+                            if not lease.effective_end_time:
+                                logger.info("Releasing Lease %s", self.name)
                             await self.svc.DeleteLease(
                                 name=self.name,
                             )
@@ -280,6 +286,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     if remain < timedelta(0):
                         # lease already expired, stopping monitor
                         logger.info("Lease {} ended at {}".format(self.name, end_time))
+                        if self.lease_ending_callback is not None:
+                            self.lease_ending_callback(self, timedelta(0))
                         break
                     # Log once when entering the threshold window
                     if threshold - timedelta(seconds=check_interval) <= remain < threshold:
@@ -288,6 +296,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                                 self.name, int((remain.total_seconds() + 30) // 60), end_time
                             )
                         )
+                        # Notify callback about approaching expiration
+                        if self.lease_ending_callback is not None:
+                            self.lease_ending_callback(self, remain)
                     await sleep(min(remain.total_seconds(), check_interval))
                 else:
                     await sleep(1)
