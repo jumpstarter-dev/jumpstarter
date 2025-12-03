@@ -211,11 +211,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             yield value
         finally:
             if self.release and self.name:
-                logger.info("Releasing Lease %s", self.name)
                 # Shield cleanup from cancellation to ensure it completes
                 with CancelScope(shield=True):
                     try:
                         with fail_after(30):
+                            # skip the message if the lease is already expired
+                            lease = await self.get()
+                            if not lease.effective_end_time:
+                                logger.info("Releasing Lease %s", self.name)
                             await self.svc.DeleteLease(
                                 name=self.name,
                             )
