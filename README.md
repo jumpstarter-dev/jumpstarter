@@ -8,7 +8,7 @@
 [![Tests](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml)
 [![documentation](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/documentation.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/documentation.yaml)</br>
 [![Wheels](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/publish.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/publish.yaml)
-[![OCI bundle](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml)
+[![Flashing bundles](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml)
 [![Containers](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build.yaml)
 
 ![GitHub Release](https://img.shields.io/github/v/release/jumpstarter-dev/jumpstarter)
