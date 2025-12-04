@@ -105,6 +105,61 @@ def test_ssh_command_without_default_username():
             assert result.stdout == "some stdout"
 
 
+def test_ssh_command_with_explicit_user_parameter():
+    """Test SSH command execution with the user parameter overriding the default."""
+    instance = SSHWrapper(
+        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
+        default_username="testuser",
+    )
+
+    with serve(instance) as client:
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
+
+            # Call run with an explicit user.
+            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"], user="overrideuser")
+            assert isinstance(result, SSHCommandRunResult)
+
+            # Verify subprocess.run was called.
+            assert mock_run.called
+            call_args = mock_run.call_args[0][0]
+
+            # Check that the override user is present.
+            assert "-l" in call_args
+            assert "overrideuser" in call_args
+            assert "testuser" not in call_args
+            assert call_args[call_args.index("-l") + 1] == "overrideuser"
+
+            assert "127.0.0.1" in call_args
+            assert "hostname" in call_args
+
+            assert result.return_code == 0
+            assert result.stdout == "some stdout"
+
+
+def test_ssh_command_with_explicit_user_parameter_fallback():
+    """Test that user parameter is preserved during direct-to-portforward fallback."""
+    instance = SSHWrapper(
+        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
+        default_username="testuser",
+    )
+
+    with serve(instance) as client:
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
+
+            # Mock tcp.address() to fail, triggering fallback
+            with patch.object(client.tcp, 'address', side_effect=ValueError("Connection failed")):
+                client.run(SSHCommandRunOptions(direct=True), ["hostname"], user="overrideuser")
+
+                # Verify that overrideuser is still used after fallback
+                call_args = mock_run.call_args[0][0]
+                assert "-l" in call_args
+                assert "overrideuser" in call_args
+                assert "testuser" not in call_args
+                assert call_args[call_args.index("-l") + 1] == "overrideuser"
+
+
 def test_ssh_command_with_user_override():
     """Test SSH command execution with -l flag overriding default username"""
     instance = SSHWrapper(

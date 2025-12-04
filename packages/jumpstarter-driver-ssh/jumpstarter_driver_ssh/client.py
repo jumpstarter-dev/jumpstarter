@@ -62,8 +62,10 @@ class SSHWrapperClient(CompositeClient):
             help="Run SSH command with arguments",
         )
         @click.option("--direct", is_flag=True, help="Use direct TCP address")
+        @click.option("-u", "--user", help="Username to use for SSH connection")
         @click.argument("args", nargs=-1)
-        def ssh(direct, args):
+        def ssh(direct, user, args):
+            """Run SSH command with arguments."""
             options = SSHCommandRunOptions(
                 direct=direct,
                 # For the CLI, we never capture output so that interactive shells
@@ -71,7 +73,7 @@ class SSHWrapperClient(CompositeClient):
                 capture_output=False,
             )
 
-            result = self.run(options, args)
+            result = self.run(options, args, user=user)
             self.logger.debug("SSH exit code: %s", result.return_code)
 
             if result.stdout:
@@ -118,8 +120,15 @@ class SSHWrapperClient(CompositeClient):
         """Get the default SSH username"""
         return self.call("get_default_username")
 
-    def run(self, options: SSHCommandRunOptions, args) -> SSHCommandRunResult:
-        """Run SSH command with the given parameters and arguments"""
+    def run(self, options: SSHCommandRunOptions, args, user: str | None = None) -> SSHCommandRunResult:
+        """
+        Run SSH command with the given parameters and arguments
+
+        Args:
+            options: SSH command run options.
+            args: Command arguments.
+            user: Optional username to override the default.
+        """
         # Get SSH command and default username from driver
         if options.direct:
             # Use direct TCP address
@@ -131,14 +140,14 @@ class SSHWrapperClient(CompositeClient):
                 if not host or not port:
                     raise ValueError(f"Invalid address format: {address}")
                 self.logger.debug("Using direct TCP connection for SSH - host: %s, port: %s", host, port)
-                return self._run_ssh_local(host, port, options, args)
+                return self._run_ssh_local(host, port, options, args, user)
             except (DriverMethodNotImplemented, ValueError) as e:
                 self.logger.error("Direct address connection failed (%s), falling back to SSH port forwarding", e)
                 return self.run(SSHCommandRunOptions(
                     direct=False,
                     capture_output=options.capture_output,
                     capture_as_text=options.capture_as_text,
-                ), args)
+                ), args, user=user)
         else:
             # Use SSH port forwarding (default behavior)
             self.logger.debug("Using SSH port forwarding for SSH connection")
@@ -147,9 +156,9 @@ class SSHWrapperClient(CompositeClient):
             ) as addr:
                 host, port = addr
                 self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
-                return self._run_ssh_local(host, port, options, args)
+                return self._run_ssh_local(host, port, options, args, user)
 
-    def _run_ssh_local(self, host, port, options, args):
+    def _run_ssh_local(self, host, port, options, args, user: str | None = None):
         """Run SSH command with the given host, port, and arguments"""
         # Create temporary identity file if needed
         ssh_identity = self.identity
@@ -175,7 +184,7 @@ class SSHWrapperClient(CompositeClient):
 
         try:
             # Build SSH command arguments
-            ssh_args = self._build_ssh_command_args(port, identity_file, args)
+            ssh_args = self._build_ssh_command_args(port, identity_file, args, user)
 
             # Separate SSH options from command arguments
             ssh_options, command_args = self._separate_ssh_options_and_command_args(args)
@@ -194,11 +203,11 @@ class SSHWrapperClient(CompositeClient):
                 except Exception as e:
                     self.logger.warning("Failed to clean up temporary identity file %s: %s", identity_file, str(e))
 
-    def _build_ssh_command_args(self, port, identity_file, args):
+    def _build_ssh_command_args(self, port, identity_file, args, user: str | None = None):
         """Build initial SSH command arguments"""
         # Split the SSH command into individual arguments
         ssh_args = shlex.split(self.command)
-        default_username = self.username
+        default_username = user or self.username
 
         # Add identity file if provided
         if identity_file:
