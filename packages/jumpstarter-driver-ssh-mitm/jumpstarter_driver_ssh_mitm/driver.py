@@ -30,48 +30,51 @@ from typing import Optional
 import paramiko
 from anyio import get_cancelled_exc_class
 from anyio.from_thread import BlockingPortal
+from jumpstarter_driver_network.driver import TcpNetwork
+from jumpstarter_driver_ssh.driver import SSHWrapper
+
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export, exportstream
 from jumpstarter.streams.common import create_memory_stream
 
+# Suppress noisy paramiko logs
 logging.getLogger("paramiko").setLevel(logging.WARNING)
-
-from jumpstarter_driver_network.driver import TcpNetwork
-from jumpstarter_driver_ssh.driver import SSHWrapper
 
 
 class SSHMITMError(Exception):
     """Base exception for SSH MITM driver errors."""
 
+
 BUFFER_SIZE = 65536
+
 
 class StreamSocket:
     """
     Adapter to bridge async Jumpstarter streams with paramiko's blocking sockets.
-    
+
     Paramiko requires a socket-like interface. This class uses a socketpair
     and forwarding threads to connect async streams to paramiko's Transport.
     """
-    
+
     def __init__(self, send_stream, recv_stream, portal: BlockingPortal):
         self.client_sock, self.server_sock = socket.socketpair()
         # Both sides blocking, run in dedicated threads
         self.client_sock.setblocking(True)
         self.server_sock.setblocking(True)
-        
+
         self.send_stream = send_stream
         self.recv_stream = recv_stream
         self.portal = portal
         self._running = True
-        
+
         self._recv_thread = threading.Thread(target=self._forward_recv, daemon=True)
         self._send_thread = threading.Thread(target=self._forward_send, daemon=True)
-        
+
     def start(self):
         """Start bidirectional forwarding threads."""
         self._recv_thread.start()
         self._send_thread.start()
-        
+
     def _forward_recv(self):
         """Forward: Jumpstarter stream → socket (for paramiko to read)."""
         socket_logger = logging.getLogger("SSHMITM.StreamSocket")
@@ -88,7 +91,7 @@ class StreamSocket:
                     break
         except Exception as exc:
             socket_logger.debug("recv loop stopped: %s", exc)
-                    
+
     def _forward_send(self):
         """Forward: socket → Jumpstarter stream (paramiko writes)."""
         socket_logger = logging.getLogger("SSHMITM.StreamSocket")
@@ -105,11 +108,11 @@ class StreamSocket:
                     break
         except Exception as exc:
             socket_logger.debug("send loop stopped: %s", exc)
-                    
+
     def get_paramiko_socket(self):
         """Get the socket for paramiko Transport."""
         return self.server_sock
-        
+
     def close(self):
         """Clean up sockets."""
         self._running = False
@@ -132,19 +135,17 @@ class StreamSocket:
         self._recv_thread.join(timeout=5)
         self._send_thread.join(timeout=5)
         if self._recv_thread.is_alive() or self._send_thread.is_alive():
-            logging.getLogger("SSHMITM.StreamSocket").warning(
-                "StreamSocket threads did not shut down cleanly"
-            )
+            logging.getLogger("SSHMITM.StreamSocket").warning("StreamSocket threads did not shut down cleanly")
 
 
 class MITMServerInterface(paramiko.ServerInterface):
     """
     Paramiko server interface that accepts all authentication.
-    
+
     Since clients have already authenticated through Jumpstarter's lease
     system, we accept any SSH authentication method here.
     """
-    
+
     def __init__(self, allowed_username: str = ""):
         self.allowed_username = allowed_username
         self.event = threading.Event()
@@ -157,40 +158,34 @@ class MITMServerInterface(paramiko.ServerInterface):
         if self.allowed_username and username and username != self.allowed_username:
             return False
         return True
-        
+
     def check_channel_request(self, kind, chanid):
         if kind == "session":
             return paramiko.OPEN_SUCCEEDED
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
-        
+
     def check_auth_password(self, username, password):
-        return (
-            paramiko.AUTH_SUCCESSFUL if self._check_username(username) else paramiko.AUTH_FAILED
-        )
-        
+        return paramiko.AUTH_SUCCESSFUL if self._check_username(username) else paramiko.AUTH_FAILED
+
     def check_auth_publickey(self, username, key):
-        return (
-            paramiko.AUTH_SUCCESSFUL if self._check_username(username) else paramiko.AUTH_FAILED
-        )
-        
+        return paramiko.AUTH_SUCCESSFUL if self._check_username(username) else paramiko.AUTH_FAILED
+
     def check_auth_none(self, username):
-        return (
-            paramiko.AUTH_SUCCESSFUL if self._check_username(username) else paramiko.AUTH_FAILED
-        )
-        
+        return paramiko.AUTH_SUCCESSFUL if self._check_username(username) else paramiko.AUTH_FAILED
+
     def get_allowed_auths(self, username):
         return "none,password,publickey"
-        
+
     def check_channel_shell_request(self, channel):
         self.exec_command = None
         self.event.set()
         return True
-        
+
     def check_channel_exec_request(self, channel, command):
         self.exec_command = command.decode() if isinstance(command, bytes) else command
         self.event.set()
         return True
-        
+
     def check_channel_pty_request(self, channel, term, width, height, pixelwidth, pixelheight, modes):
         self.pty_term = term or "xterm"
         self.pty_width = width
@@ -202,7 +197,7 @@ class MITMServerInterface(paramiko.ServerInterface):
 class SSHMITM(Driver):
     """
     SSH MITM proxy driver with server-side key storage.
-    
+
     Configuration:
         type: jumpstarter_driver_ssh_mitm.driver.SSHMITM
         ssh_identity_file: /path/to/key   # Or use ssh_identity for inline key
@@ -212,13 +207,13 @@ class SSHMITM(Driver):
                 type: jumpstarter_driver_network.driver.TcpNetwork
                 host: 192.168.1.100
                 port: 22
-    
+
     Client Commands:
         j ssh_mitm <cmd>            # Execute command via gRPC
         j ssh_mitm shell            # Native SSH via port forwarding
         j ssh_mitm shell --repl     # Interactive gRPC REPL shell
         j ssh_mitm forward -p 2222  # Port forward for ssh/scp/rsync
-    
+
     Security:
         - Private key stored only on exporter (not exported via gRPC)
         - Clients authenticate via Jumpstarter lease system
@@ -230,7 +225,7 @@ class SSHMITM(Driver):
     channel_timeout: float = 30.0
     default_pty_width: int = 80
     default_pty_height: int = 24
-    
+
     _host_key: Optional[paramiko.RSAKey] = field(init=False, default=None)
     _ssh_wrapper: Optional[SSHWrapper] = field(init=False, default=None)
 
@@ -239,9 +234,7 @@ class SSHMITM(Driver):
             super().__post_init__()
 
         if "tcp" not in self.children:
-            raise ConfigurationError(
-                "'tcp' child is required via ref, or directly as a TcpNetwork driver instance"
-            )
+            raise ConfigurationError("'tcp' child is required via ref, or directly as a TcpNetwork driver instance")
 
         if self.ssh_identity and self.ssh_identity_file:
             raise ConfigurationError("Cannot specify both ssh_identity and ssh_identity_file")
@@ -251,7 +244,7 @@ class SSHMITM(Driver):
 
         # Generate ephemeral host key for MITM server
         self._host_key = paramiko.RSAKey.generate(2048)
-    
+
         self._ssh_wrapper = SSHWrapper(
             default_username=self.default_username,
             ssh_command="ssh",
@@ -284,40 +277,40 @@ class SSHMITM(Driver):
         Load private key, auto-detecting type (Ed25519, RSA, ECDSA, DSS).
         """
         key_file = io.StringIO(key_data)
-        
+
         key_classes = [
             paramiko.Ed25519Key,
             paramiko.RSAKey,
             paramiko.ECDSAKey,
             paramiko.DSSKey,
         ]
-        
+
         for key_class in key_classes:
             try:
                 key_file.seek(0)
                 return key_class.from_private_key(key_file)
             except (paramiko.SSHException, ValueError):
                 continue
-                
+
         raise SSHMITMError("Unable to load SSH key - unsupported key type")
 
     def _create_dut_client(self) -> paramiko.SSHClient:
         """Create paramiko SSH client connected to DUT using stored key."""
         target_host, target_port = self._get_target_connection()
-        
+
         ssh_identity = self.get_ssh_identity()
         if not ssh_identity:
             raise SSHMITMError("SSH identity not available")
-            
+
         pkey = self._load_private_key(ssh_identity)
-        
+
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
+
         username = self.get_default_username() or "root"
-        
+
         self.logger.debug("Connecting to DUT: %s@%s:%d", username, target_host, target_port)
-        
+
         client.connect(
             hostname=target_host,
             port=target_port,
@@ -326,11 +319,12 @@ class SSHMITM(Driver):
             look_for_keys=False,
             allow_agent=False,
         )
-        
+
         return client
 
     def _proxy_channels(self, client_channel, dut_channel):
         """Bidirectional proxy between client and DUT SSH channels."""
+
         def forward(src, dst, name):
             try:
                 while True:
@@ -345,7 +339,7 @@ class SSHMITM(Driver):
                     dst.close()
                 except Exception:
                     pass
-                    
+
         t1 = threading.Thread(target=forward, args=(client_channel, dut_channel, "client→dut"), daemon=True)
         t2 = threading.Thread(target=forward, args=(dut_channel, client_channel, "dut→client"), daemon=True)
         t1.start()
@@ -377,21 +371,21 @@ class SSHMITM(Driver):
     def _handle_session(self, transport: paramiko.Transport):
         """Handle incoming SSH session: accept client, connect to DUT, proxy."""
         server = MITMServerInterface(self.get_default_username())
-        
+
         try:
             transport.add_server_key(self._host_key)
             transport.start_server(server=server)
         except paramiko.SSHException as e:
             self.logger.error("SSH negotiation failed: %s", e)
             return
-            
+
         client_channel = transport.accept(timeout=self.channel_timeout)
         if client_channel is None:
             self.logger.error("No channel opened by client")
             return
-            
+
         server.event.wait(timeout=self.channel_timeout)
-        
+
         dut_client: paramiko.SSHClient | None = None
         dut_channel: paramiko.Channel | None = None
         try:
@@ -432,13 +426,13 @@ class SSHMITM(Driver):
     async def connect(self):
         """
         Stream endpoint for interactive SSH sessions.
-        
+
         When a client connects to this stream we launch a lightweight
         paramiko-based SSH server and bridge it to the Jumpstarter stream
         using StreamSocket. From the client's perspective this behaves like
         a normal SSH server, from the driver's perspective the traffic is
         proxied to the DUT.
-        
+
         Note: When clients disconnect, you may see gRPC ExecuteBatchError
         tracebacks. This is a known framework limitation - the gRPC layer
         tries to send error status after the connection is already closed.
@@ -461,9 +455,7 @@ class SSHMITM(Driver):
             bridge.start()
 
             transport = paramiko.Transport(bridge.get_paramiko_socket())
-            server_thread = threading.Thread(
-                target=self._handle_session, args=(transport,), daemon=True
-            )
+            server_thread = threading.Thread(target=self._handle_session, args=(transport,), daemon=True)
             server_thread.start()
 
             try:
@@ -485,28 +477,28 @@ class SSHMITM(Driver):
     async def execute_command(self, *args) -> tuple[int, str, str]:
         """
         Execute command on DUT and return (exit_code, stdout, stderr).
-        
+
         Used by 'j ssh_mitm <command>' for simple command execution.
         More efficient than shell for single commands.
         """
         dut_client: paramiko.SSHClient | None = None
         try:
             dut_client = self._create_dut_client()
-            
+
             if not args:
                 return (1, "", "No command provided")
 
             command = shlex.join(str(arg) for arg in args)
             self.logger.debug("Executing: %s", command)
-            
+
             _, stdout, stderr = dut_client.exec_command(command)
-            
+
             exit_code = stdout.channel.recv_exit_status()
             stdout_data = stdout.read().decode()
             stderr_data = stderr.read().decode()
-            
+
             return (exit_code, stdout_data, stderr_data)
-            
+
         except Exception as e:
             self.logger.error("Command execution failed: %s", e)
             return (1, "", str(e))
