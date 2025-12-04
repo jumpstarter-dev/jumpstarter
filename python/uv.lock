@@ -2151,12 +2151,14 @@ dependencies = [
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-ssh" },
+    { name = "paramiko" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "trio" },
 ]
 
 [package.metadata]
@@ -2167,12 +2169,14 @@ requires-dist = [
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+    { name = "paramiko", specifier = ">=3.0.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]

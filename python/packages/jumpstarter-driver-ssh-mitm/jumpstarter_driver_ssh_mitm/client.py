@@ -16,8 +16,8 @@ import os
 import shlex
 import shutil
 import subprocess
-import time
 import textwrap
+import time
 import uuid
 from dataclasses import dataclass
 from difflib import get_close_matches
@@ -60,6 +60,7 @@ class DefaultCommandGroup(click.Group):
 @dataclass
 class SSHMITMCommandRunResult:
     """Result of executing a command via SSH MITM."""
+
     return_code: int
     stdout: str
     stderr: str
@@ -69,15 +70,15 @@ class SSHMITMCommandRunResult:
 class SSHMITMClient(DriverClient):
     """
     Client for SSH MITM proxy driver.
-    
+
     Provides secure SSH access where the private key never leaves the exporter.
     Commands are executed via gRPC - the driver runs SSH on behalf of the client.
     """
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         """Create CLI command for 'j ssh_mitm'."""
         client = self
-        
+
         @click.group(
             "ssh",
             cls=DefaultCommandGroup,
@@ -119,7 +120,7 @@ class SSHMITMClient(DriverClient):
 
             if result.return_code != 0:
                 ctx.exit(result.return_code)
-        
+
         @ssh_cmd.command("shell")
         @click.option(
             "--repl",
@@ -131,7 +132,7 @@ class SSHMITMClient(DriverClient):
         def shell(ctx, repl, ssh_args):
             """
             Launch an SSH session through the MITM proxy.
-            
+
             By default, spawns the system 'ssh' binary via port forwarding.
             Use --repl for the lightweight gRPC REPL shell.
             """
@@ -141,7 +142,7 @@ class SSHMITMClient(DriverClient):
                 exit_code = client._launch_native_ssh(ssh_args)
                 if exit_code != 0:
                     ctx.exit(exit_code)
-        
+
         @ssh_cmd.command("forward")
         @click.option(
             "--host",
@@ -162,15 +163,15 @@ class SSHMITMClient(DriverClient):
         def forward(local_host, local_port):
             """
             Expose the MITM proxy as a local TCP port for native SSH/scp/rsync.
-            
+
             Example:
                 j ssh_mitm forward -p 2222
                 ssh -p 2222 localhost
             """
             client._start_forward(local_host, local_port)
-        
+
         return ssh_cmd
-        
+
     def _ensure_ssh_binary(self) -> str:
         ssh_path = shutil.which("ssh")
         if not ssh_path:
@@ -198,47 +199,47 @@ class SSHMITMClient(DriverClient):
             self.logger.debug("Launching native SSH: %s", shlex.join(ssh_command))
             return subprocess.call(ssh_command)
 
-    def _run_shell(self):
+    def _run_shell(self):  # noqa: C901
         """Run interactive shell via gRPC commands."""
         username = self.call("get_default_username") or "user"
         hostname = "dut"
-        
+
         try:
             result = self.execute(["hostname", "-s"])
             if result.return_code == 0 and result.stdout.strip():
                 hostname = result.stdout.strip()
         except Exception as e:
             self.logger.debug("Failed to get hostname: %s", e)
-        
+
         click.echo(f"Connected to {hostname} via SSH MITM proxy")
         click.echo("Type 'exit' or Ctrl+D to exit")
         click.echo()
-        
+
         cwd = "~"
-        
+
         while True:
             try:
                 prompt = click.style(f"{username}@{hostname}", fg="green", bold=True)
                 prompt += click.style(":", fg="white")
                 prompt += click.style(cwd, fg="blue", bold=True)
                 prompt += click.style("$ ", fg="white")
-                
+
                 cmd = input(prompt)
-                
+
                 if not cmd.strip():
                     continue
-                    
+
                 if cmd.strip() == "exit":
                     click.echo("Connection closed.")
                     break
-                
+
                 if cmd.strip().startswith("cd "):
                     new_dir = cmd.strip()[3:].strip()
                     result = self.execute(
                         [
                             "bash",
                             "-c",
-                            f'cd {shlex.quote(cwd)} 2>/dev/null; cd {shlex.quote(new_dir)} && pwd',
+                            f"cd {shlex.quote(cwd)} 2>/dev/null; cd {shlex.quote(new_dir)} && pwd",
                         ]
                     )
                     if result.return_code == 0 and result.stdout.strip():
@@ -246,11 +247,11 @@ class SSHMITMClient(DriverClient):
                     else:
                         click.echo(f"cd: {new_dir}: No such file or directory", err=True)
                     continue
-                
+
                 if cmd.strip() == "cd":
                     cwd = "~"
                     continue
-                
+
                 # Execute command in current directory using newline-delimited heredoc to avoid interpolation
                 token = f"JSSHMITM_{uuid.uuid4().hex}"
                 script = (
@@ -265,12 +266,12 @@ class SSHMITMClient(DriverClient):
                     + "\n"
                 )
                 result = self.execute(["bash", "-lc", script])
-                
+
                 if result.stdout:
                     click.echo(result.stdout, nl=False)
                 if result.stderr:
                     click.echo(result.stderr, nl=False, err=True)
-                    
+
             except EOFError:
                 click.echo()
                 click.echo("Connection closed.")
@@ -278,7 +279,7 @@ class SSHMITMClient(DriverClient):
             except KeyboardInterrupt:
                 click.echo("^C")
                 continue
-    
+
     def _start_forward(self, local_host: str, local_port: int):
         """Expose the SSH MITM server on a local TCP port."""
         click.echo("Starting local forward (Ctrl+C to stop)...")
@@ -300,18 +301,18 @@ class SSHMITMClient(DriverClient):
     def execute(self, args) -> SSHMITMCommandRunResult:
         """
         Execute command on DUT via gRPC.
-        
+
         The command is run on the exporter using the stored SSH key,
         then results are returned.
         """
         return_code, stdout, stderr = self.call("execute_command", *args)
-        
+
         return SSHMITMCommandRunResult(
             return_code=return_code,
             stdout=stdout,
             stderr=stderr,
         )
-    
+
     def run(self, args) -> SSHMITMCommandRunResult:
         """Alias for execute()."""
         return self.execute(args)

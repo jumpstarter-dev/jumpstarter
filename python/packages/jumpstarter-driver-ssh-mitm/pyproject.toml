@@ -5,7 +5,7 @@ description = "SSH Man-in-the-Middle driver for Jumpstarter that securely stores
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
-    { name = "Miguel Angel Ajo Pelayo", email = "miguelangel@ajo.es" }
+    { name = "Bella Khizgiyaev", email = "bkhizgiy@redhat.com" }
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -17,6 +17,9 @@ dependencies = [
     "jumpstarter-driver-ssh",
     "paramiko>=3.0.0",
 ]
+
+[project.entry-points."jumpstarter.drivers"]
+ssh_mitm = "jumpstarter_driver_ssh_mitm"
 
 [tool.hatch.version]
 source = "vcs"
@@ -46,5 +49,6 @@ name = "pin_jumpstarter"
 dev = [
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
+    "trio>=0.28.0",
 ]
 

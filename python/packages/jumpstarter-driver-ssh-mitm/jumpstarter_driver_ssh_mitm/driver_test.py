@@ -30,9 +30,7 @@ class TestSSHMITMDriver:
     def test_defaults(self):
         """Test SSH MITM with default configuration"""
         instance = SSHMITM(
-            children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-            default_username="",
-            ssh_identity=TEST_SSH_KEY
+            children={"tcp": TcpNetwork(host="127.0.0.1", port=22)}, default_username="", ssh_identity=TEST_SSH_KEY
         )
 
         assert instance.default_username == ""
@@ -42,19 +40,12 @@ class TestSSHMITMDriver:
     def test_configuration_error_missing_tcp(self):
         """Test SSH MITM raises error when tcp child is missing"""
         with pytest.raises(ConfigurationError, match="'tcp' child is required"):
-            SSHMITM(
-                children={},
-                default_username="",
-                ssh_identity=TEST_SSH_KEY
-            )
+            SSHMITM(children={}, default_username="", ssh_identity=TEST_SSH_KEY)
 
     def test_configuration_error_missing_identity(self):
         """Test SSH MITM raises error when identity is missing"""
         with pytest.raises(ConfigurationError, match="Either ssh_identity or ssh_identity_file must be provided"):
-            SSHMITM(
-                children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-                default_username=""
-            )
+            SSHMITM(children={"tcp": TcpNetwork(host="127.0.0.1", port=22)}, default_username="")
 
     def test_configuration_error_both_identities(self):
         """Test SSH MITM raises error when both identity options are provided"""
@@ -63,7 +54,7 @@ class TestSSHMITMDriver:
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
                 default_username="",
                 ssh_identity=TEST_SSH_KEY,
-                ssh_identity_file="/path/to/key"
+                ssh_identity_file="/path/to/key",
             )
 
     def test_get_default_username(self):
@@ -71,7 +62,7 @@ class TestSSHMITMDriver:
         instance = SSHMITM(
             children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
             default_username="testuser",
-            ssh_identity=TEST_SSH_KEY
+            ssh_identity=TEST_SSH_KEY,
         )
 
         with serve(instance) as client:
@@ -101,14 +92,14 @@ class TestSSHMITMDriver:
 def _create_mock_ssh_client(exit_code=0, stdout=b"", stderr=b""):
     """Helper to create a mock paramiko SSHClient."""
     mock_client = MagicMock()
-    
+
     mock_stdout = MagicMock()
     mock_stdout.channel.recv_exit_status.return_value = exit_code
     mock_stdout.read.return_value = stdout
-    
+
     mock_stderr = MagicMock()
     mock_stderr.read.return_value = stderr
-    
+
     mock_client.exec_command.return_value = (MagicMock(), mock_stdout, mock_stderr)
     return mock_client
 
@@ -118,21 +109,18 @@ class TestSSHMITMClient:
 
     def test_execute_command(self):
         """Test execute_command gRPC method"""
-        mock_ssh_client = _create_mock_ssh_client(
-            exit_code=0,
-            stdout=b"test-hostname\n",
-            stderr=b""
-        )
+        mock_ssh_client = _create_mock_ssh_client(exit_code=0, stdout=b"test-hostname\n", stderr=b"")
         mock_pkey = MagicMock()
 
         # Patch at module level before serving
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient', return_value=mock_ssh_client), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', return_value=mock_pkey):
-            
+        with (
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient", return_value=mock_ssh_client),
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key", return_value=mock_pkey),
+        ):
             instance = SSHMITM(
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
                 default_username="testuser",
-                ssh_identity=TEST_SSH_KEY
+                ssh_identity=TEST_SSH_KEY,
             )
 
             with serve(instance) as client:
@@ -145,20 +133,17 @@ class TestSSHMITMClient:
 
     def test_run_alias(self):
         """Test that run() is an alias for execute()"""
-        mock_ssh_client = _create_mock_ssh_client(
-            exit_code=0,
-            stdout=b"output",
-            stderr=b""
-        )
+        mock_ssh_client = _create_mock_ssh_client(exit_code=0, stdout=b"output", stderr=b"")
         mock_pkey = MagicMock()
 
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient', return_value=mock_ssh_client), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', return_value=mock_pkey):
-            
+        with (
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient", return_value=mock_ssh_client),
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key", return_value=mock_pkey),
+        ):
             instance = SSHMITM(
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
                 default_username="testuser",
-                ssh_identity=TEST_SSH_KEY
+                ssh_identity=TEST_SSH_KEY,
             )
 
             with serve(instance) as client:
@@ -169,20 +154,17 @@ class TestSSHMITMClient:
 
     def test_execute_command_failure(self):
         """Test execute_command handles failures"""
-        mock_ssh_client = _create_mock_ssh_client(
-            exit_code=1,
-            stdout=b"",
-            stderr=b"command not found"
-        )
+        mock_ssh_client = _create_mock_ssh_client(exit_code=1, stdout=b"", stderr=b"command not found")
         mock_pkey = MagicMock()
 
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient', return_value=mock_ssh_client), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', return_value=mock_pkey):
-            
+        with (
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient", return_value=mock_ssh_client),
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key", return_value=mock_pkey),
+        ):
             instance = SSHMITM(
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
                 default_username="testuser",
-                ssh_identity=TEST_SSH_KEY
+                ssh_identity=TEST_SSH_KEY,
             )
 
             with serve(instance) as client:
@@ -193,20 +175,17 @@ class TestSSHMITMClient:
 
     def test_execute_multiple_args(self):
         """Test execute with multiple command arguments"""
-        mock_ssh_client = _create_mock_ssh_client(
-            exit_code=0,
-            stdout=b"file1.txt\nfile2.txt\n",
-            stderr=b""
-        )
+        mock_ssh_client = _create_mock_ssh_client(exit_code=0, stdout=b"file1.txt\nfile2.txt\n", stderr=b"")
         mock_pkey = MagicMock()
 
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient', return_value=mock_ssh_client), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', return_value=mock_pkey):
-            
+        with (
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient", return_value=mock_ssh_client),
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key", return_value=mock_pkey),
+        ):
             instance = SSHMITM(
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
                 default_username="testuser",
-                ssh_identity=TEST_SSH_KEY
+                ssh_identity=TEST_SSH_KEY,
             )
 
             with serve(instance) as client:
@@ -218,20 +197,17 @@ class TestSSHMITMClient:
 
     def test_execute_args_looking_like_options(self):
         """Test execute with arguments that look like Click options (e.g., ps -ef)"""
-        mock_ssh_client = _create_mock_ssh_client(
-            exit_code=0,
-            stdout=b"PID TTY TIME CMD\n",
-            stderr=b""
-        )
+        mock_ssh_client = _create_mock_ssh_client(exit_code=0, stdout=b"PID TTY TIME CMD\n", stderr=b"")
         mock_pkey = MagicMock()
 
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient', return_value=mock_ssh_client), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', return_value=mock_pkey):
-            
+        with (
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient", return_value=mock_ssh_client),
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key", return_value=mock_pkey),
+        ):
             instance = SSHMITM(
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
                 default_username="testuser",
-                ssh_identity=TEST_SSH_KEY
+                ssh_identity=TEST_SSH_KEY,
             )
 
             with serve(instance) as client:
@@ -247,11 +223,12 @@ class TestSSHMITMClient:
         mock_ssh_client = _create_mock_ssh_client(exit_code=0, stdout=b"", stderr=b"")
         mock_pkey = MagicMock()
 
-        with patch(
-            "jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient", return_value=mock_ssh_client
-        ), patch(
-            "jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key",
-            return_value=mock_pkey,
+        with (
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.SSHClient", return_value=mock_ssh_client),
+            patch(
+                "jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key",
+                return_value=mock_pkey,
+            ),
         ):
             instance = SSHMITM(
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
@@ -271,10 +248,7 @@ class TestSSHMITMSecurity:
 
     def test_key_not_accessible_via_grpc(self):
         """Verify SSH key cannot be retrieved via gRPC"""
-        instance = SSHMITM(
-            children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-            ssh_identity=TEST_SSH_KEY
-        )
+        instance = SSHMITM(children={"tcp": TcpNetwork(host="127.0.0.1", port=22)}, ssh_identity=TEST_SSH_KEY)
 
         with serve(instance) as client:
             with pytest.raises(DriverMethodNotImplemented):
@@ -284,10 +258,7 @@ class TestSSHMITMSecurity:
 
     def test_key_accessible_internally(self):
         """Verify key is accessible on driver (server) side"""
-        instance = SSHMITM(
-            children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-            ssh_identity=TEST_SSH_KEY
-        )
+        instance = SSHMITM(children={"tcp": TcpNetwork(host="127.0.0.1", port=22)}, ssh_identity=TEST_SSH_KEY)
 
         # Internal access works
         assert instance.get_ssh_identity() == TEST_SSH_KEY
@@ -301,7 +272,7 @@ class TestSSHMITMCleanup:
         instance = SSHMITM(
             children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
             default_username="testuser",
-            ssh_identity=TEST_SSH_KEY
+            ssh_identity=TEST_SSH_KEY,
         )
 
         # Should not raise
@@ -312,7 +283,7 @@ class TestSSHMITMCleanup:
         instance = SSHMITM(
             children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
             default_username="testuser",
-            ssh_identity_file="/nonexistent/path/to/key"
+            ssh_identity_file="/nonexistent/path/to/key",
         )
 
         # Calling get_ssh_identity should raise ConfigurationError
@@ -326,52 +297,55 @@ class TestSSHMITMKeyTypes:
     def test_load_ed25519_key(self):
         """Test loading Ed25519 key"""
         mock_pkey = MagicMock()
-        
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', return_value=mock_pkey):
-            instance = SSHMITM(
-                children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-                ssh_identity=TEST_SSH_KEY
-            )
-            
+
+        with patch("jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key", return_value=mock_pkey):
+            instance = SSHMITM(children={"tcp": TcpNetwork(host="127.0.0.1", port=22)}, ssh_identity=TEST_SSH_KEY)
+
             key = instance._load_private_key(TEST_SSH_KEY)
             assert key == mock_pkey
 
     def test_load_rsa_key_fallback(self):
         """Test RSA key loading when Ed25519 fails"""
         import paramiko
+
         mock_rsa_key = MagicMock()
-        
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', 
-                   side_effect=paramiko.SSHException("Not Ed25519")), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.RSAKey.from_private_key', 
-                   return_value=mock_rsa_key):
-            
-            instance = SSHMITM(
-                children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-                ssh_identity=TEST_SSH_KEY
-            )
-            
+
+        with (
+            patch(
+                "jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key",
+                side_effect=paramiko.SSHException("Not Ed25519"),
+            ),
+            patch("jumpstarter_driver_ssh_mitm.driver.paramiko.RSAKey.from_private_key", return_value=mock_rsa_key),
+        ):
+            instance = SSHMITM(children={"tcp": TcpNetwork(host="127.0.0.1", port=22)}, ssh_identity=TEST_SSH_KEY)
+
             key = instance._load_private_key(TEST_SSH_KEY)
             assert key == mock_rsa_key
 
     def test_unsupported_key_type(self):
         """Test error when key type is not supported"""
         import paramiko
-        
-        with patch('jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key', 
-                   side_effect=paramiko.SSHException("Not Ed25519")), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.RSAKey.from_private_key', 
-                   side_effect=paramiko.SSHException("Not RSA")), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.ECDSAKey.from_private_key', 
-                   side_effect=paramiko.SSHException("Not ECDSA")), \
-             patch('jumpstarter_driver_ssh_mitm.driver.paramiko.DSSKey.from_private_key', 
-                   side_effect=paramiko.SSHException("Not DSS")):
-            
-            instance = SSHMITM(
-                children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-                ssh_identity=TEST_SSH_KEY
-            )
-            
+
+        with (
+            patch(
+                "jumpstarter_driver_ssh_mitm.driver.paramiko.Ed25519Key.from_private_key",
+                side_effect=paramiko.SSHException("Not Ed25519"),
+            ),
+            patch(
+                "jumpstarter_driver_ssh_mitm.driver.paramiko.RSAKey.from_private_key",
+                side_effect=paramiko.SSHException("Not RSA"),
+            ),
+            patch(
+                "jumpstarter_driver_ssh_mitm.driver.paramiko.ECDSAKey.from_private_key",
+                side_effect=paramiko.SSHException("Not ECDSA"),
+            ),
+            patch(
+                "jumpstarter_driver_ssh_mitm.driver.paramiko.DSSKey.from_private_key",
+                side_effect=paramiko.SSHException("Not DSS"),
+            ),
+        ):
+            instance = SSHMITM(children={"tcp": TcpNetwork(host="127.0.0.1", port=22)}, ssh_identity=TEST_SSH_KEY)
+
             with pytest.raises(SSHMITMError, match="unsupported key type"):
                 instance._load_private_key(TEST_SSH_KEY)
 
@@ -402,9 +376,7 @@ class TestSSHMITMStream:
             def close(self):
                 pass
 
-        monkeypatch.setattr(
-            "jumpstarter_driver_ssh_mitm.driver.paramiko.Transport", DummyTransport
-        )
+        monkeypatch.setattr("jumpstarter_driver_ssh_mitm.driver.paramiko.Transport", DummyTransport)
 
         async with instance.connect() as stream:
             await stream.aclose()
