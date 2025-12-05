@@ -19,14 +19,14 @@ class NanoKVMVideoClient(DriverClient):
     from the NanoKVM device.
     """
 
-    def snapshot(self) -> Image.Image:
+    def snapshot(self, skip_frames: int = 3) -> Image.Image:
         """
         Get a snapshot image from the video stream
 
         Returns:
             PIL Image object of the snapshot
         """
-        input_jpg_data = b64decode(self.call("snapshot"))
+        input_jpg_data = b64decode(self.call("snapshot", skip_frames))
         return Image.open(io.BytesIO(input_jpg_data))
 
     def cli(self):
