@@ -2,15 +2,41 @@ import asyncio
 from base64 import b64encode
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from functools import wraps
 from io import BytesIO
 
 import anyio
-from aiohttp import ClientSession
+from aiohttp import ClientResponseError, ClientSession
 from jumpstarter_driver_composite.driver import Composite
 from jumpstarter_driver_pyserial.driver import PySerial
 from nanokvm.client import NanoKVMClient as NanoKVMAPIClient
 
 from jumpstarter.driver import Driver, export, exportstream
+
+
+def _is_unauthorized_error(error: Exception) -> bool:
+    """Check if an error is a 401 Unauthorized error"""
+    if isinstance(error, ClientResponseError):
+        return error.status == 401
+    # Also check for string representation in case error is wrapped
+    error_str = str(error)
+    return "401" in error_str and ("Unauthorized" in error_str or "unauthorized" in error_str.lower())
+
+
+def with_reauth(func):
+    """Decorator to automatically re-authenticate on 401 errors"""
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        try:
+            return await func(self, *args, **kwargs)
+        except Exception as e:
+            if _is_unauthorized_error(e):
+                self.logger.warning("Received 401 Unauthorized, re-authenticating...")
+                await self._reset_client()
+                # Retry once after re-authentication
+                return await func(self, *args, **kwargs)
+            raise
+    return wrapper
 
 
 @dataclass(kw_only=True)
@@ -31,6 +57,16 @@ class NanoKVMVideo(Driver):
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_nanokvm.client.NanoKVMVideoClient"
+
+    async def _reset_client(self):
+        """Reset the client and session, forcing re-authentication"""
+        if self._session is not None and not self._session.closed:
+            try:
+                await self._session.close()
+            except Exception as e:
+                self.logger.debug(f"Error closing session during reset: {e}")
+        self._client = None
+        self._session = None
 
     async def _get_client(self) -> NanoKVMAPIClient:
         """Get or create the NanoKVM API client"""
@@ -55,6 +91,7 @@ class NanoKVMVideo(Driver):
                 self.logger.debug(f"Error closing session: {e}")
 
     @export
+    @with_reauth
     async def snapshot(self) -> str:
         """
         Take a snapshot from the video stream
@@ -96,7 +133,19 @@ class NanoKVMVideo(Driver):
                         # TODO(mangelajo): this needs to be tested
                         await send_stream.send(data)
             except Exception as e:
-                self.logger.error(f"Error streaming video: {e}")
+                if _is_unauthorized_error(e):
+                    self.logger.warning("Received 401 Unauthorized during stream, re-authenticating...")
+                    await self._reset_client()
+                    # Retry with new client
+                    new_client = await self._get_client()
+                    async for frame in new_client.mjpeg_stream():
+                        buffer = BytesIO()
+                        frame.save(buffer, format="JPEG")
+                        data = buffer.getvalue()
+                        await send_stream.send(data)
+                else:
+                    self.logger.error(f"Error streaming video: {e}")
+                    raise
 
         # Start the video streaming task
         task = asyncio.create_task(stream_video())
@@ -131,6 +180,22 @@ class NanoKVMHID(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_nanokvm.client.NanoKVMHIDClient"
 
+    async def _reset_client(self):
+        """Reset the client, session, and websocket, forcing re-authentication"""
+        if self._ws is not None:
+            try:
+                await self._ws.close()
+            except Exception as e:
+                self.logger.debug(f"Error closing websocket during reset: {e}")
+        if self._session is not None and not self._session.closed:
+            try:
+                await self._session.close()
+            except Exception as e:
+                self.logger.debug(f"Error closing session during reset: {e}")
+        self._client = None
+        self._session = None
+        self._ws = None
+
     async def _get_client(self) -> NanoKVMAPIClient:
         """Get or create the NanoKVM API client"""
         if self._client is None:
@@ -151,6 +216,7 @@ class NanoKVMHID(Driver):
             )
         return self._ws
 
+    @with_reauth
     async def _send_mouse_event(self, event_type: int, x: int, y: int):
         """
         Send a mouse event via WebSocket
@@ -189,6 +255,7 @@ class NanoKVMHID(Driver):
                 self.logger.debug(f"Error closing session: {e}")
 
     @export
+    @with_reauth
     async def paste_text(self, text: str):
         """
         Paste text via keyboard HID simulation
@@ -201,6 +268,7 @@ class NanoKVMHID(Driver):
         self.logger.info(f"Pasted text: {text}")
 
     @export
+    @with_reauth
     async def press_key(self, key: str):
         """
         Press a key by pasting a single character
@@ -220,6 +288,7 @@ class NanoKVMHID(Driver):
         self.logger.debug(f"Pressed key: {repr(key)}")
 
     @export
+    @with_reauth
     async def reset_hid(self):
         """Reset the HID subsystem"""
         client = await self._get_client()
@@ -372,15 +441,20 @@ class NanoKVM(Composite):
         """Get device information"""
         # Get info from the video driver's client
         video_driver = self.children["video"]
-        client = await video_driver._get_client()
-        info = await client.get_info()
-        return {
-            "ips": [{"name": ip.name, "addr": ip.addr, "version": ip.version, "type": ip.type} for ip in info.ips],
-            "mdns": info.mdns,
-            "image": info.image,
-            "application": info.application,
-            "device_key": info.device_key,
-        }
+
+        @with_reauth
+        async def _get_info_impl(driver):
+            client = await driver._get_client()
+            info = await client.get_info()
+            return {
+                "ips": [{"name": ip.name, "addr": ip.addr, "version": ip.version, "type": ip.type} for ip in info.ips],
+                "mdns": info.mdns,
+                "image": info.image,
+                "application": info.application,
+                "device_key": info.device_key,
+            }
+
+        return await _get_info_impl(video_driver)
 
     @export
     async def reboot(self):
