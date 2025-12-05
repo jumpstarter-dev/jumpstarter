@@ -244,9 +244,10 @@ class ClientConfigV1Alpha1(BaseSettings):
         name: str,
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
+        client: str | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time)
+        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time, client=client)
 
     @asynccontextmanager
     async def lease_async(
