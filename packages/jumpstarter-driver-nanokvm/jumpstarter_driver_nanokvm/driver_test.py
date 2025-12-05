@@ -32,6 +32,10 @@ def mock_nanokvm_client():
         test_image = Image.new("RGB", (640, 480), color="red")
 
         async def mock_stream():
+            # Yield several frames - first ones are buffered/old, later ones are fresh
+            yield test_image
+            yield test_image
+            yield test_image
             yield test_image
 
         mock_client.mjpeg_stream = mock_stream

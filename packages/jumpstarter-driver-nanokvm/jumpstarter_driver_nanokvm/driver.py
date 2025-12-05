@@ -92,7 +92,7 @@ class NanoKVMVideo(Driver):
 
     @export
     @with_reauth
-    async def snapshot(self) -> str:
+    async def snapshot(self, skip_frames: int = 3) -> str:
         """
         Take a snapshot from the video stream
 
@@ -100,8 +100,13 @@ class NanoKVMVideo(Driver):
             Base64 encoded JPEG image data
         """
         client = await self._get_client()
+        frame_count = 0
         async for frame in client.mjpeg_stream():
-            # Get the first frame and return it
+            frame_count += 1
+            # Skip the first frames as it's normally stale
+            if frame_count < skip_frames:
+                continue
+            # Return the second (fresh) frame
             buffer = BytesIO()
             frame.save(buffer, format="JPEG")
             data = buffer.getvalue()
