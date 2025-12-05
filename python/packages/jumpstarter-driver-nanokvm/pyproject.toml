@@ -13,7 +13,7 @@ dependencies = [
     "jumpstarter",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-pyserial",
-    "nanokvm @ git+https://github.com/mangelajo/python-nanokvm.git@python-3-11",
+    "nanokvm>=0.1.0",
     "aiohttp",
     "pillow",
     "pydantic",

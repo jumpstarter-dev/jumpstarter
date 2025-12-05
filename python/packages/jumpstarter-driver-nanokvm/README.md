@@ -1,6 +1,6 @@
 # NanoKVM Driver
 
-`jumpstarter-driver-nanokvm` provides comprehensive support for [NanoKVM](https://github.com/sipeed/NanoKVM) devices, enabling remote KVM (Keyboard, Video, Mouse) control over the network.
+`jumpstarter-driver-nanokvm` provides comprehensive support for [NanoKVM](https://github.com/sipeed/NanoKVM) devices thanks to the amazing [python-nanokvm](https://github.com/puddly/python-nanokvm) library, enabling remote KVM (Keyboard, Video, Mouse) control over the network.
 
 ## Features
 
