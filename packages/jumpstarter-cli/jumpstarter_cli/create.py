@@ -22,9 +22,17 @@ def create():
 @opt_selector
 @opt_duration_partial(required=True)
 @opt_begin_time
+@click.option(
+    "--lease-id",
+    type=str,
+    default=None,
+    help="Optional lease ID to request (if not provided, server will generate one)",
+)
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
-def create_lease(config, selector: str, duration: timedelta, begin_time: datetime | None, output: OutputType):
+def create_lease(
+    config, selector: str, duration: timedelta, begin_time: datetime | None, lease_id: str | None, output: OutputType
+):
     """
     Create a lease
 
@@ -48,8 +56,14 @@ def create_lease(config, selector: str, duration: timedelta, begin_time: datetim
         $$ exit
         $ jmp delete lease "${JMP_LEASE}"
 
+    You can also specify a unique custom lease ID:
+
+    .. code-block:: bash
+
+        $ jmp create lease -l foo=bar --duration 1d --lease-id my-custom-lease-id
+
     """
 
-    lease = config.create_lease(selector=selector, duration=duration, begin_time=begin_time)
+    lease = config.create_lease(selector=selector, duration=duration, begin_time=begin_time, lease_id=lease_id)
 
     model_print(lease, output)

@@ -32,31 +32,37 @@ class TestLeaseAcquisitionSpinner:
 
     def test_is_terminal_available_with_tty(self):
         """Test terminal detection when TTY is available."""
-        with patch.object(sys.stdout, 'isatty', return_value=True), \
-             patch.object(sys.stderr, 'isatty', return_value=True):
+        with (
+            patch.object(sys.stdout, "isatty", return_value=True),
+            patch.object(sys.stderr, "isatty", return_value=True),
+        ):
             spinner = LeaseAcquisitionSpinner()
             assert spinner._is_terminal_available() is True
 
     def test_is_terminal_available_without_tty(self):
         """Test terminal detection when TTY is not available."""
-        with patch.object(sys.stdout, 'isatty', return_value=False), \
-             patch.object(sys.stderr, 'isatty', return_value=False):
+        with (
+            patch.object(sys.stdout, "isatty", return_value=False),
+            patch.object(sys.stderr, "isatty", return_value=False),
+        ):
             spinner = LeaseAcquisitionSpinner()
             assert spinner._is_terminal_available() is False
 
     def test_is_terminal_available_partial_tty(self):
         """Test terminal detection when only one stream is TTY."""
-        with patch.object(sys.stdout, 'isatty', return_value=True), \
-             patch.object(sys.stderr, 'isatty', return_value=False):
+        with (
+            patch.object(sys.stdout, "isatty", return_value=True),
+            patch.object(sys.stderr, "isatty", return_value=False),
+        ):
             spinner = LeaseAcquisitionSpinner()
             assert spinner._is_terminal_available() is False
 
     def test_context_manager_with_console(self):
         """Test context manager behavior when console is available."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
 
-            with patch.object(spinner.console, 'status') as mock_status:
+            with patch.object(spinner.console, "status") as mock_status:
                 mock_spinner = Mock()
                 mock_status.return_value = mock_spinner
 
@@ -70,10 +76,10 @@ class TestLeaseAcquisitionSpinner:
 
     def test_context_manager_without_console(self):
         """Test context manager behavior when console is not available."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
 
-            with patch.object(spinner.console, 'status') as mock_status:
+            with patch.object(spinner.console, "status") as mock_status:
                 with spinner as ctx_spinner:
                     assert ctx_spinner is spinner
                     assert spinner.start_time is not None
@@ -81,7 +87,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_update_status_with_console(self):
         """Test status update when console is available."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
 
@@ -98,7 +104,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_update_status_without_console(self, caplog):
         """Test status update when console is not available (should log)."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
 
@@ -110,7 +116,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_tick_with_console_and_message(self):
         """Test tick update when console is available and message exists."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
             spinner._current_message = "[blue]Test message[/blue]"
@@ -127,7 +133,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_tick_without_console(self):
         """Test tick update when console is not available (should not log)."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
             spinner._current_message = "[blue]Test message[/blue]"
@@ -137,7 +143,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_tick_without_message(self):
         """Test tick update when no current message exists."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
             spinner._current_message = None
@@ -152,7 +158,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_elapsed_time_formatting(self):
         """Test that elapsed time is formatted correctly."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now() - timedelta(seconds=65)  # 1:05
             spinner._current_message = "[blue]Test message[/blue]"
@@ -170,10 +176,10 @@ class TestLeaseAcquisitionSpinner:
     @pytest.mark.asyncio
     async def test_integration_with_async_context(self):
         """Test integration with async context manager."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
 
-            with patch.object(spinner.console, 'status') as mock_status:
+            with patch.object(spinner.console, "status") as mock_status:
                 mock_spinner = Mock()
                 mock_status.return_value = mock_spinner
 
@@ -195,7 +201,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_message_preservation_across_ticks(self):
         """Test that the base message is preserved across multiple ticks."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
 
@@ -231,7 +237,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_throttling_first_update_logged(self, caplog):
         """Test that the first update is always logged when console is not available."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
 
@@ -243,7 +249,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_throttling_second_update_within_interval_not_logged(self, caplog):
         """Test that updates within 5 minutes are not logged."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
             spinner._last_log_time = datetime.now() - timedelta(minutes=2)  # 2 minutes ago
@@ -256,7 +262,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_throttling_update_after_interval_logged(self, caplog):
         """Test that updates after 5 minutes are logged."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
             spinner._last_log_time = datetime.now() - timedelta(minutes=6)  # 6 minutes ago
@@ -269,7 +275,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_throttling_forced_update_always_logged(self, caplog):
         """Test that forced updates are always logged regardless of throttle interval."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
             spinner._last_log_time = datetime.now() - timedelta(minutes=1)  # 1 minute ago
@@ -282,7 +288,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_throttling_multiple_updates_only_logs_when_needed(self, caplog):
         """Test that multiple rapid updates only log at appropriate intervals."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=False):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
 
@@ -311,7 +317,7 @@ class TestLeaseAcquisitionSpinner:
 
     def test_throttling_not_applied_when_console_available(self):
         """Test that throttling is not applied when console is available."""
-        with patch.object(LeaseAcquisitionSpinner, '_is_terminal_available', return_value=True):
+        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
             spinner = LeaseAcquisitionSpinner("test-lease")
             spinner.start_time = datetime.now()
 
