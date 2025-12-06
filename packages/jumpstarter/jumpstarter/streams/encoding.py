@@ -1,5 +1,6 @@
 import bz2
 import lzma
+import sys
 import zlib
 from dataclasses import dataclass
 from enum import StrEnum
@@ -8,11 +9,17 @@ from typing import Any, Callable, Mapping
 from anyio import ClosedResourceError, EndOfStream
 from anyio.abc import AnyByteStream, ObjectStream
 
+if sys.version_info >= (3, 14):
+    from compression import zstd
+else:
+    from backports import zstd
+
 
 class Compression(StrEnum):
     GZIP = "gzip"
     XZ = "xz"
     BZ2 = "bz2"
+    ZSTD = "zstd"
 
 
 @dataclass(kw_only=True)
@@ -85,4 +92,10 @@ def compress_stream(stream: AnyByteStream, compression: Compression | None) -> A
                 stream=stream,
                 compressor=bz2.BZ2Compressor(),
                 decompressor=bz2.BZ2Decompressor(),
+            )
+        case Compression.ZSTD:
+            return CompressedStream(
+                stream=stream,
+                compressor=zstd.ZstdCompressor(),
+                decompressor=zstd.ZstdDecompressor(),
             )

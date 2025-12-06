@@ -48,6 +48,7 @@ SUPPORTED_CONTENT_ENCODINGS = (
         Compression.GZIP,
         Compression.XZ,
         Compression.BZ2,
+        Compression.ZSTD,
     }
 )
 

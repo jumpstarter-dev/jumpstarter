@@ -14,7 +14,7 @@ def create_buffer(size):
     return StapledObjectStream(tx, rx)
 
 
-@pytest.mark.parametrize("compression", [None, "gzip", "xz", "bz2"])
+@pytest.mark.parametrize("compression", [None, "gzip", "xz", "bz2", "zstd"])
 async def test_compress_stream(compression):
     stream = compress_stream(create_buffer(128), compression)
 
