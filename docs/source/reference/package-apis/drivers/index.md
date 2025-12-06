@@ -59,6 +59,7 @@ Drivers that handle media streams:
 
 * **[UStreamer](ustreamer.md)** (`jumpstarter-driver-ustreamer`) - Video
   streaming functionality
+* **[NanoKVM](nanokvm.md)** (`jumpstarter-driver-nanokvm`) - NanoKVM remote KVM control
 
 ### Debug and Programming Drivers
 
@@ -94,6 +95,7 @@ flashers.md
 http.md
 http-power.md
 iscsi.md
+nanokvm.md
 network.md
 opendal.md
 power.md
