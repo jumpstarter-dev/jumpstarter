@@ -10,11 +10,8 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "anyio>=4.10.0",
-    "click>=8.0.0",
     "jumpstarter",
-    "jumpstarter-driver-composite",
     "jumpstarter-driver-network",
-    "jumpstarter-driver-ssh",
     "paramiko>=3.0.0",
 ]
 

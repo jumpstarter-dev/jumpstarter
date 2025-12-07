@@ -3,22 +3,31 @@ kind: ExporterConfig
 metadata:
   namespace: default
   name: ssh-mitm-example
+endpoint: "grpc.jumpstarter.example.com:443"
+token: "your-exporter-token"
 export:
+  # "j ssh_mitm" command - secure SSH with key on server
   ssh_mitm:
-    type: jumpstarter_driver_ssh_mitm.driver.SSHMITM
+    type: jumpstarter_driver_ssh.driver.SSHWrapper
     config:
-      default_username: "root"
-      # Option 1: Provide SSH key directly in config
-      ssh_identity: |
-        -----BEGIN OPENSSH PRIVATE KEY-----
-        b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAFwAAAAdz
-        c2gtcnNhAAAAAwEAAQAAAQEAy... (your private key here)
-        -----END OPENSSH PRIVATE KEY-----
-      # Option 2: Or provide path to key file (uncomment to use)
-      # ssh_identity_file: "/path/to/your/private/key"
+      # Change to the user you will SSH as on the DUT
+      default_username: root
     children:
       tcp:
-        type: jumpstarter_driver_network.driver.TcpNetwork
+        type: jumpstarter_driver_ssh_mitm.driver.SSHMITM
         config:
-          host: "192.168.1.100"
-          port: 22
+          # Must match the user on the DUT
+          default_username: root
+          # Option 1: Path to key file (on exporter machine)
+          ssh_identity_file: /etc/jumpstarter/ssh_keys/dut_key
+          # Option 2: Inline key (from secret management)
+          # ssh_identity: |
+          #   -----BEGIN OPENSSH PRIVATE KEY-----
+          #   ...key content...
+          #   -----END OPENSSH PRIVATE KEY-----
+        children:
+          tcp:
+            type: jumpstarter_driver_network.driver.TcpNetwork
+            config:
+              host: 192.168.1.100
+              port: 22
