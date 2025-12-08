@@ -99,7 +99,7 @@ def test_capture_default_format(demo_client):
     assert len(result.data) > 0
 
     # Verify VCD data can be decoded
-    samples = result.decode()
+    samples = list(result.decode())
     assert isinstance(samples, list)
     assert len(samples) > 0
 
@@ -290,7 +290,7 @@ def test_decode_csv_format(demo_client):
     assert isinstance(result, CaptureResult)
 
     # Decode the CSV data
-    samples = result.decode()
+    samples = list(result.decode())
     assert isinstance(samples, list)
     assert len(samples) > 0
 
@@ -395,7 +395,7 @@ def test_decode_vcd_format(demo_client):
     assert isinstance(result, CaptureResult)
 
     # Decode the VCD data
-    samples = result.decode()
+    samples = list(result.decode())
     assert isinstance(samples, list)
     assert len(samples) > 0
 
@@ -432,7 +432,7 @@ def test_decode_vcd_analog_channels(demo_client):
     )
 
     result = demo_client.capture(cfg)
-    samples = result.decode()
+    samples = list(result.decode())
 
     assert isinstance(samples, list)
     assert len(samples) > 0
@@ -480,7 +480,7 @@ def test_decode_analog_csv(demo_client):
     )
 
     result = demo_client.capture(cfg)
-    samples = result.decode()
+    samples = list(result.decode())
 
     assert isinstance(samples, list)
     assert len(samples) > 0

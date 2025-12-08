@@ -51,7 +51,7 @@ def test_csv_format_basic(demo_client: SigrokClient):
     result = demo_client.capture(cfg)
     assert isinstance(result, CaptureResult)
     assert isinstance(result.data, bytes)
-    decoded_data = result.decode()
+    decoded_data = list(result.decode())
     assert isinstance(decoded_data, list)
     assert len(decoded_data) > 0
     # Verify channel names are in the data
@@ -73,7 +73,7 @@ def test_csv_format_timing(demo_client: SigrokClient):
     assert isinstance(result, CaptureResult)
 
     # Decode the CSV data
-    samples = result.decode()
+    samples = list(result.decode())
     assert isinstance(samples, list)
     assert len(samples) > 0
 
@@ -97,7 +97,7 @@ def test_csv_format_analog_channels(demo_client: SigrokClient):
     result = demo_client.capture(cfg)
     assert isinstance(result, CaptureResult)
     assert isinstance(result.data, bytes)
-    decoded_data = result.decode()
+    decoded_data = list(result.decode())
     assert isinstance(decoded_data, list)
     assert len(decoded_data) > 0
 
@@ -121,7 +121,7 @@ def test_csv_format_mixed_channels(demo_client: SigrokClient):
     )
 
     result = demo_client.capture(cfg)
-    samples = result.decode()
+    samples = list(result.decode())
 
     assert isinstance(samples, list)
     assert len(samples) > 0

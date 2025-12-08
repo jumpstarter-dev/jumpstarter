@@ -57,7 +57,7 @@ $enddefinitions $end
     )
 
     # Parse the VCD
-    samples = result.decode()
+    samples = list(result.decode())
 
     # Verify we got the expected number of samples
     assert len(samples) == 5
@@ -135,7 +135,7 @@ $enddefinitions $end
             channel_map={"D0": "d0"},
         )
 
-        samples = result.decode()
+        samples = list(result.decode())
         assert len(samples) >= 1
         # First sample at time 0
         assert samples[0].time_ns == 0
@@ -159,7 +159,7 @@ $enddefinitions $end
         channel_map={"D0": "d0"},
     )
 
-    samples = result.decode()
+    samples = list(result.decode())
     # Should have 3 samples (empty timestamp line skipped)
     assert len(samples) == 3
     assert samples[0].time_ns == 0
@@ -204,7 +204,7 @@ $enddefinitions $end
         },
     )
 
-    samples = result.decode()
+    samples = list(result.decode())
 
     # Verify first sample
     assert len(samples) == 2

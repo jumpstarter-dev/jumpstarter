@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Iterator
 
-def parse_vcd(data: bytes, sample_rate: str) -> list[dict]:
-    """Parse VCD format to list of samples with timing (changes only).
+
+def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
+    """Parse VCD format to iterator of samples with timing (changes only).
 
     VCD format only records when signals change, making it efficient for
     sparse data. Each sample represents a time point where one or more
@@ -14,8 +16,8 @@ def parse_vcd(data: bytes, sample_rate: str) -> list[dict]:
         data: Raw VCD data as bytes
         sample_rate: Sample rate string (not used for VCD as it has its own timescale)
 
-    Returns:
-        List of dicts with keys: sample, time_ns, values
+    Yields:
+        Dicts with keys: sample, time_ns, values
     """
     text = data.decode("utf-8")
     lines = text.strip().split("\n")
@@ -42,8 +44,7 @@ def parse_vcd(data: bytes, sample_rate: str) -> list[dict]:
         if line == "$enddefinitions $end":
             break
 
-    # Parse value changes
-    samples: list[dict] = []
+    # Parse and yield value changes one by one
     sample_idx = 0
 
     for line in lines:
@@ -56,10 +57,8 @@ def parse_vcd(data: bytes, sample_rate: str) -> list[dict]:
             sample_data = _parse_vcd_timestamp_line(line, timescale_multiplier, channel_map)
             if sample_data is not None:
                 sample_data["sample"] = sample_idx
-                samples.append(sample_data)
+                yield sample_data
                 sample_idx += 1
-
-    return samples
 
 
 def _parse_timescale(line: str) -> int:
