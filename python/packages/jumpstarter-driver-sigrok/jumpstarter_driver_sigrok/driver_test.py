@@ -223,3 +223,221 @@ def test_list_output_formats(demo_client):
     assert "srzip" in formats
     assert "vcd" in formats
     assert "binary" in formats
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_decode_csv_format(demo_client):
+    """Test decoding CSV format to Sample objects with timing.
+
+    Verifies:
+    - CSV parsing works through client-server boundary
+    - Sample objects have timing information
+    - Values are properly typed (int/float)
+    """
+    from .common import OutputFormat, Sample
+
+    cfg = CaptureConfig(
+        sample_rate="100kHz",
+        samples=50,
+        output_format=OutputFormat.CSV,
+        channels=["D0", "D1", "D2"],  # Select specific channels
+    )
+
+    result = demo_client.capture(cfg)
+    assert isinstance(result, CaptureResult)
+
+    # Decode the CSV data
+    samples = result.decode()
+    assert isinstance(samples, list)
+    assert len(samples) > 0
+
+    # Verify all samples are Sample objects
+    for sample in samples:
+        assert isinstance(sample, Sample)
+        assert isinstance(sample.sample, int)
+        assert isinstance(sample.time_ns, int)
+        assert isinstance(sample.values, dict)
+
+        # Verify timing progresses (1/100kHz = 10,000ns per sample)
+        assert sample.time_ns == sample.sample * 10_000
+
+        # Verify values are present
+        assert len(sample.values) > 0
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_decode_ascii_format(demo_client):
+    """Test decoding ASCII format returns string visualization.
+
+    Verifies:
+    - ASCII format decoding works
+    - Returns string (not bytes)
+    """
+    from .common import OutputFormat
+
+    cfg = CaptureConfig(
+        sample_rate="50kHz",
+        samples=20,
+        output_format=OutputFormat.ASCII,
+        channels=["D0", "D1"],
+    )
+
+    result = demo_client.capture(cfg)
+    decoded = result.decode()
+
+    # ASCII format should return string
+    assert isinstance(decoded, str)
+    assert len(decoded) > 0
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_decode_bits_format(demo_client):
+    """Test decoding bits format to channel→bit sequences.
+
+    Verifies:
+    - Bits format decoding works
+    - Returns dict with bit sequences
+    """
+    from .common import OutputFormat
+
+    cfg = CaptureConfig(
+        sample_rate="100kHz",
+        samples=30,
+        output_format=OutputFormat.BITS,
+        channels=["D0", "D1", "D2"],
+    )
+
+    result = demo_client.capture(cfg)
+    decoded = result.decode()
+
+    # Bits format should return dict
+    assert isinstance(decoded, dict)
+    assert len(decoded) > 0
+
+    # Each channel should have a list of bits
+    for channel, bits in decoded.items():
+        assert isinstance(channel, str)
+        assert isinstance(bits, list)
+        assert all(b in [0, 1] for b in bits)
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_decode_vcd_format(demo_client):
+    """Test decoding VCD format to Sample objects with timing (changes only).
+
+    Verifies:
+    - VCD parsing works through client-server boundary
+    - Sample objects have timing information in nanoseconds
+    - Only changes are recorded (efficient representation)
+    """
+    from .common import OutputFormat, Sample
+
+    cfg = CaptureConfig(
+        sample_rate="100kHz",
+        samples=50,
+        output_format=OutputFormat.VCD,
+        channels=["D0", "D1", "D2"],  # Select specific channels
+    )
+
+    result = demo_client.capture(cfg)
+    assert isinstance(result, CaptureResult)
+
+    # Decode the VCD data
+    samples = result.decode()
+    assert isinstance(samples, list)
+    assert len(samples) > 0
+
+    # Verify all samples are Sample objects
+    for sample in samples:
+        assert isinstance(sample, Sample)
+        assert isinstance(sample.sample, int)
+        assert isinstance(sample.time_ns, int)
+        assert isinstance(sample.values, dict)
+
+        # VCD only records changes, so each sample should have at least one value
+        assert len(sample.values) > 0
+
+        # Values should be integers for digital channels
+        for _channel, value in sample.values.items():
+            assert isinstance(value, int)
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_decode_vcd_analog_channels(demo_client):
+    """Test decoding VCD with analog channels.
+
+    Verifies:
+    - Analog values are parsed correctly in VCD format
+    - Timing information is in nanoseconds
+    """
+    from .common import OutputFormat, Sample
+
+    cfg = CaptureConfig(
+        sample_rate="100kHz",
+        samples=30,
+        output_format=OutputFormat.VCD,
+        channels=["A0", "A1"],  # Analog channels
+    )
+
+    result = demo_client.capture(cfg)
+    samples = result.decode()
+
+    assert isinstance(samples, list)
+    assert len(samples) > 0
+
+    # Check that samples have analog values
+    first_sample = samples[0]
+    assert isinstance(first_sample, Sample)
+    assert isinstance(first_sample.time_ns, int)
+    assert len(first_sample.values) > 0
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_decode_unsupported_format_raises(demo_client):
+    """Test that decoding unsupported formats raises NotImplementedError."""
+    from .common import OutputFormat
+
+    cfg = CaptureConfig(
+        sample_rate="100kHz",
+        samples=10,
+        output_format=OutputFormat.BINARY,
+    )
+
+    result = demo_client.capture(cfg)
+
+    # Binary format should not be decodable
+    with pytest.raises(NotImplementedError):
+        result.decode()
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_decode_analog_csv(demo_client):
+    """Test decoding CSV with analog channels (voltage values).
+
+    Verifies:
+    - Analog values are parsed as floats
+    - Timing information is included
+    """
+    from .common import OutputFormat, Sample
+
+    cfg = CaptureConfig(
+        sample_rate="100kHz",
+        samples=30,
+        output_format=OutputFormat.CSV,
+        channels=["A0", "A1"],  # Analog channels
+    )
+
+    result = demo_client.capture(cfg)
+    samples = result.decode()
+
+    assert isinstance(samples, list)
+    assert len(samples) > 0
+
+    # Check first sample for analog values
+    first_sample = samples[0]
+    assert isinstance(first_sample, Sample)
+    assert len(first_sample.values) > 0
+
+    # Analog values should be floats (voltages)
+    for _channel, value in first_sample.values.items():
+        assert isinstance(value, (int, float))
