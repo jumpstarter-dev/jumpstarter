@@ -43,8 +43,9 @@ class CaptureConfig(BaseModel):
     triggers: dict[str, str] | None = Field(default=None, description="e.g., {'D0': 'rising'}")
     channels: list[str] | None = Field(default=None, description="override default channels by name")
     output_format: str = Field(
-        default="srzip",
-        description="csv, srzip, vcd, binary, bits, ascii",
+        default=OutputFormat.VCD,
+        description="Output format (default: vcd - efficient change-based format with timing). "
+        "Options: vcd, csv, srzip, binary, bits, ascii",
     )
     decoders: list[DecoderConfig] | None = Field(default=None, description="real-time protocol decoding")
 
