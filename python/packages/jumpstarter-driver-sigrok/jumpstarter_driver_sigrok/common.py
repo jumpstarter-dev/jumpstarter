@@ -100,27 +100,35 @@ class CaptureResult(BaseModel):
             )
 
     def _parse_bits(self) -> dict[str, list[int]]:
-        """Parse bits format to dict of channel→bit sequences."""
+        """Parse bits format to dict of channel→bit sequences.
+
+        Sigrok-cli bits format: "D0:10001\\nD1:01110\\n..."
+        Each line has format "channel_name:bits"
+
+        Note: For large sample counts, sigrok-cli wraps bits across multiple
+        lines with repeated channel names. We accumulate all occurrences.
+        """
         text = self.data.decode("utf-8")
         lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
 
-        # bits format is just columns of 0/1
-        # TODO: Need to determine channel mapping from somewhere
-        # For now, return as generic numbered channels
         result: dict[str, list[int]] = {}
 
         for line in lines:
-            # Each line might be space/comma separated bits
-            bits = [int(b) for b in line if b in "01"]
-            if not result:
-                # Initialize channels
-                for i, bit in enumerate(bits):
-                    result[f"CH{i}"] = [bit]
-            else:
-                # Append to existing channels
-                for i, bit in enumerate(bits):
-                    if f"CH{i}" in result:
-                        result[f"CH{i}"].append(bit)
+            # Bits format: "D0:10001" or "A0:10001"
+            if ":" in line:
+                channel_device_name, bits_str = line.split(":", 1)
+                channel_device_name = channel_device_name.strip()
+
+                # Map device name (D0) to user-friendly name (vcc) if available
+                channel_name = self.channel_map.get(channel_device_name, channel_device_name)
+
+                # Parse bits from this line
+                bits = [int(b) for b in bits_str if b in "01"]
+
+                # Accumulate bits for this channel (may appear on multiple lines)
+                if channel_name not in result:
+                    result[channel_name] = []
+                result[channel_name].extend(bits)
 
         return result
 
