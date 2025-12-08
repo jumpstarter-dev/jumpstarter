@@ -26,7 +26,7 @@ class Sigrok(Driver):
     """Sigrok driver wrapping sigrok-cli for logic analyzer and oscilloscope support."""
 
     driver: str = "demo"
-    conn: str | None = None
+    conn: str | None = "auto"
     executable: str | None = field(default_factory=find_sigrok_cli)
     channels: dict[str, str] = field(default_factory=dict)
 
@@ -154,7 +154,7 @@ class Sigrok(Driver):
 
     def _base_driver_args(self) -> list[str]:
         assert self.executable is not None
-        if self.conn:
+        if self.conn and self.conn != "auto":
             return [self.executable, "-d", f"{self.driver}:conn={self.conn}"]
         return [self.executable, "-d", self.driver]
 

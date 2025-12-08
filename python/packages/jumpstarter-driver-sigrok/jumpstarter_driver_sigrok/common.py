@@ -22,8 +22,50 @@ class OutputFormat:
 class Sample(BaseModel):
     """A single sample with timing information."""
     sample: int  # Sample index
-    time_ns: int  # Time in nanoseconds
+    time: float  # Time in seconds (full precision)
     values: dict[str, int | float]  # Channel values (digital: 0/1, analog: voltage)
+
+    def __str__(self) -> str:
+        """Format sample with clean time display using appropriate unit (fs/ps/ns/μs/ms/s)."""
+        time_str = self._format_time(self.time)
+        return f"Sample(sample={self.sample}, time={time_str}, values={self.values})"
+
+    @staticmethod
+    def _format_time(time_s: float) -> str:
+        """Format time in seconds to the most appropriate unit.
+
+        Args:
+            time_s: Time in seconds
+
+        Returns:
+            Formatted string like "1.5ns", "2.3μs", "1.5ms", "2s"
+        """
+        # Special case for zero
+        if time_s == 0:
+            return "0s"
+
+        abs_time = abs(time_s)
+
+        # Define units in descending order (seconds to femtoseconds)
+        units = [
+            (1.0, "s"),
+            (1e-3, "ms"),
+            (1e-6, "μs"),
+            (1e-9, "ns"),
+            (1e-12, "ps"),
+            (1e-15, "fs"),
+        ]
+
+        # Find the most appropriate unit
+        for scale, unit in units:
+            if abs_time >= scale or scale == 1e-15:  # Use fs as minimum
+                value = time_s / scale
+                # Format with up to 6 significant digits, remove trailing zeros
+                formatted = f"{value:.6g}"
+                return f"{formatted}{unit}"
+
+        # Fallback (should never reach here)
+        return f"{time_s:.6g}s"
 
 
 class DecoderConfig(BaseModel):

@@ -14,14 +14,14 @@ def parse_csv(data: bytes, sample_rate: str) -> Iterator[dict]:
         sample_rate: Sample rate string (e.g., "100kHz", "1MHz")
 
     Yields:
-        Dicts with keys: sample, time_ns, values
+        Dicts with keys: sample, time (seconds), values
     """
     text = data.decode("utf-8")
     lines = text.strip().split("\n")
 
     # Parse sample rate for timing calculation
     sample_rate_hz = _parse_sample_rate_hz(sample_rate)
-    time_step_ns = int(1_000_000_000.0 / sample_rate_hz)
+    time_step_s = 1.0 / sample_rate_hz  # seconds per sample
 
     # Skip comment lines and analog preview lines (format: "A0: -10.0000 V DC")
     # The actual data starts after a header row with types like "logic,logic,V DC,V DC"
@@ -44,7 +44,7 @@ def parse_csv(data: bytes, sample_rate: str) -> Iterator[dict]:
         values = _parse_csv_row(channel_names, row)
         yield {
             "sample": idx,
-            "time_ns": idx * time_step_ns,
+            "time": idx * time_step_s,
             "values": values,
         }
 
