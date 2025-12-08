@@ -12,11 +12,13 @@ from .common import CaptureConfig, DecoderConfig, OutputFormat
 from jumpstarter.driver import Driver, export
 
 
-def find_sigrok_cli() -> str:
-    executable = which("sigrok-cli")
-    if executable is None:
-        raise FileNotFoundError("sigrok-cli executable not found in PATH")
-    return executable
+def find_sigrok_cli() -> str | None:
+    """Find sigrok-cli executable in PATH.
+
+    Returns:
+        Path to executable or None if not found
+    """
+    return which("sigrok-cli")
 
 
 @dataclass(kw_only=True)
@@ -25,12 +27,20 @@ class Sigrok(Driver):
 
     driver: str = "demo"
     conn: str | None = None
-    executable: str = field(default_factory=find_sigrok_cli)
+    executable: str | None = field(default_factory=find_sigrok_cli)
     channels: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
+
+    def _ensure_executable(self):
+        """Ensure sigrok-cli is available."""
+        if self.executable is None:
+            raise FileNotFoundError(
+                "sigrok-cli executable not found in PATH. "
+                "Please install sigrok-cli to use this driver."
+            )
 
     @classmethod
     def client(cls) -> str:
@@ -41,6 +51,8 @@ class Sigrok(Driver):
     @export
     def scan(self) -> str:
         """List devices for the configured driver."""
+        self._ensure_executable()
+        assert self.executable is not None
         cmd = [self.executable, "--driver", self.driver, "--scan"]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return result.stdout
@@ -64,6 +76,7 @@ class Sigrok(Driver):
     @export
     def capture(self, config: CaptureConfig | dict) -> dict:
         """One-shot capture; returns dict with base64-encoded binary data."""
+        self._ensure_executable()
         cfg = CaptureConfig.model_validate(config)
         cmd, outfile, tmpdir = self._build_capture_command(cfg)
 
@@ -87,6 +100,7 @@ class Sigrok(Driver):
     @export
     async def capture_stream(self, config: CaptureConfig | dict):
         """Streaming capture; yields chunks of binary data from sigrok-cli stdout."""
+        self._ensure_executable()
         cfg = CaptureConfig.model_validate(config)
         cmd = self._build_stream_command(cfg)
 
@@ -139,6 +153,7 @@ class Sigrok(Driver):
         return cmd
 
     def _base_driver_args(self) -> list[str]:
+        assert self.executable is not None
         if self.conn:
             return [self.executable, "-d", f"{self.driver}:conn={self.conn}"]
         return [self.executable, "-d", self.driver]
