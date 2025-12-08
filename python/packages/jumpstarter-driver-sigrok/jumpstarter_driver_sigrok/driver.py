@@ -8,7 +8,7 @@ from pathlib import Path
 from shutil import which
 from tempfile import TemporaryDirectory
 
-from .common import CaptureConfig, DecoderConfig
+from .common import CaptureConfig, DecoderConfig, OutputFormat
 from jumpstarter.driver import Driver, export
 
 
@@ -65,7 +65,7 @@ class Sigrok(Driver):
 
     @export
     def list_output_formats(self) -> list[str]:
-        return ["csv", "srzip", "vcd", "binary", "bits", "ascii"]
+        return OutputFormat.all()
 
     @export
     def capture(self, config: CaptureConfig | dict) -> dict:

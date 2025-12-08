@@ -5,6 +5,27 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class OutputFormat:
+    """Constants for sigrok output formats."""
+    CSV = "csv"
+    BITS = "bits"
+    ASCII = "ascii"
+    BINARY = "binary"
+    SRZIP = "srzip"
+    VCD = "vcd"
+
+    @classmethod
+    def all(cls) -> list[str]:
+        return [cls.CSV, cls.BITS, cls.ASCII, cls.BINARY, cls.SRZIP, cls.VCD]
+
+
+class Sample(BaseModel):
+    """A single sample with timing information."""
+    sample: int  # Sample index
+    time_ns: int  # Time in nanoseconds
+    values: dict[str, int | float]  # Channel values (digital: 0/1, analog: voltage)
+
+
 class DecoderConfig(BaseModel):
     """Protocol decoder configuration (real-time during capture)."""
 
@@ -46,4 +67,60 @@ class CaptureResult(BaseModel):
         """Get the captured data as bytes (auto-decodes from base64)."""
         from base64 import b64decode
         return b64decode(self.data_b64)
+
+    def decode(self) -> list[Sample] | dict[str, list[int]] | str:
+        """Parse captured data based on output format.
+
+        Returns:
+            - CSV format: list[Sample] with timing and all values per sample
+            - VCD format: list[Sample] with timing and only changed values
+            - Bits format: dict[str, list[int]] with channel→bit sequences
+            - ASCII format: str with ASCII art visualization
+            - Other formats: raises NotImplementedError (use .data for raw bytes)
+
+        Raises:
+            NotImplementedError: For binary/srzip formats (use .data property)
+        """
+        if self.output_format == OutputFormat.CSV:
+            from .csv import parse_csv
+            samples_data = parse_csv(self.data, self.sample_rate)
+            return [Sample.model_validate(s) for s in samples_data]
+        elif self.output_format == OutputFormat.VCD:
+            from .vcd import parse_vcd
+            samples_data = parse_vcd(self.data, self.sample_rate)
+            return [Sample.model_validate(s) for s in samples_data]
+        elif self.output_format == OutputFormat.BITS:
+            return self._parse_bits()
+        elif self.output_format == OutputFormat.ASCII:
+            return self.data.decode("utf-8")
+        else:
+            raise NotImplementedError(
+                f"Parsing not implemented for {self.output_format} format. "
+                f"Use .data property to get raw bytes."
+            )
+
+    def _parse_bits(self) -> dict[str, list[int]]:
+        """Parse bits format to dict of channel→bit sequences."""
+        text = self.data.decode("utf-8")
+        lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+
+        # bits format is just columns of 0/1
+        # TODO: Need to determine channel mapping from somewhere
+        # For now, return as generic numbered channels
+        result: dict[str, list[int]] = {}
+
+        for line in lines:
+            # Each line might be space/comma separated bits
+            bits = [int(b) for b in line if b in "01"]
+            if not result:
+                # Initialize channels
+                for i, bit in enumerate(bits):
+                    result[f"CH{i}"] = [bit]
+            else:
+                # Append to existing channels
+                for i, bit in enumerate(bits):
+                    if f"CH{i}" in result:
+                        result[f"CH{i}"].append(bit)
+
+        return result
 
