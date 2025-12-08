@@ -6,6 +6,12 @@ from .common import CaptureConfig, CaptureResult, OutputFormat
 from .driver import Sigrok
 from jumpstarter.common.utils import serve
 
+# Skip all integration tests if sigrok-cli is not available
+pytestmark = pytest.mark.skipif(
+    which("sigrok-cli") is None,
+    reason="sigrok-cli not found in PATH"
+)
+
 
 @pytest.fixture
 def demo_driver_instance():
