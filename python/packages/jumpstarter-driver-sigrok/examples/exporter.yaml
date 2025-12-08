@@ -10,7 +10,7 @@ export:
     type: jumpstarter_driver_sigrok.driver.Sigrok
     config:
       driver: demo
-      conn: null
+      conn: auto
       channels:
         D0: vcc
         D1: cs

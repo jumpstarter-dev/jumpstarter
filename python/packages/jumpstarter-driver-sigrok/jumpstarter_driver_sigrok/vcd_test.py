@@ -54,9 +54,9 @@ $enddefinitions $end
     # Verify we got the expected number of samples
     assert len(samples) == 5
 
-    # Sample 0 at time 0us = 0ns
+    # Sample 0 at time 0us = 0s
     s0 = samples[0]
-    assert s0.time_ns == 0
+    assert s0.time == 0.0
     # Channel names come directly from VCD (not mapped)
     assert s0.values["D0"] == 1
     assert s0.values["D1"] == 0
@@ -66,26 +66,26 @@ $enddefinitions $end
     assert s0.values["BUS0"] == 0b00001111  # Binary value
     assert abs(s0.values["ANALOG0"] - (-10.5)) < 0.001  # Real value
 
-    # Sample 1 at time 5us = 5000ns
+    # Sample 1 at time 5us = 0.000005s
     s1 = samples[1]
-    assert s1.time_ns == 5000
+    assert abs(s1.time - 0.000005) < 1e-12
     assert s1.values["D0"] == 0
     assert s1.values["D1"] == 1
     assert s1.values["D2"] == 0  # X converted to 0
     assert s1.values["CH95"] == 1
 
-    # Sample 2 at time 10us = 10000ns
+    # Sample 2 at time 10us = 0.00001s
     s2 = samples[2]
-    assert s2.time_ns == 10000
+    assert abs(s2.time - 0.00001) < 1e-12
     assert s2.values["D0"] == 0  # Z converted to 0
     assert s2.values["D1"] == 0
     assert s2.values["D2"] == 1
     assert s2.values["BUS0"] == 0b11110000
     assert abs(s2.values["ANALOG0"] - 3.14159) < 0.001
 
-    # Sample 3 at time 25us = 25000ns
+    # Sample 3 at time 25us = 0.000025s
     s3 = samples[3]
-    assert s3.time_ns == 25000
+    assert abs(s3.time - 0.000025) < 1e-12
     assert s3.values["D0"] == 1
     assert s3.values["D1"] == 1
     assert s3.values["D2"] == 0
@@ -94,9 +94,9 @@ $enddefinitions $end
     assert s3.values["BUS0"] == 0b10101010
     assert abs(s3.values["ANALOG0"] - 0.0) < 0.001
 
-    # Sample 4 at time 100us = 100000ns
+    # Sample 4 at time 100us = 0.0001s
     s4 = samples[4]
-    assert s4.time_ns == 100000
+    assert abs(s4.time - 0.0001) < 1e-12
     assert s4.values["D0"] == 0
     assert s4.values["D1"] == 0
     assert s4.values["D2"] == 0
@@ -131,7 +131,7 @@ $enddefinitions $end
         samples = list(result.decode())
         assert len(samples) >= 1
         # First sample at time 0
-        assert samples[0].time_ns == 0
+        assert samples[0].time == 0.0
 
 
 def test_vcd_parser_empty_timestamps():
@@ -155,9 +155,9 @@ $enddefinitions $end
     samples = list(result.decode())
     # Should have 3 samples (empty timestamp line skipped)
     assert len(samples) == 3
-    assert samples[0].time_ns == 0
-    assert samples[1].time_ns == 10
-    assert samples[2].time_ns == 20
+    assert samples[0].time == 0.0
+    assert samples[1].time == 1e-8  # 10ns
+    assert samples[2].time == 2e-8  # 20ns
 
 
 def test_vcd_parser_large_channel_count():
@@ -195,7 +195,7 @@ $enddefinitions $end
     assert len(samples) == 2
     s0 = samples[0]
     assert isinstance(s0, Sample)
-    assert s0.time_ns == 0
+    assert s0.time == 0.0
     assert s0.values["CH0"] == 1  # Single char: !
     assert s0.values["CH93"] == 0  # Single char: ~
     assert s0.values["CH94"] == 1  # Two char: aa
@@ -206,7 +206,7 @@ $enddefinitions $end
 
     # Verify second sample
     s1 = samples[1]
-    assert s1.time_ns == 100
+    assert abs(s1.time - 1e-7) < 1e-15  # 100ns
     assert s1.values["CH0"] == 0
     assert s1.values["CH93"] == 1
     assert s1.values["CH94"] == 0

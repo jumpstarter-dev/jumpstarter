@@ -17,13 +17,13 @@ def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
         sample_rate: Sample rate string (not used for VCD as it has its own timescale)
 
     Yields:
-        Dicts with keys: sample, time_ns, values
+        Dicts with keys: sample, time (seconds), values
     """
     text = data.decode("utf-8")
     lines = text.strip().split("\n")
 
     # Parse VCD header to extract timescale and channel mapping
-    timescale_multiplier = 1  # Default: 1 unit = 1 ns
+    timescale_multiplier = 1e-9  # Default: 1 unit = 1 ns = 1e-9 seconds
     channel_map: dict[str, str] = {}  # symbol → channel name
 
     for line in lines:
@@ -61,28 +61,28 @@ def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
                 sample_idx += 1
 
 
-def _parse_timescale(line: str) -> int:
-    """Parse timescale line and return multiplier to convert to nanoseconds."""
+def _parse_timescale(line: str) -> float:
+    """Parse timescale line and return multiplier to convert to seconds."""
     parts = line.split()
     if len(parts) >= 3:
         value = parts[1]
         unit = parts[2]
-        # Convert to nanoseconds multiplier
-        unit_multipliers = {"s": 1e9, "ms": 1e6, "us": 1e3, "ns": 1, "ps": 1e-3}
-        return int(float(value) * unit_multipliers.get(unit, 1))
-    return 1
+        # Convert to seconds multiplier
+        unit_multipliers = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12}
+        return float(value) * unit_multipliers.get(unit, 1.0)
+    return 1.0
 
 
-def _parse_vcd_timestamp_line(line: str, timescale_multiplier: int, channel_map: dict[str, str]) -> dict | None:
+def _parse_vcd_timestamp_line(line: str, timescale_multiplier: float, channel_map: dict[str, str]) -> dict | None:
     """Parse a VCD timestamp line with value changes.
 
     Args:
         line: Line starting with # (e.g., "#100 1! 0" 1#")
-        timescale_multiplier: Multiplier to convert time units to nanoseconds
+        timescale_multiplier: Multiplier to convert time units to seconds
         channel_map: Mapping from VCD symbols to channel names
 
     Returns:
-        Dict with time_ns and values, or None if line is empty
+        Dict with time (seconds) and values, or None if line is empty
     """
     # Split timestamp from values
     parts = line.split(maxsplit=1)
@@ -93,7 +93,7 @@ def _parse_vcd_timestamp_line(line: str, timescale_multiplier: int, channel_map:
         return None
 
     time_units = int(time_str)
-    current_time_ns = time_units * timescale_multiplier
+    current_time_s = time_units * timescale_multiplier
     current_values: dict[str, int | float] = {}
 
     # Parse value changes if present on the same line
@@ -103,7 +103,7 @@ def _parse_vcd_timestamp_line(line: str, timescale_multiplier: int, channel_map:
 
     # Return sample data if we have values
     if current_values:
-        return {"time_ns": current_time_ns, "values": current_values}
+        return {"time": current_time_s, "values": current_values}
 
     return None
 
