@@ -19,7 +19,7 @@ export:
   sigrok:
     type: jumpstarter_driver_sigrok.driver.Sigrok
     driver: fx2lafw                     # sigrok driver (demo, fx2lafw, rigol-ds, etc.)
-    conn: null                          # optional: USB VID.PID, serial path, or null for auto
+    conn: auto                          # optional: USB VID.PID, serial path, or "auto" for auto-detect
     channels:                           # optional: map device channels to friendly names
       D0: clk
       D1: mosi
@@ -32,7 +32,7 @@ export:
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
 | `driver` | Sigrok driver name (e.g., `demo`, `fx2lafw`, `rigol-ds`) | str | yes | - |
-| `conn` | Connection string (USB VID.PID, serial path, or `null` for auto-detect) | str \| None | no | None |
+| `conn` | Connection string (USB VID.PID, serial path, or `"auto"` for auto-detect) | str \| None | no | "auto" |
 | `executable` | Path to `sigrok-cli` executable | str | no | Auto-detected from PATH |
 | `channels` | Channel mapping from device names (D0, A0) to semantic names (clk, voltage) | dict[str, str] | no | {} (empty) |
 
@@ -106,7 +106,7 @@ result = client.capture(config)
 # Decode VCD to get samples with timing
 samples = result.decode()  # list[Sample]
 for sample in samples[:5]:
-    print(f"Time: {sample.time_ns}ns, Values: {sample.values}")
+    print(f"Time: {sample.time}s, Values: {sample.values}")
 ```
 
 **Equivalent sigrok-cli command:**
@@ -141,7 +141,7 @@ print(f"Captured {len(samples)} signal changes")
 
 # Access timing and values
 for sample in samples[:3]:
-    print(f"Time: {sample.time_ns}ns, Changed: {sample.values}")
+    print(f"Time: {sample.time}s, Changed: {sample.values}")
 ```
 
 **Equivalent sigrok-cli command:**
@@ -184,7 +184,7 @@ result = client.capture(config)
 # Parse voltage data
 samples = result.decode()  # list[Sample]
 for sample in samples[:5]:
-    print(f"Time: {sample.time_ns}ns")
+    print(f"Time: {sample.time}s")
     print(f"  CH1: {sample.values.get('A0', 'N/A')}V")
     print(f"  CH2: {sample.values.get('A1', 'N/A')}V")
 ```

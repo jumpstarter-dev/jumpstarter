@@ -105,8 +105,8 @@ def test_capture_default_format(demo_client):
 
     # Verify samples have timing information (VCD feature)
     for sample in samples:
-        assert hasattr(sample, "time_ns")
-        assert isinstance(sample.time_ns, int)
+        assert hasattr(sample, "time")
+        assert isinstance(sample.time, float)
         assert hasattr(sample, "values")
         assert isinstance(sample.values, dict)
 
@@ -298,11 +298,11 @@ def test_decode_csv_format(demo_client):
     for sample in samples:
         assert isinstance(sample, Sample)
         assert isinstance(sample.sample, int)
-        assert isinstance(sample.time_ns, int)
+        assert isinstance(sample.time, float)
         assert isinstance(sample.values, dict)
 
-        # Verify timing progresses (1/100kHz = 10,000ns per sample)
-        assert sample.time_ns == sample.sample * 10_000
+        # Verify timing progresses (1/100kHz = 0.00001s per sample)
+        assert sample.time == sample.sample * 0.00001
 
         # Verify values are present
         assert len(sample.values) > 0
@@ -403,7 +403,7 @@ def test_decode_vcd_format(demo_client):
     for sample in samples:
         assert isinstance(sample, Sample)
         assert isinstance(sample.sample, int)
-        assert isinstance(sample.time_ns, int)
+        assert isinstance(sample.time, float)
         assert isinstance(sample.values, dict)
 
         # VCD only records changes, so each sample should have at least one value
@@ -440,7 +440,7 @@ def test_decode_vcd_analog_channels(demo_client):
     # Check that samples have analog values
     first_sample = samples[0]
     assert isinstance(first_sample, Sample)
-    assert isinstance(first_sample.time_ns, int)
+    assert isinstance(first_sample.time, float)
     assert len(first_sample.values) > 0
 
 
