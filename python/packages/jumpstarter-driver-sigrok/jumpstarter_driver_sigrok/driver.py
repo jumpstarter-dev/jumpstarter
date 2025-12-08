@@ -66,7 +66,7 @@ class Sigrok(Driver):
         }
 
     @export
-    def get_channel_map(self) -> dict[int, str]:
+    def get_channel_map(self) -> dict[str, str]:
         return self.channels
 
     @export
@@ -81,7 +81,7 @@ class Sigrok(Driver):
         cmd, outfile, tmpdir = self._build_capture_command(cfg)
 
         try:
-            self.logger.debug("running sigrok-cli: %s", " ".join(cmd))
+            self.logger.debug("Running sigrok-cli: %s", " ".join(cmd))
             subprocess.run(cmd, check=True)
 
             data = outfile.read_bytes()
