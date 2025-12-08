@@ -19,12 +19,6 @@ def find_sigrok_cli() -> str:
     return executable
 
 
-def _default_channel_map() -> dict[str, str]:
-    # Decoder-friendly default names for demo driver
-    # Maps device channel name -> semantic name
-    return {"D0": "vcc", "D1": "cs", "D2": "miso", "D3": "mosi", "D4": "clk", "D5": "sda", "D6": "scl"}
-
-
 @dataclass(kw_only=True)
 class Sigrok(Driver):
     """Sigrok driver wrapping sigrok-cli for logic analyzer and oscilloscope support."""
@@ -32,7 +26,7 @@ class Sigrok(Driver):
     driver: str = "demo"
     conn: str | None = None
     executable: str = field(default_factory=find_sigrok_cli)
-    channels: dict[str, str] = field(default_factory=_default_channel_map)
+    channels: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
