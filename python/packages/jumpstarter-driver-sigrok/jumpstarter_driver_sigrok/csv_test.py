@@ -54,7 +54,8 @@ def test_csv_format_basic(demo_client: SigrokClient):
     decoded_data = list(result.decode())
     assert isinstance(decoded_data, list)
     assert len(decoded_data) > 0
-    # Verify channel names are in the data
+    # CSV format uses inferred names (D0, D1, etc.) based on column types
+    # Channel mapping is only preserved in VCD format
     first_sample = decoded_data[0]
     assert "D0" in first_sample.values or "D1" in first_sample.values
 

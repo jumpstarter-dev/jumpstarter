@@ -8,14 +8,15 @@ token: "<token>"
 export:
   sigrok:
     type: jumpstarter_driver_sigrok.driver.Sigrok
-    driver: demo
-    conn: null
-    channels:
-      D0: vcc
-      D1: cs
-      D2: miso
-      D3: mosi
-      D4: clk
-      D5: sda
-      D6: scl
+    config:
+      driver: demo
+      conn: null
+      channels:
+        D0: vcc
+        D1: cs
+        D2: miso
+        D3: mosi
+        D4: clk
+        D5: sda
+        D6: scl
 
