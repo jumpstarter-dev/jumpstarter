@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import csv
+from typing import Iterator
 
 
-def parse_csv(data: bytes, sample_rate: str) -> list[dict]:
-    """Parse CSV format to list of samples with timing.
+def parse_csv(data: bytes, sample_rate: str) -> Iterator[dict]:
+    """Parse CSV format to iterator of samples with timing.
 
     Args:
         data: Raw CSV data as bytes
         sample_rate: Sample rate string (e.g., "100kHz", "1MHz")
 
-    Returns:
-        List of dicts with keys: sample, time_ns, values
+    Yields:
+        Dicts with keys: sample, time_ns, values
     """
     text = data.decode("utf-8")
     lines = text.strip().split("\n")
@@ -27,7 +28,7 @@ def parse_csv(data: bytes, sample_rate: str) -> list[dict]:
     data_lines = _extract_csv_data_lines(lines)
 
     if not data_lines or len(data_lines) < 2:
-        return []
+        return
 
     # Parse the CSV data
     reader = csv.reader(data_lines)
@@ -38,17 +39,14 @@ def parse_csv(data: bytes, sample_rate: str) -> list[dict]:
     # Get channel names from types
     channel_names = _infer_channel_names(types_row)
 
-    # Parse data rows
-    samples: list[dict] = []
+    # Parse and yield data rows one by one
     for idx, row in enumerate(reader):
         values = _parse_csv_row(channel_names, row)
-        samples.append({
+        yield {
             "sample": idx,
             "time_ns": idx * time_step_ns,
             "values": values,
-        })
-
-    return samples
+        }
 
 
 def _parse_sample_rate_hz(sample_rate: str) -> float:
