@@ -38,20 +38,12 @@ $enddefinitions $end
 #100 0! 0" 0# r1.23e-5 xyz
 """
 
-    # Create a CaptureResult with this VCD data
+    # Create a CaptureResult with this VCD data (no channel mapping for parser test)
     result = CaptureResult(
         data_b64=b64encode(vcd_content.encode("utf-8")).decode("ascii"),
         output_format=OutputFormat.VCD,
         sample_rate="1MHz",
-        channel_map={
-            "D0": "d0",
-            "D1": "d1",
-            "D2": "d2",
-            "CH95": "ch95",
-            "CH96": "ch96",
-            "BUS0": "bus",
-            "ANALOG0": "analog",
-        },
+        channel_map={},
         triggers=None,
         decoders=None,
     )
@@ -65,6 +57,7 @@ $enddefinitions $end
     # Sample 0 at time 0us = 0ns
     s0 = samples[0]
     assert s0.time_ns == 0
+    # Channel names come directly from VCD (not mapped)
     assert s0.values["D0"] == 1
     assert s0.values["D1"] == 0
     assert s0.values["D2"] == 1
@@ -132,7 +125,7 @@ $enddefinitions $end
             data_b64=b64encode(vcd_content.encode("utf-8")).decode("ascii"),
             output_format=OutputFormat.VCD,
             sample_rate="1MHz",
-            channel_map={"D0": "d0"},
+            channel_map={},
         )
 
         samples = list(result.decode())
@@ -156,7 +149,7 @@ $enddefinitions $end
         data_b64=b64encode(vcd_content.encode("utf-8")).decode("ascii"),
         output_format=OutputFormat.VCD,
         sample_rate="1MHz",
-        channel_map={"D0": "d0"},
+        channel_map={},
     )
 
     samples = list(result.decode())
@@ -193,20 +186,12 @@ $enddefinitions $end
         data_b64=b64encode(vcd_content.encode("utf-8")).decode("ascii"),
         output_format=OutputFormat.VCD,
         sample_rate="1MHz",
-        channel_map={
-            "CH0": "ch0",
-            "CH93": "ch93",
-            "CH94": "ch94",
-            "CH95": "ch95",
-            "CH769": "ch769",
-            "CH770": "ch770",
-            "CH800": "ch800",
-        },
+        channel_map={},
     )
 
     samples = list(result.decode())
 
-    # Verify first sample
+    # Verify first sample (channel names come directly from VCD)
     assert len(samples) == 2
     s0 = samples[0]
     assert isinstance(s0, Sample)
