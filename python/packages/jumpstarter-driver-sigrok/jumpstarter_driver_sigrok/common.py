@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterator
 
 from pydantic import BaseModel, Field
 
@@ -69,12 +69,12 @@ class CaptureResult(BaseModel):
         from base64 import b64decode
         return b64decode(self.data_b64)
 
-    def decode(self) -> list[Sample] | dict[str, list[int]] | str:
+    def decode(self) -> Iterator[Sample] | dict[str, list[int]] | str:
         """Parse captured data based on output format.
 
         Returns:
-            - CSV format: list[Sample] with timing and all values per sample
-            - VCD format: list[Sample] with timing and only changed values
+            - CSV format: Iterator[Sample] yielding samples with timing and all values per sample
+            - VCD format: Iterator[Sample] yielding samples with timing and only changed values
             - Bits format: dict[str, list[int]] with channel→bit sequences
             - ASCII format: str with ASCII art visualization
             - Other formats: raises NotImplementedError (use .data for raw bytes)
@@ -85,11 +85,11 @@ class CaptureResult(BaseModel):
         if self.output_format == OutputFormat.CSV:
             from .csv import parse_csv
             samples_data = parse_csv(self.data, self.sample_rate)
-            return [Sample.model_validate(s) for s in samples_data]
+            return (Sample.model_validate(s) for s in samples_data)
         elif self.output_format == OutputFormat.VCD:
             from .vcd import parse_vcd
             samples_data = parse_vcd(self.data, self.sample_rate)
-            return [Sample.model_validate(s) for s in samples_data]
+            return (Sample.model_validate(s) for s in samples_data)
         elif self.output_format == OutputFormat.BITS:
             return self._parse_bits()
         elif self.output_format == OutputFormat.ASCII:
