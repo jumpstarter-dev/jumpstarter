@@ -105,6 +105,23 @@ class CaptureResult(BaseModel):
     triggers: dict[str, str] | None = None
     decoders: list[DecoderConfig] | None = None
 
+    def __str__(self) -> str:
+        """Format CaptureResult with truncated data_b64 field."""
+        data_len = len(self.data_b64)
+        if data_len <= 50:
+            data_preview = self.data_b64
+        else:
+            # Show first 50 and last 50 chars with ellipsis
+            data_preview = f"{self.data_b64[:25]}...{self.data_b64[-25:]} ({data_len} chars)"
+
+        return (
+            f"CaptureResult(output_format='{self.output_format}', "
+            f"sample_rate='{self.sample_rate}', "
+            f"data_size={len(self.data)} bytes, "
+            f"channels={len(self.channel_map)}, "
+            f"data_b64='{data_preview}')"
+        )
+
     @property
     def data(self) -> bytes:
         """Get the captured data as bytes (auto-decodes from base64)."""
