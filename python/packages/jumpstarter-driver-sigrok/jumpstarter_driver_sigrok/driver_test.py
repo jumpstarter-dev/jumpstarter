@@ -2,7 +2,7 @@ from shutil import which
 
 import pytest
 
-from .common import CaptureConfig, CaptureResult
+from .common import CaptureConfig, CaptureResult, OutputFormat
 from .driver import Sigrok
 from jumpstarter.common.utils import serve
 
@@ -66,6 +66,43 @@ def test_capture_with_demo_driver(demo_client):
     assert result.sample_rate == "100kHz"
     assert isinstance(result.channel_map, dict)
     assert len(result.channel_map) > 0
+
+
+@pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
+def test_capture_default_format(demo_client):
+    """Test capture with default output format (VCD).
+
+    VCD is the default because it's the most efficient format:
+    - Only records changes (not every sample)
+    - Includes precise timing information
+    - Widely supported by signal analysis tools
+    """
+    # Don't specify output_format - should default to VCD
+    cfg = CaptureConfig(
+        sample_rate="100kHz",
+        samples=50,
+        channels=["D0", "D1", "D2"],
+    )
+
+    result = demo_client.capture(cfg)
+
+    # Verify we got VCD format by default
+    assert isinstance(result, CaptureResult)
+    assert result.output_format == OutputFormat.VCD
+    assert isinstance(result.data, bytes)
+    assert len(result.data) > 0
+
+    # Verify VCD data can be decoded
+    samples = result.decode()
+    assert isinstance(samples, list)
+    assert len(samples) > 0
+
+    # Verify samples have timing information (VCD feature)
+    for sample in samples:
+        assert hasattr(sample, "time_ns")
+        assert isinstance(sample.time_ns, int)
+        assert hasattr(sample, "values")
+        assert isinstance(sample.values, dict)
 
 
 @pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
@@ -297,6 +334,7 @@ def test_decode_bits_format(demo_client):
     Verifies:
     - Bits format decoding works
     - Returns dict with bit sequences
+    - Channel names are mapped from device names (D0) to user-friendly names (vcc)
     """
     from .common import OutputFormat
 
@@ -314,11 +352,19 @@ def test_decode_bits_format(demo_client):
     assert isinstance(decoded, dict)
     assert len(decoded) > 0
 
+    # Should have user-friendly channel names (vcc, cs, miso) from channel_map
+    # Not generic names like CH0, CH1
+    assert "vcc" in decoded or "D0" in decoded
+    assert "cs" in decoded or "D1" in decoded
+    assert "miso" in decoded or "D2" in decoded
+
     # Each channel should have a list of bits
     for channel, bits in decoded.items():
         assert isinstance(channel, str)
         assert isinstance(bits, list)
         assert all(b in [0, 1] for b in bits)
+        # Should have bits (at least some, exact count may vary with demo driver timing)
+        assert len(bits) > 0
 
 
 @pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
