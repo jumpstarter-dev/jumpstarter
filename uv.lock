@@ -22,6 +22,7 @@ members = [
     "jumpstarter-driver-http",
     "jumpstarter-driver-http-power",
     "jumpstarter-driver-iscsi",
+    "jumpstarter-driver-nanokvm",
     "jumpstarter-driver-network",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-power",
@@ -1776,6 +1777,48 @@ dev = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-nanokvm"
+source = { editable = "packages/jumpstarter-driver-nanokvm" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial" },
+    { name = "nanokvm" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "yarl" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp" },
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "nanokvm", specifier = ">=0.1.0" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "yarl" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
 name = "jumpstarter-driver-network"
 source = { editable = "packages/jumpstarter-driver-network" }
 dependencies = [
@@ -2780,6 +2823,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/a5/9626ba4f73555b3735ad86247a8077d4603aa8628537687c839ab08bfe44/myst_parser-4.0.1.tar.gz", hash = "sha256:5cfea715e4f3574138aecbf7d54132296bfd72bb614d31168f48c477a830a7c4", size = 93985, upload-time = "2025-02-12T10:53:03.833Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5f/df/76d0321c3797b54b60fef9ec3bd6f4cfd124b9e422182156a1dd418722cf/myst_parser-4.0.1-py3-none-any.whl", hash = "sha256:9134e88959ec3b5780aedf8a99680ea242869d012e8821db3126d427edc9c95d", size = 84579, upload-time = "2025-02-12T10:53:02.078Z" },
+]
+
+[[package]]
+name = "nanokvm"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "cryptography" },
+    { name = "paramiko" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "yarl" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/36/14/9b899b2fc93902125fe42c8434ecdcbccc600dc8b63feae8142fc58961b5/nanokvm-0.1.0.tar.gz", hash = "sha256:d10fc30ce06b537257c3daf1a7dda965bcd114b839fab617b20d65a0c4124f33", size = 14762, upload-time = "2025-12-05T13:27:19.406Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/5d/e9f120406449fec8f79e19b4550ba4c5fdb63c70d7f15a48989984295035/nanokvm-0.1.0-py3-none-any.whl", hash = "sha256:c68d67d1abbcbcf3714320c8787e3f55809abc49e9e55fe9fb72cd0a65a2b1b6", size = 14712, upload-time = "2025-12-05T13:27:17.578Z" },
 ]
 
 [[package]]
