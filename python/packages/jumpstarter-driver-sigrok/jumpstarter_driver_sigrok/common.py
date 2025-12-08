@@ -79,6 +79,11 @@ class CaptureResult(BaseModel):
             - ASCII format: str with ASCII art visualization
             - Other formats: raises NotImplementedError (use .data for raw bytes)
 
+        Note:
+            Channel names in the output depend on how the data was captured:
+            - If captured with channel mapping, sigrok-cli outputs mapped names (vcc, cs, etc.)
+            - If captured without mapping, outputs device names (D0, D1, etc.)
+
         Raises:
             NotImplementedError: For binary/srzip formats (use .data property)
         """
