@@ -37,6 +37,7 @@ members = [
     "jumpstarter-driver-tmt",
     "jumpstarter-driver-uboot",
     "jumpstarter-driver-ustreamer",
+    "jumpstarter-driver-vnc",
     "jumpstarter-driver-yepkit",
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
@@ -2125,6 +2126,38 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-vnc"
+source = { editable = "packages/jumpstarter-driver-vnc" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
