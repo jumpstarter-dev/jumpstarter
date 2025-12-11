@@ -18,6 +18,9 @@ Example `exporter.yaml` configuration:
 export:
   vnc:
     type: jumpstarter_driver_vnc.driver.Vnc
+    # You can set the default encryption behavior for the `j vnc session` command.
+    # If not set, it defaults to False (unencrypted).
+    default_encrypt: false
     children:
       tcp:
         type: jumpstarter_driver_network.driver.TcpNetwork
@@ -55,4 +58,11 @@ j vnc session
 
 # To prevent it from opening a browser automatically:
 j vnc session --no-browser
+
+# To force an encrypted (wss://) or unencrypted (ws://) connection, overriding
+# the default set in the exporter configuration:
+j vnc session --encrypt
+j vnc session --no-encrypt
 ```
+
+> **Note:** Using an encrypted connection is intended for advanced scenarios where the local proxy can be configured with a TLS certificate that your browser trusts. For standard local development, modern browsers will likely reject the self-signed certificate and the connection will fail.
