@@ -8,6 +8,9 @@ token: "<token>"
 export:
   vnc:
     type: jumpstarter_driver_vnc.driver.Vnc
+    # You can set the default encryption behavior for the `j vnc session` command.
+    # If not set, it defaults to False (unencrypted).
+    default_encrypt: false
     children:
       tcp:
         type: jumpstarter_driver_network.driver.TcpNetwork
