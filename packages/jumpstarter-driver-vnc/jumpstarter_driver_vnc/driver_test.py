@@ -32,3 +32,11 @@ def test_vnc_driver_raises_error_without_tcp_child():
     """Test that the Vnc driver raises a ConfigurationError if the tcp child is missing."""
     with pytest.raises(ConfigurationError, match="A tcp child is required for Vnc"):
         Vnc(children={})
+
+
+@pytest.mark.parametrize("expected", [True, False])
+def test_vnc_driver_default_encrypt(expected):
+    """Test that the default_encrypt parameter is correctly handled."""
+    instance = Vnc(children={"tcp": FakeTcpDriver()}, default_encrypt=expected)
+    with serve(instance) as client:
+        assert client.get_default_encrypt() is expected

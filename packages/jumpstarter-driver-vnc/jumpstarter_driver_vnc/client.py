@@ -32,10 +32,14 @@ class VNClient(CompositeClient):
         return await self.tcp.stream_async(method)
 
     @contextlib.contextmanager
-    def session(self) -> typing.Iterator[str]:
+    def session(self, *, encrypt: bool = True) -> typing.Iterator[str]:
         """Create a new VNC session."""
-        with NovncAdapter(client=self.tcp, method="connect") as adapter:
+        with NovncAdapter(client=self.tcp, method="connect", encrypt=encrypt) as adapter:
             yield adapter
+
+    def get_default_encrypt(self) -> bool:
+        """Fetch the default encryption setting from the remote driver."""
+        return typing.cast(bool, self.call("get_default_encrypt"))
 
     def cli(self) -> click.Command:
         """Return a click command handler for this driver."""
@@ -46,12 +50,26 @@ class VNClient(CompositeClient):
 
         @vnc.command()
         @click.option("--browser/--no-browser", default=True, help="Open the session in a web browser.")
-        def session(browser: bool):
+        @click.option(
+            "--encrypt",
+            "encrypt_override",
+            flag_value=True,
+            default=None,
+            help="Force an encrypted connection (wss://). Overrides the driver default.",
+        )
+        @click.option(
+            "--no-encrypt",
+            "encrypt_override",
+            flag_value=False,
+            help="Force an unencrypted connection (ws://). Overrides the driver default.",
+        )
+        def session(browser: bool, encrypt_override: bool | None):
             """Open a VNC session."""
+            encrypt = encrypt_override if encrypt_override is not None else self.get_default_encrypt()
             # The NovncAdapter is a blocking context manager that runs in a thread.
             # We can enter it, open the browser, and then just wait for the user
             # to press Ctrl+C to exit. The adapter handles the background work.
-            with self.session() as url:
+            with self.session(encrypt=encrypt) as url:
                 click.echo(f"To connect, please visit: {url}")
                 if browser:
                     webbrowser.open(url)
