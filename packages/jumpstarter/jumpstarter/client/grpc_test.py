@@ -63,12 +63,7 @@ class TestAddExporterRow:
     def create_test_exporter(self, online=True, labels=None):
         if labels is None:
             labels = {"env": "test", "type": "device"}
-        return Exporter(
-            namespace="default",
-            name="test-exporter",
-            labels=labels,
-            online=online
-        )
+        return Exporter(namespace="default", name="test-exporter", labels=labels, online=online)
 
     def test_basic_row(self):
         table = Table()
@@ -119,11 +114,16 @@ class TestAddExporterRow:
 
 
 class TestExporterList:
-    def create_test_lease(self, client="test-client", status="Active",
-                          effective_begin_time=datetime(2023, 1, 1, 10, 0, 0),
-                          effective_duration=timedelta(hours=1),
-                          begin_time=None, duration=timedelta(hours=1),
-                          effective_end_time=None):
+    def create_test_lease(
+        self,
+        client="test-client",
+        status="Active",
+        effective_begin_time=datetime(2023, 1, 1, 10, 0, 0),
+        effective_duration=timedelta(hours=1),
+        begin_time=None,
+        duration=timedelta(hours=1),
+        effective_end_time=None,
+    ):
         lease = Mock(spec=Lease)
         lease.client = client
         lease.get_status.return_value = status
@@ -135,12 +135,7 @@ class TestExporterList:
         return lease
 
     def test_exporter_without_lease(self):
-        exporter = Exporter(
-            namespace="default",
-            name="test-exporter",
-            labels={"type": "device"},
-            online=True
-        )
+        exporter = Exporter(namespace="default", name="test-exporter", labels={"type": "device"}, online=True)
 
         table = Table()
         Exporter.rich_add_columns(table)
@@ -152,11 +147,7 @@ class TestExporterList:
     def test_exporter_with_lease_no_display(self):
         lease = self.create_test_lease()
         exporter = Exporter(
-            namespace="default",
-            name="test-exporter",
-            labels={"type": "device"},
-            online=True,
-            lease=lease
+            namespace="default", name="test-exporter", labels={"type": "device"}, online=True, lease=lease
         )
 
         table = Table()
@@ -170,11 +161,7 @@ class TestExporterList:
     def test_exporter_with_lease_display(self):
         lease = self.create_test_lease()
         exporter = Exporter(
-            namespace="default",
-            name="test-exporter",
-            labels={"type": "device"},
-            online=True,
-            lease=lease
+            namespace="default", name="test-exporter", labels={"type": "device"}, online=True, lease=lease
         )
 
         table = Table()
@@ -198,12 +185,7 @@ class TestExporterList:
         assert "2023-01-01 11:00:00" in output  # Expected release: begin_time (10:00:00) + duration (1h)
 
     def test_exporter_without_lease_but_show_leases(self):
-        exporter = Exporter(
-            namespace="default",
-            name="test-exporter",
-            labels={"type": "device"},
-            online=True
-        )
+        exporter = Exporter(namespace="default", name="test-exporter", labels={"type": "device"}, online=True)
 
         table = Table()
         options = WithOptions(show_leases=True)
@@ -228,19 +210,11 @@ class TestExporterList:
     def test_exporter_online_status_display(self):
         """Test that online status icons are correctly displayed"""
         # Test online exporter
-        exporter_online = Exporter(
-            namespace="default",
-            name="online-exporter",
-            labels={"type": "device"},
-            online=True
-        )
+        exporter_online = Exporter(namespace="default", name="online-exporter", labels={"type": "device"}, online=True)
 
         # Test offline exporter
         exporter_offline = Exporter(
-            namespace="default",
-            name="offline-exporter",
-            labels={"type": "device"},
-            online=False
+            namespace="default", name="offline-exporter", labels={"type": "device"}, online=False
         )
 
         # Test with online status display enabled
@@ -262,7 +236,7 @@ class TestExporterList:
         assert "online-exporter" in output
         assert "offline-exporter" in output
         assert "yes" in output  # Should show "yes" for online
-        assert "no" in output   # Should show "no" for offline
+        assert "no" in output  # Should show "no" for offline
 
     def test_exporter_all_features_display(self):
         """Test all display features together: online status + lease info"""
@@ -270,18 +244,14 @@ class TestExporterList:
 
         # Create exporters with different combinations of online/lease status
         exporter_online_with_lease = Exporter(
-            namespace="default",
-            name="online-with-lease",
-            labels={"env": "prod"},
-            online=True,
-            lease=lease
+            namespace="default", name="online-with-lease", labels={"env": "prod"}, online=True, lease=lease
         )
 
         exporter_offline_no_lease = Exporter(
             namespace="default",
             name="offline-no-lease",
             labels={"env": "dev"},
-            online=False
+            online=False,
             # No lease
         )
 
@@ -306,7 +276,7 @@ class TestExporterList:
         assert "env=prod" in output
         assert "env=dev" in output
         assert "yes" in output  # Online indicator
-        assert "no" in output   # Offline indicator
+        assert "no" in output  # Offline indicator
         assert "full-test-client" in output  # Lease client
         assert "Active" in output  # Lease status
         assert "Available" in output  # Available status for no lease
@@ -317,14 +287,10 @@ class TestExporterList:
         lease = self.create_test_lease(
             client="my-client",
             status="Expired",
-            effective_end_time=datetime(2023, 1, 1, 11, 0, 0)  # Ended after 1 hour
+            effective_end_time=datetime(2023, 1, 1, 11, 0, 0),  # Ended after 1 hour
         )
         exporter = Exporter(
-            namespace="default",
-            name="test-exporter",
-            labels={"type": "device"},
-            online=True,
-            lease=lease
+            namespace="default", name="test-exporter", labels={"type": "device"}, online=True, lease=lease
         )
 
         # Manually verify the lease data that would be extracted
@@ -359,7 +325,7 @@ class TestExporterList:
             namespace="default",
             name="test-exporter",
             labels={"type": "device"},
-            online=True
+            online=True,
             # No lease attached
         )
 
@@ -380,16 +346,12 @@ class TestExporterList:
             client="my-client",
             status="Scheduled",
             effective_begin_time=None,  # Not started yet
-            effective_duration=None,    # Not started yet
+            effective_duration=None,  # Not started yet
             begin_time=datetime(2023, 1, 1, 10, 0, 0),
-            duration=timedelta(hours=1)
+            duration=timedelta(hours=1),
         )
         exporter = Exporter(
-            namespace="default",
-            name="test-exporter",
-            labels={"type": "device"},
-            online=True,
-            lease=lease
+            namespace="default", name="test-exporter", labels={"type": "device"}, online=True, lease=lease
         )
 
         # Test the table display with scheduled lease
@@ -412,5 +374,3 @@ class TestExporterList:
         assert "my-client" in output
         assert "Scheduled" in output
         assert "2023-01-01 11:00:00" in output  # begin_time (10:00) + duration (1h)
-
-
