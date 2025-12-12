@@ -12,7 +12,7 @@ dependencies = [
     "anyio>=4.10.0",
     "jumpstarter",
     "jumpstarter-driver-network",
-    "paramiko>=3.0.0",
+    "paramiko>=3.6.0",
 ]
 
 [project.entry-points."jumpstarter.drivers"]
