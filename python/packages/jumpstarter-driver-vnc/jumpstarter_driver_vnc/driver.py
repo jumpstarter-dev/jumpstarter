@@ -19,7 +19,13 @@ class Vnc(Composite):
     default_encrypt: bool = False
 
     def __post_init__(self):
-        """Initialize the VNC driver."""
+        """
+        Validate the VNC driver's post-initialization configuration.
+        Ensures the driver has a "tcp" child configured.
+
+        Raises:
+            ConfigurationError: If a "tcp" child is not present.
+        """
         super().__post_init__()
         if "tcp" not in self.children:
             raise ConfigurationError("A tcp child is required for Vnc")
@@ -31,5 +37,10 @@ class Vnc(Composite):
 
     @classmethod
     def client(cls) -> str:
-        """Return the client class path for this driver."""
+        """
+        Client class path for this driver.
+
+        Returns:
+            str: Dotted import path of the client class.
+        """
         return "jumpstarter_driver_vnc.client.VNClient"
