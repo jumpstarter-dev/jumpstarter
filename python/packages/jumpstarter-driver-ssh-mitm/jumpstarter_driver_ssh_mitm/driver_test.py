@@ -217,10 +217,6 @@ class TestSSHMITMKeyTypes:
                 "jumpstarter_driver_ssh_mitm.driver.paramiko.ECDSAKey.from_private_key",
                 side_effect=paramiko.SSHException("Not ECDSA"),
             ),
-            patch(
-                "jumpstarter_driver_ssh_mitm.driver.paramiko.DSSKey.from_private_key",
-                side_effect=paramiko.SSHException("Not DSS"),
-            ),
         ):
             instance = SSHMITM(
                 children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
