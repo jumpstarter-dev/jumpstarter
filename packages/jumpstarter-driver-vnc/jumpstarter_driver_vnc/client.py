@@ -20,7 +20,12 @@ class VNClient(CompositeClient):
 
     @property
     def tcp(self) -> TCPClient:
-        """Get the TCP client."""
+        """
+        Access the underlying TCP client.
+
+        Returns:
+            TCPClient: The TCP client instance stored in this composite client's children mapping.
+        """
         return typing.cast("TCPClient", self.children["tcp"])
 
     def stream(self, method="connect"):
@@ -33,7 +38,15 @@ class VNClient(CompositeClient):
 
     @contextlib.contextmanager
     def session(self, *, encrypt: bool = True) -> typing.Iterator[str]:
-        """Create a new VNC session."""
+        """
+        Open a noVNC session and yield the connection URL.
+
+        Parameters:
+            encrypt (bool): If True, request an encrypted vnc connection.
+
+        Returns:
+            url (str): The URL to connect to the VNC session.
+        """
         with NovncAdapter(client=self.tcp, method="connect", encrypt=encrypt) as adapter:
             yield adapter
 
@@ -42,11 +55,28 @@ class VNClient(CompositeClient):
         return typing.cast(bool, self.call("get_default_encrypt"))
 
     def cli(self) -> click.Command:
-        """Return a click command handler for this driver."""
+        """
+        Provide a Click command group for running VNC sessions.
+
+        The returned command exposes a `session` subcommand that opens a VNC session,
+        prints the connection URL, optionally opens it in the user's browser,
+        and waits until the user cancels the session.
+
+        Returns:
+            click.Command: Click command group with a `session` subcommand that accepts
+            `--browser/--no-browser` and `--encrypt/--no-encrypt` options.
+        """
 
         @driver_click_group(self)
         def vnc():
-            """Open a VNC session."""
+            """
+            Open a VNC session and block until the user closes it.
+
+            When invoked, prints the connection URL for the noVNC session, optionally
+            opens that URL in the user's web browser, and waits for user-initiated
+            termination (for example, Ctrl+C). On exit, prints a message indicating
+            the session is closing.
+            """
 
         @vnc.command()
         @click.option("--browser/--no-browser", default=True, help="Open the session in a web browser.")
@@ -55,16 +85,28 @@ class VNClient(CompositeClient):
             "encrypt_override",
             flag_value=True,
             default=None,
-            help="Force an encrypted connection (wss://). Overrides the driver default.",
+            help="Force an encrypted vnc connection. Overrides the driver default.",
         )
         @click.option(
             "--no-encrypt",
             "encrypt_override",
             flag_value=False,
-            help="Force an unencrypted connection (ws://). Overrides the driver default.",
+            help="Force an unencrypted vnc connection. Overrides the driver default.",
         )
         def session(browser: bool, encrypt_override: bool | None):
-            """Open a VNC session."""
+            """
+            Open an interactive VNC session and wait for the user to terminate it.
+
+            Starts a VNC session using the client's session context, prints the connection
+            URL, optionally opens that URL in a web browser, and blocks until the user
+            cancels (e.g., Ctrl+C), then closes the session.
+
+            Parameters:
+                browser (bool): If True, open the session URL in the default web browser.
+                encrypt_override (bool | None): If provided, overrides the driver's default
+                                                encryption setting. True for encrypted,
+                                                False for unencrypted, None to use driver default.
+            """
             encrypt = encrypt_override if encrypt_override is not None else self.get_default_encrypt()
             # The NovncAdapter is a blocking context manager that runs in a thread.
             # We can enter it, open the browser, and then just wait for the user
