@@ -1,0 +1,30 @@
+FROM ghcr.io/microshift-io/microshift:release-4.20-4.20.0-okd-scos.9
+
+# Install dependencies for config-svc
+RUN dnf install -y epel-release && \
+    dnf install -y python3 iproute python3-flask python3-pip && \
+    pip3 install python-pam && \
+    dnf clean all
+
+# Install MicroShift manifests
+RUN mkdir -p /etc/microshift/manifests.d/002-jumpstarter
+COPY deploy/microshift-bootc/kustomization.yaml       /etc/microshift/manifests.d/002-jumpstarter/kustomization.yaml
+COPY deploy/operator/dist/install.yaml                /etc/microshift/manifests.d/002-jumpstarter/install-operator.yaml
+
+# Configure firewalld to open required ports
+# Use firewall-offline-cmd since firewalld is not running during build
+RUN firewall-offline-cmd --add-service=http && \
+    firewall-offline-cmd --add-service=https && \
+    firewall-offline-cmd --add-port=8880/tcp
+
+# Set root password
+RUN echo "root:jumpstarter" | chpasswd
+
+# Install config-svc systemd service
+COPY deploy/microshift-bootc/config-svc/app.py /usr/local/bin/config-svc
+RUN chmod +x /usr/local/bin/config-svc
+COPY deploy/microshift-bootc/config-svc/update-banner.sh /usr/local/bin/update-banner.sh
+RUN chmod +x /usr/local/bin/update-banner.sh
+COPY deploy/microshift-bootc/config-svc/config-svc.service /etc/systemd/system/config-svc.service
+COPY deploy/microshift-bootc/config-svc/update-banner.service /etc/systemd/system/update-banner.service
+RUN systemctl enable config-svc.service update-banner.service
