@@ -193,19 +193,101 @@ PASSWORD_REQUIRED_TEMPLATE = """<!DOCTYPE html>
                 <p>You are using the default password. For security reasons, you must change the root password before accessing the configuration interface.</p>
             </div>
             
-            <form method="POST" action="/change-password">
+            <form id="password-change-form">
+                <div id="password-messages-container"></div>
                 <div class="form-group">
                     <label for="newPassword">New Root Password *</label>
-                    <input type="password" id="newPassword" name="newPassword" required minlength="8" autofocus>
-                    <div class="hint">Minimum 8 characters</div>
+                    <input type="password" id="newPassword" name="newPassword" minlength="8" autofocus>
+                    <div class="hint">Minimum 8 characters (required to change from default password)</div>
                 </div>
                 <div class="form-group">
                     <label for="confirmPassword">Confirm Password *</label>
-                    <input type="password" id="confirmPassword" name="confirmPassword" required minlength="8">
+                    <input type="password" id="confirmPassword" name="confirmPassword" minlength="8">
                     <div class="hint">Re-enter your new password</div>
                 </div>
-                <button type="submit">Change Password & Continue</button>
+                <div class="form-group">
+                    <label for="sshKeys">SSH Authorized Keys (Optional)</label>
+                    <textarea id="sshKeys" name="sshKeys" rows="6">{{ ssh_keys }}</textarea>
+                    <div class="hint">One SSH public key per line. Leave empty to clear existing keys.</div>
+                </div>
+                <button type="submit" id="password-submit-btn">Change Password & Continue</button>
             </form>
+            <script>
+                (function() {
+                    const form = document.getElementById('password-change-form');
+                    const messagesContainer = document.getElementById('password-messages-container');
+                    const submitBtn = document.getElementById('password-submit-btn');
+                    
+                    form.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        
+                        const data = {
+                            newPassword: document.getElementById('newPassword').value,
+                            confirmPassword: document.getElementById('confirmPassword').value,
+                            sshKeys: document.getElementById('sshKeys').value
+                        };
+                        
+                        const originalText = submitBtn.textContent;
+                        submitBtn.disabled = true;
+                        submitBtn.textContent = 'Processing...';
+                        
+                        // Clear previous messages
+                        messagesContainer.innerHTML = '';
+                        
+                        fetch('/api/change-password', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            credentials: 'same-origin',
+                            body: JSON.stringify(data)
+                        })
+                        .then(response => response.json())
+                        .then(result => {
+                            // Display messages
+                            result.messages.forEach(msg => {
+                                const messageDiv = document.createElement('div');
+                                messageDiv.className = `message ${msg.type}`;
+                                messageDiv.textContent = msg.text;
+                                messagesContainer.appendChild(messageDiv);
+                            });
+                            
+                            // Update SSH keys textarea if they were updated
+                            if (result.ssh_updated && result.ssh_keys !== undefined) {
+                                document.getElementById('sshKeys').value = result.ssh_keys;
+                            }
+                            
+                            // If password was changed from default, trigger redirect
+                            if (result.requires_redirect) {
+                                // Hide form and show redirect message
+                                form.style.display = 'none';
+                                messagesContainer.innerHTML = '<div class="message success">Password changed successfully! Redirecting to login with your new password...</div>';
+                                
+                                setTimeout(function() {
+                                    fetch('/logout', {
+                                        method: 'GET',
+                                        headers: {
+                                            'Authorization': 'Basic ' + btoa('logout:logout')
+                                        }
+                                    }).finally(function() {
+                                        window.location.href = '/';
+                                    });
+                                }, 2000);
+                            } else if (result.success) {
+                                // Scroll to messages
+                                messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }
+                        })
+                        .catch(error => {
+                            messagesContainer.innerHTML = '<div class="message error">Failed to update: ' + error.message + '</div>';
+                        })
+                        .finally(() => {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = originalText;
+                        });
+                    });
+                })();
+            </script>
         </div>
     </div>
 </body>
@@ -286,18 +368,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         
         <div class="section" id="change-password">
             <h2>Change Root Password</h2>
-            <form method="POST" action="/change-password">
+            <form id="main-password-change-form">
+                <div id="main-password-messages-container"></div>
                 <div class="form-group">
-                    <label for="newPassword">New Password</label>
-                    <input type="password" id="newPassword" name="newPassword" required minlength="8">
-                    <div class="hint">Minimum 8 characters</div>
+                    <label for="mainNewPassword">New Password (Optional)</label>
+                    <input type="password" id="mainNewPassword" name="newPassword" minlength="8">
+                    <div class="hint">Leave empty to only update SSH keys. Minimum 8 characters if provided.</div>
                 </div>
                 <div class="form-group">
-                    <label for="confirmPassword">Confirm Password</label>
-                    <input type="password" id="confirmPassword" name="confirmPassword" required minlength="8">
-                    <div class="hint">Re-enter your new password</div>
+                    <label for="mainConfirmPassword">Confirm Password (Optional)</label>
+                    <input type="password" id="mainConfirmPassword" name="confirmPassword" minlength="8">
+                    <div class="hint">Re-enter your new password (required if password is provided)</div>
                 </div>
-                <button type="submit">Change Password</button>
+                <div class="form-group">
+                    <label for="mainSshKeys">SSH Authorized Keys (Optional)</label>
+                    <textarea id="mainSshKeys" name="sshKeys" rows="6">{{ ssh_keys }}</textarea>
+                    <div class="hint">One SSH public key per line. Leave empty to clear existing keys.</div>
+                </div>
+                <button type="submit" id="main-password-submit-btn">Change Password</button>
             </form>
         </div>
         
@@ -512,6 +600,69 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 })
                 .catch(error => {
                     messagesContainer.innerHTML = '<div class="message error">Failed to apply configuration: ' + error.message + '</div>';
+                })
+                .finally(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalText;
+                });
+            });
+        }
+        
+        // Handle password change form submission via API
+        const mainPasswordForm = document.getElementById('main-password-change-form');
+        if (mainPasswordForm) {
+            mainPasswordForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const data = {
+                    newPassword: document.getElementById('mainNewPassword').value,
+                    confirmPassword: document.getElementById('mainConfirmPassword').value,
+                    sshKeys: document.getElementById('mainSshKeys').value
+                };
+                
+                const submitBtn = document.getElementById('main-password-submit-btn');
+                const messagesContainer = document.getElementById('main-password-messages-container');
+                const originalText = submitBtn.textContent;
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Processing...';
+                
+                // Clear previous messages
+                messagesContainer.innerHTML = '';
+                
+                fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(result => {
+                    // Display messages
+                    result.messages.forEach(msg => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `message ${msg.type}`;
+                        messageDiv.textContent = msg.text;
+                        messagesContainer.appendChild(messageDiv);
+                    });
+                    
+                    // Update SSH keys textarea if they were updated
+                    if (result.ssh_updated && result.ssh_keys !== undefined) {
+                        document.getElementById('mainSshKeys').value = result.ssh_keys;
+                    }
+                    
+                    // Clear password fields if password was successfully updated
+                    if (result.password_updated) {
+                        document.getElementById('mainNewPassword').value = '';
+                        document.getElementById('mainConfirmPassword').value = '';
+                    }
+                    
+                    // Scroll to messages
+                    messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                })
+                .catch(error => {
+                    messagesContainer.innerHTML = '<div class="message error">Failed to update: ' + error.message + '</div>';
                 })
                 .finally(() => {
                     submitBtn.disabled = false;
@@ -946,22 +1097,30 @@ def serve_css():
             font-weight: 500;
         }
         input[type="text"],
-        input[type="password"] {
+        input[type="password"],
+        textarea {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #ddd;
             border-radius: 6px;
             font-size: 14px;
             transition: border-color 0.3s, opacity 0.3s;
+            font-family: inherit;
+        }
+        textarea {
+            font-family: monospace;
+            resize: vertical;
         }
         input[type="text"]:focus,
-        input[type="password"]:focus {
+        input[type="password"]:focus,
+        textarea:focus {
             outline: none;
             border-color: #ffc107;
             box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2);
         }
         input[type="text"]:disabled,
-        input[type="password"]:disabled {
+        input[type="password"]:disabled,
+        textarea:disabled {
             background-color: #f5f5f5;
             cursor: not-allowed;
             opacity: 0.6;
@@ -1041,6 +1200,11 @@ def serve_css():
             background: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
         }
         /* MicroShift page specific styles */
         .status-badge {
@@ -1169,13 +1333,15 @@ def index():
     current_hostname = get_current_hostname()
     jumpstarter_config = get_jumpstarter_config()
     password_required = is_default_password()
+    ssh_keys = get_ssh_authorized_keys()
     
     # Force password change if still using default
     if password_required:
         return render_template_string(
             PASSWORD_REQUIRED_TEMPLATE,
             messages=[],
-            current_hostname=current_hostname
+            current_hostname=current_hostname,
+            ssh_keys=ssh_keys
         )
     
     return render_template_string(
@@ -1183,99 +1349,75 @@ def index():
         messages=[],
         current_hostname=current_hostname,
         jumpstarter_config=jumpstarter_config,
-        password_required=password_required
+        password_required=password_required,
+        ssh_keys=ssh_keys
     )
 
 
-@app.route('/change-password', methods=['POST'])
+@app.route('/api/change-password', methods=['POST'])
 @requires_auth
-def change_password():
-    """Handle password change request."""
-    new_password = request.form.get('newPassword', '').strip()
-    confirm_password = request.form.get('confirmPassword', '').strip()
+def api_change_password():
+    """API endpoint to handle password change request (returns JSON)."""
+    data = request.get_json() if request.is_json else {}
+    new_password = data.get('newPassword', request.form.get('newPassword', '')).strip()
+    confirm_password = data.get('confirmPassword', request.form.get('confirmPassword', '')).strip()
+    ssh_keys_value = data.get('sshKeys', request.form.get('sshKeys', '')).strip()
     
-    current_hostname = get_current_hostname()
-    jumpstarter_config = get_jumpstarter_config()
     was_default = is_default_password()
+    existing_ssh_keys = get_ssh_authorized_keys()
     
     messages = []
+    password_updated = False
+    ssh_updated = False
+    requires_redirect = False
     
-    # Validate password format and security
-    password_valid, password_error = validate_password(new_password)
-    if not password_valid:
-        messages.append({'type': 'error', 'text': password_error})
-    elif new_password != confirm_password:
-        messages.append({'type': 'error', 'text': 'Passwords do not match'})
-    else:
-        password_success, password_message = set_root_password(new_password)
-        if not password_success:
-            messages.append({'type': 'error', 'text': f'Failed to set password: {password_message}'})
+    # If password is provided, validate and set it
+    if new_password:
+        # Validate password format and security
+        password_valid, password_error = validate_password(new_password)
+        if not password_valid:
+            messages.append({'type': 'error', 'text': password_error})
+        elif new_password != confirm_password:
+            messages.append({'type': 'error', 'text': 'Passwords do not match'})
         else:
-            if was_default:
-                # Update login banner on first password change
-                update_login_banner()
-                
-                # First time changing from default - show success and trigger re-auth
-                messages.append({'type': 'success', 'text': 'Password changed successfully! Redirecting to login with your new password...'})
-                # Remove warning box and form, show only success with auto-redirect
-                success_template = PASSWORD_REQUIRED_TEMPLATE.replace(
-                    '<div class="warning-box">',
-                    '<div class="warning-box" style="display: none;">'
-                ).replace(
-                    '<form method="POST" action="/change-password">',
-                    '<form method="POST" action="/change-password" style="display: none;">'
-                ).replace(
-                    '<button type="submit">Change Password & Continue</button>',
-                    '''<div style="text-align: center; margin-top: 20px;">
-                        <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Logging out to apply new credentials...</p>
-                    </div>
-                    <script>
-                        // Wait 2 seconds then force logout and redirect
-                        setTimeout(function() {
-                            // Force logout by sending request with bad credentials, then redirect
-                            fetch('/logout', {
-                                method: 'GET',
-                                headers: {
-                                    'Authorization': 'Basic ' + btoa('logout:logout')
-                                }
-                            }).finally(function() {
-                                // Redirect to root, which will trigger authentication prompt
-                                window.location.href = '/';
-                            });
-                        }, 2000);
-                    </script>'''
-                )
-                return render_template_string(
-                    success_template,
-                    messages=messages,
-                    current_hostname=current_hostname
-                )
+            password_success, password_message = set_root_password(new_password)
+            if not password_success:
+                messages.append({'type': 'error', 'text': f'Failed to set password: {password_message}'})
             else:
-                # Changing password from main page - show success there
+                password_updated = True
                 messages.append({'type': 'success', 'text': 'Password changed successfully!'})
-                return render_template_string(
-                    HTML_TEMPLATE,
-                    messages=messages,
-                    current_hostname=current_hostname,
-                    jumpstarter_config=jumpstarter_config,
-                    password_required=False
-                )
+                if was_default:
+                    # Update login banner on first password change
+                    update_login_banner()
+                    requires_redirect = True
+    elif was_default:
+        # If we're on the default password screen and no password provided, require it
+        messages.append({'type': 'error', 'text': 'Password is required to change from default password'})
     
-    # Error case - show appropriate template
-    if was_default:
-        return render_template_string(
-            PASSWORD_REQUIRED_TEMPLATE,
-            messages=messages,
-            current_hostname=current_hostname
-        )
+    # Process SSH keys (always process if form was submitted)
+    ssh_success, ssh_message = set_ssh_authorized_keys(ssh_keys_value)
+    if ssh_success:
+        ssh_updated = True
+        if ssh_keys_value:
+            messages.append({'type': 'success', 'text': ssh_message})
+        else:
+            # Only show message if keys were cleared and there were keys before
+            if existing_ssh_keys:
+                messages.append({'type': 'success', 'text': ssh_message})
     else:
-        return render_template_string(
-            HTML_TEMPLATE,
-            messages=messages,
-            current_hostname=current_hostname,
-            jumpstarter_config=jumpstarter_config,
-            password_required=False
-        )
+        messages.append({'type': 'error', 'text': f'Failed to set SSH keys: {ssh_message}'})
+    
+    has_errors = any(msg.get('type') == 'error' for msg in messages)
+    success = not has_errors and (password_updated or ssh_updated)
+    
+    return jsonify({
+        'success': success,
+        'messages': messages,
+        'password_updated': password_updated,
+        'ssh_updated': ssh_updated,
+        'requires_redirect': requires_redirect,
+        'ssh_keys': get_ssh_authorized_keys() if ssh_updated else existing_ssh_keys
+    })
 
 
 @app.route('/configure-hostname', methods=['POST'])
@@ -1910,6 +2052,13 @@ def download_kubeconfig():
             # Fallback to current hostname if IP detection fails
             nip_hostname = get_current_hostname()
         
+        # Extract the original server hostname (likely localhost) before replacing
+        # This is needed for tls-server-name to match the certificate
+        original_server_match = re.search(r'server:\s+https://([^:]+):(\d+)', kubeconfig_content)
+        original_hostname = 'localhost'  # Default fallback
+        if original_server_match:
+            original_hostname = original_server_match.group(1)
+        
         # Replace localhost with the nip.io hostname
         kubeconfig_content = re.sub(
             r'server:\s+https://localhost:(\d+)',
@@ -1917,11 +2066,23 @@ def download_kubeconfig():
             kubeconfig_content
         )
         
-        # Add insecure-skip-tls-verify: true to the cluster section
-        # We'll add it after the server line in the cluster section
+        # Keep the CA certificate fields (certificate-authority-data or certificate-authority)
+        # They are needed for certificate chain verification
+        
+        # Remove insecure-skip-tls-verify if it exists (we'll replace it with tls-server-name)
+        kubeconfig_content = re.sub(
+            r'^\s+insecure-skip-tls-verify:\s+.*\n',
+            '',
+            kubeconfig_content,
+            flags=re.MULTILINE
+        )
+        
+        # Add tls-server-name to verify the CA but allow hostname mismatch
+        # This tells the client to verify the certificate as if it were issued for the original hostname
+        # (e.g., localhost), even though we're connecting via nip.io hostname
         kubeconfig_content = re.sub(
             r'(server:\s+https://[^\n]+\n)',
-            r'\1    insecure-skip-tls-verify: true\n',
+            f'\\1    tls-server-name: {original_hostname}\n',
             kubeconfig_content
         )
         
@@ -2115,6 +2276,55 @@ def set_root_password(password):
         return True, "Success"
     except Exception as e:
         print(f"Error setting root password: {e}", file=sys.stderr)
+        return False, str(e)
+
+
+def get_ssh_authorized_keys():
+    """Read existing SSH authorized keys from /root/.ssh/authorized_keys."""
+    ssh_dir = Path('/root/.ssh')
+    authorized_keys_path = ssh_dir / 'authorized_keys'
+    
+    if authorized_keys_path.exists():
+        try:
+            with open(authorized_keys_path, 'r') as f:
+                return f.read().strip()
+        except Exception as e:
+            print(f"Error reading authorized_keys: {e}", file=sys.stderr)
+            return ""
+    return ""
+
+
+def set_ssh_authorized_keys(keys_content):
+    """Set SSH authorized keys in /root/.ssh/authorized_keys with proper permissions."""
+    ssh_dir = Path('/root/.ssh')
+    authorized_keys_path = ssh_dir / 'authorized_keys'
+    
+    try:
+        # Create .ssh directory if it doesn't exist
+        ssh_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        
+        # Write authorized_keys file
+        keys_content = keys_content.strip()
+        if keys_content:
+            with open(authorized_keys_path, 'w') as f:
+                f.write(keys_content)
+                if not keys_content.endswith('\n'):
+                    f.write('\n')
+            
+            # Set proper permissions: .ssh directory = 700, authorized_keys = 600
+            os.chmod(ssh_dir, 0o700)
+            os.chmod(authorized_keys_path, 0o600)
+            
+            return True, "SSH authorized keys updated successfully"
+        else:
+            # If empty, remove the file if it exists
+            if authorized_keys_path.exists():
+                authorized_keys_path.unlink()
+            # Ensure .ssh directory still has correct permissions
+            os.chmod(ssh_dir, 0o700)
+            return True, "SSH authorized keys cleared"
+    except Exception as e:
+        print(f"Error setting SSH authorized keys: {e}", file=sys.stderr)
         return False, str(e)
 
 
