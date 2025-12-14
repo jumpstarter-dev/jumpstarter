@@ -1,4 +1,4 @@
-.PHONY: help build bootc-build push bootc-push bootc-run bootc-stop bootc-sh bootc-rm
+.PHONY: help build bootc-build push bootc-push bootc-run bootc-stop bootc-sh bootc-rm build-image build-iso
 
 # Default image tags
 BOOTC_IMG ?= quay.io/jumpstarter-dev/microshift/bootc:latest
@@ -34,6 +34,25 @@ output/qcow2/disk.qcow2: ## Build a bootable QCOW2 image from the bootc image
 		$(BOOTC_IMG)
 	@echo "QCOW2 image built successfully in ./output/"
 
+output/iso/disk.iso: ## Build a bootable ISO image from the bootc image
+	@echo "Building ISO image from: $(BOOTC_IMG)"
+	@echo "Running bootc-image-builder..."
+	@mkdir -p output
+	sudo podman run \
+		--rm \
+		-it \
+		--privileged \
+		--pull=newer \
+		--security-opt label=type:unconfined_t \
+		-v ./config.toml:/config.toml:ro \
+		-v ./output:/output \
+		-v /var/lib/containers/storage:/var/lib/containers/storage \
+		quay.io/centos-bootc/bootc-image-builder:latest \
+		--type iso \
+		-v \
+		$(BOOTC_IMG)
+	@echo "ISO image built successfully in ./output/"
+
 build-image: bootc-build ## Build the bootc based qcow2 image
 	@echo "Building image: output/qcow2/disk.qcow2"
 	@echo "Cleaning up any existing LVM resources to avoid conflicts..."
@@ -42,6 +61,15 @@ build-image: bootc-build ## Build the bootc based qcow2 image
 	sudo rm -f output/qcow2/disk.qcow2
 	make output/qcow2/disk.qcow2
 	@echo "Image built successfully in ./output/"
+
+build-iso: bootc-build ## Build the bootc based ISO image
+	@echo "Building ISO image: output/iso/disk.iso"
+	@echo "Cleaning up any existing LVM resources to avoid conflicts..."
+	-sudo vgs --noheadings -o vg_name,vg_uuid | grep myvg1 | while read vg uuid; do sudo vgremove -f --select vg_uuid=$$uuid 2>/dev/null || true; done
+	-sudo losetup -D 2>/dev/null || true
+	sudo rm -f output/iso/disk.iso
+	make output/iso/disk.iso
+	@echo "ISO image built successfully in ./output/"
 
 ##@ Push
 
@@ -88,6 +116,8 @@ clean: ## Clean up local images and build artifacts
 	-sudo podman rmi $(BOOTC_IMG)
 	@echo "Removing QCOW2 output..."
 	-sudo rm -rf output/qcow2/disk.qcow2
+	@echo "Removing ISO output..."
+	-sudo rm -rf output/iso/disk.iso
 	@echo "Removing LVM disk image..."
 	-sudo rm -f /var/lib/microshift-okd/lvmdisk.image
 
