@@ -394,6 +394,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div id="system-stats-container">
                 <div class="loading" style="padding: 40px; text-align: center;">Loading system statistics...</div>
             </div>
+            
+            <h2 style="margin-top: 40px;">Kernel Log</h2>
+            <div id="kernel-log-container">
+                <div class="loading" style="padding: 40px; text-align: center;">Loading kernel log...</div>
+            </div>
         </div>
         
         <div class="section" id="microshift">
@@ -518,11 +523,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         form.style.opacity = '1';
                     } else {
                         // Operator not ready - disable form and show status
-                        statusContainer.innerHTML = 
-                            '<div class="info" style="background: #fff3cd; border: 1px solid #ffc107; margin-bottom: 15px;">' +
-                            '<strong>⏳ ' + data.message + '</strong><br>' +
-                            '<span style="font-size: 13px;">The configuration form will be available once the operator is ready. Checking status every 5 seconds...</span>' +
-                            '</div>';
+                        statusContainer.innerHTML = '<div class="info" style="background: #fff3cd; border: 1px solid #ffc107; margin-bottom: 15px;"><strong>⏳ ' + data.message + '</strong><br><span style="font-size: 13px;">The configuration form will be available once the operator is ready. Checking status every 5 seconds...</span></div>';
                         baseDomainInput.disabled = true;
                         imageInput.disabled = true;
                         submitBtn.disabled = true;
@@ -672,84 +673,86 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         
         function loadSystemStats() {
+            const container = document.getElementById('system-stats-container');
+            if (!container) {
+                console.error('system-stats-container not found');
+                return;
+            }
+            
             fetch('/api/system-stats')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    const container = document.getElementById('system-stats-container');
-                    
                     if (data.error) {
                         container.innerHTML = '<div class="error">' + data.error + '</div>';
                         return;
                     }
                     
-                    container.innerHTML = `
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                            <div class="info">
-                                <strong>💾 Disk Usage</strong><br>
-                                <div style="margin-top: 10px;">
-                                    Root: ${data.disk.used} / ${data.disk.total} (${data.disk.percent}%)<br>
-                                    <div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;">
-                                        <div style="background: ${data.disk.percent > 80 ? '#f44336' : '#ffc107'}; width: ${data.disk.percent}%; height: 100%;"></div>
-                                    </div>
-                                    Available: ${data.disk.available}
-                                </div>
-                            </div>
-                            
-                            <div class="info">
-                                <strong>🧠 Memory</strong><br>
-                                <div style="margin-top: 10px;">
-                                    Used: ${data.memory.used} / ${data.memory.total} (${data.memory.percent}%)<br>
-                                    <div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;">
-                                        <div style="background: ${data.memory.percent > 80 ? '#f44336' : '#4caf50'}; width: ${data.memory.percent}%; height: 100%;"></div>
-                                    </div>
-                                    Available: ${data.memory.available}
-                                </div>
-                            </div>
-                            
-                            <div class="info">
-                                <strong>⚙️ CPU</strong><br>
-                                <div style="margin-top: 10px;">
-                                    Cores: ${data.cpu.cores}<br>
-                                    Usage: ${data.cpu.usage}%<br>
-                                    <div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;">
-                                        <div style="background: ${data.cpu.usage > 80 ? '#f44336' : '#2196f3'}; width: ${data.cpu.usage}%; height: 100%;"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="info">
-                                <strong>🖥️ System</strong><br>
-                                <div style="margin-top: 10px;">
-                                    Kernel: ${data.system.kernel}<br>
-                                    Uptime: ${data.system.uptime}<br>
-                                    Hostname: ${data.system.hostname}
-                                </div>
-                            </div>
-                            
-                            <div class="info">
-                                <strong>🌐 Network</strong><br>
-                                <div style="margin-top: 10px;">
-                                    ${data.network.interfaces.map(iface => 
-                                        iface.name + ': ' + iface.ip
-                                    ).join('<br>')}
-                                </div>
-                            </div>
-                            
-                            <div class="info">
-                                <strong>📊 Load Average</strong><br>
-                                <div style="margin-top: 10px;">
-                                    1 min: ${data.system.load_1}<br>
-                                    5 min: ${data.system.load_5}<br>
-                                    15 min: ${data.system.load_15}
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                    const diskColor = data.disk.percent > 80 ? '#f44336' : '#ffc107';
+                    const memoryColor = data.memory.percent > 80 ? '#f44336' : '#4caf50';
+                    const cpuColor = data.cpu.usage > 80 ? '#f44336' : '#2196f3';
+                    const networkInfo = data.network.interfaces.map(iface => iface.name + ': ' + iface.ip).join('<br>');
+                    
+                    container.innerHTML = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;"><div class="info"><strong>💾 Disk Usage</strong><br><div style="margin-top: 10px;">Root: ' + data.disk.used + ' / ' + data.disk.total + ' (' + data.disk.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + diskColor + '; width: ' + data.disk.percent + '%; height: 100%;"></div></div>Available: ' + data.disk.available + '</div></div><div class="info"><strong>🧠 Memory</strong><br><div style="margin-top: 10px;">Used: ' + data.memory.used + ' / ' + data.memory.total + ' (' + data.memory.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + memoryColor + '; width: ' + data.memory.percent + '%; height: 100%;"></div></div>Available: ' + data.memory.available + '</div></div><div class="info"><strong>⚙️ CPU</strong><br><div style="margin-top: 10px;">Cores: ' + data.cpu.cores + '<br>Usage: ' + data.cpu.usage + '%<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + cpuColor + '; width: ' + data.cpu.usage + '%; height: 100%;"></div></div></div></div><div class="info"><strong>🖥️ System</strong><br><div style="margin-top: 10px;">Kernel: ' + data.system.kernel + '<br>Uptime: ' + data.system.uptime + '<br>Hostname: ' + data.system.hostname + '</div></div><div class="info"><strong>🌐 Network</strong><br><div style="margin-top: 10px;">' + networkInfo + '</div></div><div class="info"><strong>📊 Load Average</strong><br><div style="margin-top: 10px;">1 min: ' + data.system.load_1 + '<br>5 min: ' + data.system.load_5 + '<br>15 min: ' + data.system.load_15 + '</div></div></div>';
                 })
                 .catch(error => {
                     console.error('Error fetching system stats:', error);
-                    document.getElementById('system-stats-container').innerHTML = 
-                        '<div class="error">Failed to fetch system statistics: ' + error.message + '</div>';
+                    if (container) {
+                        container.innerHTML = '<div class="error">Failed to fetch system statistics: ' + error.message + '</div>';
+                    }
+                });
+        }
+        
+        function loadKernelLog() {
+            const container = document.getElementById('kernel-log-container');
+            if (!container) {
+                console.error('kernel-log-container not found');
+                return;
+            }
+            
+            fetch('/api/dmesg')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = '<div class="error">' + data.error + '</div>';
+                        return;
+                    }
+                    
+                    if (!data.log) {
+                        container.innerHTML = '<div class="error">No log data received</div>';
+                        return;
+                    }
+                    
+                    // Escape HTML and format the log
+                    const logLines = data.log.split('\\n').map(line => {
+                        // Escape HTML
+                        const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        // Highlight error/warning lines
+                        if (line.toLowerCase().includes('error') || line.toLowerCase().includes('fail')) {
+                            return '<span style="color: #f44336;">' + escaped + '</span>';
+                        } else if (line.toLowerCase().includes('warn')) {
+                            return '<span style="color: #ff9800;">' + escaped + '</span>';
+                        }
+                        return escaped;
+                    }).join('<br>');
+                    
+                    const lineCount = data.line_count || logLines.split('<br>').length;
+                    container.innerHTML = '<div style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; font-family: \\'Consolas\\', \\'Monaco\\', \\'Courier New\\', monospace; font-size: 12px; max-height: 600px; overflow-y: auto; line-height: 1.5;"><div style="margin-bottom: 10px; color: #888; font-size: 11px;">Showing ' + lineCount + ' lines (last 10,000 if more)</div><pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">' + logLines + '</pre></div>';
+                })
+                .catch(error => {
+                    console.error('Error fetching kernel log:', error);
+                    if (container) {
+                        container.innerHTML = '<div class="error">Failed to fetch kernel log: ' + error.message + '</div>';
+                    }
                 });
         }
         
@@ -919,6 +922,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             
             if (sectionId === '#system') {
                 loadSystemStats();
+                loadKernelLog();
             } else if (sectionId === '#microshift') {
                 startMicroshiftUpdates();
             }
@@ -931,6 +935,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         // Explicitly load content for initial section (showSection override is now active)
         if (initialSection === '#system') {
             loadSystemStats();
+            loadKernelLog();
         } else if (initialSection === '#microshift') {
             startMicroshiftUpdates();
         }
@@ -1675,6 +1680,38 @@ def get_system_stats():
         
     except Exception as e:
         return jsonify({'error': f'Error gathering system statistics: {str(e)}'}), 500
+
+
+@app.route('/api/dmesg')
+@requires_auth
+def get_dmesg():
+    """API endpoint to get kernel log (dmesg)."""
+    try:
+        # Run dmesg command to get kernel log
+        result = subprocess.run(
+            ['dmesg'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            return jsonify({'error': f'Failed to get dmesg: {result.stderr.strip()}'}), 500
+        
+        # Return the log (limit to last 10000 lines to avoid huge responses)
+        log_lines = result.stdout.strip().split('\n')
+        if len(log_lines) > 10000:
+            log_lines = log_lines[-10000:]
+        
+        return jsonify({
+            'log': '\n'.join(log_lines),
+            'line_count': len(log_lines)
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Command timed out'}), 500
+    except Exception as e:
+        return jsonify({'error': f'Error getting dmesg: {str(e)}'}), 500
 
 
 @app.route('/api/operator-status')
