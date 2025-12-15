@@ -390,9 +390,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         
         <div class="section" id="system">
-            <h2>System Information</h2>
+            <h2>BootC Operations</h2>
+            <div id="bootc-operations-container">
+                <div class="form-group">
+                    <label for="bootcSwitchImage">Switch to Image (Optional)</label>
+                    <input type="text" id="bootcSwitchImage" name="bootcSwitchImage" placeholder="quay.io/jumpstarter-dev/microshift/bootc:latest">
+                    <div class="hint">Container image reference to switch to (e.g., quay.io/jumpstarter-dev/microshift/bootc:latest)</div>
+                </div>
+                <div id="bootc-messages-container"></div>
+                <button type="button" id="bootc-upgrade-btn" style="margin-right: 10px;">Check for Upgrades</button>
+                <button type="button" id="bootc-upgrade-apply-btn" style="margin-right: 10px;">Apply Upgrade</button>
+                <button type="button" id="bootc-switch-btn">Switch Image</button>
+            </div>
+            
+            <h2 style="margin-top: 40px;">System Information</h2>
             <div id="system-stats-container">
                 <div class="loading" style="padding: 40px; text-align: center;">Loading system statistics...</div>
+            </div>
+            
+            <h2 style="margin-top: 40px;">BootC Status</h2>
+            <div id="bootc-status-container">
+                <div class="loading" style="padding: 40px; text-align: center;">Loading BootC status...</div>
             </div>
             
             <h2 style="margin-top: 40px;">Kernel Log</h2>
@@ -697,7 +715,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     const cpuColor = data.cpu.usage > 80 ? '#f44336' : '#2196f3';
                     const networkInfo = data.network.interfaces.map(iface => iface.name + ': ' + iface.ip).join('<br>');
                     
-                    container.innerHTML = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;"><div class="info"><strong>💾 Disk Usage</strong><br><div style="margin-top: 10px;">Root: ' + data.disk.used + ' / ' + data.disk.total + ' (' + data.disk.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + diskColor + '; width: ' + data.disk.percent + '%; height: 100%;"></div></div>Available: ' + data.disk.available + '</div></div><div class="info"><strong>🧠 Memory</strong><br><div style="margin-top: 10px;">Used: ' + data.memory.used + ' / ' + data.memory.total + ' (' + data.memory.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + memoryColor + '; width: ' + data.memory.percent + '%; height: 100%;"></div></div>Available: ' + data.memory.available + '</div></div><div class="info"><strong>⚙️ CPU</strong><br><div style="margin-top: 10px;">Cores: ' + data.cpu.cores + '<br>Usage: ' + data.cpu.usage + '%<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + cpuColor + '; width: ' + data.cpu.usage + '%; height: 100%;"></div></div></div></div><div class="info"><strong>🖥️ System</strong><br><div style="margin-top: 10px;">Kernel: ' + data.system.kernel + '<br>Uptime: ' + data.system.uptime + '<br>Hostname: ' + data.system.hostname + '</div></div><div class="info"><strong>🌐 Network</strong><br><div style="margin-top: 10px;">' + networkInfo + '</div></div><div class="info"><strong>📊 Load Average</strong><br><div style="margin-top: 10px;">1 min: ' + data.system.load_1 + '<br>5 min: ' + data.system.load_5 + '<br>15 min: ' + data.system.load_15 + '</div></div></div>';
+                    // Build info boxes
+                    let infoBoxes = '<div class="info"><strong>💾 Disk Usage</strong><br><div style="margin-top: 10px;">Root: ' + data.disk.used + ' / ' + data.disk.total + ' (' + data.disk.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + diskColor + '; width: ' + data.disk.percent + '%; height: 100%;"></div></div>Available: ' + data.disk.available + '</div></div>';
+                    
+                    // Add LVM PV info if available
+                    if (data.lvm) {
+                        const lvmColor = data.lvm.percent > 80 ? '#f44336' : '#2196f3';
+                        infoBoxes += '<div class="info"><strong>💿 LVM Physical Volume</strong><br><div style="margin-top: 10px;">PV: ' + data.lvm.pv_device + '<br>VG: ' + data.lvm.vg_name + '<br>Used: ' + data.lvm.used + ' / ' + data.lvm.total + ' (' + data.lvm.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + lvmColor + '; width: ' + data.lvm.percent + '%; height: 100%;"></div></div>Free: ' + data.lvm.free + '</div></div>';
+                    }
+                    
+                    infoBoxes += '<div class="info"><strong>🧠 Memory</strong><br><div style="margin-top: 10px;">Used: ' + data.memory.used + ' / ' + data.memory.total + ' (' + data.memory.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + memoryColor + '; width: ' + data.memory.percent + '%; height: 100%;"></div></div>Available: ' + data.memory.available + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>⚙️ CPU</strong><br><div style="margin-top: 10px;">Cores: ' + data.cpu.cores + '<br>Usage: ' + data.cpu.usage + '%<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + cpuColor + '; width: ' + data.cpu.usage + '%; height: 100%;"></div></div></div></div>';
+                    infoBoxes += '<div class="info"><strong>🖥️ System</strong><br><div style="margin-top: 10px;">Kernel: ' + data.system.kernel + '<br>Uptime: ' + data.system.uptime + '<br>Hostname: ' + data.system.hostname + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>🌐 Network</strong><br><div style="margin-top: 10px;">' + networkInfo + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>📊 Load Average</strong><br><div style="margin-top: 10px;">1 min: ' + data.system.load_1 + '<br>5 min: ' + data.system.load_5 + '<br>15 min: ' + data.system.load_15 + '</div></div>';
+                    
+                    container.innerHTML = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">' + infoBoxes + '</div>';
                 })
                 .catch(error => {
                     console.error('Error fetching system stats:', error);
@@ -755,6 +788,177 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     }
                 });
         }
+        
+        function loadBootcStatus() {
+            const container = document.getElementById('bootc-status-container');
+            if (!container) {
+                console.error('bootc-status-container not found');
+                return;
+            }
+            
+            fetch('/api/bootc-status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = '<div class="error">' + data.error + '</div>';
+                        return;
+                    }
+                    
+                    let html = '<div class="info">';
+                    if (data.status) {
+                        html += '<strong>📦 BootC Status</strong><br><div style="margin-top: 10px;">';
+                        html += '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">' + 
+                                data.status.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                        html += '</div>';
+                    }
+                    if (data.upgrade_check) {
+                        html += '<strong>🔄 Upgrade Check</strong><br><div style="margin-top: 10px;">';
+                        html += '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">' + 
+                                data.upgrade_check.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    container.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error fetching bootc status:', error);
+                    if (container) {
+                        container.innerHTML = '<div class="error">Failed to fetch BootC status: ' + error.message + '</div>';
+                    }
+                });
+        }
+        
+        // BootC operation handlers
+        document.addEventListener('DOMContentLoaded', function() {
+            const upgradeCheckBtn = document.getElementById('bootc-upgrade-btn');
+            const upgradeApplyBtn = document.getElementById('bootc-upgrade-apply-btn');
+            const switchBtn = document.getElementById('bootc-switch-btn');
+            const messagesContainer = document.getElementById('bootc-messages-container');
+            
+            if (upgradeCheckBtn) {
+                upgradeCheckBtn.addEventListener('click', function() {
+                    const originalText = upgradeCheckBtn.textContent;
+                    upgradeCheckBtn.disabled = true;
+                    upgradeCheckBtn.textContent = 'Checking...';
+                    messagesContainer.innerHTML = '';
+                    
+                    fetch('/api/bootc-upgrade-check', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'same-origin'
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            messagesContainer.innerHTML = '<div class="message success">Upgrade check completed. Status updated.</div>';
+                            loadBootcStatus(); // Refresh status
+                        } else {
+                            messagesContainer.innerHTML = '<div class="message error">' + (result.error || 'Failed to check for upgrades') + '</div>';
+                        }
+                    })
+                    .catch(error => {
+                        messagesContainer.innerHTML = '<div class="message error">Error: ' + error.message + '</div>';
+                    })
+                    .finally(() => {
+                        upgradeCheckBtn.disabled = false;
+                        upgradeCheckBtn.textContent = originalText;
+                    });
+                });
+            }
+            
+            if (upgradeApplyBtn) {
+                upgradeApplyBtn.addEventListener('click', function() {
+                    if (!confirm('Are you sure you want to apply the upgrade? This will download and install the new image.')) {
+                        return;
+                    }
+                    
+                    const originalText = upgradeApplyBtn.textContent;
+                    upgradeApplyBtn.disabled = true;
+                    upgradeApplyBtn.textContent = 'Upgrading...';
+                    messagesContainer.innerHTML = '<div class="message info">Upgrade in progress. This may take several minutes...</div>';
+                    
+                    fetch('/api/bootc-upgrade', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'same-origin'
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            messagesContainer.innerHTML = '<div class="message success">Upgrade completed successfully! ' + 
+                                (result.message || '') + '</div>';
+                            loadBootcStatus(); // Refresh status
+                        } else {
+                            messagesContainer.innerHTML = '<div class="message error">' + (result.error || 'Failed to apply upgrade') + '</div>';
+                        }
+                    })
+                    .catch(error => {
+                        messagesContainer.innerHTML = '<div class="message error">Error: ' + error.message + '</div>';
+                    })
+                    .finally(() => {
+                        upgradeApplyBtn.disabled = false;
+                        upgradeApplyBtn.textContent = originalText;
+                    });
+                });
+            }
+            
+            if (switchBtn) {
+                switchBtn.addEventListener('click', function() {
+                    const imageInput = document.getElementById('bootcSwitchImage');
+                    const image = imageInput ? imageInput.value.trim() : '';
+                    
+                    if (!image) {
+                        messagesContainer.innerHTML = '<div class="message error">Please enter an image reference to switch to.</div>';
+                        return;
+                    }
+                    
+                    if (!confirm('Are you sure you want to switch to image: ' + image + '? This will download and install the new image.')) {
+                        return;
+                    }
+                    
+                    const originalText = switchBtn.textContent;
+                    switchBtn.disabled = true;
+                    switchBtn.textContent = 'Switching...';
+                    messagesContainer.innerHTML = '<div class="message info">Switching to new image. This may take several minutes...</div>';
+                    
+                    fetch('/api/bootc-switch', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ image: image })
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            messagesContainer.innerHTML = '<div class="message success">Switch completed successfully! ' + 
+                                (result.message || '') + '</div>';
+                            if (imageInput) imageInput.value = '';
+                            loadBootcStatus(); // Refresh status
+                        } else {
+                            messagesContainer.innerHTML = '<div class="message error">' + (result.error || 'Failed to switch image') + '</div>';
+                        }
+                    })
+                    .catch(error => {
+                        messagesContainer.innerHTML = '<div class="message error">Error: ' + error.message + '</div>';
+                    })
+                    .finally(() => {
+                        switchBtn.disabled = false;
+                        switchBtn.textContent = originalText;
+                    });
+                });
+            }
+        });
         
         // MicroShift pod and route functions
         let podsInterval = null;
@@ -922,6 +1126,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             
             if (sectionId === '#system') {
                 loadSystemStats();
+                loadBootcStatus();
                 loadKernelLog();
             } else if (sectionId === '#microshift') {
                 startMicroshiftUpdates();
@@ -935,6 +1140,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         // Explicitly load content for initial section (showSection override is now active)
         if (initialSection === '#system') {
             loadSystemStats();
+            loadBootcStatus();
             loadKernelLog();
         } else if (initialSection === '#microshift') {
             startMicroshiftUpdates();
@@ -1557,6 +1763,191 @@ def configure_jumpstarter():
     )
 
 
+def get_lvm_pv_info():
+    """
+    Parse pvscan output to get LVM physical volume information.
+    Returns dict with PV info or None if not available.
+    """
+    try:
+        result = subprocess.run(['pvscan'], capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return None
+        
+        # Parse output like: "PV /dev/sda3   VG myvg1   lvm2 [62.41 GiB / 52.41 GiB free]"
+        # or: "Total: 1 [62.41 GiB] / in use: 1 [62.41 GiB] / in no VG: 0 [0   ]"
+        output = result.stdout.strip()
+        if not output:
+            return None
+        
+        lines = output.split('\n')
+        
+        # Look for PV line
+        pv_device = None
+        vg_name = None
+        total_size = None
+        free_size = None
+        
+        for line in lines:
+            line = line.strip()
+            # Match: "PV /dev/sda3   VG myvg1   lvm2 [62.41 GiB / 52.41 GiB free]"
+            if line.startswith('PV '):
+                parts = line.split()
+                if len(parts) >= 2:
+                    pv_device = parts[1]
+                # Find VG name
+                for i, part in enumerate(parts):
+                    if part == 'VG' and i + 1 < len(parts):
+                        vg_name = parts[i + 1]
+                        break
+                # Find size info in brackets
+                bracket_match = re.search(r'\[([^\]]+)\]', line)
+                if bracket_match:
+                    size_info = bracket_match.group(1)
+                    # Parse "62.41 GiB / 52.41 GiB free"
+                    size_parts = size_info.split('/')
+                    if len(size_parts) >= 1:
+                        total_size = size_parts[0].strip()
+                    if len(size_parts) >= 2:
+                        free_match = re.search(r'([\d.]+)\s*([KMGT]i?B)', size_parts[1])
+                        if free_match:
+                            free_size = free_match.group(1) + ' ' + free_match.group(2)
+        
+        if not pv_device or not total_size:
+            return None
+        
+        # Calculate used space and percentage
+        # Parse sizes to calculate percentage
+        def parse_size(size_str):
+            """Parse size string like '62.41 GiB' to bytes."""
+            match = re.match(r'([\d.]+)\s*([KMGT]i?)B?', size_str, re.IGNORECASE)
+            if not match:
+                return 0
+            value = float(match.group(1))
+            unit = match.group(2).upper()
+            multipliers = {'K': 1024, 'M': 1024**2, 'G': 1024**3, 'T': 1024**4}
+            return int(value * multipliers.get(unit, 1))
+        
+        total_bytes = parse_size(total_size)
+        free_bytes = parse_size(free_size) if free_size else 0
+        used_bytes = total_bytes - free_bytes
+        percent = int((used_bytes / total_bytes * 100)) if total_bytes > 0 else 0
+        
+        # Format used size
+        def format_size(bytes_val):
+            """Format bytes to human-readable size."""
+            for unit, multiplier in [('TiB', 1024**4), ('GiB', 1024**3), ('MiB', 1024**2), ('KiB', 1024)]:
+                if bytes_val >= multiplier:
+                    return f"{bytes_val / multiplier:.2f} {unit}"
+            return f"{bytes_val} B"
+        
+        used_size = format_size(used_bytes)
+        
+        return {
+            'pv_device': pv_device,
+            'vg_name': vg_name or 'N/A',
+            'total': total_size,
+            'free': free_size or '0 B',
+            'used': used_size,
+            'percent': percent
+        }
+    except Exception as e:
+        print(f"Error parsing LVM PV info: {e}", file=sys.stderr)
+        return None
+
+
+def get_root_filesystem():
+    """
+    Detect the real root filesystem mount point.
+    On bootc systems, /sysroot is the real root filesystem.
+    Otherwise, find the largest real block device filesystem.
+    """
+    # Check if /sysroot exists and is a mount point (bootc systems)
+    try:
+        result = subprocess.run(['findmnt', '-n', '-o', 'TARGET', '/sysroot'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return '/sysroot'
+    except Exception:
+        pass
+    
+    # Fallback: parse df output to find the real root filesystem
+    try:
+        df_result = subprocess.run(['df', '-h'], capture_output=True, text=True, timeout=5)
+        if df_result.returncode != 0:
+            return '/'  # Fallback to root
+        
+        lines = df_result.stdout.strip().split('\n')
+        if len(lines) < 2:
+            return '/'  # Fallback to root
+        
+        # Virtual filesystem types to skip
+        virtual_fs = ('tmpfs', 'overlay', 'composefs', 'devtmpfs', 'proc', 'sysfs', 
+                     'devpts', 'cgroup', 'pstore', 'bpf', 'tracefs', 'debugfs',
+                     'configfs', 'fusectl', 'mqueue', 'hugetlbfs', 'efivarfs', 'ramfs',
+                     'nsfs', 'shm', 'vfat')
+        
+        # Boot partitions to skip
+        boot_paths = ('/boot', '/boot/efi')
+        
+        best_fs = None
+        best_size = 0
+        
+        for line in lines[1:]:  # Skip header
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            
+            filesystem = parts[0]
+            mount_point = parts[5]
+            size_str = parts[1]
+            
+            # Skip virtual filesystems
+            fs_type = filesystem.split('/')[-1] if '/' in filesystem else filesystem
+            if any(vfs in fs_type.lower() for vfs in virtual_fs):
+                continue
+            
+            # Skip boot partitions
+            if mount_point in boot_paths:
+                continue
+            
+            # Skip if not a block device (doesn't start with /dev)
+            if not filesystem.startswith('/dev'):
+                continue
+            
+            # Prefer LVM root volumes
+            if '/mapper/' in filesystem and 'root' in filesystem.lower():
+                return mount_point
+            
+            # Calculate size for comparison (convert to bytes for comparison)
+            try:
+                # Parse size like "10G", "500M", etc.
+                size_val = float(size_str[:-1])
+                size_unit = size_str[-1].upper()
+                if size_unit == 'G':
+                    size_bytes = size_val * 1024 * 1024 * 1024
+                elif size_unit == 'M':
+                    size_bytes = size_val * 1024 * 1024
+                elif size_unit == 'K':
+                    size_bytes = size_val * 1024
+                else:
+                    size_bytes = size_val
+                
+                if size_bytes > best_size:
+                    best_size = size_bytes
+                    best_fs = mount_point
+            except (ValueError, IndexError):
+                continue
+        
+        if best_fs:
+            return best_fs
+        
+    except Exception:
+        pass
+    
+    # Final fallback
+    return '/'
+
+
 @app.route('/api/system-stats')
 @requires_auth
 def get_system_stats():
@@ -1564,8 +1955,9 @@ def get_system_stats():
     try:
         stats = {}
         
-        # Disk usage
-        disk_result = subprocess.run(['df', '-h', '/'], capture_output=True, text=True)
+        # Disk usage - use detected root filesystem
+        root_fs = get_root_filesystem()
+        disk_result = subprocess.run(['df', '-h', root_fs], capture_output=True, text=True)
         disk_lines = disk_result.stdout.strip().split('\n')
         if len(disk_lines) > 1:
             disk_parts = disk_lines[1].split()
@@ -1676,10 +2068,179 @@ def get_system_stats():
             'interfaces': interfaces
         }
         
+        # LVM Physical Volume information
+        lvm_info = get_lvm_pv_info()
+        if lvm_info:
+            stats['lvm'] = lvm_info
+        
         return jsonify(stats)
         
     except Exception as e:
         return jsonify({'error': f'Error gathering system statistics: {str(e)}'}), 500
+
+
+@app.route('/api/bootc-status')
+@requires_auth
+def get_bootc_status():
+    """API endpoint to get BootC status and upgrade check information."""
+    try:
+        status_output = ''
+        upgrade_check_output = ''
+        
+        # Get bootc status
+        try:
+            status_result = subprocess.run(
+                ['bootc', 'status'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if status_result.returncode == 0:
+                status_output = status_result.stdout.strip()
+            else:
+                status_output = f"Error: {status_result.stderr.strip()}"
+        except FileNotFoundError:
+            status_output = "bootc command not found"
+        except subprocess.TimeoutExpired:
+            status_output = "Command timed out"
+        except Exception as e:
+            status_output = f"Error: {str(e)}"
+        
+        # Get upgrade check
+        try:
+            upgrade_result = subprocess.run(
+                ['bootc', 'upgrade', '--check'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if upgrade_result.returncode == 0:
+                upgrade_check_output = upgrade_result.stdout.strip()
+            else:
+                upgrade_check_output = f"Error: {upgrade_result.stderr.strip()}"
+        except FileNotFoundError:
+            upgrade_check_output = "bootc command not found"
+        except subprocess.TimeoutExpired:
+            upgrade_check_output = "Command timed out"
+        except Exception as e:
+            upgrade_check_output = f"Error: {str(e)}"
+        
+        return jsonify({
+            'status': status_output,
+            'upgrade_check': upgrade_check_output
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error getting BootC status: {str(e)}'}), 500
+
+
+@app.route('/api/bootc-upgrade-check', methods=['POST'])
+@requires_auth
+def bootc_upgrade_check():
+    """API endpoint to check for BootC upgrades."""
+    try:
+        result = subprocess.run(
+            ['bootc', 'upgrade', '--check'],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            return jsonify({
+                'success': True,
+                'output': result.stdout.strip(),
+                'message': 'Upgrade check completed'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.stderr.strip() or 'Upgrade check failed'
+            }), 400
+            
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': 'bootc command not found'}), 404
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Command timed out'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/bootc-upgrade', methods=['POST'])
+@requires_auth
+def bootc_upgrade():
+    """API endpoint to apply BootC upgrade."""
+    try:
+        # Run bootc upgrade (this may take a while)
+        result = subprocess.run(
+            ['bootc', 'upgrade'],
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minutes timeout for upgrade
+        )
+        
+        if result.returncode == 0:
+            return jsonify({
+                'success': True,
+                'output': result.stdout.strip(),
+                'message': 'Upgrade completed successfully. Reboot may be required.'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.stderr.strip() or 'Upgrade failed'
+            }), 400
+            
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': 'bootc command not found'}), 404
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Command timed out (upgrade may still be in progress)'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/bootc-switch', methods=['POST'])
+@requires_auth
+def bootc_switch():
+    """API endpoint to switch BootC to a different image."""
+    try:
+        data = request.get_json() if request.is_json else {}
+        image = data.get('image', '').strip()
+        
+        if not image:
+            return jsonify({'success': False, 'error': 'Image reference is required'}), 400
+        
+        # Validate image format (basic check)
+        if not (image.startswith('quay.io/') or image.startswith('docker.io/') or 
+                ':' in image or '/' in image):
+            return jsonify({'success': False, 'error': 'Invalid image reference format'}), 400
+        
+        # Run bootc switch (this may take a while)
+        result = subprocess.run(
+            ['bootc', 'switch', image],
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minutes timeout for switch
+        )
+        
+        if result.returncode == 0:
+            return jsonify({
+                'success': True,
+                'output': result.stdout.strip(),
+                'message': f'Switched to {image} successfully. Reboot may be required.'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.stderr.strip() or 'Switch failed'
+            }), 400
+            
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': 'bootc command not found'}), 404
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Command timed out (switch may still be in progress)'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Error: {str(e)}'}), 500
 
 
 @app.route('/api/dmesg')
