@@ -201,12 +201,14 @@ class ClientConfigV1Alpha1(BaseSettings):
         selector: str,
         duration: timedelta,
         begin_time: datetime | None = None,
+        lease_id: str | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
             selector=selector,
             duration=duration,
             begin_time=begin_time,
+            lease_id=lease_id,
         )
 
     @_blocking_compat

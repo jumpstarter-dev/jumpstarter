@@ -34,20 +34,21 @@ def driver_click_group(client: "DriverClient", **kwargs: Any) -> Callable:
     :param kwargs: Keyword arguments passed to DriverClickGroup
     :return: Decorator that creates a DriverClickGroup
     """
+
     def decorator(f: Callable) -> DriverClickGroup:
         # Use function docstring if no help= provided
-        if 'help' not in kwargs or kwargs['help'] is None:
+        if "help" not in kwargs or kwargs["help"] is None:
             if f.__doc__:
-                kwargs['help'] = f.__doc__.strip()
+                kwargs["help"] = f.__doc__.strip()
 
         # Server description overrides Click defaults
-        if getattr(client, 'description', None):
-            kwargs['help'] = client.description
+        if getattr(client, "description", None):
+            kwargs["help"] = client.description
 
         group = DriverClickGroup(client, name=f.__name__, callback=f, **kwargs)
 
         # Transfer Click parameters attached by decorators like @click.option
-        group.params = getattr(f, '__click_params__', [])
+        group.params = getattr(f, "__click_params__", [])
 
         return group
 
@@ -74,8 +75,8 @@ def driver_click_command(client: "DriverClient", **kwargs: Any) -> Callable:
     :return: click.command decorator
     """
     # Server description overrides Click's defaults (help= parameter or docstring)
-    if getattr(client, 'description', None):
-        kwargs['help'] = client.description
+    if getattr(client, "description", None):
+        kwargs["help"] = client.description
 
     return click.command(**kwargs)
 
@@ -89,13 +90,14 @@ class DriverClickGroup(click.Group):
 
     def command(self, *args: Any, **kwargs: Any) -> Callable:
         """Command decorator with server methods_description override support."""
+
         def decorator(f: Callable) -> click.Command:
-            name = kwargs.get('name')
+            name = kwargs.get("name")
             if not name:
-                name = f.__name__.lower().replace('_', '-')
+                name = f.__name__.lower().replace("_", "-")
 
             if name in self.client.methods_description:
-                kwargs['help'] = self.client.methods_description[name]
+                kwargs["help"] = self.client.methods_description[name]
 
             return super(DriverClickGroup, self).command(*args, **kwargs)(f)
 
