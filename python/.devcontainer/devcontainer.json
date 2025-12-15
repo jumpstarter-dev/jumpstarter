@@ -5,7 +5,7 @@
 		"dockerfile": "Dockerfile"
 	},
 	"postCreateCommand": "make sync",
-	"postStartCommand": "uv run pre-commit install",
+	"postStartCommand": "uv python pin 3.12 && uv run pre-commit install",
 	"remoteUser": "vscode",
 	// Mount USB devices to devcontainer for tests
 	"mounts": [
