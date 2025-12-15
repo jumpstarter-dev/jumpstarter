@@ -275,11 +275,7 @@ class ExporterList(BaseModel):
         if not self.include_online:
             exclude_fields.add("online")
 
-        data = {
-            "exporters": [
-                exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters
-            ]
-        }
+        data = {"exporters": [exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters]}
         return json.dumps(data, **json_kwargs)
 
     def model_dump(self, **kwargs):
@@ -289,11 +285,8 @@ class ExporterList(BaseModel):
         if not self.include_online:
             exclude_fields.add("online")
 
-        return {
-            "exporters": [
-                exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters
-            ]
-        }
+        return {"exporters": [exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters]}
+
 
 class LeaseList(BaseModel):
     leases: list[Lease]
@@ -390,6 +383,7 @@ class ClientService:
         selector: str,
         duration: timedelta,
         begin_time: datetime | None = None,
+        lease_id: str | None = None,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
@@ -409,6 +403,7 @@ class ClientService:
                 client_pb2.CreateLeaseRequest(
                     parent="namespaces/{}".format(self.namespace),
                     lease=lease_pb,
+                    lease_id=lease_id or "",
                 )
             )
         return Lease.from_protobuf(lease)

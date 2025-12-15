@@ -59,8 +59,8 @@ async def client_from_channel(
             portal=portal,
             stack=stack.enter_context(ExitStack()),
             children={reports[k].labels["jumpstarter.dev/name"]: clients[k] for k in topo[index]},
-            description=getattr(report, 'description', None) or None,
-            methods_description=getattr(report, 'methods_description', {}) or {},
+            description=getattr(report, "description", None) or None,
+            methods_description=getattr(report, "methods_description", {}) or {},
         )
 
         clients[index] = client
