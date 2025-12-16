@@ -1,4 +1,4 @@
-.PHONY: help build bootc-build push bootc-push bootc-run bootc-stop bootc-sh bootc-rm build-image build-iso
+.PHONY: help build bootc-build bootc-build-multi push bootc-push bootc-push-multi bootc-run bootc-stop bootc-sh bootc-rm build-image build-iso build-all build-all-multi push-all push-all-multi
 
 # Default image tags
 BOOTC_IMG ?= quay.io/jumpstarter-dev/microshift/bootc:latest
@@ -15,8 +15,28 @@ bootc-build: ## Build the bootc image with MicroShift
 	@echo "Building bootc image: $(BOOTC_IMG): building as root to be on the container storage from root"
 	sudo podman build -t $(BOOTC_IMG) -f Containerfile ../..
 
+bootc-build-multi: ## Build the bootc image for multiple architectures (amd64, arm64)
+	@echo "Building multiarch bootc image: $(BOOTC_IMG)"
+	@echo "This will build for linux/amd64 and linux/arm64"
+	@# Remove existing manifest if it exists
+	-podman manifest rm $(BOOTC_IMG) 2>/dev/null || true
+	@# Create a new manifest
+	podman manifest create $(BOOTC_IMG)
+	@# Build for amd64
+	@echo "Building for linux/amd64..."
+	podman build --platform linux/amd64 -t $(BOOTC_IMG)-amd64 -f Containerfile ../..
+	@# Build for arm64
+	@echo "Building for linux/arm64..."
+	podman build --platform linux/arm64 -t $(BOOTC_IMG)-arm64 -f Containerfile ../..
+	@# Add both images to the manifest
+	podman manifest add $(BOOTC_IMG) $(BOOTC_IMG)-amd64
+	podman manifest add $(BOOTC_IMG) $(BOOTC_IMG)-arm64
+	@echo "Multiarch manifest created successfully!"
+	@echo "To inspect: podman manifest inspect $(BOOTC_IMG)"
+	@echo "To push: make bootc-push-multi"
+
 output/qcow2/disk.qcow2: ## Build a bootable QCOW2 image from the bootc image
-	@echo "Building QCOW2 image from: $(BOOTC_IMG)"
+	@echo "Building QCOW2 image from: $(BOOTC_IMG)"a
 	@echo "Running bootc-image-builder..."
 	@mkdir -p output
 	sudo podman run \
@@ -79,11 +99,22 @@ bootc-push: ## Push the bootc image to registry
 	@echo "Pushing bootc image: $(BOOTC_IMG)"
 	sudo podman push $(BOOTC_IMG)
 
+bootc-push-multi: ## Push the multiarch manifest to registry
+	@echo "Pushing multiarch manifest: $(BOOTC_IMG)"
+	@echo "This will push the manifest list with amd64 and arm64 images"
+	podman manifest push $(BOOTC_IMG) $(BOOTC_IMG)
+	@echo "Multiarch manifest pushed successfully!"
+	@echo "Images available for linux/amd64 and linux/arm64"
+
 ##@ Development
 
 build-all: bootc-build ## Build bootc image
 
+build-all-multi: bootc-build-multi ## Build multiarch bootc image
+
 push-all: bootc-push ## Push bootc image to registry
+
+push-all-multi: bootc-push-multi ## Push multiarch bootc image to registry
 
 bootc-run: ## Run MicroShift in a bootc container
 	@echo "Running MicroShift container with image: $(BOOTC_IMG)"
