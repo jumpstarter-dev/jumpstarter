@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from typing import Optional
 
 import click
-from anyio import EndOfStream, create_task_group, open_file, sleep
+from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file, sleep
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
@@ -70,18 +70,25 @@ class PySerialClient(DriverClient):
 
     async def _serial_to_output(self, stream, output_file: Optional[str], append: bool):
         """Read from serial and write to file or stdout."""
-        if output_file:
-            mode = "ab" if append else "wb"
-            async with await open_file(output_file, mode) as f:
+        try:
+            if output_file:
+                mode = "ab" if append else "wb"
+                async with await open_file(output_file, mode) as f:
+                    while True:
+                        data = await stream.receive()
+                        await f.write(data)
+                        await f.flush()
+            else:
                 while True:
                     data = await stream.receive()
-                    await f.write(data)
-                    await f.flush()
-        else:
-            while True:
-                data = await stream.receive()
-                sys.stdout.buffer.write(data)
-                sys.stdout.buffer.flush()
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+        except EndOfStream:
+            click.echo("\nSerial connection closed normally (end of stream).", err=True)
+        except BrokenResourceError:
+            click.echo(
+                "\nSerial connection lost (broken resource). The connection may have been interrupted.", err=True
+            )
 
     async def _stdin_to_serial(self, stream):
         """Read from stdin and write to serial. Returns when stdin reaches EOF."""
