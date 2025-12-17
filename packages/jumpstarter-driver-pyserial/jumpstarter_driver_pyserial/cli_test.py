@@ -4,13 +4,19 @@ CLI tests for PySerial driver.
 Tests the Click CLI interface including the pipe command.
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from anyio import BrokenResourceError, EndOfStream
 from click.testing import CliRunner
 
 from .driver import PySerial
 from jumpstarter.common.utils import serve
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 @pytest.fixture
@@ -240,4 +246,102 @@ def test_cli_base_command(pyserial_client):
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
     assert "Serial port client" in result.output or "Commands:" in result.output
+
+
+@pytest.mark.anyio
+async def test_serial_to_output_handles_end_of_stream(pyserial_client):
+    """Test that _serial_to_output handles EndOfStream gracefully."""
+    # Create a mock stream that raises EndOfStream
+    mock_stream = AsyncMock()
+    mock_stream.receive.side_effect = EndOfStream
+
+    # Capture the click output
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # Call _serial_to_output directly
+        await pyserial_client._serial_to_output(mock_stream, None, False)
+
+    # The method should have caught EndOfStream and not raised it
+    # (we're testing that it doesn't propagate)
+
+
+@pytest.mark.anyio
+async def test_serial_to_output_handles_broken_resource(pyserial_client):
+    """Test that _serial_to_output handles BrokenResourceError gracefully."""
+    # Create a mock stream that raises BrokenResourceError
+    mock_stream = AsyncMock()
+    mock_stream.receive.side_effect = BrokenResourceError
+
+    # Capture the click output
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # Call _serial_to_output directly
+        await pyserial_client._serial_to_output(mock_stream, None, False)
+
+    # The method should have caught BrokenResourceError and not raised it
+    # (we're testing that it doesn't propagate)
+
+
+@pytest.mark.anyio
+async def test_serial_to_output_end_of_stream_with_file(pyserial_client):
+    """Test that _serial_to_output handles EndOfStream when writing to file."""
+    # Create a mock stream that raises EndOfStream
+    mock_stream = AsyncMock()
+    mock_stream.receive.side_effect = EndOfStream
+
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # Call _serial_to_output with a file output
+        await pyserial_client._serial_to_output(mock_stream, "test.log", False)
+
+        # The file should have been created (even if empty)
+        import os
+
+        assert os.path.exists("test.log")
+
+
+@pytest.mark.anyio
+async def test_serial_to_output_broken_resource_with_file(pyserial_client):
+    """Test that _serial_to_output handles BrokenResourceError when writing to file."""
+    # Create a mock stream that raises BrokenResourceError
+    mock_stream = AsyncMock()
+    mock_stream.receive.side_effect = BrokenResourceError
+
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # Call _serial_to_output with a file output
+        await pyserial_client._serial_to_output(mock_stream, "test.log", False)
+
+        # The file should have been created (even if empty)
+        import os
+
+        assert os.path.exists("test.log")
+
+
+@pytest.mark.anyio
+async def test_serial_to_output_receives_data_then_end_of_stream(pyserial_client):
+    """Test that _serial_to_output successfully receives data before EndOfStream."""
+    # Create a mock stream that returns data then raises EndOfStream
+    mock_stream = AsyncMock()
+    mock_stream.receive.side_effect = [b"Hello", b"World", EndOfStream]
+
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        # Call _serial_to_output with a file output
+        await pyserial_client._serial_to_output(mock_stream, "test.log", False)
+
+        # Verify the file contains the data
+        with open("test.log", "rb") as f:
+            content = f.read()
+            assert content == b"HelloWorld"
 
