@@ -430,6 +430,7 @@ spec:
                 pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                 type: string
               controller:
+                default: {}
                 description: |-
                   Controller configuration for the main Jumpstarter API and gRPC services.
                   The controller handles gRPC and REST API requests from clients and exporters.
@@ -1083,6 +1084,7 @@ spec:
                         type: object
                     type: object
                   image:
+                    default: quay.io/jumpstarter-dev/jumpstarter-controller:latest
                     description: |-
                       Container image for the controller pods in 'registry/repository/image:tag' format.
                       If not specified, defaults to the latest stable version of the Jumpstarter controller.
@@ -1368,6 +1370,7 @@ spec:
                     type: object
                 type: object
               routers:
+                default: {}
                 description: |-
                   Router configuration for the Jumpstarter router service.
                   Routers handle gRPC traffic routing and load balancing.
@@ -1626,6 +1629,7 @@ spec:
                         type: object
                     type: object
                   image:
+                    default: quay.io/jumpstarter-dev/jumpstarter-controller:latest
                     description: |-
                       Container image for the router pods in 'registry/repository/image:tag' format.
                       If not specified, defaults to the latest stable version of the Jumpstarter router.

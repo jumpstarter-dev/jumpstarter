@@ -128,6 +128,10 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
+	// Apply runtime-computed defaults (endpoints based on baseDomain and cluster capabilities)
+	// Static defaults are handled by kubebuilder annotations in the CRD schema
+	r.EndpointReconciler.ApplyDefaults(&jumpstarter.Spec)
+
 	// Reconcile RBAC resources first
 	if err := r.reconcileRBAC(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile RBAC")

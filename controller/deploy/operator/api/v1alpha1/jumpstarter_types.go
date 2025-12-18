@@ -142,10 +142,12 @@ type JumpstarterSpec struct {
 
 	// Controller configuration for the main Jumpstarter API and gRPC services.
 	// The controller handles gRPC and REST API requests from clients and exporters.
+	// +kubebuilder:default={}
 	Controller ControllerConfig `json:"controller,omitempty"`
 
 	// Router configuration for the Jumpstarter router service.
 	// Routers handle gRPC traffic routing and load balancing.
+	// +kubebuilder:default={}
 	Routers RoutersConfig `json:"routers,omitempty"`
 
 	// Authentication configuration for client and exporter authentication.
@@ -158,6 +160,7 @@ type JumpstarterSpec struct {
 type RoutersConfig struct {
 	// Container image for the router pods in 'registry/repository/image:tag' format.
 	// If not specified, defaults to the latest stable version of the Jumpstarter router.
+	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:latest"
 	Image string `json:"image,omitempty"`
 
 	// Image pull policy for the router container.
@@ -192,6 +195,7 @@ type RoutersConfig struct {
 type ControllerConfig struct {
 	// Container image for the controller pods in 'registry/repository/image:tag' format.
 	// If not specified, defaults to the latest stable version of the Jumpstarter controller.
+	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:latest"
 	Image string `json:"image,omitempty"`
 
 	// Image pull policy for the controller container.

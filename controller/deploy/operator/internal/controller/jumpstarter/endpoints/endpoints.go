@@ -60,6 +60,12 @@ func NewReconciler(client client.Client, scheme *runtime.Scheme, config *rest.Co
 	}
 }
 
+// ApplyDefaults applies endpoint defaults to a JumpstarterSpec using the
+// reconciler's discovered cluster capabilities (Route vs Ingress availability).
+func (r *Reconciler) ApplyDefaults(spec *operatorv1alpha1.JumpstarterSpec) {
+	ApplyEndpointDefaults(spec, r.RouteAvailable, r.IngressAvailable)
+}
+
 // createOrUpdateService creates or updates a service with proper handling of immutable fields
 // and owner references. This is the unified service creation method.
 func (r *Reconciler) createOrUpdateService(ctx context.Context, service *corev1.Service, owner metav1.Object) error {
@@ -195,20 +201,6 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 		}
 	}
 
-	// If no service type is explicitly enabled, create a default ClusterIP service
-	if (endpoint.LoadBalancer == nil || !endpoint.LoadBalancer.Enabled) &&
-		(endpoint.NodePort == nil || !endpoint.NodePort.Enabled) &&
-		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) &&
-		(endpoint.Ingress == nil || !endpoint.Ingress.Enabled) &&
-		(endpoint.Route == nil || !endpoint.Route.Enabled) {
-
-		// TODO: Default to Route or Ingress depending of the type of cluster
-		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, nil, nil); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -286,20 +278,6 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 			return err
 		}
 	}
-
-	// If no service type is explicitly enabled, create a default ClusterIP service
-	if (endpoint.LoadBalancer == nil || !endpoint.LoadBalancer.Enabled) &&
-		(endpoint.NodePort == nil || !endpoint.NodePort.Enabled) &&
-		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) &&
-		(endpoint.Ingress == nil || !endpoint.Ingress.Enabled) &&
-		(endpoint.Route == nil || !endpoint.Route.Enabled) {
-		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, nil, nil); err != nil {
-			return err
-		}
-	}
-
-	// Note: Ingress resources are now created above. Route resources still need to be implemented.
 
 	return nil
 }
