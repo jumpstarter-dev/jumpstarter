@@ -138,7 +138,14 @@ bootc-sh: ## Open a shell in the running MicroShift container
 
 bootc-reload-app: ## Reload the config service app without rebuilding (dev mode)
 	@echo "Reloading config-svc app..."
-	sudo podman cp config-svc/app.py jumpstarter-microshift-okd:/usr/local/bin/config-svc
+	@echo "Copying Python modules..."
+	@for file in config-svc/*.py; do \
+		sudo podman cp $$file jumpstarter-microshift-okd:/usr/local/lib/config-svc/; \
+	done
+	@echo "Copying templates..."
+	@for file in config-svc/templates/*; do \
+		sudo podman cp $$file jumpstarter-microshift-okd:/usr/local/lib/config-svc/templates/; \
+	done
 	sudo podman exec jumpstarter-microshift-okd systemctl restart config-svc
 	@echo "Config service reloaded successfully!"
 

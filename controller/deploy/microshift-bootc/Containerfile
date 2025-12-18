@@ -22,11 +22,24 @@ RUN echo "root:jumpstarter" | chpasswd
 # Set hostname, we need something stable for microshift
 RUN echo "js-community" > /etc/hostname
 
-# Install config-svc systemd service
-COPY deploy/microshift-bootc/config-svc/app.py /usr/local/bin/config-svc
-RUN chmod +x /usr/local/bin/config-svc
+# Install config-svc application
+RUN mkdir -p /usr/local/lib/config-svc
+
+# Copy Python modules and templates
+COPY deploy/microshift-bootc/config-svc/*.py /usr/local/lib/config-svc/
+COPY deploy/microshift-bootc/config-svc/templates/ /usr/local/lib/config-svc/templates/
+
+# Create wrapper script to run the application
+RUN echo '#!/bin/bash' > /usr/local/bin/config-svc && \
+    echo 'cd /usr/local/lib/config-svc' >> /usr/local/bin/config-svc && \
+    echo 'exec /usr/bin/python3 app.py "$@"' >> /usr/local/bin/config-svc && \
+    chmod +x /usr/local/bin/config-svc
+
+# Install banner update script
 COPY deploy/microshift-bootc/config-svc/update-banner.sh /usr/local/bin/update-banner.sh
 RUN chmod +x /usr/local/bin/update-banner.sh
+
+# Install systemd services
 COPY deploy/microshift-bootc/config-svc/config-svc.service /etc/systemd/system/config-svc.service
 COPY deploy/microshift-bootc/config-svc/update-banner.service /etc/systemd/system/update-banner.service
 RUN systemctl enable config-svc.service update-banner.service
