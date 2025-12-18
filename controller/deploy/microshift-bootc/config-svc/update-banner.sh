@@ -1,14 +1,12 @@
-#!/bin/bash
+#!/bin/env python3
 # Update login banner with Jumpstarter web UI URL
 
-python3 << 'EOF'
 import sys
 import os
-
-# Import and call the update function
 import importlib.util
 import importlib.machinery
 
+def update_login_banner():
 config_svc_path = '/usr/local/bin/config-svc'
 if not os.path.exists(config_svc_path):
     print(f"Error: {config_svc_path} does not exist", file=sys.stderr)
@@ -34,5 +32,5 @@ try:
 except Exception as e:
     print(f"Error loading or executing {config_svc_path}: {e}", file=sys.stderr)
     sys.exit(1)
-EOF
+
 

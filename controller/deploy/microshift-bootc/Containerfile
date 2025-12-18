@@ -19,6 +19,9 @@ RUN firewall-offline-cmd --add-service=http && \
 # Set root password
 RUN echo "root:jumpstarter" | chpasswd
 
+# Set hostname, we need something stable for microshift
+RUN echo "js-community" > /etc/hostname
+
 # Install config-svc systemd service
 COPY deploy/microshift-bootc/config-svc/app.py /usr/local/bin/config-svc
 RUN chmod +x /usr/local/bin/config-svc
@@ -27,3 +30,4 @@ RUN chmod +x /usr/local/bin/update-banner.sh
 COPY deploy/microshift-bootc/config-svc/config-svc.service /etc/systemd/system/config-svc.service
 COPY deploy/microshift-bootc/config-svc/update-banner.service /etc/systemd/system/update-banner.service
 RUN systemctl enable config-svc.service update-banner.service
+

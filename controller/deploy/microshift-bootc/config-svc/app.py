@@ -354,16 +354,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     </div>
                     <button type="submit" id="apply-config-btn">Apply Configuration</button>
                 </form>
-                
-                <h2 style="margin-top: 40px;">Hostname Configuration</h2>
-                <form method="POST" action="/configure-hostname">
-                    <div class="form-group">
-                        <label for="hostname">System Hostname</label>
-                        <input type="text" id="hostname" name="hostname" value="{{ current_hostname }}" required>
-                        <div class="hint">Set the system hostname</div>
-                    </div>
-                    <button type="submit">Update Hostname</button>
-                </form>
             </div>
         
         <div class="section" id="change-password">
@@ -1631,47 +1621,6 @@ def api_change_password():
     })
 
 
-@app.route('/configure-hostname', methods=['POST'])
-@requires_auth
-def configure_hostname():
-    """Handle hostname configuration request."""
-    hostname = request.form.get('hostname', '').strip()
-    
-    current_hostname = get_current_hostname()
-    jumpstarter_config = get_jumpstarter_config()
-    password_required = is_default_password()
-    
-    messages = []
-    
-    if not hostname:
-        messages.append({'type': 'error', 'text': 'Hostname is required'})
-    else:
-        # Validate hostname format
-        hostname_valid, hostname_error = validate_hostname(hostname)
-        if not hostname_valid:
-            messages.append({'type': 'error', 'text': f'Invalid hostname: {hostname_error}'})
-        else:
-            hostname_success, hostname_message = set_hostname(hostname)
-            if not hostname_success:
-                messages.append({'type': 'error', 'text': f'Failed to update hostname: {hostname_message}'})
-            else:
-                current_hostname = hostname
-                messages.append({'type': 'success', 'text': f'Hostname updated successfully to: {hostname}'})
-                
-                # Update login banner with the new hostname
-                banner_success, banner_message = update_login_banner()
-                if not banner_success:
-                    print(f"Warning: Failed to update login banner: {banner_message}", file=sys.stderr)
-    
-    return render_template_string(
-        HTML_TEMPLATE,
-        messages=messages,
-        current_hostname=current_hostname,
-        jumpstarter_config=jumpstarter_config,
-        password_required=password_required
-    )
-
-
 @app.route('/api/configure-jumpstarter', methods=['POST'])
 @requires_auth
 def api_configure_jumpstarter():
@@ -2832,25 +2781,6 @@ def get_jumpstarter_config():
     except Exception as e:
         print(f"Error getting Jumpstarter config: {e}", file=sys.stderr)
         return defaults
-
-
-def set_hostname(hostname):
-    """Set the system hostname using hostnamectl."""
-    try:
-        subprocess.run(
-            ['hostnamectl', 'set-hostname', hostname],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        return True, "Success"
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.strip() if e.stderr else str(e)
-        print(f"Error setting hostname: {error_msg}", file=sys.stderr)
-        return False, error_msg
-    except Exception as e:
-        print(f"Error setting hostname: {e}", file=sys.stderr)
-        return False, str(e)
 
 
 def set_root_password(password):
