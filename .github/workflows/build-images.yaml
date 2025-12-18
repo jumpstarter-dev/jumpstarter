@@ -43,6 +43,9 @@ jobs:
             dockerfile: controller/deploy/operator/bundle.Dockerfile
             context: controller/deploy/operator
             generate_bundle: true
+          - image_name: quay.io/jumpstarter-dev/microshift/bootc:latest
+            dockerfile: deploy/microshift-bootc/Containerfile
+            context: controller
           # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
             label: jumpstarter
