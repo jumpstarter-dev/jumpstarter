@@ -222,18 +222,30 @@ class NanoKVMHID(Driver):
         return self._ws
 
     @with_reauth
-    async def _send_mouse_event(self, event_type: int, x: int, y: int):
+    async def _send_mouse_event(self, event_type: int, button_state: int, x: float, y: float):
         """
         Send a mouse event via WebSocket
 
         Args:
             event_type: 0=mouse_up, 1=mouse_down, 2=move_abs, 3=move_rel, 4=scroll
-            x: X coordinate or movement
-            y: Y coordinate or movement
+            button_state: Button state (0=no buttons, 1=left, 2=right, 4=middle)
+            x: X coordinate (0.0-1.0 for abs/rel) or scroll amount (int for scroll)
+            y: Y coordinate (0.0-1.0 for abs/rel) or scroll amount (int for scroll)
         """
         ws = await self._get_ws()
-        message = [2, event_type, x, y]  # 2 indicates mouse event
-        await ws.send_json(message)
+        # Scale coordinates for absolute and relative movements
+        if event_type == 2:  # move_abs
+            x_val = int(x * 32768)
+            y_val = int(y * 32768)
+        elif event_type == 3:  # move_rel
+            x_val = int(x * 32768)
+            y_val = int(y * 32768)
+        else:
+            x_val = int(x)
+            y_val = int(y)
+        message = [2, event_type, button_state, x_val, y_val]  # 2 indicates mouse event
+        res = await ws.send_json(message)
+        print(message, res)
         self.logger.debug(f"Sent mouse event: {message}")
 
     def close(self):
@@ -301,38 +313,38 @@ class NanoKVMHID(Driver):
         self.logger.info("HID subsystem reset")
 
     @export
-    async def mouse_move_abs(self, x: int, y: int):
+    async def mouse_move_abs(self, x: float, y: float):
         """
         Move mouse to absolute coordinates
 
         Args:
-            x: X coordinate (0-65535, scaled to screen resolution)
-            y: Y coordinate (0-65535, scaled to screen resolution)
+            x: X coordinate (0.0 to 1.0, where 0.0 is left/top and 1.0 is right/bottom)
+            y: Y coordinate (0.0 to 1.0, where 0.0 is left/top and 1.0 is right/bottom)
         """
-        await self._send_mouse_event(2, x, y)
+        await self._send_mouse_event(2, 0, x, y)
         self.logger.debug(f"Mouse moved to absolute position: ({x}, {y})")
 
     @export
-    async def mouse_move_rel(self, dx: int, dy: int):
+    async def mouse_move_rel(self, dx: float, dy: float):
         """
         Move mouse relative to current position
 
         Args:
-            dx: X movement delta (-127 to 127)
-            dy: Y movement delta (-127 to 127)
+            dx: X movement delta (-1.0 to 1.0, where 1.0 is full screen width)
+            dy: Y movement delta (-1.0 to 1.0, where 1.0 is full screen height)
         """
-        await self._send_mouse_event(3, dx, dy)
+        await self._send_mouse_event(3, 0, dx, dy)
         self.logger.debug(f"Mouse moved by relative offset: ({dx}, {dy})")
 
     @export
-    async def mouse_click(self, button: str = "left", x: int | None = None, y: int | None = None):
+    async def mouse_click(self, button: str = "left", x: float | None = None, y: float | None = None):
         """
         Click a mouse button at current position or specified coordinates
 
         Args:
             button: Mouse button to click ("left", "right", "middle")
-            x: Optional X coordinate for absolute positioning before click
-            y: Optional Y coordinate for absolute positioning before click
+            x: Optional X coordinate (0.0 to 1.0) for absolute positioning before click
+            y: Optional Y coordinate (0.0 to 1.0) for absolute positioning before click
         """
         # Map button names to bit flags (left=1, right=2, middle=4)
         button_map = {"left": 1, "right": 2, "middle": 4}
@@ -345,11 +357,11 @@ class NanoKVMHID(Driver):
             await asyncio.sleep(0.05)
 
         # Send mouse down
-        await self._send_mouse_event(1, button_code, 0)
+        await self._send_mouse_event(1, button_code, 0.0, 0.0)
         # Small delay between down and up
         await asyncio.sleep(0.05)
         # Send mouse up
-        await self._send_mouse_event(0, 0, 0)
+        await self._send_mouse_event(0, 0, 0.0, 0.0)
 
         self.logger.info(f"Mouse {button} clicked")
 
@@ -362,7 +374,7 @@ class NanoKVMHID(Driver):
             dx: Horizontal scroll amount
             dy: Vertical scroll amount (positive=up, negative=down)
         """
-        await self._send_mouse_event(4, dx, dy)
+        await self._send_mouse_event(4, 0, float(dx), float(dy))
         self.logger.debug(f"Mouse scrolled: ({dx}, {dy})")
 
 

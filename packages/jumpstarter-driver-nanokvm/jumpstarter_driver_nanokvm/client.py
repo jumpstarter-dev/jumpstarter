@@ -95,55 +95,64 @@ class NanoKVMHIDClient(DriverClient):
         """
         self.call("reset_hid")
 
-    def mouse_move_abs(self, x: int, y: int):
+    def mouse_move_abs(self, x: float, y: float):
         """
         Move mouse to absolute coordinates
 
         Args:
-            x: X coordinate (0-65535, scaled to screen resolution)
-            y: Y coordinate (0-65535, scaled to screen resolution)
+            x: X coordinate (0.0 to 1.0, where 0.0 is left and 1.0 is right)
+            y: Y coordinate (0.0 to 1.0, where 0.0 is top and 1.0 is bottom)
 
         Example::
 
-            # Move to center of screen (assuming 1920x1080)
-            hid.mouse_move_abs(32768, 32768)
+            # Move to center of screen
+            hid.mouse_move_abs(0.5, 0.5)
+
+            # Move to top-left corner
+            hid.mouse_move_abs(0.0, 0.0)
+
+            # Move to bottom-right corner
+            hid.mouse_move_abs(1.0, 1.0)
         """
         self.call("mouse_move_abs", x, y)
 
-    def mouse_move_rel(self, dx: int, dy: int):
+    def mouse_move_rel(self, dx: float, dy: float):
         """
         Move mouse relative to current position
 
         Args:
-            dx: X movement delta (-127 to 127)
-            dy: Y movement delta (-127 to 127)
+            dx: X movement delta (-1.0 to 1.0, where 1.0 is full screen width)
+            dy: Y movement delta (-1.0 to 1.0, where 1.0 is full screen height)
 
         Example::
 
-            # Move right and down
-            hid.mouse_move_rel(50, 50)
+            # Move right by 10% of screen width and down by 10%
+            hid.mouse_move_rel(0.1, 0.1)
+
+            # Move left by 20%
+            hid.mouse_move_rel(-0.2, 0.0)
         """
         self.call("mouse_move_rel", dx, dy)
 
-    def mouse_click(self, button: str = "left", x: int | None = None, y: int | None = None):
+    def mouse_click(self, button: str = "left", x: float | None = None, y: float | None = None):
         """
         Click a mouse button
 
         Args:
             button: Mouse button to click ("left", "right", "middle")
-            x: Optional X coordinate for absolute positioning before click
-            y: Optional Y coordinate for absolute positioning before click
+            x: Optional X coordinate (0.0 to 1.0) for absolute positioning before click
+            y: Optional Y coordinate (0.0 to 1.0) for absolute positioning before click
 
         Example::
 
             # Click at current position
             hid.mouse_click("left")
 
-            # Click at specific coordinates
-            hid.mouse_click("left", 32768, 32768)
+            # Click at center of screen
+            hid.mouse_click("left", 0.5, 0.5)
 
-            # Right-click
-            hid.mouse_click("right")
+            # Right-click at specific location
+            hid.mouse_click("right", 0.75, 0.25)
         """
         if x is not None and y is not None:
             self.call("mouse_click", button, x, y)
@@ -204,25 +213,25 @@ class NanoKVMHIDClient(DriverClient):
             pass
 
         @mouse.command()
-        @click.argument("x", type=int)
-        @click.argument("y", type=int)
+        @click.argument("x", type=float)
+        @click.argument("y", type=float)
         def move(x, y):
-            """Move mouse to absolute coordinates (0-65535)"""
+            """Move mouse to absolute coordinates (0.0-1.0)"""
             self.mouse_move_abs(x, y)
             click.echo(f"Mouse moved to ({x}, {y})")
 
         @mouse.command()
-        @click.argument("dx", type=int)
-        @click.argument("dy", type=int)
+        @click.argument("dx", type=float)
+        @click.argument("dy", type=float)
         def move_rel(dx, dy):
-            """Move mouse by relative offset (-127 to 127)"""
+            """Move mouse by relative offset (-1.0 to 1.0, where 1.0 is full screen)"""
             self.mouse_move_rel(dx, dy)
             click.echo(f"Mouse moved by ({dx}, {dy})")
 
         @mouse.command(name="click")
         @click.option("--button", "-b", default="left", type=click.Choice(["left", "right", "middle"]))
-        @click.option("--x", type=int, default=None, help="Optional X coordinate")
-        @click.option("--y", type=int, default=None, help="Optional Y coordinate")
+        @click.option("--x", type=float, default=None, help="Optional X coordinate (0.0-1.0)")
+        @click.option("--y", type=float, default=None, help="Optional Y coordinate (0.0-1.0)")
         def mouse_click_cmd(button, x, y):
             """Click a mouse button"""
             self.mouse_click(button, x, y)
