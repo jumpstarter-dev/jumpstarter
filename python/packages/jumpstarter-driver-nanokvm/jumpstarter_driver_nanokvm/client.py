@@ -298,7 +298,106 @@ class NanoKVMClient(CompositeClient):
         """
         self.call("reboot")
 
-    def cli(self):
+    def mount_image(self, file: str = "", cdrom: bool = False):
+        """
+        Mount an image file or unmount if file is empty string
+
+        Args:
+            file: Path to image file on the NanoKVM device, or empty string to unmount
+            cdrom: Whether to mount as CD-ROM (True) or disk (False)
+
+        Note:
+            Unmounting may fail if image is currently in use. If unmount fails,
+            you may need to power cycle the connected device first.
+
+        Example::
+
+            # Mount a disk image
+            nanokvm.mount_image("/path/to/disk.img", cdrom=False)
+
+            # Mount a CD-ROM image
+            nanokvm.mount_image("/path/to/cdrom.iso", cdrom=True)
+
+            # Unmount
+            nanokvm.mount_image("") or nanokvm.mount_image()
+        """
+        self.call("mount_image", file, cdrom)
+
+    def download_image(self, url: str) -> dict:
+        """
+        Start downloading an image from a URL
+
+        Args:
+            url: URL of the image to download
+
+        Returns:
+            Dictionary with download status, file, and percentage
+
+        Example::
+
+            status = nanokvm.download_image("https://example.com/image.iso")
+            print(f"Download: {status['status']}, File: {status['file']}, {status['percentage']}%")
+        """
+        return self.call("download_image", url)
+
+    def get_mounted_image(self) -> str | None:
+        """
+        Get information about mounted image
+
+        Returns:
+            String with mounted image file path, or None if no image mounted
+
+        Example::
+
+            file = nanokvm.get_mounted_image()
+            if file:
+                print(f"Mounted: {file}")
+        """
+        return self.call("get_mounted_image")
+
+    def get_cdrom_status(self) -> bool:
+        """
+        Check if the mounted image is in CD-ROM mode
+
+        Returns:
+            Boolean indicating if CD-ROM mode is active (True=CD-ROM, False=disk)
+
+        Example::
+
+            if nanokvm.get_cdrom_status():
+                print("CD-ROM mode is enabled")
+        """
+        return self.call("get_cdrom_status")
+
+    def is_image_download_enabled(self) -> bool:
+        """
+        Check if the /data partition allows image downloads
+
+        Returns:
+            Boolean indicating if image downloads are enabled
+
+        Example::
+
+            if nanokvm.is_image_download_enabled():
+                print("Image downloads are available")
+        """
+        return self.call("is_image_download_enabled")
+
+    def get_image_download_status(self) -> dict:
+        """
+        Get the status of an ongoing image download
+
+        Returns:
+            Dictionary with download status, file, and percentage complete
+
+        Example::
+
+            status = nanokvm.get_image_download_status()
+            print(f"Status: {status['status']}, File: {status['file']}, {status['percentage']}%")
+        """
+        return self.call("get_image_download_status")
+
+    def cli(self):  # noqa: C901
         """Create CLI interface with device management and child commands"""
         base = super().cli()
 
@@ -322,5 +421,81 @@ class NanoKVMClient(CompositeClient):
             """Reboot the NanoKVM device"""
             self.reboot()
             click.echo("NanoKVM device is rebooting...")
+
+        @base.group()
+        def image():
+            """Image management commands"""
+            pass
+
+        @image.command()
+        @click.argument("file")
+        @click.option("--cdrom", is_flag=True, help="Mount as CD-ROM instead of disk")
+        def mount(file, cdrom):
+            """Mount an image file"""
+            self.mount_image(file, cdrom)
+            image_type = "CD-ROM" if cdrom else "disk"
+            click.echo(f"Mounted {file} as {image_type}")
+
+        @image.command()
+        def unmount():
+            """Unmount the currently mounted image
+
+            Note: Unmount may fail if image is in use by the connected device.
+            Power cycle the device first if unmount fails.
+            """
+            try:
+                self.mount_image("")
+                click.echo("Image unmounted successfully")
+            except Exception as e:
+                click.echo(f"Failed to unmount image: {e}", err=True)
+                click.echo("Note: Image may be in use. Try power cycling the connected device first.", err=True)
+                raise
+
+        @image.command()
+        @click.argument("url")
+        def download(url):
+            """Download an image from URL"""
+            status = self.download_image(url)
+            click.echo(f"Download started: {status['status']}")
+            if status['file']:
+                click.echo(f"File: {status['file']}")
+            if status['percentage']:
+                click.echo(f"Progress: {status['percentage']}%")
+
+        @image.command()
+        def status():
+            """Show mounted image status"""
+            file = self.get_mounted_image()
+            if file:
+                is_cdrom = self.get_cdrom_status()
+                mode = "CD-ROM" if is_cdrom else "Disk"
+                click.echo(f"Mounted: {file}")
+                click.echo(f"Mode: {mode}")
+            else:
+                click.echo("No image mounted")
+
+        @image.command()
+        def cdrom_status():
+            """Check if mounted image is in CD-ROM mode"""
+            is_cdrom = self.get_cdrom_status()
+            mode = "CD-ROM" if is_cdrom else "Disk"
+            click.echo(f"Current mode: {mode}")
+
+        @image.command()
+        def download_enabled():
+            """Check if image downloads are enabled"""
+            enabled = self.is_image_download_enabled()
+            status = "enabled" if enabled else "disabled"
+            click.echo(f"Image downloads: {status}")
+
+        @image.command()
+        def download_status():
+            """Get current image download status"""
+            status = self.get_image_download_status()
+            click.echo(f"Status: {status['status']}")
+            if status['file']:
+                click.echo(f"File: {status['file']}")
+            if status['percentage']:
+                click.echo(f"Progress: {status['percentage']}")
 
         return base

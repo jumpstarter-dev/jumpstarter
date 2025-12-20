@@ -244,8 +244,7 @@ class NanoKVMHID(Driver):
             x_val = int(x)
             y_val = int(y)
         message = [2, event_type, button_state, x_val, y_val]  # 2 indicates mouse event
-        res = await ws.send_json(message)
-        print(message, res)
+        await ws.send_json(message)
         self.logger.debug(f"Sent mouse event: {message}")
 
     def close(self):
@@ -480,3 +479,132 @@ class NanoKVM(Composite):
         client = await video_driver._get_client()
         await client.reboot_system()
         self.logger.info("NanoKVM device rebooted")
+
+    @export
+    async def mount_image(self, file: str = "", cdrom: bool = False):
+        """
+        Mount an image file or unmount if file is empty string
+
+        Args:
+            file: Path to image file on the NanoKVM device, or empty string to unmount
+            cdrom: Whether to mount as CD-ROM (True) or disk (False)
+        """
+        video_driver = self.children["video"]
+
+        @with_reauth
+        async def _mount_impl(driver):
+            client = await driver._get_client()
+            # Pass empty string or None for unmount - API expects empty string
+            mount_file = file if file else ""
+            # When unmounting, we need to pass the file as empty string or None
+            await client.mount_image(file=mount_file or None, cdrom=cdrom if mount_file else False)
+
+        await _mount_impl(video_driver)
+        if file:
+            self.logger.info(f"Mounted image: {file} (cdrom={cdrom})")
+        else:
+            self.logger.info("Unmounted image")
+
+    @export
+    async def download_image(self, url: str):
+        """
+        Start downloading an image from a URL
+
+        Args:
+            url: URL of the image to download
+
+        Returns:
+            Dictionary with download status information
+        """
+        video_driver = self.children["video"]
+
+        @with_reauth
+        async def _download_impl(driver):
+            client = await driver._get_client()
+            status = await client.download_image(url=url)
+            return {
+                "status": status.status,
+                "file": status.file,
+                "percentage": status.percentage,
+            }
+
+        result = await _download_impl(video_driver)
+        self.logger.info(f"Started download from {url}")
+        return result
+
+    @export
+    async def get_mounted_image(self):
+        """
+        Get information about mounted image
+
+        Returns:
+            String with mounted image file path, or None if no image mounted
+        """
+        video_driver = self.children["video"]
+
+        @with_reauth
+        async def _get_mounted_impl(driver):
+            client = await driver._get_client()
+            info = await client.get_mounted_image()
+            return info.file
+
+        return await _get_mounted_impl(video_driver)
+
+    @export
+    async def get_cdrom_status(self):
+        """
+        Check if the mounted image is in CD-ROM mode
+
+        Returns:
+            Boolean indicating if CD-ROM mode is active (True=CD-ROM, False=disk)
+        """
+        video_driver = self.children["video"]
+
+        @with_reauth
+        async def _get_cdrom_status_impl(driver):
+            client = await driver._get_client()
+            status = await client.get_cdrom_status()
+            return bool(status.cdrom)
+
+        return await _get_cdrom_status_impl(video_driver)
+
+    @export
+    async def is_image_download_enabled(self):
+        """
+        Check if the /data partition allows image downloads
+
+        Returns:
+            Boolean indicating if image downloads are enabled
+        """
+        video_driver = self.children["video"]
+
+        @with_reauth
+        async def _is_download_enabled_impl(driver):
+            client = await driver._get_client()
+            status = await client.is_image_download_enabled()
+            return status.enabled
+
+        return await _is_download_enabled_impl(video_driver)
+
+    @export
+    async def get_image_download_status(self):
+        """
+        Get the status of an ongoing image download
+
+        Returns:
+            Dictionary with download status, file, and percentage complete
+        """
+        video_driver = self.children["video"]
+
+        @with_reauth
+        async def _get_download_status_impl(driver):
+            client = await driver._get_client()
+            status = await client.get_image_download_status()
+            return {
+                "status": status.status,
+                "file": status.file,
+                "percentage": status.percentage,
+            }
+
+        return await _get_download_status_impl(video_driver)
+

@@ -8,10 +8,15 @@
 - **Snapshot Capture**: Take screenshots of the video stream
 - **Keyboard Control**: Send text and keystrokes via HID emulation
 - **Mouse Control**: Full mouse support via WebSocket
-  - Absolute positioning (0-65535 coordinate system)
-  - Relative movement
+  - Absolute positioning (0.0-1.0 normalized coordinates)
+  - Relative movement (0.0-1.0 normalized, where 1.0 = full screen)
   - Left/right/middle button clicks
   - Mouse wheel scrolling
+- **Image Management**: Virtual disk and CD-ROM control
+  - Mount/unmount disk and CD-ROM images
+  - Download images from URLs
+  - Check mounted image status
+  - Monitor download progress
 - **Device Management**: Get device info, reboot the NanoKVM
 - **Composite Driver**: Access all functionality through a unified interface
 
@@ -79,7 +84,7 @@ The NanoKVM driver is a composite driver that provides three main interfaces:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_nanokvm.client.NanoKVMClient()
-    :members: get_info, reboot
+    :members: get_info, reboot, mount_image, download_image, get_mounted_image, get_cdrom_status, is_image_download_enabled, get_image_download_status
 ```
 
 ### NanoKVMVideoClient
@@ -151,11 +156,14 @@ j nanokvm hid reset
 #### Mouse Commands
 
 ```bash
-# Move mouse to absolute coordinates (0-65535, scaled to screen)
-j nanokvm hid mouse move 32768 32768  # Center of screen
+# Move mouse to absolute coordinates (0.0-1.0, where 0.0=top/left, 1.0=bottom/right)
+j nanokvm hid mouse move 0.5 0.5     # Center of screen
+j nanokvm hid mouse move 0.0 0.0     # Top-left corner
+j nanokvm hid mouse move 1.0 1.0     # Bottom-right corner
 
-# Move mouse relatively (-127 to 127)
-j nanokvm hid mouse move-rel 50 50    # Move right and down
+# Move mouse relatively (-1.0 to 1.0, where 1.0 = full screen width/height)
+j nanokvm hid mouse move-rel 0.1 0.1   # Move right and down by 10% of screen
+j nanokvm hid mouse move-rel -0.2 0.0  # Move left by 20% of screen width
 
 # Click at current position (default: left button)
 j nanokvm hid mouse click
@@ -164,7 +172,7 @@ j nanokvm hid mouse click
 j nanokvm hid mouse click --button right
 
 # Click at specific coordinates
-j nanokvm hid mouse click --x 32768 --y 32768 --button left
+j nanokvm hid mouse click --x 0.5 --y 0.5 --button left
 
 # Scroll (default: down 5 units)
 j nanokvm hid mouse scroll
@@ -176,6 +184,34 @@ j nanokvm hid mouse scroll --dy 5
 j nanokvm hid mouse scroll --dy -5
 ```
 
+### Image Management Commands
+
+```bash
+# Mount a disk image
+j nanokvm image mount /data/myimage.img
+
+# Mount a CD-ROM image
+j nanokvm image mount /data/installer.iso --cdrom
+
+# Unmount current image
+j nanokvm image unmount
+
+# Check mounted image status
+j nanokvm image status
+
+# Check if mounted image is in CD-ROM mode
+j nanokvm image cdrom-status
+
+# Download an image from URL
+j nanokvm image download https://example.com/image.iso
+
+# Check if image downloads are enabled
+j nanokvm image download-enabled
+
+# Check download progress
+j nanokvm image download-status
+```
+
 ### Example Session
 
 ```bash
@@ -185,6 +221,14 @@ jmp shell -l my=device
 # Inside the shell, use the commands
 j nanokvm info
 j nanokvm video snapshot my_screen.jpg
+
+# Mount a CD-ROM image
+j nanokvm image mount /data/installer.iso --cdrom
+j nanokvm image status
+
+# Control the mouse and keyboard
+j nanokvm hid mouse move 0.5 0.5
+j nanokvm hid mouse click
 j nanokvm hid paste "echo 'Hello from NanoKVM'\n"
 ```
 
@@ -216,23 +260,62 @@ nanokvm.hid.press_key("\t")  # Tab
 ### Mouse Control
 
 ```python
-# Move mouse to center of screen
-nanokvm.hid.mouse_move_abs(32768, 32768)
+# Move mouse to center of screen (normalized 0.0-1.0 coordinates)
+nanokvm.hid.mouse_move_abs(0.5, 0.5)
+
+# Move to top-left corner
+nanokvm.hid.mouse_move_abs(0.0, 0.0)
+
+# Move to bottom-right corner
+nanokvm.hid.mouse_move_abs(1.0, 1.0)
 
 # Click left button
 nanokvm.hid.mouse_click("left")
 
 # Click at specific coordinates
-nanokvm.hid.mouse_click("left", x=32768, y=16384)
+nanokvm.hid.mouse_click("left", x=0.5, y=0.25)
 
-# Move mouse relatively
-nanokvm.hid.mouse_move_rel(50, 50)  # Move right and down
+# Move mouse relatively (normalized -1.0 to 1.0, where 1.0 = full screen)
+nanokvm.hid.mouse_move_rel(0.1, 0.1)   # Move right/down by 10% of screen
+nanokvm.hid.mouse_move_rel(-0.2, 0.0)  # Move left by 20% of screen width
 
 # Scroll up
 nanokvm.hid.mouse_scroll(0, 5)
 
 # Scroll down
 nanokvm.hid.mouse_scroll(0, -5)
+```
+
+### Image Management
+
+```python
+# Mount a disk image
+nanokvm.mount_image("/data/myimage.img", cdrom=False)
+
+# Mount a CD-ROM image
+nanokvm.mount_image("/data/installer.iso", cdrom=True)
+
+# Unmount current image
+nanokvm.mount_image("")
+
+# Get mounted image info
+file = nanokvm.get_mounted_image()
+if file:
+    print(f"Mounted: {file}")
+    is_cdrom = nanokvm.get_cdrom_status()
+    print(f"Mode: {'CD-ROM' if is_cdrom else 'Disk'}")
+
+# Download an image
+status = nanokvm.download_image("https://example.com/image.iso")
+print(f"Download: {status['status']}, File: {status['file']}")
+
+# Check if downloads are enabled
+if nanokvm.is_image_download_enabled():
+    print("Downloads are available")
+
+# Monitor download progress
+status = nanokvm.get_image_download_status()
+print(f"Status: {status['status']}, Progress: {status['percentage']}")
 ```
 
 ### Device Management
