@@ -4,10 +4,14 @@ from dataclasses import dataclass
 
 import click
 from jumpstarter_driver_composite.client import CompositeClient
+from nanokvm.models import MouseButton
 from PIL import Image
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
+
+# Re-export MouseButton for convenience
+__all__ = ["NanoKVMVideoClient", "NanoKVMHIDClient", "NanoKVMClient", "MouseButton"]
 
 
 @dataclass(kw_only=True)
@@ -134,25 +138,24 @@ class NanoKVMHIDClient(DriverClient):
         """
         self.call("mouse_move_rel", dx, dy)
 
-    def mouse_click(self, button: str = "left", x: float | None = None, y: float | None = None):
+    def mouse_click(self, button: MouseButton | str = "left", x: float | None = None, y: float | None = None):
         """
         Click a mouse button
 
         Args:
-            button: Mouse button to click ("left", "right", "middle")
+            button: Mouse button to click (MouseButton enum or "left", "right", "middle" string)
             x: Optional X coordinate (0.0 to 1.0) for absolute positioning before click
             y: Optional Y coordinate (0.0 to 1.0) for absolute positioning before click
 
         Example::
 
-            # Click at current position
+            # Using string (backward compatible)
             hid.mouse_click("left")
-
-            # Click at center of screen
             hid.mouse_click("left", 0.5, 0.5)
 
-            # Right-click at specific location
-            hid.mouse_click("right", 0.75, 0.25)
+            # Using MouseButton enum (recommended)
+            hid.mouse_click(MouseButton.LEFT)
+            hid.mouse_click(MouseButton.RIGHT, 0.75, 0.25)
         """
         if x is not None and y is not None:
             self.call("mouse_click", button, x, y)
@@ -234,7 +237,14 @@ class NanoKVMHIDClient(DriverClient):
         @click.option("--y", type=float, default=None, help="Optional Y coordinate (0.0-1.0)")
         def mouse_click_cmd(button, x, y):
             """Click a mouse button"""
-            self.mouse_click(button, x, y)
+            # Convert string to MouseButton enum
+            button_map = {
+                "left": MouseButton.LEFT,
+                "right": MouseButton.RIGHT,
+                "middle": MouseButton.MIDDLE,
+            }
+            button_enum = button_map[button]
+            self.mouse_click(button_enum, x, y)
             if x is not None and y is not None:
                 click.echo(f"Clicked {button} button at ({x}, {y})")
             else:
@@ -397,6 +407,21 @@ class NanoKVMClient(CompositeClient):
         """
         return self.call("get_image_download_status")
 
+    def get_images(self) -> list[str]:
+        """
+        Get the list of available image files
+
+        Returns:
+            List of image file paths available on the NanoKVM device
+
+        Example::
+
+            images = nanokvm.get_images()
+            for image in images:
+                print(f"Available: {image}")
+        """
+        return self.call("get_images")
+
     def cli(self):  # noqa: C901
         """Create CLI interface with device management and child commands"""
         base = super().cli()
@@ -497,5 +522,16 @@ class NanoKVMClient(CompositeClient):
                 click.echo(f"File: {status['file']}")
             if status['percentage']:
                 click.echo(f"Progress: {status['percentage']}")
+
+        @image.command()
+        def list():
+            """List available image files"""
+            images = self.get_images()
+            if images:
+                click.echo("Available images:")
+                for img in images:
+                    click.echo(f"  - {img}")
+            else:
+                click.echo("No images available")
 
         return base
