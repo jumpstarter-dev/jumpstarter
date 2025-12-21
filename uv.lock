@@ -1809,7 +1809,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
-    { name = "nanokvm", specifier = ">=0.1.0" },
+    { name = "nanokvm", git = "https://github.com/mangelajo/python-nanokvm.git?rev=dev" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "yarl" },
@@ -2862,8 +2862,8 @@ wheels = [
 
 [[package]]
 name = "nanokvm"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.0.1"
+source = { git = "https://github.com/mangelajo/python-nanokvm.git?rev=dev#7cbf92f3ebe2d100a25d07b383ac177f745fa668" }
 dependencies = [
     { name = "aiohttp" },
     { name = "cryptography" },
@@ -2871,10 +2871,6 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "yarl" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/36/14/9b899b2fc93902125fe42c8434ecdcbccc600dc8b63feae8142fc58961b5/nanokvm-0.1.0.tar.gz", hash = "sha256:d10fc30ce06b537257c3daf1a7dda965bcd114b839fab617b20d65a0c4124f33", size = 14762, upload-time = "2025-12-05T13:27:19.406Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ee/5d/e9f120406449fec8f79e19b4550ba4c5fdb63c70d7f15a48989984295035/nanokvm-0.1.0-py3-none-any.whl", hash = "sha256:c68d67d1abbcbcf3714320c8787e3f55809abc49e9e55fe9fb72cd0a65a2b1b6", size = 14712, upload-time = "2025-12-05T13:27:17.578Z" },
 ]
 
 [[package]]

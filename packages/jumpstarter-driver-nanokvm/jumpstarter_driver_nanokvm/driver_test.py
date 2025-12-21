@@ -47,6 +47,11 @@ def mock_nanokvm_client():
         # Mock reboot
         mock_client.reboot_system = AsyncMock()
 
+        # Mock image management
+        mock_images = MagicMock()
+        mock_images.files = ["/data/alpine-standard-3.23.2-x86_64.iso", "/data/cs10-js.iso"]
+        mock_client.get_images = AsyncMock(return_value=mock_images)
+
         mock_client_class.return_value = mock_client
         yield mock_client
 
@@ -204,3 +209,25 @@ def test_nanokvm_mouse_click(mock_nanokvm_client, mock_aiohttp_session):
 
             # Verify WebSocket messages were sent (down and up)
             assert mock_ws.send_json.call_count >= 2
+
+
+def test_nanokvm_get_images(mock_nanokvm_client, mock_aiohttp_session):
+    """Test getting list of available images"""
+    driver = NanoKVM(
+        host="test.local",
+        username="admin",
+        password="admin",
+    )
+
+    with serve(driver) as client:
+        # Get list of images
+        images = client.get_images()
+
+        # Verify the result
+        assert isinstance(images, list)
+        assert len(images) == 2
+        assert "/data/alpine-standard-3.23.2-x86_64.iso" in images
+        assert "/data/cs10-js.iso" in images
+
+        # Verify the mock was called
+        mock_nanokvm_client.get_images.assert_called_once()
