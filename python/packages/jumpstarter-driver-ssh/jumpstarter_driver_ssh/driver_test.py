@@ -692,3 +692,18 @@ def test_ssh_identity_temp_file_cleanup_error():
 
                             assert result.return_code == 0
                             assert result.stdout == "some stdout"
+
+
+def test_ssh_client_properties():
+    """Test that the client properties correctly reflect the driver configuration"""
+    instance = SSHWrapper(
+        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
+        default_username="testuser",
+        ssh_identity=TEST_SSH_KEY,
+        ssh_command="my-ssh-command",
+    )
+
+    with serve(instance) as client:
+        assert client.username == "testuser"
+        assert client.identity == TEST_SSH_KEY
+        assert client.command == "my-ssh-command"
