@@ -1,4 +1,5 @@
 import ssl
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -30,11 +31,8 @@ class RideSXClient(FlasherClient, CompositeClient):
         """Check if the path is an HTTP or HTTPS URL."""
         return isinstance(path, str) and path.startswith(("http://", "https://"))
 
-    def _download_http(self, url: str, insecure_tls: bool = False) -> bytes:
-        """Download a file from HTTP/HTTPS URL using aiohttp."""
-
+    def _download_http_to_storage(self, url: str, storage, filename: str, insecure_tls: bool = False) -> None:
         async def _download():
-            # For http:// or when insecure_tls is set, disable SSL verification
             parsed = urlparse(url)
             if parsed.scheme == "http" or insecure_tls:
                 ssl_context: ssl.SSLContext | bool = False
@@ -45,9 +43,16 @@ class RideSXClient(FlasherClient, CompositeClient):
             async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(url) as response:
                     response.raise_for_status()
-                    return await response.read()
+                    with tempfile.NamedTemporaryFile(delete=False, dir="/var/tmp") as f:
+                        async for chunk in response.content.iter_chunked(65536):
+                            f.write(chunk)
+                        return Path(f.name)
 
-        return self.portal.call(_download)
+        tmp_path = self.portal.call(_download)
+        try:
+            storage.write_from_path(filename, tmp_path)
+        finally:
+            tmp_path.unlink()
 
     def _upload_file_if_needed(
         self, file_path: str, operator: Operator | None = None, insecure_tls: bool = False
@@ -59,12 +64,11 @@ class RideSXClient(FlasherClient, CompositeClient):
             parsed = urlparse(file_path)
             is_insecure_http = parsed.scheme == "http"
 
-            # usse aiohttp for: http:// URLs, or https:// with insecure_tls
+            # use aiohttp for: http:// URLs, or https:// with insecure_tls
             if is_insecure_http or insecure_tls:
                 filename = Path(parsed.path).name
                 self.logger.info(f"Downloading {file_path} to storage as {filename}")
-                content = self._download_http(file_path, insecure_tls=insecure_tls)
-                self.storage.write_bytes(filename, content)
+                self._download_http_to_storage(file_path, self.storage, filename, insecure_tls=insecure_tls)
                 return filename
 
         # use opendal for local files, https:// (secure), and other schemes
