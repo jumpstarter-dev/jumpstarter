@@ -34,10 +34,11 @@ import (
 
 // Reconciler provides endpoint reconciliation functionality
 type Reconciler struct {
-	Client           client.Client
-	Scheme           *runtime.Scheme
-	IngressAvailable bool
-	RouteAvailable   bool
+	Client            client.Client
+	Scheme            *runtime.Scheme
+	IngressAvailable  bool
+	RouteAvailable    bool
+	DefaultBaseDomain string // Default baseDomain auto-detected from cluster (e.g., OpenShift ingress config)
 }
 
 // NewReconciler creates a new endpoint reconciler
@@ -48,21 +49,34 @@ func NewReconciler(client client.Client, scheme *runtime.Scheme, config *rest.Co
 	ingressAvailable := discoverAPIResource(config, "networking.k8s.io/v1", "Ingress")
 	routeAvailable := discoverAPIResource(config, "route.openshift.io/v1", "Route")
 
+	// Attempt to auto-detect default baseDomain on OpenShift clusters
+	var defaultBaseDomain string
+	if routeAvailable {
+		defaultBaseDomain = detectOpenShiftBaseDomain(config)
+	}
+
 	log.Info("API discovery completed",
 		"ingressAvailable", ingressAvailable,
-		"routeAvailable", routeAvailable)
+		"routeAvailable", routeAvailable,
+		"defaultBaseDomain", defaultBaseDomain)
 
 	return &Reconciler{
-		Client:           client,
-		Scheme:           scheme,
-		IngressAvailable: ingressAvailable,
-		RouteAvailable:   routeAvailable,
+		Client:            client,
+		Scheme:            scheme,
+		IngressAvailable:  ingressAvailable,
+		RouteAvailable:    routeAvailable,
+		DefaultBaseDomain: defaultBaseDomain,
 	}
 }
 
 // ApplyDefaults applies endpoint defaults to a JumpstarterSpec using the
 // reconciler's discovered cluster capabilities (Route vs Ingress availability).
-func (r *Reconciler) ApplyDefaults(spec *operatorv1alpha1.JumpstarterSpec) {
+// If baseDomain is not provided in the spec, it will generate one using the pattern
+// jumpstarter.$namespace.$clusterDomain (auto-detected from OpenShift cluster config).
+func (r *Reconciler) ApplyDefaults(spec *operatorv1alpha1.JumpstarterSpec, namespace string) {
+	if spec.BaseDomain == "" && r.DefaultBaseDomain != "" {
+		spec.BaseDomain = fmt.Sprintf("jumpstarter.%s.%s", namespace, r.DefaultBaseDomain)
+	}
 	ApplyEndpointDefaults(spec, r.RouteAvailable, r.IngressAvailable)
 }
 
