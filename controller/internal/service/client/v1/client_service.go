@@ -222,31 +222,35 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 	}
 
 	original := kclient.MergeFrom(jlease.DeepCopy())
-	desired, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, *key,
-		corev1.LocalObjectReference{
-			Name: jclient.Name,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
 
-	// BeginTime can only be updated before lease starts; only if explicitly provided
-	if req.Lease.BeginTime != nil {
-		if jlease.Status.ExporterRef != nil {
-			if jlease.Spec.BeginTime == nil || !jlease.Spec.BeginTime.Equal(desired.Spec.BeginTime) {
-				return nil, fmt.Errorf("cannot update BeginTime: lease has already started")
-			}
+	// Only parse time fields from protobuf if any are being updated
+	if req.Lease.BeginTime != nil || req.Lease.Duration != nil || req.Lease.EndTime != nil {
+		desired, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, *key,
+			corev1.LocalObjectReference{
+				Name: jclient.Name,
+			},
+		)
+		if err != nil {
+			return nil, err
 		}
-		jlease.Spec.BeginTime = desired.Spec.BeginTime
-	}
-	// Update Duration only if provided; preserve existing otherwise
-	if req.Lease.Duration != nil {
-		jlease.Spec.Duration = desired.Spec.Duration
-	}
-	// Update EndTime only if provided; preserve existing otherwise
-	if req.Lease.EndTime != nil {
-		jlease.Spec.EndTime = desired.Spec.EndTime
+
+		// BeginTime can only be updated before lease starts; only if explicitly provided
+		if req.Lease.BeginTime != nil {
+			if jlease.Status.ExporterRef != nil {
+				if jlease.Spec.BeginTime == nil || !jlease.Spec.BeginTime.Equal(desired.Spec.BeginTime) {
+					return nil, fmt.Errorf("cannot update BeginTime: lease has already started")
+				}
+			}
+			jlease.Spec.BeginTime = desired.Spec.BeginTime
+		}
+		// Update Duration only if provided; preserve existing otherwise
+		if req.Lease.Duration != nil {
+			jlease.Spec.Duration = desired.Spec.Duration
+		}
+		// Update EndTime only if provided; preserve existing otherwise
+		if req.Lease.EndTime != nil {
+			jlease.Spec.EndTime = desired.Spec.EndTime
+		}
 	}
 
 	// Transfer lease to a new client if specified
@@ -272,9 +276,11 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 		jlease.Spec.ClientRef.Name = newClientKey.Name
 	}
 
-	// Recalculate missing field or validate consistency
-	if err := jumpstarterdevv1alpha1.ReconcileLeaseTimeFields(&jlease.Spec.BeginTime, &jlease.Spec.EndTime, &jlease.Spec.Duration); err != nil {
-		return nil, err
+	// Recalculate missing field or validate consistency (only if time fields were updated)
+	if req.Lease.BeginTime != nil || req.Lease.Duration != nil || req.Lease.EndTime != nil {
+		if err := jumpstarterdevv1alpha1.ReconcileLeaseTimeFields(&jlease.Spec.BeginTime, &jlease.Spec.EndTime, &jlease.Spec.Duration); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.Patch(ctx, &jlease, original); err != nil {
