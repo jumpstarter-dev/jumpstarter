@@ -249,6 +249,29 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 		jlease.Spec.EndTime = desired.Spec.EndTime
 	}
 
+	// Transfer lease to a new client if specified
+	if req.Lease.Client != nil && *req.Lease.Client != "" {
+		// Only active leases can be transferred (has exporter, not ended)
+		if jlease.Status.ExporterRef == nil {
+			return nil, fmt.Errorf("cannot transfer lease: lease has not started yet")
+		}
+		if jlease.Status.Ended {
+			return nil, fmt.Errorf("cannot transfer lease: lease has already ended")
+		}
+		newClientKey, err := utils.ParseClientIdentifier(*req.Lease.Client)
+		if err != nil {
+			return nil, err
+		}
+		if newClientKey.Namespace != key.Namespace {
+			return nil, fmt.Errorf("cannot transfer lease to client in different namespace")
+		}
+		var newClient jumpstarterdevv1alpha1.Client
+		if err := s.Get(ctx, *newClientKey, &newClient); err != nil {
+			return nil, fmt.Errorf("target client not found: %w", err)
+		}
+		jlease.Spec.ClientRef.Name = newClientKey.Name
+	}
+
 	// Recalculate missing field or validate consistency
 	if err := jumpstarterdevv1alpha1.ReconcileLeaseTimeFields(&jlease.Spec.BeginTime, &jlease.Spec.EndTime, &jlease.Spec.Duration); err != nil {
 		return nil, err

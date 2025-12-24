@@ -86,6 +86,9 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=get;create;update;patch
 
+// OpenShift cluster config (for baseDomain auto-detection)
+// +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get;list;watch
+
 // Monitoring resources
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
@@ -127,6 +130,10 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// Handle finalizer logic here if needed
 		return ctrl.Result{}, nil
 	}
+
+	// Apply runtime-computed defaults (endpoints based on baseDomain and cluster capabilities)
+	// Static defaults are handled by kubebuilder annotations in the CRD schema
+	r.EndpointReconciler.ApplyDefaults(&jumpstarter.Spec, jumpstarter.Namespace)
 
 	// Reconcile RBAC resources first
 	if err := r.reconcileRBAC(ctx, &jumpstarter); err != nil {

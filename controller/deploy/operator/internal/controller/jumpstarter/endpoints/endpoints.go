@@ -34,10 +34,11 @@ import (
 
 // Reconciler provides endpoint reconciliation functionality
 type Reconciler struct {
-	Client           client.Client
-	Scheme           *runtime.Scheme
-	IngressAvailable bool
-	RouteAvailable   bool
+	Client            client.Client
+	Scheme            *runtime.Scheme
+	IngressAvailable  bool
+	RouteAvailable    bool
+	DefaultBaseDomain string // Default baseDomain auto-detected from cluster (e.g., OpenShift ingress config)
 }
 
 // NewReconciler creates a new endpoint reconciler
@@ -48,16 +49,35 @@ func NewReconciler(client client.Client, scheme *runtime.Scheme, config *rest.Co
 	ingressAvailable := discoverAPIResource(config, "networking.k8s.io/v1", "Ingress")
 	routeAvailable := discoverAPIResource(config, "route.openshift.io/v1", "Route")
 
+	// Attempt to auto-detect default baseDomain on OpenShift clusters
+	var defaultBaseDomain string
+	if routeAvailable {
+		defaultBaseDomain = detectOpenShiftBaseDomain(config)
+	}
+
 	log.Info("API discovery completed",
 		"ingressAvailable", ingressAvailable,
-		"routeAvailable", routeAvailable)
+		"routeAvailable", routeAvailable,
+		"defaultBaseDomain", defaultBaseDomain)
 
 	return &Reconciler{
-		Client:           client,
-		Scheme:           scheme,
-		IngressAvailable: ingressAvailable,
-		RouteAvailable:   routeAvailable,
+		Client:            client,
+		Scheme:            scheme,
+		IngressAvailable:  ingressAvailable,
+		RouteAvailable:    routeAvailable,
+		DefaultBaseDomain: defaultBaseDomain,
 	}
+}
+
+// ApplyDefaults applies endpoint defaults to a JumpstarterSpec using the
+// reconciler's discovered cluster capabilities (Route vs Ingress availability).
+// If baseDomain is not provided in the spec, it will generate one using the pattern
+// jumpstarter.$namespace.$clusterDomain (auto-detected from OpenShift cluster config).
+func (r *Reconciler) ApplyDefaults(spec *operatorv1alpha1.JumpstarterSpec, namespace string) {
+	if spec.BaseDomain == "" && r.DefaultBaseDomain != "" {
+		spec.BaseDomain = fmt.Sprintf("jumpstarter.%s.%s", namespace, r.DefaultBaseDomain)
+	}
+	ApplyEndpointDefaults(spec, r.RouteAvailable, r.IngressAvailable)
 }
 
 // createOrUpdateService creates or updates a service with proper handling of immutable fields
@@ -195,20 +215,6 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 		}
 	}
 
-	// If no service type is explicitly enabled, create a default ClusterIP service
-	if (endpoint.LoadBalancer == nil || !endpoint.LoadBalancer.Enabled) &&
-		(endpoint.NodePort == nil || !endpoint.NodePort.Enabled) &&
-		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) &&
-		(endpoint.Ingress == nil || !endpoint.Ingress.Enabled) &&
-		(endpoint.Route == nil || !endpoint.Route.Enabled) {
-
-		// TODO: Default to Route or Ingress depending of the type of cluster
-		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, nil, nil); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -286,20 +292,6 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 			return err
 		}
 	}
-
-	// If no service type is explicitly enabled, create a default ClusterIP service
-	if (endpoint.LoadBalancer == nil || !endpoint.LoadBalancer.Enabled) &&
-		(endpoint.NodePort == nil || !endpoint.NodePort.Enabled) &&
-		(endpoint.ClusterIP == nil || !endpoint.ClusterIP.Enabled) &&
-		(endpoint.Ingress == nil || !endpoint.Ingress.Enabled) &&
-		(endpoint.Route == nil || !endpoint.Route.Enabled) {
-		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
-			podSelector, baseLabels, nil, nil); err != nil {
-			return err
-		}
-	}
-
-	// Note: Ingress resources are now created above. Route resources still need to be implemented.
 
 	return nil
 }

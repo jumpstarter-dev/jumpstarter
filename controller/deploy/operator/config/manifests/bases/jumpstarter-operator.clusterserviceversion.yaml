@@ -2,7 +2,20 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
   annotations:
-    alm-examples: '[]'
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "operator.jumpstarter.dev/v1alpha1",
+          "kind": "Jumpstarter",
+          "metadata": {
+            "name": "jumpstarter",
+            "namespace": "jumpstarter"
+          },
+          "spec": {
+            "baseDomain": "jumpstarter.example.com"
+          }
+        }
+      ]
     capabilities: Basic Install
   name: jumpstarter-operator.v0.0.0
   namespace: placeholder

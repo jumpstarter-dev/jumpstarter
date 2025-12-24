@@ -89,3 +89,7 @@ func ParseLeaseIdentifier(identifier string) (key *kclient.ObjectKey, err error)
 func UnparseLeaseIdentifier(key kclient.ObjectKey) string {
 	return UnparseObjectIdentifier(key, "leases")
 }
+
+func ParseClientIdentifier(identifier string) (key *kclient.ObjectKey, err error) {
+	return ParseObjectIdentifier(identifier, "clients")
+}
