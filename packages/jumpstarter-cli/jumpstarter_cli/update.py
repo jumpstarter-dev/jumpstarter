@@ -23,31 +23,37 @@ def update():
 @opt_duration_partial(required=False)
 @opt_begin_time
 @click.option(
-    "--client",
+    "--to-client",
     type=str,
     default=None,
-    help="Transfer lease to a different client (format: namespaces/{namespace}/clients/{client})",
+    help="Transfer lease to a different client in the same namespace",
 )
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
 def update_lease(
-    config, name: str, duration: timedelta | None, begin_time: datetime | None, client: str | None, output: OutputType
+    config,
+    name: str,
+    duration: timedelta | None,
+    begin_time: datetime | None,
+    to_client: str | None,
+    output: OutputType,
 ):
     """
     Update a lease
 
     Update the duration, begin time, and/or owner of an existing lease.
-    At least one of --duration, --begin-time, or --client must be specified.
+    At least one of --duration, --begin-time, or --to_client must be specified.
 
-    To transfer a lease to another client, use the --client option with the
-    full client identifier (e.g., namespaces/default/clients/other-client).
+    To transfer a lease to another client in the same namespace, use the --to_client option.
 
     Updating the begin time of an already active lease is not allowed.
     """
 
-    if duration is None and begin_time is None and client is None:
+    if duration is None and begin_time is None and to_client is None:
         raise click.UsageError("At least one of --duration, --begin-time, or --client must be specified")
 
-    lease = config.update_lease(name, duration=duration, begin_time=begin_time, client=client)
+    client_path = f"namespaces/{config.metadata.namespace}/clients/{to_client}" if to_client else None
+
+    lease = config.update_lease(name, duration=duration, begin_time=begin_time, client=client_path)
 
     model_print(lease, output)
