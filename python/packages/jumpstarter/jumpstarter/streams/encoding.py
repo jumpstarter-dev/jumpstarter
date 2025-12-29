@@ -206,6 +206,12 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
             chunk = await self.source.__anext__()
         except StopAsyncIteration:
             self._exhausted = True
+            # Flush any remaining data from decompressor (gzip needs this)
+            if self._decompressor is not None and hasattr(self._decompressor, "flush"):
+                remaining = self._decompressor.flush()
+                self._decompressor = None
+                if remaining:
+                    return remaining
             raise
 
         if self._decompressor is not None:
