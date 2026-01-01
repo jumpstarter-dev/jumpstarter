@@ -81,7 +81,7 @@ class RideSXClient(FlasherClient, CompositeClient):
         self,
         path: str | Dict[str, str],
         *,
-        partition: str | None = None,
+        target: str | None = None,
         operator: Operator | Dict[str, Operator] | None = None,
         compression=None,
     ):
@@ -89,10 +89,14 @@ class RideSXClient(FlasherClient, CompositeClient):
             partitions = path
             operators = operator if isinstance(operator, dict) else None
         else:
-            if partition is None:
-                raise ValueError("'partition' must be provided")
-            partitions = {partition: path}
-            operators = {partition: operator} if isinstance(operator, Operator) else None
+            if target is None:
+                raise ValueError(
+                    "This driver requires a target partition.\n"
+                    "Usage: j storage flash --target <partition>:<file>\n"
+                    "Example: j storage flash -t boot_a:aboot.img -t system_a:rootfs.simg -t system_b:qm_var.simg"
+                )
+            partitions = {target: path}
+            operators = {target: operator} if isinstance(operator, Operator) else None
 
         for partition_name, file_path in partitions.items():
             if not file_path or not file_path.strip():
