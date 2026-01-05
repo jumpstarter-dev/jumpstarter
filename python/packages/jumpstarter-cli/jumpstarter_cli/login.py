@@ -47,6 +47,7 @@ async def login(  # noqa: C901
     issuer: str,
     client_id: str,
     connector_id: str,
+    callback_port: int | None,
     unsafe,
     insecure_tls_config: bool,
     nointeractive: bool,
@@ -123,7 +124,7 @@ async def login(  # noqa: C901
     elif username is not None and password is not None:
         tokens = await oidc.password_grant(username, password)
     else:
-        tokens = await oidc.authorization_code_grant()
+        tokens = await oidc.authorization_code_grant(callback_port=callback_port)
 
     config.token = tokens["access_token"]
 
