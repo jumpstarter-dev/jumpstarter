@@ -51,7 +51,7 @@ class QemuFlasher(FlasherInterface, Driver):
         async with await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream:
             async with self.resource(source) as res:
                 # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
-                async for chunk in AutoDecompressIterator(source=res.__aiter__()):
+                async for chunk in AutoDecompressIterator(source=res):
                     await stream.send(chunk)
 
     @export

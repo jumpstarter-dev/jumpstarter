@@ -164,3 +164,13 @@ class TestAutoDecompressIterator:
         original = b"x" * 1024 * 1024  # 1MB of data
         compressed = gzip.compress(original)
         await self._decompress_and_check(compressed, original, chunk_size=65536)
+
+    async def test_corrupted_gzip(self):
+        """Corrupted gzip data should raise RuntimeError with clear message."""
+        # Create fake gzip data: valid signature but corrupted payload
+        corrupted = b"\x1f\x8b\x08" + b"corrupted data here"
+
+        with pytest.raises(RuntimeError, match=r"Failed to decompress gzip:.*"):
+            chunks = []
+            async for chunk in AutoDecompressIterator(source=self._async_iter_from_bytes(corrupted, 16)):
+                chunks.append(chunk)

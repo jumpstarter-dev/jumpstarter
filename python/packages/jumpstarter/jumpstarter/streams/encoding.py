@@ -162,9 +162,25 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
 
     source: AsyncIterator[bytes]
     _decompressor: Any = field(init=False, default=None)
+    _compression: Compression | None = field(init=False, default=None)
     _detected: bool = field(init=False, default=False)
     _buffer: bytes = field(init=False, default=b"")
     _exhausted: bool = field(init=False, default=False)
+
+    def _call_decompressor(self, method_name: str, *args) -> bytes:
+        """Call decompressor method with error handling.
+
+        Args:
+            method_name: decompressor method to call
+            *args: Arguments to the method
+        """
+        try:
+            method = getattr(self._decompressor, method_name)
+            return method(*args)
+        except (zlib.error, lzma.LZMAError, OSError, zstd.ZstdError) as e:
+            raise RuntimeError(
+                f"Failed to decompress {self._compression}: {e}"
+            ) from e
 
     async def _detect_compression(self) -> None:
         """Read enough bytes to detect compression format."""
@@ -180,6 +196,7 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
         # Detect compression from buffered data
         compression = detect_compression_from_signature(self._buffer)
         if compression is not None:
+            self._compression = compression
             self._decompressor = create_decompressor(compression)
 
         self._detected = True
@@ -194,7 +211,7 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
             data = self._buffer
             self._buffer = b""
             if self._decompressor is not None:
-                return self._decompressor.decompress(data)
+                return self._call_decompressor("decompress", data)
             return data
 
         # Stream exhausted
@@ -208,14 +225,14 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
             self._exhausted = True
             # Flush any remaining data from decompressor (gzip needs this)
             if self._decompressor is not None and hasattr(self._decompressor, "flush"):
-                remaining = self._decompressor.flush()
+                remaining = self._call_decompressor("flush")
                 self._decompressor = None
                 if remaining:
                     return remaining
             raise
 
         if self._decompressor is not None:
-            return self._decompressor.decompress(chunk)
+            return self._call_decompressor("decompress", chunk)
         return chunk
 
     def __aiter__(self) -> AsyncIterator[bytes]:
