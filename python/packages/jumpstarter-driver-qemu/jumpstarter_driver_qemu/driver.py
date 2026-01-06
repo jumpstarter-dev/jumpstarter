@@ -25,6 +25,7 @@ from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
 from jumpstarter.driver import Driver, export
+from jumpstarter.streams.encoding import AutoDecompressIterator
 
 
 def _vsock_available():
@@ -42,9 +43,15 @@ class QemuFlasher(FlasherInterface, Driver):
 
     @export
     async def flash(self, source, partition: str | None = None):
+        """Flash an image to the specified partition.
+
+        Supports transparent decompression of gzip, xz, bz2, and zstd compressed images.
+        Compression format is auto-detected from file signature.
+        """
         async with await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream:
             async with self.resource(source) as res:
-                async for chunk in res:
+                # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
+                async for chunk in AutoDecompressIterator(source=res):
                     await stream.send(chunk)
 
     @export
