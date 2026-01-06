@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
@@ -23,7 +24,8 @@ def opt_oidc(f):
     @click.option("--username", help="OIDC username")
     @click.option("--password", help="OIDC password")
     @click.option("--connector-id", "connector_id", help="OIDC token exchange connector id (Dex specific)")
-    @click.option("--callback-port",
+    @click.option(
+        "--callback-port",
         "callback_port",
         type=click.IntRange(0, 65535),
         default=None,
@@ -93,7 +95,7 @@ class Config:
             elif env_value.isdigit() and int(env_value) <= 65535:
                 port = int(env_value)
             else:
-                raise click.ClickException(f"Invalid {JMP_OIDC_CALLBACK_PORT} \"{env_value}\": must be a valid port")
+                raise click.ClickException(f'Invalid {JMP_OIDC_CALLBACK_PORT} "{env_value}": must be a valid port')
 
         tx, rx = create_memory_object_stream()
 
@@ -133,8 +135,50 @@ class Config:
 
 
 def decode_jwt(token: str):
-    return json.loads(extract_compact(token.encode()).payload)
+    try:
+        return json.loads(extract_compact(token.encode()).payload)
+    except (ValueError, KeyError, TypeError) as e:
+        raise ValueError(f"Invalid JWT format: {e}") from e
 
 
 def decode_jwt_issuer(token: str):
     return decode_jwt(token).get("iss")
+
+
+def get_token_expiry(token: str) -> int | None:
+    """Get token expiry timestamp (Unix epoch seconds) from JWT.
+
+    Returns None if token doesn't have an exp claim.
+    """
+    return decode_jwt(token).get("exp")
+
+
+def get_token_remaining_seconds(token: str) -> float | None:
+    """Get seconds remaining until token expires.
+
+    Returns:
+        Positive value if token is still valid
+        Negative value if token is expired (magnitude = how long ago)
+        None if token doesn't have an exp claim
+    """
+    exp = get_token_expiry(token)
+    if exp is None:
+        return None
+    return exp - time.time()
+
+
+def is_token_expired(token: str, buffer_seconds: int = 0) -> bool:
+    """Check if token is expired or will expire within buffer_seconds.
+
+    Args:
+        token: JWT token string
+        buffer_seconds: Consider expired if less than this many seconds remain
+
+    Returns:
+        True if token is expired or will expire within buffer
+        False if token is still valid (or has no exp claim)
+    """
+    remaining = get_token_remaining_seconds(token)
+    if remaining is None:
+        return False
+    return remaining < buffer_seconds
