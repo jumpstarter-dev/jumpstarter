@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -20,7 +21,7 @@ from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetw
 from jumpstarter_driver_opendal.driver import FlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
-from pydantic import BaseModel, Field, validate_call
+from pydantic import BaseModel, ByteSize, Field, TypeAdapter, ValidationError, validate_call
 from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
@@ -169,6 +170,7 @@ class QemuPower(PowerInterface, Driver):
                 proc.check_returncode()
                 info = json.loads(proc.stdout)
                 image_format = info.get("format", "raw")
+                current_virtual_size = info.get("virtual-size") or root.stat().st_size
                 match image_format:
                     case "raw" | "qcow2" | "qcow" | "vmdk":
                         image_driver = image_format
@@ -177,6 +179,34 @@ class QemuPower(PowerInterface, Driver):
             except CalledProcessError:
                 self.logger.warning("unable to detect image format, assuming raw")
                 image_driver = "raw"
+                current_virtual_size = root.stat().st_size
+
+            # Resize disk if configured
+            if self.parent.disk_size:
+                requested = self.parent._parse_size(self.parent.disk_size)
+
+                if requested < current_virtual_size:
+                    raise RuntimeError(
+                        f"Shrinking disk is not supported: current {ByteSize(current_virtual_size).human_readable()}, "
+                        f"requested {self.parent.disk_size}"
+                    )
+
+                available = shutil.disk_usage(root.parent).free
+                if requested > available:
+                    raise RuntimeError(
+                        f"Not enough disk space: need {ByteSize(requested).human_readable()}, "
+                        f"only {ByteSize(available).human_readable()} available"
+                    )
+
+                if requested > current_virtual_size:
+                    self.logger.info(f"Resizing disk to {ByteSize(requested).human_readable()}")
+                    proc = await run_process(
+                        ["qemu-img", "resize", str(root), str(requested)],
+                        stdout=PIPE,
+                        stderr=PIPE,
+                    )
+                    if proc.returncode != 0:
+                        raise RuntimeError(f"Failed to resize disk: {proc.stderr.decode()}")
 
             cmdline += [
                 "-blockdev",
@@ -254,6 +284,7 @@ class Qemu(Driver):
 
     smp: int = 2
     mem: str = "512M"
+    disk_size: str | None = None  # e.g., "20G" (resize disk before boot)
 
     hostname: str = "demo"
     username: str = "jumpstarter"
@@ -372,3 +403,24 @@ class Qemu(Driver):
     @validate_call(validate_return=True)
     def get_password(self) -> str:
         return self.password
+
+    def _parse_size(self, size: str) -> int:
+        """Parse size string (e.g., '20G') to bytes."""
+        try:
+            return int(TypeAdapter(ByteSize).validate_python(size + "iB" if size[-1] in "kmgtKMGT" else size))
+        except (ValidationError, IndexError):
+            raise ValueError(f"Invalid size: '{size}'. Use e.g. '20G', '512M', '2T'") from None
+
+    @export
+    @validate_call(validate_return=True)
+    def set_disk_size(self, size: str) -> None:
+        """Set the disk size for resizing before boot."""
+        self._parse_size(size)  # Validate
+        self.disk_size = size
+
+    @export
+    @validate_call(validate_return=True)
+    def set_memory_size(self, size: str) -> None:
+        """Set the memory size for next boot."""
+        self._parse_size(size)  # Validate
+        self.mem = size
