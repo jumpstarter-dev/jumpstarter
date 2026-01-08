@@ -410,3 +410,17 @@ class Qemu(Driver):
             return int(TypeAdapter(ByteSize).validate_python(size + "iB" if size[-1] in "kmgtKMGT" else size))
         except (ValidationError, IndexError):
             raise ValueError(f"Invalid size: '{size}'. Use e.g. '20G', '512M', '2T'") from None
+
+    @export
+    @validate_call(validate_return=True)
+    def set_disk_size(self, size: str) -> None:
+        """Set the disk size for resizing before boot."""
+        self._parse_size(size)  # Validate
+        self.disk_size = size
+
+    @export
+    @validate_call(validate_return=True)
+    def set_memory_size(self, size: str) -> None:
+        """Set the memory size for next boot."""
+        self._parse_size(size)  # Validate
+        self.mem = size
