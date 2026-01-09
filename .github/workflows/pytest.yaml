@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ubuntu-24.04, macos-15]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.14t"]
     steps:
       - uses: actions/checkout@v4
 
