@@ -167,6 +167,10 @@ def get_token_remaining_seconds(token: str) -> float | None:
     return exp - time.time()
 
 
+# Token expiry warning threshold in seconds (5 minutes)
+TOKEN_EXPIRY_WARNING_SECONDS = 300
+
+
 def is_token_expired(token: str, buffer_seconds: int = 0) -> bool:
     """Check if token is expired or will expire within buffer_seconds.
 
@@ -182,3 +186,24 @@ def is_token_expired(token: str, buffer_seconds: int = 0) -> bool:
     if remaining is None:
         return False
     return remaining < buffer_seconds
+
+
+def format_duration(seconds: float) -> str:
+    """Format a duration in seconds as a human-readable string.
+
+    Args:
+        seconds: Duration in seconds (can be negative for past times)
+
+    Returns:
+        Formatted string like "2h 30m" or "5m 10s"
+    """
+    abs_seconds = abs(seconds)
+    hours = int(abs_seconds // 3600)
+    mins = int((abs_seconds % 3600) // 60)
+    secs = int(abs_seconds % 60)
+
+    if hours > 0:
+        return f"{hours}h {mins}m"
+    if mins > 0:
+        return f"{mins}m {secs}s"
+    return f"{secs}s"

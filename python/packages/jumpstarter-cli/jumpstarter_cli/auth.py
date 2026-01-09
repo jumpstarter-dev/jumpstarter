@@ -1,24 +1,40 @@
-import time
 from datetime import datetime, timezone
 
 import click
 from jumpstarter_cli_common.config import opt_config
-from jumpstarter_cli_common.oidc import decode_jwt
+from jumpstarter_cli_common.oidc import (
+    TOKEN_EXPIRY_WARNING_SECONDS,
+    decode_jwt,
+    format_duration,
+    get_token_remaining_seconds,
+)
 
 
 @click.group()
 def auth():
-    """
-    Authentication and token management commands
-    """
+    """Authentication and token management commands."""
+
+
+def _print_token_status(remaining: float) -> None:
+    """Print token status message based on remaining time."""
+    duration = format_duration(remaining)
+
+    if remaining < 0:
+        click.echo(click.style(f"Status: EXPIRED ({duration} ago)", fg="red", bold=True))
+        click.echo(click.style("Run 'jmp login' to refresh your credentials.", fg="yellow"))
+    elif remaining < TOKEN_EXPIRY_WARNING_SECONDS:
+        click.echo(click.style(f"Status: EXPIRING SOON ({duration} remaining)", fg="red", bold=True))
+        click.echo(click.style("Run 'jmp login' to refresh your credentials.", fg="yellow"))
+    elif remaining < 3600:
+        click.echo(click.style(f"Status: Valid ({duration} remaining)", fg="yellow"))
+    else:
+        click.echo(click.style(f"Status: Valid ({duration} remaining)", fg="green"))
 
 
 @auth.command(name="status")
 @opt_config(exporter=False)
 def token_status(config):
-    """
-    Display token status and expiry information
-    """
+    """Display token status and expiry information."""
     token_str = getattr(config, "token", None)
 
     if not token_str:
@@ -27,40 +43,25 @@ def token_status(config):
 
     try:
         payload = decode_jwt(token_str)
-    except Exception as e:
+    except ValueError as e:
         click.echo(click.style(f"Failed to decode token: {e}", fg="red"))
         return
 
-    exp = payload.get("exp")
-    if not exp:
+    remaining = get_token_remaining_seconds(token_str)
+    if remaining is None:
         click.echo(click.style("Token has no expiry claim", fg="yellow"))
         return
 
-    remaining = exp - time.time()
+    exp = payload.get("exp")
     exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+    click.echo(f"Token expiry: {exp_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
-    click.echo(f"Token expiry: {exp_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-
-    if remaining < 0:
-        hours = int(abs(remaining) / 3600)
-        mins = int((abs(remaining) % 3600) / 60)
-        click.echo(click.style(f"Status: EXPIRED ({hours}h {mins}m ago)", fg="red", bold=True))
-        click.echo(click.style("Run 'jmp login' to refresh your credentials.", fg="yellow"))
-    elif remaining < 300:  # Less than 5 minutes
-        mins = int(remaining / 60)
-        secs = int(remaining % 60)
-        click.echo(click.style(f"Status: EXPIRING SOON ({mins}m {secs}s remaining)", fg="red", bold=True))
-        click.echo(click.style("Run 'jmp login' to refresh your credentials.", fg="yellow"))
-    elif remaining < 3600:  # Less than 1 hour
-        mins = int(remaining / 60)
-        click.echo(click.style(f"Status: Valid ({mins}m remaining)", fg="yellow"))
-    else:
-        hours = int(remaining / 3600)
-        mins = int((remaining % 3600) / 60)
-        click.echo(click.style(f"Status: Valid ({hours}h {mins}m remaining)", fg="green"))
+    _print_token_status(remaining)
 
     # Show additional token info
-    if payload.get("sub"):
-        click.echo(f"Subject: {payload.get('sub')}")
-    if payload.get("iss"):
-        click.echo(f"Issuer: {payload.get('iss')}")
+    sub = payload.get("sub")
+    iss = payload.get("iss")
+    if sub:
+        click.echo(f"Subject: {sub}")
+    if iss:
+        click.echo(f"Issuer: {iss}")

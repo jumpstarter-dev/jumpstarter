@@ -6,7 +6,11 @@ import click
 from anyio import create_task_group, get_cancelled_exc_class
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
-from jumpstarter_cli_common.oidc import get_token_remaining_seconds
+from jumpstarter_cli_common.oidc import (
+    TOKEN_EXPIRY_WARNING_SECONDS,
+    format_duration,
+    get_token_remaining_seconds,
+)
 from jumpstarter_cli_common.signal import signal_handler
 
 from .common import opt_acquisition_timeout, opt_duration_partial, opt_selector
@@ -16,14 +20,14 @@ from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 
-def _warn_about_expired_token(lease_name: str, selector: str):
+def _warn_about_expired_token(lease_name: str, selector: str) -> None:
     """Warn user that lease won't be cleaned up due to expired token."""
     click.echo(click.style("\nToken expired - lease cleanup will fail.", fg="yellow", bold=True))
     click.echo(click.style(f"Lease '{lease_name}' will remain active.", fg="yellow"))
-    click.echo(click.style(f"To reconnect: JMP_LEASE={lease_name} jmp shell -s {selector}", fg="cyan"))
+    click.echo(click.style(f"To reconnect: JMP_LEASE={lease_name} jmp shell", fg="cyan"))
 
 
-async def _monitor_token_expiry(config, cancel_scope):
+async def _monitor_token_expiry(config, cancel_scope) -> None:
     """Monitor token expiry and warn user."""
     token = getattr(config, "token", None)
     if not token:
@@ -40,11 +44,12 @@ async def _monitor_token_expiry(config, cancel_scope):
                 click.echo(click.style("\nToken expired! Exiting shell.", fg="red", bold=True))
                 cancel_scope.cancel()
                 return
-            elif remaining <= 300 and not warned:  # 5 minutes
-                mins, secs = int(remaining // 60), int(remaining % 60)
+
+            if remaining <= TOKEN_EXPIRY_WARNING_SECONDS and not warned:
+                duration = format_duration(remaining)
                 click.echo(
                     click.style(
-                        f"\nToken expires in {mins}m {secs}s. Session will continue but cleanup may fail on exit.",
+                        f"\nToken expires in {duration}. Session will continue but cleanup may fail on exit.",
                         fg="yellow",
                         bold=True,
                     )
@@ -88,15 +93,26 @@ async def _shell_with_signal_handling(
     cancelled_exc_class = get_cancelled_exc_class()
     lease_used = None
 
+    # Check token before starting
+    token = getattr(config, "token", None)
+    if token:
+        remaining = get_token_remaining_seconds(token)
+        if remaining is not None and remaining <= 0:
+            from jumpstarter.common.exceptions import ConnectionError
+            raise ConnectionError("token is expired")
+
     async with create_task_group() as tg:
         tg.start_soon(signal_handler, tg.cancel_scope)
-        tg.start_soon(_monitor_token_expiry, config, tg.cancel_scope)
 
         try:
             try:
                 async with anyio.from_thread.BlockingPortal() as portal:
                     async with config.lease_async(selector, lease_name, duration, portal, acquisition_timeout) as lease:
                         lease_used = lease
+
+                        # Start token monitoring only once we're in the shell
+                        tg.start_soon(_monitor_token_expiry, config, tg.cancel_scope)
+
                         exit_code = await anyio.to_thread.run_sync(
                             _run_shell_with_lease, lease, exporter_logs, config, command
                         )
