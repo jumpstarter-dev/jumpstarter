@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [{ name = "Andreas Karner", email = "andreas.karner@outlook.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "anyio>=4.10.0",
+    "anyio>=4.12.1",
     "jumpstarter",
     "bleak>=1.1.1",
 ]
