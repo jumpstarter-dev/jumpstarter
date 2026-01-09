@@ -1,7 +1,6 @@
 import ctypes
 import socket
 from abc import ABCMeta, abstractmethod
-from asyncio import get_running_loop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import getenv, getuid
@@ -14,7 +13,7 @@ from anyio import (
     create_connected_udp_socket,
     create_memory_object_stream,
 )
-from anyio._backends._asyncio import SocketStream, StreamProtocol
+from anyio._core._eventloop import get_async_backend
 from anyio.streams.stapled import StapledObjectStream
 
 from .streams.websocket import WebsocketClientStream
@@ -120,6 +119,7 @@ class TcpNetwork(NetworkInterface, Driver):
         else:
             raise ValueError("enable_address mode is not true in the exporter configuration")
 
+
 @dataclass(kw_only=True)
 class UdpNetwork(NetworkInterface, Driver):
     '''
@@ -207,12 +207,7 @@ class VsockNetwork(NetworkInterface, Driver):
             if libc.connect(sock.fileno(), ctypes.byref(addr), ctypes.sizeof(addr)) < 0:
                 raise OSError(ctypes.get_errno(), "vsock connect() failed")
 
-            transport, protocol = await get_running_loop().create_connection(
-                StreamProtocol,
-                sock=sock,
-            )
-
-            yield SocketStream(transport, protocol)
+            yield await get_async_backend().wrap_stream_socket(sock)
 
 
 @dataclass(kw_only=True)
@@ -301,7 +296,7 @@ class EchoNetwork(NetworkInterface, Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        tx, rx = create_memory_object_stream[bytes](32) # ty: ignore[call-non-callable]
+        tx, rx = create_memory_object_stream[bytes](32)  # ty: ignore[call-non-callable]
         self.logger.debug("Connecting Echo")
         async with StapledObjectStream(tx, rx) as stream:
             yield stream
@@ -309,18 +304,19 @@ class EchoNetwork(NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class WebsocketNetwork(NetworkInterface, Driver):
-    '''
+    """
     Handles websocket connections from a given url.
-    '''
+    """
+
     url: str
     enable_address: bool = True
 
     @exportstream
     @asynccontextmanager
     async def connect(self):
-        '''
+        """
         Create a websocket connection to `self.url` and streams its output.
-        '''
+        """
         self.logger.info("Connecting to %s", self.url)
 
         async with websockets.connect(self.url) as websocket:
