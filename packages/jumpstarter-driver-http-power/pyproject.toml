@@ -12,6 +12,7 @@ dependencies = [
     "anyio>=4.12.1",
     "jumpstarter",
     "jumpstarter-driver-power",
+    "requests>=2.32.5",
 ]
 
 

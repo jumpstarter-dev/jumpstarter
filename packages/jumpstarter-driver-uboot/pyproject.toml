@@ -10,7 +10,12 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "jumpstarter-driver-composite", "pexpect>=4.9.0"]
+dependencies = [
+    "jumpstarter",
+    "jumpstarter-driver-composite",
+    "pexpect>=4.9.0",
+    "requests>=2.32.5",
+]
 
 [dependency-groups]
 dev = [

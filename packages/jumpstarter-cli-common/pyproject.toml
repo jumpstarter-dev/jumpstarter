@@ -15,6 +15,7 @@ dependencies = [
   "joserfc>=1.0.3",
   "yarl>=1.18.3",
   "rich>=14.0.0",
+  "requests>=2.32.5",
 ]
 
 [dependency-groups]

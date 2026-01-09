@@ -19,6 +19,7 @@ dependencies = [
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-power",
     "jumpstarter-driver-uboot",
+    "requests>=2.32.5",
 ]
 
 [tool.hatch.version]
