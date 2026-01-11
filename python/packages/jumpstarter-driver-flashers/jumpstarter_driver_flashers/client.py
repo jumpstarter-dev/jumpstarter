@@ -100,6 +100,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         retries: int = 3,
         method: str = "fls",
         fls_version: str = "",
+        fls_binary_url: str | None = None,
     ):
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
@@ -173,7 +174,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     self._perform_flash_operation(
                         partition, path, image_url, should_download_to_httpd,
                         storage_thread, error_queue, cacert_file, insecure_tls,
-                        headers, bearer_token, method, fls_version
+                        headers, bearer_token, method, fls_version, fls_binary_url
                     )
                     self.logger.info(f"Flash operation succeeded on attempt {attempt + 1}")
                     break
@@ -299,6 +300,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         bearer_token: str | None,
         method: str,
         fls_version: str,
+        fls_binary_url: str | None,
     ):
         """Perform the actual flash operation with console setup.
 
@@ -363,6 +365,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     stored_cacert,
                     header_args,
                     fls_version,
+                    fls_binary_url,
                 )
             elif method == "shell":
                 self._flash_with_progress(
@@ -464,6 +467,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         stored_cacert,
         header_args: str,
         fls_version: str,
+        fls_binary_url: str | None,
     ):
         """Flash image to target device with progress monitoring.
 
@@ -477,13 +481,27 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             stored_cacert: Path to the stored CA certificate in the DUT flasher
             header_args: Header arguments for curl command
             fls_version: Version of FLS to use
+            fls_binary_url: Custom URL to download FLS binary from (overrides fls_version)
         """
 
         # Calculate decompress and tls arguments for curl
         prompt = manifest.spec.login.prompt
         tls_args = self._cmdline_tls_args(insecure_tls, stored_cacert)
 
-        if fls_version != "":
+        if fls_binary_url:
+            self.logger.info(f"Downloading FLS binary from custom URL: {fls_binary_url}")
+            console.sendline(f"curl -L {fls_binary_url} -o /sbin/fls")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            console.sendline("echo $?")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+            exit_code = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
+
+            if exit_code != 0:
+                raise FlashRetryableError(f"Failed to download FLS from {fls_binary_url}, exit code: {exit_code}")
+            console.sendline("chmod +x /sbin/fls")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        elif fls_version != "":
             self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
             # Download fls binary to the target device (until it is available on the target device)
             fls_url = (
@@ -1166,6 +1184,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             default="0.1.9", # TODO(majopela): set default to "" once fls is included in our images
             help="Download an specific fls version from the github releases",
         )
+        @click.option(
+            "--fls-binary-url",
+            type=str,
+            help="Custom URL to download FLS binary from (overrides --fls-version)",
+        )
         @debug_console_option
         def flash(
             file,
@@ -1182,6 +1205,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             retries,
             method,
             fls_version,
+            fls_binary_url,
         ):
             """Flash image to DUT from file"""
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
@@ -1205,6 +1229,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 retries=retries,
                 method=method,
                 fls_version=fls_version,
+                fls_binary_url=fls_binary_url,
             )
 
         @base.command()
