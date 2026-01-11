@@ -38,6 +38,7 @@ class FlashRetryableError(FlashError):
 class FlashNonRetryableError(FlashError):
     """Exception for non-retryable flash errors (configuration, file system, etc.)."""
 
+
 debug_console_option = click.option("--console-debug", is_flag=True, help="Enable console debug mode")
 
 EXPECT_TIMEOUT_DEFAULT = 60
@@ -113,8 +114,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         image_url = ""
         original_http_url = None
         operator_scheme = None
-        # initrmafs cannot handle https yet, fallback to using the exporter's http server
-        if path.startswith(("http://", "https://")) and not force_exporter_http:
+        if path.startswith("oci://"):
+            # OCI URLs are always passed directly to fls
+            image_url = path
+            should_download_to_httpd = False
+        elif path.startswith(("http://", "https://")) and not force_exporter_http:
             # the flasher image can handle the http(s) from a remote directly, unless target is isolated
             image_url = path
             should_download_to_httpd = False
@@ -172,9 +176,19 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             for attempt in range(retries + 1):  # +1 for initial attempt
                 try:
                     self._perform_flash_operation(
-                        partition, path, image_url, should_download_to_httpd,
-                        storage_thread, error_queue, cacert_file, insecure_tls,
-                        headers, bearer_token, method, fls_version, fls_binary_url
+                        partition,
+                        path,
+                        image_url,
+                        should_download_to_httpd,
+                        storage_thread,
+                        error_queue,
+                        cacert_file,
+                        insecure_tls,
+                        headers,
+                        bearer_token,
+                        method,
+                        fls_version,
+                        fls_binary_url,
                     )
                     self.logger.info(f"Flash operation succeeded on attempt {attempt + 1}")
                     break
@@ -194,14 +208,13 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                             )
                             self.logger.info(f"Retrying flash operation (attempt {attempt + 2}/{retries + 1})")
                             # Wait a bit before retrying
-                            time.sleep(2 ** attempt)  # Exponential backoff
+                            time.sleep(2**attempt)  # Exponential backoff
                             continue
                         else:
                             self.logger.error(f"Flash operation failed after {retries + 1} attempts")
                             raise FlashError(
                                 f"Flash operation failed after {retries + 1} attempts. Last error: {categorized_error}"
                             ) from e
-
 
         total_time = time.time() - start_time
         # total time in minutes:seconds
@@ -262,7 +275,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             The found exception instance if found, None otherwise
         """
         # Check if this is an ExceptionGroup and look through its exceptions
-        if hasattr(exception, 'exceptions'):
+        if hasattr(exception, "exceptions"):
             for sub_exc in exception.exceptions:
                 result = self._find_exception_in_chain(sub_exc, target_type)
                 if result is not None:
@@ -273,17 +286,17 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             return exception
 
         # Check the cause chain
-        current = getattr(exception, '__cause__', None)
+        current = getattr(exception, "__cause__", None)
         while current is not None:
             if isinstance(current, target_type):
                 return current
             # Also check if the cause is an ExceptionGroup
-            if hasattr(current, 'exceptions'):
+            if hasattr(current, "exceptions"):
                 for sub_exc in current.exceptions:
                     result = self._find_exception_in_chain(sub_exc, target_type)
                     if result is not None:
                         return result
-            current = getattr(current, '__cause__', None)
+            current = getattr(current, "__cause__", None)
         return None
 
     def _perform_flash_operation(
@@ -352,7 +365,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
 
             header_args = self._prepare_headers(headers, bearer_token)
-
 
             if method == "fls":
                 self._flash_with_fls(
@@ -504,10 +516,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         elif fls_version != "":
             self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
             # Download fls binary to the target device (until it is available on the target device)
-            fls_url = (
-                f"https://github.com/jumpstarter-dev/fls/releases/download/{fls_version}/"
-                f"fls-aarch64-linux"
-            )
+            fls_url = f"https://github.com/jumpstarter-dev/fls/releases/download/{fls_version}/fls-aarch64-linux"
             console.sendline(f"curl -L {fls_url} -o /sbin/fls")
             console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
             console.sendline("echo $?")
@@ -547,7 +556,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 if len(current_output) > last_printed_length:
                     new_output = current_output[last_printed_length:]
                     if new_output:
-                        print(new_output, end='', flush=True)
+                        print(new_output, end="", flush=True)
                     last_printed_length = len(current_output)
 
                 # Check if we matched the prompt (index 0 means prompt matched)
@@ -556,7 +565,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     break
                 # If match_index is 1, it means TIMEOUT was matched, so we continue the loop
 
-                if 'panicked at' in current_output:
+                if "panicked at" in current_output:
                     raise FlashRetryableError(f"FLS panicked: {current_output}")
 
             except pexpect.EOF as err:
@@ -610,8 +619,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         flash_cmd = (
             f'( set -o pipefail; curl -fsSL {tls_args} {header_args} "{image_url}" | '
             f"{decompress_cmd} "
-            f'dd of={target_path} bs=64k iflag=fullblock oflag=direct ' +
-            '&& echo "F""LASH_COMPLETE" || echo "F""LASH_FAILED" ) &'
+            f"dd of={target_path} bs=64k iflag=fullblock oflag=direct "
+            + '&& echo "F""LASH_COMPLETE" || echo "F""LASH_FAILED" ) &'
         )
         console.sendline(flash_cmd)
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT * 2)
@@ -629,7 +638,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         console.sendline("pidof dd")
         console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         pidof_output = console.before.decode(errors="ignore")
-        accumulated_output = pidof_output # just in case we get the FLASH_COMPLETE or FLASH_FAILED markers soon
+        accumulated_output = pidof_output  # just in case we get the FLASH_COMPLETE or FLASH_FAILED markers soon
 
         # Extract the actual process ID from the output, handling potential error messages
         lines = pidof_output.splitlines()
@@ -709,8 +718,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """Update accumulated output with new data, keeping only last 64KB."""
         accumulated_output += data
         # Keep only the last 64KB to prevent memory growth
-        if len(accumulated_output) > 64*1024:
-            accumulated_output = accumulated_output[-64*1024:]
+        if len(accumulated_output) > 64 * 1024:
+            accumulated_output = accumulated_output[-64 * 1024 :]
         return accumulated_output
 
     def _update_progress_stats(self, data, last_pos, last_time):
@@ -943,7 +952,16 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
     def _filename(self, path: PathBuf) -> str:
         """Extract filename from url or path"""
-        if path.startswith(("http://", "https://")):
+        if path.startswith("oci://"):
+            oci_path = path[6:]  # Remove "oci://" prefix
+            if ":" in oci_path:
+                repository, tag = oci_path.rsplit(":", 1)
+                repo_name = repository.split("/")[-1] if "/" in repository else repository
+                return f"{repo_name}-{tag}"
+            else:
+                repo_name = oci_path.split("/")[-1] if "/" in oci_path else oci_path
+                return repo_name
+        elif path.startswith(("http://", "https://")):
             return urlparse(path).path.split("/")[-1]
         else:
             return Path(path).name
@@ -1181,7 +1199,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--fls-version",
             type=str,
-            default="0.1.9", # TODO(majopela): set default to "" once fls is included in our images
+            default="0.1.9",  # TODO(majopela): set default to "" once fls is included in our images
             help="Download an specific fls version from the github releases",
         )
         @click.option(
