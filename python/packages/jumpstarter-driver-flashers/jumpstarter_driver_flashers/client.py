@@ -468,6 +468,34 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return " ".join(parts)
 
+    def _download_fls_binary(self, console, prompt: str, download_url: str, error_message_prefix: str):
+        """Download FLS binary to the target device.
+
+        Args:
+            console: Console object for device interaction
+            prompt: Login prompt for console interaction
+            download_url: URL to download the FLS binary from
+            error_message_prefix: Prefix for error message if download fails
+
+        Raises:
+            FlashRetryableError: If download fails or binary cannot be made executable
+        """
+        console.sendline(f"curl -L {download_url} -o /sbin/fls")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        console.sendline("echo $?")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+        try:
+            lines = console.before.decode(errors="ignore").strip().splitlines()
+            exit_code = int(lines[-1]) if lines else -1
+        except (IndexError, ValueError) as e:
+            raise FlashRetryableError(f"{error_message_prefix}, failed to parse exit code") from e
+
+        if exit_code != 0:
+            raise FlashRetryableError(f"{error_message_prefix}, exit code: {exit_code}")
+        console.sendline("chmod +x /sbin/fls")
+        console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
     def _flash_with_fls(
         self,
         console,
@@ -502,32 +530,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         if fls_binary_url:
             self.logger.info(f"Downloading FLS binary from custom URL: {fls_binary_url}")
-            console.sendline(f"curl -L {fls_binary_url} -o /sbin/fls")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-            console.sendline("echo $?")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-
-            exit_code = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
-
-            if exit_code != 0:
-                raise FlashRetryableError(f"Failed to download FLS from {fls_binary_url}, exit code: {exit_code}")
-            console.sendline("chmod +x /sbin/fls")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            self._download_fls_binary(console, prompt, fls_binary_url, f"Failed to download FLS from {fls_binary_url}")
         elif fls_version != "":
             self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
             # Download fls binary to the target device (until it is available on the target device)
             fls_url = f"https://github.com/jumpstarter-dev/fls/releases/download/{fls_version}/fls-aarch64-linux"
-            console.sendline(f"curl -L {fls_url} -o /sbin/fls")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-            console.sendline("echo $?")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-
-            exit_code = int(console.before.decode(errors="ignore").strip().splitlines()[-1])
-
-            if exit_code != 0:
-                raise FlashRetryableError(f"Failed to download FLS from {fls_url}, exit code: {exit_code}")
-            console.sendline("chmod +x /sbin/fls")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            self._download_fls_binary(console, prompt, fls_url, f"Failed to download FLS from {fls_url}")
 
         # Flash the image
         flash_cmd = f'fls from-url -i 1.0 -n {tls_args} {header_args} --o-direct "{image_url}" {target_path}'
