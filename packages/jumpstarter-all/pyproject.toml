@@ -35,6 +35,7 @@ dependencies = [
   "jumpstarter-driver-tmt",
   "jumpstarter-driver-uboot",
   "jumpstarter-driver-ustreamer",
+  "jumpstarter-driver-vnc",
   "jumpstarter-driver-yepkit",
   "jumpstarter-imagehash",
   "jumpstarter-kubernetes",

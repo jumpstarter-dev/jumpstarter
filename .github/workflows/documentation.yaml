@@ -42,7 +42,9 @@ jobs:
           version: "latest"
 
       - name: Install Python
-        run: uv python install
+        run: |
+          uv python pin 3.12
+          uv python install
 
       - name: Setup Pages
         id: pages
@@ -80,7 +82,9 @@ jobs:
           version: "latest"
 
       - name: Install Python
-        run: uv python install
+        run: |
+          uv python pin 3.12
+          uv python install
 
       - name: Build the documentation for the current version (no warnings allowed)
         run: make sync && make docs

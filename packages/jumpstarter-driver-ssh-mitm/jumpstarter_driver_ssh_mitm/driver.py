@@ -257,14 +257,13 @@ class SSHMITM(Driver):
         return tcp_driver.host, tcp_driver.port or 22
 
     def _load_private_key(self, key_data: str) -> paramiko.PKey:
-        """Load private key, auto-detecting type (Ed25519, RSA, ECDSA, DSS)."""
+        """Load private key, auto-detecting type (Ed25519, RSA, ECDSA)."""
         key_file = io.StringIO(key_data)
 
         key_classes = [
             paramiko.Ed25519Key,
             paramiko.RSAKey,
             paramiko.ECDSAKey,
-            paramiko.DSSKey,
         ]
 
         for key_class in key_classes:
