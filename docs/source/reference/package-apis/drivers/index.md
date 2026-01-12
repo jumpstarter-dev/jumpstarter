@@ -41,6 +41,7 @@ Drivers that provide various communication interfaces:
   Protocol
 * **[TFTP](tftp.md)** (`jumpstarter-driver-tftp`) - Trivial File Transfer
   Protocol
+* **[VNC](vnc.md)** (`jumpstarter-driver-vnc`) - VNC (Virtual Network Computing) remote desktop protocol
 
 ### Storage and Data Drivers
 
@@ -109,5 +110,6 @@ tmt.md
 tftp.md
 uboot.md
 ustreamer.md
+vnc.md
 yepkit.md
 ```
