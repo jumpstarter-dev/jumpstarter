@@ -72,6 +72,8 @@ Drivers for debugging and programming devices:
 * **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
 * **[Corellium](corellium.md)** (`jumpstarter-driver-corellium`) - Corellium
   virtualization platform
+* **[Sigrok](sigrok.md)** (`jumpstarter-driver-sigrok`) - Logic analyzer and
+  oscilloscope support via sigrok-cli
 * **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader
   interface
 * **[RideSX](ridesx.md)** (`jumpstarter-driver-ridesx`) - Flashing and power management for Qualcomm RideSX devices
@@ -105,6 +107,7 @@ gpiod.md
 ridesx.md
 sdwire.md
 shell.md
+sigrok.md
 ssh.md
 snmp.md
 tasmota.md
