@@ -19,6 +19,12 @@ from jumpstarter.config.tls import TLSConfigV1Alpha1
 @click.option("-e", "--endpoint", type=str, help="Enter the Jumpstarter service endpoint.", default=None)
 @click.option("--namespace", type=str, help="Enter the Jumpstarter exporter namespace.", default=None)
 @click.option("--name", type=str, help="Enter the Jumpstarter exporter name.", default=None)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force fresh login",
+    default=False,
+)
 @opt_oidc
 # client specific
 # TODO: warn if used with exporter
@@ -52,6 +58,7 @@ async def login(  # noqa: C901
     insecure_tls_config: bool,
     nointeractive: bool,
     allow,
+    force: bool,
 ):
     """Login into a jumpstarter instance"""
 
@@ -124,7 +131,8 @@ async def login(  # noqa: C901
     elif username is not None and password is not None:
         tokens = await oidc.password_grant(username, password)
     else:
-        tokens = await oidc.authorization_code_grant(callback_port=callback_port)
+        prompt = "login" if force else None
+        tokens = await oidc.authorization_code_grant(callback_port=callback_port, prompt=prompt)
 
     config.token = tokens["access_token"]
 
@@ -138,10 +146,11 @@ async def login(  # noqa: C901
         case "exporter_config":
             ExporterConfigV1Alpha1.save(config, value)  # ty: ignore[invalid-argument-type]
 
+
 @blocking
 async def relogin_client(config: ClientConfigV1Alpha1):
     """Relogin into a jumpstarter instance"""
-    client_id = "jumpstarter-cli" # TODO: store this metadata in the config
+    client_id = "jumpstarter-cli"  # TODO: store this metadata in the config
     try:
         issuer = decode_jwt_issuer(config.token)
     except Exception as e:
@@ -151,7 +160,6 @@ async def relogin_client(config: ClientConfigV1Alpha1):
         oidc = Config(issuer=issuer, client_id=client_id)
         tokens = await oidc.authorization_code_grant()
         config.token = tokens["access_token"]
-        ClientConfigV1Alpha1.save(config) # ty: ignore[invalid-argument-type]
+        ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
     except Exception as e:
         raise ReauthenticationFailed(f"Failed to re-authenticate: {e}") from e
-

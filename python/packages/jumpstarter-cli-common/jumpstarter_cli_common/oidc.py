@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
@@ -23,7 +24,8 @@ def opt_oidc(f):
     @click.option("--username", help="OIDC username")
     @click.option("--password", help="OIDC password")
     @click.option("--connector-id", "connector_id", help="OIDC token exchange connector id (Dex specific)")
-    @click.option("--callback-port",
+    @click.option(
+        "--callback-port",
         "callback_port",
         type=click.IntRange(0, 65535),
         default=None,
@@ -80,7 +82,7 @@ class Config:
             )
         )
 
-    async def authorization_code_grant(self, callback_port: int | None = None):
+    async def authorization_code_grant(self, callback_port: int | None = None, prompt: str | None = None):
         config = await self.configuration()
 
         # Use provided port, fall back to env var, then default to 0 (OS picks)
@@ -93,7 +95,7 @@ class Config:
             elif env_value.isdigit() and int(env_value) <= 65535:
                 port = int(env_value)
             else:
-                raise click.ClickException(f"Invalid {JMP_OIDC_CALLBACK_PORT} \"{env_value}\": must be a valid port")
+                raise click.ClickException(f'Invalid {JMP_OIDC_CALLBACK_PORT} "{env_value}": must be a valid port')
 
         tx, rx = create_memory_object_stream()
 
@@ -118,7 +120,12 @@ class Config:
 
         client = self.client(redirect_uri=redirect_uri)
 
-        uri, state = client.create_authorization_url(config["authorization_endpoint"])
+        # Add prompt parameter if force requested
+        auth_params = {}
+        if prompt:
+            auth_params["prompt"] = prompt
+
+        uri, state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
 
         print("Please open the URL in browser: ", uri)
 
@@ -133,8 +140,75 @@ class Config:
 
 
 def decode_jwt(token: str):
-    return json.loads(extract_compact(token.encode()).payload)
+    try:
+        return json.loads(extract_compact(token.encode()).payload)
+    except (ValueError, KeyError, TypeError) as e:
+        raise ValueError(f"Invalid JWT format: {e}") from e
 
 
 def decode_jwt_issuer(token: str):
     return decode_jwt(token).get("iss")
+
+
+def get_token_expiry(token: str) -> int | None:
+    """Get token expiry timestamp (Unix epoch seconds) from JWT.
+
+    Returns None if token doesn't have an exp claim.
+    """
+    return decode_jwt(token).get("exp")
+
+
+def get_token_remaining_seconds(token: str) -> float | None:
+    """Get seconds remaining until token expires.
+
+    Returns:
+        Positive value if token is still valid
+        Negative value if token is expired (magnitude = how long ago)
+        None if token doesn't have an exp claim
+    """
+    exp = get_token_expiry(token)
+    if exp is None:
+        return None
+    return exp - time.time()
+
+
+# Token expiry warning threshold in seconds (5 minutes)
+TOKEN_EXPIRY_WARNING_SECONDS = 300
+
+
+def is_token_expired(token: str, buffer_seconds: int = 0) -> bool:
+    """Check if token is expired or will expire within buffer_seconds.
+
+    Args:
+        token: JWT token string
+        buffer_seconds: Consider expired if less than this many seconds remain
+
+    Returns:
+        True if token is expired or will expire within buffer
+        False if token is still valid (or has no exp claim)
+    """
+    remaining = get_token_remaining_seconds(token)
+    if remaining is None:
+        return False
+    return remaining < buffer_seconds
+
+
+def format_duration(seconds: float) -> str:
+    """Format a duration in seconds as a human-readable string.
+
+    Args:
+        seconds: Duration in seconds (can be negative for past times)
+
+    Returns:
+        Formatted string like "2h 30m" or "5m 10s"
+    """
+    abs_seconds = abs(seconds)
+    hours = int(abs_seconds // 3600)
+    mins = int((abs_seconds % 3600) // 60)
+    secs = int(abs_seconds % 60)
+
+    if hours > 0:
+        return f"{hours}h {mins}m"
+    if mins > 0:
+        return f"{mins}m {secs}s"
+    return f"{secs}s"
