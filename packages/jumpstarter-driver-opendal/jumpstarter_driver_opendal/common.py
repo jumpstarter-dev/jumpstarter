@@ -83,9 +83,12 @@ class Capability(BaseModel):
     read: bool
     read_with_if_match: bool
     read_with_if_none_match: bool
+    read_with_if_modified_since: bool
+    read_with_if_unmodified_since: bool
     read_with_override_cache_control: bool
     read_with_override_content_disposition: bool
     read_with_override_content_type: bool
+    read_with_version: bool
 
     write: bool
     write_can_multi: bool
@@ -93,10 +96,15 @@ class Capability(BaseModel):
     write_can_append: bool
     write_with_content_type: bool
     write_with_content_disposition: bool
+    write_with_content_encoding: bool
     write_with_cache_control: bool
-    write_multi_max_size: Optional[int]
-    write_multi_min_size: Optional[int]
-    write_total_max_size: Optional[int]
+    write_with_if_match: bool
+    write_with_if_none_match: bool
+    write_with_if_not_exists: bool
+    write_with_user_metadata: bool
+    write_multi_max_size: int | None
+    write_multi_min_size: int | None
+    write_total_max_size: int | None
 
     create_dir: bool
     delete: bool
@@ -112,6 +120,6 @@ class Capability(BaseModel):
     presign_read: bool
     presign_stat: bool
     presign_write: bool
+    presign_delete: bool
 
     shared: bool
-    blocking: bool
