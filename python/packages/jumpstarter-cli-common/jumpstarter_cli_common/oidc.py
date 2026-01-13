@@ -82,7 +82,7 @@ class Config:
             )
         )
 
-    async def authorization_code_grant(self, callback_port: int | None = None):
+    async def authorization_code_grant(self, callback_port: int | None = None, prompt: str | None = None):
         config = await self.configuration()
 
         # Use provided port, fall back to env var, then default to 0 (OS picks)
@@ -120,7 +120,12 @@ class Config:
 
         client = self.client(redirect_uri=redirect_uri)
 
-        uri, state = client.create_authorization_url(config["authorization_endpoint"])
+        # Add prompt parameter if force requested
+        auth_params = {}
+        if prompt:
+            auth_params["prompt"] = prompt
+
+        uri, state = client.create_authorization_url(config["authorization_endpoint"], **auth_params)
 
         print("Please open the URL in browser: ", uri)
 
