@@ -21,10 +21,10 @@ def _print_token_status(remaining: float) -> None:
 
     if remaining < 0:
         click.echo(click.style(f"Status: EXPIRED ({duration} ago)", fg="red", bold=True))
-        click.echo(click.style("Run 'jmp login' to refresh your credentials.", fg="yellow"))
+        click.echo(click.style("Run 'jmp login --force' to refresh your credentials.", fg="yellow"))
     elif remaining < TOKEN_EXPIRY_WARNING_SECONDS:
         click.echo(click.style(f"Status: EXPIRING SOON ({duration} remaining)", fg="red", bold=True))
-        click.echo(click.style("Run 'jmp login' to refresh your credentials.", fg="yellow"))
+        click.echo(click.style("Run 'jmp login --force' to refresh your credentials.", fg="yellow"))
     elif remaining < 3600:
         click.echo(click.style(f"Status: Valid ({duration} remaining)", fg="yellow"))
     else:
