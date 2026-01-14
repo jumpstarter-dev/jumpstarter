@@ -37,11 +37,13 @@ export:
 
 The `NVDemuxSerial` driver provides serial access to NVIDIA Tegra demultiplexed UART channels using the [nv_tcu_demuxer](https://docs.nvidia.com/jetson/archives/r38.2.1/DeveloperGuide/AT/JetsonLinuxDevelopmentTools/TegraCombinedUART.html) tool. It automatically handles device reconnection when the target device restarts.
 
-> **⚠️ Important**: This driver currently supports only a single demuxed port per exporter.
+### Multi-Instance Support
+
+Multiple driver instances can share a single demuxer process by specifying different target channels. This allows simultaneous access to multiple UART channels (CCPLEX, BPMP, SCE, etc.) from the same physical device.
 
 ### Configuration
 
-Example configuration:
+#### Single channel example:
 
 ```yaml
 export:
@@ -51,6 +53,32 @@ export:
       demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
       # device defaults to auto-detect NVIDIA Tegra On-Platform Operator
       # chip defaults to T264 (Thor), use T234 for Orin
+```
+
+#### Multiple channels example:
+
+```yaml
+export:
+  ccplex:
+    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
+    config:
+      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
+      target: "CCPLEX: 0"
+      chip: "T264"
+
+  bpmp:
+    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
+    config:
+      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
+      target: "BPMP: 1"
+      chip: "T264"
+
+  sce:
+    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
+    config:
+      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
+      target: "SCE: 2"
+      chip: "T264"
 ```
 
 ### Config parameters
@@ -92,26 +120,18 @@ When the target device restarts (e.g., power cycle), the serial device disappear
 
 Active connections will receive errors when the device disconnects. Clients should reconnect, and the driver will wait for the device to be available again.
 
-### Limitations
+### Configuration Validation / Limitations
 
-**Single Port Per Exporter**: The driver can only manage one demuxed channel at a time. The following configuration will **NOT work**:
+When using multiple driver instances, all instances must have compatible configurations:
 
-```yaml
-# ❌ This will NOT work - both drivers will conflict
-export:
-  ccplex:
-    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
-    config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "CCPLEX: 0"
-  bpmp:
-    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
-    config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "BPMP: 1"  # This will conflict with the CCPLEX instance
-```
+- **demuxer_path**: Must be identical across all instances
+- **device**: Must be identical across all instances
+- **chip**: Must be identical across all instances
+- **target**: Must be unique for each instance (no duplicates allowed)
 
-To access multiple channels, use separate exporters or modify the driver to support multiple channels.
+If these requirements are not met, the driver will raise a `ValueError` during initialization.
+
+
 
 ## CLI Commands
 
