@@ -104,7 +104,7 @@ Both drivers require:
 
 ```{testcode}
 # Flash a single partition
-ridesx_client.flash("/path/to/boot.img", partition="boot")
+ridesx_client.flash("/path/to/boot.img", target="boot")
 ```
 
 ### Flash Multiple Partitions
@@ -125,7 +125,7 @@ The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`):
 
 ```{testcode}
 # Flash compressed images - decompression is automatic
-ridesx_client.flash("/path/to/boot.img.gz", partition="boot")
+ridesx_client.flash("/path/to/boot.img.gz", target="boot")
 ```
 
 ### Power Control

@@ -6,6 +6,11 @@ import click
 from anyio import create_task_group, get_cancelled_exc_class
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
+from jumpstarter_cli_common.oidc import (
+    TOKEN_EXPIRY_WARNING_SECONDS,
+    format_duration,
+    get_token_remaining_seconds,
+)
 from jumpstarter_cli_common.signal import signal_handler
 
 from .common import opt_acquisition_timeout, opt_duration_partial, opt_selector
@@ -15,12 +20,59 @@ from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 
+def _warn_about_expired_token(lease_name: str, selector: str) -> None:
+    """Warn user that lease won't be cleaned up due to expired token."""
+    click.echo(click.style("\nToken expired - lease cleanup will fail.", fg="yellow", bold=True))
+    click.echo(click.style(f"Lease '{lease_name}' will remain active.", fg="yellow"))
+    click.echo(click.style(f"To reconnect: JMP_LEASE={lease_name} jmp shell", fg="cyan"))
+
+
+async def _monitor_token_expiry(config, cancel_scope) -> None:
+    """Monitor token expiry and warn user."""
+    token = getattr(config, "token", None)
+    if not token:
+        return
+
+    warned = False
+    while not cancel_scope.cancel_called:
+        try:
+            remaining = get_token_remaining_seconds(token)
+            if remaining is None:
+                return
+
+            if remaining <= 0:
+                click.echo(click.style("\nToken expired! Exiting shell.", fg="red", bold=True))
+                cancel_scope.cancel()
+                return
+
+            if remaining <= TOKEN_EXPIRY_WARNING_SECONDS and not warned:
+                duration = format_duration(remaining)
+                click.echo(
+                    click.style(
+                        f"\nToken expires in {duration}. Session will continue but cleanup may fail on exit.",
+                        fg="yellow",
+                        bold=True,
+                    )
+                )
+                warned = True
+
+            await anyio.sleep(30)
+        except Exception:
+            return
+
+
 def _run_shell_with_lease(lease, exporter_logs, config, command):
     """Run shell with lease context managers."""
+
     def launch_remote_shell(path: str) -> int:
         return launch_shell(
-            path, lease.exporter_name, config.drivers.allow, config.drivers.unsafe,
-            config.shell.use_profiles, command=command, lease=lease
+            path,
+            lease.exporter_name,
+            config.drivers.allow,
+            config.drivers.unsafe,
+            config.shell.use_profiles,
+            command=command,
+            lease=lease,
         )
 
     with lease.serve_unix() as path:
@@ -39,13 +91,28 @@ async def _shell_with_signal_handling(
     """Handle lease acquisition and shell execution with signal handling."""
     exit_code = 0
     cancelled_exc_class = get_cancelled_exc_class()
+    lease_used = None
+
+    # Check token before starting
+    token = getattr(config, "token", None)
+    if token:
+        remaining = get_token_remaining_seconds(token)
+        if remaining is not None and remaining <= 0:
+            from jumpstarter.common.exceptions import ConnectionError
+            raise ConnectionError("token is expired")
 
     async with create_task_group() as tg:
         tg.start_soon(signal_handler, tg.cancel_scope)
+
         try:
             try:
                 async with anyio.from_thread.BlockingPortal() as portal:
                     async with config.lease_async(selector, lease_name, duration, portal, acquisition_timeout) as lease:
+                        lease_used = lease
+
+                        # Start token monitoring only once we're in the shell
+                        tg.start_soon(_monitor_token_expiry, config, tg.cancel_scope)
+
                         exit_code = await anyio.to_thread.run_sync(
                             _run_shell_with_lease, lease, exporter_logs, config, command
                         )
@@ -55,6 +122,13 @@ async def _shell_with_signal_handling(
                         raise exc from None
                 raise
             except cancelled_exc_class:
+                # Check if cancellation was due to token expiry
+                token = getattr(config, "token", None)
+                if lease_used and token:
+                    remaining = get_token_remaining_seconds(token)
+                    if remaining is not None and remaining <= 0:
+                        _warn_about_expired_token(lease_used.name, selector)
+                        return 3  # Exit code for token expiry
                 exit_code = 2
         finally:
             if not tg.cancel_scope.cancel_called:
