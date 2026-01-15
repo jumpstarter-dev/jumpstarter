@@ -163,8 +163,8 @@ class DemuxerManager:
             # If target is already ready, notify immediately
             notify_args = self._get_ready_callback(target, callback)
 
-            # Start monitor thread if this is the first driver
-            if len(self._drivers) == 1:
+            # Start monitor thread only once
+            if not self._monitor_thread or not self._monitor_thread.is_alive():
                 self._start_monitor()
 
         if notify_args:
@@ -186,9 +186,7 @@ class DemuxerManager:
                 del self._drivers[driver_id]
                 logger.info("Unregistered driver %s (target: %s)", driver_id, target)
 
-                # Stop monitor thread if this was the last driver
-                if not self._drivers:
-                    self._stop_monitor()
+                # Keep monitor running even if no drivers remain
 
     def get_pts_path(self, driver_id: str) -> str | None:
         """Get the pts path for a registered driver.

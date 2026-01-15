@@ -426,10 +426,10 @@ def test_reference_counting():
             time.sleep(0.2)
             assert not mock_proc._terminated
 
-            # Unregister second driver - process should stop
+            # Unregister second driver - process should still continue (monitor stays running)
             manager.unregister_driver("driver2")
             time.sleep(0.2)
-            assert mock_proc._terminated
+            assert not mock_proc._terminated
 
             # Cleanup
             DemuxerManager.reset_instance()

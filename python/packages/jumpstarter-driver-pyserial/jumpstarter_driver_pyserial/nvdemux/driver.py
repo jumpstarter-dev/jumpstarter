@@ -120,12 +120,16 @@ class NVDemuxSerial(Driver):
             # Use a short sleep to allow checking ready state
             await sleep(0.1)
 
-        # Get the current pts path from manager
+        # Get the current pts path from manager (retry until timeout)
         manager = DemuxerManager.get_instance()
+        pts_start = time.monotonic()
         pts_path = manager.get_pts_path(str(self.uuid))
-
-        if not pts_path:
-            raise RuntimeError("Demuxer ready but no pts path available")
+        while not pts_path:
+            elapsed = time.monotonic() - pts_start
+            if elapsed >= self.timeout:
+                raise TimeoutError("Demuxer ready but no pts path available after retrying")
+            await sleep(self.poll_interval)
+            pts_path = manager.get_pts_path(str(self.uuid))
 
         cps_info = f", cps: {self.cps}" if self.cps is not None else ""
         self.logger.info("Connecting to %s, baudrate: %d%s", pts_path, self.baudrate, cps_info)
