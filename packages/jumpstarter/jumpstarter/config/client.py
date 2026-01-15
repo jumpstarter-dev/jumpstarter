@@ -148,6 +148,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         name: str,
     ):
+        """Gets an exporter by name."""
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.GetExporter(name=name)
 
@@ -161,6 +162,20 @@ class ClientConfigV1Alpha1(BaseSettings):
         include_leases: bool = False,
         include_online: bool = False,
     ):
+        """Lists exporters.
+
+        Args:
+            * page_size: The number of exporters to return.
+            * page_token: The token to use to get the next page of exporters.
+            * filter: A filter to apply to the list of exporters.
+            * include_leases: Whether to include leases in the response.
+            * include_online: Whether to include online status in the response.
+        Returns:
+            .exporters: list[Exporter]
+            .next_page_token: str | None
+            .include_online: bool : Whether to include online status in the response.
+            .include_leases: bool : Whether to include leases in the response.
+        """
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         exporters_response = await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
 
@@ -203,6 +218,13 @@ class ClientConfigV1Alpha1(BaseSettings):
         begin_time: datetime | None = None,
         lease_id: str | None = None,
     ):
+        """Creates a lease request.
+
+        Args:
+            * selector: The selector to use to create the lease.
+            * duration: The duration of the lease.
+            * begin_time: The beginning time of the lease.
+        """
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
             selector=selector,
@@ -217,6 +239,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         self,
         name: str,
     ):
+        """Deletes a lease by name."""
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         await svc.DeleteLease(
             name=name,
@@ -231,6 +254,17 @@ class ClientConfigV1Alpha1(BaseSettings):
         filter: str | None = None,
         only_active: bool = True,
     ):
+        """Lists leases.
+
+        Args:
+            * page_size: The number of leases to return.
+            * page_token: The token to use to get the next page of leases.
+            * filter: A filter to apply to the list of leases.
+            * only_active: Whether to only include active leases.
+        Returns:
+            .leases: list[Lease]
+            .next_page_token: str | None
+        """
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.ListLeases(
             page_size=page_size,
@@ -247,6 +281,15 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
     ):
+        """Updates a lease by name.
+        Can be used to extend the duration of an active lease, or modify the desired begin
+        time and duration of a lease request.
+
+        Args:
+            * name: The name of the lease to update.
+            * duration: The duration of the lease.
+            * begin_time: The beginning time of the lease.
+        """
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time)
 
@@ -299,6 +342,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     @classmethod
     def from_file(cls, path: os.PathLike):
+        """Loads a client config from a file path."""
         with open(path) as f:
             v = cls.model_validate(yaml.safe_load(f))
             v.alias = os.path.basename(path).split(".")[0]
@@ -319,6 +363,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     @classmethod
     def from_env(cls):
+        """Loads a client config from the environment variables."""
         return cls()
 
     @classmethod
@@ -350,6 +395,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
+        """Dumps a client config as YAML."""
         return yaml.safe_dump(config.model_dump(mode="json", exclude={"path", "alias"}), sort_keys=False)
 
     @classmethod
