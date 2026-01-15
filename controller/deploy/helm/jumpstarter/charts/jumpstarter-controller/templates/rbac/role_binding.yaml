@@ -3,8 +3,9 @@ kind: ClusterRoleBinding
 metadata:
   labels:
     app.kubernetes.io/name: jumpstarter-router
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
   name: jumpstarter-manager-rolebinding
-  
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
