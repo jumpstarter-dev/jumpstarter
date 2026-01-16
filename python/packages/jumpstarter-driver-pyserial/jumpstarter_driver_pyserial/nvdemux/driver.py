@@ -1,10 +1,9 @@
-import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Optional
 
-from anyio import sleep
+from anyio import Event, fail_after, sleep
 from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
 from serial_asyncio import open_serial_connection
 
@@ -50,7 +49,7 @@ class NVDemuxSerial(Driver):
     poll_interval: float = field(default=1.0)
 
     # Internal state (not init params)
-    _ready: threading.Event = field(init=False, default_factory=threading.Event)
+    _ready: Event = field(init=False, default_factory=Event)
     _registered: bool = field(init=False, default=False)
 
     def __post_init__(self):
@@ -106,16 +105,14 @@ class NVDemuxSerial(Driver):
         Waits for the demuxer to be ready (device connected and pts path discovered)
         before opening the serial connection.
         """
-        # Wait for ready state
-        start_time = time.monotonic()
-        while not self._ready.is_set():
-            elapsed = time.monotonic() - start_time
-            if elapsed >= self.timeout:
-                raise TimeoutError(
-                    f"Timeout waiting for demuxer to become ready (device pattern: {self.device})"
-                )
-            # Use a short sleep to allow checking ready state
-            await sleep(0.1)
+        # Wait for ready state with timeout
+        try:
+            with fail_after(self.timeout):
+                await self._ready.wait()
+        except TimeoutError:
+            raise TimeoutError(
+                f"Timeout waiting for demuxer to become ready (device pattern: {self.device})"
+            ) from None
 
         # Get the current pts path from manager (retry until timeout)
         manager = DemuxerManager.get_instance()
