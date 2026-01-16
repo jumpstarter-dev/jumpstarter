@@ -49,9 +49,10 @@ export:
 ## API Reference
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_snmp.client.SNMPServerClient()
+.. autoclass:: jumpstarter_driver_power.client.PowerClient()
    :members:
    :show-inheritance:
+   :no-index:
 ```
 
 ### Examples
