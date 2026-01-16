@@ -18,6 +18,7 @@ def mock_nanokvm_client():
         # Mock authentication
         mock_client.authenticate = AsyncMock()
         mock_client.logout = AsyncMock()
+        mock_client.close = AsyncMock()
 
         # Mock info
         mock_info = MagicMock()
@@ -43,6 +44,8 @@ def mock_nanokvm_client():
         # Mock HID functions
         mock_client.paste_text = AsyncMock()
         mock_client.reset_hid = AsyncMock()
+        mock_client.mouse_move_abs = AsyncMock()
+        mock_client.mouse_click = AsyncMock()
 
         # Mock reboot
         mock_client.reboot_system = AsyncMock()
@@ -52,14 +55,19 @@ def mock_nanokvm_client():
         mock_images.files = ["/data/alpine-standard-3.23.2-x86_64.iso", "/data/cs10-js.iso"]
         mock_client.get_images = AsyncMock(return_value=mock_images)
 
-        mock_client_class.return_value = mock_client
+        # Mock context manager behavior
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+        mock_client_class.return_value = mock_context
+
         yield mock_client
 
 
 @pytest.fixture
 def mock_aiohttp_session():
     """Create a mock aiohttp ClientSession"""
-    with patch("jumpstarter_driver_nanokvm.driver.ClientSession") as mock_session_class:
+    with patch("aiohttp.ClientSession") as mock_session_class:
         mock_session = AsyncMock()
         mock_session.close = AsyncMock()
         mock_session_class.return_value = mock_session
@@ -173,42 +181,28 @@ def test_nanokvm_client_creation():
 
 def test_nanokvm_mouse_move_abs(mock_nanokvm_client, mock_aiohttp_session):
     """Test mouse absolute movement"""
-    with patch("jumpstarter_driver_nanokvm.driver.ClientSession") as mock_session_class:
-        mock_ws = AsyncMock()
-        mock_ws.send_json = AsyncMock()
-        mock_session = AsyncMock()
-        mock_session.ws_connect = AsyncMock(return_value=mock_ws)
-        mock_session.close = AsyncMock()
-        mock_session_class.return_value = mock_session
+    hid = NanoKVMHID(host="test.local", username="admin", password="admin")
 
-        hid = NanoKVMHID(host="test.local", username="admin", password="admin")
+    with serve(hid) as client:
+        # Move mouse to absolute position (normalized 0.0-1.0 coordinates)
+        client.mouse_move_abs(0.5, 0.5)
 
-        with serve(hid) as client:
-            # Move mouse to absolute position
-            client.mouse_move_abs(32768, 32768)
-
-            # Verify WebSocket message was sent
-            mock_ws.send_json.assert_called()
+        # Verify the mock was called
+        mock_nanokvm_client.mouse_move_abs.assert_called_once_with(0.5, 0.5)
 
 
 def test_nanokvm_mouse_click(mock_nanokvm_client, mock_aiohttp_session):
     """Test mouse click"""
-    with patch("jumpstarter_driver_nanokvm.driver.ClientSession") as mock_session_class:
-        mock_ws = AsyncMock()
-        mock_ws.send_json = AsyncMock()
-        mock_session = AsyncMock()
-        mock_session.ws_connect = AsyncMock(return_value=mock_ws)
-        mock_session.close = AsyncMock()
-        mock_session_class.return_value = mock_session
+    from nanokvm.models import MouseButton
 
-        hid = NanoKVMHID(host="test.local", username="admin", password="admin")
+    hid = NanoKVMHID(host="test.local", username="admin", password="admin")
 
-        with serve(hid) as client:
-            # Click left button
-            client.mouse_click("left")
+    with serve(hid) as client:
+        # Click left button
+        client.mouse_click("left")
 
-            # Verify WebSocket messages were sent (down and up)
-            assert mock_ws.send_json.call_count >= 2
+        # Verify the mock was called
+        mock_nanokvm_client.mouse_click.assert_called_once_with(MouseButton.LEFT, None, None)
 
 
 def test_nanokvm_get_images(mock_nanokvm_client, mock_aiohttp_session):

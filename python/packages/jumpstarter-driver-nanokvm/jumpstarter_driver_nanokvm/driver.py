@@ -86,14 +86,9 @@ class NanoKVMVideo(Driver):
     def close(self):
         """Clean up resources"""
         # Schedule cleanup of client
-        if self._client is not None:
+        if self._client_ctx is not None:
             try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self._client_ctx.__aexit__(None, None, None))
-                else:
-                    loop.run_until_complete(self._client_ctx.__aexit__(None, None, None))
+                anyio.from_thread.run(self._client_ctx.__aexit__(None, None, None))
             except Exception as e:
                 self.logger.debug(f"Error closing client: {e}")
 
@@ -215,14 +210,9 @@ class NanoKVMHID(Driver):
     def close(self):
         """Clean up resources"""
         # Schedule cleanup of client
-        if self._client is not None:
+        if self._client_ctx is not None:
             try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self._client_ctx.__aexit__(None, None, None))
-                else:
-                    loop.run_until_complete(self._client_ctx.__aexit__(None, None, None))
+                anyio.from_thread.run(self._client_ctx.__aexit__(None, None, None))
             except Exception as e:
                 self.logger.debug(f"Error closing client: {e}")
 
@@ -397,13 +387,14 @@ class NanoKVM(Composite):
             ),
         }
 
+        super().__post_init__()
+
         # Optionally add serial console access
         if self.enable_serial:
             # Note: This is a placeholder - actual serial console access via SSH
             # would require additional implementation in the nanokvm library
             self.logger.warning("Serial console access not yet fully implemented")
 
-        super().__post_init__()
 
     @classmethod
     def client(cls) -> str:
@@ -415,26 +406,44 @@ class NanoKVM(Composite):
         # Get info from the video driver's client
         video_driver = self.children["video"]
 
-        @with_reauth
-        async def _get_info_impl(driver):
-            client = await driver._get_client()
-            info = await client.get_info()
+        def _format_info(info):
+            """Format device info into a dictionary"""
             return {
-                "ips": [{"name": ip.name, "addr": ip.addr, "version": ip.version, "type": ip.type} for ip in info.ips],
+                "ips": [
+                    {"name": ip.name, "addr": ip.addr, "version": ip.version, "type": ip.type}
+                    for ip in info.ips
+                ],
                 "mdns": info.mdns,
                 "image": info.image,
                 "application": info.application,
                 "device_key": info.device_key,
             }
 
-        return await _get_info_impl(video_driver)
+        try:
+            client = await video_driver._get_client()
+            info = await client.get_info()
+            return _format_info(info)
+        except Exception as e:
+            if _is_unauthorized_error(e):
+                self.logger.warning("Received 401 Unauthorized, re-authenticating...")
+                await video_driver._reset_client()
+                # Retry once after re-authentication
+                client = await video_driver._get_client()
+                info = await client.get_info()
+                return _format_info(info)
+            raise
 
     @export
     async def reboot(self):
         """Reboot the NanoKVM device"""
         video_driver = self.children["video"]
-        client = await video_driver._get_client()
-        await client.reboot_system()
+
+        @with_reauth
+        async def _reboot_impl(driver):
+            client = await driver._get_client()
+            await client.reboot_system()
+
+        await _reboot_impl(video_driver)
         self.logger.info("NanoKVM device rebooted")
 
     @export
