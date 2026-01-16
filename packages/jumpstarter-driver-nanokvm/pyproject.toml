@@ -21,6 +21,9 @@ dependencies = [
     "click",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+NanoKVM = "jumpstarter_driver_nanokvm.driver:NanoKVM"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../'}
