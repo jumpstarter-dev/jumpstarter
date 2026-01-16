@@ -3,7 +3,7 @@
 import os
 import tempfile
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from .manager import DemuxerManager, _has_glob_chars, _resolve_device
 
@@ -139,7 +139,6 @@ def test_single_driver_registration():
             mock_popen.return_value = MockPopen(stdout_lines, block_after_lines=True)
 
             manager = DemuxerManager.get_instance()
-            callback = MagicMock()
 
             manager.register_driver(
                 driver_id="driver1",
@@ -147,14 +146,10 @@ def test_single_driver_registration():
                 device=device_file.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=callback,
             )
 
-            # Wait for callback
+            # Wait for demuxer to process output
             time.sleep(0.5)
-
-            # Verify callback was called
-            callback.assert_called_once_with("CCPLEX: 0", "/dev/pts/5")
 
             # Verify pts path is available
             pts_path = manager.get_pts_path("driver1")
@@ -180,9 +175,6 @@ def test_multiple_drivers_single_process():
             mock_popen.return_value = MockPopen(stdout_lines, block_after_lines=True)
 
             manager = DemuxerManager.get_instance()
-            callback1 = MagicMock()
-            callback2 = MagicMock()
-            callback3 = MagicMock()
 
             # Register three drivers
             manager.register_driver(
@@ -191,7 +183,6 @@ def test_multiple_drivers_single_process():
                 device=device_file.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=callback1,
             )
 
             manager.register_driver(
@@ -200,7 +191,6 @@ def test_multiple_drivers_single_process():
                 device=device_file.name,
                 chip="T264",
                 target="BPMP: 1",
-                callback=callback2,
             )
 
             manager.register_driver(
@@ -209,16 +199,10 @@ def test_multiple_drivers_single_process():
                 device=device_file.name,
                 chip="T264",
                 target="SCE: 2",
-                callback=callback3,
             )
 
-            # Wait for callbacks
+            # Wait for demuxer to process output
             time.sleep(0.5)
-
-            # Verify all callbacks were called
-            callback1.assert_called_once_with("CCPLEX: 0", "/dev/pts/5")
-            callback2.assert_called_once_with("BPMP: 1", "/dev/pts/6")
-            callback3.assert_called_once_with("SCE: 2", "/dev/pts/7")
 
             # Verify process was only started once
             assert mock_popen.call_count == 1
@@ -254,7 +238,6 @@ def test_config_validation_demuxer_path_mismatch():
                 device=device_file.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=MagicMock(),
             )
 
             # Try to register second driver with different demuxer_path
@@ -265,7 +248,6 @@ def test_config_validation_demuxer_path_mismatch():
                     device=device_file.name,
                     chip="T264",
                     target="BPMP: 1",
-                    callback=MagicMock(),
                 )
                 raise AssertionError("Should have raised ValueError")
             except ValueError as e:
@@ -295,7 +277,6 @@ def test_config_validation_device_mismatch():
                 device=device_file1.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=MagicMock(),
             )
 
             # Try to register second driver with different device
@@ -306,7 +287,6 @@ def test_config_validation_device_mismatch():
                     device=device_file2.name,  # Different device
                     chip="T264",
                     target="BPMP: 1",
-                    callback=MagicMock(),
                 )
                 raise AssertionError("Should have raised ValueError")
             except ValueError as e:
@@ -336,7 +316,6 @@ def test_config_validation_chip_mismatch():
                 device=device_file.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=MagicMock(),
             )
 
             # Try to register second driver with different chip
@@ -347,7 +326,6 @@ def test_config_validation_chip_mismatch():
                     device=device_file.name,
                     chip="T234",  # Different chip
                     target="BPMP: 1",
-                    callback=MagicMock(),
                 )
                 raise AssertionError("Should have raised ValueError")
             except ValueError as e:
@@ -377,7 +355,6 @@ def test_duplicate_target_rejected():
                 device=device_file.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=MagicMock(),
             )
 
             # Try to register second driver with same target
@@ -388,7 +365,6 @@ def test_duplicate_target_rejected():
                     device=device_file.name,
                     chip="T264",
                     target="CCPLEX: 0",  # Same target
-                    callback=MagicMock(),
                 )
                 raise AssertionError("Should have raised ValueError")
             except ValueError as e:
@@ -425,7 +401,6 @@ def test_reference_counting():
                 device=device_file.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=MagicMock(),
             )
 
             time.sleep(0.2)
@@ -438,7 +413,6 @@ def test_reference_counting():
                 device=device_file.name,
                 chip="T264",
                 target="BPMP: 1",
-                callback=MagicMock(),
             )
 
             time.sleep(0.2)
@@ -458,8 +432,8 @@ def test_reference_counting():
             DemuxerManager.reset_instance()
 
 
-def test_immediate_notification_for_ready_target():
-    """Test that drivers are notified immediately if target is already ready."""
+def test_pts_path_available_for_ready_target():
+    """Test that pts path is available for already-ready targets."""
     DemuxerManager.reset_instance()
 
     with tempfile.NamedTemporaryFile() as device_file:
@@ -474,32 +448,28 @@ def test_immediate_notification_for_ready_target():
             manager = DemuxerManager.get_instance()
 
             # Register first driver
-            callback1 = MagicMock()
             manager.register_driver(
                 driver_id="driver1",
                 demuxer_path="/usr/bin/demuxer",
                 device=device_file.name,
                 chip="T264",
                 target="CCPLEX: 0",
-                callback=callback1,
             )
 
             time.sleep(0.5)
-            callback1.assert_called_once()
+            assert manager.get_pts_path("driver1") == "/dev/pts/5"
 
-            # Register second driver for already-ready target - should be notified immediately
-            callback2 = MagicMock()
+            # Register second driver for already-ready target
             manager.register_driver(
                 driver_id="driver2",
                 demuxer_path="/usr/bin/demuxer",
                 device=device_file.name,
                 chip="T264",
                 target="BPMP: 1",
-                callback=callback2,
             )
 
-            # Should be called immediately without waiting
-            callback2.assert_called_once_with("BPMP: 1", "/dev/pts/6")
+            # pts path should be immediately available
+            assert manager.get_pts_path("driver2") == "/dev/pts/6"
 
             # Cleanup
             manager.unregister_driver("driver1")

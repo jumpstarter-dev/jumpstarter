@@ -1,7 +1,6 @@
 """Tests for NVDemuxSerial driver."""
 
 import tempfile
-import time
 from unittest.mock import MagicMock, patch
 
 from .driver import NVDemuxSerial
@@ -35,36 +34,6 @@ def test_nvdemux_registration():
                 driver.close()
 
 
-def test_nvdemux_callback_sets_ready():
-    """Test that callback from manager sets the ready event."""
-    with tempfile.NamedTemporaryFile() as device_file:
-        with patch("jumpstarter_driver_pyserial.nvdemux.driver.DemuxerManager") as mock_manager_class:
-            mock_manager = MagicMock()
-            mock_manager_class.get_instance.return_value = mock_manager
-
-            driver = NVDemuxSerial(
-                demuxer_path="/usr/bin/demuxer",
-                device=device_file.name,
-                target="CCPLEX: 0",
-                timeout=0.1,
-            )
-
-            try:
-                # Get the callback that was registered
-                callback = mock_manager.register_driver.call_args[1]["callback"]
-
-                # Initially not ready
-                assert not driver._ready.is_set()
-
-                # Call the callback
-                callback("CCPLEX: 0", "/dev/pts/5")
-
-                # Should now be ready
-                assert driver._ready.is_set()
-            finally:
-                driver.close()
-
-
 def test_nvdemux_gets_pts_from_manager():
     """Test that connect() gets pts path from manager."""
     with tempfile.NamedTemporaryFile() as device_file:
@@ -81,10 +50,6 @@ def test_nvdemux_gets_pts_from_manager():
             )
 
             try:
-                # Trigger callback to set ready
-                callback = mock_manager.register_driver.call_args[1]["callback"]
-                callback("CCPLEX: 0", "/dev/pts/5")
-
                 # Should call get_pts_path when checking pts availability
                 # (We can't test connect() easily without mocking serial, but we can test the logic)
                 pts_path = mock_manager.get_pts_path(str(driver.uuid))
@@ -112,28 +77,6 @@ def test_nvdemux_unregisters_on_close():
 
             # Verify driver unregistered
             mock_manager.unregister_driver.assert_called_once_with(driver_id)
-
-
-def test_nvdemux_timeout_no_callback():
-    """Test timeout when callback is never invoked."""
-    with tempfile.NamedTemporaryFile() as device_file:
-        with patch("jumpstarter_driver_pyserial.nvdemux.driver.DemuxerManager") as mock_manager_class:
-            mock_manager = MagicMock()
-            mock_manager_class.get_instance.return_value = mock_manager
-
-            driver = NVDemuxSerial(
-                demuxer_path="/usr/bin/demuxer",
-                device=device_file.name,
-                target="CCPLEX: 0",
-                timeout=0.1,
-            )
-
-            try:
-                # Callback is never invoked, so ready should not be set
-                time.sleep(0.2)
-                assert not driver._ready.is_set()
-            finally:
-                driver.close()
 
 
 def test_nvdemux_default_values():

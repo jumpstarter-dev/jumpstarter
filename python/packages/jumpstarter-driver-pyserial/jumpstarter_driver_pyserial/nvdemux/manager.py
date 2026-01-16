@@ -80,7 +80,6 @@ class DriverInfo:
 
     driver_id: str
     target: str
-    callback: Callable[[str, str], None]  # (target, pts_path) -> None
 
 
 class DemuxerManager:
@@ -207,14 +206,6 @@ class DemuxerManager:
             if existing_driver.target == target:
                 raise ValueError(f"Target '{target}' already registered by another driver")
 
-    def _get_ready_callback(self, target: str, callback: Callable[[str, str], None]) -> tuple[str, str] | None:
-        """Return callback args if target is already ready."""
-        if target in self._ready_targets:
-            pts_path = self._pts_map.get(target)
-            if pts_path:
-                return target, pts_path
-        return None
-
     def register_driver(
         self,
         driver_id: str,
@@ -222,7 +213,6 @@ class DemuxerManager:
         device: str,
         chip: str,
         target: str,
-        callback: Callable[[str, str], None],
         poll_interval: float = 1.0,
     ) -> None:
         """Register a driver instance with the manager.
@@ -233,13 +223,11 @@ class DemuxerManager:
             device: Device path or glob pattern
             chip: Chip type (T234 or T264)
             target: Target channel (e.g., "CCPLEX: 0")
-            callback: Function to call when target becomes ready
             poll_interval: Polling interval for device reconnection
 
         Raises:
             ValueError: If configuration doesn't match existing process
         """
-        notify_args: tuple[str, str] | None = None
         with self._lock:
             # Validate configuration matches existing process
             if self._drivers:
@@ -252,24 +240,14 @@ class DemuxerManager:
                 self._poll_interval = poll_interval
 
             # Register the driver
-            driver_info = DriverInfo(driver_id=driver_id, target=target, callback=callback)
+            driver_info = DriverInfo(driver_id=driver_id, target=target)
             self._drivers[driver_id] = driver_info
 
             logger.debug("Registered driver %s for target '%s'", driver_id, target)
 
-            # If target is already ready, notify immediately
-            notify_args = self._get_ready_callback(target, callback)
-
             # Start monitor thread only once
             if not self._monitor_thread or not self._monitor_thread.is_alive():
                 self._start_monitor()
-
-        if notify_args:
-            # Invoke callbacks outside the lock to avoid deadlocks/reentrancy.
-            try:
-                callback(*notify_args)
-            except Exception as e:
-                logger.error("Error in driver callback: %s", e)
 
     def unregister_driver(self, driver_id: str) -> None:
         """Unregister a driver instance.
@@ -527,23 +505,9 @@ class DemuxerManager:
                 if pts_path and target:
                     logger.debug("Found pts path for target '%s': %s", target, pts_path)
 
-                    callback_to_invoke = None
                     with self._lock:
                         self._pts_map[target] = pts_path
                         self._ready_targets.add(target)
-
-                        # Find driver callback for this specific target
-                        for driver_info in self._drivers.values():
-                            if driver_info.target == target:
-                                callback_to_invoke = driver_info.callback
-                                break  # Only one driver per target
-
-                    if callback_to_invoke:
-                        # Invoke callbacks outside the lock to avoid deadlocks/reentrancy.
-                        try:
-                            callback_to_invoke(target, pts_path)
-                        except Exception as e:
-                            logger.error("Error in driver callback: %s", e)
 
         except Exception as e:
             logger.error("Error reading demuxer output: %s", e)

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Optional
 
-from anyio import Event, fail_after, sleep
+from anyio import sleep
 from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
 from serial_asyncio import open_serial_connection
 
@@ -49,7 +49,6 @@ class NVDemuxSerial(Driver):
     poll_interval: float = field(default=1.0)
 
     # Internal state (not init params)
-    _ready: Event = field(init=False, default_factory=Event)
     _registered: bool = field(init=False, default=False)
 
     def __post_init__(self):
@@ -65,7 +64,6 @@ class NVDemuxSerial(Driver):
                 device=self.device,
                 chip=self.chip,
                 target=self.target,
-                callback=self._on_target_ready,
                 poll_interval=self.poll_interval,
             )
             self._registered = True
@@ -77,16 +75,6 @@ class NVDemuxSerial(Driver):
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_pyserial.client.PySerialClient"
-
-    def _on_target_ready(self, target: str, pts_path: str):
-        """Callback invoked by DemuxerManager when target becomes ready.
-
-        Args:
-            target: The target channel that became ready
-            pts_path: The pts path for this target
-        """
-        self.logger.info("Target '%s' ready with pts path: %s", target, pts_path)
-        self._ready.set()
 
     def close(self):
         """Unregister from the DemuxerManager."""
@@ -105,23 +93,16 @@ class NVDemuxSerial(Driver):
         Waits for the demuxer to be ready (device connected and pts path discovered)
         before opening the serial connection.
         """
-        # Wait for ready state with timeout
-        try:
-            with fail_after(self.timeout):
-                await self._ready.wait()
-        except TimeoutError:
-            raise TimeoutError(
-                f"Timeout waiting for demuxer to become ready (device pattern: {self.device})"
-            ) from None
-
-        # Get the current pts path from manager (retry until timeout)
+        # Poll for pts path until available or timeout
         manager = DemuxerManager.get_instance()
         pts_start = time.monotonic()
         pts_path = manager.get_pts_path(str(self.uuid))
         while not pts_path:
             elapsed = time.monotonic() - pts_start
             if elapsed >= self.timeout:
-                raise TimeoutError("Demuxer ready but no pts path available after retrying")
+                raise TimeoutError(
+                    f"Timeout waiting for demuxer to become ready (device pattern: {self.device})"
+                )
             await sleep(self.poll_interval)
             pts_path = manager.get_pts_path(str(self.uuid))
 
