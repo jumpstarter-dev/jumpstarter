@@ -55,7 +55,8 @@ def setup_mock_snmp_engine():
         },
     ],
 )
-def test_snmp_auth_configurations(auth_config):
+@pytest.mark.anyio
+async def test_snmp_auth_configurations(auth_config):
     """Test different SNMP authentication configurations"""
     with (
         patch("pysnmp.entity.config.add_v3_user") as mock_add_user,
@@ -103,15 +104,13 @@ def test_snmp_auth_configurations(auth_config):
 
 @patch("pysnmp.entity.config.add_v3_user")
 @patch("pysnmp.entity.engine.SnmpEngine")
-def test_power_on_command(mock_engine, mock_add_user):
+@pytest.mark.anyio
+async def test_power_on_command(mock_engine, mock_add_user):
     """Test power on command execution"""
     mock_engine.return_value = setup_mock_snmp_engine()
 
     with (
         patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
-        patch("asyncio.get_running_loop", side_effect=RuntimeError),
-        patch("asyncio.new_event_loop"),
-        patch("asyncio.set_event_loop"),
         patch("pysnmp.entity.config.add_target_parameters"),
         patch("pysnmp.entity.config.add_target_address"),
         patch("pysnmp.entity.config.add_transport"),
@@ -124,22 +123,20 @@ def test_power_on_command(mock_engine, mock_add_user):
 
         mock_send.side_effect = side_effect
 
-        result = server.on()
+        result = await server.on()
         assert "Power ON command sent successfully" in result
         mock_send.assert_called_once()
 
 
 @patch("pysnmp.entity.config.add_v3_user")
 @patch("pysnmp.entity.engine.SnmpEngine")
-def test_power_off_command(mock_engine, mock_add_user):
+@pytest.mark.anyio
+async def test_power_off_command(mock_engine, mock_add_user):
     """Test power off command execution"""
     mock_engine.return_value = setup_mock_snmp_engine()
 
     with (
         patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
-        patch("asyncio.get_running_loop", side_effect=RuntimeError),
-        patch("asyncio.new_event_loop"),
-        patch("asyncio.set_event_loop"),
         patch("pysnmp.entity.config.add_target_parameters"),
         patch("pysnmp.entity.config.add_target_address"),
         patch("pysnmp.entity.config.add_transport"),
@@ -152,6 +149,6 @@ def test_power_off_command(mock_engine, mock_add_user):
 
         mock_send.side_effect = side_effect
 
-        result = server.off()
+        result = await server.off()
         assert "Power OFF command sent successfully" in result
         mock_send.assert_called_once()

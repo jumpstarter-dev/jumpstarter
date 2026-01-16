@@ -1,9 +1,11 @@
-import asyncio
 import socket
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
+from anyio import Event, fail_after
+from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdgen
@@ -36,7 +38,7 @@ class SNMPError(Exception):
 
 
 @dataclass(kw_only=True)
-class SNMPServer(Driver):
+class SNMPServer(PowerInterface, Driver):
     """SNMP Power Control Driver"""
 
     host: str = field()
@@ -117,7 +119,7 @@ class SNMPServer(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_snmp.client.SNMPServerClient"
 
-    def _create_snmp_callback(self, result: Dict[str, Any], response_received: asyncio.Event):
+    def _create_snmp_callback(self, result: Dict[str, Any], response_received: Event):
         def callback(snmpEngine, sendRequestHandle, errorIndication, errorStatus, errorIndex, varBinds, cbCtx):
             self.logger.debug(f"Callback {errorIndication} {errorStatus} {errorIndex} {varBinds}")
             if errorIndication:
@@ -138,29 +140,17 @@ class SNMPServer(Driver):
 
         return callback
 
-    def _setup_event_loop(self) -> Tuple[asyncio.AbstractEventLoop, bool]:
-        try:
-            loop = asyncio.get_running_loop()
-            return loop, False
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return loop, True
-
-    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: asyncio.Event):
+    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: Event):
         snmp_engine.open_dispatcher()
         await response_received.wait()
         snmp_engine.close_dispatcher()
 
-    def _snmp_set(self, state: PowerState):
+    async def _snmp_set(self, state: PowerState):
         result = {"success": False, "error": None}
-        response_received = asyncio.Event()
-        loop = None
-        created_loop = False
+        response_received = Event()
 
         try:
             self.logger.info(f"Sending power {state.name} command to {self.host}")
-            loop, created_loop = self._setup_event_loop()
             snmp_engine = self._setup_snmp()
             callback = self._create_snmp_callback(result, response_received)
             cmdgen.SetCommandGenerator().send_varbinds(
@@ -172,10 +162,10 @@ class SNMPServer(Driver):
                 callback,
             )
 
-            dispatcher_task = loop.create_task(self._run_snmp_dispatcher(snmp_engine, response_received))
             try:
-                loop.run_until_complete(asyncio.wait_for(dispatcher_task, self.timeout))
-            except asyncio.TimeoutError:
+                with fail_after(self.timeout):
+                    await self._run_snmp_dispatcher(snmp_engine, response_received)
+            except TimeoutError:
                 self.logger.warning(f"SNMP operation timed out after {self.timeout} seconds")
                 result["error"] = "SNMP operation timed out"
 
@@ -188,19 +178,20 @@ class SNMPServer(Driver):
             error_msg = f"SNMP set failed: {str(e)}"
             self.logger.error(error_msg)
             raise SNMPError(error_msg) from e
-        finally:
-            if created_loop and loop:
-                loop.close()
 
     @export
-    def on(self):
+    async def on(self):
         """Turn power on"""
-        return self._snmp_set(PowerState.ON)
+        return await self._snmp_set(PowerState.ON)
 
     @export
-    def off(self):
+    async def off(self):
         """Turn power off"""
-        return self._snmp_set(PowerState.OFF)
+        return await self._snmp_set(PowerState.OFF)
+
+    @export
+    async def read(self) -> AsyncGenerator[PowerReading, None]:
+        raise NotImplementedError
 
     def close(self):
         """No cleanup needed since engines are created per operation"""
