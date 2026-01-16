@@ -19,7 +19,7 @@ dev = [
   "pytest-cov>=5.0.0",
   "requests>=2.32.3",
   "rpmfile>=2.1.0",
-  "zstandard>=0.23.0",
+  "zstandard>=0.25.0",
 ]
 
 [tool.hatch.metadata.hooks.vcs.urls]
