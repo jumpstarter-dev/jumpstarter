@@ -51,18 +51,41 @@ def test_resolve_device_glob_no_match():
     assert result is None
 
 
+class MockStderr:
+    """Mock stderr file-like object for testing."""
+
+    def __init__(self, stderr_lines=None, terminated_callback=None):
+        self.stderr_lines = stderr_lines or []
+        self._line_index = 0
+        self._terminated_callback = terminated_callback
+
+    def readline(self):
+        if self._terminated_callback and self._terminated_callback():
+            return ""
+        if self._line_index >= len(self.stderr_lines):
+            return ""
+        line = self.stderr_lines[self._line_index]
+        self._line_index += 1
+        return line + "\n"
+
+
 class MockPopen:
     """Mock subprocess.Popen for testing."""
 
-    def __init__(self, stdout_lines, returncode=0, delay_per_line=0.01, block_after_lines=False):
+    _next_pid = 1000
+
+    def __init__(self, stdout_lines, returncode=0, delay_per_line=0.01, block_after_lines=False, stderr_lines=None):
         self.stdout_lines = stdout_lines
         self.returncode = returncode
         self.delay_per_line = delay_per_line
         self.block_after_lines = block_after_lines
         self._line_index = 0
         self.stdout = self
-        self.stderr = MagicMock()
+        self.stderr = MockStderr(stderr_lines=stderr_lines, terminated_callback=lambda: self._terminated)
         self._terminated = False
+        # Assign a mock PID
+        self.pid = MockPopen._next_pid
+        MockPopen._next_pid += 1
 
     def readline(self):
         if self._terminated:

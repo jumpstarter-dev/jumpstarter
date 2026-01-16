@@ -74,9 +74,6 @@ class NVDemuxSerial(Driver):
             self.logger.error("Failed to register with DemuxerManager: %s", e)
             raise
 
-        # Wait for initial ready state (with timeout)
-        if not self._ready.wait(timeout=self.timeout):
-            self.logger.warning("Timeout waiting for demuxer to become ready during initialization")
 
     @classmethod
     def client(cls) -> str:
