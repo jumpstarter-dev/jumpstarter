@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict, defaultdict
 from contextlib import ExitStack, asynccontextmanager
 from graphlib import TopologicalSorter
@@ -9,7 +10,11 @@ from google.protobuf import empty_pb2
 
 from .grpc import MultipathExporterStub
 from jumpstarter.client import DriverClient
+from jumpstarter.client.base import StubDriverClient
+from jumpstarter.common.exceptions import MissingDriverError
 from jumpstarter.common.importlib import import_class
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -50,7 +55,12 @@ async def client_from_channel(
     for index in TopologicalSorter(topo).static_order():
         report = reports[index]
 
-        client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
+        try:
+            client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
+        except MissingDriverError as e:
+            # Create stub client instead of failing
+            logger.warning("Driver client '%s' is not available.", e.class_path)
+            client_class = StubDriverClient
 
         client = client_class(
             uuid=UUID(report.uuid),

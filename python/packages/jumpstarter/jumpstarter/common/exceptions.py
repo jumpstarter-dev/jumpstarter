@@ -79,3 +79,15 @@ class EnvironmentVariableNotSetError(JumpstarterException):
     """Raised when a environment variable is not set."""
 
     pass
+
+
+class MissingDriverError(JumpstarterException):
+    """Raised when a driver module is not found but should be handled gracefully.
+
+    This exception is raised when a driver client class cannot be imported,
+    but the connection should continue with a stub client instead of failing.
+    """
+
+    def __init__(self, message: str, class_path: str):
+        super().__init__(message)
+        self.class_path = class_path
