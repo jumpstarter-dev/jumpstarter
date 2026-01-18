@@ -29,8 +29,6 @@ class BleConsole:
             yield
         finally:
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, original)
-            # Clear screen and move cursor to top-left (like \033c\033[2J\033[H).
-            print("\033c\033[2J\033[H", end="")
 
     async def __run(self):
         async with self.ble_client.stream_async(method="connect") as stream:
