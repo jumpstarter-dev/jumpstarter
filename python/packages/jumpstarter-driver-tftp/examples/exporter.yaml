@@ -1,0 +1,19 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  serial:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 1843200
+  tftp:
+    type: jumpstarter_driver_tftp.driver.TftpServer
+    config:
+      root_dir: "/var/lib/tftpboot/"
+      host: "192.168.1.111"
+      port: 6969

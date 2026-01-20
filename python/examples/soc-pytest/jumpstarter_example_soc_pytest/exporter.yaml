@@ -1,0 +1,27 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
+export:
+  # a DUTLink interface to the DUT
+  dutlink:
+    type: jumpstarter_driver_dutlink.driver.Dutlink
+    config:
+      storage_device: "/dev/disk/by-id/usb-SanDisk_3.2_Gen_1_5B4C0AB025C0-0:0"
+  # an HDMI to USB capture card
+  video:
+    type: jumpstarter_driver_ustreamer.driver.UStreamer
+    config:
+      args:
+        device: '/dev/v4l/by-path/pci-0000:00:14.0-usbv2-0:3:1.0-video-index0'
+        resolution: 1920x1080
+  # a USB camera pointing to the DUT
+  camera:
+    type: jumpstarter_driver_ustreamer.driver.UStreamer
+    config:
+      args:
+        device: '/dev/v4l/by-path/pci-0000:00:14.0-usbv2-0:4:1.0-video-index0'
+        resolution: 1280x720

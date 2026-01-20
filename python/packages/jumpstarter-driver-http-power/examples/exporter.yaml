@@ -1,0 +1,20 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: ""
+token: ""
+export:
+  power:
+    type: jumpstarter_driver_http_power.driver.HttpPower
+    config:
+      name: "splug"
+      power_on:
+        url: "http://192.168.1.65/relay/0?turn=on"
+      power_off:
+        url: "http://192.168.1.65/relay/0?turn=off"
+      auth:
+        basic:
+          user: admin
+          password: something
