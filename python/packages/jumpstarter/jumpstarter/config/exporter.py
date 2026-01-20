@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel
 from .common import ObjectMeta
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
-from jumpstarter.common.exceptions import ConfigurationError
+from jumpstarter.common.exceptions import ConfigurationError, MissingDriverError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 from jumpstarter.driver import Driver
@@ -44,7 +44,12 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
     def instantiate(self) -> Driver:
         match self.root:
             case ExporterConfigV1Alpha1DriverInstanceBase():
-                driver_class = import_class(self.root.type, [], True)
+                try:
+                    driver_class = import_class(self.root.type, [], True)
+                except MissingDriverError:
+                    raise ConfigurationError(
+                        f"Exporter configuration: Driver '{self.root.type}' is not installed.\n\n"
+                    ) from None
 
                 children = {name: child.instantiate() for name, child in self.root.children.items()}
 
