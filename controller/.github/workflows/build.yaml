@@ -1,0 +1,137 @@
+name: Build and push container image
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+    branches:
+      - main
+      - 'release-*'
+
+env:
+  REGISTRY: quay.io
+  QUAY_ORG: quay.io/jumpstarter-dev
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - image_name: jumpstarter-dev/jumpstarter-controller
+            dockerfile: Dockerfile
+            context: .
+          - image_name: jumpstarter-dev/jumpstarter-operator
+            dockerfile: Dockerfile.operator
+            context: .
+          - image_name: jumpstarter-dev/jumpstarter-operator-bundle
+            dockerfile: deploy/operator/bundle.Dockerfile
+            context: deploy/operator
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        run: |
+          VERSION=$(git describe --tags)
+          VERSION=${VERSION#v} # remove the leading v prefix for version
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}"
+
+      - name: Set build args
+        id: build-args
+        run: |
+          GIT_COMMIT=$(git rev-parse HEAD)
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          echo "git_commit=${GIT_COMMIT}" >> $GITHUB_OUTPUT
+          echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+          echo "GIT_COMMIT=${GIT_COMMIT}"
+          echo "BUILD_DATE=${BUILD_DATE}"
+
+      - name: Set image tags
+        id: set-tags
+        run: |
+          TAGS="${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ env.VERSION }}"
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ matrix.image_name }}:latest"
+          fi
+
+          if [[ "${{ github.ref }}" == "refs/heads/release-*" ]]; then
+            RELEASE_BRANCH_NAME=$(basename "${{ github.ref }}")
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ matrix.image_name }}:${RELEASE_BRANCH_NAME}"
+          fi
+
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: jumpstarter-dev+jumpstarter_ci
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.set-tags.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            GIT_VERSION=${{ env.VERSION }}
+            GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}
+            BUILD_DATE=${{ steps.build-args.outputs.build_date }}
+
+  publish-helm-charts-containers:
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        run: |
+          VERSION=$(git describe --tags)
+          VERSION=${VERSION#v} # remove the leading v prefix for version
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}"
+
+      - name: Build helm charts
+        run: |
+          echo packaging ${VERSION}
+          # patch the sub-chart app-version, because helm package won't do it
+          sed -i "s/^appVersion:.*/appVersion: $VERSION/" deploy/helm/jumpstarter/charts/jumpstarter-controller/Chart.yaml
+          helm package ./deploy/helm/jumpstarter --version "${VERSION}" --app-version "${VERSION}"
+
+      - name: Login helm
+        env:
+          PASSWORD: ${{ secrets.QUAY_TOKEN }}
+          USER: jumpstarter-dev+jumpstarter_ci
+        run:
+          helm registry login quay.io -u ${USER} -p ${PASSWORD}
+
+      - name: Push helm charts
+        run: |
+          helm push jumpstarter-*.tgz oci://${{ env.QUAY_ORG }}/helm
+
+          if [[ "${{ github.ref }}" == "refs/heads/release-*" ]]; then
+            RELEASE_BRANCH_NAME=$(basename "${{ github.ref }}")
+            helm chart save jumpstarter-*.tgz ${{ env.QUAY_ORG }}/helm:${RELEASE_BRANCH_NAME}
+            helm chart push ${{ env.QUAY_ORG }}/helm:${RELEASE_BRANCH_NAME}
+          fi
