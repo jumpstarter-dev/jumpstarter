@@ -51,7 +51,7 @@ helm ${METHOD} --namespace jumpstarter-lab \
                --create-namespace \
                ${HELM_SETS} \
                --set global.timestamp=$(date +%s) \
-               --values ./deploy/helm/jumpstarter/values.kind.yaml jumpstarter \
+               --values ./deploy/helm/jumpstarter/values.kind.yaml ${EXTRA_VALUES} jumpstarter \
             ./deploy/helm/jumpstarter/
 
 kubectl config set-context --current --namespace=jumpstarter-lab
