@@ -1,0 +1,5 @@
+{
+    "error": "Unsupported device model",
+    "errorID": "UserError",
+    "field": "flavor"
+}

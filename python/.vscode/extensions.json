@@ -1,0 +1,30 @@
+{
+    "recommendations": [
+        "tamasfe.even-better-toml",
+        "tekumara.typos-vscode",
+        "charliermarsh.ruff",
+        "codezombiech.gitignore",
+        "littlefoxteam.vscode-python-test-adapter",
+        "hbenl.vscode-test-explorer",
+        "ryanluker.vscode-coverage-gutters",
+        "lextudio.restructuredtext",
+        "trond-snekvik.simple-rst",
+        "swyddfa.esbonio",
+        "ExecutableBookProject.myst-highlight",
+        "eamodio.gitlens",
+        "kevinrose.vsc-python-indent",
+        "mosapride.zenkaku",
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "njpwerner.autodocstring",
+        "pkief.material-icon-theme",
+        "shardulm94.trailing-spaces",
+        "usernamehw.errorlens",
+        "yzhang.markdown-all-in-one",
+        "ms-vscode.makefile-tools",
+        "cnshenj.vscode-task-manager"
+    ],
+    "unwantedRecommendations": [
+        "ms-python.autopep8"
+    ]
+}

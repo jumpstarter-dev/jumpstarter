@@ -1,0 +1,97 @@
+/dts-v1/;
+
+/ {
+	description = "buildroot kernel flasher FIT Image";
+	#address-cells = <1>;
+
+	images {
+		kernel {
+			description = "buildroot Kernel";
+			data = /incbin/("./kernel-fedora/vmlinuz.lz4");
+			type = "kernel";
+			arch = "arm64";
+			os = "linux";
+			compression = "lz4";
+			load = <0x80000000>;
+			entry = <0x80000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		initrd {
+			description = "Initrd";
+			data = /incbin/("/var/tmp/buildroot/output/images/rootfs.cpio.lz4");
+			type = "ramdisk";
+			arch = "arm64";
+			os = "linux";
+			compression = "none";
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-j784s4 {
+			description = "DTB TI J784S4EVM";
+			data = /incbin/("./kernel-fedora/dtb/ti/k3-j784s4-evm.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x88000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-am69 {
+			description = "DTB TI SK-AM69";
+			data = /incbin/("./kernel-fedora/dtb/ti/k3-am69-sk.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x88000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-s32g3 {
+			description = "DTB NXP S32G-VNP-RDB3";
+			data = /incbin/("./s32g3.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x88000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+	};
+
+	configurations {
+		default = "j784s4";
+		j784s4 {
+			description = "Boot TI J784S4EVM";
+			kernel = "kernel";
+			fdt = "fdt-j784s4";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+		am69 {
+			description = "Boot TI SK-AM69";
+			kernel = "kernel";
+			fdt = "fdt-am69";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+		s32g3 {
+			description = "Boot NXP S32G-VNP-RDB3";
+			kernel = "kernel";
+			fdt = "fdt-s32g3";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+	};
+};

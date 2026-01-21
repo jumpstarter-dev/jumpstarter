@@ -1,0 +1,78 @@
+/dts-v1/;
+
+/ {
+	description = "R-Car S4 flasher FIT Image";
+	#address-cells = <1>;
+
+	images {
+		kernel {
+			description = "Kernel";
+			data = /incbin/("kernel/vmlinuz");
+			type = "kernel";
+			arch = "arm64";
+			os = "linux";
+			compression = "none";
+			load = <0x48080000>;
+			entry = <0x48080000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-spider {
+			description = "DTB 8779f0-spider";
+			data = /incbin/("kernel/dtb/renesas/r8a779f0-spider.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x48000000>;
+			entry = <0x48000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-s4sk {
+			description = "DTB r8a779f4-s4sk";
+			data = /incbin/("kernel/dtb/renesas/r8a779f4-s4sk.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x48000000>;
+			entry = <0x48000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		initrd {
+			description = "Initrd";
+			data = /incbin/("/buildroot/output/images/rootfs.cpio.lzo");
+			type = "ramdisk";
+			arch = "arm64";
+			os = "linux";
+			hash {
+				algo = "sha256";
+			};
+		};
+	};
+
+	configurations {
+		default = "spider";
+		spider {
+			description = "Boot R-Car S4 Spider";
+			kernel = "kernel";
+			fdt = "fdt-spider";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+		s4sk {
+			description = "Boot R-Car S4 SK";
+			kernel = "kernel";
+			fdt = "fdt-s4sk";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+	};
+};

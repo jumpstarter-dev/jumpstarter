@@ -1,0 +1,12 @@
+version: v2
+managed:
+  enabled: true
+plugins:
+  - remote: buf.build/protocolbuffers/python:v30.1
+    out: ./packages/jumpstarter-protocol/jumpstarter_protocol
+  - remote: buf.build/grpc/python
+    out: ./packages/jumpstarter-protocol/jumpstarter_protocol
+inputs:
+  - git_repo: https://github.com/jumpstarter-dev/jumpstarter-protocol.git
+    branch: main
+    subdir: proto
