@@ -1,0 +1,111 @@
+{{ range $k, $v := .Values.grpc.additionalRouters }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jumpstarter-router-{{ $k }}
+  namespace: {{ default $.Release.Namespace $.Values.namespace }}
+  labels:
+    control-plane: controller-router-{{ $k }}
+    app.kubernetes.io/name: jumpstarter-controller
+    {{ if $.Values.global.timestamp }}
+    deployment.timestamp: {{ $.Values.global.timestamp | quote }}
+    {{ end }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-router-{{ $k }}
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: router
+        configmap-sha256: {{ include (print $.Template.BasePath "/cms/controller-cm.yaml") $ | sha256sum }}
+      labels:
+        control-plane: controller-router-{{ $k }}
+      {{ if $.Values.global.timestamp }}
+        deployment.timestamp: {{ $.Values.global.timestamp | quote }}
+      {{ end }}
+    spec:
+      # TODO(user): Uncomment the following code to configure the nodeAffinity expression
+      # according to the platforms which are supported by your solution.
+      # It is considered best practice to support multiple architectures. You can
+      # build your manager image using the makefile target docker-buildx.
+      # affinity:
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #         - matchExpressions:
+      #           - key: kubernetes.io/arch
+      #             operator: In
+      #             values:
+      #               - amd64
+      #               - arm64
+      #               - ppc64le
+      #               - s390x
+      #           - key: kubernetes.io/os
+      #             operator: In
+      #             values:
+      #               - linux
+      {{ if $v.nodeSelector }}
+      nodeSelector:
+        {{ $v.nodeSelector | toYaml | indent 1 }}
+      {{ end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - command:
+          - /router
+        env:
+        - name: GRPC_ROUTER_ENDPOINT
+          {{ if $v.endpoint }}
+          value: {{ $v.endpoint }}
+          {{ else if $v.hostname }}
+          value: {{ $v.hostname }}:{{ default 443 $.Values.grpc.tls.port }}
+          {{ else }}
+          value: router-{{ $k }}.{{ $.Values.global.baseDomain | required "set .global.baseDomain, or provide grpc.additionalRouters[...].endpoint/hostname" }}:{{ default 443 $.Values.grpc.tls.port }}
+          {{ end }}
+        - name: ROUTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jumpstarter-router-secret
+              key: key
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+
+        image: {{ $.Values.image }}:{{ default $.Chart.AppVersion $.Values.tag }}
+        imagePullPolicy: {{ $.Values.imagePullPolicy }}
+        name: router
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        # livenessProbe:
+        #   httpGet:
+        #     path: /healthz
+        #     port: 8081
+        #   initialDelaySeconds: 15
+        #   periodSeconds: 20
+        # readinessProbe:
+        #   httpGet:
+        #     path: /readyz
+        #     port: 8081
+        #   initialDelaySeconds: 5
+        #   periodSeconds: 10
+        resources:
+          limits:
+            cpu: 2000m
+            memory: 1024Mi
+          requests:
+            cpu: 1000m
+            memory: 256Mi
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10
+{{ end }}

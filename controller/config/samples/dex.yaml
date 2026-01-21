@@ -1,0 +1,28 @@
+issuer: https://10.239.206.8:5556/dex
+storage:
+  type: sqlite3
+  config:
+    file: dex.db
+web:
+  https: 0.0.0.0:5556
+  tlsCert: 10.239.206.8/cert.pem
+  tlsKey: 10.239.206.8/key.pem
+logger:
+  level: "debug"
+  format: "text"
+staticClients:
+  - id: jumpstarter
+    name: jumpstarter
+    secret: secret
+oauth2:
+  passwordConnector: local
+enablePasswordDB: true
+staticPasswords:
+  - email: "client-sample@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+    username: "client-sample"
+    userID: "73bca0b9-9be6-4e73-a8fb-347c2ac23255"
+  - email: "exporter-sample@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+    username: "exporter-sample"
+    userID: "a4cb4de2-4467-4e5c-a42a-33be8783649d"

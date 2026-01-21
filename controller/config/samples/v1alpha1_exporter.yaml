@@ -1,0 +1,8 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    dut: fancy-hardware
+  name: exporter-sample
+spec: {}
