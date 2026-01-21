@@ -1,0 +1,18 @@
+{
+    "CN": "dex.dex.svc.cluster.local",
+    "hosts": [
+        "dex.dex.svc.cluster.local"
+    ],
+    "key": {
+        "algo": "ecdsa",
+        "size": 256
+    },
+    "names": [
+        {
+            "C": "US",
+            "ST": "CA",
+            "L": "San Francisco"
+        }
+    ]
+}
+
