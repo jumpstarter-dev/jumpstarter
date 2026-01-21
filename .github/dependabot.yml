@@ -1,0 +1,34 @@
+# Dependabot configuration for monorepo
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  # Go modules for controller
+  - package-ecosystem: "gomod"
+    directory: "/controller"
+    schedule:
+      interval: weekly
+
+  # Go modules for operator
+  - package-ecosystem: "gomod"
+    directory: "/controller/deploy/operator"
+    schedule:
+      interval: weekly
+
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/python"
+    schedule:
+      interval: weekly
+
+  # Devcontainers
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: weekly
