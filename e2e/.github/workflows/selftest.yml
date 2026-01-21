@@ -1,0 +1,19 @@
+name: selftest
+on:
+  - push
+jobs:
+  test:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: e2e
+      - uses: ./e2e
+        with:
+          controller-ref: main
+          jumpstarter-ref: main
