@@ -1,0 +1,226 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "jumpstarter/v1/kubernetes.proto";
+import "jumpstarter/v1/common.proto";
+
+// A service where a exporter can connect to make itself available
+service ControllerService {
+  // Exporter registration
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Exporter disconnection
+  // Disconnecting with bye will invalidate any existing router tokens
+  // we will eventually have a mechanism to tell the router this token
+  // has been invalidated
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+
+  // Exporter status report
+  // Allows exporters to report their own status to the controller
+  rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
+
+  // Exporter listening
+  // Returns stream tokens for accepting incoming client connections
+  rpc Listen(ListenRequest) returns (stream ListenResponse);
+
+  // Exporter status
+  // Returns lease status for the exporter
+  rpc Status(StatusRequest) returns (stream StatusResponse);
+
+  // Client connecting
+  // Returns stream token for connecting to the desired exporter
+  // Leases are checked before token issuance
+  rpc Dial(DialRequest) returns (DialResponse);
+
+  // Audit events from the exporters
+  // audit events are used to track the exporter's activity
+  rpc AuditStream(stream AuditStreamRequest) returns (google.protobuf.Empty);
+
+  // Get Lease
+  rpc GetLease(GetLeaseRequest) returns (GetLeaseResponse);
+  // Request Lease
+  rpc RequestLease(RequestLeaseRequest) returns (RequestLeaseResponse);
+  // Release Lease
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+  // List Leases
+  rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse);
+}
+
+message RegisterRequest {
+  // additional context:
+  // - token/authentication mechanism
+  map<string, string> labels = 1;
+  // standard labels:
+  // jumpstarter.dev/hostname=
+  // jumpstarter.dev/name=
+  repeated DriverInstanceReport reports = 2;
+}
+
+message DriverInstanceReport {
+  string uuid = 1; // a unique id within the exporter
+  optional string parent_uuid = 2; // optional, if device has a parent device
+  map<string, string> labels = 3;
+  optional string description = 4; // optional custom driver description for CLI
+  map<string, string> methods_description = 5; // method name -> help text for CLI
+}
+
+message RegisterResponse {
+  string uuid = 1;
+}
+
+message UnregisterRequest {
+  string reason = 2;
+}
+
+message UnregisterResponse {}
+
+message ListenRequest {
+  string lease_name = 1;
+}
+
+message ListenResponse {
+  string router_endpoint = 1;
+  string router_token = 2;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  bool leased = 1;
+  optional string lease_name = 2;
+  optional string client_name = 3;
+}
+
+message DialRequest {
+  string lease_name = 1;
+}
+
+message DialResponse {
+  string router_endpoint = 1;
+  string router_token = 2;
+}
+
+message AuditStreamRequest {
+  // additional context:
+  // - token/authentication mechanism
+  string exporter_uuid = 1;
+  string driver_instance_uuid = 2;
+  string severity = 3;
+  string message = 4;
+}
+
+message ReportStatusRequest {
+  ExporterStatus status = 1;
+  optional string message = 2;  // Optional human-readable status message
+}
+
+message ReportStatusResponse {}
+
+// A service a exporter can share locally to be used without a server
+// Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+service ExporterService {
+  // Exporter registration
+  rpc GetReport(google.protobuf.Empty) returns (GetReportResponse);
+  rpc DriverCall(DriverCallRequest) returns (DriverCallResponse);
+  rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
+  rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
+  rpc Reset(ResetRequest) returns (ResetResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+message GetReportResponse {
+  string uuid = 1;
+  map<string, string> labels = 2;
+  // standard labels:
+  // jumpstarter.dev/hostname=
+  // jumpstarter.dev/name=
+  repeated DriverInstanceReport reports = 3;
+  repeated Endpoint alternative_endpoints = 4;
+}
+
+message Endpoint {
+  string endpoint = 1;
+  string certificate = 2;
+  string client_certificate = 3;
+  string client_private_key = 4;
+}
+
+message DriverCallRequest {
+  string uuid = 1;
+  string method = 2;
+  repeated google.protobuf.Value args = 3;
+}
+
+message DriverCallResponse {
+  string uuid = 1;
+  google.protobuf.Value result = 2;
+}
+
+message StreamingDriverCallRequest {
+  string uuid = 1;
+  string method = 2;
+  repeated google.protobuf.Value args = 3;
+}
+
+message StreamingDriverCallResponse {
+  string uuid = 1;
+  google.protobuf.Value result = 2;
+}
+
+message LogStreamResponse {
+  string uuid = 1;
+  string severity = 2;
+  string message = 3;
+  optional LogSource source = 4;  // New optional field
+}
+
+message ResetRequest {}
+message ResetResponse {}
+
+message GetLeaseRequest {
+  string name = 1;
+}
+
+message GetLeaseResponse {
+  google.protobuf.Duration duration = 1;
+  LabelSelector selector = 2;
+  optional google.protobuf.Timestamp begin_time = 3;
+  optional google.protobuf.Timestamp end_time = 4;
+  optional string exporter_uuid = 5;
+  repeated Condition conditions = 6;
+}
+
+message RequestLeaseRequest {
+  google.protobuf.Duration duration = 1;
+  LabelSelector selector = 2;
+}
+
+message RequestLeaseResponse {
+  string name = 1;
+}
+
+message ReleaseLeaseRequest {
+  string name = 1;
+}
+
+message ReleaseLeaseResponse {}
+
+message ListLeasesRequest {}
+
+message ListLeasesResponse {
+  repeated string names = 1;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  ExporterStatus status = 1;
+  optional string message = 2;
+}
