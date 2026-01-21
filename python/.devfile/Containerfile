@@ -1,0 +1,21 @@
+FROM quay.io/devfile/base-developer-image:ubi9-latest
+LABEL maintainer="Jumpstarter.dev"
+
+LABEL name="devfile/udi9/jumpstarter"
+
+#labels for container catalog
+LABEL summary="devfile jumpstarter developer image"
+LABEL description="Image with developers tools."
+LABEL io.k8s.display-name="jumpstarter-developer-universal"
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv  /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uvx /bin/uvx
+
+USER root
+
+RUN dnf -y install make git python3.12 libusbx python3-pyusb golang podman && dnf clean all
+
+USER 10001
+
+# This will make sure that we always run python from our venv instead
+RUN echo "alias python='uv run python'" >> /home/user/.bashrc

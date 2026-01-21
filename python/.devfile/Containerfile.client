@@ -1,0 +1,44 @@
+FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:latest AS uv
+
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi:latest AS builder
+RUN dnf install -y make git && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf
+COPY --from=uv /uv /uvx /bin/
+ADD . /src
+RUN make -C /src build
+
+
+FROM quay.io/devfile/base-developer-image:ubi9-latest
+LABEL maintainer="jumpstarter.dev"
+
+LABEL name="devfile/udi9/jumpstarter-client"
+
+#labels for container catalog
+LABEL summary="devfile jumpstarter developer image"
+LABEL description="Devspaces image for consuming jumpstarter as a client"
+LABEL io.k8s.display-name="jumpstarter-client-developer"
+
+USER root
+
+# switch to python 3.12 as the default
+RUN rm -rf /usr/bin/python && ln -s /usr/bin/python3.12 /usr/bin/python
+
+RUN dnf -y install make git python3.12 python3.12 libusbx python3-pyusb python3.12-pip golang && dnf clean all
+
+USER 10001
+
+RUN --mount=from=builder,source=/src/dist,target=/dist python3.12 -m pip install /dist/*.whl
+
+RUN python3.12 -m pip install pytest
+
+# now that all .config/.local/.cache files are available, fix permissions so a devspace
+# user could write to any of those
+
+USER root
+
+RUN mkdir -p /home/user/.config/jumpstarter/clients
+RUN chown 10001:0 -R /home/user/{.config,.local,.cache} && chmod g+rwx -R /home/user/{.config,.local,.cache}
+
+USER 10001
+

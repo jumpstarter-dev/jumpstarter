@@ -1,0 +1,54 @@
+[project]
+name = "jumpstarter"
+dynamic = ["version", "urls"]
+description = ""
+authors = [
+    { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+    { name = "Nick Cao", email = "ncao@redhat.com" },
+    { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter-protocol",
+    "pyyaml>=6.0.2",
+    "anyio>=4.4.0,!=4.6.2",
+    "aiohttp>=3.10.5",
+    "pydantic>=2.8.2",
+    "xdg-base-dirs>=6.0.2",
+    "pydantic-settings>=2.9.1",
+    "rich>=14.0.0",
+    "tenacity>=8.2.0",
+    "backports-zstd>=1.1.0 ; python_full_version < '3.14'",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-cov>=6.0.0",
+    "pytest-anyio>=0.0.0",
+    "pytest-asyncio>=0.0.0",
+    "cryptography>=43.0.3",
+    "jumpstarter-driver-power",
+    "jumpstarter-driver-network",
+    "jumpstarter-driver-composite",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["jumpstarter"]
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../' }
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"

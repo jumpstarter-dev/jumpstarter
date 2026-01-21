@@ -1,0 +1,38 @@
+schemaVersion: 2.3.0
+metadata:
+  name: jumpstarter-dev
+  icon: https://jumpstarter.dev/jumpstarter.svg
+  tags:
+    - Python
+    - UV
+    - Jumpstarter
+  language: Python
+projects:
+  - name: jumpstarter
+    git:
+      remotes:
+        origin: https://github.com/jumpstarter-dev/jumpstarter.git
+components:
+   - name: runtime
+     container:
+       image: quay.io/jumpstarter-dev/jumpstarter-dev:latest
+       mountSources: true
+
+commands:
+  - id: serve-docs
+    exec:
+      component: runtime
+      commandLine: make docs-serve DOC_LISTEN="--host 0.0.0.0"
+  - id: sync
+    exec:
+      component: runtime
+      commandLine: make sync
+  - id: clean
+    exec:
+      component: runtime
+      commandLine: make clean
+  - id: test
+    exec:
+      component: runtime
+      commandLine: make test
+
