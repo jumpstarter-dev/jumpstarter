@@ -1,0 +1,30 @@
+name: Unit/Functional tests
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - 'release-*'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run controller tests
+        run: make test
+
+      - name: Cache operator bin directory
+        uses: actions/cache@v4
+        with:
+          path: deploy/operator/bin/
+          key: ${{ runner.os }}-operator-bin-${{ hashFiles('deploy/operator/go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-operator-bin-
+
+      - name: Run operator tests
+        run: make -C deploy/operator test
