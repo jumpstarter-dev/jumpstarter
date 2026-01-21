@@ -1,0 +1,33 @@
+# Typos configuration for Jumpstarter monorepo
+# https://github.com/crate-ci/typos
+
+[default]
+extend-ignore-re = [
+    # Ignore hash strings (like 321ba1)
+    "[a-f0-9]{6,}",
+]
+
+[default.extend-words]
+# ANDed/ORed are valid technical terms (combined with AND/OR operations)
+ANDed = "ANDed"
+Ded = "Ded"  # suffix of ANDed in generated CRD docs
+ORed = "ORed"
+
+# mosquitto is the name of an MQTT broker, not a typo of "mosquito"
+mosquitto = "mosquitto"
+
+# ser is short for "serialize" in variable names like ser_json_timedelta
+ser = "ser"
+
+[type.gomod]
+# Exclude go.mod and go.sum from spell checking
+extend-glob = ["go.mod", "go.sum"]
+check-file = false
+
+[files]
+extend-exclude = [
+    # Generated files that shouldn't be spell-checked
+    "*.lock",
+    # Vendored dependencies
+    "vendor/",
+]
