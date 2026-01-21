@@ -1,9 +1,12 @@
 name: Check Bundle
+
 on:
   pull_request:
     branches:
       - main
       - 'release-*'
+    paths:
+      - 'controller/**'
 
 jobs:
   check-bundle:
@@ -17,13 +20,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.24
+          go-version: '1.24'
 
       - name: Cache bin directory (deploy/operator)
         uses: actions/cache@v4
         with:
-          path: deploy/operator/bin/
-          key: ${{ runner.os }}-operator-bin-${{ hashFiles('deploy/operator/go.mod') }}
+          path: controller/deploy/operator/bin/
+          key: ${{ runner.os }}-operator-bin-${{ hashFiles('controller/deploy/operator/go.mod') }}
           restore-keys: |
             ${{ runner.os }}-operator-bin-
 
@@ -47,7 +50,7 @@ jobs:
           echo "TAG=${TAG}"
 
       - name: Run make bundle
-        working-directory: deploy/operator
+        working-directory: controller/deploy/operator
         run: |
           make bundle IMG="quay.io/jumpstarter-dev/jumpstarter-operator:${TAG}"
 
@@ -78,7 +81,7 @@ jobs:
           git checkout -- . || true
 
       - name: Run make build-installer
-        working-directory: deploy/operator
+        working-directory: controller/deploy/operator
         run: |
           make build-installer
 
@@ -92,4 +95,3 @@ jobs:
           else
             echo "No uncommitted changes detected. Installer files are up to date."
           fi
-

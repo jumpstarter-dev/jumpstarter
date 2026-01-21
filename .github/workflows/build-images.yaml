@@ -1,4 +1,5 @@
-name: Build and push container image
+name: Build and push container images
+
 on:
   workflow_dispatch:
   push:
@@ -7,8 +8,10 @@ on:
     branches:
       - main
       - 'release-*'
+  merge_group:
 
 env:
+  PUSH: ${{ github.repository_owner == 'jumpstarter-dev' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release-')) }}
   REGISTRY: quay.io
   QUAY_ORG: quay.io/jumpstarter-dev
 
@@ -17,18 +20,35 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
+      attestations: write
+      id-token: write
     strategy:
       matrix:
         include:
+          # Controller images
           - image_name: jumpstarter-dev/jumpstarter-controller
-            dockerfile: Dockerfile
-            context: .
+            dockerfile: controller/Dockerfile
+            context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator
-            dockerfile: Dockerfile.operator
-            context: .
+            dockerfile: controller/Dockerfile.operator
+            context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
-            dockerfile: deploy/operator/bundle.Dockerfile
-            context: deploy/operator
+            dockerfile: controller/deploy/operator/bundle.Dockerfile
+            context: controller/deploy/operator
+          # Python images (use repo root context for .git access needed by hatch-vcs)
+          - image_name: jumpstarter-dev/jumpstarter
+            dockerfile: python/Dockerfile
+            context: .
+          - image_name: jumpstarter-dev/jumpstarter-utils
+            dockerfile: python/Dockerfile.utils
+            context: python
+          - image_name: jumpstarter-dev/jumpstarter-dev
+            dockerfile: python/.devfile/Containerfile
+            context: python
+          - image_name: jumpstarter-dev/jumpstarter-devspace
+            dockerfile: python/.devfile/Containerfile.client
+            context: .
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,6 +61,17 @@ jobs:
           VERSION=${VERSION#v} # remove the leading v prefix for version
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
+          
+          # Convert to PEP 440 compliant version for Python packages
+          # Format: 0.7.0-1051-g54cd2f08 -> 0.7.0.dev1051+g54cd2f08
+          if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([a-f0-9]+)$ ]]; then
+            PEP440_VERSION="${BASH_REMATCH[1]}.dev${BASH_REMATCH[2]}+g${BASH_REMATCH[3]}"
+          else
+            # If it's already a clean version (e.g., 0.7.0), use as-is
+            PEP440_VERSION="$VERSION"
+          fi
+          echo "PEP440_VERSION=${PEP440_VERSION}" >> $GITHUB_ENV
+          echo "PEP440_VERSION=${PEP440_VERSION}"
 
       - name: Set build args
         id: build-args
@@ -53,6 +84,7 @@ jobs:
           echo "BUILD_DATE=${BUILD_DATE}"
 
       - name: Set image tags
+        if: ${{ env.PUSH == 'true' }}
         id: set-tags
         run: |
           TAGS="${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ env.VERSION }}"
@@ -61,7 +93,7 @@ jobs:
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ matrix.image_name }}:latest"
           fi
 
-          if [[ "${{ github.ref }}" == "refs/heads/release-*" ]]; then
+          if [[ "${{ github.ref }}" == refs/heads/release-* ]]; then
             RELEASE_BRANCH_NAME=$(basename "${{ github.ref }}")
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ matrix.image_name }}:${RELEASE_BRANCH_NAME}"
           fi
@@ -76,10 +108,17 @@ jobs:
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
+        if: ${{ env.PUSH == 'true' }}
         with:
           registry: ${{ env.REGISTRY }}
           username: jumpstarter-dev+jumpstarter_ci
           password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ matrix.image_name }}
 
       - name: Build and push Docker image
         id: push
@@ -87,18 +126,28 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: true
+          push: ${{ env.PUSH }}
           tags: ${{ steps.set-tags.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            GIT_VERSION=${{ env.VERSION }}
+            GIT_VERSION=${{ env.PEP440_VERSION }}
             GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}
             BUILD_DATE=${{ steps.build-args.outputs.build_date }}
 
-  publish-helm-charts-containers:
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        if: ${{ env.PUSH == 'true' }}
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ matrix.image_name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: ${{ env.PUSH }}
+
+  publish-helm-charts:
     needs: build-and-push-image
+    if: ${{ github.repository_owner == 'jumpstarter-dev' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/release-')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,8 +165,8 @@ jobs:
         run: |
           echo packaging ${VERSION}
           # patch the sub-chart app-version, because helm package won't do it
-          sed -i "s/^appVersion:.*/appVersion: $VERSION/" deploy/helm/jumpstarter/charts/jumpstarter-controller/Chart.yaml
-          helm package ./deploy/helm/jumpstarter --version "${VERSION}" --app-version "${VERSION}"
+          sed -i "s/^appVersion:.*/appVersion: $VERSION/" controller/deploy/helm/jumpstarter/charts/jumpstarter-controller/Chart.yaml
+          helm package ./controller/deploy/helm/jumpstarter --version "${VERSION}" --app-version "${VERSION}"
 
       - name: Login helm
         env:
