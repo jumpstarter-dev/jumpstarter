@@ -14,10 +14,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 FROM builder AS wheels
 ADD . /src
-RUN make -C /src build
+RUN make -C /src/python build
 
 FROM product
-RUN --mount=from=wheels,source=/src/dist,target=/dist \
+RUN --mount=from=wheels,source=/src/python/dist,target=/dist \
     uv venv /jumpstarter && \
     VIRTUAL_ENV=/jumpstarter uv pip install /dist/*.whl
 ENV PATH="/jumpstarter/bin:$PATH"
