@@ -24,13 +24,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMP_DIR="${SCRIPT_DIR}/.import-pr-temp"
 PATCH_DIR="${TEMP_DIR}/patches"
 
-# Repository mappings: repo_name -> "github_repo subdir"
-declare -A REPO_MAP=(
-    ["python"]="jumpstarter-dev/jumpstarter python"
-    ["protocol"]="jumpstarter-dev/jumpstarter-protocol protocol"
-    ["controller"]="jumpstarter-dev/jumpstarter-controller controller"
-    ["e2e"]="jumpstarter-dev/jumpstarter-e2e e2e"
-)
+# Repository mapping function (compatible with bash 3.2+)
+get_repo_info() {
+    local repo_name="$1"
+    case "$repo_name" in
+        python)
+            echo "jumpstarter-dev/jumpstarter python"
+            ;;
+        protocol)
+            echo "jumpstarter-dev/jumpstarter-protocol protocol"
+            ;;
+        controller)
+            echo "jumpstarter-dev/jumpstarter-controller controller"
+            ;;
+        e2e)
+            echo "jumpstarter-dev/jumpstarter-e2e e2e"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
 
 # Colors for output
 RED='\033[0;31m'
@@ -127,7 +141,9 @@ validate_args() {
     local pr_number="$2"
 
     # Validate repo name
-    if [ -z "${REPO_MAP[$repo]}" ]; then
+    local repo_info
+    repo_info=$(get_repo_info "$repo")
+    if [ -z "$repo_info" ]; then
         log_error "Invalid repository name: ${repo}"
         echo "Valid options are: python, protocol, controller, e2e"
         exit 1
@@ -182,12 +198,9 @@ clone_and_checkout_pr() {
 
     local clone_dir="${TEMP_DIR}/repo"
 
-    # Clone the repository
+    # Clone the repository (full clone needed for patch generation)
     log_info "Cloning ${github_repo}..."
-    gh repo clone "${github_repo}" "${clone_dir}" -- --depth=1 --no-single-branch 2>/dev/null || {
-        # If shallow clone fails, try full clone
-        gh repo clone "${github_repo}" "${clone_dir}"
-    }
+    gh repo clone "${github_repo}" "${clone_dir}"
 
     cd "${clone_dir}"
 
@@ -195,9 +208,9 @@ clone_and_checkout_pr() {
     log_info "Checking out PR #${pr_number}..."
     gh pr checkout "${pr_number}" --repo "${github_repo}"
 
-    # Fetch the base branch to ensure we have it
-    log_info "Fetching base branch (${PR_BASE_BRANCH})..."
-    git fetch origin "${PR_BASE_BRANCH}"
+    # Ensure we have the full history of both branches for finding merge base
+    log_info "Fetching base branch with full history..."
+    git fetch --unshallow origin "${PR_BASE_BRANCH}" 2>/dev/null || git fetch origin "${PR_BASE_BRANCH}"
 
     CLONE_DIR="${clone_dir}"
 }
@@ -206,29 +219,63 @@ clone_and_checkout_pr() {
 generate_patches() {
     log_step "Generating patches..."
 
-    cd "${CLONE_DIR}"
+    cd "${CLONE_DIR}" || {
+        log_error "Failed to cd to ${CLONE_DIR}"
+        exit 1
+    }
 
     # Find the merge base between the PR branch and the base branch
     local merge_base
-    merge_base=$(git merge-base "origin/${PR_BASE_BRANCH}" HEAD)
-
-    log_info "Merge base: ${merge_base}"
-
-    # Count commits to be patched
-    local commit_count
-    commit_count=$(git rev-list --count "${merge_base}..HEAD")
-    log_info "Commits to import: ${commit_count}"
-
-    if [ "$commit_count" -eq 0 ]; then
-        log_error "No commits found between merge base and HEAD."
+    if ! merge_base=$(git merge-base "origin/${PR_BASE_BRANCH}" HEAD 2>&1); then
+        log_error "Failed to find merge base: ${merge_base}"
         exit 1
     fi
 
-    # Generate patches
-    git format-patch -o "${PATCH_DIR}" "${merge_base}..HEAD"
+    log_info "Merge base: ${merge_base}"
+
+    # Count all commits (including merges)
+    local total_commits
+    if ! total_commits=$(git rev-list --count "${merge_base}..HEAD" 2>&1); then
+        log_error "Failed to count commits: ${total_commits}"
+        exit 1
+    fi
+    
+    # Count non-merge commits
+    local non_merge_commits
+    if ! non_merge_commits=$(git rev-list --count --no-merges "${merge_base}..HEAD" 2>&1); then
+        log_error "Failed to count non-merge commits: ${non_merge_commits}"
+        exit 1
+    fi
+    
+    log_info "Total commits: ${total_commits} (${non_merge_commits} non-merge)"
+
+    if [ "$non_merge_commits" -eq 0 ]; then
+        log_error "No non-merge commits found between merge base and HEAD."
+        exit 1
+    fi
+    
+    # Check if there are merge commits
+    local merge_commits=$((total_commits - non_merge_commits))
+    if [ "$merge_commits" -gt 0 ]; then
+        log_warn "PR contains ${merge_commits} merge commit(s) which will be skipped."
+        log_warn "Only the ${non_merge_commits} non-merge commits will be imported."
+    fi
+
+    # Generate patches (skip merge commits)
+    log_info "Generating patches for non-merge commits..."
+    if ! git format-patch --no-merges -o "${PATCH_DIR}" "${merge_base}..HEAD"; then
+        log_error "Failed to generate patches."
+        exit 1
+    fi
 
     # Count generated patches
-    PATCH_COUNT=$(ls -1 "${PATCH_DIR}"/*.patch 2>/dev/null | wc -l | tr -d ' ')
+    PATCH_COUNT=$(find "${PATCH_DIR}" -name "*.patch" 2>/dev/null | wc -l | tr -d ' ')
+    
+    if [ "$PATCH_COUNT" -eq 0 ]; then
+        log_error "No patches were generated."
+        exit 1
+    fi
+    
     log_info "Generated ${PATCH_COUNT} patch file(s)."
 }
 
@@ -354,7 +401,8 @@ main() {
     echo ""
 
     # Parse repo mapping
-    local repo_info="${REPO_MAP[$repo_name]}"
+    local repo_info
+    repo_info=$(get_repo_info "$repo_name")
     local github_repo subdir
     read -r github_repo subdir <<< "${repo_info}"
 
