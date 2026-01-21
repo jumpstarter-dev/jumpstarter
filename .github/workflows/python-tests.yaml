@@ -1,16 +1,24 @@
-name: "Run Tests"
+name: Python Tests
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
       - release-*
+    paths:
+      - 'python/**'
+      - 'protocol/**'
   pull_request:
+    paths:
+      - 'python/**'
+      - 'protocol/**'
   merge_group:
 
 permissions:
   contents: read
   pull-requests: read
+
 jobs:
   pytest-matrix:
     runs-on: ${{ matrix.runs-on }}
@@ -60,18 +68,19 @@ jobs:
         id: cache-fedora-cloud-images
         uses: actions/cache@v4
         with:
-          path: packages/jumpstarter-driver-qemu/images
+          path: python/packages/jumpstarter-driver-qemu/images
           key: fedora-cloud-41-1.4
 
       - name: Download Fedora Cloud images
         if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
         run: |
           for arch in aarch64 x86_64; do
-            curl -L --output "packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-41-1.4.${arch}.qcow2" \
+            curl -L --output "python/packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-41-1.4.${arch}.qcow2" \
               "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-41-1.4.${arch}.qcow2"
           done
 
       - name: Run pytest
+        working-directory: python
         run: |
             make test
 

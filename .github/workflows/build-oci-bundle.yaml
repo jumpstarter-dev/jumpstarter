@@ -1,4 +1,5 @@
 name: Build and push buildroot-based flasher OCI bundle
+
 on:
   workflow_dispatch:
 
@@ -14,17 +15,17 @@ jobs:
 
       - name: Run build_fits.sh
         run: |
-          cd packages/jumpstarter-driver-flashers/oci_bundles/aarch64-itb
+          cd python/packages/jumpstarter-driver-flashers/oci_bundles/aarch64-itb
           ./build_fits.sh
 
       - name: Upload FIT artifacts
         uses: actions/upload-artifact@v4
         with:
           name: FIT-images
-          path: packages/jumpstarter-driver-flashers/oci_bundles/aarch64-itb/data/*.itb
+          path: python/packages/jumpstarter-driver-flashers/oci_bundles/aarch64-itb/data/*.itb
 
       - name: Run build_bundle.sh for aarch64-itb
         run: |
-          cd packages/jumpstarter-driver-flashers/oci_bundles && dnf install -y oras
+          cd python/packages/jumpstarter-driver-flashers/oci_bundles && dnf install -y oras
           oras login quay.io -u jumpstarter-dev+jumpstarter_ci --password-stdin <<< "${{ secrets.QUAY_TOKEN }}"
           ./build_bundle.sh quay.io/jumpstarter-dev/jumpstarter-flasher-aarch64-itb:latest aarch64-itb
