@@ -1,0 +1,24 @@
+name: "Run E2E Tests"
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - release-*
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    if: github.repository_owner == 'jumpstarter-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: false
+    steps:
+      - uses: jumpstarter-dev/jumpstarter-e2e@main
+        with:
+          controller-ref: main
+          jumpstarter-ref: ${{ github.ref }}

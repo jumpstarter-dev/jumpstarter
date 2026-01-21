@@ -1,0 +1,19 @@
+{% extends "!page.html" %}
+{% block extrahead %}
+{% include "head.html" %}
+{% endblock %}
+
+{% block content %}
+{% if pagename != 'index' %}
+<div class="admonition warning">
+    <p class="admonition-title">Warning</p>
+    <p>This documentation is actively being updated as the project evolves and may not be complete in all areas.</p>
+</div>
+{% endif %}
+
+{{ super() }}
+{% endblock %}
+
+{% block footer %}
+{% include "footer.html" %}
+{% endblock %}

@@ -1,0 +1,13 @@
+[project]
+name = "jumpstarter-example-automotive"
+version = "0.1.0"
+description = ""
+authors = [
+  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+  { name = "Nick Cao", email = "ncao@redhat.com" },
+  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["jumpstarter"]

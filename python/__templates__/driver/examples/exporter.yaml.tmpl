@@ -1,0 +1,11 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  example:
+    type: jumpstarter_driver_${DRIVER_NAME}.driver.${DRIVER_CLASS}
+
