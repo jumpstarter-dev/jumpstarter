@@ -32,7 +32,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../' }
+raw-options = { 'root' = '../../../' }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
