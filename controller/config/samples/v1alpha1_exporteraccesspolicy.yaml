@@ -1,0 +1,30 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterAccessPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/managed-by: kustomize
+  name: default
+spec:
+  exporterSelector:
+    matchLabels:
+      dut: fancy-hardware
+  policies:
+    - priority: 20 # Administrators come first, highest priority
+      from:
+        - clientSelector:
+            matchLabels:
+              client-type: administrator
+    - priority: 10 # Developers come next, maximum 2days
+      maximumDuration: 24h
+      from:
+        - clientSelector:
+            matchLabels:
+              client-type: developer
+    - priority: 5 # CI comes next, but only spot instances, can be deallocated
+      maximumDuration: 12h
+      spotAccess: true
+      from:
+        - clientSelector:
+            matchLabels:
+              client-type: ci

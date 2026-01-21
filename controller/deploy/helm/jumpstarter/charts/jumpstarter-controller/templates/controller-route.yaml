@@ -1,0 +1,34 @@
+{{ if eq .Values.grpc.mode "route" }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    external-exposed: "true"
+    shard: external
+  annotations:
+    haproxy.router.openshift.io/timeout: 2d
+    haproxy.router.openshift.io/timeout-tunnel: 2d
+  name: jumpstarter-controller-route
+  namespace: {{ default .Release.Namespace .Values.namespace }}
+spec:
+  {{ if .Values.grpc.hostname }}
+  host: {{ .Values.grpc.hostname }}
+  {{ else }}
+  host: grpc.{{ .Values.global.baseDomain | required "a global.baseDomain or a grpc.hostname must be provided"}}
+  {{ end }}
+  port:
+    targetPort: 8082
+  tls:
+    termination: {{ .Values.grpc.tls.mode }}
+    insecureEdgeTerminationPolicy: None
+    {{ if .Values.grpc.tls.controllerCertSecret }}
+    externalCertificate:
+      name: {{ .Values.grpc.tls.controllerCertSecret }}
+    {{ end }}
+
+  to:
+    kind: Service
+    name: jumpstarter-grpc
+    weight: 100
+  wildcardPolicy: None
+{{ end }}

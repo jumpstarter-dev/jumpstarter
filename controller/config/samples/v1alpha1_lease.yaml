@@ -1,0 +1,12 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Lease
+metadata:
+  labels:
+    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/managed-by: kustomize
+  name: lease-sample
+spec:
+  clientRef:
+    name: client-sample
+  duration: 30s
+  selector: {}
