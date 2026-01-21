@@ -21,7 +21,7 @@ vnc = "jumpstarter_driver_vnc.driver:Vnc"
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../../'}
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
