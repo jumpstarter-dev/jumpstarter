@@ -1,0 +1,9 @@
+apiVersion: v2
+name: jumpstarter
+description: A helm chart for the jumpstarter project
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: jumpstarter-controller
+    condition: jumpstarter-controller.enabled

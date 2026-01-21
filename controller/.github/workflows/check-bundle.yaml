@@ -1,0 +1,95 @@
+name: Check Bundle
+on:
+  pull_request:
+    branches:
+      - main
+      - 'release-*'
+
+jobs:
+  check-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.24
+
+      - name: Cache bin directory (deploy/operator)
+        uses: actions/cache@v4
+        with:
+          path: deploy/operator/bin/
+          key: ${{ runner.os }}-operator-bin-${{ hashFiles('deploy/operator/go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-operator-bin-
+
+      - name: Get version
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BASE_BRANCH="${{ github.base_ref }}"
+            if [ "$BASE_BRANCH" == "main" ]; then
+              TAG="latest"
+            elif [[ "$BASE_BRANCH" =~ ^release- ]]; then
+              TAG="$BASE_BRANCH"
+            else
+              echo "::error::Unknown base branch: $BASE_BRANCH"
+              exit 1
+            fi
+          else
+            echo "::error::Unsupported event: ${{ github.event_name }}"
+            exit 1
+          fi
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "TAG=${TAG}"
+
+      - name: Run make bundle
+        working-directory: deploy/operator
+        run: |
+          make bundle IMG="quay.io/jumpstarter-dev/jumpstarter-operator:${TAG}"
+
+      - name: Check for uncommitted changes
+        run: |
+          DIFF=$(git diff)
+          if [ -n "$DIFF" ]; then
+            # Filter out createdAt timestamp lines and context lines, check if any actual changes remain
+            FILTERED_DIFF=$(echo "$DIFF" | grep -vE '^(---|\+\+\+|@@|index|diff)' | grep -vE '^[+-].*createdAt:.*[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' || true)
+            # Check if there are any non-timestamp, non-context changes
+            if [ -n "$FILTERED_DIFF" ] && [ -n "$(echo "$FILTERED_DIFF" | grep -E '^[+-]' || true)" ]; then
+              echo "::error::Uncommitted changes detected after running 'make bundle'. Please commit all bundle changes before pushing."
+              echo "::error::This can be done by running 'make bundle IMG=\"quay.io/jumpstarter-dev/jumpstarter-operator:${TAG}\""
+              git diff
+              exit 1
+            else
+              echo "Only timestamp changes detected (ignored). Bundle files are up to date."
+              # Reset the timestamp changes to keep the repo clean
+              git checkout -- .
+            fi
+          else
+            echo "No uncommitted changes detected. Bundle files are up to date."
+          fi
+
+      - name: Ensure clean state before build-installer
+        run: |
+          # Reset any remaining changes from root
+          git checkout -- . || true
+
+      - name: Run make build-installer
+        working-directory: deploy/operator
+        run: |
+          make build-installer
+
+      - name: Check for uncommitted changes after build-installer
+        run: |
+          if [ -n "$(git diff)" ]; then
+            echo "::error::Uncommitted changes detected after running 'make build-installer'. Please commit all installer changes before pushing."
+            echo "::error::This can be done by running 'make build-installer'"
+            git diff
+            exit 1
+          else
+            echo "No uncommitted changes detected. Installer files are up to date."
+          fi
+

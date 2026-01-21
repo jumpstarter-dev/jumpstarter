@@ -1,0 +1,40 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+kubeadmConfigPatches:
+- |
+  kind: ClusterConfiguration
+  apiServer:
+    extraArgs:
+      "service-node-port-range": "3000-32767"
+- |
+  kind: InitConfiguration
+  nodeRegistration:
+    kubeletExtraArgs:
+      node-labels: "ingress-ready=true"
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 80 # ingress controller
+    hostPort: 5080
+    protocol: TCP
+  - containerPort: 443
+    hostPort: 5443
+    protocol: TCP
+  - containerPort: 30010 # grpc nodeport
+    hostPort: 8082
+    protocol: TCP
+  - containerPort: 30011 # grpc router nodeport (replica 0)
+    hostPort: 8083
+    protocol: TCP
+  - containerPort: 30012 # grpc router nodeport (replica 1)
+    hostPort: 8084
+    protocol: TCP
+  - containerPort: 30013 # grpc router nodeport (replica 2)
+    hostPort: 8085
+    protocol: TCP
+
+# if we needed to mount a hostPath volume into the kind cluster, we can do it like this
+#  extraMounts:
+#  - hostPath: ./bin/e2e-certs
+#    containerPath: /tmp/e2e-certs
+

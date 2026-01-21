@@ -1,0 +1,30 @@
+name: Kind based CI
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - 'release-*'
+
+jobs:
+  deploy-kind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run make deploy
+        run: make deploy
+
+  e2e-test-operator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run make deploy
+        run: make test-operator-e2e

@@ -1,0 +1,47 @@
+{{ if eq .Values.grpc.mode "ingress" }}
+{{ range $k, $v := .Values.grpc.additionalRouters }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    {{ if eq $.Values.grpc.tls.mode "passthrough" }}
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    {{ end }}
+  name: jumpstarter-router-ingress-{{ $k }}
+  namespace: {{ default $.Release.Namespace $.Values.namespace }}
+spec:
+  {{ if $.Values.grpc.ingress.class }}
+  ingressClassName: {{ $.Values.grpc.ingress.class }}
+  {{ end }}
+  rules:
+  {{ if $v.hostname }}
+  - host: {{ $v.hostname }}
+  {{ else }}
+  - host: router-{{ $k }}.{{ $.Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
+  {{ end }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jumpstarter-router-grpc-{{ $k }}
+            port:
+              number: 8083
+  tls:
+  - hosts:
+      {{ if $v.hostname }}
+      - {{ $v.hostname }}
+      {{ else }}
+      - router-{{ $k }}.{{ $.Values.global.baseDomain | required "a global.baseDomain or a grpc.routerHostname must be provided"}}
+      {{ end }}
+    {{ if $.Values.grpc.tls.routerCertSecret }}
+    secretName: {{ $.Values.grpc.tls.routerCertSecret }}
+    {{ end }}
+{{ end }}
+{{ end }}

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jumpstarter-controller
+  namespace: {{ default .Release.Namespace .Values.namespace }}
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: jumpstarter-controller
+    {{ if .Values.global.timestamp }}
+    deployment.timestamp: {{ .Values.global.timestamp | quote }}
+    {{ end }}
+data:
+  # backwards compatibility
+  # TODO: remove in 0.7.0
+  {{ if .Values.authenticationConfig }}
+  authentication: {{- .Values.authenticationConfig | toYaml | indent 1 }}
+  {{ end }}
+  config: |
+{{ .Values.config | toYaml | indent 4 }}
+  router: |
+    default:
+      {{ if .Values.grpc.routerEndpoint }}
+      endpoint: {{ .Values.grpc.routerEndpoint }}
+      {{ else if .Values.routerHostname }}
+      endpoint: {{ .Values.routerHostname }}:{{ .Values.grpc.tls.port }}
+      {{ else }}
+      endpoint: router.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
+      {{ end }}
+  {{ range $k, $v := .Values.grpc.additionalRouters }}
+    {{ $k }}:
+      {{ if $v.endpoint }}
+      endpoint: {{ $v.endpoint }}
+      {{ else if $v.hostname }}
+      endpoint: {{ $v.hostname }}:{{ $.Values.grpc.tls.port }}
+      {{ else }}
+      endpoint: router-{{ $k }}.{{ $.Values.global.baseDomain }}:{{ $.Values.grpc.tls.port }}
+      {{ end }}
+      {{ if $v.labels }}
+      labels:
+        {{ $v.labels | toYaml | indent 1 }}
+      {{ end }}
+  {{ end }}
