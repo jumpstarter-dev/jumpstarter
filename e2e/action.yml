@@ -1,11 +1,7 @@
 name: 'Jumpstarter end-to-end testing'
-inputs:
-  controller-ref:
-    description: 'jumpstarter-dev/jumpstarter-controller git ref'
-    required: true
-  jumpstarter-ref:
-    description: 'jumpstarter-dev/jumpstarter git ref'
-    required: true
+# Monorepo version: no inputs needed, uses local checkout
+# controller/ and python/ directories are at repo root
+inputs: {}
 runs:
   using: "composite"
   steps:
@@ -20,18 +16,7 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y bats bats-support bats-assert
-    - name: Checkout jumpstarter controller
-      uses: actions/checkout@v4
-      with:
-        repository: jumpstarter-dev/jumpstarter-controller
-        ref: ${{ inputs.controller-ref }}
-        path: controller
-    - name: Checkout jumpstarter
-      uses: actions/checkout@v4
-      with:
-        repository: jumpstarter-dev/jumpstarter
-        ref: ${{ inputs.jumpstarter-ref }}
-        path: jumpstarter
+    # Monorepo: controller/ and python/ directories are already at repo root
     - name: Deploy dex
       shell: bash
       run: |
@@ -75,10 +60,10 @@ runs:
       run: |
         uv venv
         uv pip install \
-          ./jumpstarter/packages/jumpstarter-cli \
-          ./jumpstarter/packages/jumpstarter-driver-composite \
-          ./jumpstarter/packages/jumpstarter-driver-power \
-          ./jumpstarter/packages/jumpstarter-driver-opendal
+          ./python/packages/jumpstarter-cli \
+          ./python/packages/jumpstarter-driver-composite \
+          ./python/packages/jumpstarter-driver-power \
+          ./python/packages/jumpstarter-driver-opendal
     - name: Run jumpstarter
       shell: bash
       run: |

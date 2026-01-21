@@ -15,10 +15,10 @@ for BRANCH in "${BRANCHES[@]}"; do
 
   git worktree add --force    "${WORKTREE}" "${BRANCH}"
 
-  uv run --project "${WORKTREE}" --isolated --all-packages --group docs \
-    make -C "${WORKTREE}/docs" html SPHINXOPTS="-D version=${BRANCH}"
+  uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
+    make -C "${WORKTREE}/python/docs" html SPHINXOPTS="-D version=${BRANCH}"
 
-  cp -r "${WORKTREE}/docs/build/html" "${OUTPUT_DIR}/${BRANCH}"
+  cp -r "${WORKTREE}/python/docs/build/html" "${OUTPUT_DIR}/${BRANCH}"
 
   git worktree remove --force "${WORKTREE}"
 done

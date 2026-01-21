@@ -1,10 +1,16 @@
-name: documentation
+name: Documentation
 
 on:
   # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
+    paths:
+      - 'python/docs/**'
+      - 'python/packages/**'
   pull_request:
+    paths:
+      - 'python/docs/**'
+      - 'python/packages/**'
   merge_group:
 
   # Allows you to run this workflow manually from the Actions tab
@@ -25,6 +31,7 @@ concurrency:
 defaults:
   run:
     shell: bash
+    working-directory: python
 
 jobs:
   # Build job
@@ -66,7 +73,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs/build
+          path: ./python/docs/build
 
   check-warnings:
     runs-on: ubuntu-latest
