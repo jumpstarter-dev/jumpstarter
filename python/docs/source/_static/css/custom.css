@@ -1,0 +1,21 @@
+.admonition.warning {
+    margin-bottom: 2rem;
+}
+
+/* Hide the Furo attribution text */
+.made-with-furo {
+    display: none !important;
+}
+
+/* Fix version name overflow in sidebar */
+.sidebar-brand .sidebar-brand-text {
+    white-space: normal;
+    word-break: break-word;
+}
+
+.sidebar-brand .sidebar-brand-text a {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

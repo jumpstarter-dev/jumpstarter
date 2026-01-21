@@ -1,0 +1,16 @@
+{
+    "python.testing.pytestArgs": [
+        "tests",
+        "jumpstarter",
+        "--cov",
+        "--cov-report=html",
+        "--cov-report=xml"
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.analysis.extraPaths": [
+        "./contrib/*"
+    ],
+    "makefile.configureOnOpen": false
+}

@@ -1,0 +1,22 @@
+#!/bin/bash
+set -e
+#LATEST_URL=$(wget -O /dev/null -o - --max-redirect=0 https://downloads.raspberrypi.org/raspios_lite_armhf_latest 2>/dev/null| sed -n "s/^Location: \(.*\) \[following\]$/\1/p")
+LATEST_URL=$(curl https://downloads.raspberrypi.org/raspios_lite_armhf_latest -v 2>&1 | sed -n "s/< location: \(.*\)\r$/\1/p")
+echo $LATEST_URL
+CACHE="./images"
+wget "${LATEST_URL}" -np -m -A '*img.xz' -c -P "${CACHE}"
+# use the latest compose image
+LATEST_IMG=$(ls -Art "${CACHE}/downloads.raspberrypi.org/raspios_lite_armhf/images"/*/*.img.xz | tail -n 1)
+
+echo "Latest image: ${LATEST_IMG}"
+
+# calculate full path to LATEST_IMG
+LATEST_IMG_FULLPATH=$(readlink -f ${LATEST_IMG})
+EXISTING_LINK=$(readlink "${CACHE}/latest.raw.xz" || true )
+# if the link has changed, update the link
+if [[ "${LATEST_IMG_FULLPATH}" != "${EXISTING_LINK}" ]]; then
+    echo "Updating link from latest.raw.xz -> ${LATEST_IMG}"
+    ln -fs "${LATEST_IMG_FULLPATH}" "${CACHE}/latest.raw.xz"
+else
+    echo "We are up-to-date."
+fi

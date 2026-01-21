@@ -1,0 +1,28 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+kubeadmConfigPatches:
+- |
+  kind: ClusterConfiguration
+  apiServer:
+    extraArgs:
+      "service-node-port-range": "3000-32767"
+- |
+  kind: InitConfiguration
+  nodeRegistration:
+    kubeletExtraArgs:
+      node-labels: "ingress-ready=true"
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 80 # ingress controller
+    hostPort: 5080
+    protocol: TCP
+  - containerPort: 30010 # grpc nodeport
+    hostPort: 8082
+    protocol: TCP
+  - containerPort: 30011 # grpc router nodeport
+    hostPort: 8083
+    protocol: TCP
+  - containerPort: 443 # minimalistic UI
+    hostPort: 5443
+    protocol: TCP

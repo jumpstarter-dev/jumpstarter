@@ -1,0 +1,18 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+metadata:
+  namespace: default
+  name: demo
+tls:
+  ca: ''
+  insecure: true
+token: <token>
+export:
+  power:
+    type: "jumpstarter_driver_snmp.driver.SNMPServer"
+    config:
+      host: "pdu.mgmt.com"
+      user: "labuser"
+      plug: 32
+      oid: "1.3.6.1.4.1.13742.6.4.1.2.1.2.1"

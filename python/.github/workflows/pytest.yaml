@@ -1,0 +1,91 @@
+name: "Run Tests"
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - release-*
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  pytest-matrix:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        runs-on: [ubuntu-24.04, macos-15]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6.0.1
+        with:
+          version: latest
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Qemu (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo <<EOF | sudo tee /etc/udev/rules.d/99-kvm.rules
+          KERNEL=="kvm", GROUP="kvm", MODE="0666"
+          KERNEL=="vhost-vsock", GROUP="kvm", MODE="0666"
+          KERNEL=="vhost-net", GROUP="kvm", MODE="0666"
+          EOF
+
+          sudo udevadm control --reload-rules
+
+          sudo modprobe vhost_vsock
+          sudo modprobe vhost_net
+          sudo chmod 0666 /dev/kvm /dev/vhost-vsock /dev/vhost-net
+
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm qemu-system-x86
+
+      - name: Install libgpiod-dev (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgpiod-dev liblgpio-dev
+
+      - name: Install Qemu (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install qemu
+
+      - name: Cache Fedora Cloud images
+        id: cache-fedora-cloud-images
+        uses: actions/cache@v4
+        with:
+          path: packages/jumpstarter-driver-qemu/images
+          key: fedora-cloud-41-1.4
+
+      - name: Download Fedora Cloud images
+        if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
+        run: |
+          for arch in aarch64 x86_64; do
+            curl -L --output "packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-41-1.4.${arch}.qcow2" \
+              "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-41-1.4.${arch}.qcow2"
+          done
+
+      - name: Run pytest
+        run: |
+            make test
+
+
+  # https://github.com/orgs/community/discussions/26822
+  pytest:
+    runs-on: ubuntu-latest
+    needs: [pytest-matrix]
+    if: ${{ always() }}
+    steps:
+      - run: exit 1
+        if: >-
+          ${{
+               contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+            || contains(needs.*.result, 'skipped')
+          }}

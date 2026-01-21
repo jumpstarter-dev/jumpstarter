@@ -1,0 +1,29 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  storage:
+    type: "jumpstarter_driver_flashers.driver.TIJ784S4Flasher"
+    children:
+      serial:
+        ref: "serial"
+      power:
+        ref: "power"
+      # tftp and http driver are automatically created when not specified, cannot be specified via ref
+      # tftp:
+      #   type: "jumpstarter_driver_tftp.driver.TftpServer"
+      # http
+  serial:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_112214101760A-if00-port0"
+      baudrate: 115200
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      serial: "YK112233"
+      port: "1"
