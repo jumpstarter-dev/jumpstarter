@@ -1,0 +1,55 @@
+{% block footer %}
+<div class="related-pages">
+    {% if next -%}
+    <a class="next-page" href="{{ next.link }}">
+        <div class="page-info">
+            <div class="context">
+                <span>{{ _("Next") }}</span>
+            </div>
+            <div class="title">{{ next.title }}</div>
+        </div>
+        <svg class="furo-related-icon">
+            <use href="#svg-arrow-right"></use>
+        </svg>
+    </a>
+    {%- endif %}
+    {% if prev -%}
+    <a class="prev-page" href="{{ prev.link }}">
+        <svg class="furo-related-icon">
+            <use href="#svg-arrow-right"></use>
+        </svg>
+        <div class="page-info">
+            <div class="context">
+                <span>{{ _("Previous") }}</span>
+            </div>
+            <div class="title">{{ prev.title }}</div>
+        </div>
+    </a>
+    {%- endif %}
+</div>
+<div class="bottom-of-page">
+    <div class="left-details">
+        {%- if show_copyright %}
+        <div class="copyright">
+            {%- if hasdoc('copyright') %}
+            {% trans path=pathto('copyright'), copyright=copyright|e %}&#169; <a href="{{ path }}">Copyright</a> {{
+            copyright }}.{% endtrans %}
+            {%- else %}
+            {% trans copyright=copyright|e %}&#169; Copyright {{ copyright }}.{% endtrans %}
+            {%- endif %}
+        </div>
+        {%- endif %}
+    </div>
+    <div class="right-details">
+        {% if theme_footer_icons %}
+        <div class="icons">
+            {% for icon in theme_footer_icons %}
+            <a class="muted-link {{ icon.class }}" href="{{ icon.url }}" aria-label="{{ icon.name }}">
+                {{- icon.html -}}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

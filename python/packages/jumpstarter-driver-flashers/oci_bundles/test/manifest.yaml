@@ -1,0 +1,39 @@
+# This is a test manifest for the flasher bundle
+# It is used to test the flasher bundle, not intended for any production use
+apiVersion: jumpstarter.dev/v1alpha1
+kind: FlashBundleManifest
+metadata:
+  name: test-bundle
+spec:
+  manufacturer: The Jumpstarter Authors
+  link: "https://jumpstarter.dev"
+  bootcmd: "booti 0x82000000 - 0x84000000"
+  default_target: "usd"
+  login:
+    type: "busybox"
+    login_prompt: "login:"
+    username: "root"
+    password: "password"
+    prompt: "#"
+  targets:
+    usd: "/sys/class/block#4fb0000"
+    emmc: "/sys/class/block#4f80000"
+  preflash_commands:
+    - "dd if=/dev/zero of=/dev/mmcblk0 bs=512 count=34"
+    - "dd if=/dev/zero of=/dev/mmcblk1 bs=512 count=34"
+  kernel:
+    file: data/kernel
+    address: "0x82000000"
+  initram:
+    file: data/initramfs
+    address: "0x83000000"
+  dtb:
+    default: test-dtb
+    address: "0x84000000"
+    variants:
+      test-dtb:
+        file: data/dtbs/test-dtb.dtb
+      alternate:
+        file: data/dtbs/alternate.dtb
+      othercmd:
+        bootcmd: "bootm"

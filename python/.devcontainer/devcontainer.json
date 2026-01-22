@@ -1,0 +1,71 @@
+{
+	"name": "uv",
+	"build": {
+		"context": "..",
+		"dockerfile": "Dockerfile"
+	},
+	"postCreateCommand": "make sync",
+	"postStartCommand": "uv python pin 3.12 && uv run pre-commit install",
+	"remoteUser": "vscode",
+	// Mount USB devices to devcontainer for tests
+	"mounts": [
+		"type=bind,source=/dev/bus/usb,target=/dev/bus/usb"
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"tamasfe.even-better-toml",
+				"tekumara.typos-vscode",
+				"charliermarsh.ruff",
+				"codezombiech.gitignore",
+				"littlefoxteam.vscode-python-test-adapter",
+				"hbenl.vscode-test-explorer",
+				"ryanluker.vscode-coverage-gutters",
+				"lextudio.restructuredtext",
+				"trond-snekvik.simple-rst",
+				"swyddfa.esbonio",
+				"ExecutableBookProject.myst-highlight",
+				"eamodio.gitlens",
+				"kevinrose.vsc-python-indent",
+				"mosapride.zenkaku",
+				"ms-azuretools.vscode-docker",
+				"ms-python.python",
+				"njpwerner.autodocstring",
+				"pkief.material-icon-theme",
+				"shardulm94.trailing-spaces",
+				"usernamehw.errorlens",
+				"yzhang.markdown-all-in-one",
+				"ms-vscode.makefile-tools"
+			],
+			"settings": {
+				"python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+				"[python]": {
+					"editor.defaultFormatter": "charliermarsh.ruff",
+					"editor.codeActionsOnSave": {
+						"source.fixAll.ruff": "explicit",
+						"source.organizeImports.ruff": "explicit"
+					},
+					"editor.formatOnSave": true
+				},
+				"files.insertFinalNewline": true,
+				"files.trimTrailingWhitespace": true,
+				"terminal.integrated.defaultProfile.linux": "zsh",
+				"terminal.integrated.profiles.linux": {
+					"zsh": {
+						"path": "/bin/zsh"
+					}
+				},
+				"[markdown]": {
+					"editor.rulers": [
+						80
+					]
+				},
+				"[restructuredtext]": {
+					"editor.rulers": [
+						80
+					]
+				}
+			}
+		}
+	}
+}
