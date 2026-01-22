@@ -1,10 +1,59 @@
 JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
+# File to track bash wrapper process PIDs across tests
+EXPORTER_PIDS_FILE="${BATS_RUN_TMPDIR:-/tmp}/exporter_pids.txt"
+
+setup_file() {
+  # Initialize the PIDs file at the start of all tests
+  echo "" > "$EXPORTER_PIDS_FILE"
+}
+
 setup() {
   bats_load_library bats-support
   bats_load_library bats-assert
 
   bats_require_minimum_version 1.5.0
+}
+
+# teardown_file runs once after all tests complete (requires bats-core 1.5.0+)
+teardown_file() {
+  echo "" >&2
+  echo "========================================" >&2
+  echo "TEARDOWN_FILE RUNNING" >&2
+  echo "========================================" >&2
+  echo "=== Cleaning up exporter bash processes ===" >&2
+  
+  # Read PIDs from file
+  if [ -f "$EXPORTER_PIDS_FILE" ]; then
+    local pids=$(cat "$EXPORTER_PIDS_FILE" | tr '\n' ' ')
+    echo "Tracked PIDs from file: $pids" >&2
+    
+    while IFS= read -r pid; do
+      if [ -n "$pid" ]; then
+        echo "Checking PID $pid..." >&2
+        if ps -p "$pid" > /dev/null 2>&1; then
+          echo "  Killing PID $pid" >&2
+          kill -9 "$pid" 2>/dev/null || true
+        else
+          echo "  PID $pid already terminated" >&2
+        fi
+      fi
+    done < "$EXPORTER_PIDS_FILE"
+  else
+    echo "No PIDs file found at $EXPORTER_PIDS_FILE" >&2
+  fi
+  
+  echo "Checking for orphaned jmp processes..." >&2
+  local orphans=$(pgrep -f "jmp run --exporter" 2>/dev/null | wc -l)
+  echo "Found $orphans orphaned jmp processes" >&2
+  
+  # remove orphaned processes
+  pkill -9 -f "jmp run --exporter" 2>/dev/null || true
+  
+  # Clean up the PIDs file
+  rm -f "$EXPORTER_PIDS_FILE"
+  
+  echo "=== Cleanup complete ===" >&2
 }
 
 wait_for_exporter() {
@@ -69,11 +118,11 @@ wait_for_exporter() {
     --connector-id kubernetes \
     --token $(kubectl create -n "${JS_NAMESPACE}" token test-exporter-sa)
 
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"$GITHUB_ACTION_PATH/exporter.yaml\")" \
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-oidc.yaml
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"$GITHUB_ACTION_PATH/exporter.yaml\")" \
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-sa.yaml
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"$GITHUB_ACTION_PATH/exporter.yaml\")" \
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-legacy.yaml
  
   jmp config client   list
@@ -86,19 +135,21 @@ while true; do
   jmp run --exporter test-exporter-oidc
 done
 EOF
+  echo "$!" >> "$EXPORTER_PIDS_FILE"
 
   cat <<EOF | bash 3>&- &
 while true; do
   jmp run --exporter test-exporter-sa
 done
 EOF
+  echo "$!" >> "$EXPORTER_PIDS_FILE"
 
   cat <<EOF | bash 3>&- &
 while true; do
   jmp run --exporter test-exporter-legacy
 done
 EOF
-
+  echo "$!" >> "$EXPORTER_PIDS_FILE"
 
   wait_for_exporter
 }
@@ -110,7 +161,7 @@ EOF
   # to verify that the client can operate without a config file
   JMP_NAMESPACE="${JS_NAMESPACE}" \
   JMP_DRIVERS_ALLOW="*" \
-  JMP_NAME=test-exporter-legacy \
+  JMP_NAME=test-client-legacy \
   JMP_ENDPOINT=$(kubectl get clients.jumpstarter.dev -n "${JS_NAMESPACE}" test-client-legacy -o 'jsonpath={.status.endpoint}') \
   JMP_TOKEN=$(kubectl get secrets -n "${JS_NAMESPACE}" test-client-legacy-client -o 'jsonpath={.data.token}' | base64 -d) \
   jmp shell --selector example.com/board=oidc j power on

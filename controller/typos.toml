@@ -1,6 +1,0 @@
-[default.extend-words]
-Ded = "Ded" # from ANDed
-
-[type.gomod]
-extend-glob = ["go.mod", "go.sum"]
-check-file = false

@@ -1,10 +1,13 @@
 name: Kind based CI
+
 on:
   workflow_dispatch:
   pull_request:
     branches:
       - main
       - 'release-*'
+    paths:
+      - 'controller/**'
 
 jobs:
   deploy-kind:
@@ -16,6 +19,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run make deploy
+        working-directory: controller
         run: make deploy
 
   e2e-test-operator:
@@ -26,5 +30,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run make deploy
+      - name: Run operator e2e test
+        working-directory: controller
         run: make test-operator-e2e
