@@ -1,0 +1,27 @@
+# E2E test artifacts and local configuration
+.e2e-setup-complete
+.e2e/
+.bats/
+ca.pem
+ca-key.pem
+ca.csr
+server.pem
+server-key.pem
+server.csr
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
