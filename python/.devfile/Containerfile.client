@@ -6,7 +6,7 @@ RUN dnf install -y make git && \
     rm -rf /var/cache/dnf
 COPY --from=uv /uv /uvx /bin/
 ADD . /src
-RUN make -C /src build
+RUN make -C /src/python build
 
 
 FROM quay.io/devfile/base-developer-image:ubi9-latest
@@ -28,7 +28,7 @@ RUN dnf -y install make git python3.12 python3.12 libusbx python3-pyusb python3.
 
 USER 10001
 
-RUN --mount=from=builder,source=/src/dist,target=/dist python3.12 -m pip install /dist/*.whl
+RUN --mount=from=builder,source=/src/python/dist,target=/dist python3.12 -m pip install /dist/*.whl
 
 RUN python3.12 -m pip install pytest
 
