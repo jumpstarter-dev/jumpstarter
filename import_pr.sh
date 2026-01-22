@@ -30,7 +30,7 @@ get_repo_info() {
     local repo_name="$1"
     case "$repo_name" in
         python)
-            echo "jumpstarter-dev/jumpstarter python"
+            echo "jumpstarter-dev/jumpstarter-python python"
             ;;
         protocol)
             echo "jumpstarter-dev/jumpstarter-protocol protocol"
