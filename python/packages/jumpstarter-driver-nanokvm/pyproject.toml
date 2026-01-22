@@ -26,7 +26,7 @@ NanoKVM = "jumpstarter_driver_nanokvm.driver:NanoKVM"
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { 'root' = '../../'}
+raw-options = { 'root' = '../../..'}
 
 [tool.hatch.metadata]
 allow-direct-references = true
