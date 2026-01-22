@@ -7,7 +7,7 @@ RUN dnf install -y make git && \
 COPY --from=uv /uv /uvx /bin/
 
 FROM fedora:42 AS product
-RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod && \
+RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod sigrok-cli && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/

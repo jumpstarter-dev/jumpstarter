@@ -59,10 +59,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgpiod-dev liblgpio-dev
 
+      - name: Install sigrok-cli (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sigrok-cli
+
       - name: Install Qemu (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install qemu
+
+      - name: Install sigrok-cli (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install sigrok-cli
 
       - name: Cache Fedora Cloud images
         id: cache-fedora-cloud-images

@@ -31,6 +31,7 @@ members = [
     "jumpstarter-driver-ridesx",
     "jumpstarter-driver-sdwire",
     "jumpstarter-driver-shell",
+    "jumpstarter-driver-sigrok",
     "jumpstarter-driver-snmp",
     "jumpstarter-driver-ssh",
     "jumpstarter-driver-ssh-mitm",
@@ -2073,6 +2074,30 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-sigrok"
+source = { editable = "packages/jumpstarter-driver-sigrok" }
+dependencies = [
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
