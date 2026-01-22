@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euox pipefail
 
-declare -a BRANCHES=("main" "release-0.5" "release-0.6" "release-0.7")
+declare -a BRANCHES=("main" "release-0.6" "release-0.7")
 
 # https://stackoverflow.com/a/246128
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
@@ -15,10 +15,10 @@ for BRANCH in "${BRANCHES[@]}"; do
 
   git worktree add --force    "${WORKTREE}" "${BRANCH}"
 
-  uv run --project "${WORKTREE}" --isolated --all-packages --group docs \
-    make -C "${WORKTREE}/docs" html SPHINXOPTS="-D version=${BRANCH}"
+  uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
+    make -C "${WORKTREE}/python/docs" html SPHINXOPTS="-D version=${BRANCH}"
 
-  cp -r "${WORKTREE}/docs/build/html" "${OUTPUT_DIR}/${BRANCH}"
+  cp -r "${WORKTREE}/python/docs/build/html" "${OUTPUT_DIR}/${BRANCH}"
 
   git worktree remove --force "${WORKTREE}"
 done
