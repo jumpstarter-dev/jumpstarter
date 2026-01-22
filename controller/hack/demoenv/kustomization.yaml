@@ -1,0 +1,19 @@
+namespace: jumpstarter-exporters
+
+resources:
+  - exporters-statefulset.yaml
+  - vcan-exporters-statefulset.yaml
+configMapGenerator:
+- name: exporter-configs
+  files:
+  - gen/exporter-0.yaml
+  - gen/exporter-1.yaml
+  - gen/exporter-2.yaml
+  - gen/exporter-3.yaml
+  - gen/exporter-4.yaml
+  - gen/vcan-exporter-0.yaml
+  - gen/vcan-exporter-1.yaml
+  - gen/vcan-exporter-2.yaml
+  - gen/vcan-exporter-3.yaml
+  - gen/vcan-exporter-4.yaml
+
