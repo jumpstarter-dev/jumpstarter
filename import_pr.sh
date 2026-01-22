@@ -21,8 +21,9 @@ set -e
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEMP_DIR="${SCRIPT_DIR}/.import-pr-temp"
-PATCH_DIR="${TEMP_DIR}/patches"
+# TEMP_DIR will be set later with repo name and PR number
+TEMP_DIR=""
+PATCH_DIR=""
 
 # Repository mapping function (compatible with bash 3.2+)
 get_repo_info() {
@@ -70,15 +71,23 @@ log_step() {
     echo -e "${BLUE}[STEP]${NC} $1"
 }
 
-# Cleanup function
+# Cleanup function - only clean up on success
 cleanup() {
     local exit_code=$?
-    if [ -d "${TEMP_DIR}" ]; then
-        log_info "Cleaning up temporary directory..."
-        rm -rf "${TEMP_DIR}"
-    fi
-    if [ $exit_code -ne 0 ]; then
-        log_warn "Script exited with errors. Any partial changes may need to be reverted."
+    if [ $exit_code -eq 0 ]; then
+        if [ -n "${TEMP_DIR}" ] && [ -d "${TEMP_DIR}" ]; then
+            log_info "Cleaning up temporary directory..."
+            rm -rf "${TEMP_DIR}"
+        fi
+    else
+        if [ -n "${TEMP_DIR}" ] && [ -d "${TEMP_DIR}" ]; then
+            echo ""
+            log_warn "Script failed. Temporary directory preserved for debugging:"
+            log_warn "  ${TEMP_DIR}"
+            echo ""
+            log_warn "To clean up manually after debugging:"
+            log_warn "  rm -rf ${TEMP_DIR}"
+        fi
     fi
 }
 
@@ -342,10 +351,23 @@ apply_patches() {
     if [ "$failed" -gt 0 ]; then
         log_error "Failed to apply ${failed} patch(es)."
         echo ""
-        echo "The patch may have conflicts. You can try to resolve them manually:"
-        echo "  1. git checkout main"
-        echo "  2. git branch -D ${branch_name}"
-        echo "  3. Manually apply the changes from the upstream PR"
+        echo "Debug information:"
+        echo "  - Patches directory: ${PATCH_DIR}"
+        echo "  - Upstream repo clone: ${TEMP_DIR}/repo"
+        echo "  - Current branch: ${branch_name}"
+        echo ""
+        echo "To investigate the failure:"
+        echo "  1. Examine the failed patch:"
+        echo "     cat ${PATCH_DIR}/*.patch | less"
+        echo ""
+        echo "  2. Try applying manually to see the conflict:"
+        echo "     git am --directory=${subdir} ${PATCH_DIR}/*.patch"
+        echo ""
+        echo "  3. If you want to start over:"
+        echo "     git checkout main"
+        echo "     git branch -D ${branch_name}"
+        echo "     rm -rf ${TEMP_DIR}"
+        echo ""
         exit 1
     fi
 
@@ -395,6 +417,10 @@ main() {
 
     # Validate arguments
     validate_args "$@"
+
+    # Set temp directory with descriptive name
+    TEMP_DIR="${SCRIPT_DIR}/.import-pr-temp-${repo_name}-${pr_number}"
+    PATCH_DIR="${TEMP_DIR}/patches"
 
     # Check dependencies
     check_dependencies
