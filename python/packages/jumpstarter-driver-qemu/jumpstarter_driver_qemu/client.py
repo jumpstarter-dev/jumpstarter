@@ -4,8 +4,6 @@ import click
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import FabricAdapter, NovncAdapter
 
-from jumpstarter.client.decorators import driver_click_group
-
 
 class QemuClient(CompositeClient):
     @property
@@ -43,10 +41,8 @@ class QemuClient(CompositeClient):
             yield conn
 
     def cli(self):
-        @driver_click_group(self)
-        def base():
-            """QEMU virtual machine operations"""
-            pass
+        # Get the base group from CompositeClient which includes all child commands
+        base = super().cli()
 
         @base.group()
         def resize():
