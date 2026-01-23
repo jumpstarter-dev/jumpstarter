@@ -13,6 +13,7 @@ get_script_dir() {
 export KIND=${KIND:-bin/kind}
 export GRPCURL=${GRPCURL:-bin/grpcurl}
 export NETWORKING_MODE=${NETWORKING_MODE:-nodeport}
+export CERTMANAGER_VERSION=${CERTMANAGER_VERSION:-v1.19.2}
 
 # Color codes for terminal output
 export GREEN='\033[0;32m'
@@ -171,5 +172,26 @@ print_deployment_success() {
   echo -e "${GREEN}Jumpstarter controller deployed successfully${method_text}!${NC}"
   echo -e " gRPC        endpoint: ${GRPC_ENDPOINT}"
   echo -e " gRPC router endpoint: ${GRPC_ROUTER_ENDPOINT}"
+}
+
+# Check if cert-manager CRDs are installed in the cluster
+is_cert_manager_installed() {
+  kubectl get crd certificates.cert-manager.io > /dev/null 2>&1
+}
+
+# Install cert-manager in the cluster
+# Uses CERTMANAGER_VERSION environment variable (default: v1.19.2)
+# Waits for webhook to be ready before returning
+install_cert_manager() {
+  echo -e "${GREEN}Installing cert-manager ${CERTMANAGER_VERSION} ...${NC}"
+  
+  kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERTMANAGER_VERSION}/cert-manager.yaml"
+  
+  echo -e "${GREEN}Waiting for cert-manager webhook to be ready ...${NC}"
+  kubectl wait --namespace cert-manager \
+    --for=condition=available deployment/cert-manager-webhook \
+    --timeout=300s
+  
+  echo -e "${GREEN}cert-manager ${CERTMANAGER_VERSION} installed successfully${NC}"
 }
 
