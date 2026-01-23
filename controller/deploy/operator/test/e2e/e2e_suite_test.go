@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"testing"
 
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
@@ -65,6 +66,10 @@ var _ = BeforeSuite(func() {
 
 	// Add the operator scheme to the default scheme
 	err = operatorv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Add cert-manager scheme for certificate testing
+	err = certmanagerv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Create a controller-runtime client
