@@ -591,6 +591,74 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		}
 	}
 
+	// Base environment variables
+	envVars := []corev1.EnvVar{
+		{
+			Name:  "GRPC_ENDPOINT",
+			Value: grpcEndpoint,
+		},
+		{
+			Name: "CONTROLLER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-controller-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+		{
+			Name: "ROUTER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-router-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath:  "metadata.namespace",
+					APIVersion: "v1",
+				},
+			},
+		},
+		{
+			Name:  "GIN_MODE",
+			Value: "release",
+		},
+	}
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+
+	// Add TLS certificate mount when cert-manager is enabled
+	if jumpstarter.Spec.CertManager.Enabled {
+		tlsSecretName := GetControllerCertSecretName(jumpstarter)
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
+			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
+		)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "tls-certs",
+			MountPath: "/tls",
+			ReadOnly:  true,
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: "tls-certs",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: tlsSecretName,
+				},
+			},
+		})
+	}
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-controller", jumpstarter.Name),
@@ -629,47 +697,8 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 								"--health-probe-bind-address=:8081",
 								"-metrics-bind-address=:8080",
 							},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "GRPC_ENDPOINT",
-									Value: grpcEndpoint,
-								},
-								{
-									Name: "CONTROLLER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-controller-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-								{
-									Name: "ROUTER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-router-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-								{
-									Name: "NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath:  "metadata.namespace",
-											APIVersion: "v1",
-										},
-									},
-								},
-								{
-									Name:  "GIN_MODE",
-									Value: "release",
-								},
-							},
+							Env:          envVars,
+							VolumeMounts: volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 8082,
@@ -726,6 +755,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 							},
 						},
 					},
+					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: boolPtr(true),
 						SeccompProfile: &corev1.SeccompProfile{
@@ -758,6 +788,59 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 
 	// Build router endpoint for this specific replica
 	routerEndpoint := r.buildRouterEndpointForReplica(jumpstarter, replicaIndex)
+
+	// Base environment variables
+	envVars := []corev1.EnvVar{
+		{
+			Name:  "GRPC_ROUTER_ENDPOINT",
+			Value: routerEndpoint,
+		},
+		{
+			Name: "ROUTER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-router-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath:  "metadata.namespace",
+					APIVersion: "v1",
+				},
+			},
+		},
+	}
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+
+	// Add TLS certificate mount when cert-manager is enabled
+	if jumpstarter.Spec.CertManager.Enabled {
+		tlsSecretName := GetRouterCertSecretName(jumpstarter, replicaIndex)
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
+			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
+		)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "tls-certs",
+			MountPath: "/tls",
+			ReadOnly:  true,
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: "tls-certs",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: tlsSecretName,
+				},
+			},
+		})
+	}
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -793,32 +876,8 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Image:           jumpstarter.Spec.Routers.Image,
 							ImagePullPolicy: jumpstarter.Spec.Routers.ImagePullPolicy,
 							Command:         []string{"/router"},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "GRPC_ROUTER_ENDPOINT",
-									Value: routerEndpoint,
-								},
-								{
-									Name: "ROUTER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-router-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-								{
-									Name: "NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath:  "metadata.namespace",
-											APIVersion: "v1",
-										},
-									},
-								},
-							},
+							Env:             envVars,
+							VolumeMounts:    volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 8083,
@@ -847,6 +906,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							},
 						},
 					},
+					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: boolPtr(true),
 						SeccompProfile: &corev1.SeccompProfile{
