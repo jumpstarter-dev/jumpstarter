@@ -22,6 +22,30 @@ import (
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 )
 
+// Condition type constants for JumpstarterStatus.Conditions
+const (
+	// ConditionTypeCertManagerAvailable indicates whether cert-manager CRDs are installed
+	ConditionTypeCertManagerAvailable = "CertManagerAvailable"
+
+	// ConditionTypeIssuerReady indicates whether the cert-manager Issuer is ready
+	ConditionTypeIssuerReady = "IssuerReady"
+
+	// ConditionTypeControllerCertificateReady indicates whether the controller TLS certificate is ready
+	ConditionTypeControllerCertificateReady = "ControllerCertificateReady"
+
+	// ConditionTypeRouterCertificatesReady indicates whether all router TLS certificates are ready
+	ConditionTypeRouterCertificatesReady = "RouterCertificatesReady"
+
+	// ConditionTypeControllerDeploymentReady indicates whether the controller deployment is available
+	ConditionTypeControllerDeploymentReady = "ControllerDeploymentReady"
+
+	// ConditionTypeRouterDeploymentsReady indicates whether all router deployments are available
+	ConditionTypeRouterDeploymentsReady = "RouterDeploymentsReady"
+
+	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
+	ConditionTypeReady = "Ready"
+)
+
 // yaml mockup of the JumpstarterSpec
 // spec:
 //   baseDomain: example.com 
@@ -590,10 +614,21 @@ type IssuerReference struct {
 }
 
 // JumpstarterStatus defines the observed state of Jumpstarter.
-// This field is currently empty but can be extended to include status information
-// such as deployment status, endpoint URLs, and health information.
+// Status information is reported through conditions following Kubernetes conventions.
 type JumpstarterStatus struct {
-	// Jumpstarter deployment status
+	// Conditions represent the latest available observations of the Jumpstarter state.
+	// Condition types include:
+	// - CertManagerAvailable: cert-manager CRDs are installed in the cluster
+	// - IssuerReady: The referenced or created issuer is ready to issue certificates
+	// - ControllerCertificateReady: Controller TLS certificate is issued and secret exists
+	// - RouterCertificatesReady: All router TLS certificates are issued and secrets exist
+	// - ControllerDeploymentReady: Controller deployment is available
+	// - RouterDeploymentsReady: All router deployments are available
+	// - Ready: Overall system ready (aggregates all other conditions)
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
