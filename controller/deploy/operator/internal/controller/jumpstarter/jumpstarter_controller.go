@@ -907,24 +907,24 @@ func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpst
 
 	// Authentication configuration
 	auth := config.Authentication{
-		JWT: jumpstarter.Spec.Controller.Authentication.JWT,
+		JWT: jumpstarter.Spec.Authentication.JWT,
 	}
 
 	// Internal authentication
-	if jumpstarter.Spec.Controller.Authentication.Internal.Enabled {
-		prefix := jumpstarter.Spec.Controller.Authentication.Internal.Prefix
+	if jumpstarter.Spec.Authentication.Internal.Enabled {
+		prefix := jumpstarter.Spec.Authentication.Internal.Prefix
 		if prefix == "" {
 			prefix = "internal:"
 		}
 		auth.Internal.Prefix = prefix
 
-		if jumpstarter.Spec.Controller.Authentication.Internal.TokenLifetime != nil {
-			auth.Internal.TokenLifetime = jumpstarter.Spec.Controller.Authentication.Internal.TokenLifetime.Duration.String()
+		if jumpstarter.Spec.Authentication.Internal.TokenLifetime != nil {
+			auth.Internal.TokenLifetime = jumpstarter.Spec.Authentication.Internal.TokenLifetime.Duration.String()
 		}
 	}
 
 	// Kubernetes authentication
-	if jumpstarter.Spec.Controller.Authentication.K8s.Enabled {
+	if jumpstarter.Spec.Authentication.K8s.Enabled {
 		auth.K8s.Enabled = true
 	}
 

@@ -369,6 +369,10 @@ metadata:
 spec:
   baseDomain: %s
   useCertManager: false
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
   controller:
     image: %s
     imagePullPolicy: IfNotPresent
@@ -379,10 +383,6 @@ spec:
           nodeport:
             enabled: true
             port: 30010
-    authentication:
-      internal:
-        prefix: "internal:"
-        enabled: true
   routers:
     image: %s
     imagePullPolicy: IfNotPresent
