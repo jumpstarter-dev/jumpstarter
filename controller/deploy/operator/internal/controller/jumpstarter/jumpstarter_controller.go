@@ -562,14 +562,7 @@ func generateRandomKey(length int) (string, error) {
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
-// updateStatus updates the status of the Jumpstarter resource
-func (r *JumpstarterReconciler) updateStatus(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
-	// Update status fields based on current state
-	// This is a placeholder - actual implementation would check deployment status, etc.
-	// TODO: Add status fields to JumpstarterStatus in the API types
-
-	return nil
-}
+// updateStatus is implemented in status.go
 
 // createControllerDeployment creates a deployment for the controller
 func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv1.Deployment {
