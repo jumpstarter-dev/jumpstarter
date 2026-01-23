@@ -92,6 +92,14 @@ type JumpstarterReconciler struct {
 // Monitoring resources
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
+// cert-manager resources (for TLS certificate management)
+// +kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cert-manager.io,resources=issuers/status,verbs=get
+// +kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers/status,verbs=get
+// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates/status,verbs=get
+
 // Jumpstarter CRD resources (needed to grant permissions to managed controllers)
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients/status,verbs=get;update;patch
