@@ -902,18 +902,20 @@ spec:
 		})
 
 		It("should report ControllerDeploymentReady condition as True", func() {
+			// Deployment readiness can take longer due to image pulls and pod scheduling
 			waitForCondition(certManagerTestNamespace, jumpstarterName,
-				operatorv1alpha1.ConditionTypeControllerDeploymentReady, metav1.ConditionTrue, 3*time.Minute)
+				operatorv1alpha1.ConditionTypeControllerDeploymentReady, metav1.ConditionTrue, 5*time.Minute)
 		})
 
 		It("should report RouterDeploymentsReady condition as True", func() {
+			// Deployment readiness can take longer due to image pulls and pod scheduling
 			waitForCondition(certManagerTestNamespace, jumpstarterName,
-				operatorv1alpha1.ConditionTypeRouterDeploymentsReady, metav1.ConditionTrue, 3*time.Minute)
+				operatorv1alpha1.ConditionTypeRouterDeploymentsReady, metav1.ConditionTrue, 5*time.Minute)
 		})
 
 		It("should report Ready condition as True when all components are ready", func() {
 			waitForCondition(certManagerTestNamespace, jumpstarterName,
-				operatorv1alpha1.ConditionTypeReady, metav1.ConditionTrue, 3*time.Minute)
+				operatorv1alpha1.ConditionTypeReady, metav1.ConditionTrue, 5*time.Minute)
 
 			By("verifying all conditions are present and True")
 			conditions := getJumpstarterConditions(certManagerTestNamespace, jumpstarterName)

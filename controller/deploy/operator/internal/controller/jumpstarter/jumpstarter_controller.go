@@ -650,11 +650,14 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			MountPath: "/tls",
 			ReadOnly:  true,
 		})
+		// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
+		defaultMode := int32(420)
 		volumes = append(volumes, corev1.Volume{
 			Name: "tls-certs",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: tlsSecretName,
+					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
 				},
 			},
 		})
@@ -833,11 +836,14 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			MountPath: "/tls",
 			ReadOnly:  true,
 		})
+		// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
+		defaultMode := int32(420)
 		volumes = append(volumes, corev1.Volume{
 			Name: "tls-certs",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: tlsSecretName,
+					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
 				},
 			},
 		})
