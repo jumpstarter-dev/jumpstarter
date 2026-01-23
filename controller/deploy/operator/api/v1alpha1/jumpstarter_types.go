@@ -48,7 +48,7 @@ const (
 
 // yaml mockup of the JumpstarterSpec
 // spec:
-//   baseDomain: example.com 
+//   baseDomain: example.com
 //   controller:
 //     image: quay.io/jumpstarter/jumpstarter:0.7.2
 //     imagePullPolicy: IfNotPresent
@@ -153,7 +153,6 @@ const (
 //       issuerRef:
 //         name: my-issuer
 //         kind: Issuer
-
 
 // JumpstarterSpec defines the desired state of a Jumpstarter deployment. A deployment
 // can be created in a namespace of the cluster, and that's where all the Jumpstarter

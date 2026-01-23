@@ -3,7 +3,7 @@ set -exo pipefail
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 DEPLOY_JUMPSTARTER=${DEPLOY_JUMPSTARTER:-true}
-USE_CERTMANAGER=${USE_CERTMANAGER:-false}
+USE_CERTMANAGER=${USE_CERTMANAGER:-true}
 
 # Source common utilities
 source "${SCRIPT_DIR}/utils"
