@@ -24,8 +24,7 @@ import (
 
 // yaml mockup of the JumpstarterSpec
 // spec:
-//   baseDomain: example.com
-//   useCertManager: true
+//   baseDomain: example.com 
 //   controller:
 //     image: quay.io/jumpstarter/jumpstarter:0.7.2
 //     imagePullPolicy: IfNotPresent
@@ -122,7 +121,15 @@ import (
 //            username:
 //              claim: "preferred_username"
 //              prefix: "corp:"
-//
+//   certManager:
+//     enabled: true
+//     server:
+//       selfSigned:
+//         enabled: true
+//       issuerRef:
+//         name: my-issuer
+//         kind: Issuer
+
 
 // JumpstarterSpec defines the desired state of a Jumpstarter deployment. A deployment
 // can be created in a namespace of the cluster, and that's where all the Jumpstarter
@@ -134,11 +141,10 @@ type JumpstarterSpec struct {
 	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
 	BaseDomain string `json:"baseDomain,omitempty"`
 
-	// Enable automatic TLS certificate management using cert-manager.
+	// CertManager configuration for automatic TLS certificate management.
 	// When enabled, jumpstarter will interact with cert-manager to automatically provision
 	// and renew TLS certificates for all endpoints. Requires cert-manager to be installed in the cluster.
-	// +kubebuilder:default=true
-	UseCertManager bool `json:"useCertManager,omitempty"`
+	CertManager CertManagerConfig `json:"certManager,omitempty"`
 
 	// Controller configuration for the main Jumpstarter API and gRPC services.
 	// The controller handles gRPC and REST API requests from clients and exporters.
@@ -507,6 +513,80 @@ type ClusterIPConfig struct {
 	// Labels to add to the ClusterIP service.
 	// Useful for monitoring, cost allocation, and resource organization.
 	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// CertManagerConfig defines certificate management configuration using cert-manager.
+// When enabled, the operator will create Certificate resources to automatically
+// provision and renew TLS certificates for controller and router endpoints.
+type CertManagerConfig struct {
+	// Enable cert-manager integration for automatic TLS certificate management.
+	// When disabled, TLS certificates must be provided manually via secrets.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Server certificate configuration for controller and router endpoints.
+	// Defines how server TLS certificates are issued.
+	Server *ServerCertConfig `json:"server,omitempty"`
+}
+
+// ServerCertConfig defines how server certificates are issued.
+// Only one of SelfSigned or IssuerRef should be specified.
+// If neither is specified and cert-manager is enabled, SelfSigned with defaults is used.
+type ServerCertConfig struct {
+	// Create a self-signed CA managed by the operator.
+	// The operator will create a self-signed Issuer and CA certificate,
+	// then use that CA to issue server certificates.
+	SelfSigned *SelfSignedConfig `json:"selfSigned,omitempty"`
+
+	// Reference an existing cert-manager Issuer or ClusterIssuer.
+	// Use this to integrate with existing PKI infrastructure (ACME, Vault, etc.).
+	IssuerRef *IssuerReference `json:"issuerRef,omitempty"`
+}
+
+// SelfSignedConfig configures operator-managed self-signed CA for certificate issuance.
+// When enabled, the operator creates:
+// 1. A SelfSigned Issuer (bootstrap)
+// 2. A CA Certificate signed by the self-signed issuer
+// 3. A CA Issuer that uses the CA certificate's secret
+// 4. Server Certificates signed by the CA Issuer
+type SelfSignedConfig struct {
+	// Enable self-signed CA mode.
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Duration of the CA certificate validity.
+	// The CA certificate is used to sign server certificates.
+	// +kubebuilder:default="87600h"
+	CADuration *metav1.Duration `json:"caDuration,omitempty"`
+
+	// Duration of server certificate validity.
+	// Server certificates are issued for controller and router endpoints.
+	// +kubebuilder:default="8760h"
+	CertDuration *metav1.Duration `json:"certDuration,omitempty"`
+
+	// Time before certificate expiration to trigger renewal.
+	// Certificates will be renewed this duration before they expire.
+	// +kubebuilder:default="360h"
+	RenewBefore *metav1.Duration `json:"renewBefore,omitempty"`
+}
+
+// IssuerReference references an existing cert-manager Issuer or ClusterIssuer.
+// This allows integration with any cert-manager issuer type (CA, ACME, Vault, Venafi, etc.).
+type IssuerReference struct {
+	// Name of the Issuer or ClusterIssuer resource.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Kind of the issuer: "Issuer" for namespace-scoped or "ClusterIssuer" for cluster-scoped.
+	// +kubebuilder:validation:Enum=Issuer;ClusterIssuer
+	// +kubebuilder:default="Issuer"
+	Kind string `json:"kind,omitempty"`
+
+	// Group of the issuer resource. Defaults to cert-manager.io.
+	// Only change this if using a custom issuer from a different API group.
+	// +kubebuilder:default="cert-manager.io"
+	Group string `json:"group,omitempty"`
 }
 
 // JumpstarterStatus defines the observed state of Jumpstarter.
