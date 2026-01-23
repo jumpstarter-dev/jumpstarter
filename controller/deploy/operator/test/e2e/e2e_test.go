@@ -60,7 +60,7 @@ const metricsRoleBindingName = "jumpstarter-operator-metrics-binding"
 // testNamespace is the namespace where the test will be run
 const testNamespace = "jumpstarter-lab-e2e"
 
-var _ = Describe("Manager", Ordered, func() {
+var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 	var controllerPodName string
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
@@ -1181,9 +1181,10 @@ func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
 	By(fmt.Sprintf("waiting for gRPC endpoint %s to be ready", endpoint))
 
 	// Get grpcurl path from environment or use default
+	// Tests run from controller/deploy/operator/ directory, grpcurl is at controller/bin/
 	grpcurlPath := os.Getenv("GRPCURL")
 	if grpcurlPath == "" {
-		grpcurlPath = "../../../../bin/grpcurl" // installed on the base jumpstarter-controller project
+		grpcurlPath = "../../bin/grpcurl" // installed on the base jumpstarter-controller project
 	}
 
 	// exec grpcurl -h to verify it is available
