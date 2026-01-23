@@ -133,7 +133,7 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 func (r *JumpstarterReconciler) checkCertManagerCRDs(ctx context.Context) bool {
 	// Try to list Issuers - if this works, cert-manager CRDs are installed
 	issuerList := &certmanagerv1.IssuerList{}
-	err := r.Client.List(ctx, issuerList, client.Limit(1))
+	err := r.List(ctx, issuerList, client.Limit(1))
 	if err != nil {
 		// If error is because CRD is not installed, return false
 		if meta.IsNoMatchError(err) {
@@ -165,7 +165,7 @@ func (r *JumpstarterReconciler) checkIssuerReady(ctx context.Context, js *operat
 
 	if issuerKind == "ClusterIssuer" {
 		clusterIssuer := &certmanagerv1.ClusterIssuer{}
-		err := r.Client.Get(ctx, types.NamespacedName{Name: issuerName}, clusterIssuer)
+		err := r.Get(ctx, types.NamespacedName{Name: issuerName}, clusterIssuer)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				return false, fmt.Sprintf("ClusterIssuer %s not found", issuerName)
@@ -186,7 +186,7 @@ func (r *JumpstarterReconciler) checkIssuerReady(ctx context.Context, js *operat
 
 	// Namespaced Issuer
 	issuer := &certmanagerv1.Issuer{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: issuerName, Namespace: js.Namespace}, issuer)
+	err := r.Get(ctx, types.NamespacedName{Name: issuerName, Namespace: js.Namespace}, issuer)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, fmt.Sprintf("Issuer %s not found", issuerName)
@@ -209,7 +209,7 @@ func (r *JumpstarterReconciler) checkIssuerReady(ctx context.Context, js *operat
 func (r *JumpstarterReconciler) checkControllerCertificateReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
 	secretName := GetControllerCertSecretName(js)
 	secret := &corev1.Secret{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: js.Namespace}, secret)
+	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: js.Namespace}, secret)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, fmt.Sprintf("Controller TLS secret %s not found (certificate pending)", secretName)
@@ -236,7 +236,7 @@ func (r *JumpstarterReconciler) checkRouterCertificatesReady(ctx context.Context
 	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
 		secretName := GetRouterCertSecretName(js, i)
 		secret := &corev1.Secret{}
-		err := r.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: js.Namespace}, secret)
+		err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: js.Namespace}, secret)
 		if err != nil {
 			allReady = false
 			notReadyRouters = append(notReadyRouters, i)
@@ -265,7 +265,7 @@ func (r *JumpstarterReconciler) checkRouterCertificatesReady(ctx context.Context
 func (r *JumpstarterReconciler) checkControllerDeploymentReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
 	deploymentName := fmt.Sprintf("%s-controller", js.Name)
 	deployment := &appsv1.Deployment{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
+	err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, fmt.Sprintf("Controller deployment %s not found", deploymentName)
@@ -294,7 +294,7 @@ func (r *JumpstarterReconciler) checkRouterDeploymentsReady(ctx context.Context,
 	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
 		deploymentName := fmt.Sprintf("%s-router-%d", js.Name, i)
 		deployment := &appsv1.Deployment{}
-		err := r.Client.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
+		err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
 		if err != nil {
 			allReady = false
 			notReadyRouters = append(notReadyRouters, i)

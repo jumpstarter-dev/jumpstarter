@@ -60,6 +60,9 @@ const metricsRoleBindingName = "jumpstarter-operator-metrics-binding"
 // testNamespace is the namespace where the test will be run
 const testNamespace = "jumpstarter-lab-e2e"
 
+// defaultControllerImage is the default image for the controller if IMG env is not set
+const defaultControllerImage = "quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+
 var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 	var controllerPodName string
 
@@ -364,7 +367,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			// Get image from environment or use default
 			image := os.Getenv("IMG")
 			if image == "" {
-				image = "quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+				image = defaultControllerImage
 			}
 
 			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
@@ -705,7 +708,7 @@ provisioning:
 			By("creating a Jumpstarter custom resource with cert-manager enabled")
 			image := os.Getenv("IMG")
 			if image == "" {
-				image = "quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+				image = defaultControllerImage
 			}
 
 			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
@@ -961,7 +964,7 @@ spec:
 			By("creating a Jumpstarter custom resource with external issuer")
 			image := os.Getenv("IMG")
 			if image == "" {
-				image = "quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+				image = defaultControllerImage
 			}
 
 			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
