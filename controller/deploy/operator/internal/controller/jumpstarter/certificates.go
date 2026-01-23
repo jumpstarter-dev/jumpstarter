@@ -1,0 +1,500 @@
+/*
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package jumpstarter
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
+	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+const (
+	// Default certificate durations
+	defaultCADuration   = 87600 * time.Hour // 10 years
+	defaultCertDuration = 8760 * time.Hour  // 1 year
+	defaultRenewBefore  = 360 * time.Hour   // 15 days
+
+	// Issuer and Certificate naming
+	selfSignedIssuerSuffix = "-selfsigned-issuer"
+	caIssuerSuffix         = "-ca-issuer"
+	caCertificateSuffix    = "-ca"
+	controllerCertSuffix   = "-controller-tls"
+	routerCertSuffix       = "-router-%d-tls"
+)
+
+// reconcileCertificates reconciles all cert-manager resources for TLS certificates.
+// This is the main entry point called from Reconcile() when cert-manager is enabled.
+func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
+	log := logf.FromContext(ctx)
+
+	if !js.Spec.CertManager.Enabled {
+		log.V(1).Info("cert-manager integration disabled, skipping certificate reconciliation")
+		return nil
+	}
+
+	log.Info("Reconciling cert-manager resources")
+
+	// Determine issuer reference based on configuration
+	issuerRef, err := r.reconcileIssuer(ctx, js)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile issuer: %w", err)
+	}
+
+	// Create controller certificate
+	if err := r.reconcileControllerCertificate(ctx, js, issuerRef); err != nil {
+		return fmt.Errorf("failed to reconcile controller certificate: %w", err)
+	}
+
+	// Create router certificates (one per replica)
+	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
+		if err := r.reconcileRouterCertificate(ctx, js, issuerRef, i); err != nil {
+			return fmt.Errorf("failed to reconcile router %d certificate: %w", i, err)
+		}
+	}
+
+	return nil
+}
+
+// reconcileIssuer reconciles the cert-manager Issuer based on configuration.
+// Returns the issuer reference to use for certificate issuance.
+func (r *JumpstarterReconciler) reconcileIssuer(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (cmmeta.ObjectReference, error) {
+	log := logf.FromContext(ctx)
+
+	// If external issuer is specified, use it directly
+	if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.IssuerRef != nil {
+		ref := js.Spec.CertManager.Server.IssuerRef
+		log.Info("Using external issuer", "name", ref.Name, "kind", ref.Kind)
+		return cmmeta.ObjectReference{
+			Name:  ref.Name,
+			Kind:  ref.Kind,
+			Group: ref.Group,
+		}, nil
+	}
+
+	// Default to self-signed CA mode
+	log.Info("Using self-signed CA mode")
+	return r.reconcileSelfSignedIssuer(ctx, js)
+}
+
+// reconcileSelfSignedIssuer creates the self-signed CA infrastructure:
+// 1. A SelfSigned Issuer (bootstrap)
+// 2. A CA Certificate signed by the self-signed issuer
+// 3. A CA Issuer that uses the CA certificate's secret
+func (r *JumpstarterReconciler) reconcileSelfSignedIssuer(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (cmmeta.ObjectReference, error) {
+	log := logf.FromContext(ctx)
+
+	// Get duration settings
+	caDuration := defaultCADuration
+	certDuration := defaultCertDuration
+	renewBefore := defaultRenewBefore
+
+	if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.SelfSigned != nil {
+		cfg := js.Spec.CertManager.Server.SelfSigned
+		if cfg.CADuration != nil {
+			caDuration = cfg.CADuration.Duration
+		}
+		if cfg.CertDuration != nil {
+			certDuration = cfg.CertDuration.Duration
+		}
+		if cfg.RenewBefore != nil {
+			renewBefore = cfg.RenewBefore.Duration
+		}
+	}
+
+	// 1. Create SelfSigned Issuer (bootstrap issuer)
+	selfSignedIssuerName := js.Name + selfSignedIssuerSuffix
+	selfSignedIssuer := &certmanagerv1.Issuer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      selfSignedIssuerName,
+			Namespace: js.Namespace,
+			Labels: map[string]string{
+				"app":                          js.Name,
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+			},
+		},
+		Spec: certmanagerv1.IssuerSpec{
+			IssuerConfig: certmanagerv1.IssuerConfig{
+				SelfSigned: &certmanagerv1.SelfSignedIssuer{},
+			},
+		},
+	}
+
+	if err := r.reconcileIssuerResource(ctx, js, selfSignedIssuer); err != nil {
+		return cmmeta.ObjectReference{}, fmt.Errorf("failed to reconcile self-signed issuer: %w", err)
+	}
+	log.Info("Reconciled self-signed issuer", "name", selfSignedIssuerName)
+
+	// 2. Create CA Certificate signed by the self-signed issuer
+	caCertName := js.Name + caCertificateSuffix
+	caCert := &certmanagerv1.Certificate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caCertName,
+			Namespace: js.Namespace,
+			Labels: map[string]string{
+				"app":                          js.Name,
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+			},
+		},
+		Spec: certmanagerv1.CertificateSpec{
+			IsCA:       true,
+			CommonName: fmt.Sprintf("%s-ca", js.Name),
+			SecretName: caCertName,
+			Duration:   &metav1.Duration{Duration: caDuration},
+			RenewBefore: &metav1.Duration{Duration: func() time.Duration {
+				// Ensure renewBefore is less than duration
+				if renewBefore >= caDuration {
+					return caDuration / 2
+				}
+				return renewBefore
+			}()},
+			PrivateKey: &certmanagerv1.CertificatePrivateKey{
+				Algorithm: certmanagerv1.ECDSAKeyAlgorithm,
+				Size:      256,
+			},
+			IssuerRef: cmmeta.ObjectReference{
+				Name:  selfSignedIssuerName,
+				Kind:  "Issuer",
+				Group: "cert-manager.io",
+			},
+		},
+	}
+
+	if err := r.reconcileCertificateResource(ctx, js, caCert); err != nil {
+		return cmmeta.ObjectReference{}, fmt.Errorf("failed to reconcile CA certificate: %w", err)
+	}
+	log.Info("Reconciled CA certificate", "name", caCertName)
+
+	// 3. Create CA Issuer that uses the CA certificate's secret
+	caIssuerName := js.Name + caIssuerSuffix
+	caIssuer := &certmanagerv1.Issuer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caIssuerName,
+			Namespace: js.Namespace,
+			Labels: map[string]string{
+				"app":                          js.Name,
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+			},
+		},
+		Spec: certmanagerv1.IssuerSpec{
+			IssuerConfig: certmanagerv1.IssuerConfig{
+				CA: &certmanagerv1.CAIssuer{
+					SecretName: caCertName,
+				},
+			},
+		},
+	}
+
+	if err := r.reconcileIssuerResource(ctx, js, caIssuer); err != nil {
+		return cmmeta.ObjectReference{}, fmt.Errorf("failed to reconcile CA issuer: %w", err)
+	}
+	log.Info("Reconciled CA issuer", "name", caIssuerName)
+
+	// Store cert duration for server certs
+	_ = certDuration // Will be used in certificate creation
+
+	return cmmeta.ObjectReference{
+		Name:  caIssuerName,
+		Kind:  "Issuer",
+		Group: "cert-manager.io",
+	}, nil
+}
+
+// reconcileControllerCertificate creates the TLS certificate for the controller.
+func (r *JumpstarterReconciler) reconcileControllerCertificate(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuerRef cmmeta.ObjectReference) error {
+	log := logf.FromContext(ctx)
+
+	// Get duration settings
+	certDuration := defaultCertDuration
+	renewBefore := defaultRenewBefore
+
+	if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.SelfSigned != nil {
+		cfg := js.Spec.CertManager.Server.SelfSigned
+		if cfg.CertDuration != nil {
+			certDuration = cfg.CertDuration.Duration
+		}
+		if cfg.RenewBefore != nil {
+			renewBefore = cfg.RenewBefore.Duration
+		}
+	}
+
+	// Collect DNS names from controller endpoints
+	dnsNames := r.collectControllerDNSNames(js)
+
+	certName := js.Name + controllerCertSuffix
+	cert := &certmanagerv1.Certificate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      certName,
+			Namespace: js.Namespace,
+			Labels: map[string]string{
+				"app":                          js.Name,
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+				"component":                    "controller",
+			},
+		},
+		Spec: certmanagerv1.CertificateSpec{
+			SecretName: certName,
+			Duration:   &metav1.Duration{Duration: certDuration},
+			RenewBefore: &metav1.Duration{Duration: func() time.Duration {
+				if renewBefore >= certDuration {
+					return certDuration / 2
+				}
+				return renewBefore
+			}()},
+			PrivateKey: &certmanagerv1.CertificatePrivateKey{
+				Algorithm: certmanagerv1.ECDSAKeyAlgorithm,
+				Size:      256,
+			},
+			DNSNames:  dnsNames,
+			IssuerRef: issuerRef,
+			Usages: []certmanagerv1.KeyUsage{
+				certmanagerv1.UsageServerAuth,
+				certmanagerv1.UsageDigitalSignature,
+				certmanagerv1.UsageKeyEncipherment,
+			},
+		},
+	}
+
+	if err := r.reconcileCertificateResource(ctx, js, cert); err != nil {
+		return err
+	}
+	log.Info("Reconciled controller certificate", "name", certName, "dnsNames", dnsNames)
+
+	return nil
+}
+
+// reconcileRouterCertificate creates the TLS certificate for a specific router replica.
+func (r *JumpstarterReconciler) reconcileRouterCertificate(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuerRef cmmeta.ObjectReference, replicaIndex int32) error {
+	log := logf.FromContext(ctx)
+
+	// Get duration settings
+	certDuration := defaultCertDuration
+	renewBefore := defaultRenewBefore
+
+	if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.SelfSigned != nil {
+		cfg := js.Spec.CertManager.Server.SelfSigned
+		if cfg.CertDuration != nil {
+			certDuration = cfg.CertDuration.Duration
+		}
+		if cfg.RenewBefore != nil {
+			renewBefore = cfg.RenewBefore.Duration
+		}
+	}
+
+	// Collect DNS names for this router replica
+	dnsNames := r.collectRouterDNSNames(js, replicaIndex)
+
+	certName := fmt.Sprintf(js.Name+routerCertSuffix, replicaIndex)
+	cert := &certmanagerv1.Certificate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      certName,
+			Namespace: js.Namespace,
+			Labels: map[string]string{
+				"app":                          js.Name,
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+				"component":                    "router",
+				"router-index":                 fmt.Sprintf("%d", replicaIndex),
+			},
+		},
+		Spec: certmanagerv1.CertificateSpec{
+			SecretName: certName,
+			Duration:   &metav1.Duration{Duration: certDuration},
+			RenewBefore: &metav1.Duration{Duration: func() time.Duration {
+				if renewBefore >= certDuration {
+					return certDuration / 2
+				}
+				return renewBefore
+			}()},
+			PrivateKey: &certmanagerv1.CertificatePrivateKey{
+				Algorithm: certmanagerv1.ECDSAKeyAlgorithm,
+				Size:      256,
+			},
+			DNSNames:  dnsNames,
+			IssuerRef: issuerRef,
+			Usages: []certmanagerv1.KeyUsage{
+				certmanagerv1.UsageServerAuth,
+				certmanagerv1.UsageDigitalSignature,
+				certmanagerv1.UsageKeyEncipherment,
+			},
+		},
+	}
+
+	if err := r.reconcileCertificateResource(ctx, js, cert); err != nil {
+		return err
+	}
+	log.Info("Reconciled router certificate", "name", certName, "replica", replicaIndex, "dnsNames", dnsNames)
+
+	return nil
+}
+
+// collectControllerDNSNames collects all DNS names for the controller certificate.
+func (r *JumpstarterReconciler) collectControllerDNSNames(js *operatorv1alpha1.Jumpstarter) []string {
+	dnsNames := make([]string, 0)
+
+	// Add default controller service name
+	dnsNames = append(dnsNames,
+		fmt.Sprintf("%s-controller", js.Name),
+		fmt.Sprintf("%s-controller.%s", js.Name, js.Namespace),
+		fmt.Sprintf("%s-controller.%s.svc", js.Name, js.Namespace),
+		fmt.Sprintf("%s-controller.%s.svc.cluster.local", js.Name, js.Namespace),
+	)
+
+	// Add DNS names from configured endpoints
+	for _, endpoint := range js.Spec.Controller.GRPC.Endpoints {
+		if endpoint.Address != "" {
+			host := extractHostname(endpoint.Address)
+			if host != "" && !contains(dnsNames, host) {
+				dnsNames = append(dnsNames, host)
+			}
+		}
+	}
+
+	// Add default domain-based name
+	if js.Spec.BaseDomain != "" {
+		defaultName := fmt.Sprintf("grpc.%s", js.Spec.BaseDomain)
+		if !contains(dnsNames, defaultName) {
+			dnsNames = append(dnsNames, defaultName)
+		}
+	}
+
+	return dnsNames
+}
+
+// collectRouterDNSNames collects all DNS names for a specific router replica certificate.
+func (r *JumpstarterReconciler) collectRouterDNSNames(js *operatorv1alpha1.Jumpstarter, replicaIndex int32) []string {
+	dnsNames := make([]string, 0)
+
+	// Add default router service name
+	serviceName := fmt.Sprintf("%s-router-%d", js.Name, replicaIndex)
+	dnsNames = append(dnsNames,
+		serviceName,
+		fmt.Sprintf("%s.%s", serviceName, js.Namespace),
+		fmt.Sprintf("%s.%s.svc", serviceName, js.Namespace),
+		fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, js.Namespace),
+	)
+
+	// Add DNS names from configured endpoints (with replica substitution)
+	for _, endpoint := range js.Spec.Routers.GRPC.Endpoints {
+		if endpoint.Address != "" {
+			address := r.substituteReplica(endpoint.Address, replicaIndex)
+			host := extractHostname(address)
+			if host != "" && !contains(dnsNames, host) {
+				dnsNames = append(dnsNames, host)
+			}
+		}
+	}
+
+	// Add default domain-based name
+	if js.Spec.BaseDomain != "" {
+		defaultName := fmt.Sprintf("router-%d.%s", replicaIndex, js.Spec.BaseDomain)
+		if !contains(dnsNames, defaultName) {
+			dnsNames = append(dnsNames, defaultName)
+		}
+	}
+
+	return dnsNames
+}
+
+// reconcileIssuerResource creates or updates an Issuer resource.
+func (r *JumpstarterReconciler) reconcileIssuerResource(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuer *certmanagerv1.Issuer) error {
+	existing := &certmanagerv1.Issuer{}
+	existing.Name = issuer.Name
+	existing.Namespace = issuer.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+		existing.Labels = issuer.Labels
+		existing.Spec = issuer.Spec
+		return controllerutil.SetControllerReference(js, existing, r.Scheme)
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to reconcile issuer %s: %w", issuer.Name, err)
+	}
+
+	logf.FromContext(ctx).V(1).Info("Issuer reconciled", "name", issuer.Name, "operation", op)
+	return nil
+}
+
+// reconcileCertificateResource creates or updates a Certificate resource.
+func (r *JumpstarterReconciler) reconcileCertificateResource(ctx context.Context, js *operatorv1alpha1.Jumpstarter, cert *certmanagerv1.Certificate) error {
+	existing := &certmanagerv1.Certificate{}
+	existing.Name = cert.Name
+	existing.Namespace = cert.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+		existing.Labels = cert.Labels
+		existing.Spec = cert.Spec
+		return controllerutil.SetControllerReference(js, existing, r.Scheme)
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to reconcile certificate %s: %w", cert.Name, err)
+	}
+
+	logf.FromContext(ctx).V(1).Info("Certificate reconciled", "name", cert.Name, "operation", op)
+	return nil
+}
+
+// GetControllerCertSecretName returns the name of the controller TLS secret.
+func GetControllerCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
+	return js.Name + controllerCertSuffix
+}
+
+// GetRouterCertSecretName returns the name of a router TLS secret.
+func GetRouterCertSecretName(js *operatorv1alpha1.Jumpstarter, replicaIndex int32) string {
+	return fmt.Sprintf(js.Name+routerCertSuffix, replicaIndex)
+}
+
+// extractHostname extracts the hostname from an address (removes port if present).
+func extractHostname(address string) string {
+	// Handle IPv6 addresses in brackets
+	if len(address) > 0 && address[0] == '[' {
+		end := len(address)
+		for i, c := range address {
+			if c == ']' {
+				end = i + 1
+				break
+			}
+		}
+		return address[:end]
+	}
+
+	// Handle regular hostname:port or hostname
+	for i := len(address) - 1; i >= 0; i-- {
+		if address[i] == ':' {
+			return address[:i]
+		}
+	}
+	return address
+}
+
+// contains checks if a string slice contains a specific string.
+func contains(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}

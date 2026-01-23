@@ -171,6 +171,12 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile cert-manager resources (Issuers, Certificates)
+	if err := r.reconcileCertificates(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Certificates")
+		return ctrl.Result{}, err
+	}
+
 	// Update status
 	if err := r.updateStatus(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to update status")
