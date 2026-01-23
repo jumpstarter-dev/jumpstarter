@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/test/utils"
 )
 
 var (
@@ -70,6 +71,14 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	// Install cert-manager if not already installed
+	By("installing cert-manager")
+	if !utils.IsCertManagerCRDsInstalled() {
+		Expect(utils.InstallCertManager()).To(Succeed())
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "cert-manager already installed, skipping installation\n")
+	}
 })
 
 var _ = AfterSuite(func() {
