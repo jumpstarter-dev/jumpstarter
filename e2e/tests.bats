@@ -187,8 +187,13 @@ wait_for_exporter() {
     --token $(kubectl create -n "${JS_NAMESPACE}" token test-exporter-sa)
   assert_success
 
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/exporter.yaml\")" \
+    /etc/jumpstarter/exporters/test-exporter-oidc.yaml
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-sa.yaml
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/exporter.yaml\")" \
+    /etc/jumpstarter/exporters/test-exporter-legacy.yaml
+
   run jmp config exporter list -o yaml
   assert_success
   assert_output --partial "test-exporter-sa"
