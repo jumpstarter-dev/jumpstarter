@@ -19,6 +19,7 @@ package jumpstarter
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -466,25 +467,18 @@ func GetRouterCertSecretName(js *operatorv1alpha1.Jumpstarter, replicaIndex int3
 }
 
 // extractHostname extracts the hostname from an address (removes port if present).
+// It properly handles IPv4, IPv6 (bracketed), and host:port forms.
 func extractHostname(address string) string {
-	// Handle IPv6 addresses in brackets
-	if len(address) > 0 && address[0] == '[' {
-		end := len(address)
-		for i, c := range address {
-			if c == ']' {
-				end = i + 1
-				break
-			}
-		}
-		return address[:end]
+	// Try to split host and port using net.SplitHostPort
+	// This correctly handles [IPv6]:port, hostname:port, and IPv4:port
+	host, _, err := net.SplitHostPort(address)
+	if err == nil {
+		// Successfully split host and port
+		return host
 	}
 
-	// Handle regular hostname:port or hostname
-	for i := len(address) - 1; i >= 0; i-- {
-		if address[i] == ':' {
-			return address[:i]
-		}
-	}
+	// If SplitHostPort failed, there's no port in the address
+	// Return the full address (handles plain IPv6, IPv4, or hostname)
 	return address
 }
 
