@@ -230,6 +230,7 @@ func (r *JumpstarterReconciler) checkControllerCertificateReady(ctx context.Cont
 
 // checkRouterCertificatesReady checks if all router TLS certificate secrets exist
 func (r *JumpstarterReconciler) checkRouterCertificatesReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	log := logf.FromContext(ctx)
 	allReady := true
 	var notReadyRouters []int32
 
@@ -238,6 +239,17 @@ func (r *JumpstarterReconciler) checkRouterCertificatesReady(ctx context.Context
 		secret := &corev1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: js.Namespace}, secret)
 		if err != nil {
+			if errors.IsNotFound(err) {
+				// Secret doesn't exist yet - mark as not ready
+				allReady = false
+				notReadyRouters = append(notReadyRouters, i)
+				continue
+			}
+			// Other API errors (RBAC, transient issues) should be logged
+			log.Error(err, "Failed to get router TLS secret",
+				"secretName", secretName,
+				"namespace", js.Namespace,
+				"routerIndex", i)
 			allReady = false
 			notReadyRouters = append(notReadyRouters, i)
 			continue
@@ -288,6 +300,7 @@ func (r *JumpstarterReconciler) checkControllerDeploymentReady(ctx context.Conte
 
 // checkRouterDeploymentsReady checks if all router deployments are available
 func (r *JumpstarterReconciler) checkRouterDeploymentsReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	log := logf.FromContext(ctx)
 	allReady := true
 	var notReadyRouters []int32
 
@@ -296,6 +309,17 @@ func (r *JumpstarterReconciler) checkRouterDeploymentsReady(ctx context.Context,
 		deployment := &appsv1.Deployment{}
 		err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
 		if err != nil {
+			if errors.IsNotFound(err) {
+				// Deployment doesn't exist yet - mark as not ready
+				allReady = false
+				notReadyRouters = append(notReadyRouters, i)
+				continue
+			}
+			// Other API errors (RBAC, transient issues) should be logged
+			log.Error(err, "Failed to get router deployment",
+				"deploymentName", deploymentName,
+				"namespace", js.Namespace,
+				"routerIndex", i)
 			allReady = false
 			notReadyRouters = append(notReadyRouters, i)
 			continue
