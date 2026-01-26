@@ -77,12 +77,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	// Install cert-manager if not already installed
-	By("installing cert-manager")
-	if !utils.IsCertManagerCRDsInstalled() {
+	// Install cert-manager if not already ready
+	By("ensuring cert-manager is ready")
+	if !utils.IsCertManagerReady() {
+		By("installing cert-manager (not ready or not installed)")
 		Expect(utils.InstallCertManager()).To(Succeed())
 	} else {
-		_, _ = fmt.Fprintf(GinkgoWriter, "cert-manager already installed, skipping installation\n")
+		_, _ = fmt.Fprintf(GinkgoWriter, "cert-manager is ready, skipping installation\n")
 	}
 })
 
