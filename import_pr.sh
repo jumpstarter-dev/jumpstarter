@@ -337,10 +337,10 @@ apply_patches() {
             patch_name=$(basename "$patch")
             if git am --directory="${subdir}" "$patch" 2>/dev/null; then
                 log_info "Applied: ${patch_name}"
-                ((applied++))
+                ((applied++)) || true
             else
                 log_error "Failed to apply: ${patch_name}"
-                ((failed++))
+                ((failed++)) || true
                 # Abort the am session
                 git am --abort 2>/dev/null || true
                 break
