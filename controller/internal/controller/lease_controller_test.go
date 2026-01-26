@@ -1661,9 +1661,9 @@ var _ = Describe("Scheduled Leases", func() {
 			ctx := context.Background()
 
 			// Give lease1 an earlier BeginTime to ensure deterministic ordering
-			// Stagger them closely so both BeginTimes will have passed by the time we check lease2
+			// Use a 2 second gap to ensure lease1 acquires exporter before lease2's BeginTime passes
 			lease1BeginTime := metav1.NewTime(time.Now().Truncate(time.Second).Add(1 * time.Second))
-			lease2BeginTime := metav1.NewTime(time.Now().Truncate(time.Second).Add(1*time.Second + 100*time.Millisecond))
+			lease2BeginTime := metav1.NewTime(time.Now().Truncate(time.Second).Add(3 * time.Second))
 
 			// Both leases target dut:b (only one exporter available)
 			lease1 := leaseDutA2Sec.DeepCopy()
@@ -1706,14 +1706,15 @@ var _ = Describe("Scheduled Leases", func() {
 			updatedLease1.Spec.Release = true
 			Expect(k8sClient.Update(ctx, updatedLease1)).To(Succeed())
 
-			// Poll until lease1 is released and lease2 acquires exporter immediately
+			// Poll until lease1 is released and lease2 acquires exporter
+			// lease2's BeginTime is at T+3s, so we need enough time to wait for it
 			Eventually(func() bool {
 				_ = reconcileLease(ctx, lease1)
 				_ = reconcileLease(ctx, lease2)
 				updatedLease1 = getLease(ctx, lease1Name)
 				updatedLease2 = getLease(ctx, lease2Name)
 				return updatedLease1.Status.Ended && updatedLease2.Status.ExporterRef != nil
-			}).WithTimeout(1500*time.Millisecond).WithPolling(50*time.Millisecond).Should(BeTrue(), "lease1 should be released and lease2 should acquire exporter immediately")
+			}).WithTimeout(3*time.Second).WithPolling(50*time.Millisecond).Should(BeTrue(), "lease1 should be released and lease2 should acquire exporter after its BeginTime")
 		})
 	})
 
