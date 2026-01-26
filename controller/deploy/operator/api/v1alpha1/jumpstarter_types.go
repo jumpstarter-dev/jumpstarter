@@ -150,9 +150,6 @@ const (
 //     server:
 //       selfSigned:
 //         enabled: true
-//       issuerRef:
-//         name: my-issuer
-//         kind: Issuer
 
 // JumpstarterSpec defines the desired state of a Jumpstarter deployment. A deployment
 // can be created in a namespace of the cluster, and that's where all the Jumpstarter
@@ -384,7 +381,8 @@ type K8sAuthConfig struct {
 type TLSConfig struct {
 	// Name of the Kubernetes secret containing the TLS certificate and private key.
 	// The secret must contain 'tls.crt' and 'tls.key' keys.
-	// If useCertManager is enabled, this secret will be automatically created.
+	// If useCertManager is enabled, this secret will be automatically managed and
+	// configured by cert-manager.
 	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
 	CertSecret string `json:"certSecret,omitempty"`
 }
