@@ -69,4 +69,8 @@ def import_class(class_path: str, allow: list[str], unsafe: bool):
             class_path=class_path,
         ) from e
     except AttributeError as e:
-        raise ImportError(f"{module_path} doesn't have specified class {class_name}") from e
+        # Module exists but class doesn't - treat in a similar way to missing module
+        raise MissingDriverError(
+            message=_format_missing_driver_message(class_path),
+            class_path=class_path,
+        ) from e

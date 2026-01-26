@@ -1,4 +1,5 @@
 import logging
+import os
 from collections import OrderedDict, defaultdict
 from contextlib import ExitStack, asynccontextmanager
 from graphlib import TopologicalSorter
@@ -59,7 +60,9 @@ async def client_from_channel(
             client_class = import_class(report.labels["jumpstarter.dev/client"], allow, unsafe)
         except MissingDriverError as e:
             # Create stub client instead of failing
-            logger.warning("Driver client '%s' is not available.", e.class_path)
+            # Suppress duplicate warnings
+            if not os.environ.get("_JMP_SUPPRESS_DRIVER_WARNINGS"):
+                logger.warning("Driver client '%s' is not available.", e.class_path)
             client_class = StubDriverClient
 
         client = client_class(

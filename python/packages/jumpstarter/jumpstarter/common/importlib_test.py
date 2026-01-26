@@ -1,12 +1,13 @@
 import pytest
 
+from .exceptions import MissingDriverError
 from .importlib import import_class
 
 
 def test_import_class():
     import_class("os.open", [], True)
 
-    with pytest.raises(ImportError):
+    with pytest.raises(MissingDriverError):
         import_class("os.invalid", [], True)
 
     with pytest.raises(ImportError):

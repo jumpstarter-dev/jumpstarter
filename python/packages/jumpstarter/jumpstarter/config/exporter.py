@@ -48,7 +48,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                     driver_class = import_class(self.root.type, [], True)
                 except MissingDriverError:
                     raise ConfigurationError(
-                        f"Exporter configuration: Driver '{self.root.type}' is not installed.\n\n"
+                        f"Driver '{self.root.type}' is not installed. Please check exporter configuration."
                     ) from None
 
                 children = {name: child.instantiate() for name, child in self.root.children.items()}

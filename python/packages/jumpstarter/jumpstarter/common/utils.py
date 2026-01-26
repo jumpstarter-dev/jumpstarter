@@ -108,6 +108,7 @@ def launch_shell(
     common_env = os.environ | {
         JUMPSTARTER_HOST: host,
         JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
+        "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
     }
 
     if command:
