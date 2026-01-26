@@ -89,3 +89,13 @@ def test_stub_driver_client_error_message_third_party():
     with pytest.raises(ImportError) as exc_info:
         stub.call("some_method")
     assert "pip install custom_driver" in str(exc_info.value)
+
+
+def test_stub_driver_client_arbitrary_method_raises():
+    """Test that accessing arbitrary methods like .on() raises ImportError, not AttributeError."""
+    stub = create_stub_client("jumpstarter_driver_power.client.PowerClient")
+    # Accessing .on() should raise ImportError with helpful message, not AttributeError
+    with pytest.raises(ImportError) as exc_info:
+        stub.on()
+    assert "jumpstarter_driver_power" in str(exc_info.value)
+    assert "version mismatch" in str(exc_info.value)

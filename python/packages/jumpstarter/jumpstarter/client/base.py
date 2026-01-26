@@ -147,3 +147,11 @@ class StubDriverClient(DriverClient):
         """Open a log stream - raises ImportError since driver is not installed."""
         self._raise_missing_error()
         yield
+
+    def __getattr__(self, name):
+        """Catch any attribute access and raise the missing driver error.
+
+        This ensures that calls like .on(), .off(), .write() etc. on stub clients
+        raise a helpful ImportError instead of AttributeError.
+        """
+        self._raise_missing_error()
