@@ -638,9 +638,15 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 	var volumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
 
-	// Add TLS certificate mount when cert-manager is enabled
+	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided
+	var tlsSecretName string
 	if jumpstarter.Spec.CertManager.Enabled {
-		tlsSecretName := GetControllerCertSecretName(jumpstarter)
+		tlsSecretName = GetControllerCertSecretName(jumpstarter)
+	} else if jumpstarter.Spec.Controller.GRPC.TLS.CertSecret != "" {
+		tlsSecretName = jumpstarter.Spec.Controller.GRPC.TLS.CertSecret
+	}
+
+	if tlsSecretName != "" {
 		envVars = append(envVars,
 			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
 			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
@@ -824,9 +830,15 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 	var volumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
 
-	// Add TLS certificate mount when cert-manager is enabled
+	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided
+	var tlsSecretName string
 	if jumpstarter.Spec.CertManager.Enabled {
-		tlsSecretName := GetRouterCertSecretName(jumpstarter, replicaIndex)
+		tlsSecretName = GetRouterCertSecretName(jumpstarter, replicaIndex)
+	} else if jumpstarter.Spec.Routers.GRPC.TLS.CertSecret != "" {
+		tlsSecretName = jumpstarter.Spec.Routers.GRPC.TLS.CertSecret
+	}
+
+	if tlsSecretName != "" {
 		envVars = append(envVars,
 			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
 			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
