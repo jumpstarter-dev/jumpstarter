@@ -18,7 +18,7 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2026-01-28T10:46:49Z"
+    createdAt: "2026-01-28T10:50:09Z"
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: jumpstarter-operator.v0.8.0

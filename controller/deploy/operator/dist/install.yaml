@@ -762,6 +762,17 @@ spec:
                                 Required to be unique across all JWT authenticators.
                                 Note that egress selection configuration is not used for this network connection.
                               type: string
+                            egressSelectorType:
+                              description: |-
+                                egressSelectorType is an indicator of which egress selection should be used for sending all traffic related
+                                to this issuer (discovery, JWKS, distributed claims, etc).  If unspecified, no custom dialer is used.
+                                When specified, the valid choices are "controlplane" and "cluster".  These correspond to the associated
+                                values in the --egress-selector-config-file.
+
+                                - controlplane: for traffic intended to go to the control plane.
+
+                                - cluster: for traffic intended to go to the system being managed by Kubernetes.
+                              type: string
                             url:
                               description: |-
                                 url points to the issuer URL in a format https://url or https://url/path.
@@ -1174,7 +1185,8 @@ spec:
                             description: |-
                               Name of the Kubernetes secret containing the TLS certificate and private key.
                               The secret must contain 'tls.crt' and 'tls.key' keys.
-                              If useCertManager is enabled, this secret will be automatically created.
+                              If useCertManager is enabled, this secret will be automatically managed and
+                              configured by cert-manager.
                             pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                             type: string
                         type: object
@@ -1213,7 +1225,7 @@ spec:
                           Claims lists the names of resources, defined in spec.resourceClaims,
                           that are used by this container.
 
-                          This is an alpha field and requires enabling the
+                          This field depends on the
                           DynamicResourceAllocation feature gate.
 
                           This field is immutable. It can only be set for containers.
@@ -1459,7 +1471,8 @@ spec:
                             description: |-
                               Name of the Kubernetes secret containing the TLS certificate and private key.
                               The secret must contain 'tls.crt' and 'tls.key' keys.
-                              If useCertManager is enabled, this secret will be automatically created.
+                              If useCertManager is enabled, this secret will be automatically managed and
+                              configured by cert-manager.
                             pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                             type: string
                         type: object
@@ -1719,7 +1732,8 @@ spec:
                             description: |-
                               Name of the Kubernetes secret containing the TLS certificate and private key.
                               The secret must contain 'tls.crt' and 'tls.key' keys.
-                              If useCertManager is enabled, this secret will be automatically created.
+                              If useCertManager is enabled, this secret will be automatically managed and
+                              configured by cert-manager.
                             pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                             type: string
                         type: object
@@ -1758,7 +1772,7 @@ spec:
                           Claims lists the names of resources, defined in spec.resourceClaims,
                           that are used by this container.
 
-                          This is an alpha field and requires enabling the
+                          This field depends on the
                           DynamicResourceAllocation feature gate.
 
                           This field is immutable. It can only be set for containers.
