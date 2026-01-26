@@ -12,6 +12,7 @@ from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
 from .core import AsyncDriverClient
+from jumpstarter.common.importlib import _format_missing_driver_message
 from jumpstarter.streams.blocking import BlockingStream
 
 
@@ -103,3 +104,54 @@ class DriverClient(AsyncDriverClient):
 
     def __del__(self):
         self.close()
+
+
+@dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
+class StubDriverClient(DriverClient):
+    """Stub client for drivers that are not installed.
+
+    This client is created when a driver client class cannot be imported.
+    It provides a placeholder that raises a clear error when the driver
+    is actually used.
+    """
+
+    def _get_missing_class_path(self) -> str:
+        """Get the missing class path from labels."""
+        return self.labels["jumpstarter.dev/client"]
+
+    def _raise_missing_error(self):
+        """Raise ImportError with installation instructions."""
+        class_path = self._get_missing_class_path()
+        message = _format_missing_driver_message(class_path)
+        raise ImportError(message)
+
+    def call(self, method, *args):
+        """Invoke driver call - raises ImportError since driver is not installed."""
+        self._raise_missing_error()
+
+    def streamingcall(self, method, *args):
+        """Invoke streaming driver call - raises ImportError since driver is not installed."""
+        self._raise_missing_error()
+        # Unreachable yield to make this a generator function for type checking
+        while False:  # noqa: SIM114
+            yield
+
+    @contextmanager
+    def stream(self, method="connect"):
+        """Open a stream - raises ImportError since driver is not installed."""
+        self._raise_missing_error()
+        yield
+
+    @contextmanager
+    def log_stream(self):
+        """Open a log stream - raises ImportError since driver is not installed."""
+        self._raise_missing_error()
+        yield
+
+    def __getattr__(self, name):
+        """Catch any attribute access and raise the missing driver error.
+
+        This ensures that calls like .on(), .off(), .write() etc. on stub clients
+        raise a helpful ImportError instead of AttributeError.
+        """
+        self._raise_missing_error()

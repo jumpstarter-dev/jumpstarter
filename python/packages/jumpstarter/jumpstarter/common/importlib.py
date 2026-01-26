@@ -5,7 +5,31 @@ import sys
 from fnmatch import fnmatchcase
 from importlib import import_module
 
+from jumpstarter.common.exceptions import MissingDriverError
+
 logger = logging.getLogger(__name__)
+
+
+def _format_missing_driver_message(class_path: str) -> str:
+    """Format error message depending on whether the class path is a Jumpstarter driver."""
+    # Extract package name from class path (first component)
+    package_name = class_path.split(".")[0]
+
+    if class_path.startswith("jumpstarter_driver_"):
+        return (
+            f"Driver '{class_path}' is not installed.\n\n"
+            "This usually indicates a version mismatch between your client and the exporter.\n"
+            "Please try to update your client to the latest version and ensure the exporter "
+            "has the correct version installed.\n"
+        )
+    else:
+        return (
+            f"Driver '{class_path}' is not installed.\n\n"
+            "Please install the missing module:\n"
+            f"  pip install {package_name}\n\n"
+            "or if using uv:\n"
+            f"  uv pip install {package_name}"
+        )
 
 
 def cached_import(module_path, class_name):
@@ -40,36 +64,13 @@ def import_class(class_path: str, allow: list[str], unsafe: bool):
     try:
         return cached_import(module_path, class_name)
     except ModuleNotFoundError as e:
-        module_name = str(e).split("'")[1] if "'" in str(e) else str(e).split()[-1]
-
-        is_jumpstarter_driver = unsafe or any(fnmatchcase(class_path, pattern) for pattern in allow)
-
-        if is_jumpstarter_driver:
-            logger.error(
-                "Missing Jumpstarter driver module '%s' for class '%s'. "
-                "This usually indicates a version mismatch between your client and the exporter.",
-                module_name,
-                class_path,
-            )
-            raise ConnectionError(
-                f"Missing Jumpstarter driver module '{module_name}'.\n\n"
-                "This usually indicates a version mismatch between your client and the exporter.\n"
-                "Please try to update your client to the latest version and ensure the exporter "
-                "has the correct version installed.\n"
-            ) from e
-        else:
-            logger.error(
-                "Missing Python module '%s' while importing '%s'. "
-                "This module needs to be installed in your environment.",
-                module_name,
-                class_path,
-            )
-            raise ConnectionError(
-                f"Missing Python module '{module_name}'.\n\n"
-                "Please install the missing module:\n"
-                f"  pip install {module_name}\n\n"
-                "or if using uv:\n"
-                f"  uv pip install {module_name}"
-            ) from e
+        raise MissingDriverError(
+            message=_format_missing_driver_message(class_path),
+            class_path=class_path,
+        ) from e
     except AttributeError as e:
-        raise ImportError(f"{module_path} doesn't have specified class {class_name}") from e
+        # Module exists but class doesn't - treat in a similar way to missing module
+        raise MissingDriverError(
+            message=_format_missing_driver_message(class_path),
+            class_path=class_path,
+        ) from e
