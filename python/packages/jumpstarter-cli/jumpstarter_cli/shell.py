@@ -27,6 +27,7 @@ def _warn_about_expired_token(lease_name: str, selector: str) -> None:
     click.echo(click.style(f"To reconnect: JMP_LEASE={lease_name} jmp shell", fg="cyan"))
 
 
+# test
 async def _monitor_token_expiry(config, cancel_scope) -> None:
     """Monitor token expiry and warn user."""
     token = getattr(config, "token", None)
