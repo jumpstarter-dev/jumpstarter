@@ -15,7 +15,7 @@ from jumpstarter.common.utils import serve
 def uboot_image(tmpdir_factory):
     tmp_path = tmpdir_factory.mktemp("uboot-images")
 
-    url = "https://kojipkgs.fedoraproject.org/packages/uboot-tools/2024.10/1.fc41/noarch/uboot-images-armv8-2024.10-1.fc41.noarch.rpm"
+    url = "https://kojipkgs.fedoraproject.org/packages/uboot-tools/2025.10/1.fc43/noarch/uboot-images-armv8-2025.10-1.fc43.noarch.rpm"
 
     with requests.get(url, stream=True) as r:
         r.raise_for_status()
@@ -33,7 +33,7 @@ def uboot_image(tmpdir_factory):
 
 @pytest.mark.xfail(
     platform.system() == "Darwin" and os.getenv("GITHUB_ACTIONS") == "true",
-    reason="QEMU-based U-Boot tests are flaky on macOS in GitHub CI"
+    reason="QEMU-based U-Boot tests are flaky on macOS in GitHub CI",
 )
 def test_driver_uboot_console(uboot_image):
     print(uboot_image)
@@ -56,8 +56,10 @@ def test_driver_uboot_console(uboot_image):
 
         with uboot.reboot_to_console(debug=True):
             assert uboot.run_command_checked("version") == [
-                "U-Boot 2024.10 (Oct 11 2024 - 00:00:00 +0000)",
+                "U-Boot 2025.10 (Oct 13 2025 - 00:00:00 +0000)",
                 "",
+                "gcc (GCC) 15.2.1 20250924 (Red Hat 15.2.1-2)",
+                "GNU ld version 2.45-1.fc43",
             ]
 
             print(uboot.setup_dhcp())
