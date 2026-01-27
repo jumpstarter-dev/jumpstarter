@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
+import tempfile
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
@@ -345,18 +347,38 @@ class ClientConfigV1Alpha1(BaseSettings):
             config.path = cls._get_path(config.alias)
         else:
             config.path = Path(path)
-        with config.path.open(mode="w") as f:
-            yaml.safe_dump(
-                config.model_dump(mode="json", exclude={"path", "alias"}, exclude_none=True),
-                f,
-                sort_keys=False,
-            )
+            config.path.parent.mkdir(parents=True, exist_ok=True)
+        payload = config.model_dump(mode="json", exclude={"path", "alias"}, exclude_none=True)
+        temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
+        try:
+            os.fchmod(temp_fd, 0o600)
+            with os.fdopen(temp_fd, "w") as f:
+                yaml.safe_dump(
+                    payload,
+                    f,
+                    sort_keys=False,
+                )
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, config.path)
+            os.chmod(config.path, 0o600)
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError as e:
+                if e.errno != errno.ENOENT:
+                    raise
         return config.path
 
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
+        """Return YAML suitable for display"""
         return yaml.safe_dump(
-            config.model_dump(mode="json", exclude={"path", "alias"}, exclude_none=True),
+            config.model_dump(
+                mode="json",
+                exclude={"path", "alias", "refresh_token"},
+                exclude_none=True,
+            ),
             sort_keys=False,
         )
 
@@ -412,10 +434,21 @@ class ClientConfigListV1Alpha1(BaseModel):
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
 
     def dump_json(self):
-        return self.model_dump_json(indent=4, by_alias=True)
+        return self.model_dump_json(
+            indent=4,
+            by_alias=True,
+            exclude={"items": {"__all__": {"refresh_token"}}},
+        )
 
     def dump_yaml(self):
-        return yaml.safe_dump(self.model_dump(mode="json", by_alias=True), indent=2)
+        return yaml.safe_dump(
+            self.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude={"items": {"__all__": {"refresh_token"}}},
+            ),
+            indent=2,
+        )
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
 
