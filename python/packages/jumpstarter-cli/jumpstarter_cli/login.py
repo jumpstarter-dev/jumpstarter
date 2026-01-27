@@ -19,12 +19,6 @@ from jumpstarter.config.tls import TLSConfigV1Alpha1
 @click.option("-e", "--endpoint", type=str, help="Enter the Jumpstarter service endpoint.", default=None)
 @click.option("--namespace", type=str, help="Enter the Jumpstarter exporter namespace.", default=None)
 @click.option("--name", type=str, help="Enter the Jumpstarter exporter name.", default=None)
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Force fresh login",
-    default=False,
-)
 @opt_oidc
 # client specific
 # TODO: warn if used with exporter
@@ -54,11 +48,11 @@ async def login(  # noqa: C901
     client_id: str,
     connector_id: str,
     callback_port: int | None,
+    offline_access: bool,
     unsafe,
     insecure_tls_config: bool,
     nointeractive: bool,
     allow,
-    force: bool,
 ):
     """Login into a jumpstarter instance"""
 
@@ -123,7 +117,36 @@ async def login(  # noqa: C901
             raise click.UsageError("Issuer is required in non-interactive mode.")
         issuer = click.prompt("Enter the OIDC issuer")
 
-    oidc = Config(issuer=issuer, client_id=client_id)
+    stored_refresh_token = getattr(config, "refresh_token", None)
+    oidc = Config(
+        issuer=issuer,
+        client_id=client_id,
+        offline_access=offline_access or stored_refresh_token is not None,
+    )
+
+    def save_config() -> None:
+        match config_kind:
+            case "client":
+                ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+            case "client_config":
+                ClientConfigV1Alpha1.save(config, value)  # ty: ignore[invalid-argument-type]
+            case "exporter":
+                ExporterConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+            case "exporter_config":
+                ExporterConfigV1Alpha1.save(config, value)  # ty: ignore[invalid-argument-type]
+
+    if stored_refresh_token and token is None and username is None and password is None:
+        try:
+            tokens = await oidc.refresh_token_grant(stored_refresh_token)
+            config.token = tokens["access_token"]
+            refresh_token = tokens.get("refresh_token")
+            if refresh_token is not None:
+                config.refresh_token = refresh_token
+            save_config()
+            click.echo("Refreshed access token using stored refresh token.")
+            return
+        except Exception:
+            pass
 
     if token is not None:
         kwargs = {"connector_id": connector_id} if connector_id is not None else {}
@@ -131,20 +154,14 @@ async def login(  # noqa: C901
     elif username is not None and password is not None:
         tokens = await oidc.password_grant(username, password)
     else:
-        prompt = "login" if force else None
-        tokens = await oidc.authorization_code_grant(callback_port=callback_port, prompt=prompt)
+        tokens = await oidc.authorization_code_grant(callback_port=callback_port)
 
     config.token = tokens["access_token"]
+    refresh_token = tokens.get("refresh_token")
+    if refresh_token is not None:
+        config.refresh_token = refresh_token
 
-    match config_kind:
-        case "client":
-            ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
-        case "client_config":
-            ClientConfigV1Alpha1.save(config, value)  # ty: ignore[invalid-argument-type]
-        case "exporter":
-            ExporterConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
-        case "exporter_config":
-            ExporterConfigV1Alpha1.save(config, value)  # ty: ignore[invalid-argument-type]
+    save_config()
 
 
 @blocking
@@ -157,9 +174,24 @@ async def relogin_client(config: ClientConfigV1Alpha1):
         raise ReauthenticationFailed(f"Failed to decode JWT issuer: {e}") from e
 
     try:
-        oidc = Config(issuer=issuer, client_id=client_id)
+        oidc = Config(issuer=issuer, client_id=client_id, offline_access=config.refresh_token is not None)
+        if config.refresh_token:
+            try:
+                tokens = await oidc.refresh_token_grant(config.refresh_token)
+                config.token = tokens["access_token"]
+                refresh_token = tokens.get("refresh_token")
+                if refresh_token is not None:
+                    config.refresh_token = refresh_token
+                ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+                return
+            except Exception:
+                pass
+
         tokens = await oidc.authorization_code_grant()
         config.token = tokens["access_token"]
+        refresh_token = tokens.get("refresh_token")
+        if refresh_token is not None:
+            config.refresh_token = refresh_token
         ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
     except Exception as e:
         raise ReauthenticationFailed(f"Failed to re-authenticate: {e}") from e

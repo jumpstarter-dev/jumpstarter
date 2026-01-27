@@ -112,6 +112,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     endpoint: str | None = Field(default=None)
     tls: TLSConfigV1Alpha1 = Field(default_factory=TLSConfigV1Alpha1)
     token: str | None = Field(default=None)
+    refresh_token: str | None = Field(default=None)
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
     drivers: ClientConfigV1Alpha1Drivers = Field(default_factory=ClientConfigV1Alpha1Drivers)
@@ -345,12 +346,19 @@ class ClientConfigV1Alpha1(BaseSettings):
         else:
             config.path = Path(path)
         with config.path.open(mode="w") as f:
-            yaml.safe_dump(config.model_dump(mode="json", exclude={"path", "alias"}), f, sort_keys=False)
+            yaml.safe_dump(
+                config.model_dump(mode="json", exclude={"path", "alias"}, exclude_none=True),
+                f,
+                sort_keys=False,
+            )
         return config.path
 
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
-        return yaml.safe_dump(config.model_dump(mode="json", exclude={"path", "alias"}), sort_keys=False)
+        return yaml.safe_dump(
+            config.model_dump(mode="json", exclude={"path", "alias"}, exclude_none=True),
+            sort_keys=False,
+        )
 
     @classmethod
     def exists(cls, alias: str) -> bool:
