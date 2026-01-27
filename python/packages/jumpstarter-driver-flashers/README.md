@@ -113,23 +113,54 @@ Commands:
 
 ### flash
 ```shell
-Usage: j storage flash [OPTIONS] FILE
+Usage: j storage flash [OPTIONS] [FILE]
 
-  Flash image to DUT from file
+  Flash image(s) to DUT
+
+  Usage examples:
+
+  - Flash to default block device and target
+
+      j storage flash image.img
+
+  - Flash to specific block device (e.g., 'emmc')
+
+      j storage flash image.img --target emmc
+
+  - Flash to partition(s) on default block device
+
+      j storage flash -t rootfs:rootfs.img
+
+  - Flash to partition(s) on specific block device
+
+      j storage flash --target emmc -t rootfs:rootfs.img -t boot:boot.img
 
 Options:
-  --partition TEXT
+  --target TEXT                  Block device to flash to (e.g., 'usd',
+                                 'emmc'). If not provided, uses default
+                                 target.
+  -t TEXT                        Flash file to partition:
+                                 'partition:filename'. Can be repeated for
+                                 multiple partitions.
   --os-image-checksum TEXT       SHA256 checksum of OS image (direct value)
   --os-image-checksum-file FILE  File containing SHA256 checksum of OS image
   --force-exporter-http          Force use of exporter HTTP
   --force-flash-bundle TEXT      Force use of a specific flasher OCI bundle
-  --console-debug                Enable console debug mode
   --cacert FILE                  CA certificate to use for HTTPS
   --insecure-tls                 Skip TLS certificate verification
   --header TEXT                  Custom HTTP header in 'Key: Value' format
   --bearer TEXT                  Bearer token for HTTP authentication
   --oci-username TEXT            OCI registry username (or OCI_USERNAME environment variable)
   --oci-password TEXT            OCI registry password (or OCI_PASSWORD environment variable)
+  --retries INTEGER              Number of retry attempts for flash operation
+                                 (default: 3)
+  --method [fls|shell]           Method to use for flash operation (default:
+                                 fls)
+  --fls-version TEXT             Download an specific fls version from the
+                                 github releases
+  --fls-binary-url TEXT          Custom URL to download FLS binary from
+                                 (overrides --fls-version)
+  --console-debug                Enable console debug mode
   --help                         Show this message and exit.
 ```
 
