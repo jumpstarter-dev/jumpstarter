@@ -90,6 +90,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         path: PathBuf,
         *,
         partition: str | None = None,
+        block_device: str | None = None,
         operator: Operator | None = None,
         os_image_checksum: str | None = None,
         force_exporter_http: bool = False,
@@ -177,6 +178,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 try:
                     self._perform_flash_operation(
                         partition,
+                        block_device,
                         path,
                         image_url,
                         should_download_to_httpd,
@@ -302,6 +304,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _perform_flash_operation(
         self,
         partition: str | None,
+        block_device: str | None,
         path: PathBuf,
         image_url: str,
         should_download_to_httpd: bool,
@@ -321,13 +324,32 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
         with self._busybox() as console:
             manifest = self.manifest
-            target = partition or self.call("get_default_target") or manifest.spec.default_target
+            # Check if partition is a valid target device name in the manifest
+            # If not, treat it as a partition label and use the specified block_device or default target
+            partition_label = None
+            if partition and partition in manifest.spec.targets:
+                target = partition
+            else:
+                # partition is a partition label, not a target device
+                partition_label = partition
+                # Use specified block_device if provided, otherwise use default target
+                if block_device:
+                    target = block_device
+                else:
+                    target = self.call("get_default_target") or manifest.spec.default_target
             if not target:
                 raise ArgumentError("No partition or default target specified")
 
             target_device = self._get_target_device(target, manifest, console)
 
-            self.logger.info(f"Using target block device: {target_device}")
+            # If a partition label is provided, construct the partition path
+            flash_target = target_device
+            if partition_label:
+                flash_target = f"/dev/disk/by-partlabel/{partition_label}"
+                self.logger.info(f"Using target partition: {partition_label} ({flash_target})")
+            else:
+                self.logger.info(f"Using target block device: {target_device}")
+
             console.sendline(f"export dhcp_addr={self._dhcp_details.ip_address}")
             console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
             console.sendline(f"export gw_addr={self._dhcp_details.gateway}")
@@ -372,7 +394,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     manifest,
                     path,
                     image_url,
-                    target_device,
+                    flash_target,
                     insecure_tls,
                     stored_cacert,
                     header_args,
@@ -385,7 +407,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     manifest,
                     path,
                     image_url,
-                    target_device,
+                    flash_target,
                     insecure_tls,
                     stored_cacert,
                     header_args,
@@ -1162,6 +1184,71 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return token
 
+    def _resolve_flash_parameters(
+        self, file: str | None, partitions: tuple[str, ...] | None, block_device: str | None
+    ) -> list[tuple[str, str | None, str | None]]:
+        """Resolve and validate flash parameters from CLI options.
+
+        Supports multiple modes:
+        1. Single file to default block device:
+            flash image.img
+        2. Single file to specific block device:
+            flash image.img --target usd
+        3. Multiple file-partition pairs:
+            flash -t rootfs:rootfs.img -t boot:boot.img
+        4. Multiple file-partition pairs to specific block device:
+            flash --target emmc -t rootfs:rootfs.img -t boot:boot.img
+
+        Args:
+            file: The image file argument (positional, optional). When provided alone,
+                  flashes to the default block device.
+            partitions: The -t options in 'partition:file' format (repeatable).
+                       Use this to specify partition and file together.
+            block_device: The --target option (block device name like 'usd', 'emmc').
+                         Can be used with both file and -t options.
+
+        Returns:
+            list[tuple]: List of (image_file, target_partition, block_device) tuples
+
+        Raises:
+            click.UsageError: If parameters are invalid or conflicting
+        """
+        flash_ops: list[tuple[str, str | None, str | None]] = []
+
+        # Mode 1 & 2: Single file with optional block device
+        if file:
+            if partitions:
+                raise click.UsageError(
+                    "Cannot specify FILE argument with -t options. "
+                    "Use either 'flash image.img' or 'flash -t partition:file'"
+                )
+            flash_ops.append((file, None, block_device))
+
+        # Mode 3 & 4: Multiple file-partition pairs with optional block device
+        elif partitions:
+            for spec in partitions:
+                if ':' not in spec:
+                    raise click.UsageError(
+                        f"Invalid flash spec format: '{spec}'. "
+                        "Expected 'partition:filename'"
+                    )
+                partition_label, filename = spec.split(':', 1)
+                if not partition_label or not filename:
+                    raise click.UsageError(
+                        f"Invalid flash spec format: '{spec}'. "
+                        "Both partition label and filename are required"
+                    )
+                flash_ops.append((filename, partition_label, block_device))
+
+        # No input provided
+        else:
+            raise click.UsageError(
+                "Must provide either FILE argument or -t options. "
+                "Use 'j storage flash --help' for usage examples"
+            )
+
+        return flash_ops
+
     def cli(self):
         @driver_click_group(self)
         def base():
@@ -1169,8 +1256,18 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             pass
 
         @base.command()
-        @click.argument("file")
-        @click.option("--target", type=str)
+        @click.argument("file", required=False)
+        @click.option(
+            "--target",
+            type=str,
+            help="Block device to flash to (e.g., 'usd', 'emmc'). If not provided, uses default target."
+        )
+        @click.option(
+            "-t",
+            "partitions",
+            multiple=True,
+            help="Flash file to partition: 'partition:filename'. Can be repeated for multiple partitions.",
+        )
         @click.option("--os-image-checksum", help="SHA256 checksum of OS image (direct value)")
         @click.option(
             "--os-image-checksum-file",
@@ -1219,6 +1316,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         def flash(
             file,
             target,
+            partitions,
             os_image_checksum,
             os_image_checksum_file,
             console_debug,
@@ -1233,30 +1331,66 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             fls_version,
             fls_binary_url,
         ):
-            """Flash image to DUT from file"""
+            """Flash image(s) to DUT
+
+            Usage examples:
+
+            - Flash to default block device and target
+
+                j storage flash image.img
+
+            - Flash to specific block device (e.g., 'emmc')
+
+                j storage flash image.img --target emmc
+
+            - Flash to partition(s) on default block device
+
+                j storage flash -t rootfs:rootfs.img
+
+            - Flash to partition(s) on specific block device
+
+                j storage flash --target emmc -t rootfs:rootfs.img -t boot:boot.img
+            """
+            # Validate and resolve flash parameters
+            flash_operations = self._resolve_flash_parameters(
+                file, partitions, target
+            )
+
+            # Setup common options
+            self.set_console_debug(console_debug)
+            headers_dict = self._parse_headers(header) if header else None
+
+            # Load checksum from file if provided (used for all operations)
+            checksum = os_image_checksum
             if os_image_checksum_file and os.path.exists(os_image_checksum_file):
                 with open(os_image_checksum_file) as f:
-                    os_image_checksum = f.read().strip().split()[0]
-                    self.logger.info(f"Read checksum from file: {os_image_checksum}")
+                    checksum = f.read().strip().split()[0]
+                    self.logger.info(f"Read checksum from file: {checksum}")
 
-            self.set_console_debug(console_debug)
+            # Execute each flash operation
+            for idx, (image_file, target_partition, block_device) in enumerate(flash_operations):
+                op_num = f"{idx + 1}/{len(flash_operations)}" if len(flash_operations) > 1 else ""
+                op_desc = f"partition '{target_partition}'" if target_partition else "default target"
 
-            headers = self._parse_headers(header) if header else None
+                self.logger.info(f"Flashing {op_num} {op_desc} with '{image_file}'".strip())
 
-            self.flash(
-                file,
-                partition=target,
-                force_exporter_http=force_exporter_http,
-                force_flash_bundle=force_flash_bundle,
-                cacert_file=cacert,
-                insecure_tls=insecure_tls,
-                headers=headers,
-                bearer_token=bearer,
-                retries=retries,
-                method=method,
-                fls_version=fls_version,
-                fls_binary_url=fls_binary_url,
-            )
+                # Perform the flash operation
+                self.flash(
+                    image_file,
+                    partition=target_partition,
+                    block_device=block_device,
+                    os_image_checksum=checksum,
+                    force_exporter_http=force_exporter_http,
+                    force_flash_bundle=force_flash_bundle,
+                    cacert_file=cacert,
+                    insecure_tls=insecure_tls,
+                    headers=headers_dict,
+                    bearer_token=bearer,
+                    retries=retries,
+                    method=method,
+                    fls_version=fls_version,
+                    fls_binary_url=fls_binary_url,
+                )
 
         @base.command()
         @debug_console_option
