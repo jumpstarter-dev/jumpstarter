@@ -226,11 +226,6 @@ type ControllerConfig struct {
 	// gRPC configuration for controller endpoints.
 	// Defines how controller gRPC services are exposed and configured.
 	GRPC GRPCConfig `json:"grpc,omitempty"`
-
-	// Authentication configuration for client and exporter authentication.
-	// Configures how clients and exporters can authenticate with Jumpstarter.
-	// Supports multiple authentication methods including internal tokens, Kubernetes tokens, and JWT.
-	Authentication AuthenticationConfig `json:"authentication,omitempty"`
 }
 
 // ExporterOptions defines configuration options for exporter behavior.

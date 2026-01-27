@@ -10,9 +10,10 @@ on:
       - 'python/**'
       - 'protocol/**'
   pull_request:
-    paths:
-      - 'python/**'
-      - 'protocol/**'
+    # running for all, since github does not detect skipped on this when required for merging
+    #paths:
+    #  - 'python/**'
+    #  - 'protocol/**'
   merge_group:
 
 permissions:

@@ -65,8 +65,11 @@ kind_load_image() {
 install_nginx_ingress() {
   echo -e "${GREEN}Deploying nginx ingress in kind ...${NC}"
 
-  lsmod | grep ip_tables || \
-    (echo "ip_tables module not loaded needed by nginx ingress, please run 'sudo modprobe ip_tables'" && exit 1)
+  # Check ip_tables module only on Linux (lsmod doesn't exist on macOS)
+  if command -v lsmod &> /dev/null; then
+    lsmod | grep ip_tables || \
+      (echo "ip_tables module not loaded needed by nginx ingress, please run 'sudo modprobe ip_tables'" && exit 1)
+  fi
 
 kubectl apply -f https://github.com/kubernetes/ingress-nginx/raw/refs/heads/main/deploy/static/provider/kind/deploy.yaml
 
