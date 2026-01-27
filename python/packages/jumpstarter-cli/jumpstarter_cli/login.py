@@ -145,7 +145,9 @@ async def login(  # noqa: C901
             save_config()
             click.echo("Refreshed access token using stored refresh token.")
             return
-        except Exception:
+        except Exception as e:
+            if nointeractive:
+                raise click.ClickException(f"Failed to refresh access token: {e}") from e
             pass
 
     if token is not None:
