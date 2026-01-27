@@ -561,7 +561,7 @@ type ServerCertConfig struct {
 
 	// Reference an existing cert-manager Issuer or ClusterIssuer.
 	// Use this to integrate with existing PKI infrastructure (ACME, Vault, etc.).
-	//This overrides SelfSigned.Enabled = true which is the default setting
+	// This overrides SelfSigned.Enabled = true which is the default setting
 	IssuerRef *IssuerReference `json:"issuerRef,omitempty"`
 }
 
