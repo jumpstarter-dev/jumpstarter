@@ -3,7 +3,7 @@ module github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator
 go 1.24.0
 
 require (
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/google/uuid v1.6.0
 	github.com/jumpstarter-dev/jumpstarter-controller v0.7.1
 	github.com/onsi/ginkgo/v2 v2.22.2
