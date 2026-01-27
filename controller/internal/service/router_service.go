@@ -92,17 +92,22 @@ func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sctx := streamContext{
+	sctx := &streamContext{
 		cancel: cancel,
 		stream: stream,
 	}
 
 	actual, loaded := s.pending.LoadOrStore(streamName, sctx)
 	if loaded {
-		defer actual.(streamContext).cancel()
+		// peer connected - clean up
+		first := actual.(*streamContext)
+		s.pending.CompareAndDelete(streamName, first)
+		defer first.cancel()
 		logger.Info("forwarding", "stream", streamName)
-		return Forward(ctx, stream, actual.(streamContext).stream)
+		return Forward(ctx, stream, first.stream)
 	} else {
+		// First peer - wait for second peer before cleaning up
+		defer s.pending.CompareAndDelete(streamName, sctx)
 		logger.Info("waiting for the other side", "stream", streamName)
 		<-ctx.Done()
 		return nil
