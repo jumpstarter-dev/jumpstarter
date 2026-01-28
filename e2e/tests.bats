@@ -69,18 +69,18 @@ wait_for_exporter() {
 }
 
 @test "can create clients with admin cli" {
-  jmp admin create client -n "${JS_NAMESPACE}" test-client-oidc     --unsafe --out /dev/null \
+  jmp admin create client -n "${JS_NAMESPACE}" test-client-oidc     --unsafe --nointeractive \
     --oidc-username dex:test-client-oidc
-  jmp admin create client -n "${JS_NAMESPACE}" test-client-sa       --unsafe --out /dev/null \
+  jmp admin create client -n "${JS_NAMESPACE}" test-client-sa       --unsafe --nointeractive \
     --oidc-username dex:system:serviceaccount:"${JS_NAMESPACE}":test-client-sa
   jmp admin create client -n "${JS_NAMESPACE}" test-client-legacy   --unsafe --save
 }
 
 @test "can create exporters with admin cli" {
-  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-oidc   --out /dev/null \
+  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-oidc   --nointeractive \
     --oidc-username dex:test-exporter-oidc \
     --label example.com/board=oidc
-  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-sa     --out /dev/null \
+  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-sa     --nointeractive \
     --oidc-username dex:system:serviceaccount:"${JS_NAMESPACE}":test-exporter-sa \
     --label example.com/board=sa
   jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-legacy --save \
