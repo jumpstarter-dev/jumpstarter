@@ -855,33 +855,19 @@ spec:
 		})
 
 		It("should mount TLS certificates in controller deployment", func() {
-			By("waiting for controller deployment to be available")
+			By("waiting for controller deployment to be available with TLS mount")
 			controllerDeploymentName := jumpstarterName + "-controller"
 			Eventually(func(g Gomega) {
-				deployment := &appsv1.Deployment{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      controllerDeploymentName,
-					Namespace: certManagerTestNamespace,
-				}, deployment)
-				g.Expect(err).NotTo(HaveOccurred())
-			}, 2*time.Minute).Should(Succeed())
-
-			verifyDeploymentHasTLSMount(certManagerTestNamespace, controllerDeploymentName)
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		})
 
 		It("should mount TLS certificates in router deployment", func() {
-			By("waiting for router deployment to be available")
+			By("waiting for router deployment to be available with TLS mount")
 			routerDeploymentName := jumpstarterName + "-router-0"
 			Eventually(func(g Gomega) {
-				deployment := &appsv1.Deployment{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      routerDeploymentName,
-					Namespace: certManagerTestNamespace,
-				}, deployment)
-				g.Expect(err).NotTo(HaveOccurred())
-			}, 2*time.Minute).Should(Succeed())
-
-			verifyDeploymentHasTLSMount(certManagerTestNamespace, routerDeploymentName)
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		})
 
 		It("should report CertManagerAvailable condition as True", func() {
@@ -938,6 +924,86 @@ spec:
 				Expect(cond.Status).To(Equal(metav1.ConditionTrue),
 					fmt.Sprintf("condition %s is not True: %s", condType, cond.Message))
 			}
+		})
+
+		It("should preserve certificates when cert-manager is disabled and re-enabled", func() {
+			By("starting with cert-manager enabled and verifying TLS is configured")
+			controllerDeploymentName := jumpstarterName + "-controller"
+			routerDeploymentName := jumpstarterName + "-router-0"
+			controllerCertName := jumpstarterName + "-controller-tls"
+			routerCertName := fmt.Sprintf("%s-router-0-tls", jumpstarterName)
+			issuerNames := []string{
+				jumpstarterName + "-selfsigned-issuer",
+				jumpstarterName + "-ca-issuer",
+			}
+
+			// Verify initial state has TLS configured
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 1*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("disabling cert-manager")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      jumpstarterName,
+				Namespace: certManagerTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			jumpstarter.Spec.CertManager.Enabled = false
+			err = k8sClient.Update(ctx, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for and verifying deployments are reconciled WITHOUT TLS configuration")
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasNoTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+				verifyDeploymentHasNoTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying Certificate and Issuer resources still exist (not deleted)")
+			cert := &certmanagerv1.Certificate{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      controllerCertName,
+				Namespace: certManagerTestNamespace,
+			}, cert)
+			Expect(err).NotTo(HaveOccurred(), "Controller certificate should still exist")
+
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      routerCertName,
+				Namespace: certManagerTestNamespace,
+			}, cert)
+			Expect(err).NotTo(HaveOccurred(), "Router certificate should still exist")
+
+			for _, issuerName := range issuerNames {
+				issuer := &certmanagerv1.Issuer{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      issuerName,
+					Namespace: certManagerTestNamespace,
+				}, issuer)
+				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Issuer %s should still exist", issuerName))
+			}
+
+			By("re-enabling cert-manager")
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      jumpstarterName,
+				Namespace: certManagerTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			jumpstarter.Spec.CertManager.Enabled = true
+			err = k8sClient.Update(ctx, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying deployments are reconciled WITH TLS configuration again")
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying system is ready with certificates")
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeReady, metav1.ConditionTrue, 3*time.Minute)
 		})
 
 		AfterAll(func() {
@@ -1368,15 +1434,14 @@ func verifyTLSSecret(namespace, name string) {
 }
 
 // verifyDeploymentHasTLSMount checks that a deployment has the TLS volume mount and env vars.
-func verifyDeploymentHasTLSMount(namespace, name string) {
-	By(fmt.Sprintf("verifying deployment %s has TLS mount", name))
-
+// This is used with Gomega assertions to verify the deployment has been reconciled with TLS.
+func verifyDeploymentHasTLSMount(g Gomega, namespace, name string) {
 	deployment := &appsv1.Deployment{}
 	err := k8sClient.Get(ctx, types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
 	}, deployment)
-	Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred())
 
 	// Check for tls-certs volume
 	hasVolume := false
@@ -1386,10 +1451,10 @@ func verifyDeploymentHasTLSMount(namespace, name string) {
 			break
 		}
 	}
-	Expect(hasVolume).To(BeTrue(), fmt.Sprintf("deployment %s missing tls-certs volume", name))
+	g.Expect(hasVolume).To(BeTrue(), fmt.Sprintf("deployment %s missing tls-certs volume", name))
 
 	// Check for volume mount in the first container
-	Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+	g.Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 	container := deployment.Spec.Template.Spec.Containers[0]
 
 	hasMount := false
@@ -1399,7 +1464,7 @@ func verifyDeploymentHasTLSMount(namespace, name string) {
 			break
 		}
 	}
-	Expect(hasMount).To(BeTrue(), fmt.Sprintf("deployment %s missing /tls volume mount", name))
+	g.Expect(hasMount).To(BeTrue(), fmt.Sprintf("deployment %s missing /tls volume mount", name))
 
 	// Check for EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM env vars
 	hasCertEnv := false
@@ -1412,8 +1477,45 @@ func verifyDeploymentHasTLSMount(namespace, name string) {
 			hasKeyEnv = true
 		}
 	}
-	Expect(hasCertEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_CERT_PEM env var", name))
-	Expect(hasKeyEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_KEY_PEM env var", name))
+	g.Expect(hasCertEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_CERT_PEM env var", name))
+	g.Expect(hasKeyEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_KEY_PEM env var", name))
+}
+
+// verifyDeploymentHasNoTLSMount checks that a deployment does NOT have TLS configuration.
+// This is used with Gomega assertions to verify the deployment has been reconciled without TLS.
+func verifyDeploymentHasNoTLSMount(g Gomega, namespace, name string) {
+	deployment := &appsv1.Deployment{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, deployment)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Check that tls-certs volume is NOT present
+	for _, vol := range deployment.Spec.Template.Spec.Volumes {
+		g.Expect(vol.Name).NotTo(Equal("tls-certs"),
+			fmt.Sprintf("deployment %s should not have tls-certs volume", name))
+	}
+
+	// Check for volume mount in the first container
+	g.Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	// Check that /tls volume mount is NOT present
+	for _, mount := range container.VolumeMounts {
+		if mount.Name == "tls-certs" {
+			g.Expect(mount.MountPath).NotTo(Equal("/tls"),
+				fmt.Sprintf("deployment %s should not have /tls volume mount", name))
+		}
+	}
+
+	// Check that EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM env vars are NOT present
+	for _, env := range container.Env {
+		g.Expect(env.Name).NotTo(Equal("EXTERNAL_CERT_PEM"),
+			fmt.Sprintf("deployment %s should not have EXTERNAL_CERT_PEM env var", name))
+		g.Expect(env.Name).NotTo(Equal("EXTERNAL_KEY_PEM"),
+			fmt.Sprintf("deployment %s should not have EXTERNAL_KEY_PEM env var", name))
+	}
 }
 
 // dumpCertManagerResourcesOnFailure dumps cert-manager and Jumpstarter resources for debugging test failures.

@@ -269,8 +269,8 @@ type ExporterOptions struct {
 type GRPCConfig struct {
 	// TLS configuration for secure gRPC communication.
 	// Requires a Kubernetes secret containing the TLS certificate and private key.
-	// If useCertManager is enabled, this secret will be automatically created.
-	// See also: spec.useCertManager for automatic certificate management.
+	// If spec.certManager.enabled is true, this secret will be automatically managed and
+	// configured by cert-manager.
 	TLS TLSConfig `json:"tls,omitempty"`
 
 	// List of gRPC endpoints to expose.

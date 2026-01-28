@@ -158,6 +158,17 @@ func (r *JumpstarterReconciler) checkIssuerReady(ctx context.Context, js *operat
 		issuerName = js.Spec.CertManager.Server.IssuerRef.Name
 		issuerKind = js.Spec.CertManager.Server.IssuerRef.Kind
 	} else {
+		// Check if self-signed is enabled (default to true if not specified)
+		selfSignedEnabled := true
+		if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.SelfSigned != nil {
+			selfSignedEnabled = js.Spec.CertManager.Server.SelfSigned.Enabled
+		}
+
+		if !selfSignedEnabled {
+			// Self-signed is disabled and no external issuer is configured
+			return false, "no issuer configured: selfSigned.enabled is false and no external issuerRef provided"
+		}
+
 		// Self-signed CA issuer
 		issuerName = js.Name + caIssuerSuffix
 		issuerKind = "Issuer"

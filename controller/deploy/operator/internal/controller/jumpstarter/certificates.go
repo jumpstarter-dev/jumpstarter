@@ -74,6 +74,10 @@ func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *o
 	log := logf.FromContext(ctx)
 
 	if !js.Spec.CertManager.Enabled {
+		// If cert-manager integration is disabled, skip certificate reconciliation
+		// we do not remove existing certificates or issuers here,
+		// that must be handled by the administrator, to avoid issues if the certificates
+		// are disabled by error, enabled again, at least the certificates will remain.
 		log.V(1).Info("cert-manager integration disabled, skipping certificate reconciliation")
 		return nil
 	}
@@ -84,6 +88,12 @@ func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *o
 	issuerRef, err := r.reconcileIssuer(ctx, js)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile issuer: %w", err)
+	}
+
+	// Skip certificate creation if no issuer is configured
+	if issuerRef.Name == "" {
+		log.Info("No issuer configured, skipping certificate creation")
+		return nil
 	}
 
 	// Create controller certificate
@@ -117,9 +127,22 @@ func (r *JumpstarterReconciler) reconcileIssuer(ctx context.Context, js *operato
 		}, nil
 	}
 
-	// Default to self-signed CA mode
-	log.Info("Using self-signed CA mode")
-	return r.reconcileSelfSignedIssuer(ctx, js)
+	// Check if self-signed mode is enabled
+	// Default to true if SelfSigned config is nil or Enabled is not explicitly set
+	selfSignedEnabled := true
+	if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.SelfSigned != nil {
+		selfSignedEnabled = js.Spec.CertManager.Server.SelfSigned.Enabled
+	}
+
+	if selfSignedEnabled {
+		log.Info("Using self-signed CA mode")
+		return r.reconcileSelfSignedIssuer(ctx, js)
+	}
+
+	// Self-signed is disabled and no external issuer is configured
+	// Return empty issuer reference - status update will handle the error condition
+	log.Info("Self-signed CA is disabled and no external issuer configured, skipping issuer creation")
+	return cmmeta.ObjectReference{}, nil
 }
 
 // reconcileSelfSignedIssuer creates the self-signed CA infrastructure:
