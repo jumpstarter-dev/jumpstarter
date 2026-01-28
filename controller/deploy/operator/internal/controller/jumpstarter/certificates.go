@@ -270,6 +270,17 @@ func (r *JumpstarterReconciler) reconcileServerCertificate(
 		labels[k] = v
 	}
 
+	// Separate IP addresses from DNS names for cert-manager v1 compatibility
+	var dns []string
+	var ipAddrs []string
+	for _, name := range dnsNames {
+		if ip := net.ParseIP(name); ip != nil {
+			ipAddrs = append(ipAddrs, name)
+		} else {
+			dns = append(dns, name)
+		}
+	}
+
 	cert := &certmanagerv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      certName,
@@ -284,8 +295,9 @@ func (r *JumpstarterReconciler) reconcileServerCertificate(
 				Algorithm: certmanagerv1.ECDSAKeyAlgorithm,
 				Size:      256,
 			},
-			DNSNames:  dnsNames,
-			IssuerRef: issuerRef,
+			DNSNames:    dns,
+			IPAddresses: ipAddrs,
+			IssuerRef:   issuerRef,
 			Usages: []certmanagerv1.KeyUsage{
 				certmanagerv1.UsageServerAuth,
 				certmanagerv1.UsageDigitalSignature,
