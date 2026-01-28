@@ -140,7 +140,7 @@ async def login(  # noqa: C901
             tokens = await oidc.refresh_token_grant(stored_refresh_token)
             config.token = tokens["access_token"]
             refresh_token = tokens.get("refresh_token")
-            if refresh_token is not None:
+            if refresh_token is not None and isinstance(config, ClientConfigV1Alpha1):
                 config.refresh_token = refresh_token
             save_config()
             click.echo("Refreshed access token using stored refresh token.")
@@ -160,7 +160,9 @@ async def login(  # noqa: C901
 
     config.token = tokens["access_token"]
     refresh_token = tokens.get("refresh_token")
-    if refresh_token is not None:
+
+    # only client configs support refresh_token
+    if refresh_token is not None and isinstance(config, ClientConfigV1Alpha1):
         config.refresh_token = refresh_token
 
     save_config()
