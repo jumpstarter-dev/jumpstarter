@@ -31,6 +31,11 @@ def opt_oidc(f):
         default=None,
         help="Port for OIDC callback server (0=random port)",
     )
+    @click.option(
+        "--offline-access/--no-offline-access",
+        default=True,
+        help="Request offline_access scope (refresh token)",
+    )
     @wraps(f)
     def wrapper(*args, **kwds):
         return f(*args, **kwds)
@@ -42,6 +47,7 @@ def opt_oidc(f):
 class Config:
     issuer: str
     client_id: str
+    offline_access: bool = False
     scope: ClassVar[list[str]] = ["openid", "profile"]
 
     async def configuration(self):
@@ -52,8 +58,13 @@ class Config:
             ) as response:
                 return await response.json()
 
+    def _scopes(self) -> list[str]:
+        if self.offline_access:
+            return [*self.scope, "offline_access"]
+        return list(self.scope)
+
     def client(self, **kwargs):
-        return OAuth2Session(client_id=self.client_id, scope=self.scope, **kwargs)
+        return OAuth2Session(client_id=self.client_id, scope=self._scopes(), **kwargs)
 
     async def token_exchange_grant(self, token: str, **kwargs):
         config = await self.configuration()
@@ -68,6 +79,19 @@ class Config:
                 subject_token_type="urn:ietf:params:oauth:token-type:id_token",
                 subject_token=token,
                 **kwargs,
+            )
+        )
+
+    async def refresh_token_grant(self, refresh_token: str):
+        config = await self.configuration()
+
+        client = self.client()
+
+        return await run_sync(
+            lambda: client.fetch_token(
+                config["token_endpoint"],
+                grant_type="refresh_token",
+                refresh_token=refresh_token,
             )
         )
 
