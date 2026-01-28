@@ -24,6 +24,8 @@ import (
 	"os/exec"
 	"time"
 
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,6 +34,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -57,7 +60,10 @@ const metricsRoleBindingName = "jumpstarter-operator-metrics-binding"
 // testNamespace is the namespace where the test will be run
 const testNamespace = "jumpstarter-lab-e2e"
 
-var _ = Describe("Manager", Ordered, func() {
+// defaultControllerImage is the default image for the controller if IMG env is not set
+const defaultControllerImage = "quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+
+var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 	var controllerPodName string
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
@@ -155,6 +161,9 @@ var _ = Describe("Manager", Ordered, func() {
 			} else {
 				fmt.Println("Failed to describe controller pod")
 			}
+
+			// Dump cert-manager related resources for debugging
+			dumpCertManagerResourcesOnFailure()
 		}
 	})
 
@@ -358,7 +367,7 @@ var _ = Describe("Manager", Ordered, func() {
 			// Get image from environment or use default
 			image := os.Getenv("IMG")
 			if image == "" {
-				image = "quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+				image = defaultControllerImage
 			}
 
 			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
@@ -685,6 +694,465 @@ provisioning:
 			DeleteTestNamespace(dynamicTestNamespace)
 		})
 	})
+
+	Context("cert-manager self-signed mode", Ordered, func() {
+		const baseDomain = "certmanager.127.0.0.1.nip.io"
+		const jumpstarterName = "jumpstarter-certmanager"
+		var certManagerTestNamespace string
+
+		BeforeAll(func() {
+			certManagerTestNamespace = CreateTestNamespace()
+		})
+
+		It("should deploy jumpstarter with self-signed cert-manager", func() {
+			By("creating a Jumpstarter custom resource with cert-manager enabled")
+			image := os.Getenv("IMG")
+			if image == "" {
+				image = defaultControllerImage
+			}
+
+			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  baseDomain: %s
+  certManager:
+    enabled: true
+    server:
+      selfSigned:
+        enabled: true
+  controller:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: grpc.%s:8082
+          nodeport:
+            enabled: true
+            port: 30020
+    authentication:
+      internal:
+        prefix: "internal:"
+        enabled: true
+  routers:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+    grpc:
+      endpoints:
+        - address: router.%s:8083
+          nodeport:
+            enabled: true
+            port: 30021
+`, jumpstarterName, certManagerTestNamespace, baseDomain, image, baseDomain, image, baseDomain)
+
+			err := applyYAML(jumpstarterYAML)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR with cert-manager")
+
+			By("verifying the Jumpstarter CR was created")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      jumpstarterName,
+					Namespace: certManagerTestNamespace,
+				}, js)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(js.Spec.CertManager.Enabled).To(BeTrue())
+			}, 30*time.Second).Should(Succeed())
+		})
+
+		It("should create the self-signed issuer", func() {
+			By("verifying the self-signed issuer was created")
+			issuerName := jumpstarterName + "-selfsigned-issuer"
+			Eventually(func(g Gomega) {
+				issuer := &certmanagerv1.Issuer{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      issuerName,
+					Namespace: certManagerTestNamespace,
+				}, issuer)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(issuer.Spec.SelfSigned).NotTo(BeNil())
+			}, 1*time.Minute).Should(Succeed())
+
+			waitForIssuerReady(certManagerTestNamespace, issuerName, 2*time.Minute)
+		})
+
+		It("should create the CA certificate", func() {
+			By("verifying the CA certificate was created")
+			caCertName := jumpstarterName + "-ca"
+			Eventually(func(g Gomega) {
+				cert := &certmanagerv1.Certificate{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      caCertName,
+					Namespace: certManagerTestNamespace,
+				}, cert)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cert.Spec.IsCA).To(BeTrue())
+			}, 1*time.Minute).Should(Succeed())
+
+			waitForCertificateReady(certManagerTestNamespace, caCertName, 2*time.Minute)
+		})
+
+		It("should create the CA issuer", func() {
+			By("verifying the CA issuer was created")
+			caIssuerName := jumpstarterName + "-ca-issuer"
+			Eventually(func(g Gomega) {
+				issuer := &certmanagerv1.Issuer{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      caIssuerName,
+					Namespace: certManagerTestNamespace,
+				}, issuer)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(issuer.Spec.CA).NotTo(BeNil())
+			}, 1*time.Minute).Should(Succeed())
+
+			waitForIssuerReady(certManagerTestNamespace, caIssuerName, 2*time.Minute)
+		})
+
+		It("should create the controller TLS certificate", func() {
+			By("verifying the controller certificate was created")
+			controllerCertName := jumpstarterName + "-controller-tls"
+			Eventually(func(g Gomega) {
+				cert := &certmanagerv1.Certificate{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      controllerCertName,
+					Namespace: certManagerTestNamespace,
+				}, cert)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cert.Spec.IsCA).To(BeFalse())
+			}, 1*time.Minute).Should(Succeed())
+
+			waitForCertificateReady(certManagerTestNamespace, controllerCertName, 2*time.Minute)
+
+			By("verifying the controller TLS secret exists")
+			verifyTLSSecret(certManagerTestNamespace, controllerCertName)
+		})
+
+		It("should create the router TLS certificate", func() {
+			By("verifying the router certificate was created")
+			routerCertName := fmt.Sprintf("%s-router-0-tls", jumpstarterName)
+			Eventually(func(g Gomega) {
+				cert := &certmanagerv1.Certificate{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      routerCertName,
+					Namespace: certManagerTestNamespace,
+				}, cert)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cert.Spec.IsCA).To(BeFalse())
+			}, 1*time.Minute).Should(Succeed())
+
+			waitForCertificateReady(certManagerTestNamespace, routerCertName, 2*time.Minute)
+
+			By("verifying the router TLS secret exists")
+			verifyTLSSecret(certManagerTestNamespace, routerCertName)
+		})
+
+		It("should mount TLS certificates in controller deployment", func() {
+			By("waiting for controller deployment to be available with TLS mount")
+			controllerDeploymentName := jumpstarterName + "-controller"
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		})
+
+		It("should mount TLS certificates in router deployment", func() {
+			By("waiting for router deployment to be available with TLS mount")
+			routerDeploymentName := jumpstarterName + "-router-0"
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		})
+
+		It("should report CertManagerAvailable condition as True", func() {
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeCertManagerAvailable, metav1.ConditionTrue, 1*time.Minute)
+		})
+
+		It("should report IssuerReady condition as True", func() {
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeIssuerReady, metav1.ConditionTrue, 2*time.Minute)
+		})
+
+		It("should report ControllerCertificateReady condition as True", func() {
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeControllerCertificateReady, metav1.ConditionTrue, 2*time.Minute)
+		})
+
+		It("should report RouterCertificatesReady condition as True", func() {
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeRouterCertificatesReady, metav1.ConditionTrue, 2*time.Minute)
+		})
+
+		It("should report ControllerDeploymentReady condition as True", func() {
+			// Deployment readiness can take longer due to image pulls and pod scheduling
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeControllerDeploymentReady, metav1.ConditionTrue, 5*time.Minute)
+		})
+
+		It("should report RouterDeploymentsReady condition as True", func() {
+			// Deployment readiness can take longer due to image pulls and pod scheduling
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeRouterDeploymentsReady, metav1.ConditionTrue, 5*time.Minute)
+		})
+
+		It("should report Ready condition as True when all components are ready", func() {
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeReady, metav1.ConditionTrue, 5*time.Minute)
+
+			By("verifying all conditions are present and True")
+			conditions := getJumpstarterConditions(certManagerTestNamespace, jumpstarterName)
+			expectedConditions := []string{
+				operatorv1alpha1.ConditionTypeCertManagerAvailable,
+				operatorv1alpha1.ConditionTypeIssuerReady,
+				operatorv1alpha1.ConditionTypeControllerCertificateReady,
+				operatorv1alpha1.ConditionTypeRouterCertificatesReady,
+				operatorv1alpha1.ConditionTypeControllerDeploymentReady,
+				operatorv1alpha1.ConditionTypeRouterDeploymentsReady,
+				operatorv1alpha1.ConditionTypeReady,
+			}
+
+			for _, condType := range expectedConditions {
+				cond := meta.FindStatusCondition(conditions, condType)
+				Expect(cond).NotTo(BeNil(), fmt.Sprintf("condition %s not found", condType))
+				Expect(cond.Status).To(Equal(metav1.ConditionTrue),
+					fmt.Sprintf("condition %s is not True: %s", condType, cond.Message))
+			}
+		})
+
+		It("should preserve certificates when cert-manager is disabled and re-enabled", func() {
+			By("starting with cert-manager enabled and verifying TLS is configured")
+			controllerDeploymentName := jumpstarterName + "-controller"
+			routerDeploymentName := jumpstarterName + "-router-0"
+			controllerCertName := jumpstarterName + "-controller-tls"
+			routerCertName := fmt.Sprintf("%s-router-0-tls", jumpstarterName)
+			issuerNames := []string{
+				jumpstarterName + "-selfsigned-issuer",
+				jumpstarterName + "-ca-issuer",
+			}
+
+			// Verify initial state has TLS configured
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 1*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("disabling cert-manager")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      jumpstarterName,
+				Namespace: certManagerTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			jumpstarter.Spec.CertManager.Enabled = false
+			err = k8sClient.Update(ctx, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for and verifying deployments are reconciled WITHOUT TLS configuration")
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasNoTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+				verifyDeploymentHasNoTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying Certificate and Issuer resources still exist (not deleted)")
+			cert := &certmanagerv1.Certificate{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      controllerCertName,
+				Namespace: certManagerTestNamespace,
+			}, cert)
+			Expect(err).NotTo(HaveOccurred(), "Controller certificate should still exist")
+
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      routerCertName,
+				Namespace: certManagerTestNamespace,
+			}, cert)
+			Expect(err).NotTo(HaveOccurred(), "Router certificate should still exist")
+
+			for _, issuerName := range issuerNames {
+				issuer := &certmanagerv1.Issuer{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      issuerName,
+					Namespace: certManagerTestNamespace,
+				}, issuer)
+				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Issuer %s should still exist", issuerName))
+			}
+
+			By("re-enabling cert-manager")
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      jumpstarterName,
+				Namespace: certManagerTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			jumpstarter.Spec.CertManager.Enabled = true
+			err = k8sClient.Update(ctx, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying deployments are reconciled WITH TLS configuration again")
+			Eventually(func(g Gomega) {
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, controllerDeploymentName)
+				verifyDeploymentHasTLSMount(g, certManagerTestNamespace, routerDeploymentName)
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying system is ready with certificates")
+			waitForCondition(certManagerTestNamespace, jumpstarterName,
+				operatorv1alpha1.ConditionTypeReady, metav1.ConditionTrue, 3*time.Minute)
+		})
+
+		AfterAll(func() {
+			DeleteTestNamespace(certManagerTestNamespace)
+		})
+	})
+
+	Context("cert-manager external issuer mode", Ordered, func() {
+		const baseDomain = "external-issuer.127.0.0.1.nip.io"
+		const jumpstarterName = "jumpstarter-external"
+		const clusterIssuerName = "test-cluster-issuer"
+		var externalIssuerTestNamespace string
+
+		BeforeAll(func() {
+			externalIssuerTestNamespace = CreateTestNamespace()
+
+			By("creating a self-signed ClusterIssuer for testing")
+			err := createSelfSignedClusterIssuer(clusterIssuerName)
+			Expect(err).NotTo(HaveOccurred())
+			waitForClusterIssuerReady(clusterIssuerName, 2*time.Minute)
+		})
+
+		It("should deploy jumpstarter with external issuer reference", func() {
+			By("creating a Jumpstarter custom resource with external issuer")
+			image := os.Getenv("IMG")
+			if image == "" {
+				image = defaultControllerImage
+			}
+
+			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  baseDomain: %s
+  certManager:
+    enabled: true
+    server:
+      issuerRef:
+        name: %s
+        kind: ClusterIssuer
+  controller:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: grpc.%s:8082
+          nodeport:
+            enabled: true
+            port: 30030
+    authentication:
+      internal:
+        prefix: "internal:"
+        enabled: true
+  routers:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+    grpc:
+      endpoints:
+        - address: router.%s:8083
+          nodeport:
+            enabled: true
+            port: 30031
+`, jumpstarterName, externalIssuerTestNamespace, baseDomain, clusterIssuerName, image, baseDomain, image, baseDomain)
+
+			err := applyYAML(jumpstarterYAML)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR with external issuer")
+
+			By("verifying the Jumpstarter CR was created")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      jumpstarterName,
+					Namespace: externalIssuerTestNamespace,
+				}, js)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(js.Spec.CertManager.Enabled).To(BeTrue())
+				g.Expect(js.Spec.CertManager.Server).NotTo(BeNil())
+				g.Expect(js.Spec.CertManager.Server.IssuerRef).NotTo(BeNil())
+				g.Expect(js.Spec.CertManager.Server.IssuerRef.Name).To(Equal(clusterIssuerName))
+			}, 30*time.Second).Should(Succeed())
+		})
+
+		It("should NOT create a self-signed issuer when using external issuer", func() {
+			By("verifying no self-signed issuer was created")
+			selfSignedIssuerName := jumpstarterName + "-selfsigned-issuer"
+			Consistently(func(g Gomega) {
+				issuer := &certmanagerv1.Issuer{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      selfSignedIssuerName,
+					Namespace: externalIssuerTestNamespace,
+				}, issuer)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+					"Self-signed issuer should not exist when using external issuer")
+			}, 10*time.Second, time.Second).Should(Succeed())
+		})
+
+		It("should create controller certificate referencing the external issuer", func() {
+			By("verifying the controller certificate was created")
+			controllerCertName := jumpstarterName + "-controller-tls"
+			Eventually(func(g Gomega) {
+				cert := &certmanagerv1.Certificate{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      controllerCertName,
+					Namespace: externalIssuerTestNamespace,
+				}, cert)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cert.Spec.IssuerRef.Name).To(Equal(clusterIssuerName))
+				g.Expect(cert.Spec.IssuerRef.Kind).To(Equal("ClusterIssuer"))
+			}, 1*time.Minute).Should(Succeed())
+
+			waitForCertificateReady(externalIssuerTestNamespace, controllerCertName, 2*time.Minute)
+
+			By("verifying the controller TLS secret exists")
+			verifyTLSSecret(externalIssuerTestNamespace, controllerCertName)
+		})
+
+		It("should create router certificate referencing the external issuer", func() {
+			By("verifying the router certificate was created")
+			routerCertName := fmt.Sprintf("%s-router-0-tls", jumpstarterName)
+			Eventually(func(g Gomega) {
+				cert := &certmanagerv1.Certificate{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      routerCertName,
+					Namespace: externalIssuerTestNamespace,
+				}, cert)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cert.Spec.IssuerRef.Name).To(Equal(clusterIssuerName))
+				g.Expect(cert.Spec.IssuerRef.Kind).To(Equal("ClusterIssuer"))
+			}, 1*time.Minute).Should(Succeed())
+
+			waitForCertificateReady(externalIssuerTestNamespace, routerCertName, 2*time.Minute)
+
+			By("verifying the router TLS secret exists")
+			verifyTLSSecret(externalIssuerTestNamespace, routerCertName)
+		})
+
+		AfterAll(func() {
+			DeleteTestNamespace(externalIssuerTestNamespace)
+			_ = deleteSelfSignedClusterIssuer(clusterIssuerName)
+		})
+	})
 })
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
@@ -784,9 +1252,10 @@ func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
 	By(fmt.Sprintf("waiting for gRPC endpoint %s to be ready", endpoint))
 
 	// Get grpcurl path from environment or use default
+	// Tests run from controller/deploy/operator/ directory, grpcurl is at controller/bin/
 	grpcurlPath := os.Getenv("GRPCURL")
 	if grpcurlPath == "" {
-		grpcurlPath = "../../../../bin/grpcurl" // installed on the base jumpstarter-controller project
+		grpcurlPath = "../../bin/grpcurl" // installed on the base jumpstarter-controller project
 	}
 
 	// exec grpcurl -h to verify it is available
@@ -801,4 +1270,311 @@ func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
 	}
 
 	Eventually(checkEndpoint, timeout, 2*time.Second).Should(Succeed())
+}
+
+// verifyCondition checks if a Jumpstarter resource has a specific condition with the expected status.
+// Returns true if the condition exists and has the expected status.
+func verifyCondition(js *operatorv1alpha1.Jumpstarter, condType string, expectedStatus metav1.ConditionStatus) bool {
+	cond := meta.FindStatusCondition(js.Status.Conditions, condType)
+	if cond == nil {
+		return false
+	}
+	return cond.Status == expectedStatus
+}
+
+// waitForCondition waits for a Jumpstarter resource to have a specific condition with the expected status.
+// It polls the resource until the condition is met or the timeout is reached.
+func waitForCondition(namespace, name, condType string, expectedStatus metav1.ConditionStatus, timeout time.Duration) {
+	By(fmt.Sprintf("waiting for condition %s to be %s", condType, expectedStatus))
+
+	checkCondition := func(g Gomega) {
+		js := &operatorv1alpha1.Jumpstarter{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		}, js)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(verifyCondition(js, condType, expectedStatus)).To(BeTrue(),
+			fmt.Sprintf("condition %s is not %s", condType, expectedStatus))
+	}
+
+	Eventually(checkCondition, timeout, 2*time.Second).Should(Succeed())
+}
+
+// getJumpstarterConditions retrieves and returns all conditions from a Jumpstarter resource.
+func getJumpstarterConditions(namespace, name string) []metav1.Condition {
+	js := &operatorv1alpha1.Jumpstarter{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, js)
+	Expect(err).NotTo(HaveOccurred())
+	return js.Status.Conditions
+}
+
+// createSelfSignedClusterIssuer creates a self-signed ClusterIssuer for testing external issuer mode.
+func createSelfSignedClusterIssuer(name string) error {
+	issuer := &certmanagerv1.ClusterIssuer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: certmanagerv1.IssuerSpec{
+			IssuerConfig: certmanagerv1.IssuerConfig{
+				SelfSigned: &certmanagerv1.SelfSignedIssuer{},
+			},
+		},
+	}
+
+	err := k8sClient.Create(ctx, issuer)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
+// deleteSelfSignedClusterIssuer deletes a ClusterIssuer.
+func deleteSelfSignedClusterIssuer(name string) error {
+	issuer := &certmanagerv1.ClusterIssuer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+	return client.IgnoreNotFound(k8sClient.Delete(ctx, issuer))
+}
+
+// waitForIssuerReady waits for an Issuer to have a Ready condition.
+func waitForIssuerReady(namespace, name string, timeout time.Duration) {
+	By(fmt.Sprintf("waiting for Issuer %s to be ready", name))
+
+	checkReady := func(g Gomega) {
+		issuer := &certmanagerv1.Issuer{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		}, issuer)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Check for Ready condition
+		for _, cond := range issuer.Status.Conditions {
+			if cond.Type == certmanagerv1.IssuerConditionReady {
+				g.Expect(cond.Status).To(Equal(cmmeta.ConditionTrue),
+					fmt.Sprintf("Issuer %s is not ready: %s", name, cond.Message))
+				return
+			}
+		}
+		g.Expect(false).To(BeTrue(), fmt.Sprintf("Issuer %s has no Ready condition", name))
+	}
+
+	Eventually(checkReady, timeout, 2*time.Second).Should(Succeed())
+}
+
+// waitForClusterIssuerReady waits for a ClusterIssuer to have a Ready condition.
+func waitForClusterIssuerReady(name string, timeout time.Duration) {
+	By(fmt.Sprintf("waiting for ClusterIssuer %s to be ready", name))
+
+	checkReady := func(g Gomega) {
+		issuer := &certmanagerv1.ClusterIssuer{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name: name,
+		}, issuer)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Check for Ready condition
+		for _, cond := range issuer.Status.Conditions {
+			if cond.Type == certmanagerv1.IssuerConditionReady {
+				g.Expect(cond.Status).To(Equal(cmmeta.ConditionTrue),
+					fmt.Sprintf("ClusterIssuer %s is not ready: %s", name, cond.Message))
+				return
+			}
+		}
+		g.Expect(false).To(BeTrue(), fmt.Sprintf("ClusterIssuer %s has no Ready condition", name))
+	}
+
+	Eventually(checkReady, timeout, 2*time.Second).Should(Succeed())
+}
+
+// waitForCertificateReady waits for a Certificate to have a Ready condition.
+func waitForCertificateReady(namespace, name string, timeout time.Duration) {
+	By(fmt.Sprintf("waiting for Certificate %s to be ready", name))
+
+	checkReady := func(g Gomega) {
+		cert := &certmanagerv1.Certificate{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		}, cert)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Check for Ready condition
+		for _, cond := range cert.Status.Conditions {
+			if cond.Type == certmanagerv1.CertificateConditionReady {
+				g.Expect(cond.Status).To(Equal(cmmeta.ConditionTrue),
+					fmt.Sprintf("Certificate %s is not ready: %s", name, cond.Message))
+				return
+			}
+		}
+		g.Expect(false).To(BeTrue(), fmt.Sprintf("Certificate %s has no Ready condition", name))
+	}
+
+	Eventually(checkReady, timeout, 2*time.Second).Should(Succeed())
+}
+
+// verifyTLSSecret checks that a TLS secret exists and has the expected keys.
+func verifyTLSSecret(namespace, name string) {
+	By(fmt.Sprintf("verifying TLS secret %s exists", name))
+
+	secret := &corev1.Secret{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, secret)
+	Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("TLS secret %s not found", name))
+	Expect(secret.Data).To(HaveKey("tls.crt"), fmt.Sprintf("TLS secret %s missing tls.crt", name))
+	Expect(secret.Data).To(HaveKey("tls.key"), fmt.Sprintf("TLS secret %s missing tls.key", name))
+}
+
+// verifyDeploymentHasTLSMount checks that a deployment has the TLS volume mount and env vars.
+// This is used with Gomega assertions to verify the deployment has been reconciled with TLS.
+func verifyDeploymentHasTLSMount(g Gomega, namespace, name string) {
+	deployment := &appsv1.Deployment{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, deployment)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Check for tls-certs volume
+	hasVolume := false
+	for _, vol := range deployment.Spec.Template.Spec.Volumes {
+		if vol.Name == "tls-certs" {
+			hasVolume = true
+			break
+		}
+	}
+	g.Expect(hasVolume).To(BeTrue(), fmt.Sprintf("deployment %s missing tls-certs volume", name))
+
+	// Check for volume mount in the first container
+	g.Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	hasMount := false
+	for _, mount := range container.VolumeMounts {
+		if mount.Name == "tls-certs" && mount.MountPath == "/tls" {
+			hasMount = true
+			break
+		}
+	}
+	g.Expect(hasMount).To(BeTrue(), fmt.Sprintf("deployment %s missing /tls volume mount", name))
+
+	// Check for EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM env vars
+	hasCertEnv := false
+	hasKeyEnv := false
+	for _, env := range container.Env {
+		if env.Name == "EXTERNAL_CERT_PEM" && env.Value == "/tls/tls.crt" {
+			hasCertEnv = true
+		}
+		if env.Name == "EXTERNAL_KEY_PEM" && env.Value == "/tls/tls.key" {
+			hasKeyEnv = true
+		}
+	}
+	g.Expect(hasCertEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_CERT_PEM env var", name))
+	g.Expect(hasKeyEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_KEY_PEM env var", name))
+}
+
+// verifyDeploymentHasNoTLSMount checks that a deployment does NOT have TLS configuration.
+// This is used with Gomega assertions to verify the deployment has been reconciled without TLS.
+func verifyDeploymentHasNoTLSMount(g Gomega, namespace, name string) {
+	deployment := &appsv1.Deployment{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, deployment)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Check that tls-certs volume is NOT present
+	for _, vol := range deployment.Spec.Template.Spec.Volumes {
+		g.Expect(vol.Name).NotTo(Equal("tls-certs"),
+			fmt.Sprintf("deployment %s should not have tls-certs volume", name))
+	}
+
+	// Check for volume mount in the first container
+	g.Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	// Check that /tls volume mount is NOT present
+	for _, mount := range container.VolumeMounts {
+		if mount.Name == "tls-certs" {
+			g.Expect(mount.MountPath).NotTo(Equal("/tls"),
+				fmt.Sprintf("deployment %s should not have /tls volume mount", name))
+		}
+	}
+
+	// Check that EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM env vars are NOT present
+	for _, env := range container.Env {
+		g.Expect(env.Name).NotTo(Equal("EXTERNAL_CERT_PEM"),
+			fmt.Sprintf("deployment %s should not have EXTERNAL_CERT_PEM env var", name))
+		g.Expect(env.Name).NotTo(Equal("EXTERNAL_KEY_PEM"),
+			fmt.Sprintf("deployment %s should not have EXTERNAL_KEY_PEM env var", name))
+	}
+}
+
+// dumpCertManagerResourcesOnFailure dumps cert-manager and Jumpstarter resources for debugging test failures.
+func dumpCertManagerResourcesOnFailure() {
+	By("Dumping cert-manager resources for debugging")
+
+	// List all Jumpstarter resources across all namespaces
+	jsList := &operatorv1alpha1.JumpstarterList{}
+	if err := k8sClient.List(ctx, jsList); err == nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "\n=== Jumpstarter Resources ===\n")
+		for _, js := range jsList.Items {
+			_, _ = fmt.Fprintf(GinkgoWriter, "Jumpstarter: %s/%s\n", js.Namespace, js.Name)
+			_, _ = fmt.Fprintf(GinkgoWriter, "  CertManager.Enabled: %v\n", js.Spec.CertManager.Enabled)
+			_, _ = fmt.Fprintf(GinkgoWriter, "  Conditions:\n")
+			for _, cond := range js.Status.Conditions {
+				_, _ = fmt.Fprintf(GinkgoWriter, "    - %s: %s (%s: %s)\n",
+					cond.Type, cond.Status, cond.Reason, cond.Message)
+			}
+		}
+	}
+
+	// List all Issuers across all namespaces
+	issuerList := &certmanagerv1.IssuerList{}
+	if err := k8sClient.List(ctx, issuerList); err == nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "\n=== cert-manager Issuers ===\n")
+		for _, issuer := range issuerList.Items {
+			_, _ = fmt.Fprintf(GinkgoWriter, "Issuer: %s/%s\n", issuer.Namespace, issuer.Name)
+			for _, cond := range issuer.Status.Conditions {
+				_, _ = fmt.Fprintf(GinkgoWriter, "  - %s: %s (%s: %s)\n",
+					cond.Type, cond.Status, cond.Reason, cond.Message)
+			}
+		}
+	}
+
+	// List all ClusterIssuers
+	clusterIssuerList := &certmanagerv1.ClusterIssuerList{}
+	if err := k8sClient.List(ctx, clusterIssuerList); err == nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "\n=== cert-manager ClusterIssuers ===\n")
+		for _, issuer := range clusterIssuerList.Items {
+			_, _ = fmt.Fprintf(GinkgoWriter, "ClusterIssuer: %s\n", issuer.Name)
+			for _, cond := range issuer.Status.Conditions {
+				_, _ = fmt.Fprintf(GinkgoWriter, "  - %s: %s (%s: %s)\n",
+					cond.Type, cond.Status, cond.Reason, cond.Message)
+			}
+		}
+	}
+
+	// List all Certificates across all namespaces
+	certList := &certmanagerv1.CertificateList{}
+	if err := k8sClient.List(ctx, certList); err == nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "\n=== cert-manager Certificates ===\n")
+		for _, cert := range certList.Items {
+			_, _ = fmt.Fprintf(GinkgoWriter, "Certificate: %s/%s (Secret: %s)\n",
+				cert.Namespace, cert.Name, cert.Spec.SecretName)
+			_, _ = fmt.Fprintf(GinkgoWriter, "  IssuerRef: %s/%s\n", cert.Spec.IssuerRef.Kind, cert.Spec.IssuerRef.Name)
+			for _, cond := range cert.Status.Conditions {
+				_, _ = fmt.Fprintf(GinkgoWriter, "  - %s: %s (%s: %s)\n",
+					cond.Type, cond.Status, cond.Reason, cond.Message)
+			}
+		}
+	}
 }

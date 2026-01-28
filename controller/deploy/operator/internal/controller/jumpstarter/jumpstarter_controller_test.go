@@ -54,8 +54,10 @@ var _ = Describe("Jumpstarter Controller", func() {
 						Namespace: "default",
 					},
 					Spec: operatorv1alpha1.JumpstarterSpec{
-						BaseDomain:     "example.com",
-						UseCertManager: true,
+						BaseDomain: "example.com",
+						CertManager: operatorv1alpha1.CertManagerConfig{
+							Enabled: false, // Disable for unit tests - cert-manager CRDs not available in envtest
+						},
 						Controller: operatorv1alpha1.ControllerConfig{
 							Image:           "quay.io/jumpstarter/jumpstarter:latest",
 							ImagePullPolicy: "IfNotPresent",

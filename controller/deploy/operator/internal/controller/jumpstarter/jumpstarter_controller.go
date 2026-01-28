@@ -92,6 +92,14 @@ type JumpstarterReconciler struct {
 // Monitoring resources
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
+// cert-manager resources (for TLS certificate management)
+// +kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cert-manager.io,resources=issuers/status,verbs=get
+// +kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers/status,verbs=get
+// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates/status,verbs=get
+
 // Jumpstarter CRD resources (needed to grant permissions to managed controllers)
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients/status,verbs=get;update;patch
@@ -168,6 +176,12 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Reconcile Secrets
 	if err := r.reconcileSecrets(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Secrets")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile cert-manager resources (Issuers, Certificates)
+	if err := r.reconcileCertificates(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Certificates")
 		return ctrl.Result{}, err
 	}
 
@@ -556,14 +570,7 @@ func generateRandomKey(length int) (string, error) {
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
-// updateStatus updates the status of the Jumpstarter resource
-func (r *JumpstarterReconciler) updateStatus(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
-	// Update status fields based on current state
-	// This is a placeholder - actual implementation would check deployment status, etc.
-	// TODO: Add status fields to JumpstarterStatus in the API types
-
-	return nil
-}
+// updateStatus is implemented in status.go
 
 // createControllerDeployment creates a deployment for the controller
 func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv1.Deployment {
@@ -583,6 +590,83 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		} else {
 			grpcEndpoint = fmt.Sprintf("grpc.%s:443", jumpstarter.Spec.BaseDomain)
 		}
+	}
+
+	// Base environment variables
+	envVars := []corev1.EnvVar{
+		{
+			Name:  "GRPC_ENDPOINT",
+			Value: grpcEndpoint,
+		},
+		{
+			Name: "CONTROLLER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-controller-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+		{
+			Name: "ROUTER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-router-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath:  "metadata.namespace",
+					APIVersion: "v1",
+				},
+			},
+		},
+		{
+			Name:  "GIN_MODE",
+			Value: "release",
+		},
+	}
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+
+	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided
+	var tlsSecretName string
+	if jumpstarter.Spec.CertManager.Enabled {
+		tlsSecretName = GetControllerCertSecretName(jumpstarter)
+	} else if jumpstarter.Spec.Controller.GRPC.TLS.CertSecret != "" {
+		tlsSecretName = jumpstarter.Spec.Controller.GRPC.TLS.CertSecret
+	}
+
+	if tlsSecretName != "" {
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
+			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
+		)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "tls-certs",
+			MountPath: "/tls",
+			ReadOnly:  true,
+		})
+		// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
+		defaultMode := int32(420)
+		volumes = append(volumes, corev1.Volume{
+			Name: "tls-certs",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
+				},
+			},
+		})
 	}
 
 	return &appsv1.Deployment{
@@ -623,47 +707,8 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 								"--health-probe-bind-address=:8081",
 								"-metrics-bind-address=:8080",
 							},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "GRPC_ENDPOINT",
-									Value: grpcEndpoint,
-								},
-								{
-									Name: "CONTROLLER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-controller-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-								{
-									Name: "ROUTER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-router-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-								{
-									Name: "NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath:  "metadata.namespace",
-											APIVersion: "v1",
-										},
-									},
-								},
-								{
-									Name:  "GIN_MODE",
-									Value: "release",
-								},
-							},
+							Env:          envVars,
+							VolumeMounts: volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 8082,
@@ -720,6 +765,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 							},
 						},
 					},
+					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: boolPtr(true),
 						SeccompProfile: &corev1.SeccompProfile{
@@ -752,6 +798,68 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 
 	// Build router endpoint for this specific replica
 	routerEndpoint := r.buildRouterEndpointForReplica(jumpstarter, replicaIndex)
+
+	// Base environment variables
+	envVars := []corev1.EnvVar{
+		{
+			Name:  "GRPC_ROUTER_ENDPOINT",
+			Value: routerEndpoint,
+		},
+		{
+			Name: "ROUTER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-router-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath:  "metadata.namespace",
+					APIVersion: "v1",
+				},
+			},
+		},
+	}
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+
+	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided
+	var tlsSecretName string
+	if jumpstarter.Spec.CertManager.Enabled {
+		tlsSecretName = GetRouterCertSecretName(jumpstarter, replicaIndex)
+	} else if jumpstarter.Spec.Routers.GRPC.TLS.CertSecret != "" {
+		tlsSecretName = jumpstarter.Spec.Routers.GRPC.TLS.CertSecret
+	}
+
+	if tlsSecretName != "" {
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
+			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
+		)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "tls-certs",
+			MountPath: "/tls",
+			ReadOnly:  true,
+		})
+		// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
+		defaultMode := int32(420)
+		volumes = append(volumes, corev1.Volume{
+			Name: "tls-certs",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
+				},
+			},
+		})
+	}
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -787,32 +895,8 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Image:           jumpstarter.Spec.Routers.Image,
 							ImagePullPolicy: jumpstarter.Spec.Routers.ImagePullPolicy,
 							Command:         []string{"/router"},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "GRPC_ROUTER_ENDPOINT",
-									Value: routerEndpoint,
-								},
-								{
-									Name: "ROUTER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-router-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-								{
-									Name: "NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath:  "metadata.namespace",
-											APIVersion: "v1",
-										},
-									},
-								},
-							},
+							Env:             envVars,
+							VolumeMounts:    volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 8083,
@@ -841,6 +925,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							},
 						},
 					},
+					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: boolPtr(true),
 						SeccompProfile: &corev1.SeccompProfile{

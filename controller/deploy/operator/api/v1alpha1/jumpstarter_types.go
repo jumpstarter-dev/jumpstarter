@@ -22,10 +22,33 @@ import (
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 )
 
+// Condition type constants for JumpstarterStatus.Conditions
+const (
+	// ConditionTypeCertManagerAvailable indicates whether cert-manager CRDs are installed
+	ConditionTypeCertManagerAvailable = "CertManagerAvailable"
+
+	// ConditionTypeIssuerReady indicates whether the cert-manager Issuer is ready
+	ConditionTypeIssuerReady = "IssuerReady"
+
+	// ConditionTypeControllerCertificateReady indicates whether the controller TLS certificate is ready
+	ConditionTypeControllerCertificateReady = "ControllerCertificateReady"
+
+	// ConditionTypeRouterCertificatesReady indicates whether all router TLS certificates are ready
+	ConditionTypeRouterCertificatesReady = "RouterCertificatesReady"
+
+	// ConditionTypeControllerDeploymentReady indicates whether the controller deployment is available
+	ConditionTypeControllerDeploymentReady = "ControllerDeploymentReady"
+
+	// ConditionTypeRouterDeploymentsReady indicates whether all router deployments are available
+	ConditionTypeRouterDeploymentsReady = "RouterDeploymentsReady"
+
+	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
+	ConditionTypeReady = "Ready"
+)
+
 // yaml mockup of the JumpstarterSpec
 // spec:
 //   baseDomain: example.com
-//   useCertManager: true
 //   controller:
 //     image: quay.io/jumpstarter/jumpstarter:0.7.2
 //     imagePullPolicy: IfNotPresent
@@ -122,7 +145,11 @@ import (
 //            username:
 //              claim: "preferred_username"
 //              prefix: "corp:"
-//
+//   certManager:
+//     enabled: true
+//     server:
+//       selfSigned:
+//         enabled: true
 
 // JumpstarterSpec defines the desired state of a Jumpstarter deployment. A deployment
 // can be created in a namespace of the cluster, and that's where all the Jumpstarter
@@ -134,11 +161,10 @@ type JumpstarterSpec struct {
 	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
 	BaseDomain string `json:"baseDomain,omitempty"`
 
-	// Enable automatic TLS certificate management using cert-manager.
+	// CertManager configuration for automatic TLS certificate management.
 	// When enabled, jumpstarter will interact with cert-manager to automatically provision
 	// and renew TLS certificates for all endpoints. Requires cert-manager to be installed in the cluster.
-	// +kubebuilder:default=true
-	UseCertManager bool `json:"useCertManager,omitempty"`
+	CertManager CertManagerConfig `json:"certManager,omitempty"`
 
 	// Controller configuration for the main Jumpstarter API and gRPC services.
 	// The controller handles gRPC and REST API requests from clients and exporters.
@@ -243,8 +269,8 @@ type ExporterOptions struct {
 type GRPCConfig struct {
 	// TLS configuration for secure gRPC communication.
 	// Requires a Kubernetes secret containing the TLS certificate and private key.
-	// If useCertManager is enabled, this secret will be automatically created.
-	// See also: spec.useCertManager for automatic certificate management.
+	// If spec.certManager.enabled is true, this secret will be automatically managed and
+	// configured by cert-manager.
 	TLS TLSConfig `json:"tls,omitempty"`
 
 	// List of gRPC endpoints to expose.
@@ -355,7 +381,8 @@ type K8sAuthConfig struct {
 type TLSConfig struct {
 	// Name of the Kubernetes secret containing the TLS certificate and private key.
 	// The secret must contain 'tls.crt' and 'tls.key' keys.
-	// If useCertManager is enabled, this secret will be automatically created.
+	// If useCertManager is enabled, this secret will be automatically managed and
+	// configured by cert-manager.
 	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
 	CertSecret string `json:"certSecret,omitempty"`
 }
@@ -509,11 +536,97 @@ type ClusterIPConfig struct {
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
+// CertManagerConfig defines certificate management configuration using cert-manager.
+// When enabled, the operator will create Certificate resources to automatically
+// provision and renew TLS certificates for controller and router endpoints.
+type CertManagerConfig struct {
+	// Enable cert-manager integration for automatic TLS certificate management.
+	// When disabled, TLS certificates must be provided manually via secrets.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Server certificate configuration for controller and router endpoints.
+	// Defines how server TLS certificates are issued.
+	Server *ServerCertConfig `json:"server,omitempty"`
+}
+
+// ServerCertConfig defines how server certificates are issued.
+// Only one of SelfSigned or IssuerRef should be specified.
+// If neither is specified and cert-manager is enabled, SelfSigned with defaults is used.
+type ServerCertConfig struct {
+	// Create a self-signed CA managed by the operator.
+	// The operator will create a self-signed Issuer and CA certificate,
+	// then use that CA to issue server certificates.
+	SelfSigned *SelfSignedConfig `json:"selfSigned,omitempty"`
+
+	// Reference an existing cert-manager Issuer or ClusterIssuer.
+	// Use this to integrate with existing PKI infrastructure (ACME, Vault, etc.).
+	// This overrides SelfSigned.Enabled = true which is the default setting
+	IssuerRef *IssuerReference `json:"issuerRef,omitempty"`
+}
+
+// SelfSignedConfig configures operator-managed self-signed CA for certificate issuance.
+// When enabled, the operator creates:
+// 1. A SelfSigned Issuer (bootstrap)
+// 2. A CA Certificate signed by the self-signed issuer
+// 3. A CA Issuer that uses the CA certificate's secret
+// 4. Server Certificates signed by the CA Issuer
+type SelfSignedConfig struct {
+	// Enable self-signed CA mode.
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Duration of the CA certificate validity.
+	// The CA certificate is used to sign server certificates.
+	// +kubebuilder:default="87600h"
+	CADuration *metav1.Duration `json:"caDuration,omitempty"`
+
+	// Duration of server certificate validity.
+	// Server certificates are issued for controller and router endpoints.
+	// +kubebuilder:default="8760h"
+	CertDuration *metav1.Duration `json:"certDuration,omitempty"`
+
+	// Time before certificate expiration to trigger renewal.
+	// Certificates will be renewed this duration before they expire.
+	// +kubebuilder:default="360h"
+	RenewBefore *metav1.Duration `json:"renewBefore,omitempty"`
+}
+
+// IssuerReference references an existing cert-manager Issuer or ClusterIssuer.
+// This allows integration with any cert-manager issuer type (CA, ACME, Vault, Venafi, etc.).
+type IssuerReference struct {
+	// Name of the Issuer or ClusterIssuer resource.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Kind of the issuer: "Issuer" for namespace-scoped or "ClusterIssuer" for cluster-scoped.
+	// +kubebuilder:validation:Enum=Issuer;ClusterIssuer
+	// +kubebuilder:default="Issuer"
+	Kind string `json:"kind,omitempty"`
+
+	// Group of the issuer resource. Defaults to cert-manager.io.
+	// Only change this if using a custom issuer from a different API group.
+	// +kubebuilder:default="cert-manager.io"
+	Group string `json:"group,omitempty"`
+}
+
 // JumpstarterStatus defines the observed state of Jumpstarter.
-// This field is currently empty but can be extended to include status information
-// such as deployment status, endpoint URLs, and health information.
+// Status information is reported through conditions following Kubernetes conventions.
 type JumpstarterStatus struct {
-	// Jumpstarter deployment status
+	// Conditions represent the latest available observations of the Jumpstarter state.
+	// Condition types include:
+	// - CertManagerAvailable: cert-manager CRDs are installed in the cluster
+	// - IssuerReady: The referenced or created issuer is ready to issue certificates
+	// - ControllerCertificateReady: Controller TLS certificate is issued and secret exists
+	// - RouterCertificatesReady: All router TLS certificates are issued and secrets exist
+	// - ControllerDeploymentReady: Controller deployment is available
+	// - RouterDeploymentsReady: All router deployments are available
+	// - Ready: Overall system ready (aggregates all other conditions)
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

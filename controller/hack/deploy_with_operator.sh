@@ -3,6 +3,7 @@ set -exo pipefail
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 DEPLOY_JUMPSTARTER=${DEPLOY_JUMPSTARTER:-true}
+USE_CERTMANAGER=${USE_CERTMANAGER:-true}
 
 # Source common utilities
 source "${SCRIPT_DIR}/utils"
@@ -17,6 +18,15 @@ if [ "${NETWORKING_MODE}" = "ingress" ]; then
     install_nginx_ingress
 else
     echo -e "${GREEN}Deploying with nodeport ...${NC}"
+fi
+
+# Install cert-manager if requested
+if [ "${USE_CERTMANAGER}" = "true" ]; then
+    if is_cert_manager_installed; then
+        echo -e "${GREEN}cert-manager already installed, skipping ...${NC}"
+    else
+        install_cert_manager
+    fi
 fi
 
 # load the container images into the kind cluster
@@ -91,8 +101,22 @@ END
 )
 fi
 
+# Build cert-manager configuration if enabled
+if [ "${USE_CERTMANAGER}" = "true" ]; then
+  CERTMANAGER_CONFIG="  certManager:
+    enabled: true
+    server:
+      selfSigned:
+        enabled: true"
+else
+  CERTMANAGER_CONFIG="  certManager:
+    enabled: false"
+fi
+
 # Apply the Jumpstarter CR with the appropriate endpoint configuration
-cat <<EOF | kubectl apply -f -
+# Create a temporary file which is useful for debugging
+TMPFILE=$(mktemp /tmp/jumpstarter-cr.XXXXXX.yaml)
+cat <<EOF > "${TMPFILE}"
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
 metadata:
@@ -100,7 +124,11 @@ metadata:
   namespace: jumpstarter-lab
 spec:
   baseDomain: ${BASEDOMAIN}
-  useCertManager: false
+${CERTMANAGER_CONFIG}
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
   controller:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
@@ -108,10 +136,6 @@ spec:
     grpc:
       endpoints:
 ${CONTROLLER_ENDPOINT_CONFIG}
-    authentication:
-      internal:
-        prefix: "internal:"
-        enabled: true
   routers:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
@@ -124,6 +148,12 @@ ${CONTROLLER_ENDPOINT_CONFIG}
       endpoints:
 ${ROUTER_ENDPOINT_CONFIG}
 EOF
+
+echo -e "${GREEN}Generated Jumpstarter CR (saved to ${TMPFILE}):${NC}"
+cat "${TMPFILE}"
+echo ""
+echo -e "${GREEN}Applying Jumpstarter CR...${NC}"
+kubectl apply -f "${TMPFILE}"
 
 # Set context to jumpstarter-lab namespace
 kubectl config set-context --current --namespace=jumpstarter-lab

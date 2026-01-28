@@ -32,7 +32,7 @@ const (
 	prometheusOperatorURL     = "https://github.com/prometheus-operator/prometheus-operator/" +
 		"releases/download/%s/bundle.yaml"
 
-	certmanagerVersion = "v1.16.3"
+	certmanagerVersion = "v1.19.2"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 )
 
@@ -163,6 +163,31 @@ func IsCertManagerCRDsInstalled() bool {
 	}
 
 	return false
+}
+
+// IsCertManagerReady checks if cert-manager is fully deployed and ready by verifying
+// that the cert-manager-webhook Deployment in the cert-manager namespace is Available.
+// This ensures runtime readiness, not just CRD presence.
+func IsCertManagerReady() bool {
+	// Check if the cert-manager namespace exists
+	cmd := exec.Command("kubectl", "get", "namespace", "cert-manager")
+	if _, err := Run(cmd); err != nil {
+		return false
+	}
+
+	// Check if the cert-manager-webhook deployment exists and is Available
+	// Using the same condition check as InstallCertManager() waits for
+	cmd = exec.Command("kubectl", "get", "deployment.apps/cert-manager-webhook",
+		"--namespace", "cert-manager",
+		"-o", "jsonpath={.status.conditions[?(@.type=='Available')].status}",
+	)
+	output, err := Run(cmd)
+	if err != nil {
+		return false
+	}
+
+	// Check if the Available condition status is "True"
+	return strings.TrimSpace(output) == "True"
 }
 
 // LoadImageToKindClusterWithName loads a local docker image to the kind cluster

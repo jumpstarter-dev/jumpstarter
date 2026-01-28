@@ -359,6 +359,17 @@ spec:
                                 Required to be unique across all JWT authenticators.
                                 Note that egress selection configuration is not used for this network connection.
                               type: string
+                            egressSelectorType:
+                              description: |-
+                                egressSelectorType is an indicator of which egress selection should be used for sending all traffic related
+                                to this issuer (discovery, JWKS, distributed claims, etc).  If unspecified, no custom dialer is used.
+                                When specified, the valid choices are "controlplane" and "cluster".  These correspond to the associated
+                                values in the --egress-selector-config-file.
+
+                                - controlplane: for traffic intended to go to the control plane.
+
+                                - cluster: for traffic intended to go to the system being managed by Kubernetes.
+                              type: string
                             url:
                               description: |-
                                 url points to the issuer URL in a format https://url or https://url/path.
@@ -429,6 +440,81 @@ spec:
                   Example: "example.com" will generate endpoints like "grpc.example.com", "router.example.com"
                 pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                 type: string
+              certManager:
+                description: |-
+                  CertManager configuration for automatic TLS certificate management.
+                  When enabled, jumpstarter will interact with cert-manager to automatically provision
+                  and renew TLS certificates for all endpoints. Requires cert-manager to be installed in the cluster.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enable cert-manager integration for automatic TLS certificate management.
+                      When disabled, TLS certificates must be provided manually via secrets.
+                    type: boolean
+                  server:
+                    description: |-
+                      Server certificate configuration for controller and router endpoints.
+                      Defines how server TLS certificates are issued.
+                    properties:
+                      issuerRef:
+                        description: |-
+                          Reference an existing cert-manager Issuer or ClusterIssuer.
+                          Use this to integrate with existing PKI infrastructure (ACME, Vault, etc.).
+                          This overrides SelfSigned.Enabled = true which is the default setting
+                        properties:
+                          group:
+                            default: cert-manager.io
+                            description: |-
+                              Group of the issuer resource. Defaults to cert-manager.io.
+                              Only change this if using a custom issuer from a different API group.
+                            type: string
+                          kind:
+                            default: Issuer
+                            description: 'Kind of the issuer: "Issuer" for namespace-scoped
+                              or "ClusterIssuer" for cluster-scoped.'
+                            enum:
+                            - Issuer
+                            - ClusterIssuer
+                            type: string
+                          name:
+                            description: Name of the Issuer or ClusterIssuer resource.
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      selfSigned:
+                        description: |-
+                          Create a self-signed CA managed by the operator.
+                          The operator will create a self-signed Issuer and CA certificate,
+                          then use that CA to issue server certificates.
+                        properties:
+                          caDuration:
+                            default: 87600h
+                            description: |-
+                              Duration of the CA certificate validity.
+                              The CA certificate is used to sign server certificates.
+                            type: string
+                          certDuration:
+                            default: 8760h
+                            description: |-
+                              Duration of server certificate validity.
+                              Server certificates are issued for controller and router endpoints.
+                            type: string
+                          enabled:
+                            default: true
+                            description: Enable self-signed CA mode.
+                            type: boolean
+                          renewBefore:
+                            default: 360h
+                            description: |-
+                              Time before certificate expiration to trigger renewal.
+                              Certificates will be renewed this duration before they expire.
+                            type: string
+                        type: object
+                    type: object
+                type: object
               controller:
                 default: {}
                 description: |-
@@ -690,14 +776,15 @@ spec:
                         description: |-
                           TLS configuration for secure gRPC communication.
                           Requires a Kubernetes secret containing the TLS certificate and private key.
-                          If useCertManager is enabled, this secret will be automatically created.
-                          See also: spec.useCertManager for automatic certificate management.
+                          If spec.certManager.enabled is true, this secret will be automatically managed and
+                          configured by cert-manager.
                         properties:
                           certSecret:
                             description: |-
                               Name of the Kubernetes secret containing the TLS certificate and private key.
                               The secret must contain 'tls.crt' and 'tls.key' keys.
-                              If useCertManager is enabled, this secret will be automatically created.
+                              If useCertManager is enabled, this secret will be automatically managed and
+                              configured by cert-manager.
                             pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                             type: string
                         type: object
@@ -736,7 +823,7 @@ spec:
                           Claims lists the names of resources, defined in spec.resourceClaims,
                           that are used by this container.
 
-                          This is an alpha field and requires enabling the
+                          This field depends on the
                           DynamicResourceAllocation feature gate.
 
                           This field is immutable. It can only be set for containers.
@@ -982,7 +1069,8 @@ spec:
                             description: |-
                               Name of the Kubernetes secret containing the TLS certificate and private key.
                               The secret must contain 'tls.crt' and 'tls.key' keys.
-                              If useCertManager is enabled, this secret will be automatically created.
+                              If useCertManager is enabled, this secret will be automatically managed and
+                              configured by cert-manager.
                             pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                             type: string
                         type: object
@@ -1235,14 +1323,15 @@ spec:
                         description: |-
                           TLS configuration for secure gRPC communication.
                           Requires a Kubernetes secret containing the TLS certificate and private key.
-                          If useCertManager is enabled, this secret will be automatically created.
-                          See also: spec.useCertManager for automatic certificate management.
+                          If spec.certManager.enabled is true, this secret will be automatically managed and
+                          configured by cert-manager.
                         properties:
                           certSecret:
                             description: |-
                               Name of the Kubernetes secret containing the TLS certificate and private key.
                               The secret must contain 'tls.crt' and 'tls.key' keys.
-                              If useCertManager is enabled, this secret will be automatically created.
+                              If useCertManager is enabled, this secret will be automatically managed and
+                              configured by cert-manager.
                             pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                             type: string
                         type: object
@@ -1281,7 +1370,7 @@ spec:
                           Claims lists the names of resources, defined in spec.resourceClaims,
                           that are used by this container.
 
-                          This is an alpha field and requires enabling the
+                          This field depends on the
                           DynamicResourceAllocation feature gate.
 
                           This field is immutable. It can only be set for containers.
@@ -1510,19 +1599,81 @@ spec:
                       type: object
                     type: array
                 type: object
-              useCertManager:
-                default: true
-                description: |-
-                  Enable automatic TLS certificate management using cert-manager.
-                  When enabled, jumpstarter will interact with cert-manager to automatically provision
-                  and renew TLS certificates for all endpoints. Requires cert-manager to be installed in the cluster.
-                type: boolean
             type: object
           status:
             description: |-
               JumpstarterStatus defines the observed state of Jumpstarter.
-              This field is currently empty but can be extended to include status information
-              such as deployment status, endpoint URLs, and health information.
+              Status information is reported through conditions following Kubernetes conventions.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the Jumpstarter state.
+                  Condition types include:
+                  - CertManagerAvailable: cert-manager CRDs are installed in the cluster
+                  - IssuerReady: The referenced or created issuer is ready to issue certificates
+                  - ControllerCertificateReady: Controller TLS certificate is issued and secret exists
+                  - RouterCertificatesReady: All router TLS certificates are issued and secrets exist
+                  - ControllerDeploymentReady: Controller deployment is available
+                  - RouterDeploymentsReady: All router deployments are available
+                  - Ready: Overall system ready (aggregates all other conditions)
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
             type: object
         type: object
     served: true
