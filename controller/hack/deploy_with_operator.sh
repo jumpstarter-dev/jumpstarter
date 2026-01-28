@@ -114,7 +114,9 @@ else
 fi
 
 # Apply the Jumpstarter CR with the appropriate endpoint configuration
-cat <<EOF | kubectl apply -f -
+# Create a temporary file which is useful for debugging
+TMPFILE=$(mktemp /tmp/jumpstarter-cr.XXXXXX.yaml)
+cat <<EOF > "${TMPFILE}"
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
 metadata:
@@ -123,6 +125,10 @@ metadata:
 spec:
   baseDomain: ${BASEDOMAIN}
 ${CERTMANAGER_CONFIG}
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
   controller:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
@@ -130,10 +136,6 @@ ${CERTMANAGER_CONFIG}
     grpc:
       endpoints:
 ${CONTROLLER_ENDPOINT_CONFIG}
-    authentication:
-      internal:
-        prefix: "internal:"
-        enabled: true
   routers:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
@@ -146,6 +148,12 @@ ${CONTROLLER_ENDPOINT_CONFIG}
       endpoints:
 ${ROUTER_ENDPOINT_CONFIG}
 EOF
+
+echo -e "${GREEN}Generated Jumpstarter CR (saved to ${TMPFILE}):${NC}"
+cat "${TMPFILE}"
+echo ""
+echo -e "${GREEN}Applying Jumpstarter CR...${NC}"
+kubectl apply -f "${TMPFILE}"
 
 # Set context to jumpstarter-lab namespace
 kubectl config set-context --current --namespace=jumpstarter-lab
