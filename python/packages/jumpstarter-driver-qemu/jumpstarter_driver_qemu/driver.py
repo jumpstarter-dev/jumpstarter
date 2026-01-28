@@ -29,8 +29,14 @@ from jumpstarter.driver import Driver, export
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
 
-def _vsock_available():
-    return platform.system() == "Linux"
+def _vsock_available(socket_path: str = "/dev/vhost-vsock") -> bool:
+    if platform.system() != "Linux":
+        return False
+
+    if not os.path.exists(socket_path):
+        return False
+
+    return os.access(socket_path, os.R_OK | os.W_OK)
 
 
 class QmpLogFilter(logging.Filter):
