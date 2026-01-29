@@ -185,6 +185,33 @@ EOF
   assert_success
   assert_output "No resources found."
 
+  # Test complex selectors with matchExpressions (regression test for server-side over-filtering)
+  # Use 'sa' exporter since 'oidc' is already leased above. The '!nonexistent' is a matchExpression
+  # that will always be true (label doesn't exist on exporters), allowing the lease to match.
+  jmp create lease --selector 'example.com/board=sa,!nonexistent' --duration 1d
+
+  # Partial match: filter with just matchLabels (subset) → expecting a match
+  run jmp get leases --selector 'example.com/board=sa' -o yaml
+  assert_success
+  assert_output --partial "example.com/board=sa"
+
+  # Partial match: filter with just matchExpressions (subset) → expecting a match
+  # This specifically tests client-side filtering of matchExpressions
+  run jmp get leases --selector '!nonexistent' -o yaml
+  assert_success
+  assert_output --partial "!nonexistent"
+
+  # Non-matching matchExpressions → expecting no match with current implementation
+  # where we're filtering against the original lease request
+  run jmp get leases --selector 'example.com/board=sa,!production'
+  assert_success
+  assert_output "No resources found."
+
+  # Filter asks for more than lease has → expecting no match
+  run jmp get leases --selector 'example.com/board=sa,!nonexistent,region=us'
+  assert_success
+  assert_output "No resources found."
+
   jmp delete leases    --all
 }
 
