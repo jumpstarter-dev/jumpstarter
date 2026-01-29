@@ -60,12 +60,19 @@ wait_for_exporter() {
   # After a lease operation the exporter is disconnecting from controller and reconnecting.
   # The disconnect can take a short while so let's avoid catching the pre-disconnect state and early return
   sleep 2
-  kubectl -n "${JS_NAMESPACE}" wait --timeout 20m --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-oidc
-  kubectl -n "${JS_NAMESPACE}" wait --timeout 20m --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-sa
-  kubectl -n "${JS_NAMESPACE}" wait --timeout 20m --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-legacy
+  # Run waits in parallel
+  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-oidc &
+  local pid1=$!
+  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-sa &
+  local pid2=$!
+  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-legacy &
+  local pid3=$!
+
+  # Wait for all to complete
+  wait $pid1 $pid2 $pid3
 }
 
 @test "can create clients with admin cli" {
@@ -118,6 +125,7 @@ wait_for_exporter() {
     --connector-id kubernetes \
     --token $(kubectl create -n "${JS_NAMESPACE}" token test-exporter-sa)
 
+  # add the mock export paths to those files
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-oidc.yaml
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \

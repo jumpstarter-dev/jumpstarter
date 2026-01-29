@@ -274,9 +274,15 @@ deploy_controller() {
         exit 1
     fi
     
-    # Deploy with modified values using EXTRA_VALUES environment variable
+    # Deploy with CA certificate
     log_info "Deploying controller with CA certificate using $METHOD..."
-    EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" METHOD=$METHOD make -C controller deploy
+    if [ "$METHOD" = "operator" ]; then
+        # For operator: use OPERATOR_USE_DEX to inject dex config directly
+        OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" METHOD=$METHOD make -C controller deploy
+    else
+        # For helm: use EXTRA_VALUES to pass the values file
+        EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" METHOD=$METHOD make -C controller deploy
+    fi
     
     log_info "✓ Controller deployed"
 }
@@ -306,14 +312,26 @@ setup_test_environment() {
     
     cd "$REPO_ROOT"
     
-    # Get the controller endpoint
-    export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+    # Get the controller endpoint based on deployment method
+    if [ "$METHOD" = "operator" ]; then
+        # For operator deployment, construct the endpoint from the Jumpstarter CR
+        # The operator uses nodeport mode by default with port 8082
+        local BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
+        export ENDPOINT="grpc.${BASEDOMAIN}:8082"
+    else
+        # For helm deployment, get the endpoint from helm values
+        export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+    fi
     log_info "Controller endpoint: $ENDPOINT"
     
-    # Setup exporters directory
-    echo "Setting up exporters directory in /etc/jumpstarter/exporters..., will need permissions"
-    sudo mkdir -p /etc/jumpstarter/exporters
-    sudo chown "$USER" /etc/jumpstarter/exporters
+    # Setup exporters directory (only use sudo if needed)
+    if [ ! -d /etc/jumpstarter/exporters ] || [ ! -w /etc/jumpstarter/exporters ]; then
+        log_info "Setting up exporters directory in /etc/jumpstarter/exporters (requires sudo)..."
+        sudo mkdir -p /etc/jumpstarter/exporters
+        sudo chown "$USER" /etc/jumpstarter/exporters
+    else
+        log_info "Exporters directory already exists and is writable"
+    fi
     
     # Create service accounts
     log_info "Creating service accounts..."

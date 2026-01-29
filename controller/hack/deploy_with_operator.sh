@@ -113,9 +113,50 @@ else
     enabled: false"
 fi
 
+# Build JWT authentication configuration for dex if OPERATOR_USE_DEX is set
+JWT_AUTH_CONFIG=""
+if [ "${OPERATOR_USE_DEX:-}" = "true" ]; then
+  DEX_CA_FILE="${DEX_CA_FILE:-ca.pem}"
+  if [ ! -f "${DEX_CA_FILE}" ]; then
+    echo -e "${RED}OPERATOR_USE_DEX is set but DEX_CA_FILE (${DEX_CA_FILE}) not found${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}Configuring dex JWT authentication (CA from ${DEX_CA_FILE})...${NC}"
+  # Read the CA certificate content
+  DEX_CA_CONTENT=$(cat "${DEX_CA_FILE}")
+  JWT_AUTH_CONFIG="    - issuer:
+        url: https://dex.dex.svc.cluster.local:5556
+        audiences:
+        - jumpstarter-cli
+        audienceMatchPolicy: MatchAny
+        certificateAuthority: |
+$(echo "${DEX_CA_CONTENT}" | sed 's/^/          /')
+      claimMappings:
+        username:
+          claim: \"name\"
+          prefix: \"dex:\""
+fi
+
 # Apply the Jumpstarter CR with the appropriate endpoint configuration
 # Create a temporary file which is useful for debugging
-TMPFILE=$(mktemp /tmp/jumpstarter-cr.XXXXXX.yaml)
+TMPFILE=$(mktemp /tmp/jumpstarter-cr-XXXXXX)
+mv "${TMPFILE}" "${TMPFILE}.yaml"
+TMPFILE="${TMPFILE}.yaml"
+# Build the authentication section
+if [ -n "${JWT_AUTH_CONFIG}" ]; then
+  AUTH_CONFIG="  authentication:
+    internal:
+      prefix: \"internal:\"
+      enabled: true
+    jwt:
+${JWT_AUTH_CONFIG}"
+else
+  AUTH_CONFIG="  authentication:
+    internal:
+      prefix: \"internal:\"
+      enabled: true"
+fi
+
 cat <<EOF > "${TMPFILE}"
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
@@ -125,10 +166,7 @@ metadata:
 spec:
   baseDomain: ${BASEDOMAIN}
 ${CERTMANAGER_CONFIG}
-  authentication:
-    internal:
-      prefix: "internal:"
-      enabled: true
+${AUTH_CONFIG}
   controller:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
