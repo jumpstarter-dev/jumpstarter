@@ -13,6 +13,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Default namespace for tests
 export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
+# Deployment method: operator (default) or helm
+export METHOD="${METHOD:-operator}"
+
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -261,13 +264,19 @@ deploy_dex() {
 
 # Step 3: Deploy jumpstarter controller
 deploy_controller() {
-    log_info "Deploying jumpstarter controller..."
+    log_info "Deploying jumpstarter controller (method: $METHOD)..."
     
     cd "$REPO_ROOT"
     
+    # Validate METHOD
+    if [ "$METHOD" != "operator" ] && [ "$METHOD" != "helm" ]; then
+        log_error "Unknown deployment method: $METHOD (expected 'operator' or 'helm')"
+        exit 1
+    fi
+    
     # Deploy with modified values using EXTRA_VALUES environment variable
-    log_info "Deploying controller with CA certificate..."
-    EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" make -C controller deploy
+    log_info "Deploying controller with CA certificate using $METHOD..."
+    EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" METHOD=$METHOD make -C controller deploy
     
     log_info "✓ Controller deployed"
 }
@@ -316,6 +325,7 @@ setup_test_environment() {
     echo "JS_NAMESPACE=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REPO_ROOT=$REPO_ROOT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "SCRIPT_DIR=$SCRIPT_DIR" >> "$REPO_ROOT/.e2e-setup-complete"
+    echo "METHOD=$METHOD" >> "$REPO_ROOT/.e2e-setup-complete"
     
     # Set SSL certificate paths for Python to use the generated CA
     echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
@@ -331,6 +341,7 @@ setup_test_environment() {
 main() {
     log_info "=== Jumpstarter E2E Setup ==="
     log_info "Namespace: $JS_NAMESPACE"
+    log_info "Deployment Method: $METHOD"
     log_info "Repository Root: $REPO_ROOT"
     log_info "Script Directory: $SCRIPT_DIR"
     echo ""

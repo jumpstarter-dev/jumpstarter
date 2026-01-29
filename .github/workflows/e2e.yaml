@@ -19,6 +19,13 @@ jobs:
         os:
           - ubuntu-24.04
           - ubuntu-24.04-arm
+        method:
+          - operator
+          - helm
+        exclude:
+          # Only run operator on ARM, skip helm
+          - os: ubuntu-24.04-arm
+            method: helm
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -37,8 +44,10 @@ jobs:
         run: make e2e-setup
         env:
           CI: true
+          METHOD: ${{ matrix.method }}
       
       - name: Run e2e tests
         run: make e2e-run
         env:
           CI: true
+          METHOD: ${{ matrix.method }}
