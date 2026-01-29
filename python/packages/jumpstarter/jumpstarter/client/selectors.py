@@ -51,6 +51,22 @@ def parse_label_selector(selector: str) -> tuple[dict[str, str], list[tuple[str,
     return match_labels, match_expressions
 
 
+def extract_match_labels_filter(selector: str | None) -> str | None:
+    """Extract only the matchLabels portion from a selector string.
+
+    This is used to send only the server-filterable portion to the server,
+    since matchExpressions can't be matched against metadata.labels.
+    """
+    if not selector:
+        return None
+    match_labels, _ = parse_label_selector(selector)
+    if not match_labels:
+        return None
+    # Format matchLabels dict back to a selector string.
+    # Example: {"board": "rpi", "env": "test"} -> "board=rpi,env=test"
+    return ",".join(f"{k}={v}" for k, v in match_labels.items())
+
+
 def selector_contains(selector: str, requirements: str) -> bool:
     """Check if selector contains all criteria from requirements.
 

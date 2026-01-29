@@ -13,7 +13,7 @@ from grpc.aio import Channel
 from jumpstarter_protocol import client_pb2, client_pb2_grpc, jumpstarter_pb2_grpc, kubernetes_pb2, router_pb2_grpc
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from jumpstarter.client.selectors import selector_contains
+from jumpstarter.client.selectors import extract_match_labels_filter, selector_contains
 from jumpstarter.common.grpc import translate_grpc_exceptions
 
 
@@ -383,7 +383,7 @@ class ClientService:
                     parent="namespaces/{}".format(self.namespace),
                     page_size=page_size,
                     page_token=page_token,
-                    filter=filter,
+                    filter=extract_match_labels_filter(filter),
                     only_active=only_active,
                 )
             )

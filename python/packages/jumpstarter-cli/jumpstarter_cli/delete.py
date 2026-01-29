@@ -32,6 +32,8 @@ def delete_leases(config, name: str, selector: str | None, all: bool, output: Ou
         names.append(name)
     elif selector:
         leases = config.list_leases(filter=selector)
+        # Client-side filtering for matchExpressions (server only filters matchLabels)
+        leases = leases.filter_by_selector(selector)
         for lease in leases.leases:
             if lease.client == config.metadata.name:
                 names.append(lease.name)
