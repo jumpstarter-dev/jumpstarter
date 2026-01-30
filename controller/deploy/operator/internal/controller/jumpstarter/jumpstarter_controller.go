@@ -980,7 +980,7 @@ func (r *JumpstarterReconciler) createConfigMap(jumpstarter *operatorv1alpha1.Ju
 func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpstarter) config.Config {
 	cfg := config.Config{
 		Provisioning: config.Provisioning{
-			Enabled: false,
+			Enabled: jumpstarter.Spec.Authentication.AutoProvisioning.Enabled,
 		},
 		Grpc: config.Grpc{
 			Keepalive: config.Keepalive{

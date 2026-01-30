@@ -124,7 +124,9 @@ if [ "${OPERATOR_USE_DEX:-}" = "true" ]; then
   echo -e "${GREEN}Configuring dex JWT authentication (CA from ${DEX_CA_FILE})...${NC}"
   # Read the CA certificate content
   DEX_CA_CONTENT=$(cat "${DEX_CA_FILE}")
-  JWT_AUTH_CONFIG="    - issuer:
+  JWT_AUTH_CONFIG="
+    jwt:
+    - issuer:
         url: https://dex.dex.svc.cluster.local:5556
         audiences:
         - jumpstarter-cli
@@ -143,19 +145,12 @@ TMPFILE=$(mktemp /tmp/jumpstarter-cr-XXXXXX)
 mv "${TMPFILE}" "${TMPFILE}.yaml"
 TMPFILE="${TMPFILE}.yaml"
 # Build the authentication section
-if [ -n "${JWT_AUTH_CONFIG}" ]; then
-  AUTH_CONFIG="  authentication:
+AUTH_CONFIG="  authentication:
     internal:
       prefix: \"internal:\"
       enabled: true
-    jwt:
-${JWT_AUTH_CONFIG}"
-else
-  AUTH_CONFIG="  authentication:
-    internal:
-      prefix: \"internal:\"
-      enabled: true"
-fi
+    autoProvisioning:
+      enabled: true${JWT_AUTH_CONFIG}"
 
 cat <<EOF > "${TMPFILE}"
 apiVersion: operator.jumpstarter.dev/v1alpha1

@@ -344,6 +344,19 @@ type AuthenticationConfig struct {
 	// Enables authentication using external JWT tokens from OIDC providers.
 	// Supports multiple JWT authenticators for different identity providers.
 	JWT []apiserverv1beta1.JWTAuthenticator `json:"jwt,omitempty"`
+
+	// Automatic user provisioning configuration, this is useful for creating
+	// users authenticated by external identity providers in Jumpstarter.
+	AutoProvisioning AutoProvisioningConfig `json:"autoProvisioning,omitempty"`
+}
+
+// AutoProvisioningConfig defines auto provisioning configuration.
+type AutoProvisioningConfig struct {
+	// Enable auto provisioning.
+	// When disabled, users authenticated by external identity providers will
+	// not be automatically created in Jumpstarter.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // InternalAuthConfig defines the built-in authentication configuration.
