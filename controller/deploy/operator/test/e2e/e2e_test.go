@@ -680,6 +680,38 @@ provisioning:
 			}, 1*time.Minute).Should(ContainSubstring("router.jumpstarter.127.0.0.1.nip.io:5443"))
 		})
 
+		It("should update provisioning config when autoProvisioning is enabled", func() {
+			By("updating the Jumpstarter CR to enable auto provisioning")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter",
+				Namespace: dynamicTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			jumpstarter.Spec.Authentication.AutoProvisioning.Enabled = true
+			err = k8sClient.Update(ctx, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the ConfigMap contains provisioning.enabled: true")
+			Eventually(func(g Gomega) {
+				configmap := &corev1.ConfigMap{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: dynamicTestNamespace,
+				}, configmap)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				var configObj map[string]interface{}
+				err = yaml.Unmarshal([]byte(configmap.Data["config"]), &configObj)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				provisioning, ok := configObj["provisioning"].(map[string]interface{})
+				g.Expect(ok).To(BeTrue())
+				g.Expect(provisioning["enabled"]).To(Equal(true))
+			}, 1*time.Minute).Should(Succeed())
+		})
+
 		It("should allow access to ingress grpc endpoints", func() {
 			// TODO: fix ingress in kind (not working for helm either)
 			Skip("nginx ingress not working in kind")

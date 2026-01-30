@@ -450,6 +450,19 @@ spec:
                   Authentication configuration for client and exporter authentication.
                   Supports multiple authentication methods including internal tokens, Kubernetes tokens, and JWT.
                 properties:
+                  autoProvisioning:
+                    description: |-
+                      Automatic user provisioning configuration, this is useful for creating
+                      users authenticated by external identity providers in Jumpstarter.
+                    properties:
+                      enabled:
+                        default: false
+                        description: |-
+                          Enable auto provisioning.
+                          When disabled, users authenticated by external identity providers will
+                          not be automatically created in Jumpstarter.
+                        type: boolean
+                    type: object
                   internal:
                     description: |-
                       Internal authentication configuration.

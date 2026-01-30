@@ -11,6 +11,11 @@ on:
 
 jobs:
   deploy-kind:
+    strategy:
+      matrix:
+        method:
+          - helm
+          - operator
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -18,9 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run make deploy
+      - name: Run make deploy (${{ matrix.method }})
         working-directory: controller
         run: make deploy
+        env:
+          METHOD: ${{ matrix.method }}
 
   e2e-test-operator:
     runs-on: ubuntu-latest

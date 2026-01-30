@@ -100,7 +100,7 @@ run_tests() {
     
     # Run bats tests
     log_info "Running bats tests..."
-    bats --show-output-of-passing-tests --verbose-run "$SCRIPT_DIR"/tests.bats
+    bats -x --show-output-of-passing-tests --verbose-run "$SCRIPT_DIR"/tests.bats
 }
 
 # Full setup and run (for CI or first-time use)
