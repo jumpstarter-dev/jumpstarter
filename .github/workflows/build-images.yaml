@@ -9,6 +9,7 @@ on:
       - main
       - 'release-*'
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     branches:
       - main
       - 'release-*'
@@ -21,6 +22,7 @@ env:
 
 jobs:
   build-and-push-image:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'build-pr-images')
     runs-on: ubuntu-latest
     permissions:
       contents: read
