@@ -179,6 +179,34 @@ EOF
   jmp shell --selector example.com/board=oidc j power on
 }
 
+@test "legacy client config contains CA certificate and works with secure TLS" {
+  # This test only works with operator-based deployment, which creates the CA ConfigMap
+  if [ "${METHOD:-}" != "operator" ]; then
+    skip "CA certificate injection only available with operator deployment (METHOD=$METHOD)"
+  fi
+
+  wait_for_exporter
+
+  # Get the config file path from jmp (clients are saved to ~/.config/jumpstarter/clients/)
+  local config_file="${HOME}/.config/jumpstarter/clients/test-client-legacy.yaml"
+  run test -f "$config_file"
+  assert_success
+
+  # Check that tls.ca field exists and is not empty
+  run go run github.com/mikefarah/yq/v4@latest '.tls.ca' "$config_file"
+  assert_success
+  # The CA should be a non-empty base64-encoded string
+  refute_output ""
+  refute_output "null"
+
+  # Test that the client works WITHOUT JUMPSTARTER_GRPC_INSECURE set
+  # This proves the CA certificate is being used for TLS verification
+  run env -u JUMPSTARTER_GRPC_INSECURE jmp get exporters --client test-client-legacy
+  assert_success
+  # Should see the legacy exporter in the output
+  assert_output --partial "test-exporter-legacy"
+}
+
 @test "can operate on leases" {
   wait_for_exporter
 

@@ -12,6 +12,7 @@ from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
+from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,8 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
         secret = await self.core_api.read_namespaced_secret(client.status.credential.name, self.namespace)
         endpoint = client.status.endpoint
         token = base64.b64decode(secret.data["token"]).decode("utf8")
+        # Get CA bundle from ConfigMap (base64-encoded)
+        ca_bundle = await self.get_ca_bundle()
         return ClientConfigV1Alpha1(
             alias=name,
             metadata=ObjectMeta(
@@ -156,6 +159,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             endpoint=endpoint,
             token=token,
             drivers=ClientConfigV1Alpha1Drivers(allow=allow, unsafe=unsafe),
+            tls=TLSConfigV1Alpha1(ca=ca_bundle),
         )
 
     async def delete_client(self, name: str):

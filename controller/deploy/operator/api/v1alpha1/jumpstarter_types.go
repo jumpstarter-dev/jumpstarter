@@ -622,6 +622,13 @@ type IssuerReference struct {
 	// Only change this if using a custom issuer from a different API group.
 	// +kubebuilder:default="cert-manager.io"
 	Group string `json:"group,omitempty"`
+
+	// CABundle is an optional base64-encoded PEM CA certificate bundle for this issuer.
+	// Required when using external issuers with non-publicly-trusted CAs.
+	// This will be published to the {name}-service-ca-cert ConfigMap for clients to use.
+	// For self-signed CA mode, this is automatically populated from the CA secret.
+	// +optional
+	CABundle []byte `json:"caBundle,omitempty"`
 }
 
 // JumpstarterStatus defines the observed state of Jumpstarter.
