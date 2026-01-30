@@ -12,8 +12,30 @@ permissions:
   contents: read
 
 jobs:
-  e2e-tests:
+  changes:
     if: github.repository_owner == 'jumpstarter-dev'
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.filter.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
+          filters: |
+            e2e:
+              - 'controller/**'
+              - 'e2e/**'
+              - 'python/**'
+              - '.github/workflows/e2e.yaml'
+              - 'Makefile'
+
+  e2e-tests:
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
         os:
