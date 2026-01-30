@@ -1,6 +1,16 @@
-from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
+import base64
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from jumpstarter_kubernetes.exporters import V1Alpha1Exporter, V1Alpha1ExporterDevice, V1Alpha1ExporterStatus
+import pytest
+from kubernetes_asyncio.client.exceptions import ApiException
+from kubernetes_asyncio.client.models import V1ConfigMap, V1ObjectMeta, V1ObjectReference, V1Secret
+
+from jumpstarter_kubernetes.exporters import (
+    ExportersV1Alpha1Api,
+    V1Alpha1Exporter,
+    V1Alpha1ExporterDevice,
+    V1Alpha1ExporterStatus,
+)
 
 TEST_EXPORTER = V1Alpha1Exporter(
     api_version="jumpstarter.dev/v1alpha1",
@@ -107,7 +117,6 @@ def test_exporter_from_dict():
 
 def test_exporter_rich_add_columns_without_devices():
     """Test V1Alpha1Exporter.rich_add_columns without devices"""
-    from unittest.mock import MagicMock
 
     from jumpstarter_kubernetes import V1Alpha1Exporter
 
@@ -122,7 +131,6 @@ def test_exporter_rich_add_columns_without_devices():
 
 def test_exporter_rich_add_columns_with_devices():
     """Test V1Alpha1Exporter.rich_add_columns with devices"""
-    from unittest.mock import MagicMock
 
     from jumpstarter_kubernetes import V1Alpha1Exporter
 
@@ -138,7 +146,6 @@ def test_exporter_rich_add_columns_with_devices():
 
 def test_exporter_rich_add_rows_without_devices():
     """Test V1Alpha1Exporter.rich_add_rows without devices flag"""
-    from unittest.mock import MagicMock, patch
 
     mock_table = MagicMock()
     with patch("jumpstarter_kubernetes.exporters.time_since", return_value="5m"):
@@ -153,7 +160,6 @@ def test_exporter_rich_add_rows_without_devices():
 
 def test_exporter_rich_add_rows_with_devices():
     """Test V1Alpha1Exporter.rich_add_rows with devices flag"""
-    from unittest.mock import MagicMock, patch
 
     mock_table = MagicMock()
     with patch("jumpstarter_kubernetes.exporters.time_since", return_value="5m"):
@@ -206,7 +212,6 @@ def test_exporter_list_from_dict():
 
 def test_exporter_list_rich_add_columns():
     """Test V1Alpha1ExporterList.rich_add_columns"""
-    from unittest.mock import MagicMock
 
     from jumpstarter_kubernetes import V1Alpha1ExporterList
 
@@ -217,7 +222,6 @@ def test_exporter_list_rich_add_columns():
 
 def test_exporter_list_rich_add_columns_with_devices():
     """Test V1Alpha1ExporterList.rich_add_columns with devices"""
-    from unittest.mock import MagicMock
 
     from jumpstarter_kubernetes import V1Alpha1ExporterList
 
@@ -228,7 +232,6 @@ def test_exporter_list_rich_add_columns_with_devices():
 
 def test_exporter_list_rich_add_rows():
     """Test V1Alpha1ExporterList.rich_add_rows"""
-    from unittest.mock import MagicMock, patch
 
     from jumpstarter_kubernetes import V1Alpha1ExporterList
 
@@ -241,7 +244,6 @@ def test_exporter_list_rich_add_rows():
 
 def test_exporter_list_rich_add_rows_with_devices():
     """Test V1Alpha1ExporterList.rich_add_rows with devices"""
-    from unittest.mock import MagicMock, patch
 
     from jumpstarter_kubernetes import V1Alpha1ExporterList
 
@@ -260,3 +262,97 @@ def test_exporter_list_rich_add_names():
     names = []
     exporter_list.rich_add_names(names)
     assert names == ["exporter.jumpstarter.dev/test-exporter"]
+
+
+# Tests for get_exporter_config with CA bundle
+
+
+@pytest.mark.asyncio
+async def test_get_exporter_config_includes_ca_bundle():
+    """Test get_exporter_config includes CA bundle from ConfigMap"""
+    api = ExportersV1Alpha1Api(namespace="test-namespace")
+    api.api = AsyncMock()
+    api.core_api = AsyncMock()
+
+    # Mock exporter response
+    exporter_dict = {
+        "apiVersion": "jumpstarter.dev/v1alpha1",
+        "kind": "Exporter",
+        "metadata": {
+            "creationTimestamp": "2021-10-01T00:00:00Z",
+            "generation": 1,
+            "name": "test-exporter",
+            "namespace": "test-namespace",
+            "resourceVersion": "1",
+            "uid": "test-uid",
+        },
+        "status": {
+            "credential": {"name": "test-secret"},
+            "endpoint": "https://test-endpoint:8082",
+            "devices": [],
+        },
+    }
+    api.api.get_namespaced_custom_object = AsyncMock(return_value=exporter_dict)
+
+    # Mock secret with token
+    token = "test-token-value"
+    mock_secret = V1Secret(data={"token": base64.b64encode(token.encode()).decode()})
+    api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
+
+    # Mock ConfigMap with CA certificate
+    ca_cert_pem = "-----BEGIN CERTIFICATE-----\nMIIBtest\n-----END CERTIFICATE-----"
+    mock_configmap = V1ConfigMap(data={"ca.crt": ca_cert_pem})
+    api.core_api.read_namespaced_config_map = AsyncMock(return_value=mock_configmap)
+
+    config = await api.get_exporter_config("test-exporter")
+
+    # Verify CA bundle is included and base64-encoded
+    expected_ca = base64.b64encode(ca_cert_pem.encode("utf-8")).decode("utf-8")
+    assert config.tls.ca == expected_ca
+    assert config.endpoint == "https://test-endpoint:8082"
+    assert config.token == token
+
+
+@pytest.mark.asyncio
+async def test_get_exporter_config_without_ca_bundle():
+    """Test get_exporter_config works when CA ConfigMap doesn't exist"""
+    api = ExportersV1Alpha1Api(namespace="test-namespace")
+    api.api = AsyncMock()
+    api.core_api = AsyncMock()
+
+    # Mock exporter response
+    exporter_dict = {
+        "apiVersion": "jumpstarter.dev/v1alpha1",
+        "kind": "Exporter",
+        "metadata": {
+            "creationTimestamp": "2021-10-01T00:00:00Z",
+            "generation": 1,
+            "name": "test-exporter",
+            "namespace": "test-namespace",
+            "resourceVersion": "1",
+            "uid": "test-uid",
+        },
+        "status": {
+            "credential": {"name": "test-secret"},
+            "endpoint": "https://test-endpoint:8082",
+            "devices": [],
+        },
+    }
+    api.api.get_namespaced_custom_object = AsyncMock(return_value=exporter_dict)
+
+    # Mock secret with token
+    token = "test-token-value"
+    mock_secret = V1Secret(data={"token": base64.b64encode(token.encode()).decode()})
+    api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
+
+    # Mock ConfigMap not found
+    api.core_api.read_namespaced_config_map = AsyncMock(
+        side_effect=ApiException(status=404, reason="Not Found")
+    )
+
+    config = await api.get_exporter_config("test-exporter")
+
+    # Verify CA bundle is empty
+    assert config.tls.ca == ""
+    assert config.endpoint == "https://test-endpoint:8082"
+    assert config.token == token
