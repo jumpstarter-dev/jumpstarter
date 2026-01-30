@@ -71,8 +71,12 @@ wait_for_exporter() {
     exporters.jumpstarter.dev/test-exporter-legacy &
   local pid3=$!
 
-  # Wait for all to complete
-  wait $pid1 $pid2 $pid3
+  # Wait for all to complete and capture failures
+  local rc=0
+  wait "$pid1" || rc=$?
+  wait "$pid2" || rc=$?
+  wait "$pid3" || rc=$?
+  return $rc
 }
 
 @test "can create clients with admin cli" {
