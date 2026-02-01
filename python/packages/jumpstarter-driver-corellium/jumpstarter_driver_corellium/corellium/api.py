@@ -191,7 +191,7 @@ class ApiClient:
 
     def get_instance_console_url(self, instance: Instance, console_id: str) -> Optional[str]:
         """
-        Get a a console URL (websocket) to stream logs from.
+        Get a console URL (websocket) to stream logs from.
         """
         data = None
 
