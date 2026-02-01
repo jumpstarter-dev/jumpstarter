@@ -67,7 +67,7 @@ var _ = Describe("controller", Ordered, func() {
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
-			By("loading the the manager(Operator) image on Kind")
+			By("loading the manager(Operator) image on Kind")
 			err = utils.LoadImageToKindClusterWithName(projectimage)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 

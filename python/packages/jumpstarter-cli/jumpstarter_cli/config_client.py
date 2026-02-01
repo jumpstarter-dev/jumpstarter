@@ -35,7 +35,7 @@ def config_client():
     "--namespace",
     type=str,
     help="Enter the Jumpstarter client namespace.",
-    prompt="Enter a valid Jumpstarter client nespace",
+    prompt="Enter a valid Jumpstarter client namespace",
 )
 @click.option(
     "--name",
