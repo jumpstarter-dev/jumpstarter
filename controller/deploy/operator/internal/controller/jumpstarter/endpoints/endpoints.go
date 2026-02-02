@@ -192,7 +192,12 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 
 	// NodePort service
 	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-np", corev1.ServiceTypeNodePort,
+		// Copy servicePort and set NodePort if specified
+		nodePortServicePort := servicePort
+		if endpoint.NodePort.Port > 0 {
+			nodePortServicePort.NodePort = endpoint.NodePort.Port
+		}
+		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
 			podSelector, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
 			return err
 		}
@@ -270,7 +275,12 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 
 	// NodePort service
 	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-np", corev1.ServiceTypeNodePort,
+		// Copy servicePort and set NodePort if specified
+		nodePortServicePort := servicePort
+		if endpoint.NodePort.Port > 0 {
+			nodePortServicePort.NodePort = endpoint.NodePort.Port
+		}
+		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
 			podSelector, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
 			return err
 		}
@@ -338,7 +348,12 @@ func (r *Reconciler) ReconcileLoginEndpoint(ctx context.Context, owner metav1.Ob
 
 	// NodePort service
 	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-np", corev1.ServiceTypeNodePort,
+		// Copy servicePort and set NodePort if specified
+		nodePortServicePort := servicePort
+		if endpoint.NodePort.Port > 0 {
+			nodePortServicePort.NodePort = endpoint.NodePort.Port
+		}
+		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
 			podSelector, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
 			return err
 		}

@@ -40,6 +40,7 @@ else
     # Login endpoint via nodeport (30014 -> 8086 on host)
     HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.enabled=true"
     HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.nodeport.enabled=true"
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.nodeport.port=30014"
 fi
 
 echo -e "${GREEN}Loading the ${IMG} in kind ...${NC}"
