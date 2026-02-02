@@ -30,6 +30,9 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= podman
 
+# Deployment method: operator (default) or helm
+METHOD ?= operator
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
@@ -171,15 +174,23 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: docker-build cluster grpcurl
-	./hack/deploy_with_helm.sh
-
-.PHONY: deploy-with-operator
-deploy-with-operator: docker-build build-operator cluster grpcurl
+deploy: docker-build cluster grpcurl ## Deploy controller using METHOD (operator or helm)
+ifeq ($(METHOD),operator)
+	$(MAKE) build-operator
 	./hack/deploy_with_operator.sh
+else ifeq ($(METHOD),helm)
+	./hack/deploy_with_helm.sh
+else
+	$(error Unknown METHOD=$(METHOD). Use 'operator' or 'helm')
+endif
+
+# Backward compatibility alias
+.PHONY: deploy-with-operator
+deploy-with-operator:
+	$(MAKE) deploy METHOD=operator
 
 .PHONY: deploy-operator
-deploy-operator: docker-build build-operator cluster grpcurl
+deploy-operator: docker-build build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
 .PHONY: test-operator-e2e
@@ -191,7 +202,7 @@ operator-logs:
 
 .PHONY: deploy-with-operator-parallel
 deploy-with-operator-parallel:
-	make deploy-with-operator -j5 --output-sync=target
+	make deploy METHOD=operator -j5 --output-sync=target
 
 .PHONY: deploy-exporters
 deploy-exporters:

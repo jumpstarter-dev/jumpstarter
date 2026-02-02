@@ -13,6 +13,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Default namespace for tests
 export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
+# Deployment method: operator (default) or helm
+export METHOD="${METHOD:-operator}"
+
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -261,13 +264,25 @@ deploy_dex() {
 
 # Step 3: Deploy jumpstarter controller
 deploy_controller() {
-    log_info "Deploying jumpstarter controller..."
+    log_info "Deploying jumpstarter controller (method: $METHOD)..."
     
     cd "$REPO_ROOT"
     
-    # Deploy with modified values using EXTRA_VALUES environment variable
-    log_info "Deploying controller with CA certificate..."
-    EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" make -C controller deploy
+    # Validate METHOD
+    if [ "$METHOD" != "operator" ] && [ "$METHOD" != "helm" ]; then
+        log_error "Unknown deployment method: $METHOD (expected 'operator' or 'helm')"
+        exit 1
+    fi
+    
+    # Deploy with CA certificate
+    log_info "Deploying controller with CA certificate using $METHOD..."
+    if [ "$METHOD" = "operator" ]; then
+        # For operator: use OPERATOR_USE_DEX to inject dex config directly
+        OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" METHOD=$METHOD make -C controller deploy
+    else
+        # For helm: use EXTRA_VALUES to pass the values file
+        EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" METHOD=$METHOD make -C controller deploy
+    fi
     
     log_info "✓ Controller deployed"
 }
@@ -297,14 +312,26 @@ setup_test_environment() {
     
     cd "$REPO_ROOT"
     
-    # Get the controller endpoint
-    export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+    # Get the controller endpoint based on deployment method
+    if [ "$METHOD" = "operator" ]; then
+        # For operator deployment, construct the endpoint from the Jumpstarter CR
+        # The operator uses nodeport mode by default with port 8082
+        local BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
+        export ENDPOINT="grpc.${BASEDOMAIN}:8082"
+    else
+        # For helm deployment, get the endpoint from helm values
+        export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+    fi
     log_info "Controller endpoint: $ENDPOINT"
     
-    # Setup exporters directory
-    echo "Setting up exporters directory in /etc/jumpstarter/exporters..., will need permissions"
-    sudo mkdir -p /etc/jumpstarter/exporters
-    sudo chown "$USER" /etc/jumpstarter/exporters
+    # Setup exporters directory (only use sudo if needed)
+    if [ ! -d /etc/jumpstarter/exporters ] || [ ! -w /etc/jumpstarter/exporters ]; then
+        log_info "Setting up exporters directory in /etc/jumpstarter/exporters (requires sudo)..."
+        sudo mkdir -p /etc/jumpstarter/exporters
+        sudo chown "$USER" /etc/jumpstarter/exporters
+    else
+        log_info "Exporters directory already exists and is writable"
+    fi
     
     # Create service accounts
     log_info "Creating service accounts..."
@@ -316,6 +343,7 @@ setup_test_environment() {
     echo "JS_NAMESPACE=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REPO_ROOT=$REPO_ROOT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "SCRIPT_DIR=$SCRIPT_DIR" >> "$REPO_ROOT/.e2e-setup-complete"
+    echo "METHOD=$METHOD" >> "$REPO_ROOT/.e2e-setup-complete"
     
     # Set SSL certificate paths for Python to use the generated CA
     echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
@@ -331,6 +359,7 @@ setup_test_environment() {
 main() {
     log_info "=== Jumpstarter E2E Setup ==="
     log_info "Namespace: $JS_NAMESPACE"
+    log_info "Deployment Method: $METHOD"
     log_info "Repository Root: $REPO_ROOT"
     log_info "Script Directory: $SCRIPT_DIR"
     echo ""
