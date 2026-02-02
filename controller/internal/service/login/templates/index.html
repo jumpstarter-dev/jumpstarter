@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jumpstarter Login</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --code-bg: #f1f5f9;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .logo h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+        
+        .logo p {
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+        
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-color);
+        }
+        
+        .code-block {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+            font-size: 0.875rem;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+        
+        .code-block code {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .highlight {
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+        
+        .info-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .info-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+        
+        .info-value {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.875rem;
+            background: var(--code-bg);
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .step {
+            margin-bottom: 1.5rem;
+        }
+        
+        .step:last-child {
+            margin-bottom: 0;
+        }
+        
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.5rem;
+            height: 1.5rem;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+        
+        .step-title {
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+        
+        .step-content {
+            padding-left: 2rem;
+        }
+        
+        .note {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 0.875rem;
+            color: #92400e;
+        }
+        
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        .footer {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="logo">
+                <h1>Jumpstarter</h1>
+                <p>Hardware-in-the-loop testing platform</p>
+            </div>
+            
+            <h2>Quick Login</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-muted);">
+                Use the following command to login with your credentials:
+            </p>
+            
+            <div class="code-block">
+                <code>jmp login <span class="highlight">your-username</span>@<span class="highlight">{{.GRPCEndpoint}}</span></code>
+            </div>
+            
+            <p style="font-size: 0.875rem; color: var(--text-muted);">
+                Replace <code class="highlight">your-username</code> with your client name.
+            </p>
+        </div>
+        
+        <div class="card">
+            <h2>Service Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">gRPC Endpoint</span>
+                    <span class="info-value">{{.GRPCEndpoint}}</span>
+                </div>
+                {{if .RouterEndpoint}}
+                <div class="info-item">
+                    <span class="info-label">Router Endpoint</span>
+                    <span class="info-value">{{.RouterEndpoint}}</span>
+                </div>
+                {{end}}
+                {{if .Namespace}}
+                <div class="info-item">
+                    <span class="info-label">Namespace</span>
+                    <span class="info-value">{{.Namespace}}</span>
+                </div>
+                {{end}}
+                {{if .HasOIDC}}
+                {{range .OIDC}}
+                <div class="info-item">
+                    <span class="info-label">OIDC Issuer</span>
+                    <span class="info-value">{{.Issuer}}</span>
+                </div>
+                {{end}}
+                {{end}}
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Manual Login Steps</h2>
+            
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">1</span>
+                    Install the Jumpstarter CLI
+                </div>
+                <div class="step-content">
+                    <div class="code-block">
+                        <code>pip install jumpstarter-cli</code>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">2</span>
+                    Login with your credentials
+                </div>
+                <div class="step-content">
+                    <div class="code-block">
+                        <code>jmp login --client <span class="highlight">your-username</span> \
+  --endpoint {{.GRPCEndpoint}} \
+  {{if .Namespace}}--namespace {{.Namespace}} \
+  {{end}}{{if .HasOIDC}}{{range $i, $o := .OIDC}}{{if eq $i 0}}--issuer {{$o.Issuer}}{{end}}{{end}}{{end}}</code>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-title">
+                    <span class="step-number">3</span>
+                    Verify your connection
+                </div>
+                <div class="step-content">
+                    <div class="code-block">
+                        <code>jmp list exporters</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>API Endpoint</h2>
+            <p style="margin-bottom: 1rem; color: var(--text-muted);">
+                Programmatic access to authentication configuration:
+            </p>
+            <div class="code-block">
+                <code>GET /v1/auth/config</code>
+            </div>
+            <p style="font-size: 0.875rem; color: var(--text-muted);">
+                Returns JSON with endpoints, namespace, CA certificate, and OIDC configuration.
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p>
+                <a href="https://jumpstarter.dev" target="_blank">Documentation</a> &middot;
+                <a href="https://github.com/jumpstarter-dev/jumpstarter" target="_blank">GitHub</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

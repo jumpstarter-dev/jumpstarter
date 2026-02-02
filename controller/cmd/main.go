@@ -27,10 +27,13 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
+	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -47,6 +50,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/login"
 
 	// +kubebuilder:scaffold:imports
 
@@ -298,6 +302,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Setup Login Service for simplified CLI login
+	loginService := login.NewServiceFromEnv()
+	// Extract OIDC configuration from the loaded config for the login service
+	oidcConfigs := extractOIDCConfigs(mgr.GetAPIReader(), watchNamespace)
+	loginService.SetOIDCConfig(oidcConfigs)
+	if err = loginService.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create service", "service", "Login")
+		os.Exit(1)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -312,4 +326,53 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// extractOIDCConfigs reads the OIDC configuration from the ConfigMap
+func extractOIDCConfigs(reader client.Reader, namespace string) []login.OIDCConfig {
+	var configmap corev1.ConfigMap
+	if err := reader.Get(context.Background(), client.ObjectKey{
+		Namespace: namespace,
+		Name:      "jumpstarter-controller",
+	}, &configmap); err != nil {
+		setupLog.Error(err, "unable to read configmap for OIDC config")
+		return nil
+	}
+
+	// Try new config format first
+	rawConfig, ok := configmap.Data["config"]
+	if ok {
+		var cfg config.Config
+		if err := yaml.UnmarshalStrict([]byte(rawConfig), &cfg); err == nil {
+			return jwtAuthenticatorsToOIDCConfigs(cfg.Authentication.JWT)
+		}
+	}
+
+	// Fall back to legacy authentication format
+	rawAuth, ok := configmap.Data["authentication"]
+	if ok {
+		var auth config.Authentication
+		if err := yaml.Unmarshal([]byte(rawAuth), &auth); err == nil {
+			return jwtAuthenticatorsToOIDCConfigs(auth.JWT)
+		}
+	}
+
+	return nil
+}
+
+// jwtAuthenticatorsToOIDCConfigs converts JWT authenticators to login OIDC configs
+func jwtAuthenticatorsToOIDCConfigs(authenticators []apiserverv1beta1.JWTAuthenticator) []login.OIDCConfig {
+	var configs []login.OIDCConfig
+	for _, auth := range authenticators {
+		// Skip internal OIDC provider (localhost)
+		if auth.Issuer.URL == "https://localhost:8085" {
+			continue
+		}
+		configs = append(configs, login.OIDCConfig{
+			Issuer:    auth.Issuer.URL,
+			ClientID:  "jumpstarter-cli", // Default client ID for CLI
+			Audiences: auth.Issuer.Audiences,
+		})
+	}
+	return configs
 }
