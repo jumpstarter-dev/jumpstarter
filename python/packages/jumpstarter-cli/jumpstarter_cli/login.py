@@ -19,29 +19,35 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 
-async def fetch_auth_config(login_endpoint: str, insecure: bool = False) -> dict[str, Any]:
+async def fetch_auth_config(
+    login_endpoint: str,
+    insecure_tls: bool = False,
+    use_http: bool = False,
+) -> dict[str, Any]:
     """Fetch authentication configuration from the login endpoint.
 
     Args:
         login_endpoint: The login endpoint URL (e.g., login.example.com or https://login.example.com)
-        insecure: Skip TLS certificate verification
+        insecure_tls: Skip TLS certificate verification for HTTPS connections
+        use_http: Use HTTP instead of HTTPS (for local testing)
 
     Returns:
         Dictionary containing:
             - grpcEndpoint: The gRPC controller endpoint
             - routerEndpoint: The router endpoint (optional)
             - namespace: Default namespace for clients
-            - caBundle: PEM-encoded CA certificate (optional)
+            - caBundle: base64-encoded PEM CA certificate (optional)
             - oidc: List of OIDC provider configurations (optional)
     """
     # Ensure the URL has a scheme
     if not login_endpoint.startswith(("http://", "https://")):
-        login_endpoint = f"https://{login_endpoint}"
+        scheme = "http" if use_http else "https"
+        login_endpoint = f"{scheme}://{login_endpoint}"
 
     url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
 
-    # Configure SSL context
-    ssl_context: ssl.SSLContext | bool = False if insecure else True
+    # Configure SSL context: False disables verification, True enables it
+    ssl_context: ssl.SSLContext | bool = False if insecure_tls else True
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url, ssl=ssl_context) as response:
@@ -85,6 +91,18 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
 )
 # end client specific
 @opt_insecure_tls_config
+@click.option(
+    "--insecure-login-tls",
+    is_flag=True,
+    help="Skip TLS certificate verification when fetching config from login endpoint.",
+    default=False,
+)
+@click.option(
+    "--insecure-login-http",
+    is_flag=True,
+    help="Use HTTP instead of HTTPS when fetching config from login endpoint (for local testing).",
+    default=False,
+)
 @opt_nointeractive
 @opt_config(allow_missing=True)
 @blocking
@@ -104,15 +122,20 @@ async def login(  # noqa: C901
     offline_access: bool,
     unsafe,
     insecure_tls_config: bool,
+    insecure_login_tls: bool,
+    insecure_login_http: bool,
     nointeractive: bool,
     allow,
 ):
     """Login into a jumpstarter instance.
 
-    Supports simplified login format: jmp login [username@]login.endpoint.com
+    Supports simplified login format: jmp login [client-name@]login.endpoint.com
 
-    When using simplified format, the endpoint fetches configuration from the
-    login service's /v1/auth/config API, providing:
+    When using simplified format:
+    - The part before @ becomes the client name (--name and --client)
+    - The endpoint fetches configuration from the login service's /v1/auth/config API
+
+    The fetched configuration provides:
     - gRPC endpoint
     - OIDC issuer
     - CA certificate (optional)
@@ -121,19 +144,24 @@ async def login(  # noqa: C901
 
     confirm_insecure_tls(insecure_tls_config, nointeractive)
 
-    # Handle simplified login format: [username@]login.endpoint.com
+    # Handle simplified login format: [client-name@]login.endpoint.com
     ca_bundle = None
+    parsed_client_name = None
     if login_target is not None:
-        parsed_name, login_endpoint = parse_login_argument(login_target)
+        parsed_client_name, login_endpoint = parse_login_argument(login_target)
 
         # If name was parsed from login target and --name not provided, use it
-        if parsed_name and name is None:
-            name = parsed_name
+        if parsed_client_name and name is None:
+            name = parsed_client_name
 
         # Fetch auth config from the login endpoint
         try:
             click.echo(f"Fetching configuration from {login_endpoint}...")
-            auth_config = await fetch_auth_config(login_endpoint, insecure=insecure_tls_config)
+            auth_config = await fetch_auth_config(
+                login_endpoint,
+                insecure_tls=insecure_login_tls or insecure_tls_config,
+                use_http=insecure_login_http,
+            )
 
             # Use fetched values if not explicitly provided
             if endpoint is None:
@@ -166,6 +194,11 @@ async def login(  # noqa: C901
         # we are creating a new config
         case (kind, value):
             config_kind = kind
+
+            # If client name was parsed from login_target and value is "default", use parsed name as alias
+            if kind == "client" and value == "default" and parsed_client_name:
+                value = parsed_client_name
+
             if namespace is None:
                 if nointeractive:
                     raise click.UsageError("Namespace is required in non-interactive mode.")
