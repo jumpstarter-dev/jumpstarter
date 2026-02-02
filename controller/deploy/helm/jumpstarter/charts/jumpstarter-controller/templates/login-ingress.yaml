@@ -1,0 +1,39 @@
+{{ if and .Values.login.enabled .Values.login.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    component: login
+    {{- if .Values.login.ingress.labels }}
+    {{- toYaml .Values.login.ingress.labels | nindent 4 }}
+    {{- end }}
+  {{- if .Values.login.ingress.annotations }}
+  annotations:
+    {{- toYaml .Values.login.ingress.annotations | nindent 4 }}
+  {{- end }}
+  name: jumpstarter-login-ing
+  namespace: {{ default .Release.Namespace .Values.namespace }}
+spec:
+  {{- if .Values.login.ingress.class }}
+  ingressClassName: {{ .Values.login.ingress.class }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.login.hostname | default (printf "login.%s" .Values.global.baseDomain) | required "a global.baseDomain or a login.hostname must be provided" }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jumpstarter-login
+            port:
+              number: 8086
+  tls:
+  - hosts:
+    - {{ .Values.login.hostname | default (printf "login.%s" .Values.global.baseDomain) }}
+    {{- if .Values.login.ingress.tls.secretName }}
+    secretName: {{ .Values.login.ingress.tls.secretName }}
+    {{- else }}
+    secretName: jumpstarter-login-tls
+    {{- end }}
+{{ end }}

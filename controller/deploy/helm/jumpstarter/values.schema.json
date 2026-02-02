@@ -86,6 +86,63 @@
       "title": "Global",
       "type": "object"
     },
+    "Login": {
+      "description": "Login endpoint configuration for simplified CLI login",
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled"
+        },
+        "hostname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hostname"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "ingress": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ingress"
+        }
+      },
+      "title": "Login",
+      "type": "object"
+    },
     "Metrics": {
       "additionalProperties": false,
       "properties": {
@@ -132,6 +189,18 @@
         }
       ],
       "default": null
+    },
+    "login": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Login"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Login endpoint configuration (passed to subchart)"
     }
   },
   "title": "Model",

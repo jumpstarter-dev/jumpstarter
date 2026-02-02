@@ -31,6 +31,25 @@ grpc:
     port: 30010
     routerPort: 30011
 
+# Login endpoint configuration for simplified CLI login
+# The login service runs on HTTP with TLS terminated at Route/Ingress level
+login:
+  enabled: false
+  hostname: ""
+  # OpenShift Route configuration (uses edge TLS termination)
+  route:
+    enabled: false
+    annotations: {}
+    labels: {}
+  # Kubernetes Ingress configuration (uses edge TLS termination)
+  ingress:
+    enabled: false
+    class: ""
+    annotations: {}
+    labels: {}
+    tls:
+      secretName: ""
+
 image: quay.io/jumpstarter-dev/jumpstarter-controller
 tag: ""
 imagePullPolicy: IfNotPresent

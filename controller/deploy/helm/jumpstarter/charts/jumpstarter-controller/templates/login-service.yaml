@@ -1,0 +1,19 @@
+{{ if .Values.login.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: jumpstarter-controller
+    component: login
+  name: jumpstarter-login
+  namespace: {{ default .Release.Namespace .Values.namespace }}
+spec:
+  ports:
+  - name: login
+    port: 8086
+    protocol: TCP
+    targetPort: 8086
+  selector:
+    control-plane: controller-manager
+{{ end }}

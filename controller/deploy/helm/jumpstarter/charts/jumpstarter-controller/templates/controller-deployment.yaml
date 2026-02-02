@@ -85,6 +85,14 @@ spec:
         - name: EXTERNAL_KEY_PEM
           value: /secrets/tls.key
         {{- end }}
+        - name: CA_BUNDLE_PEM
+          valueFrom:
+            configMapKeyRef:
+              name: jumpstarter-service-ca-cert
+              key: ca.crt
+              optional: true
+        - name: GIN_MODE
+          value: release
         image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
         name: manager

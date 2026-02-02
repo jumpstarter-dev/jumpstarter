@@ -43,6 +43,14 @@ class Global(BaseModel):
     metrics: Optional[Metrics] = None
 
 
+class Login(BaseModel):
+    """Login endpoint configuration for simplified CLI login"""
+    enabled: Optional[bool] = None
+    hostname: Optional[str] = None
+    route: Optional[Dict[str, Any]] = None
+    ingress: Optional[Dict[str, Any]] = None
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -50,6 +58,9 @@ class Model(BaseModel):
         None, alias="jumpstarter-controller"
     )
     global_: Optional[Global] = Field(None, alias="global")
+    login: Optional[Login] = Field(
+        None, description="Login endpoint configuration (passed to subchart)"
+    )
 
 
 print(json.dumps(Model.model_json_schema(), indent=2))

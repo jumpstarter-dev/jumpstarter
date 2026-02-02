@@ -91,6 +91,59 @@ class Route(BaseModel):
     )
 
 
+class LoginRoute(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable OpenShift Route for the login endpoint"
+    )
+    annotations: Optional[dict[str, str]] = Field(
+        None, description="Annotations for the login route"
+    )
+    labels: Optional[dict[str, str]] = Field(
+        None, description="Labels for the login route"
+    )
+
+
+class LoginIngressTls(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secretName: Optional[str] = Field(
+        None, description="Secret name for the TLS certificate"
+    )
+
+
+class LoginIngress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable Ingress for the login endpoint"
+    )
+    class_: Optional[str] = Field(
+        None, alias="class", description="IngressClass to use for the login endpoint"
+    )
+    annotations: Optional[dict[str, str]] = Field(
+        None, description="Annotations for the login ingress"
+    )
+    labels: Optional[dict[str, str]] = Field(
+        None, description="Labels for the login ingress"
+    )
+    tls: Optional[LoginIngressTls] = None
+
+
+class Login(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable the login endpoint for simplified CLI login"
+    )
+    hostname: Optional[str] = Field(
+        None, description="Hostname for the login endpoint"
+    )
+    route: Optional[LoginRoute] = None
+    ingress: Optional[LoginIngress] = None
+
+
 class PrefixedClaimOrExpression1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -283,6 +336,9 @@ class Model(BaseModel):
         None, alias="global", description="Global parameters"
     )
     grpc: Optional[Grpc1] = None
+    login: Optional[Login] = Field(
+        None, description="Login endpoint configuration for simplified CLI login"
+    )
 
 
 print(json.dumps(Model.model_json_schema(), indent=2))
