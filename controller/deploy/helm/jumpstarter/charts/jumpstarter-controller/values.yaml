@@ -36,6 +36,8 @@ grpc:
 login:
   enabled: false
   hostname: ""
+  # The endpoint is passed to the login service to announce to clients
+  endpoint: ""
   # OpenShift Route configuration (uses edge TLS termination)
   route:
     enabled: false
@@ -49,6 +51,10 @@ login:
     labels: {}
     tls:
       secretName: ""
+  # NodePort service for login, useful for local development
+  nodeport:
+    enabled: false
+    port: 30014
 
 image: quay.io/jumpstarter-dev/jumpstarter-controller
 tag: ""

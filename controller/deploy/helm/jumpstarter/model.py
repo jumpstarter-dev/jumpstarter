@@ -47,8 +47,10 @@ class Login(BaseModel):
     """Login endpoint configuration for simplified CLI login"""
     enabled: Optional[bool] = None
     hostname: Optional[str] = None
+    endpoint: Optional[str] = None
     route: Optional[Dict[str, Any]] = None
     ingress: Optional[Dict[str, Any]] = None
+    nodeport: Optional[Dict[str, Any]] = None
 
 
 class Model(BaseModel):

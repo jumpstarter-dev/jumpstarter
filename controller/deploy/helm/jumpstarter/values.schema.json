@@ -113,6 +113,18 @@
           "default": null,
           "title": "Hostname"
         },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint"
+        },
         "route": {
           "anyOf": [
             {
@@ -138,6 +150,19 @@
           ],
           "default": null,
           "title": "Ingress"
+        },
+        "nodeport": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nodeport"
         }
       },
       "title": "Login",

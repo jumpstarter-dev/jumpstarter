@@ -29,6 +29,9 @@ nodes:
   - containerPort: 30013 # grpc router nodeport
     hostPort: 8085
     protocol: TCP
+  - containerPort: 30014 # login nodeport
+    hostPort: 8086
+    protocol: TCP
   - containerPort: 32000 # dex nodeport
     hostPort: 5556
     protocol: TCP

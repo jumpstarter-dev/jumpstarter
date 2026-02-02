@@ -705,6 +705,19 @@
           "description": "Hostname for the login endpoint",
           "title": "Hostname"
         },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The endpoint to announce to clients",
+          "title": "Endpoint"
+        },
         "route": {
           "anyOf": [
             {
@@ -720,6 +733,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/LoginIngress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "nodeport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoginNodeport"
             },
             {
               "type": "null"
@@ -825,6 +849,38 @@
         }
       },
       "title": "LoginIngressTls",
+      "type": "object"
+    },
+    "LoginNodeport": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable NodePort for the login endpoint",
+          "title": "Enabled"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Port"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "NodePort port number for the login service"
+        }
+      },
+      "title": "LoginNodeport",
       "type": "object"
     },
     "LoginRoute": {

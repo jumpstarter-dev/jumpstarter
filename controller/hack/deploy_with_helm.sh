@@ -30,8 +30,18 @@ HELM_SETS="${HELM_SETS} --set jumpstarter-controller.tag=${IMAGE_TAG}"
 # Enable appropriate networking mode
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
     HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.ingress.enabled=true"
+    # Login endpoint via ingress
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.enabled=true"
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.ingress.enabled=true"
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.ingress.class=nginx"
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.hostname=login.${BASEDOMAIN}"
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.endpoint=${LOGIN_ENDPOINT}"
 else
     HELM_SETS="${HELM_SETS} --set jumpstarter-controller.grpc.nodeport.enabled=true"
+    # Login endpoint via nodeport (30014 -> 8086 on host)
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.enabled=true"
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.nodeport.enabled=true"
+    HELM_SETS="${HELM_SETS} --set jumpstarter-controller.login.endpoint=${LOGIN_ENDPOINT}"
 fi
 
 echo -e "${GREEN}Loading the ${IMG} in kind ...${NC}"

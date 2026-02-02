@@ -131,6 +131,17 @@ class LoginIngress(BaseModel):
     tls: Optional[LoginIngressTls] = None
 
 
+class LoginNodeport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable NodePort for the login endpoint"
+    )
+    port: Optional[Port] = Field(
+        None, description="NodePort port number for the login service"
+    )
+
+
 class Login(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -140,8 +151,12 @@ class Login(BaseModel):
     hostname: Optional[str] = Field(
         None, description="Hostname for the login endpoint"
     )
+    endpoint: Optional[str] = Field(
+        None, description="The endpoint to announce to clients"
+    )
     route: Optional[LoginRoute] = None
     ingress: Optional[LoginIngress] = None
+    nodeport: Optional[LoginNodeport] = None
 
 
 class PrefixedClaimOrExpression1(BaseModel):

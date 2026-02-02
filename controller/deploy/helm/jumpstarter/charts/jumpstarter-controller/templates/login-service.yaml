@@ -9,11 +9,18 @@ metadata:
   name: jumpstarter-login
   namespace: {{ default .Release.Namespace .Values.namespace }}
 spec:
+  {{ if .Values.login.nodeport.enabled }}
+  type: NodePort
+  {{ end }}
+
   ports:
   - name: login
     port: 8086
     protocol: TCP
     targetPort: 8086
+    {{ if .Values.login.nodeport.enabled }}
+    nodePort: {{ .Values.login.nodeport.port }}
+    {{ end }}
   selector:
     control-plane: controller-manager
 {{ end }}
