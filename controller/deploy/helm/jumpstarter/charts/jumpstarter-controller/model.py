@@ -151,9 +151,6 @@ class Login(BaseModel):
     hostname: Optional[str] = Field(
         None, description="Hostname for the login endpoint"
     )
-    endpoint: Optional[str] = Field(
-        None, description="The endpoint to announce to clients"
-    )
     route: Optional[LoginRoute] = None
     ingress: Optional[LoginIngress] = None
     nodeport: Optional[LoginNodeport] = None

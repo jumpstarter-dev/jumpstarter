@@ -113,18 +113,6 @@
           "default": null,
           "title": "Hostname"
         },
-        "endpoint": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Endpoint"
-        },
         "route": {
           "anyOf": [
             {

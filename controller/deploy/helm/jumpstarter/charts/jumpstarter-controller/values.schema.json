@@ -705,19 +705,6 @@
           "description": "Hostname for the login endpoint",
           "title": "Hostname"
         },
-        "endpoint": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The endpoint to announce to clients",
-          "title": "Endpoint"
-        },
         "route": {
           "anyOf": [
             {
