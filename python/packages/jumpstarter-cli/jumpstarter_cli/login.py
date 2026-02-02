@@ -1,3 +1,7 @@
+import ssl
+from typing import Any
+
+import aiohttp
 import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
@@ -15,7 +19,55 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 
+async def fetch_auth_config(login_endpoint: str, insecure: bool = False) -> dict[str, Any]:
+    """Fetch authentication configuration from the login endpoint.
+
+    Args:
+        login_endpoint: The login endpoint URL (e.g., login.example.com or https://login.example.com)
+        insecure: Skip TLS certificate verification
+
+    Returns:
+        Dictionary containing:
+            - grpcEndpoint: The gRPC controller endpoint
+            - routerEndpoint: The router endpoint (optional)
+            - namespace: Default namespace for clients
+            - caBundle: PEM-encoded CA certificate (optional)
+            - oidc: List of OIDC provider configurations (optional)
+    """
+    # Ensure the URL has a scheme
+    if not login_endpoint.startswith(("http://", "https://")):
+        login_endpoint = f"https://{login_endpoint}"
+
+    url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
+
+    # Configure SSL context
+    ssl_context: ssl.SSLContext | bool = False if insecure else True
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, ssl=ssl_context) as response:
+            if response.status != 200:
+                raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
+            return await response.json()
+
+
+def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
+    """Parse a login argument in the format [username@]endpoint.
+
+    Args:
+        login_arg: String in format "username@login.example.com" or "login.example.com"
+
+    Returns:
+        Tuple of (username, endpoint) where username may be None
+    """
+    if "@" in login_arg:
+        # Split on the last @ to handle email-like usernames
+        parts = login_arg.rsplit("@", 1)
+        return parts[0], parts[1]
+    return None, login_arg
+
+
 @click.command("login", short_help="Login")
+@click.argument("login_target", required=False, default=None)
 @click.option("-e", "--endpoint", type=str, help="Enter the Jumpstarter service endpoint.", default=None)
 @click.option("--namespace", type=str, help="Enter the Jumpstarter exporter namespace.", default=None)
 @click.option("--name", type=str, help="Enter the Jumpstarter exporter name.", default=None)
@@ -38,6 +90,7 @@ from jumpstarter.config.tls import TLSConfigV1Alpha1
 @blocking
 async def login(  # noqa: C901
     config,
+    login_target: str | None,
     endpoint: str,
     namespace: str,
     name: str,
@@ -54,9 +107,52 @@ async def login(  # noqa: C901
     nointeractive: bool,
     allow,
 ):
-    """Login into a jumpstarter instance"""
+    """Login into a jumpstarter instance.
+
+    Supports simplified login format: jmp login [username@]login.endpoint.com
+
+    When using simplified format, the endpoint fetches configuration from the
+    login service's /v1/auth/config API, providing:
+    - gRPC endpoint
+    - OIDC issuer
+    - CA certificate (optional)
+    - Default namespace
+    """
 
     confirm_insecure_tls(insecure_tls_config, nointeractive)
+
+    # Handle simplified login format: [username@]login.endpoint.com
+    ca_bundle = None
+    if login_target is not None:
+        parsed_name, login_endpoint = parse_login_argument(login_target)
+
+        # If name was parsed from login target and --name not provided, use it
+        if parsed_name and name is None:
+            name = parsed_name
+
+        # Fetch auth config from the login endpoint
+        try:
+            click.echo(f"Fetching configuration from {login_endpoint}...")
+            auth_config = await fetch_auth_config(login_endpoint, insecure=insecure_tls_config)
+
+            # Use fetched values if not explicitly provided
+            if endpoint is None:
+                endpoint = auth_config.get("grpcEndpoint")
+            if namespace is None:
+                namespace = auth_config.get("namespace")
+            if issuer is None and auth_config.get("oidc"):
+                # Use the first OIDC provider
+                issuer = auth_config["oidc"][0].get("issuer")
+                if client_id == "jumpstarter-cli" and auth_config["oidc"][0].get("clientId"):
+                    client_id = auth_config["oidc"][0]["clientId"]
+
+            # Store CA bundle for TLS configuration
+            ca_bundle = auth_config.get("caBundle")
+            if ca_bundle:
+                click.echo("Retrieved CA certificate from login service.")
+
+        except aiohttp.ClientError as e:
+            raise click.ClickException(f"Failed to fetch auth config from {login_endpoint}: {e}") from e
 
     config_kind = None
     match config:
@@ -93,11 +189,14 @@ async def login(  # noqa: C901
                         "Enter a comma-separated list of allowed driver packages (optional)", default="", type=str
                     )
 
+            # Build TLS config with CA bundle if available
+            tls_config = TLSConfigV1Alpha1(insecure=insecure_tls_config, ca=ca_bundle or "")
+
             if kind.startswith("client"):
                 config = ClientConfigV1Alpha1(
                     alias=value if kind == "client" else "default",
                     metadata=ObjectMeta(namespace=namespace, name=name),
-                    tls=TLSConfigV1Alpha1(insecure=insecure_tls_config),
+                    tls=tls_config,
                     endpoint=endpoint,
                     token="",
                     drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe),
@@ -106,7 +205,7 @@ async def login(  # noqa: C901
             if kind.startswith("exporter"):
                 config = ExporterConfigV1Alpha1(
                     alias=value if kind == "exporter" else "default",
-                    tls=TLSConfigV1Alpha1(insecure=insecure_tls_config),
+                    tls=tls_config,
                     metadata=ObjectMeta(namespace=namespace, name=name),
                     endpoint=endpoint,
                     token="",
