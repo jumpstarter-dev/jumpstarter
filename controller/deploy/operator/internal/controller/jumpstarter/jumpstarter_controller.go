@@ -647,6 +647,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			Value: "release",
 		},
 		// CA_BUNDLE_PEM for the login service to return to clients
+		// Only optional if cert-manager is not enabled (when enabled, we know the CA ConfigMap exists)
 		{
 			Name: "CA_BUNDLE_PEM",
 			ValueFrom: &corev1.EnvVarSource{
@@ -655,7 +656,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 						Name: GetCAConfigMapName(jumpstarter),
 					},
 					Key:      "ca.crt",
-					Optional: boolPtr(true), // Optional in case cert-manager is not enabled
+					Optional: boolPtr(!jumpstarter.Spec.CertManager.Enabled),
 				},
 			},
 		},
