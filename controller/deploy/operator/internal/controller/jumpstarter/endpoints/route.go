@@ -145,3 +145,69 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 
 	return r.createOrUpdateRoute(ctx, route, owner)
 }
+
+// createRouteForLoginEndpoint creates an OpenShift Route for a login endpoint.
+// Unlike gRPC routes that use passthrough TLS termination, login routes use edge termination
+// where TLS is terminated at the router and plain HTTP is forwarded to the backend.
+func (r *Reconciler) createRouteForLoginEndpoint(ctx context.Context, owner metav1.Object, serviceName string, servicePort int32,
+	endpoint *operatorv1alpha1.Endpoint, baseLabels map[string]string) error {
+
+	log := logf.FromContext(ctx)
+
+	// Check if Route API is available in the cluster
+	if !r.RouteAvailable {
+		log.Info("Skipping login route creation: Route API not available in cluster")
+		return nil
+	}
+
+	// Extract hostname from address
+	hostname := extractHostname(endpoint.Address)
+	if hostname == "" {
+		log.Info("Skipping login route creation: no hostname in endpoint address",
+			"address", endpoint.Address)
+		return nil
+	}
+
+	if errs := validation.IsDNS1123Subdomain(hostname); errs != nil {
+		log.Error(errors.New(strings.Join(errs, ", ")), "Skipping login route creation: invalid hostname",
+			"address", endpoint.Address,
+			"hostname", hostname)
+		return nil
+	}
+
+	// Merge with user-provided annotations (user annotations take precedence)
+	// No default annotations for login routes - admin configures TLS via annotations
+	annotations := utils.MergeMaps(nil, endpoint.Route.Annotations)
+
+	// Merge labels (user labels take precedence)
+	routeLabels := utils.MergeMaps(baseLabels, endpoint.Route.Labels)
+
+	// Use edge TLS termination - TLS is terminated at the router, plain HTTP to backend
+	// This is different from gRPC endpoints which use passthrough
+	route := &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        serviceName + "-route",
+			Namespace:   owner.GetNamespace(),
+			Labels:      routeLabels,
+			Annotations: annotations,
+		},
+		Spec: routev1.RouteSpec{
+			Host: hostname,
+			Port: &routev1.RoutePort{
+				TargetPort: intstr.FromInt(int(servicePort)),
+			},
+			To: routev1.RouteTargetReference{
+				Kind:   "Service",
+				Name:   serviceName,
+				Weight: ptr.To(int32(100)),
+			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationEdge,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+			},
+			WildcardPolicy: routev1.WildcardPolicyNone,
+		},
+	}
+
+	return r.createOrUpdateRoute(ctx, route, owner)
+}

@@ -417,6 +417,19 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 		return err
 	}
 
+	// Reconcile login endpoints (if configured)
+	for _, endpoint := range jumpstarter.Spec.Controller.Login.Endpoints {
+		svcPort := corev1.ServicePort{
+			Name:       "login",
+			Port:       8086,
+			TargetPort: intstr.FromInt(8086),
+			Protocol:   corev1.ProtocolTCP,
+		}
+		if err := r.EndpointReconciler.ReconcileLoginEndpoint(ctx, jumpstarter, &endpoint, svcPort); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -633,6 +646,19 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			Name:  "GIN_MODE",
 			Value: "release",
 		},
+		// CA_BUNDLE_PEM for the login service to return to clients
+		{
+			Name: "CA_BUNDLE_PEM",
+			ValueFrom: &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: GetCAConfigMapName(jumpstarter),
+					},
+					Key:      "ca.crt",
+					Optional: boolPtr(true), // Optional in case cert-manager is not enabled
+				},
+			},
+		},
 	}
 
 	var volumeMounts []corev1.VolumeMount
@@ -723,6 +749,11 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 								{
 									ContainerPort: 8081,
 									Name:          "health",
+									Protocol:      corev1.ProtocolTCP,
+								},
+								{
+									ContainerPort: 8086,
+									Name:          "login",
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
