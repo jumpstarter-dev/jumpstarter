@@ -79,43 +79,10 @@ wait_for_exporter() {
   return $rc
 }
 
-# Login endpoint tests (only run if login endpoint is configured)
-@test "login endpoint returns auth config" {
-  # Check if login service exists
-  if ! kubectl -n "${JS_NAMESPACE}" get svc jumpstarter-login &>/dev/null; then
-    skip "Login endpoint not configured (jumpstarter-login service not found)"
-  fi
-
-  # Port-forward to the login service
-  kubectl -n "${JS_NAMESPACE}" port-forward svc/jumpstarter-login 18086:8086 &
-  local port_forward_pid=$!
-  sleep 2
-
-  # Test the /v1/auth/config endpoint
-  run curl -s http://localhost:18086/v1/auth/config
-  assert_success
-
-  # Verify the response contains expected fields
-  assert_output --partial "grpcEndpoint"
-  assert_output --partial "namespace"
-
-  # Cleanup port-forward
-  kill $port_forward_pid 2>/dev/null || true
-}
-
 @test "login endpoint serves landing page" {
   # Check if login service exists
-  if ! kubectl -n "${JS_NAMESPACE}" get svc jumpstarter-login &>/dev/null; then
-    skip "Login endpoint not configured (jumpstarter-login service not found)"
-  fi
 
-  # Port-forward to the login service
-  kubectl -n "${JS_NAMESPACE}" port-forward svc/jumpstarter-login 18086:8086 &
-  local port_forward_pid=$!
-  sleep 2
-
-  # Test the landing page
-  run curl -s http://localhost:18086/
+  run curl -s http://${LOGIN_ENDPOINT}
   assert_success
 
   # Verify the response is HTML with login instructions
@@ -188,6 +155,46 @@ wait_for_exporter() {
   jmp config exporter list
 }
 
+@test "can login with simplified login" {
+  jmp config client   delete test-client-oidc
+  jmp config exporter delete test-exporter-oidc
+
+  run jmp login test-client-oidc@${LOGIN_ENDPOINT} --insecure-login-http \
+    --username test-client-oidc@example.com --password password --unsafe
+  assert_success
+
+  run jmp login --exporter test-exporter-oidc ${LOGIN_ENDPOINT} \
+    --username test-exporter-oidc@example.com --password password
+  assert_success
+
+  # add the mock export paths to those files
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
+    /etc/jumpstarter/exporters/test-exporter-oidc.yaml
+
+  # Verify CA certificate is populated in client config
+  local client_config="${HOME}/.config/jumpstarter/clients/test-client-oidc.yaml"
+  run test -f "$client_config"
+  assert_success
+  run go run github.com/mikefarah/yq/v4@latest '.tls.ca' "$client_config"
+  assert_success
+  refute_output ""
+  refute_output "null"
+  echo "Client config has CA certificate populated"
+
+  # Verify CA certificate is populated in exporter config
+  local exporter_config="/etc/jumpstarter/exporters/test-exporter-oidc.yaml"
+  run test -f "$exporter_config"
+  assert_success
+  run go run github.com/mikefarah/yq/v4@latest '.tls.ca' "$exporter_config"
+  assert_success
+  refute_output ""
+  refute_output "null"
+  echo "Exporter config has CA certificate populated"
+
+  jmp config client   list
+  jmp config exporter list
+}
+
 @test "can run exporters" {
   cat <<EOF | bash 3>&- &
 while true; do
@@ -224,40 +231,6 @@ EOF
   JMP_ENDPOINT=$(kubectl get clients.jumpstarter.dev -n "${JS_NAMESPACE}" test-client-legacy -o 'jsonpath={.status.endpoint}') \
   JMP_TOKEN=$(kubectl get secrets -n "${JS_NAMESPACE}" test-client-legacy-client -o 'jsonpath={.data.token}' | base64 -d) \
   jmp shell --selector example.com/board=oidc j power on
-}
-
-@test "can login using simplified format via login endpoint" {
-  # Use LOGIN_ENDPOINT if available (set by setup-e2e.sh), otherwise try to discover it
-  local login_host="${LOGIN_ENDPOINT:-}"
-
-  if [ -z "$login_host" ]; then
-    # Try to get from route or ingress
-    if kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route &>/dev/null; then
-      login_host=$(kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route -o jsonpath='{.spec.host}')
-    elif kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing &>/dev/null; then
-      login_host=$(kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing -o jsonpath='{.spec.rules[0].host}')
-    fi
-  fi
-
-  # Skip if no login endpoint found
-  if [ -z "$login_host" ]; then
-    skip "Login endpoint not available (LOGIN_ENDPOINT not set and no route/ingress found)"
-  fi
-
-  echo "Using login endpoint: $login_host" >&2
-
-  # Test simplified login format
-  # Note: We use --unsafe because the e2e test environment uses self-signed certs
-  jmp login test-client-login@"$login_host" \
-    --username test-client-oidc@example.com --password password --unsafe
-
-  # Verify the client was created
-  run jmp config client list
-  assert_success
-  assert_output --partial "test-client-login"
-
-  # Clean up the created client config
-  rm -f "${HOME}/.config/jumpstarter/clients/test-client-login.yaml"
 }
 
 @test "legacy client config contains CA certificate and works with secure TLS" {
