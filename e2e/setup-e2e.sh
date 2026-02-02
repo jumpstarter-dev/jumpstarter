@@ -318,11 +318,16 @@ setup_test_environment() {
         # The operator uses nodeport mode by default with port 8082
         local BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
         export ENDPOINT="grpc.${BASEDOMAIN}:8082"
+        export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
     else
         # For helm deployment, get the endpoint from helm values
         export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+        # Login endpoint is on nodeport 30014 mapped to host port 8086
+        local BASEDOMAIN=$(helm get values jumpstarter --output json | jq -r '.global.baseDomain')
+        export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
     fi
     log_info "Controller endpoint: $ENDPOINT"
+    log_info "Login endpoint: $LOGIN_ENDPOINT"
     
     # Setup exporters directory (only use sudo if needed)
     if [ ! -d /etc/jumpstarter/exporters ] || [ ! -w /etc/jumpstarter/exporters ]; then
@@ -340,6 +345,7 @@ setup_test_environment() {
     
     # Create a marker file to indicate setup is complete
     echo "ENDPOINT=$ENDPOINT" > "$REPO_ROOT/.e2e-setup-complete"
+    echo "LOGIN_ENDPOINT=$LOGIN_ENDPOINT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "JS_NAMESPACE=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REPO_ROOT=$REPO_ROOT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "SCRIPT_DIR=$SCRIPT_DIR" >> "$REPO_ROOT/.e2e-setup-complete"

@@ -227,27 +227,27 @@ EOF
 }
 
 @test "can login using simplified format via login endpoint" {
-  # Check if login route exists (for external access)
-  if ! kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route &>/dev/null && \
-     ! kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing &>/dev/null; then
-    skip "Login endpoint not exposed externally (no route or ingress found)"
-  fi
+  # Use LOGIN_ENDPOINT if available (set by setup-e2e.sh), otherwise try to discover it
+  local login_host="${LOGIN_ENDPOINT:-}"
 
-  # Get the login endpoint hostname
-  local login_host
-  if kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route &>/dev/null; then
-    login_host=$(kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route -o jsonpath='{.spec.host}')
-  else
-    login_host=$(kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing -o jsonpath='{.spec.rules[0].host}')
-  fi
-
-  # Skip if no hostname found
   if [ -z "$login_host" ]; then
-    skip "Could not determine login endpoint hostname"
+    # Try to get from route or ingress
+    if kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route &>/dev/null; then
+      login_host=$(kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route -o jsonpath='{.spec.host}')
+    elif kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing &>/dev/null; then
+      login_host=$(kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing -o jsonpath='{.spec.rules[0].host}')
+    fi
   fi
+
+  # Skip if no login endpoint found
+  if [ -z "$login_host" ]; then
+    skip "Login endpoint not available (LOGIN_ENDPOINT not set and no route/ingress found)"
+  fi
+
+  echo "Using login endpoint: $login_host" >&2
 
   # Test simplified login format
-  # Note: We use --insecure because the e2e test environment may use self-signed certs
+  # Note: We use --unsafe because the e2e test environment uses self-signed certs
   jmp login test-client-login@"$login_host" \
     --username test-client-oidc@example.com --password password --unsafe
 
