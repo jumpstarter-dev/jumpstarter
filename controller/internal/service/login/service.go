@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2026 The Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package login
 import (
 	"context"
 	"embed"
+	"encoding/base64"
 	"html/template"
 	"net/http"
 	"os"
@@ -161,11 +162,18 @@ func (s *Service) handleLandingPage(c *gin.Context) {
 
 // handleAuthConfig returns the authentication configuration as JSON
 func (s *Service) handleAuthConfig(c *gin.Context) {
+	// Base64 encode the CA bundle to match what the Python CLI expects
+	// (jumpstarter.common.grpc.ssl_channel_credentials calls base64.b64decode on the ca field)
+	caBundle := ""
+	if s.config.CABundle != "" {
+		caBundle = base64.StdEncoding.EncodeToString([]byte(s.config.CABundle))
+	}
+
 	response := AuthConfig{
 		GRPCEndpoint:   s.config.GRPCEndpoint,
 		RouterEndpoint: s.config.RouterEndpoint,
 		Namespace:      s.config.Namespace,
-		CABundle:       s.config.CABundle,
+		CABundle:       caBundle,
 		OIDC:           s.config.OIDC,
 	}
 
