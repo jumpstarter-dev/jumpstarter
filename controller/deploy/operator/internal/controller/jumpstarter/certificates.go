@@ -79,17 +79,11 @@ func getServerCertDurationSettings(js *operatorv1alpha1.Jumpstarter) (time.Durat
 func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
-	// Always reconcile the CA ConfigMap first - this ensures cleanup during config transitions
-	// and provides the CA bundle for clients regardless of certificate reconciliation state
-	if err := r.reconcileCAConfigMap(ctx, js); err != nil {
-		return fmt.Errorf("failed to reconcile CA ConfigMap: %w", err)
-	}
-
 	if !js.Spec.CertManager.Enabled {
-		// If cert-manager integration is disabled, skip certificate reconciliation
-		// we do not remove existing certificates or issuers here,
-		// that must be handled by the administrator, to avoid issues if the certificates
-		// are disabled by error, enabled again, at least the certificates will remain.
+		// If cert-manager integration is disabled, still create empty CA ConfigMap for consistency
+		if err := r.reconcileCAConfigMap(ctx, js); err != nil {
+			return fmt.Errorf("failed to reconcile CA ConfigMap: %w", err)
+		}
 		log.V(1).Info("cert-manager integration disabled, skipping certificate reconciliation")
 		return nil
 	}
@@ -118,6 +112,13 @@ func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *o
 		if err := r.reconcileRouterCertificate(ctx, js, issuerRef, i); err != nil {
 			return fmt.Errorf("failed to reconcile router %d certificate: %w", i, err)
 		}
+	}
+
+	// Reconcile CA ConfigMap AFTER certificates are created
+	// This ensures cert-manager has had a chance to create the CA secret
+	// which we need to populate the ConfigMap for the login service
+	if err := r.reconcileCAConfigMap(ctx, js); err != nil {
+		return fmt.Errorf("failed to reconcile CA ConfigMap: %w", err)
 	}
 
 	return nil
@@ -520,13 +521,15 @@ func (r *JumpstarterReconciler) reconcileCAConfigMap(ctx context.Context, js *op
 					return fmt.Errorf("failed to get CA secret %s: %w", caSecretName, err)
 				}
 				// CA secret doesn't exist yet - this is expected during initial setup
-				// The ConfigMap will be updated once the CA certificate is ready
-				log.V(1).Info("CA secret not found, creating empty CA ConfigMap", "secret", caSecretName)
+				// Return error to trigger requeue, so we wait for cert-manager to create the CA
+				log.Info("CA secret not found, waiting for cert-manager to create it", "secret", caSecretName)
+				return fmt.Errorf("CA secret %s not found, waiting for cert-manager: %w", caSecretName, err)
 			} else if cert, ok := caSecret.Data["tls.crt"]; ok {
 				caCert = string(cert)
 				log.V(1).Info("Using CA certificate from self-signed CA secret", "secret", caSecretName)
 			} else {
-				log.V(1).Info("CA secret missing tls.crt key, creating empty CA ConfigMap", "secret", caSecretName)
+				log.V(1).Info("CA secret missing tls.crt key, waiting for cert-manager", "secret", caSecretName)
+				return fmt.Errorf("CA secret %s missing tls.crt key", caSecretName)
 			}
 		} else {
 			// Self-signed disabled and no external issuer - leave empty

@@ -149,6 +149,14 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile cert-manager resources (Issuers, Certificates, CA ConfigMap) before deployments
+	// This ensures the CA ConfigMap exists before the controller deployment starts,
+	// so the CA_BUNDLE_PEM environment variable is properly populated
+	if err := r.reconcileCertificates(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Certificates")
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile Controller Deployment
 	if err := r.reconcileControllerDeployment(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Controller Deployment")
@@ -176,12 +184,6 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Reconcile Secrets
 	if err := r.reconcileSecrets(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Secrets")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile cert-manager resources (Issuers, Certificates)
-	if err := r.reconcileCertificates(ctx, &jumpstarter); err != nil {
-		log.Error(err, "Failed to reconcile Certificates")
 		return ctrl.Result{}, err
 	}
 
