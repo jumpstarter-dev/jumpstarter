@@ -252,6 +252,11 @@ type ControllerConfig struct {
 	// gRPC configuration for controller endpoints.
 	// Defines how controller gRPC services are exposed and configured.
 	GRPC GRPCConfig `json:"grpc,omitempty"`
+
+	// Login endpoint configuration for simplified CLI login.
+	// Provides authentication configuration discovery for the jmp login command.
+	// The login service runs on HTTP and expects TLS to be terminated at the Route/Ingress level.
+	Login LoginConfig `json:"login,omitempty"`
 }
 
 // ExporterOptions defines configuration options for exporter behavior.
@@ -410,6 +415,18 @@ type RestAPIConfig struct {
 	// List of REST API endpoints to expose.
 	// Each endpoint can use different networking methods (Route, Ingress, NodePort, or LoadBalancer)
 	// based on your cluster setup.
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
+}
+
+// LoginConfig defines configuration for the login endpoint.
+// The login service provides authentication configuration discovery for simplified CLI login.
+// It runs on HTTP with TLS terminated at the Route/Ingress level (edge termination).
+type LoginConfig struct {
+	// List of login endpoints to expose.
+	// Each endpoint can use different networking methods (Route, Ingress, NodePort, or LoadBalancer)
+	// based on your cluster setup. TLS should be configured via annotations/labels on the
+	// Route or Ingress resources (e.g., for cert-manager integration).
+	// Note: Unlike gRPC endpoints, login endpoints use edge TLS termination (not passthrough).
 	Endpoints []Endpoint `json:"endpoints,omitempty"`
 }
 
@@ -626,7 +643,7 @@ type IssuerReference struct {
 	// CABundle is an optional base64-encoded PEM CA certificate bundle for this issuer.
 	// Required when using external issuers with non-publicly-trusted CAs.
 	// This will be published to the {name}-service-ca-cert ConfigMap for clients to use.
-	// For self-signed CA mode, this is automatically populated from the CA secret.
+	// For self-signed CA mode, this is automatically calculated from the CA secret.
 	// +optional
 	CABundle []byte `json:"caBundle,omitempty"`
 }
