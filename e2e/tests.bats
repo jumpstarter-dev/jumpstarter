@@ -79,6 +79,53 @@ wait_for_exporter() {
   return $rc
 }
 
+# Login endpoint tests (only run if login endpoint is configured)
+@test "login endpoint returns auth config" {
+  # Check if login service exists
+  if ! kubectl -n "${JS_NAMESPACE}" get svc jumpstarter-login &>/dev/null; then
+    skip "Login endpoint not configured (jumpstarter-login service not found)"
+  fi
+
+  # Port-forward to the login service
+  kubectl -n "${JS_NAMESPACE}" port-forward svc/jumpstarter-login 18086:8086 &
+  local port_forward_pid=$!
+  sleep 2
+
+  # Test the /v1/auth/config endpoint
+  run curl -s http://localhost:18086/v1/auth/config
+  assert_success
+
+  # Verify the response contains expected fields
+  assert_output --partial "grpcEndpoint"
+  assert_output --partial "namespace"
+
+  # Cleanup port-forward
+  kill $port_forward_pid 2>/dev/null || true
+}
+
+@test "login endpoint serves landing page" {
+  # Check if login service exists
+  if ! kubectl -n "${JS_NAMESPACE}" get svc jumpstarter-login &>/dev/null; then
+    skip "Login endpoint not configured (jumpstarter-login service not found)"
+  fi
+
+  # Port-forward to the login service
+  kubectl -n "${JS_NAMESPACE}" port-forward svc/jumpstarter-login 18086:8086 &
+  local port_forward_pid=$!
+  sleep 2
+
+  # Test the landing page
+  run curl -s http://localhost:18086/
+  assert_success
+
+  # Verify the response is HTML with login instructions
+  assert_output --partial "Jumpstarter"
+  assert_output --partial "jmp login"
+
+  # Cleanup port-forward
+  kill $port_forward_pid 2>/dev/null || true
+}
+
 @test "can create clients with admin cli" {
   jmp admin create client -n "${JS_NAMESPACE}" test-client-oidc     --unsafe --nointeractive \
     --oidc-username dex:test-client-oidc
@@ -177,6 +224,40 @@ EOF
   JMP_ENDPOINT=$(kubectl get clients.jumpstarter.dev -n "${JS_NAMESPACE}" test-client-legacy -o 'jsonpath={.status.endpoint}') \
   JMP_TOKEN=$(kubectl get secrets -n "${JS_NAMESPACE}" test-client-legacy-client -o 'jsonpath={.data.token}' | base64 -d) \
   jmp shell --selector example.com/board=oidc j power on
+}
+
+@test "can login using simplified format via login endpoint" {
+  # Check if login route exists (for external access)
+  if ! kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route &>/dev/null && \
+     ! kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing &>/dev/null; then
+    skip "Login endpoint not exposed externally (no route or ingress found)"
+  fi
+
+  # Get the login endpoint hostname
+  local login_host
+  if kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route &>/dev/null; then
+    login_host=$(kubectl -n "${JS_NAMESPACE}" get route jumpstarter-login-route -o jsonpath='{.spec.host}')
+  else
+    login_host=$(kubectl -n "${JS_NAMESPACE}" get ingress jumpstarter-login-ing -o jsonpath='{.spec.rules[0].host}')
+  fi
+
+  # Skip if no hostname found
+  if [ -z "$login_host" ]; then
+    skip "Could not determine login endpoint hostname"
+  fi
+
+  # Test simplified login format
+  # Note: We use --insecure because the e2e test environment may use self-signed certs
+  jmp login test-client-login@"$login_host" \
+    --username test-client-oidc@example.com --password password --unsafe
+
+  # Verify the client was created
+  run jmp config client list
+  assert_success
+  assert_output --partial "test-client-login"
+
+  # Clean up the created client config
+  rm -f "${HOME}/.config/jumpstarter/clients/test-client-login.yaml"
 }
 
 @test "legacy client config contains CA certificate and works with secure TLS" {
