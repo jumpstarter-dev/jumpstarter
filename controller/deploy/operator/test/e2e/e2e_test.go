@@ -886,6 +886,36 @@ spec:
 			verifyTLSSecret(certManagerTestNamespace, routerCertName)
 		})
 
+		It("should create the CA ConfigMap with the CA certificate", func() {
+			By("verifying the CA ConfigMap was created with the correct CA certificate")
+			caConfigMapName := "jumpstarter-service-ca-cert"
+			caSecretName := jumpstarterName + "-ca"
+
+			Eventually(func(g Gomega) {
+				// Get the CA ConfigMap
+				cm := &corev1.ConfigMap{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      caConfigMapName,
+					Namespace: certManagerTestNamespace,
+				}, cm)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Get the CA secret to compare
+				caSecret := &corev1.Secret{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name:      caSecretName,
+					Namespace: certManagerTestNamespace,
+				}, caSecret)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify the CA ConfigMap contains the CA certificate from the secret
+				g.Expect(cm.Data).To(HaveKey("ca.crt"))
+				g.Expect(cm.Data["ca.crt"]).NotTo(BeEmpty(), "CA ConfigMap should contain the CA certificate")
+				g.Expect(cm.Data["ca.crt"]).To(Equal(string(caSecret.Data["tls.crt"])),
+					"CA ConfigMap should contain the same certificate as the CA secret")
+			}, 2*time.Minute).Should(Succeed())
+		})
+
 		It("should mount TLS certificates in controller deployment", func() {
 			By("waiting for controller deployment to be available with TLS mount")
 			controllerDeploymentName := jumpstarterName + "-controller"
@@ -1178,6 +1208,26 @@ spec:
 
 			By("verifying the router TLS secret exists")
 			verifyTLSSecret(externalIssuerTestNamespace, routerCertName)
+		})
+
+		It("should create an empty CA ConfigMap for external issuer without CABundle", func() {
+			By("verifying the CA ConfigMap was created but is empty (external issuer without CABundle)")
+			// Fixed name for discoverability by jmp admin cli
+			caConfigMapName := "jumpstarter-service-ca-cert"
+
+			Eventually(func(g Gomega) {
+				cm := &corev1.ConfigMap{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      caConfigMapName,
+					Namespace: externalIssuerTestNamespace,
+				}, cm)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify the CA ConfigMap exists but ca.crt is empty (publicly trusted CA)
+				g.Expect(cm.Data).To(HaveKey("ca.crt"))
+				g.Expect(cm.Data["ca.crt"]).To(BeEmpty(),
+					"CA ConfigMap should be empty for external issuer without CABundle")
+			}, 1*time.Minute).Should(Succeed())
 		})
 
 		AfterAll(func() {

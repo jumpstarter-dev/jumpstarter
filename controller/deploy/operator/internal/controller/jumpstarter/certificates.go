@@ -25,7 +25,10 @@ import (
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -42,6 +45,9 @@ const (
 	caCertificateSuffix    = "-ca"
 	controllerCertSuffix   = "-controller-tls"
 	routerCertSuffix       = "-router-%d-tls"
+
+	// CA ConfigMap naming
+	caConfigMapSuffix = "-service-ca-cert"
 )
 
 // getServerCertDurationSettings
@@ -72,6 +78,12 @@ func getServerCertDurationSettings(js *operatorv1alpha1.Jumpstarter) (time.Durat
 // This is the main entry point called from Reconcile() when cert-manager is enabled.
 func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
+
+	// Always reconcile the CA ConfigMap first - this ensures cleanup during config transitions
+	// and provides the CA bundle for clients regardless of certificate reconciliation state
+	if err := r.reconcileCAConfigMap(ctx, js); err != nil {
+		return fmt.Errorf("failed to reconcile CA ConfigMap: %w", err)
+	}
 
 	if !js.Spec.CertManager.Enabled {
 		// If cert-manager integration is disabled, skip certificate reconciliation
@@ -460,6 +472,107 @@ func (r *JumpstarterReconciler) reconcileCertificateResource(ctx context.Context
 
 	logf.FromContext(ctx).V(1).Info("Certificate reconciled", "name", cert.Name, "operation", op)
 	return nil
+}
+
+// reconcileCAConfigMap creates or updates the CA certificate ConfigMap.
+// This ConfigMap contains the CA bundle that clients can use to verify TLS connections.
+// The ConfigMap is ALWAYS created to ensure proper cleanup during configuration transitions.
+// This configmap is used by jmp admin cli when creating exporters or clients.
+func (r *JumpstarterReconciler) reconcileCAConfigMap(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
+	log := logf.FromContext(ctx)
+
+	// fixed name because we only support one "jumpstater" per namespace, and
+	// we want to ensure that the CA configmap is findable by jmp admin cli
+	// when creating exporters or clients
+	configMapName := "jumpstarter" + caConfigMapSuffix
+	caCert := ""
+
+	// If cert-manager is disabled, create empty ConfigMap
+	if !js.Spec.CertManager.Enabled {
+		log.V(1).Info("cert-manager disabled, creating empty CA ConfigMap")
+	} else if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.IssuerRef != nil {
+		// External issuer mode
+		if len(js.Spec.CertManager.Server.IssuerRef.CABundle) > 0 {
+			// Use provided CA bundle
+			caCert = string(js.Spec.CertManager.Server.IssuerRef.CABundle)
+			log.V(1).Info("Using CA bundle from external issuer configuration")
+		} else {
+			// External issuer without CA bundle - leave empty (publicly trusted CA)
+			log.V(1).Info("External issuer without CA bundle, creating empty CA ConfigMap")
+		}
+	} else {
+		// Self-signed CA mode - read from CA secret
+		selfSignedEnabled := true
+		if js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.SelfSigned != nil {
+			selfSignedEnabled = js.Spec.CertManager.Server.SelfSigned.Enabled
+		}
+
+		if selfSignedEnabled {
+			caSecretName := js.Name + caCertificateSuffix
+			caSecret := &corev1.Secret{}
+			err := r.Client.Get(ctx, types.NamespacedName{
+				Name:      caSecretName,
+				Namespace: js.Namespace,
+			}, caSecret)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					// Transient/API/RBAC error - return to requeue and retry
+					return fmt.Errorf("failed to get CA secret %s: %w", caSecretName, err)
+				}
+				// CA secret doesn't exist yet - this is expected during initial setup
+				// The ConfigMap will be updated once the CA certificate is ready
+				log.V(1).Info("CA secret not found, creating empty CA ConfigMap", "secret", caSecretName)
+			} else if cert, ok := caSecret.Data["tls.crt"]; ok {
+				caCert = string(cert)
+				log.V(1).Info("Using CA certificate from self-signed CA secret", "secret", caSecretName)
+			} else {
+				log.V(1).Info("CA secret missing tls.crt key, creating empty CA ConfigMap", "secret", caSecretName)
+			}
+		} else {
+			// Self-signed disabled and no external issuer - leave empty
+			log.V(1).Info("Self-signed CA disabled, creating empty CA ConfigMap")
+		}
+	}
+
+	// Create the ConfigMap
+	labels := map[string]string{
+		"app":                          js.Name,
+		"app.kubernetes.io/managed-by": "jumpstarter-operator",
+	}
+
+	desiredConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: js.Namespace,
+			Labels:    labels,
+		},
+		Data: map[string]string{
+			"ca.crt": caCert,
+		},
+	}
+
+	existingConfigMap := &corev1.ConfigMap{}
+	existingConfigMap.Name = desiredConfigMap.Name
+	existingConfigMap.Namespace = desiredConfigMap.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingConfigMap, func() error {
+		existingConfigMap.Labels = desiredConfigMap.Labels
+		existingConfigMap.Data = desiredConfigMap.Data
+		return controllerutil.SetControllerReference(js, existingConfigMap, r.Scheme)
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to reconcile CA ConfigMap %s: %w", configMapName, err)
+	}
+
+	log.Info("CA ConfigMap reconciled", "name", configMapName, "operation", op, "hasCA", caCert != "")
+	return nil
+}
+
+// GetCAConfigMapName returns the name of the CA certificate ConfigMap.
+// The name is fixed to "jumpstarter-service-ca-cert" for discoverability by jmp admin cli.
+func GetCAConfigMapName(js *operatorv1alpha1.Jumpstarter) string {
+	return "jumpstarter" + caConfigMapSuffix
 }
 
 // GetControllerCertSecretName returns the name of the controller TLS secret.
