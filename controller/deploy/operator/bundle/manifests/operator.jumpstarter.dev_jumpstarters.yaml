@@ -476,6 +476,14 @@ spec:
                           Use this to integrate with existing PKI infrastructure (ACME, Vault, etc.).
                           This overrides SelfSigned.Enabled = true which is the default setting
                         properties:
+                          caBundle:
+                            description: |-
+                              CABundle is an optional base64-encoded PEM CA certificate bundle for this issuer.
+                              Required when using external issuers with non-publicly-trusted CAs.
+                              This will be published to the {name}-service-ca-cert ConfigMap for clients to use.
+                              For self-signed CA mode, this is automatically populated from the CA secret.
+                            format: byte
+                            type: string
                           group:
                             default: cert-manager.io
                             description: |-
