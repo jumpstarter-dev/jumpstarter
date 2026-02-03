@@ -1103,6 +1103,118 @@ spec:
 		})
 	})
 
+	Context("Login endpoint auto-configuration", Ordered, func() {
+		const baseDomain = "login-auto.127.0.0.1.nip.io"
+		const jumpstarterName = "jumpstarter-login-auto"
+		var loginAutoTestNamespace string
+
+		BeforeAll(func() {
+			loginAutoTestNamespace = CreateTestNamespace()
+		})
+
+		It("should deploy Jumpstarter without explicit login endpoints", func() {
+			By("creating a Jumpstarter CR with baseDomain but no login endpoints")
+			image := os.Getenv("IMG")
+			if image == "" {
+				image = defaultControllerImage
+			}
+
+			// Note: No login.endpoints specified - resources should be auto-generated
+			// The defaults are applied in-memory during reconciliation, not persisted to CR
+			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  baseDomain: %s
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
+  controller:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: grpc.%s:8082
+          nodeport:
+            enabled: true
+            port: 30070
+  routers:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: router.%s:8083
+          nodeport:
+            enabled: true
+            port: 30071
+`, jumpstarterName, loginAutoTestNamespace, baseDomain, image, baseDomain, image, baseDomain)
+
+			err := applyYAML(jumpstarterYAML)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR")
+
+			By("verifying the Jumpstarter CR was created")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      jumpstarterName,
+					Namespace: loginAutoTestNamespace,
+				}, js)
+				g.Expect(err).NotTo(HaveOccurred())
+				// Note: spec.Controller.Login.Endpoints will be empty in the stored CR
+				// because defaults are applied in-memory during reconciliation
+				g.Expect(js.Spec.Controller.Login.Endpoints).To(BeEmpty(),
+					"Login endpoints should be empty in stored CR (defaults applied in-memory)")
+			}, 30*time.Second).Should(Succeed())
+		})
+
+		It("should auto-create login service when baseDomain is set", func() {
+			By("verifying the login service was auto-created")
+			Eventually(func(g Gomega) {
+				svc := &corev1.Service{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "login",
+					Namespace: loginAutoTestNamespace,
+				}, svc)
+				g.Expect(err).NotTo(HaveOccurred(),
+					"Login service should be auto-created when baseDomain is set")
+				g.Expect(svc.Spec.Ports).To(HaveLen(1))
+				g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(8086)))
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		It("should auto-create login ingress with correct hostname", func() {
+			By("verifying the login ingress was auto-created with login.{baseDomain}")
+			// In kind cluster, Ingress API should be available
+			Eventually(func(g Gomega) {
+				ingress := &networkingv1.Ingress{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "login-ing",
+					Namespace: loginAutoTestNamespace,
+				}, ingress)
+				g.Expect(err).NotTo(HaveOccurred(),
+					"Login ingress should be auto-created when baseDomain is set and Ingress API is available")
+
+				// Verify the auto-generated hostname follows the pattern login.{baseDomain}
+				g.Expect(ingress.Spec.Rules).To(HaveLen(1))
+				g.Expect(ingress.Spec.Rules[0].Host).To(Equal("login."+baseDomain),
+					"Auto-generated login ingress should use login.{baseDomain} as hostname")
+
+				// Verify TLS is configured
+				g.Expect(ingress.Spec.TLS).To(HaveLen(1))
+				g.Expect(ingress.Spec.TLS[0].Hosts).To(ContainElement("login." + baseDomain))
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		AfterAll(func() {
+			DeleteTestNamespace(loginAutoTestNamespace)
+		})
+	})
+
 	Context("cert-manager self-signed mode", Ordered, func() {
 		const baseDomain = "certmanager.127.0.0.1.nip.io"
 		const jumpstarterName = "jumpstarter-certmanager"

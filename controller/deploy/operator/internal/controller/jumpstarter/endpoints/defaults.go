@@ -82,4 +82,19 @@ func ApplyEndpointDefaults(spec *operatorv1alpha1.JumpstarterSpec, routeAvailabl
 			ensureEndpointServiceType(&spec.Routers.GRPC.Endpoints[i], routeAvailable, ingressAvailable)
 		}
 	}
+
+	// Generate default login endpoint if none specified
+	// Login endpoints use edge TLS termination (not passthrough like gRPC)
+	if len(spec.Controller.Login.Endpoints) == 0 {
+		endpoint := operatorv1alpha1.Endpoint{
+			Address: fmt.Sprintf("login.%s", spec.BaseDomain),
+		}
+		ensureEndpointServiceType(&endpoint, routeAvailable, ingressAvailable)
+		spec.Controller.Login.Endpoints = []operatorv1alpha1.Endpoint{endpoint}
+	} else {
+		// Ensure existing login endpoints have a service type enabled
+		for i := range spec.Controller.Login.Endpoints {
+			ensureEndpointServiceType(&spec.Controller.Login.Endpoints[i], routeAvailable, ingressAvailable)
+		}
+	}
 }
