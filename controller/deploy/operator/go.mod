@@ -1,9 +1,9 @@
 module github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator
 
-go 1.24.0
+go 1.25.0
 
 require (
-	github.com/cert-manager/cert-manager v1.18.4
+	github.com/cert-manager/cert-manager v1.19.3
 	github.com/go-logr/logr v1.4.3
 	github.com/google/uuid v1.6.0
 	github.com/jumpstarter-dev/jumpstarter-controller v0.7.1
