@@ -292,18 +292,10 @@ install_jumpstarter() {
     log_info "Installing jumpstarter..."
     
     cd "$REPO_ROOT"
-    
-    # Create virtual environment
-    uv venv
-    
-    # Install jumpstarter packages
-    uv pip install \
-        ./python/packages/jumpstarter-cli \
-        ./python/packages/jumpstarter-driver-composite \
-        ./python/packages/jumpstarter-driver-power \
-        ./python/packages/jumpstarter-driver-opendal
-    
-    log_info "✓ Jumpstarter installed"
+    cd python
+    make sync
+    cd ..
+    log_info "✓ Jumpstarter python installed"
 }
 
 # Step 5: Setup test environment
