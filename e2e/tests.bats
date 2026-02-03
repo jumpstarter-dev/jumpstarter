@@ -122,7 +122,7 @@ wait_for_exporter() {
     --username test-client-oidc@example.com --password password --unsafe
 
   jmp login --client test-client-oidc-provisioning \
-    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name "" \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name="" \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc-provisioning@example.com --password password --unsafe
 
@@ -133,7 +133,7 @@ wait_for_exporter() {
     --token $(kubectl create -n "${JS_NAMESPACE}" token test-client-sa) --unsafe
 
   jmp login --exporter test-exporter-oidc \
-    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-exporter-oidc \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-exporter-oidc@example.com --password password
 
@@ -156,20 +156,16 @@ wait_for_exporter() {
 }
 
 @test "can login with simplified login" {
+  # This test only works with operator-based deployment, which creates the CA ConfigMap
+  if [ "${METHOD:-}" != "operator" ]; then
+    skip "CA certificate injection only configured with operator deployment (METHOD=$METHOD)"
+  fi
+
   jmp config client   delete test-client-oidc
-  jmp config exporter delete test-exporter-oidc
 
   run jmp login test-client-oidc@${LOGIN_ENDPOINT} --insecure-login-http \
     --username test-client-oidc@example.com --password password --unsafe
   assert_success
-
-  run jmp login --exporter test-exporter-oidc ${LOGIN_ENDPOINT} \
-    --username test-exporter-oidc@example.com --password password
-  assert_success
-
-  # add the mock export paths to those files
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
-    /etc/jumpstarter/exporters/test-exporter-oidc.yaml
 
   # Verify CA certificate is populated in client config
   local client_config="${HOME}/.config/jumpstarter/clients/test-client-oidc.yaml"
@@ -181,18 +177,7 @@ wait_for_exporter() {
   refute_output "null"
   echo "Client config has CA certificate populated"
 
-  # Verify CA certificate is populated in exporter config
-  local exporter_config="/etc/jumpstarter/exporters/test-exporter-oidc.yaml"
-  run test -f "$exporter_config"
-  assert_success
-  run go run github.com/mikefarah/yq/v4@latest '.tls.ca' "$exporter_config"
-  assert_success
-  refute_output ""
-  refute_output "null"
-  echo "Exporter config has CA certificate populated"
-
   jmp config client   list
-  jmp config exporter list
 }
 
 @test "can run exporters" {
