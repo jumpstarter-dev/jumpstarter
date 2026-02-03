@@ -178,6 +178,7 @@ wait_for_exporter() {
   run jmp config exporter list
   assert_success
   assert_output --partial "test-exporter-oidc"
+
 }
 
 @test "can login with oidc test-exporter-sa" {
@@ -217,6 +218,11 @@ wait_for_exporter() {
   refute_output "null"
   echo "Client config has CA certificate populated"
 
+  # Verify the new client is set as the default (marked with * in CURRENT column)
+  run jmp config client list
+  assert_success
+  assert_output --regexp '^\*[[:space:]]+test-client-oidc[[:space:]]'
+  echo "Client test-client-oidc is set as default"
 }
 
 @test "can run exporters" {
