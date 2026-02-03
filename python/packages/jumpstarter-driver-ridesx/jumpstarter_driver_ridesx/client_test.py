@@ -59,6 +59,7 @@ def test_flash_oci_auto_success(ridesx_client):
     """Test successful flash_oci_auto call"""
     with patch.object(ridesx_client, "call") as mock_call:
         mock_call.side_effect = [
+            None,  # boot_to_fastboot call
             {"status": "device_found", "device_id": "ABC123"},
             {"status": "success"},
         ]
@@ -67,7 +68,7 @@ def test_flash_oci_auto_success(ridesx_client):
 
         assert result == {"status": "success"}
         # Verify flash_oci_image was called with the OCI URL
-        flash_call = mock_call.call_args_list[1]
+        flash_call = mock_call.call_args_list[2]
         assert flash_call[0][0] == "flash_oci_image"
         assert flash_call[0][1] == "oci://quay.io/org/image:tag"
 

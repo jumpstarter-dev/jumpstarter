@@ -66,19 +66,31 @@ def test_get_fls_binary_falls_back_to_path():
 
 
 def test_download_fls_success():
-    with patch("urllib.request.urlretrieve") as mock_retrieve:
+    from unittest.mock import MagicMock, mock_open
+
+    mock_response = MagicMock()
+    mock_response.read.side_effect = [b"binary data", b""]  # Simulate chunked read
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=None)
+
+    with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
         with patch("tempfile.mkstemp", return_value=(99, "/tmp/fls-test")):
             with patch("os.close") as mock_close:
-                with patch("pathlib.Path.chmod"):
-                    result = download_fls("https://example.com/fls")
+                with patch("pathlib.Path.chmod") as mock_chmod:
+                    with patch("os.replace") as mock_replace:
+                        with patch("builtins.open", mock_open()):
+                            with patch("os.fsync"):
+                                result = download_fls("https://example.com/fls")
 
-                    mock_close.assert_called_once_with(99)
-                    mock_retrieve.assert_called_once_with("https://example.com/fls", "/tmp/fls-test")
-                    assert result == "/tmp/fls-test"
+                                mock_close.assert_called_once_with(99)
+                                mock_urlopen.assert_called_once_with("https://example.com/fls", timeout=30.0)
+                                mock_chmod.assert_called_once_with(0o755)
+                                mock_replace.assert_called_once_with("/tmp/fls-test.part", "/tmp/fls-test")
+                                assert result == "/tmp/fls-test"
 
 
 def test_download_fls_failure():
-    with patch("urllib.request.urlretrieve", side_effect=Exception("Network error")):
+    with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
         with patch("tempfile.mkstemp", return_value=(99, "/tmp/fls-test")):
             with patch("os.close"):
                 with patch("pathlib.Path.unlink"):
