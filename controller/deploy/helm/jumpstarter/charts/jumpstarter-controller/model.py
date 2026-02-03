@@ -142,6 +142,15 @@ class LoginNodeport(BaseModel):
     )
 
 
+class LoginTls(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secretName: Optional[str] = Field(
+        None,
+        description="Name of the Kubernetes secret containing tls.crt and tls.key for edge TLS termination",
+    )
+
+
 class Login(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -153,6 +162,10 @@ class Login(BaseModel):
     )
     endpoint: Optional[str] = Field(
         None, description="The endpoint URL to display in the login landing page"
+    )
+    tls: Optional[LoginTls] = Field(
+        None,
+        description="TLS configuration for edge termination (used by both route and ingress)",
     )
     route: Optional[LoginRoute] = None
     ingress: Optional[LoginIngress] = None

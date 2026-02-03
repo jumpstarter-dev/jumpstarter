@@ -718,6 +718,18 @@
           "description": "The endpoint URL to display in the login landing page",
           "title": "Endpoint"
         },
+        "tls": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoginTls"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "TLS configuration for edge termination (used by both route and ingress)"
+        },
         "route": {
           "anyOf": [
             {
@@ -933,6 +945,26 @@
         }
       },
       "title": "LoginRoute",
+      "type": "object"
+    },
+    "LoginTls": {
+      "additionalProperties": false,
+      "properties": {
+        "secretName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of the Kubernetes secret containing tls.crt and tls.key for edge TLS termination",
+          "title": "Secretname"
+        }
+      },
+      "title": "LoginTls",
       "type": "object"
     },
     "Metrics": {
