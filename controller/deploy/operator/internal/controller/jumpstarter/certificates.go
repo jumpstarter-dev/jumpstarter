@@ -26,6 +26,7 @@ import (
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -514,6 +515,10 @@ func (r *JumpstarterReconciler) reconcileCAConfigMap(ctx context.Context, js *op
 				Namespace: js.Namespace,
 			}, caSecret)
 			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					// Transient/API/RBAC error - return to requeue and retry
+					return fmt.Errorf("failed to get CA secret %s: %w", caSecretName, err)
+				}
 				// CA secret doesn't exist yet - this is expected during initial setup
 				// The ConfigMap will be updated once the CA certificate is ready
 				log.V(1).Info("CA secret not found, creating empty CA ConfigMap", "secret", caSecretName)
