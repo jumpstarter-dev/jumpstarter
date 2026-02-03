@@ -103,7 +103,7 @@ wait_for_exporter() {
   run jmp admin create client -n "${JS_NAMESPACE}" test-client-legacy   --unsafe --save
   assert_success
 
-  run jmp config client list
+  run jmp config client list -o yaml
   assert_success
   assert_output --partial "test-client-legacy"
 }
@@ -125,7 +125,7 @@ wait_for_exporter() {
 
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-legacy.yaml
-  run jmp config exporter list
+  run jmp config exporter list -o yaml
   assert_success
   assert_output --partial "test-exporter-legacy"
 }
@@ -136,7 +136,7 @@ wait_for_exporter() {
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc@example.com --password password --unsafe
   assert_success
-  run jmp config client list
+  run jmp config client list -o yaml
   assert_success
   assert_output --partial "test-client-oidc"
 }
@@ -147,7 +147,7 @@ wait_for_exporter() {
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc-provisioning@example.com --password password --unsafe
   assert_success
-  run jmp config client list
+  run jmp config client list -o yaml
   assert_success
   assert_output --partial "test-client-oidc-provisioning"
 }
@@ -159,7 +159,7 @@ wait_for_exporter() {
     --connector-id kubernetes \
     --token $(kubectl create -n "${JS_NAMESPACE}" token test-client-sa) --unsafe
   assert_success
-  run jmp config client list
+  run jmp config client list -o yaml
   assert_success
   assert_output --partial "test-client-sa"
 }
@@ -173,7 +173,7 @@ wait_for_exporter() {
   # add the mock export paths to those files
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-oidc.yaml
-  run jmp config exporter list
+  run jmp config exporter list -o yaml
   assert_success
   assert_output --partial "test-exporter-oidc"
 
@@ -189,7 +189,7 @@ wait_for_exporter() {
 
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-sa.yaml
-  run jmp config exporter list
+  run jmp config exporter list -o yaml
   assert_success
   assert_output --partial "test-exporter-sa"
 }
@@ -283,7 +283,7 @@ EOF
 
   # Test that the client works WITHOUT JUMPSTARTER_GRPC_INSECURE set
   # This proves the CA certificate is being used for TLS verification
-  run env -u JUMPSTARTER_GRPC_INSECURE jmp get exporters --client test-client-legacy
+  run env -u JUMPSTARTER_GRPC_INSECURE jmp get exporters --client test-client-legacy -o yaml
   assert_success
   # Should see the legacy exporter in the output
   assert_output --partial "test-exporter-legacy"
