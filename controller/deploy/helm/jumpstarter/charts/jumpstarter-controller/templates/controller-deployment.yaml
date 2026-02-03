@@ -96,7 +96,9 @@ spec:
             configMapKeyRef:
               name: jumpstarter-service-ca-cert
               key: ca.crt
-              optional: true
+              # When cert-manager is enabled, require the configmap (fail fast on missing cert)
+              # When disabled, make it optional (users may not have TLS configured)
+              optional: {{ not .Values.certManager.enabled }}
         - name: GIN_MODE
           value: release
         image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}

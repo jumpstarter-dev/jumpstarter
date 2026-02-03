@@ -305,17 +305,20 @@ setup_test_environment() {
     cd "$REPO_ROOT"
     
     # Get the controller endpoint based on deployment method
+    # Note: We declare BASEDOMAIN separately from assignment so that command
+    # failures propagate under set -e (local VAR=$(...) masks exit codes).
+    local BASEDOMAIN
     if [ "$METHOD" = "operator" ]; then
         # For operator deployment, construct the endpoint from the Jumpstarter CR
         # The operator uses nodeport mode by default with port 8082
-        local BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
+        BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
         export ENDPOINT="grpc.${BASEDOMAIN}:8082"
         export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
     else
         # For helm deployment, get the endpoint from helm values
         export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
         # Login endpoint is on nodeport 30014 mapped to host port 8086
-        local BASEDOMAIN=$(helm get values jumpstarter --output json | jq -r '.global.baseDomain')
+        BASEDOMAIN=$(helm get values jumpstarter --output json | jq -r '.global.baseDomain')
         export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
     fi
     log_info "Controller endpoint: $ENDPOINT"

@@ -23,6 +23,7 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -67,7 +68,13 @@ type Config struct {
 	OIDC []OIDCConfig
 }
 
-// Service provides the login API for simplified CLI login
+// Service provides the login API for simplified CLI login.
+//
+// Concurrency: Service is designed with a "configure then run" model.
+// All configuration (including SetOIDCConfig) must be completed before
+// calling Start(). Once Start() is called, the config is read concurrently
+// by HTTP handlers and must not be modified. This design avoids the need
+// for mutex synchronization on the hot path.
 type Service struct {
 	config Config
 }
@@ -93,7 +100,12 @@ func NewServiceFromEnv() *Service {
 	}
 }
 
-// SetOIDCConfig sets the OIDC configuration
+// SetOIDCConfig sets the OIDC configuration.
+//
+// IMPORTANT: This method must only be called before Start(). Calling it after
+// Start() introduces a data race with concurrent readers (handleAuthConfig,
+// handleLandingPage). If dynamic OIDC configuration updates are needed in the
+// future, add mutex synchronization around s.config.OIDC access.
 func (s *Service) SetOIDCConfig(oidc []OIDCConfig) {
 	s.config.OIDC = oidc
 }
@@ -136,7 +148,7 @@ func (s *Service) Start(ctx context.Context) error {
 	<-ctx.Done()
 
 	// Graceful shutdown
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	return server.Shutdown(shutdownCtx)

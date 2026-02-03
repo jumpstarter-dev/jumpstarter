@@ -1,6 +1,14 @@
 
 namespace: ""
 
+# cert-manager integration for automatic TLS certificate management
+# When enabled, the jumpstarter-service-ca-cert configmap is expected to be
+# created by cert-manager and is required (not optional).
+# When disabled, the configmap is optional - users must pre-create it manually
+# if they want TLS, otherwise TLS will be disabled.
+certManager:
+  enabled: false
+
 grpc:
   hostname: ""
   routerHostname: ""

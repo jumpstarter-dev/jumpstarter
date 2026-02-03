@@ -343,6 +343,15 @@ class Router(BaseModel):
     nodeSelector: dict[str, str] | None = None
 
 
+class CertManager(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None,
+        description="Enable cert-manager integration. When enabled, jumpstarter-service-ca-cert configmap is required.",
+    )
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -362,6 +371,10 @@ class Model(BaseModel):
     )
     global_: Optional[Global] = Field(
         None, alias="global", description="Global parameters"
+    )
+    certManager: Optional[CertManager] = Field(
+        None,
+        description="cert-manager integration for automatic TLS certificate management",
     )
     grpc: Optional[Grpc1] = None
     login: Optional[Login] = Field(

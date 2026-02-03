@@ -41,6 +41,26 @@
       "title": "Authentication",
       "type": "object"
     },
+    "CertManager": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Enable cert-manager integration. When enabled, jumpstarter-service-ca-cert configmap is required.",
+          "title": "Enabled"
+        }
+      },
+      "title": "CertManager",
+      "type": "object"
+    },
     "ClaimMappings": {
       "additionalProperties": false,
       "properties": {
@@ -1392,6 +1412,18 @@
       ],
       "default": null,
       "description": "Global parameters"
+    },
+    "certManager": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CertManager"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "cert-manager integration for automatic TLS certificate management"
     },
     "grpc": {
       "anyOf": [

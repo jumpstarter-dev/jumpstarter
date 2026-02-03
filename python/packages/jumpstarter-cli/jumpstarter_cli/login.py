@@ -19,6 +19,9 @@ from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
 
+# Default timeout for HTTP requests to prevent CLI from hanging indefinitely
+_HTTP_TIMEOUT_SECONDS = 30
+
 
 async def fetch_auth_config(
     login_endpoint: str,
@@ -50,7 +53,10 @@ async def fetch_auth_config(
     # Configure SSL context: False disables verification, True enables it
     ssl_context: ssl.SSLContext | bool = False if insecure_tls else True
 
-    async with aiohttp.ClientSession() as session:
+    # Use a timeout to prevent the CLI from hanging indefinitely
+    timeout = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url, ssl=ssl_context) as response:
             if response.status != 200:
                 raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
