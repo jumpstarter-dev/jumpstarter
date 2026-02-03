@@ -183,6 +183,16 @@ async def login(  # noqa: C901
         except aiohttp.ClientError as e:
             raise click.ClickException(f"Failed to fetch auth config from {login_endpoint}: {e}") from e
 
+    # If we parsed a client name from login_target and the config is an existing client
+    # with a different alias, we should create a new config instead of updating the wrong one
+    # (e.g., when the current default client differs from the target in simplified login)
+    if (
+        parsed_client_name
+        and isinstance(config, ClientConfigV1Alpha1)
+        and config.alias != parsed_client_name
+    ):
+        config = ("client", parsed_client_name)
+
     config_kind = None
     match config:
         # we are updating an existing config
@@ -299,7 +309,6 @@ async def login(  # noqa: C901
         config.refresh_token = refresh_token
 
     save_config()
-
     # Set the new client as the default if it's a client config
     if config_kind in ("client", "client_config") and isinstance(config, ClientConfigV1Alpha1):
         user_config = UserConfigV1Alpha1.load_or_create()

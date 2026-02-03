@@ -89,8 +89,6 @@ wait_for_exporter() {
   assert_output --partial "Jumpstarter"
   assert_output --partial "jmp login"
 
-  # Cleanup port-forward
-  kill $port_forward_pid 2>/dev/null || true
 }
 
 @test "can create clients with admin cli" {
@@ -221,7 +219,7 @@ wait_for_exporter() {
   # Verify the new client is set as the default (marked with * in CURRENT column)
   run jmp config client list
   assert_success
-  assert_output --regexp '^\*[[:space:]]+test-client-oidc[[:space:]]'
+  assert_line --regexp '^[[:space:]]*\*[[:space:]]+test-client-oidc[[:space:]]'
   echo "Client test-client-oidc is set as default"
 }
 
