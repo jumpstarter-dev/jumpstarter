@@ -422,12 +422,26 @@ type RestAPIConfig struct {
 // The login service provides authentication configuration discovery for simplified CLI login.
 // It runs on HTTP with TLS terminated at the Route/Ingress level (edge termination).
 type LoginConfig struct {
+	// TLS configuration for the login endpoint.
+	// Specifies the Kubernetes secret containing the TLS certificate for edge termination.
+	// If not specified and certManager is enabled, a default secret name will be generated.
+	TLS *LoginTLSConfig `json:"tls,omitempty"`
+
 	// List of login endpoints to expose.
 	// Each endpoint can use different networking methods (Route, Ingress, NodePort, or LoadBalancer)
-	// based on your cluster setup. TLS should be configured via annotations/labels on the
-	// Route or Ingress resources (e.g., for cert-manager integration).
+	// based on your cluster setup.
 	// Note: Unlike gRPC endpoints, login endpoints use edge TLS termination (not passthrough).
 	Endpoints []Endpoint `json:"endpoints,omitempty"`
+}
+
+// LoginTLSConfig defines TLS configuration for login endpoints.
+// This is used for edge TLS termination at the Ingress/Route level.
+type LoginTLSConfig struct {
+	// Name of the Kubernetes secret containing the TLS certificate and private key.
+	// The secret must contain 'tls.crt' and 'tls.key' keys.
+	// Used for edge TLS termination at the Ingress/Route level.
+	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+	SecretName string `json:"secretName,omitempty"`
 }
 
 // Endpoint defines a single endpoint configuration.

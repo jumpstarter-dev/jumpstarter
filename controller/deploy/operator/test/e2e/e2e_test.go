@@ -727,6 +727,382 @@ provisioning:
 		})
 	})
 
+	Context("Login endpoint TLS configuration", Ordered, func() {
+		const baseDomain = "login-tls.127.0.0.1.nip.io"
+		const jumpstarterName = "jumpstarter-login-tls"
+		const loginTLSSecretName = "my-custom-login-tls-secret"
+		var loginTLSTestNamespace string
+
+		BeforeAll(func() {
+			loginTLSTestNamespace = CreateTestNamespace()
+		})
+
+		It("should create login ingress with explicit TLS secret", func() {
+			By("creating a TLS secret for the login endpoint")
+			// Create a dummy TLS secret (in real scenarios this would be a valid cert)
+			tlsSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      loginTLSSecretName,
+					Namespace: loginTLSTestNamespace,
+				},
+				Type: corev1.SecretTypeTLS,
+				Data: map[string][]byte{
+					"tls.crt": []byte("dummy-cert"),
+					"tls.key": []byte("dummy-key"),
+				},
+			}
+			err := k8sClient.Create(ctx, tlsSecret)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create TLS secret")
+
+			By("creating a Jumpstarter CR with login endpoint and explicit TLS secret")
+			image := os.Getenv("IMG")
+			if image == "" {
+				image = defaultControllerImage
+			}
+
+			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  baseDomain: %s
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
+  controller:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: grpc.%s:8082
+          nodeport:
+            enabled: true
+            port: 30040
+    login:
+      tls:
+        secretName: %s
+      endpoints:
+        - address: login.%s
+          ingress:
+            enabled: true
+            class: nginx
+  routers:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: router.%s:8083
+          nodeport:
+            enabled: true
+            port: 30041
+`, jumpstarterName, loginTLSTestNamespace, baseDomain, image, baseDomain, loginTLSSecretName, baseDomain, image, baseDomain)
+
+			err = applyYAML(jumpstarterYAML)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR with login TLS config")
+
+			By("verifying the Jumpstarter CR was created with login TLS config")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      jumpstarterName,
+					Namespace: loginTLSTestNamespace,
+				}, js)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(js.Spec.Controller.Login.TLS).NotTo(BeNil())
+				g.Expect(js.Spec.Controller.Login.TLS.SecretName).To(Equal(loginTLSSecretName))
+			}, 30*time.Second).Should(Succeed())
+		})
+
+		It("should create login service", func() {
+			By("verifying the login service was created")
+			Eventually(func(g Gomega) {
+				svc := &corev1.Service{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "login",
+					Namespace: loginTLSTestNamespace,
+				}, svc)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(svc.Spec.Ports).To(HaveLen(1))
+				g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(8086)))
+			}, 1*time.Minute).Should(Succeed())
+		})
+
+		It("should create login ingress with the explicit TLS secret", func() {
+			By("verifying the login ingress was created with correct TLS secret")
+			Eventually(func(g Gomega) {
+				ingress := &networkingv1.Ingress{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "login-ing",
+					Namespace: loginTLSTestNamespace,
+				}, ingress)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify the ingress rules
+				g.Expect(ingress.Spec.Rules).To(HaveLen(1))
+				g.Expect(ingress.Spec.Rules[0].Host).To(Equal("login." + baseDomain))
+
+				// Verify the TLS configuration uses the explicit secret
+				g.Expect(ingress.Spec.TLS).To(HaveLen(1))
+				g.Expect(ingress.Spec.TLS[0].SecretName).To(Equal(loginTLSSecretName),
+					"Login ingress should use the explicitly configured TLS secret")
+				g.Expect(ingress.Spec.TLS[0].Hosts).To(ContainElement("login." + baseDomain))
+			}, 1*time.Minute).Should(Succeed())
+		})
+
+		It("should update login ingress TLS secret when config changes", func() {
+			By("updating the Jumpstarter CR with a different TLS secret name")
+			newSecretName := "updated-login-tls-secret"
+
+			// Create the new TLS secret
+			newTLSSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      newSecretName,
+					Namespace: loginTLSTestNamespace,
+				},
+				Type: corev1.SecretTypeTLS,
+				Data: map[string][]byte{
+					"tls.crt": []byte("dummy-cert-2"),
+					"tls.key": []byte("dummy-key-2"),
+				},
+			}
+			err := k8sClient.Create(ctx, newTLSSecret)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create new TLS secret")
+
+			// Update the Jumpstarter CR
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      jumpstarterName,
+				Namespace: loginTLSTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			jumpstarter.Spec.Controller.Login.TLS.SecretName = newSecretName
+			err = k8sClient.Update(ctx, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the login ingress TLS secret was updated")
+			Eventually(func(g Gomega) {
+				ingress := &networkingv1.Ingress{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "login-ing",
+					Namespace: loginTLSTestNamespace,
+				}, ingress)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ingress.Spec.TLS).To(HaveLen(1))
+				g.Expect(ingress.Spec.TLS[0].SecretName).To(Equal(newSecretName),
+					"Login ingress should use the updated TLS secret")
+			}, 1*time.Minute).Should(Succeed())
+		})
+
+		AfterAll(func() {
+			DeleteTestNamespace(loginTLSTestNamespace)
+		})
+	})
+
+	Context("Login endpoint with cert-manager default TLS", Ordered, func() {
+		const baseDomain = "login-cm.127.0.0.1.nip.io"
+		const jumpstarterName = "jumpstarter-login-cm"
+		var loginCMTestNamespace string
+
+		BeforeAll(func() {
+			loginCMTestNamespace = CreateTestNamespace()
+		})
+
+		It("should create login ingress with default TLS secret when cert-manager is enabled", func() {
+			By("creating a Jumpstarter CR with login endpoint and cert-manager enabled")
+			image := os.Getenv("IMG")
+			if image == "" {
+				image = defaultControllerImage
+			}
+
+			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  baseDomain: %s
+  certManager:
+    enabled: true
+    server:
+      selfSigned:
+        enabled: true
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
+  controller:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: grpc.%s:8082
+          nodeport:
+            enabled: true
+            port: 30050
+    login:
+      endpoints:
+        - address: login.%s
+          ingress:
+            enabled: true
+            class: nginx
+  routers:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: router.%s:8083
+          nodeport:
+            enabled: true
+            port: 30051
+`, jumpstarterName, loginCMTestNamespace, baseDomain, image, baseDomain, baseDomain, image, baseDomain)
+
+			err := applyYAML(jumpstarterYAML)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR with cert-manager")
+
+			By("verifying the Jumpstarter CR was created")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      jumpstarterName,
+					Namespace: loginCMTestNamespace,
+				}, js)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(js.Spec.CertManager.Enabled).To(BeTrue())
+			}, 30*time.Second).Should(Succeed())
+		})
+
+		It("should create login ingress with default TLS secret name", func() {
+			By("verifying the login ingress was created with default TLS secret naming")
+			Eventually(func(g Gomega) {
+				ingress := &networkingv1.Ingress{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "login-ing",
+					Namespace: loginCMTestNamespace,
+				}, ingress)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify the ingress rules
+				g.Expect(ingress.Spec.Rules).To(HaveLen(1))
+				g.Expect(ingress.Spec.Rules[0].Host).To(Equal("login." + baseDomain))
+
+				// When cert-manager is enabled and no explicit TLS secret is set,
+				// the default naming convention should be used: serviceName + "-tls"
+				g.Expect(ingress.Spec.TLS).To(HaveLen(1))
+				g.Expect(ingress.Spec.TLS[0].SecretName).To(Equal("login-tls"),
+					"Login ingress should use default TLS secret name (login-tls) when cert-manager is enabled")
+			}, 1*time.Minute).Should(Succeed())
+		})
+
+		AfterAll(func() {
+			DeleteTestNamespace(loginCMTestNamespace)
+		})
+	})
+
+	Context("Login endpoint without TLS secret", Ordered, func() {
+		const baseDomain = "login-notls.127.0.0.1.nip.io"
+		const jumpstarterName = "jumpstarter-login-notls"
+		var loginNoTLSTestNamespace string
+
+		BeforeAll(func() {
+			loginNoTLSTestNamespace = CreateTestNamespace()
+		})
+
+		It("should create login ingress with empty TLS secret when cert-manager is disabled", func() {
+			By("creating a Jumpstarter CR with login endpoint and no TLS config")
+			image := os.Getenv("IMG")
+			if image == "" {
+				image = defaultControllerImage
+			}
+
+			jumpstarterYAML := fmt.Sprintf(`apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  baseDomain: %s
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
+  controller:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: grpc.%s:8082
+          nodeport:
+            enabled: true
+            port: 30060
+    login:
+      endpoints:
+        - address: login.%s
+          ingress:
+            enabled: true
+            class: nginx
+  routers:
+    image: %s
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: router.%s:8083
+          nodeport:
+            enabled: true
+            port: 30061
+`, jumpstarterName, loginNoTLSTestNamespace, baseDomain, image, baseDomain, baseDomain, image, baseDomain)
+
+			err := applyYAML(jumpstarterYAML)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR without TLS config")
+
+			By("verifying the Jumpstarter CR was created")
+			Eventually(func(g Gomega) {
+				js := &operatorv1alpha1.Jumpstarter{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      jumpstarterName,
+					Namespace: loginNoTLSTestNamespace,
+				}, js)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(js.Spec.CertManager.Enabled).To(BeFalse())
+				g.Expect(js.Spec.Controller.Login.TLS).To(BeNil())
+			}, 30*time.Second).Should(Succeed())
+		})
+
+		It("should create login ingress with empty TLS secret name", func() {
+			By("verifying the login ingress was created with empty TLS secret")
+			Eventually(func(g Gomega) {
+				ingress := &networkingv1.Ingress{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "login-ing",
+					Namespace: loginNoTLSTestNamespace,
+				}, ingress)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify the ingress rules
+				g.Expect(ingress.Spec.Rules).To(HaveLen(1))
+				g.Expect(ingress.Spec.Rules[0].Host).To(Equal("login." + baseDomain))
+
+				// When cert-manager is disabled and no explicit TLS secret is set,
+				// the TLS secret name should be empty (let ingress controller handle it)
+				g.Expect(ingress.Spec.TLS).To(HaveLen(1))
+				g.Expect(ingress.Spec.TLS[0].SecretName).To(BeEmpty(),
+					"Login ingress should have empty TLS secret name when no TLS config and cert-manager disabled")
+			}, 1*time.Minute).Should(Succeed())
+		})
+
+		AfterAll(func() {
+			DeleteTestNamespace(loginNoTLSTestNamespace)
+		})
+	})
+
 	Context("cert-manager self-signed mode", Ordered, func() {
 		const baseDomain = "certmanager.127.0.0.1.nip.io"
 		const jumpstarterName = "jumpstarter-certmanager"

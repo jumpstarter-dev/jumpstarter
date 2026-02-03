@@ -193,8 +193,10 @@ func (r *Reconciler) createIngressForEndpoint(ctx context.Context, owner metav1.
 // createIngressForLoginEndpoint creates an Ingress for a login endpoint.
 // Unlike gRPC ingresses that use ssl-passthrough, login ingresses use standard HTTPS
 // with TLS terminated at the ingress controller level.
+// certManagerEnabled indicates if cert-manager is enabled for default TLS secret naming.
+// tlsSecretName is the explicit TLS secret name from LoginTLSConfig (empty if not specified).
 func (r *Reconciler) createIngressForLoginEndpoint(ctx context.Context, owner metav1.Object, serviceName string, servicePort int32,
-	endpoint *operatorv1alpha1.Endpoint, baseLabels map[string]string) error {
+	endpoint *operatorv1alpha1.Endpoint, baseLabels map[string]string, certManagerEnabled bool, tlsSecretName string) error {
 
 	log := logf.FromContext(ctx)
 
@@ -235,8 +237,16 @@ func (r *Reconciler) createIngressForLoginEndpoint(ctx context.Context, owner me
 	// Build path type
 	pathTypePrefix := networkingv1.PathTypePrefix
 
-	// Build TLS secret name from service name if not provided via annotations
-	tlsSecretName := serviceName + "-tls"
+	// Determine TLS secret name:
+	// 1. If explicitly provided via LoginTLSConfig, use it
+	// 2. Else if cert-manager is enabled, use default naming convention
+	// 3. Otherwise, leave empty (let ingress controller handle it or user provides via annotations)
+	var finalTLSSecretName string
+	if tlsSecretName != "" {
+		finalTLSSecretName = tlsSecretName
+	} else if certManagerEnabled {
+		finalTLSSecretName = serviceName + "-tls"
+	}
 
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -273,7 +283,7 @@ func (r *Reconciler) createIngressForLoginEndpoint(ctx context.Context, owner me
 			TLS: []networkingv1.IngressTLS{
 				{
 					Hosts:      []string{hostname},
-					SecretName: tlsSecretName, // TLS secret for edge termination
+					SecretName: finalTLSSecretName, // TLS secret for edge termination (may be empty)
 				},
 			},
 		},

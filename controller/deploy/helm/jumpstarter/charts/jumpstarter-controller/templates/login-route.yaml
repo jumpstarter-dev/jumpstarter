@@ -25,6 +25,11 @@ spec:
     # Edge termination - TLS terminated at the router, plain HTTP to backend
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+    {{- if .Values.login.tls.secretName }}
+    # Reference TLS certificate from secret (OpenShift 4.14+)
+    externalCertificate:
+      name: {{ .Values.login.tls.secretName }}
+    {{- end }}
   to:
     kind: Service
     name: jumpstarter-login

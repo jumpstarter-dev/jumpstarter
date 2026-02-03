@@ -427,7 +427,8 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 			TargetPort: intstr.FromInt(8086),
 			Protocol:   corev1.ProtocolTCP,
 		}
-		if err := r.EndpointReconciler.ReconcileLoginEndpoint(ctx, jumpstarter, &endpoint, svcPort); err != nil {
+		if err := r.EndpointReconciler.ReconcileLoginEndpoint(ctx, jumpstarter, &endpoint, svcPort,
+			jumpstarter.Spec.CertManager.Enabled, jumpstarter.Spec.Controller.Login.TLS); err != nil {
 			return err
 		}
 	}

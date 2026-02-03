@@ -38,6 +38,12 @@ login:
   hostname: ""
   # the endpoint is passed down to the service to know where to announce the login endpoint
   endpoint: ""
+  # TLS configuration for edge termination (used by both route and ingress)
+  tls:
+    # Name of the Kubernetes secret containing tls.crt and tls.key
+    # If not specified, defaults to "jumpstarter-login-tls" for ingress
+    # For routes, uses externalCertificate to reference the secret (OpenShift 4.14+)
+    secretName: ""
   # OpenShift Route configuration (uses edge TLS termination)
   route:
     enabled: false
@@ -50,6 +56,7 @@ login:
     annotations: {}
     labels: {}
     tls:
+      # Deprecated: use login.tls.secretName instead (kept for backward compatibility)
       secretName: ""
   # NodePort service for login, useful for local development
   nodeport:

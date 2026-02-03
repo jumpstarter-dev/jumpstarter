@@ -149,8 +149,10 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 // createRouteForLoginEndpoint creates an OpenShift Route for a login endpoint.
 // Unlike gRPC routes that use passthrough TLS termination, login routes use edge termination
 // where TLS is terminated at the router and plain HTTP is forwarded to the backend.
+// tlsSecretName is the explicit TLS secret name from LoginTLSConfig (empty if not specified).
+// When provided, the route will use ExternalCertificate to reference the secret (OpenShift 4.14+).
 func (r *Reconciler) createRouteForLoginEndpoint(ctx context.Context, owner metav1.Object, serviceName string, servicePort int32,
-	endpoint *operatorv1alpha1.Endpoint, baseLabels map[string]string) error {
+	endpoint *operatorv1alpha1.Endpoint, baseLabels map[string]string, tlsSecretName string) error {
 
 	log := logf.FromContext(ctx)
 
@@ -182,6 +184,20 @@ func (r *Reconciler) createRouteForLoginEndpoint(ctx context.Context, owner meta
 	// Merge labels (user labels take precedence)
 	routeLabels := utils.MergeMaps(baseLabels, endpoint.Route.Labels)
 
+	// Build TLS config with edge termination
+	tlsConfig := &routev1.TLSConfig{
+		Termination:                   routev1.TLSTerminationEdge,
+		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+	}
+
+	// If TLS secret is provided, reference it via ExternalCertificate (OpenShift 4.14+)
+	// This allows the route to use a certificate from a Kubernetes secret
+	if tlsSecretName != "" {
+		tlsConfig.ExternalCertificate = &routev1.LocalObjectReference{
+			Name: tlsSecretName,
+		}
+	}
+
 	// Use edge TLS termination - TLS is terminated at the router, plain HTTP to backend
 	// This is different from gRPC endpoints which use passthrough
 	route := &routev1.Route{
@@ -201,10 +217,7 @@ func (r *Reconciler) createRouteForLoginEndpoint(ctx context.Context, owner meta
 				Name:   serviceName,
 				Weight: ptr.To(int32(100)),
 			},
-			TLS: &routev1.TLSConfig{
-				Termination:                   routev1.TLSTerminationEdge,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-			},
+			TLS:            tlsConfig,
 			WildcardPolicy: routev1.WildcardPolicyNone,
 		},
 	}

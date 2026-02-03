@@ -31,9 +31,6 @@ spec:
   tls:
   - hosts:
     - {{ .Values.login.hostname | default (printf "login.%s" .Values.global.baseDomain) }}
-    {{- if .Values.login.ingress.tls.secretName }}
-    secretName: {{ .Values.login.ingress.tls.secretName }}
-    {{- else }}
-    secretName: jumpstarter-login-tls
-    {{- end }}
+    {{- /* Use login.tls.secretName (new), fallback to login.ingress.tls.secretName (legacy), then default */}}
+    secretName: {{ .Values.login.tls.secretName | default .Values.login.ingress.tls.secretName | default "jumpstarter-login-tls" }}
 {{ end }}

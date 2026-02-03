@@ -836,8 +836,7 @@ spec:
                         description: |-
                           List of login endpoints to expose.
                           Each endpoint can use different networking methods (Route, Ingress, NodePort, or LoadBalancer)
-                          based on your cluster setup. TLS should be configured via annotations/labels on the
-                          Route or Ingress resources (e.g., for cert-manager integration).
+                          based on your cluster setup.
                           Note: Unlike gRPC endpoints, login endpoints use edge TLS termination (not passthrough).
                         items:
                           description: |-
@@ -1014,6 +1013,20 @@ spec:
                               type: object
                           type: object
                         type: array
+                      tls:
+                        description: |-
+                          TLS configuration for the login endpoint.
+                          Specifies the Kubernetes secret containing the TLS certificate for edge termination.
+                          If not specified and certManager is enabled, a default secret name will be generated.
+                        properties:
+                          secretName:
+                            description: |-
+                              Name of the Kubernetes secret containing the TLS certificate and private key.
+                              The secret must contain 'tls.crt' and 'tls.key' keys.
+                              Used for edge TLS termination at the Ingress/Route level.
+                            pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+                            type: string
+                        type: object
                     type: object
                   replicas:
                     default: 2

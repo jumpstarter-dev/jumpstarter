@@ -309,7 +309,10 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 // ReconcileLoginEndpoint reconciles a login endpoint with edge TLS termination.
 // Unlike gRPC endpoints that use TLS passthrough, login endpoints use edge termination
 // where TLS is terminated at the Route/Ingress level.
-func (r *Reconciler) ReconcileLoginEndpoint(ctx context.Context, owner metav1.Object, endpoint *operatorv1alpha1.Endpoint, servicePort corev1.ServicePort) error {
+// certManagerEnabled indicates if cert-manager integration is enabled for default TLS secret naming.
+// loginTLS provides optional explicit TLS secret configuration.
+func (r *Reconciler) ReconcileLoginEndpoint(ctx context.Context, owner metav1.Object, endpoint *operatorv1alpha1.Endpoint, servicePort corev1.ServicePort,
+	certManagerEnabled bool, loginTLS *operatorv1alpha1.LoginTLSConfig) error {
 	// Controller pods have fixed labels: app=jumpstarter-controller
 	baseLabels := map[string]string{
 		"component":  "login",
@@ -322,10 +325,16 @@ func (r *Reconciler) ReconcileLoginEndpoint(ctx context.Context, owner metav1.Ob
 		"app": "jumpstarter-controller",
 	}
 
+	// Determine TLS secret name from configuration
+	var tlsSecretName string
+	if loginTLS != nil && loginTLS.SecretName != "" {
+		tlsSecretName = loginTLS.SecretName
+	}
+
 	// Ingress resource with edge TLS termination (uses ClusterIP service)
 	if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
 		serviceName := servicePort.Name
-		if err := r.createIngressForLoginEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
+		if err := r.createIngressForLoginEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels, certManagerEnabled, tlsSecretName); err != nil {
 			return err
 		}
 	}
@@ -333,7 +342,7 @@ func (r *Reconciler) ReconcileLoginEndpoint(ctx context.Context, owner metav1.Ob
 	// Route resource with edge TLS termination (uses ClusterIP service)
 	if endpoint.Route != nil && endpoint.Route.Enabled {
 		serviceName := servicePort.Name
-		if err := r.createRouteForLoginEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels); err != nil {
+		if err := r.createRouteForLoginEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels, tlsSecretName); err != nil {
 			return err
 		}
 	}
