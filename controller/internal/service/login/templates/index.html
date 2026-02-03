@@ -227,62 +227,6 @@
             </div>
         </div>
         
-        <div class="card">
-            <h2>Manual Login Steps</h2>
-            
-            <div class="step">
-                <div class="step-title">
-                    <span class="step-number">1</span>
-                    Install the Jumpstarter CLI
-                </div>
-                <div class="step-content">
-                    <div class="code-block">
-                        <code>pip install jumpstarter-cli</code>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="step">
-                <div class="step-title">
-                    <span class="step-number">2</span>
-                    Login with your credentials
-                </div>
-                <div class="step-content">
-                    <div class="code-block">
-                        <code>jmp login --client <span class="highlight">your-username</span> \
-  --endpoint {{.GRPCEndpoint}} \
-  {{if .Namespace}}--namespace {{.Namespace}} \
-  {{end}}{{if .HasOIDC}}{{range $i, $o := .OIDC}}{{if eq $i 0}}--issuer {{$o.Issuer}}{{end}}{{end}}{{end}}</code>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="step">
-                <div class="step-title">
-                    <span class="step-number">3</span>
-                    Verify your connection
-                </div>
-                <div class="step-content">
-                    <div class="code-block">
-                        <code>jmp list exporters</code>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h2>API Endpoint</h2>
-            <p style="margin-bottom: 1rem; color: var(--text-muted);">
-                Programmatic access to authentication configuration:
-            </p>
-            <div class="code-block">
-                <code>GET /v1/auth/config</code>
-            </div>
-            <p style="font-size: 0.875rem; color: var(--text-muted);">
-                Returns JSON with endpoints, namespace, CA certificate, and OIDC configuration.
-            </p>
-        </div>
-        
         <div class="footer">
             <p>
                 <a href="https://jumpstarter.dev" target="_blank">Documentation</a> &middot;
