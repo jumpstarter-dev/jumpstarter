@@ -275,9 +275,11 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 
 	// NodePort service
 	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		// Copy servicePort and set NodePort if specified
+		// Copy servicePort and set NodePort if specified.
+		// Only set NodePort from endpoint config if not already set on the servicePort.
+		// The caller may have already calculated a per-replica NodePort.
 		nodePortServicePort := servicePort
-		if endpoint.NodePort.Port > 0 {
+		if servicePort.NodePort == 0 && endpoint.NodePort.Port > 0 {
 			nodePortServicePort.NodePort = endpoint.NodePort.Port
 		}
 		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,

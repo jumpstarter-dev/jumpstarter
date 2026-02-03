@@ -392,6 +392,12 @@ spec:
           nodeport:
             enabled: true
             port: 30010
+    login:
+      endpoints:
+        - address: login.%s
+          nodeport:
+            enabled: true
+            port: 30070 # send this to a higher nodeport to avoid collision with growing routers 
   routers:
     image: %s
     imagePullPolicy: IfNotPresent
@@ -406,7 +412,7 @@ spec:
           nodeport:
             enabled: true
             port: 30011
-`, dynamicTestNamespace, baseDomain, image, baseDomain, image, baseDomain)
+`, dynamicTestNamespace, baseDomain, image, baseDomain, baseDomain, image, baseDomain)
 
 			err := applyYAML(jumpstarterYAML)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR")
