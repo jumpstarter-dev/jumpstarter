@@ -8,16 +8,31 @@ from typing import Dict
 from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter.common.exceptions import ConfigurationError
+from jumpstarter.common.fls import get_fls_binary
 from jumpstarter.driver import Driver, export
 
 
 @dataclass(kw_only=True)
 class RideSXDriver(Driver):
     """RideSX Driver"""
-    decompression_timeout: int = field(default=15 * 60) # 15 minutes
-    flash_timeout: int = field(default=30 * 60) # 30 minutes
-    continue_timeout: int = field(default=20 * 60) # 20 minutes
+
+    decompression_timeout: int = field(default=15 * 60)  # 15 minutes
+    flash_timeout: int = field(default=30 * 60)  # 30 minutes
+    continue_timeout: int = field(default=20 * 60)  # 20 minutes
     storage_dir: str = field(default="/var/lib/jumpstarter/ridesx")
+
+    # FLS configuration
+    fls_version: str | None = field(default=None)
+    fls_allow_custom_binaries: bool = field(
+        default=False,
+        metadata={
+            "help": "⚠️  SECURITY WARNING: Enables downloading custom FLS binaries. Only use in trusted environments."
+        }
+    )
+    fls_custom_binary_url: str | None = field(
+        default=None,
+        metadata={"help": "Custom URL for FLS binary download. Requires fls_allow_custom_binaries=True."}
+    )
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -25,6 +40,14 @@ class RideSXDriver(Driver):
 
         if "serial" not in self.children:
             raise ConfigurationError("'serial' instance is required")
+
+        # Security warning for custom binary downloads
+        if self.fls_allow_custom_binaries:
+            self.logger.warning(
+                "⚠️  SECURITY WARNING: Custom FLS binary downloads are enabled. "
+                "This allows arbitrary code execution on the exporter host. "
+                "Only use this in trusted environments with verified binary sources."
+            )
 
         Path(self.storage_dir).mkdir(parents=True, exist_ok=True)
         self.children["storage"] = Opendal(
@@ -196,6 +219,66 @@ class RideSXDriver(Driver):
             self.logger.warning(f"Fastboot continue failed - return code: {e.returncode}")
             self.logger.warning(f"stdout: {e.stdout}")
             self.logger.warning(f"stderr: {e.stderr}")
+
+    @export
+    def flash_oci_image(
+        self,
+        oci_url: str,
+        partitions: Dict[str, str] | None = None,
+    ):
+        """Flash OCI image using FLS fastboot CLI
+
+        Args:
+            oci_url: OCI image reference (e.g., "quay.io/bzlotnik/ridesx-image:latest")
+            partitions: Optional mapping of partition -> filename inside OCI image
+        """
+        if not oci_url.startswith("oci://"):
+            raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
+
+        fls_binary = get_fls_binary(
+            fls_version=self.fls_version,
+            fls_binary_url=self.fls_custom_binary_url,
+            allow_custom_binaries=self.fls_allow_custom_binaries,
+        )
+        fls_cmd = [fls_binary, "fastboot", oci_url]
+
+        if partitions:
+            for partition_name, filename in sorted(partitions.items()):
+                if not filename or not filename.strip():
+                    raise ValueError(
+                        f"Partition '{partition_name}' has an empty filename. "
+                        "Each partition must have a non-empty filename."
+                    )
+                fls_cmd.extend(["-t", f"{partition_name}:{filename}"])
+
+        # Align fastboot timeout with driver timeout
+        fls_cmd.extend(["--timeout", str(self.flash_timeout)])
+
+        self.logger.info(f"Running FLS fastboot: {' '.join(fls_cmd)}")
+
+        try:
+            result = subprocess.run(fls_cmd, capture_output=True, text=True, check=True, timeout=self.flash_timeout)
+
+            self.logger.info("FLS fastboot auto-detection completed successfully")
+            self.logger.debug(f"FLS stdout: {result.stdout}")
+            if result.stderr:
+                self.logger.debug(f"FLS stderr: {result.stderr}")
+
+            return {"status": "success", "output": result.stdout}
+
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"FLS fastboot auto-detection failed - return code: {e.returncode}")
+            self.logger.error(f"stdout: {e.stdout}")
+            self.logger.error(f"stderr: {e.stderr}")
+            raise RuntimeError(f"FLS fastboot auto-detection failed: {e}") from e
+
+        except subprocess.TimeoutExpired:
+            self.logger.error("FLS fastboot auto-detection timed out")
+            raise RuntimeError("FLS fastboot auto-detection timeout") from None
+
+        except FileNotFoundError:
+            self.logger.error("FLS command not found - ensure FLS is installed and in PATH")
+            raise RuntimeError("FLS command not found") from None
 
     @export
     async def boot_to_fastboot(self):
