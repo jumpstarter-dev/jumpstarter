@@ -65,6 +65,14 @@ spec:
           {{ else }}
           value: grpc.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
           {{ end }}
+        - name: LOGIN_ENDPOINT
+          {{ if .Values.login.endpoint }}
+          value: {{ .Values.login.endpoint }}
+          {{ else if .Values.login.hostname }}
+          value: {{ .Values.login.hostname }}
+          {{ else }}
+          value: login.{{ .Values.global.baseDomain }}
+          {{ end }}
         - name: CONTROLLER_KEY
           valueFrom:
             secretKeyRef:

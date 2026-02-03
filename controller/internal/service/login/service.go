@@ -57,6 +57,8 @@ type Config struct {
 	GRPCEndpoint string
 	// RouterEndpoint is the router endpoint (optional)
 	RouterEndpoint string
+	// LoginEndpoint is the public URL for the login service (for display in landing page)
+	LoginEndpoint string
 	// Namespace is the default namespace for clients
 	Namespace string
 	// CABundle is the PEM-encoded CA certificate bundle
@@ -83,6 +85,7 @@ func NewServiceFromEnv() *Service {
 		config: Config{
 			GRPCEndpoint:   getEnvOrDefault("GRPC_ENDPOINT", "localhost:8082"),
 			RouterEndpoint: os.Getenv("GRPC_ROUTER_ENDPOINT"),
+			LoginEndpoint:  os.Getenv("LOGIN_ENDPOINT"),
 			Namespace:      os.Getenv("NAMESPACE"),
 			CABundle:       os.Getenv("CA_BUNDLE_PEM"),
 			// OIDC config will be set via SetOIDCConfig
@@ -154,6 +157,7 @@ func (s *Service) handleLandingPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", map[string]interface{}{
 		"GRPCEndpoint":   s.config.GRPCEndpoint,
 		"RouterEndpoint": s.config.RouterEndpoint,
+		"LoginEndpoint":  s.config.LoginEndpoint,
 		"Namespace":      s.config.Namespace,
 		"HasOIDC":        len(s.config.OIDC) > 0,
 		"OIDC":           s.config.OIDC,

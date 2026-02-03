@@ -607,11 +607,27 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		}
 	}
 
+	// Build Login endpoint from first login endpoint
+	// Default to port 443 for HTTPS login endpoints
+	loginEndpoint := ""
+	if len(jumpstarter.Spec.Controller.Login.Endpoints) > 0 {
+		ep := jumpstarter.Spec.Controller.Login.Endpoints[0]
+		if ep.Address != "" {
+			loginEndpoint = ep.Address
+		} else {
+			loginEndpoint = fmt.Sprintf("login.%s", jumpstarter.Spec.BaseDomain)
+		}
+	}
+
 	// Base environment variables
 	envVars := []corev1.EnvVar{
 		{
 			Name:  "GRPC_ENDPOINT",
 			Value: grpcEndpoint,
+		},
+		{
+			Name:  "LOGIN_ENDPOINT",
+			Value: loginEndpoint,
 		},
 		{
 			Name: "CONTROLLER_KEY",

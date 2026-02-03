@@ -705,6 +705,19 @@
           "description": "Hostname for the login endpoint",
           "title": "Hostname"
         },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The endpoint URL to display in the login landing page",
+          "title": "Endpoint"
+        },
         "route": {
           "anyOf": [
             {

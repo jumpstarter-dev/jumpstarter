@@ -36,6 +36,8 @@ grpc:
 login:
   enabled: false
   hostname: ""
+  # the endpoint is passed down to the service to know where to announce the login endpoint
+  endpoint: ""
   # OpenShift Route configuration (uses edge TLS termination)
   route:
     enabled: false
