@@ -17,6 +17,7 @@ from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
+from jumpstarter.config.user import UserConfigV1Alpha1
 
 
 async def fetch_auth_config(
@@ -298,6 +299,12 @@ async def login(  # noqa: C901
         config.refresh_token = refresh_token
 
     save_config()
+
+    # Set the new client as the default if it's a client config
+    if config_kind in ("client", "client_config") and isinstance(config, ClientConfigV1Alpha1):
+        user_config = UserConfigV1Alpha1.load_or_create()
+        user_config.use_client(config.alias)
+        click.echo(f"Set '{config.alias}' as the default client.")
 
 
 @blocking
