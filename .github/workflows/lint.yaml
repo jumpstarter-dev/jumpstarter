@@ -33,12 +33,16 @@ jobs:
           filters: |
             controller:
               - 'controller/**'
+              - '.github/workflows/lint.yaml'
             helm:
               - 'controller/deploy/helm/**'
+              - '.github/workflow/lint.yaml'
             protocol:
               - 'protocol/**'
+              - '.github/workflows/lint.yaml'
             python:
               - 'python/**'
+              - '.github/workflows/lint.yaml'
 
   lint-go:
     needs: changes
