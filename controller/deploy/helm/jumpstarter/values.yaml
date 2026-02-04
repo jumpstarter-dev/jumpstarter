@@ -59,6 +59,10 @@ global:
 ## @param jumpstarter-controller.grpc.ingress.enabled Enable the gRPC ingress configuration.
 ##
 ## @param jumpstarter-controller.grpc.mode Mode to use for the gRPC endpoints, either route or ingress.
+##
+## @param jumpstarter-controller.certManager.enabled Enable cert-manager integration for TLS certificates.
+##   When enabled, the jumpstarter-service-ca-cert configmap is required (deployment fails if missing).
+##   When disabled, the configmap is optional - pre-create it manually if TLS is needed.
 
 
 
@@ -70,6 +74,12 @@ jumpstarter-controller:
     imagePullPolicy: IfNotPresent
 
     namespace: ""
+
+    # cert-manager integration for automatic TLS certificate management
+    # When enabled, the jumpstarter-service-ca-cert configmap is required
+    # When disabled (default), the configmap is optional
+    certManager:
+      enabled: false
 
     config:
       grpc:

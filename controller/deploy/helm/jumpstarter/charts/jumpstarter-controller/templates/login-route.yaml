@@ -1,0 +1,38 @@
+{{ if and .Values.login.enabled .Values.login.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    component: login
+    {{- if .Values.login.route.labels }}
+    {{- toYaml .Values.login.route.labels | nindent 4 }}
+    {{- end }}
+  {{- if .Values.login.route.annotations }}
+  annotations:
+    {{- toYaml .Values.login.route.annotations | nindent 4 }}
+  {{- end }}
+  name: jumpstarter-login-route
+  namespace: {{ default .Release.Namespace .Values.namespace }}
+spec:
+  {{ if .Values.login.hostname }}
+  host: {{ .Values.login.hostname }}
+  {{ else }}
+  host: login.{{ .Values.global.baseDomain | required "a global.baseDomain or a login.hostname must be provided"}}
+  {{ end }}
+  port:
+    targetPort: 8086
+  tls:
+    # Edge termination - TLS terminated at the router, plain HTTP to backend
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    {{- if .Values.login.tls.secretName }}
+    # Reference TLS certificate from secret (OpenShift 4.14+)
+    externalCertificate:
+      name: {{ .Values.login.tls.secretName }}
+    {{- end }}
+  to:
+    kind: Service
+    name: jumpstarter-login
+    weight: 100
+  wildcardPolicy: None
+{{ end }}

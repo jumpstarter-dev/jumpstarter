@@ -12,9 +12,11 @@ OPERATOR_IMG=${OPERATOR_IMG:-quay.io/jumpstarter-dev/jumpstarter-operator:latest
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5443"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5443"
+    LOGIN_ENDPOINT="login.${BASEDOMAIN}"
 else
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
+    LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
 fi
 
 # Extract image repository and tag from IMG variable
@@ -31,6 +33,7 @@ export BASEDOMAIN
 export NETWORKING_MODE
 export GRPC_ENDPOINT
 export GRPC_ROUTER_ENDPOINT
+export LOGIN_ENDPOINT
 export IMAGE_REPO
 export IMAGE_TAG
 export IMG

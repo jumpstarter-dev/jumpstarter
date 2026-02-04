@@ -49,6 +49,7 @@ check_setup() {
     # Export SSL certificate paths for Python
     export SSL_CERT_FILE
     export REQUESTS_CA_BUNDLE
+    export LOGIN_ENDPOINT
     
     # Verify critical components are still running
     if ! kubectl get namespace "$JS_NAMESPACE" &> /dev/null; then
@@ -81,8 +82,8 @@ run_tests() {
     cd "$REPO_ROOT"
     
     # Activate virtual environment
-    if [ -f .venv/bin/activate ]; then
-        source .venv/bin/activate
+    if [ -f python/.venv/bin/activate ]; then
+        source python/.venv/bin/activate
     else
         log_error "Virtual environment not found. Please run setup-e2e.sh first."
         exit 1

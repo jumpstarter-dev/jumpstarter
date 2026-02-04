@@ -63,9 +63,14 @@ def opt_config_inner(  # noqa: C901
                             config = UserConfigV1Alpha1.load_or_create().config.current_client
 
                         if config is None:
-                            raise click.ClickException(
-                                f"none of {', '.join(options_names)} is specified, and default config is not set"
-                            )
+                            if allow_missing:
+                                # Return a tuple indicating a new client should be created
+                                # The command can use the login_target to infer the client name
+                                config = ("client", "default")
+                            else:
+                                raise click.ClickException(
+                                    f"none of {', '.join(options_names)} is specified, and default config is not set"
+                                )
                     else:
                         raise click.BadParameter(f"one of {', '.join(options_names)} should be specified")
                 case 1:

@@ -1,6 +1,14 @@
 
 namespace: ""
 
+# cert-manager integration for automatic TLS certificate management
+# When enabled, the jumpstarter-service-ca-cert configmap is expected to be
+# created by cert-manager and is required (not optional).
+# When disabled, the configmap is optional - users must pre-create it manually
+# if they want TLS, otherwise TLS will be disabled.
+certManager:
+  enabled: false
+
 grpc:
   hostname: ""
   routerHostname: ""
@@ -30,6 +38,38 @@ grpc:
     enabled: false
     port: 30010
     routerPort: 30011
+
+# Login endpoint configuration for simplified CLI login
+# The login service runs on HTTP with TLS terminated at Route/Ingress level
+login:
+  enabled: false
+  hostname: ""
+  # the endpoint is passed down to the service to know where to announce the login endpoint
+  endpoint: ""
+  # TLS configuration for edge termination (used by both route and ingress)
+  tls:
+    # Name of the Kubernetes secret containing tls.crt and tls.key
+    # If not specified, defaults to "jumpstarter-login-tls" for ingress
+    # For routes, uses externalCertificate to reference the secret (OpenShift 4.14+)
+    secretName: ""
+  # OpenShift Route configuration (uses edge TLS termination)
+  route:
+    enabled: false
+    annotations: {}
+    labels: {}
+  # Kubernetes Ingress configuration (uses edge TLS termination)
+  ingress:
+    enabled: false
+    class: ""
+    annotations: {}
+    labels: {}
+    tls:
+      # Deprecated: use login.tls.secretName instead (kept for backward compatibility)
+      secretName: ""
+  # NodePort service for login, useful for local development
+  nodeport:
+    enabled: false
+    port: 30014
 
 image: quay.io/jumpstarter-dev/jumpstarter-controller
 tag: ""

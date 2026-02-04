@@ -82,6 +82,15 @@ END
             class: "nginx"
 END
 )
+  LOGIN_ENDPOINT_CONFIG=$(cat <<-END
+    login:
+      endpoints:
+        - address: login.${BASEDOMAIN}:5443
+          ingress:
+            enabled: true
+            class: "nginx"
+END
+)
 else
   CONTROLLER_ENDPOINT_CONFIG=$(cat <<-END
         # this is exposed by a nodeport in 30010 but mapped to 8082 on the host
@@ -97,6 +106,16 @@ END
           nodeport:
             enabled: true
             port: 30011
+END
+)
+  LOGIN_ENDPOINT_CONFIG=$(cat <<-END
+    # Login endpoint exposed by nodeport 30014 mapped to 8086 on host
+    login:
+      endpoints:
+        - address: login.${BASEDOMAIN}:8086
+          nodeport:
+            enabled: true
+            port: 30014
 END
 )
 fi
@@ -169,6 +188,7 @@ ${AUTH_CONFIG}
     grpc:
       endpoints:
 ${CONTROLLER_ENDPOINT_CONFIG}
+${LOGIN_ENDPOINT_CONFIG}
   routers:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent

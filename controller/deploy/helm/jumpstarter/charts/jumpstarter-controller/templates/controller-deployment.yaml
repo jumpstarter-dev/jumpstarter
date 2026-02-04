@@ -65,6 +65,12 @@ spec:
           {{ else }}
           value: grpc.{{ .Values.global.baseDomain }}:{{ .Values.grpc.tls.port }}
           {{ end }}
+        - name: LOGIN_ENDPOINT
+          {{ if .Values.login.endpoint }}
+          value: {{ .Values.login.endpoint }}
+          {{ else }}
+          value: login.{{ .Values.global.baseDomain }}
+          {{ end }}
         - name: CONTROLLER_KEY
           valueFrom:
             secretKeyRef:
@@ -85,6 +91,16 @@ spec:
         - name: EXTERNAL_KEY_PEM
           value: /secrets/tls.key
         {{- end }}
+        - name: CA_BUNDLE_PEM
+          valueFrom:
+            configMapKeyRef:
+              name: jumpstarter-service-ca-cert
+              key: ca.crt
+              # When cert-manager is enabled, require the configmap (fail fast on missing cert)
+              # When disabled, make it optional (users may not have TLS configured)
+              optional: {{ not .Values.certManager.enabled }}
+        - name: GIN_MODE
+          value: release
         image: {{ .Values.image }}:{{ default .Chart.AppVersion .Values.tag }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
         name: manager

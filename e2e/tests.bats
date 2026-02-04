@@ -79,66 +79,148 @@ wait_for_exporter() {
   return $rc
 }
 
+@test "login endpoint serves landing page" {
+  # Check if login service exists
+
+  run curl -s http://${LOGIN_ENDPOINT}
+  assert_success
+
+  # Verify the response is HTML with login instructions
+  assert_output --partial "Jumpstarter"
+  assert_output --partial "jmp login"
+
+}
+
 @test "can create clients with admin cli" {
-  jmp admin create client -n "${JS_NAMESPACE}" test-client-oidc     --unsafe --nointeractive \
+  run jmp admin create client -n "${JS_NAMESPACE}" test-client-oidc     --unsafe --nointeractive \
     --oidc-username dex:test-client-oidc
-  jmp admin create client -n "${JS_NAMESPACE}" test-client-sa       --unsafe --nointeractive \
+  assert_success
+
+  run jmp admin create client -n "${JS_NAMESPACE}" test-client-sa       --unsafe --nointeractive \
     --oidc-username dex:system:serviceaccount:"${JS_NAMESPACE}":test-client-sa
-  jmp admin create client -n "${JS_NAMESPACE}" test-client-legacy   --unsafe --save
+  assert_success
+
+  run jmp admin create client -n "${JS_NAMESPACE}" test-client-legacy   --unsafe --save
+  assert_success
+
+  run jmp config client list -o yaml
+  assert_success
+  assert_output --partial "test-client-legacy"
 }
 
 @test "can create exporters with admin cli" {
-  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-oidc   --nointeractive \
+  run jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-oidc   --nointeractive \
     --oidc-username dex:test-exporter-oidc \
     --label example.com/board=oidc
-  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-sa     --nointeractive \
+  assert_success
+
+  run jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-sa     --nointeractive \
     --oidc-username dex:system:serviceaccount:"${JS_NAMESPACE}":test-exporter-sa \
     --label example.com/board=sa
-  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-legacy --save \
+  assert_success
+
+  run jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-legacy --save \
     --label example.com/board=legacy
+  assert_success
+
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
+    /etc/jumpstarter/exporters/test-exporter-legacy.yaml
+  run jmp config exporter list -o yaml
+  assert_success
+  assert_output --partial "test-exporter-legacy"
 }
 
-@test "can login with oidc" {
-  jmp config client   list
-  jmp config exporter list
-
-  jmp login --client test-client-oidc \
+@test "can login with oidc test-client-oidc" {
+  run jmp login --client test-client-oidc \
     --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-client-oidc \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc@example.com --password password --unsafe
+  assert_success
+  run jmp config client list -o yaml
+  assert_success
+  assert_output --partial "test-client-oidc"
+}
 
-  jmp login --client test-client-oidc-provisioning \
-    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name "" \
+@test "can login with oidc test-client-oidc-provisioning" {
+  run jmp login --client test-client-oidc-provisioning \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name="" \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc-provisioning@example.com --password password --unsafe
+  assert_success
+  run jmp config client list -o yaml
+  assert_success
+  assert_output --partial "test-client-oidc-provisioning"
+}
 
-  jmp login --client test-client-sa \
+@test "can login with oidc test-client-sa" {
+  run jmp login --client test-client-sa \
     --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-client-sa \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --connector-id kubernetes \
     --token $(kubectl create -n "${JS_NAMESPACE}" token test-client-sa) --unsafe
+  assert_success
+  run jmp config client list -o yaml
+  assert_success
+  assert_output --partial "test-client-sa"
+}
 
-  jmp login --exporter test-exporter-oidc \
-    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-exporter-oidc \
+@test "can login with oidc test-exporter-oidc" {
+  run jmp login --exporter test-exporter-oidc --name test-exporter-oidc \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-exporter-oidc@example.com --password password
+  assert_success
+  # add the mock export paths to those files
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
+    /etc/jumpstarter/exporters/test-exporter-oidc.yaml
+  run jmp config exporter list -o yaml
+  assert_success
+  assert_output --partial "test-exporter-oidc"
 
-  jmp login --exporter test-exporter-sa \
+}
+
+@test "can login with oidc test-exporter-sa" {
+  run jmp login --exporter test-exporter-sa \
     --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-exporter-sa \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --connector-id kubernetes \
     --token $(kubectl create -n "${JS_NAMESPACE}" token test-exporter-sa)
+  assert_success
 
-  # add the mock export paths to those files
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
-    /etc/jumpstarter/exporters/test-exporter-oidc.yaml
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-sa.yaml
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
-    /etc/jumpstarter/exporters/test-exporter-legacy.yaml
- 
-  jmp config client   list
-  jmp config exporter list
+  run jmp config exporter list -o yaml
+  assert_success
+  assert_output --partial "test-exporter-sa"
+}
+
+@test "can login with simplified login" {
+  # This test only works with operator-based deployment, which deploys the CA ConfigMap
+  if [ "${METHOD:-}" != "operator" ]; then
+    skip "CA certificate injection only configured with operator deployment (METHOD=$METHOD)"
+  fi
+
+  jmp config client   delete test-client-oidc
+
+  run jmp login test-client-oidc@${LOGIN_ENDPOINT} --insecure-login-http \
+    --username test-client-oidc@example.com --password password --unsafe
+  assert_success
+
+  # Verify CA certificate is populated in client config
+  local client_config="${HOME}/.config/jumpstarter/clients/test-client-oidc.yaml"
+  run test -f "$client_config"
+  assert_success
+  run go run github.com/mikefarah/yq/v4@latest '.tls.ca' "$client_config"
+  assert_success
+  refute_output ""
+  refute_output "null"
+  echo "Client config has CA certificate populated"
+
+  # Verify the new client is set as the default (marked with * in CURRENT column)
+  run jmp config client list
+  assert_success
+  assert_line --regexp '^[[:space:]]*\*[[:space:]]+test-client-oidc[[:space:]]'
+  echo "Client test-client-oidc is set as default"
 }
 
 @test "can run exporters" {
@@ -201,7 +283,7 @@ EOF
 
   # Test that the client works WITHOUT JUMPSTARTER_GRPC_INSECURE set
   # This proves the CA certificate is being used for TLS verification
-  run env -u JUMPSTARTER_GRPC_INSECURE jmp get exporters --client test-client-legacy
+  run env -u JUMPSTARTER_GRPC_INSECURE jmp get exporters --client test-client-legacy -o yaml
   assert_success
   # Should see the legacy exporter in the output
   assert_output --partial "test-exporter-legacy"

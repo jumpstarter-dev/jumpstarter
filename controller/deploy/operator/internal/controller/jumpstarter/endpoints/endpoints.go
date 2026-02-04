@@ -192,7 +192,12 @@ func (r *Reconciler) ReconcileControllerEndpoint(ctx context.Context, owner meta
 
 	// NodePort service
 	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-np", corev1.ServiceTypeNodePort,
+		// Copy servicePort and set NodePort if specified
+		nodePortServicePort := servicePort
+		if endpoint.NodePort.Port > 0 {
+			nodePortServicePort.NodePort = endpoint.NodePort.Port
+		}
+		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
 			podSelector, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
 			return err
 		}
@@ -270,7 +275,14 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 
 	// NodePort service
 	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
-		if err := r.createService(ctx, owner, servicePort, "-np", corev1.ServiceTypeNodePort,
+		// Copy servicePort and set NodePort if specified.
+		// Only set NodePort from endpoint config if not already set on the servicePort.
+		// The caller may have already calculated a per-replica NodePort.
+		nodePortServicePort := servicePort
+		if servicePort.NodePort == 0 && endpoint.NodePort.Port > 0 {
+			nodePortServicePort.NodePort = endpoint.NodePort.Port
+		}
+		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
 			podSelector, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
 			return err
 		}
@@ -282,6 +294,87 @@ func (r *Reconciler) ReconcileRouterReplicaEndpoint(ctx context.Context, owner m
 		(endpoint.Ingress != nil && endpoint.Ingress.Enabled) ||
 		(endpoint.Route != nil && endpoint.Route.Enabled) {
 		// Merge annotations and labels from ClusterIP config if present
+		var annotations, labels map[string]string
+		if endpoint.ClusterIP != nil {
+			annotations = endpoint.ClusterIP.Annotations
+			labels = endpoint.ClusterIP.Labels
+		}
+		if err := r.createService(ctx, owner, servicePort, "", corev1.ServiceTypeClusterIP,
+			podSelector, baseLabels, annotations, labels); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ReconcileLoginEndpoint reconciles a login endpoint with edge TLS termination.
+// Unlike gRPC endpoints that use TLS passthrough, login endpoints use edge termination
+// where TLS is terminated at the Route/Ingress level.
+// certManagerEnabled indicates if cert-manager integration is enabled for default TLS secret naming.
+// loginTLS provides optional explicit TLS secret configuration.
+func (r *Reconciler) ReconcileLoginEndpoint(ctx context.Context, owner metav1.Object, endpoint *operatorv1alpha1.Endpoint, servicePort corev1.ServicePort,
+	certManagerEnabled bool, loginTLS *operatorv1alpha1.LoginTLSConfig) error {
+	// Controller pods have fixed labels: app=jumpstarter-controller
+	baseLabels := map[string]string{
+		"component":  "login",
+		"app":        "jumpstarter-controller",
+		"controller": owner.GetName(),
+	}
+
+	// Pod selector for controller pods (login service runs in the same pod)
+	podSelector := map[string]string{
+		"app": "jumpstarter-controller",
+	}
+
+	// Determine TLS secret name from configuration
+	var tlsSecretName string
+	if loginTLS != nil && loginTLS.SecretName != "" {
+		tlsSecretName = loginTLS.SecretName
+	}
+
+	// Ingress resource with edge TLS termination (uses ClusterIP service)
+	if endpoint.Ingress != nil && endpoint.Ingress.Enabled {
+		serviceName := servicePort.Name
+		if err := r.createIngressForLoginEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels, certManagerEnabled, tlsSecretName); err != nil {
+			return err
+		}
+	}
+
+	// Route resource with edge TLS termination (uses ClusterIP service)
+	if endpoint.Route != nil && endpoint.Route.Enabled {
+		serviceName := servicePort.Name
+		if err := r.createRouteForLoginEndpoint(ctx, owner, serviceName, servicePort.Port, endpoint, baseLabels, tlsSecretName); err != nil {
+			return err
+		}
+	}
+
+	// LoadBalancer service
+	if endpoint.LoadBalancer != nil && endpoint.LoadBalancer.Enabled {
+		if err := r.createService(ctx, owner, servicePort, "-lb", corev1.ServiceTypeLoadBalancer,
+			podSelector, baseLabels, endpoint.LoadBalancer.Annotations, endpoint.LoadBalancer.Labels); err != nil {
+			return err
+		}
+	}
+
+	// NodePort service
+	if endpoint.NodePort != nil && endpoint.NodePort.Enabled {
+		// Copy servicePort and set NodePort if specified
+		nodePortServicePort := servicePort
+		if endpoint.NodePort.Port > 0 {
+			nodePortServicePort.NodePort = endpoint.NodePort.Port
+		}
+		if err := r.createService(ctx, owner, nodePortServicePort, "-np", corev1.ServiceTypeNodePort,
+			podSelector, baseLabels, endpoint.NodePort.Annotations, endpoint.NodePort.Labels); err != nil {
+			return err
+		}
+	}
+
+	// ClusterIP service (no suffix for cleaner in-cluster service names)
+	// Create ClusterIP if explicitly enabled OR if Ingress/Route need it
+	if (endpoint.ClusterIP != nil && endpoint.ClusterIP.Enabled) ||
+		(endpoint.Ingress != nil && endpoint.Ingress.Enabled) ||
+		(endpoint.Route != nil && endpoint.Route.Enabled) {
 		var annotations, labels map[string]string
 		if endpoint.ClusterIP != nil {
 			annotations = endpoint.ClusterIP.Annotations

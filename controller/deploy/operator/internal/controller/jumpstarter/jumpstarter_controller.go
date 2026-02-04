@@ -149,6 +149,14 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile cert-manager resources (Issuers, Certificates, CA ConfigMap) before deployments
+	// This ensures the CA ConfigMap exists before the controller deployment starts,
+	// so the CA_BUNDLE_PEM environment variable is properly populated
+	if err := r.reconcileCertificates(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Certificates")
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile Controller Deployment
 	if err := r.reconcileControllerDeployment(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Controller Deployment")
@@ -176,12 +184,6 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Reconcile Secrets
 	if err := r.reconcileSecrets(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Secrets")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile cert-manager resources (Issuers, Certificates)
-	if err := r.reconcileCertificates(ctx, &jumpstarter); err != nil {
-		log.Error(err, "Failed to reconcile Certificates")
 		return ctrl.Result{}, err
 	}
 
@@ -417,6 +419,20 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 		return err
 	}
 
+	// Reconcile login endpoints (if configured)
+	for _, endpoint := range jumpstarter.Spec.Controller.Login.Endpoints {
+		svcPort := corev1.ServicePort{
+			Name:       "login",
+			Port:       8086,
+			TargetPort: intstr.FromInt(8086),
+			Protocol:   corev1.ProtocolTCP,
+		}
+		if err := r.EndpointReconciler.ReconcileLoginEndpoint(ctx, jumpstarter, &endpoint, svcPort,
+			jumpstarter.Spec.CertManager.Enabled, jumpstarter.Spec.Controller.Login.TLS); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -592,11 +608,27 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		}
 	}
 
+	// Build Login endpoint from first login endpoint
+	// Default to port 443 for HTTPS login endpoints
+	loginEndpoint := ""
+	if len(jumpstarter.Spec.Controller.Login.Endpoints) > 0 {
+		ep := jumpstarter.Spec.Controller.Login.Endpoints[0]
+		if ep.Address != "" {
+			loginEndpoint = ep.Address
+		} else {
+			loginEndpoint = fmt.Sprintf("login.%s", jumpstarter.Spec.BaseDomain)
+		}
+	}
+
 	// Base environment variables
 	envVars := []corev1.EnvVar{
 		{
 			Name:  "GRPC_ENDPOINT",
 			Value: grpcEndpoint,
+		},
+		{
+			Name:  "LOGIN_ENDPOINT",
+			Value: loginEndpoint,
 		},
 		{
 			Name: "CONTROLLER_KEY",
@@ -632,6 +664,20 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		{
 			Name:  "GIN_MODE",
 			Value: "release",
+		},
+		// CA_BUNDLE_PEM for the login service to return to clients
+		// Only optional if cert-manager is not enabled (when enabled, we know the CA ConfigMap exists)
+		{
+			Name: "CA_BUNDLE_PEM",
+			ValueFrom: &corev1.EnvVarSource{
+				ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: GetCAConfigMapName(jumpstarter),
+					},
+					Key:      "ca.crt",
+					Optional: boolPtr(!jumpstarter.Spec.CertManager.Enabled),
+				},
+			},
 		},
 	}
 
@@ -723,6 +769,11 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 								{
 									ContainerPort: 8081,
 									Name:          "health",
+									Protocol:      corev1.ProtocolTCP,
+								},
+								{
+									ContainerPort: 8086,
+									Name:          "login",
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},

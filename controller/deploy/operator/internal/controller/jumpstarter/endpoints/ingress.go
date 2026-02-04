@@ -189,3 +189,105 @@ func (r *Reconciler) createIngressForEndpoint(ctx context.Context, owner metav1.
 
 	return r.createOrUpdateIngress(ctx, ingress, owner)
 }
+
+// createIngressForLoginEndpoint creates an Ingress for a login endpoint.
+// Unlike gRPC ingresses that use ssl-passthrough, login ingresses use standard HTTPS
+// with TLS terminated at the ingress controller level.
+// certManagerEnabled indicates if cert-manager is enabled for default TLS secret naming.
+// tlsSecretName is the explicit TLS secret name from LoginTLSConfig (empty if not specified).
+func (r *Reconciler) createIngressForLoginEndpoint(ctx context.Context, owner metav1.Object, serviceName string, servicePort int32,
+	endpoint *operatorv1alpha1.Endpoint, baseLabels map[string]string, certManagerEnabled bool, tlsSecretName string) error {
+
+	log := logf.FromContext(ctx)
+
+	// Check if Ingress API is available in the cluster
+	if !r.IngressAvailable {
+		log.Info("Skipping login ingress creation: Ingress API not available in cluster")
+		return nil
+	}
+
+	// Extract hostname from address
+	hostname := extractHostname(endpoint.Address)
+	if hostname == "" {
+		log.Info("Skipping login ingress creation: no hostname in endpoint address",
+			"address", endpoint.Address)
+		return nil
+	}
+
+	if errs := validation.IsDNS1123Subdomain(hostname); errs != nil {
+		log.Error(errors.New(strings.Join(errs, ", ")), "Skipping login ingress creation: invalid hostname",
+			"address", endpoint.Address,
+			"hostname", hostname)
+		return nil
+	}
+
+	// No ssl-passthrough for login endpoints - use standard HTTPS with edge termination
+	// Admin configures TLS via annotations (e.g., cert-manager)
+	annotations := utils.MergeMaps(nil, endpoint.Ingress.Annotations)
+
+	// Merge labels (user labels take precedence)
+	ingressLabels := utils.MergeMaps(baseLabels, endpoint.Ingress.Labels)
+
+	// Set ingress class name (only if specified, cannot be empty string)
+	var ingressClassName *string
+	if endpoint.Ingress.Class != "" {
+		ingressClassName = &endpoint.Ingress.Class
+	}
+
+	// Build path type
+	pathTypePrefix := networkingv1.PathTypePrefix
+
+	// Determine TLS secret name:
+	// 1. If explicitly provided via LoginTLSConfig, use it
+	// 2. Else if cert-manager is enabled, use default naming convention
+	// 3. Otherwise, leave empty (let ingress controller handle it or user provides via annotations)
+	var finalTLSSecretName string
+	if tlsSecretName != "" {
+		finalTLSSecretName = tlsSecretName
+	} else if certManagerEnabled {
+		finalTLSSecretName = serviceName + "-tls"
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        serviceName + "-ing",
+			Namespace:   owner.GetNamespace(),
+			Labels:      ingressLabels,
+			Annotations: annotations,
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: ingressClassName,
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: hostname,
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: &pathTypePrefix,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: serviceName,
+											Port: networkingv1.ServiceBackendPort{
+												Number: servicePort,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			TLS: []networkingv1.IngressTLS{
+				{
+					Hosts:      []string{hostname},
+					SecretName: finalTLSSecretName, // TLS secret for edge termination (may be empty)
+				},
+			},
+		},
+	}
+
+	return r.createOrUpdateIngress(ctx, ingress, owner)
+}

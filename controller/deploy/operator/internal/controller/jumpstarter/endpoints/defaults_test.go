@@ -32,6 +32,7 @@ var _ = Describe("ApplyEndpointDefaults", func() {
 
 			Expect(spec.Controller.GRPC.Endpoints).To(BeEmpty())
 			Expect(spec.Routers.GRPC.Endpoints).To(BeEmpty())
+			Expect(spec.Controller.Login.Endpoints).To(BeEmpty())
 		})
 	})
 
@@ -77,6 +78,39 @@ var _ = Describe("ApplyEndpointDefaults", func() {
 			Expect(spec.Routers.GRPC.Endpoints[0].Route).NotTo(BeNil())
 			Expect(spec.Routers.GRPC.Endpoints[0].Route.Enabled).To(BeTrue())
 		})
+
+		It("should generate login endpoint with Route when available", func() {
+			spec := &operatorv1alpha1.JumpstarterSpec{BaseDomain: "example.com"}
+
+			ApplyEndpointDefaults(spec, true, true)
+
+			Expect(spec.Controller.Login.Endpoints).To(HaveLen(1))
+			Expect(spec.Controller.Login.Endpoints[0].Address).To(Equal("login.example.com"))
+			Expect(spec.Controller.Login.Endpoints[0].Route).NotTo(BeNil())
+			Expect(spec.Controller.Login.Endpoints[0].Route.Enabled).To(BeTrue())
+		})
+
+		It("should generate login endpoint with Ingress when Route unavailable", func() {
+			spec := &operatorv1alpha1.JumpstarterSpec{BaseDomain: "example.com"}
+
+			ApplyEndpointDefaults(spec, false, true)
+
+			Expect(spec.Controller.Login.Endpoints).To(HaveLen(1))
+			Expect(spec.Controller.Login.Endpoints[0].Address).To(Equal("login.example.com"))
+			Expect(spec.Controller.Login.Endpoints[0].Ingress).NotTo(BeNil())
+			Expect(spec.Controller.Login.Endpoints[0].Ingress.Enabled).To(BeTrue())
+		})
+
+		It("should generate login endpoint with ClusterIP when neither Route nor Ingress available", func() {
+			spec := &operatorv1alpha1.JumpstarterSpec{BaseDomain: "example.com"}
+
+			ApplyEndpointDefaults(spec, false, false)
+
+			Expect(spec.Controller.Login.Endpoints).To(HaveLen(1))
+			Expect(spec.Controller.Login.Endpoints[0].Address).To(Equal("login.example.com"))
+			Expect(spec.Controller.Login.Endpoints[0].ClusterIP).NotTo(BeNil())
+			Expect(spec.Controller.Login.Endpoints[0].ClusterIP.Enabled).To(BeTrue())
+		})
 	})
 
 	Context("when endpoints already exist", func() {
@@ -115,6 +149,43 @@ var _ = Describe("ApplyEndpointDefaults", func() {
 			// Should auto-select Route since it's available
 			Expect(spec.Controller.GRPC.Endpoints[0].Route).NotTo(BeNil())
 			Expect(spec.Controller.GRPC.Endpoints[0].Route.Enabled).To(BeTrue())
+		})
+
+		It("should not override existing login endpoints", func() {
+			spec := &operatorv1alpha1.JumpstarterSpec{
+				BaseDomain: "example.com",
+				Controller: operatorv1alpha1.ControllerConfig{
+					Login: operatorv1alpha1.LoginConfig{
+						Endpoints: []operatorv1alpha1.Endpoint{
+							{Address: "custom-login.example.com", Ingress: &operatorv1alpha1.IngressConfig{Enabled: true}},
+						},
+					},
+				},
+			}
+
+			ApplyEndpointDefaults(spec, true, true)
+
+			Expect(spec.Controller.Login.Endpoints).To(HaveLen(1))
+			Expect(spec.Controller.Login.Endpoints[0].Address).To(Equal("custom-login.example.com"))
+		})
+
+		It("should ensure existing login endpoints have a service type enabled", func() {
+			spec := &operatorv1alpha1.JumpstarterSpec{
+				BaseDomain: "example.com",
+				Controller: operatorv1alpha1.ControllerConfig{
+					Login: operatorv1alpha1.LoginConfig{
+						Endpoints: []operatorv1alpha1.Endpoint{
+							{Address: "custom-login.example.com"}, // No service type
+						},
+					},
+				},
+			}
+
+			ApplyEndpointDefaults(spec, true, true)
+
+			// Should auto-select Route since it's available
+			Expect(spec.Controller.Login.Endpoints[0].Route).NotTo(BeNil())
+			Expect(spec.Controller.Login.Endpoints[0].Route.Enabled).To(BeTrue())
 		})
 	})
 })

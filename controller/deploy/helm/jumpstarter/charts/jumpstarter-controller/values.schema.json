@@ -41,6 +41,26 @@
       "title": "Authentication",
       "type": "object"
     },
+    "CertManager": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Enable cert-manager integration. When enabled, jumpstarter-service-ca-cert configmap is required.",
+          "title": "Enabled"
+        }
+      },
+      "title": "CertManager",
+      "type": "object"
+    },
     "ClaimMappings": {
       "additionalProperties": false,
       "properties": {
@@ -676,6 +696,297 @@
       "title": "Keepalive",
       "type": "object"
     },
+    "Login": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable the login endpoint for simplified CLI login",
+          "title": "Enabled"
+        },
+        "hostname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Hostname for the login endpoint",
+          "title": "Hostname"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The endpoint URL to display in the login landing page",
+          "title": "Endpoint"
+        },
+        "tls": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoginTls"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "TLS configuration for edge termination (used by both route and ingress)"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoginRoute"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ingress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoginIngress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "nodeport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoginNodeport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Login",
+      "type": "object"
+    },
+    "LoginIngress": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable Ingress for the login endpoint",
+          "title": "Enabled"
+        },
+        "class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "IngressClass to use for the login endpoint",
+          "title": "Class"
+        },
+        "annotations": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Annotations for the login ingress",
+          "title": "Annotations"
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Labels for the login ingress",
+          "title": "Labels"
+        },
+        "tls": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoginIngressTls"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "LoginIngress",
+      "type": "object"
+    },
+    "LoginIngressTls": {
+      "additionalProperties": false,
+      "properties": {
+        "secretName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Secret name for the TLS certificate",
+          "title": "Secretname"
+        }
+      },
+      "title": "LoginIngressTls",
+      "type": "object"
+    },
+    "LoginNodeport": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable NodePort for the login endpoint",
+          "title": "Enabled"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Port"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "NodePort port number for the login service"
+        }
+      },
+      "title": "LoginNodeport",
+      "type": "object"
+    },
+    "LoginRoute": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to enable OpenShift Route for the login endpoint",
+          "title": "Enabled"
+        },
+        "annotations": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Annotations for the login route",
+          "title": "Annotations"
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Labels for the login route",
+          "title": "Labels"
+        }
+      },
+      "title": "LoginRoute",
+      "type": "object"
+    },
+    "LoginTls": {
+      "additionalProperties": false,
+      "properties": {
+        "secretName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of the Kubernetes secret containing tls.crt and tls.key for edge TLS termination",
+          "title": "Secretname"
+        }
+      },
+      "title": "LoginTls",
+      "type": "object"
+    },
     "Metrics": {
       "properties": {
         "enabled": {
@@ -1102,6 +1413,18 @@
       "default": null,
       "description": "Global parameters"
     },
+    "certManager": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CertManager"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "cert-manager integration for automatic TLS certificate management"
+    },
     "grpc": {
       "anyOf": [
         {
@@ -1112,6 +1435,18 @@
         }
       ],
       "default": null
+    },
+    "login": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Login"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Login endpoint configuration for simplified CLI login"
     }
   },
   "required": [

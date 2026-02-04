@@ -91,6 +91,87 @@ class Route(BaseModel):
     )
 
 
+class LoginRoute(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable OpenShift Route for the login endpoint"
+    )
+    annotations: Optional[dict[str, str]] = Field(
+        None, description="Annotations for the login route"
+    )
+    labels: Optional[dict[str, str]] = Field(
+        None, description="Labels for the login route"
+    )
+
+
+class LoginIngressTls(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secretName: Optional[str] = Field(
+        None, description="Secret name for the TLS certificate"
+    )
+
+
+class LoginIngress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable Ingress for the login endpoint"
+    )
+    class_: Optional[str] = Field(
+        None, alias="class", description="IngressClass to use for the login endpoint"
+    )
+    annotations: Optional[dict[str, str]] = Field(
+        None, description="Annotations for the login ingress"
+    )
+    labels: Optional[dict[str, str]] = Field(
+        None, description="Labels for the login ingress"
+    )
+    tls: Optional[LoginIngressTls] = None
+
+
+class LoginNodeport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable NodePort for the login endpoint"
+    )
+    port: Optional[Port] = Field(
+        None, description="NodePort port number for the login service"
+    )
+
+
+class LoginTls(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secretName: Optional[str] = Field(
+        None,
+        description="Name of the Kubernetes secret containing tls.crt and tls.key for edge TLS termination",
+    )
+
+
+class Login(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None, description="Whether to enable the login endpoint for simplified CLI login"
+    )
+    hostname: Optional[str] = Field(
+        None, description="Hostname for the login endpoint"
+    )
+    endpoint: Optional[str] = Field(
+        None, description="The endpoint URL to display in the login landing page"
+    )
+    tls: Optional[LoginTls] = Field(
+        None,
+        description="TLS configuration for edge termination (used by both route and ingress)",
+    )
+    route: Optional[LoginRoute] = None
+    ingress: Optional[LoginIngress] = None
+    nodeport: Optional[LoginNodeport] = None
+
+
 class PrefixedClaimOrExpression1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -262,6 +343,15 @@ class Router(BaseModel):
     nodeSelector: dict[str, str] | None = None
 
 
+class CertManager(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: Optional[bool] = Field(
+        None,
+        description="Enable cert-manager integration. When enabled, jumpstarter-service-ca-cert configmap is required.",
+    )
+
+
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -282,7 +372,14 @@ class Model(BaseModel):
     global_: Optional[Global] = Field(
         None, alias="global", description="Global parameters"
     )
+    certManager: Optional[CertManager] = Field(
+        None,
+        description="cert-manager integration for automatic TLS certificate management",
+    )
     grpc: Optional[Grpc1] = None
+    login: Optional[Login] = Field(
+        None, description="Login endpoint configuration for simplified CLI login"
+    )
 
 
 print(json.dumps(Model.model_json_schema(), indent=2))
