@@ -29,7 +29,7 @@ If you have questions, reach out in our Matrix chat or open an issue on GitHub.
 - Follow code style (validate with `make lint`, fix with `make lint-fix`)
 - Perform static type checking with (`make ty-pkg-${package_name}`)
 - Add tests and update documentation. New drivers/features need tests and docs.
-- Verify all tests pass (`make test-pkg-${package_name}` or `make test`)
+- Verify all tests pass (`make pkg-test-${package_name}` or `make test`)
 
 ### Commit Messages
 

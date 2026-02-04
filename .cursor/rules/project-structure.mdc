@@ -118,7 +118,7 @@ python/examples/
 
 ### Testing
 
-- **Package tests**: `make test-pkg-<package_name>`
+- **Package tests**: `make pkg-test-<package_name>`
 - **All tests**: `make test`
 - **Coverage**: Configured per package with HTML and XML reports
 
