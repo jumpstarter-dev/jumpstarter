@@ -6,14 +6,7 @@ on:
     branches:
       - main
       - release-*
-    paths:
-      - 'python/**'
-      - 'protocol/**'
   pull_request:
-    # running for all, since github does not detect skipped on this when required for merging
-    #paths:
-    #  - 'python/**'
-    #  - 'protocol/**'
   merge_group:
 
 permissions:
@@ -21,7 +14,27 @@ permissions:
   pull-requests: read
 
 jobs:
+  changes:
+    if: github.repository_owner == 'jumpstarter-dev'
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
+          filters: |
+            python:
+              - 'python/**'
+              - '.github/workflows/python-tests.yaml'
+
   pytest-matrix:
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
@@ -89,13 +102,14 @@ jobs:
   # https://github.com/orgs/community/discussions/26822
   pytest:
     runs-on: ubuntu-latest
-    needs: [pytest-matrix]
+    needs: [changes, pytest-matrix]
     if: ${{ always() }}
     steps:
       - run: exit 1
+        # Fail on failures or cancellations, but allow skips when no relevant changes
         if: >-
           ${{
                contains(needs.*.result, 'failure')
             || contains(needs.*.result, 'cancelled')
-            || contains(needs.*.result, 'skipped')
+            || (contains(needs.*.result, 'skipped') && needs.changes.outputs.should_run == 'true')
           }}
