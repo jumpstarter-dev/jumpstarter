@@ -47,7 +47,7 @@ $ make test
 You can also run specific tests with:
 
 ```console
-$ make test-pkg-${package_name}
+$ make pkg-test-${package_name}
 ```
 
 ## Go Environment

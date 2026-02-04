@@ -84,7 +84,7 @@ The script automatically creates:
 - Follow existing code style (validate with `make lint`, fix with `make lint-fix`)
 - Perform static type checking with `make ty-pkg-${package_name}`
 - Add comprehensive tests and update documentation
-- Verify all tests pass (`make test-pkg-${package_name}` or `make test`)
+- Verify all tests pass (`make pkg-test-${package_name}` or `make test`)
 
 ## Contributing Guidelines
 
