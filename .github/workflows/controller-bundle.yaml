@@ -2,9 +2,6 @@ name: Check Bundle
 
 on:
   pull_request:
-    branches:
-      - main
-      - 'release-*'
     paths:
       - 'controller/**'
 
