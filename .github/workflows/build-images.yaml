@@ -10,9 +10,6 @@ on:
       - 'release-*'
   pull_request:
     types: [opened, synchronize, reopened, labeled]
-    branches:
-      - main
-      - 'release-*'
   merge_group:
 
 env:
