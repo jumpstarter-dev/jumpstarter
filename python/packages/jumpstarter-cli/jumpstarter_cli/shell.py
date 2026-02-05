@@ -122,7 +122,11 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 logger.error("beforeLease hook failed, not launching shell")
                                 return 1
                             elif result is None:
-                                logger.error("Timeout waiting for beforeLease hook, not launching shell")
+                                if monitor.connection_lost:
+                                    # Exporter shut down (likely due to onFailure=exit)
+                                    logger.error("Connection lost during beforeLease hook (exporter may have shut down)")
+                                else:
+                                    logger.error("Timeout waiting for beforeLease hook, not launching shell")
                                 return 1
 
                             logger.debug("Exporter ready (status: %s), launching shell...", result)

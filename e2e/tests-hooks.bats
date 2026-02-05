@@ -149,11 +149,11 @@ exporter_process_running() {
 
 @test "hooks: create client and exporter" {
   # Create client
-  jmp admin create client -n "${JS_NAMESPACE}" test-client-hooks --unsafe --out /dev/null \
+  jmp admin create client -n "${JS_NAMESPACE}" test-client-hooks --unsafe --out "${BATS_RUN_TMPDIR}/test-client-hooks.yaml" \
     --oidc-username dex:test-client-hooks
 
   # Create exporter with hooks label
-  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-hooks --out /dev/null \
+  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-hooks --out "${BATS_RUN_TMPDIR}/test-exporter-hooks.yaml" \
     --oidc-username dex:test-exporter-hooks \
     --label example.com/board=hooks
 
