@@ -55,7 +55,17 @@ metadata:
         }
       ]
     capabilities: Basic Install
+    categories: Developer Tools, Integration & Delivery
+    com.redhat.openshift.versions: v4.18-v4.21
+    containerImage: quay.io/jumpstarter-dev/jumpstarter-operator:latest
+    description: Jumpstarter is a cloud-native framework for Hardware-in-the-Loop
+      (HIL) testing and development
     operators.operatorframework.io/internal-objects: '["clients.jumpstarter.dev","exporters.jumpstarter.dev","leases.jumpstarter.dev","exporteraccesspolicies.jumpstarter.dev"]'
+    repository: https://github.com/jumpstarter-dev/jumpstarter-controller
+    support: The Jumpstarter Community
+  labels:
+    operatorframework.io/arch.amd64: supported
+    operatorframework.io/arch.arm64: supported
   name: jumpstarter-operator.v0.0.0
   namespace: placeholder
 spec:
