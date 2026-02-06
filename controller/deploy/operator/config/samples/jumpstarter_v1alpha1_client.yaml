@@ -1,0 +1,8 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Client
+metadata:
+  name: client-sample
+  labels:
+    type: developer
+spec:
+  username: "keycloak:user-name-in-keycloak"

@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterAccessPolicy
+metadata:
+  name: exporteraccesspolicy-sample
+spec:
+  exporterSelector:
+    matchLabels:
+      lab: jumpstarter
+  policies:
+  - from:
+    - clientSelector:
+        matchLabels:
+          team: platform
