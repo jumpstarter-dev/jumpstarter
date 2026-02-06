@@ -1,13 +1,13 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from rich.console import Console
 
-from jumpstarter.client.lease import LeaseAcquisitionSpinner
+from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
 
 
 class TestLeaseAcquisitionSpinner:
@@ -334,3 +334,179 @@ class TestLeaseAcquisitionSpinner:
             spinner.update_status("Message 4")
 
             assert mock_spinner.update.call_count == 4
+
+
+class TestRefreshChannel:
+    """Tests for Lease.refresh_channel."""
+
+    def _make_lease(self):
+        """Create a Lease with mocked dependencies."""
+        channel = Mock(name="original_channel")
+        lease = object.__new__(Lease)
+        lease.channel = channel
+        lease.namespace = "default"
+        lease.controller = Mock(name="original_controller")
+        lease.svc = Mock(name="original_svc")
+        return lease
+
+    @patch("jumpstarter.client.lease.ClientService")
+    @patch("jumpstarter.client.lease.jumpstarter_pb2_grpc.ControllerServiceStub")
+    def test_replaces_channel_and_stubs(self, mock_stub_cls, mock_svc_cls):
+        lease = self._make_lease()
+        new_channel = Mock(name="new_channel")
+
+        lease.refresh_channel(new_channel)
+
+        assert lease.channel is new_channel
+        mock_stub_cls.assert_called_once_with(new_channel)
+        assert lease.controller is mock_stub_cls.return_value
+        mock_svc_cls.assert_called_once()
+
+
+class TestNotifyLeaseEnding:
+    """Tests for Lease._notify_lease_ending."""
+
+    def _make_lease(self):
+        lease = object.__new__(Lease)
+        lease.lease_ending_callback = None
+        return lease
+
+    def test_calls_callback_when_set(self):
+        lease = self._make_lease()
+        callback = Mock()
+        lease.lease_ending_callback = callback
+        remaining = timedelta(minutes=3)
+
+        lease._notify_lease_ending(remaining)
+
+        callback.assert_called_once_with(lease, remaining)
+
+    def test_noop_when_no_callback(self):
+        lease = self._make_lease()
+
+        # Should not raise
+        lease._notify_lease_ending(timedelta(0))
+
+
+class TestGetLeaseEndTime:
+    """Tests for Lease._get_lease_end_time."""
+
+    def _make_lease(self):
+        return object.__new__(Lease)
+
+    def test_returns_none_when_no_begin_time(self):
+        lease = self._make_lease()
+        response = Mock(effective_begin_time=None, effective_duration=timedelta(minutes=30))
+
+        assert lease._get_lease_end_time(response) is None
+
+    def test_returns_none_when_no_duration(self):
+        lease = self._make_lease()
+        response = Mock(
+            effective_begin_time=datetime.now(tz=timezone.utc),
+            effective_duration=None,
+        )
+
+        assert lease._get_lease_end_time(response) is None
+
+    def test_returns_effective_end_time_when_present(self):
+        lease = self._make_lease()
+        end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        response = Mock(
+            effective_begin_time=datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
+            effective_duration=timedelta(hours=1),
+            effective_end_time=end_time,
+        )
+
+        assert lease._get_lease_end_time(response) is end_time
+
+    def test_calculates_end_time_when_no_effective_end(self):
+        lease = self._make_lease()
+        begin = datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc)
+        duration = timedelta(hours=2)
+        response = Mock(
+            effective_begin_time=begin,
+            effective_duration=duration,
+            effective_end_time=None,
+            duration=duration,
+        )
+
+        result = lease._get_lease_end_time(response)
+
+        assert result == begin + duration
+
+
+class TestMonitorAsyncError:
+    """Tests for the error handling in monitor_async."""
+
+    def _make_lease_for_monitor(self):
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.lease_ending_callback = None
+        lease.get = AsyncMock()
+        return lease
+
+    @pytest.mark.anyio
+    async def test_continues_on_get_failure_without_end_time(self):
+        """When get() fails and we have no end time, monitor retries."""
+        lease = self._make_lease_for_monitor()
+        call_count = 0
+
+        async def failing_get():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise Exception("transient error")
+            # Third call: return expired lease to exit the loop
+            end_time = datetime.now(tz=timezone.utc) - timedelta(seconds=10)
+            return Mock(
+                effective_begin_time=end_time - timedelta(hours=1),
+                effective_duration=timedelta(hours=1),
+                effective_end_time=end_time,
+            )
+
+        lease.get = failing_get
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            async with lease.monitor_async():
+                pass
+
+        assert call_count == 3  # two failures + one success
+
+    @pytest.mark.anyio
+    async def test_estimates_expiry_from_last_known_end_time(self, caplog):
+        """When get() fails after we've seen an end time, use cached value."""
+        lease = self._make_lease_for_monitor()
+        callback = Mock()
+        lease.lease_ending_callback = callback
+
+        # End time slightly in the future so the monitor caches it and sleeps
+        future_end = datetime.now(tz=timezone.utc) + timedelta(milliseconds=50)
+        call_count = 0
+
+        async def get_then_fail():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return Mock(
+                    effective_begin_time=future_end - timedelta(hours=1),
+                    effective_duration=timedelta(hours=1),
+                    effective_end_time=None,
+                    duration=timedelta(hours=1),
+                )
+            raise Exception("server unavailable")
+
+        lease.get = get_then_fail
+
+        with caplog.at_level(logging.WARNING):
+            async with lease.monitor_async():
+                # Keep the body alive long enough for the monitor to loop
+                # through the first get(), sleep, second get() (fails), and
+                # error handler using the cached end time.
+                await asyncio.sleep(0.2)
+
+        # Should have gone through the error handler using cached end time
+        assert call_count >= 2
+        callback.assert_called()
+        _, remain_arg = callback.call_args[0]
+        assert remain_arg == timedelta(0)
