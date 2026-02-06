@@ -131,6 +131,10 @@ func (s *Service) Start(ctx context.Context) error {
 	})
 
 	port := getEnvOrDefault("LOGIN_SERVICE_PORT", defaultPort)
+	// Ensure port has the ":" prefix for net.Listen format
+	if port != "" && port[0] != ':' {
+		port = ":" + port
+	}
 
 	server := &http.Server{
 		Addr:    port,
