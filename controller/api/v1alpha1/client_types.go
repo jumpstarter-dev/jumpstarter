@@ -41,6 +41,9 @@ type ClientStatus struct {
 
 // Client is the Schema for the identities API
 type Client struct {
+	// The Client in the Jumpstarter controller represents a user that can access the Jumpstarter Controller.
+	// Clients can be associated to external identity OIDC providers by providing Username, i.e.
+	// Spec.Username: "kc:user-name-in-keycloak"
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
