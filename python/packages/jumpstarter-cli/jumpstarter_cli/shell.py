@@ -77,7 +77,7 @@ async def _monitor_token_expiry(config, cancel_scope) -> None:
             return
 
 
-async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):
+async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):  # noqa: C901
     """Run shell with lease context managers and wait for afterLease hook if logs enabled.
 
     When exporter_logs is enabled, this function will:
@@ -119,15 +119,20 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             )
 
                             if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
-                                logger.error("beforeLease hook failed, not launching shell")
-                                return 1
+                                from jumpstarter.common.exceptions import ExporterOfflineError
+                                reason = monitor.status_message or "beforeLease hook failed"
+                                raise ExporterOfflineError(reason)
                             elif result is None:
+                                from jumpstarter.common.exceptions import ExporterOfflineError
                                 if monitor.connection_lost:
-                                    # Exporter shut down (likely due to onFailure=exit)
-                                    logger.error("Connection lost during beforeLease hook (exporter may have shut down)")
+                                    reason = (
+                                        monitor.status_message
+                                        or "Connection to exporter lost during beforeLease hook"
+                                    )
+                                    raise ExporterOfflineError(reason)
                                 else:
-                                    logger.error("Timeout waiting for beforeLease hook, not launching shell")
-                                return 1
+                                    reason = monitor.status_message or "Timeout waiting for beforeLease hook"
+                                    raise ExporterOfflineError(reason)
 
                             logger.debug("Exporter ready (status: %s), launching shell...", result)
 
@@ -142,6 +147,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # to wait for hook completion.
                             if lease.name and not cancel_scope.cancel_called:
                                 logger.info("Running afterLease hook (Ctrl+C to skip)...")
+                                from jumpstarter.common.exceptions import ExporterOfflineError
                                 try:
                                     # EndSession triggers the afterLease hook asynchronously
                                     success = await client.end_session_async()
@@ -156,16 +162,24 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                             if result == ExporterStatus.AVAILABLE:
                                                 logger.info("afterLease hook completed")
                                             elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                                                logger.warning("afterLease hook failed")
+                                                from jumpstarter.common.exceptions import ExporterOfflineError
+                                                reason = monitor.status_message or "afterLease hook failed"
+                                                raise ExporterOfflineError(reason)
                                             elif monitor.connection_lost:
-                                                # Connection lost - exporter closed, hook likely completed
-                                                logger.info("Exporter connection closed (hook completed)")
+                                                from jumpstarter.common.exceptions import ExporterOfflineError
+                                                reason = (
+                                                    monitor.status_message
+                                                    or "Connection to exporter lost during afterLease hook"
+                                                )
+                                                raise ExporterOfflineError(reason)
                                             else:
                                                 logger.debug("Hook completion not confirmed")
                                         if timeout_scope.cancelled_caught:
                                             logger.warning("Timeout waiting for afterLease hook to complete")
                                     else:
                                         logger.debug("EndSession not implemented, skipping hook wait")
+                                except ExporterOfflineError:
+                                    raise
                                 except Exception as e:
                                     logger.warning("Error during afterLease hook: %s", e)
 
@@ -211,6 +225,14 @@ async def _shell_with_signal_handling(  # noqa: C901
                 for exc in eg.exceptions:
                     if isinstance(exc, TimeoutError):
                         raise exc from None
+                from jumpstarter_cli_common.exceptions import find_exception_in_group
+
+                from jumpstarter.common.exceptions import ExporterOfflineError
+                offline_exc = find_exception_in_group(eg, ExporterOfflineError)
+                if offline_exc:
+                    raise offline_exc from None
+                if lease_used is not None:
+                    raise ExporterOfflineError("Connection to exporter lost") from None
                 raise
             except cancelled_exc_class:
                 # Check if cancellation was due to token expiry

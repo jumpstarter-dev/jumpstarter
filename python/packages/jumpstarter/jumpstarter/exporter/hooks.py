@@ -512,8 +512,9 @@ class HookExecutor:
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
                 )
-                # Brief delay to allow status and logs to reach client before shutdown
-                await anyio.sleep(0.3)
+                # Delay to allow client's status monitor to poll and cache failure reason
+                # before the exporter shuts down and the connection drops
+                await anyio.sleep(1.0)
                 logger.error("Shutting down exporter due to beforeLease hook failure with on_failure='exit'")
                 # Exit code 1 tells the CLI not to restart the exporter
                 shutdown(exit_code=1)
@@ -599,8 +600,9 @@ class HookExecutor:
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                     f"afterLease hook failed (on_failure=exit, shutting down): {e}",
                 )
-                # Brief delay to allow status and logs to reach client before shutdown
-                await anyio.sleep(0.3)
+                # Delay to allow client's status monitor to poll and cache failure reason
+                # before the exporter shuts down and the connection drops
+                await anyio.sleep(1.0)
                 logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")
                 # Exit code 1 tells the CLI not to restart the exporter
                 shutdown(exit_code=1)
