@@ -506,32 +506,22 @@ class HookExecutor:
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
-                # on_failure='exit' - shut down the entire exporter
+                # on_failure='exit' - defer shutdown until client handles the failure
                 logger.error("beforeLease hook failed with on_failure='exit': %s", e)
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
                 )
-                # Delay to allow client's status monitor to poll and cache failure reason
-                # before the exporter shuts down and the connection drops
-                await anyio.sleep(1.0)
-                logger.error("Shutting down exporter due to beforeLease hook failure with on_failure='exit'")
-                # Exit code 1 tells the CLI not to restart the exporter
-                shutdown(exit_code=1)
+                # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
+                shutdown(exit_code=1, wait_for_lease_exit=True)
             else:
-                # on_failure='endLease' - end this lease, exporter stays available for new leases
+                # on_failure='endLease' - report failure, session stays alive for client
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=endLease): {e}",
                 )
-                # Delay to allow client's status monitor to poll and cache failure reason
-                # before request_lease_release triggers session close
-                await anyio.sleep(1.0)
-                # Request the controller to release the lease
-                if request_lease_release:
-                    logger.info("Requesting lease release due to beforeLease hook failure")
-                    await request_lease_release()
+                # No request_lease_release - client will discover failure and release
 
         except Exception as e:
             logger.error("beforeLease hook failed with unexpected error: %s", e, exc_info=True)
@@ -568,6 +558,7 @@ class HookExecutor:
             shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
             request_lease_release: Async callback to request lease release from controller
         """
+        shutdown_called = False
         try:
             # Verify lease scope is ready - for after-lease this should always be true
             # since we've already processed the lease, but check defensively
@@ -603,12 +594,11 @@ class HookExecutor:
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                     f"afterLease hook failed (on_failure=exit, shutting down): {e}",
                 )
-                # Delay to allow client's status monitor to poll and cache failure reason
-                # before the exporter shuts down and the connection drops
-                await anyio.sleep(1.0)
+                # No delay needed - client is already polling and will see the failure
                 logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")
                 # Exit code 1 tells the CLI not to restart the exporter
                 shutdown(exit_code=1)
+                shutdown_called = True
             else:
                 # on_failure='endLease' - lease already ended, just report the failure
                 # The exporter remains available for new leases
@@ -628,9 +618,9 @@ class HookExecutor:
             # Unexpected errors don't trigger shutdown - exporter remains available
 
         finally:
-            # Brief delay to allow client's status monitor to poll and see AVAILABLE
-            # before we request lease release (which closes the session)
-            await anyio.sleep(1.0)
+            # Only delay if shutdown wasn't called (normal flow needs time for client to poll)
+            if not shutdown_called:
+                await anyio.sleep(1.0)
 
             # Request lease release from controller after hook completes (success or failure)
             # This ensures the lease is always released even if the client disconnects
