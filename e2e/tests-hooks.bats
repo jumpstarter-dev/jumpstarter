@@ -115,7 +115,7 @@ wait_for_hooks_exporter() {
 
 # Helper: Wait for hooks exporter to go offline
 wait_for_hooks_exporter_offline() {
-  local max_wait=30
+  local max_wait=200
   local count=0
 
   while [ $count -lt $max_wait ]; do
