@@ -265,7 +265,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     await sleep(delay)
                     attempt += 1
                     continue
-                raise
+                # Exporter went offline or lease ended - log and exit gracefully
+                logger.warning("Connection to exporter lost: %s", e.details())
+                return
         async with connect_router_stream(
             response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options
         ):
