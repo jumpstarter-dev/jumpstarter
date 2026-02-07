@@ -291,6 +291,7 @@ class StatusMonitor:
         """Background polling loop."""
         self._poll_task_started.set()
         logger.debug("Status monitor poll loop started")
+        deadline_retries = 0
 
         while self._running:
             try:
@@ -311,6 +312,7 @@ class StatusMonitor:
                 if self._connection_lost:
                     logger.info("Connection recovered, resetting connection_lost flag")
                     self._connection_lost = False
+                deadline_retries = 0
 
                 # Detect missed transitions
                 if self._status_version > 0 and new_version > self._status_version + 1:
@@ -364,13 +366,16 @@ class StatusMonitor:
                     self._any_change_event = Event()
                     break
                 elif e.code() == StatusCode.DEADLINE_EXCEEDED:
-                    # Timeout - connection might be dead
-                    logger.info("GetStatus call timed out (DEADLINE_EXCEEDED), treating as connection lost")
-                    self._connection_lost = True
-                    self._running = False
-                    self._any_change_event.set()
-                    self._any_change_event = Event()
-                    break
+                    deadline_retries += 1
+                    if deadline_retries >= 3:
+                        logger.info("GetStatus timed out %d times, treating as connection lost", deadline_retries)
+                        self._connection_lost = True
+                        self._running = False
+                        self._any_change_event.set()
+                        self._any_change_event = Event()
+                        break
+                    logger.debug("GetStatus timed out (attempt %d/3), retrying...", deadline_retries)
+                    continue
                 logger.debug(f"GetStatus poll error: {e.code()}")
             except Exception as e:
                 logger.debug(f"GetStatus poll error: {e}")

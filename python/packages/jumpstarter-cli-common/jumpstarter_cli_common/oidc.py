@@ -1,11 +1,13 @@
 import json
 import os
+import ssl
 import time
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
 
 import aiohttp
+import certifi
 import click
 from aiohttp import web
 from anyio import create_memory_object_stream
@@ -15,6 +17,14 @@ from joserfc.jws import extract_compact
 from yarl import URL
 
 from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT
+
+
+def _get_ssl_context() -> ssl.SSLContext:
+    """Create an SSL context that respects SSL_CERT_FILE environment variable."""
+    ssl_ctx = ssl.create_default_context()
+    ca_file = os.environ.get("SSL_CERT_FILE") or certifi.where()
+    ssl_ctx.load_verify_locations(ca_file)
+    return ssl_ctx
 
 
 def opt_oidc(f):
@@ -51,7 +61,8 @@ class Config:
     scope: ClassVar[list[str]] = ["openid", "profile"]
 
     async def configuration(self):
-        async with aiohttp.ClientSession() as session:
+        connector = aiohttp.TCPConnector(ssl=_get_ssl_context())
+        async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(
                 URL(self.issuer).joinpath(".well-known", "openid-configuration"),
                 raise_for_status=True,

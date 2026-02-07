@@ -519,6 +519,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         The separation prevents SSL frame corruption that occurs when multiple gRPC
         connections share the same socket simultaneously.
 
+        Note: Registration with the controller is handled once during serve() via
+        self.session(). Per-lease sessions do not re-register to avoid spurious
+        status updates that can tear down the session prematurely.
+
         Yields:
             tuple[Session, str, str]: A tuple of (session, main_socket_path, hook_socket_path)
         """
@@ -531,13 +535,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # Create dual Unix sockets - one for clients, one for hooks
             async with session.serve_unix_with_hook_socket_async() as (main_path, hook_path):
                 logger.info("Session serving on main=%s, hook=%s", main_path, hook_path)
-                # Create a gRPC channel to the controller via the main socket
-                async with grpc.aio.secure_channel(
-                    f"unix://{main_path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
-                ) as channel:
-                    # Register the exporter with the controller
-                    await self._register_with_controller(channel)
-                # Yield session and both socket paths
                 yield session, main_path, hook_path
         logger.info("Session closed")
 

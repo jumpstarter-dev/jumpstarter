@@ -234,9 +234,9 @@ exporter_process_running() {
 
   run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
 
-  # Shell should fail because lease was ended
+  # Shell should fail because hook failed - error message contains reason from exporter
   assert_failure
-  assert_output --partial "HOOK_FAIL_ENDLEASE: will fail and end lease"
+  assert_output --partial "beforeLease hook failed"
 
   # Exporter should still be available after failure
   wait_for_hooks_exporter
@@ -247,9 +247,9 @@ exporter_process_running() {
 
   run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
 
-  # Shell should fail
+  # Shell should fail - error includes reason from exporter status
   assert_failure
-  assert_output --partial "HOOK_FAIL_EXIT: shutting down"
+  assert_output --partial "beforeLease hook failed"
 
   # Exporter process should have exited
   sleep 2
@@ -282,9 +282,9 @@ exporter_process_running() {
 
   run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
 
-  # Shell command itself should succeed
-  assert_success
-  assert_output --partial "HOOK_FAIL_EXIT: afterLease failed, shutting down"
+  # Shell should fail because afterLease hook failed and exporter shut down
+  assert_failure
+  assert_output --partial "afterLease hook failed"
 
   # Exporter process should have exited
   sleep 2
