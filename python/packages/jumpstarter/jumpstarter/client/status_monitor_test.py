@@ -300,6 +300,57 @@ class TestStatusMonitorPolling:
         # Monitor should have recovered and reached LEASE_READY
         assert monitor.current_status == ExporterStatus.LEASE_READY
 
+    async def test_poll_loop_deadline_exceeded_threshold(self) -> None:
+        """Test that poll loop marks connection lost after threshold DEADLINE_EXCEEDED.
+
+        If GetStatus times out 20+ consecutive times (~100s at 5s/timeout),
+        the monitor should treat this as a permanently stuck connection and
+        set connection_lost.
+        """
+        responses = [
+            create_status_response(ExporterStatus.AVAILABLE, version=1),
+        ] + [
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED)
+            for _ in range(25)
+        ]
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+            # Wait for all DEADLINE_EXCEEDED errors to be processed
+            await anyio.sleep(3.0)
+            await monitor.stop()
+
+        # After 20+ consecutive DEADLINE_EXCEEDED, connection should be marked lost
+        assert monitor.connection_lost
+
+    async def test_poll_loop_deadline_exceeded_below_threshold(self) -> None:
+        """Test that DEADLINE_EXCEEDED below threshold does not mark connection lost.
+
+        10 consecutive timeouts is well below the threshold of 20, so the
+        monitor should recover when a successful response arrives.
+        """
+        responses = [
+            create_status_response(ExporterStatus.AVAILABLE, version=1),
+        ] + [
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED)
+            for _ in range(10)
+        ] + [
+            create_status_response(ExporterStatus.LEASE_READY, version=2),
+        ]
+        stub = MockExporterStub(responses)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+            await anyio.sleep(1.0)
+            await monitor.stop()
+
+        # 10 consecutive DEADLINE_EXCEEDED (below 20 threshold) should recover
+        assert not monitor.connection_lost
+        assert monitor.current_status == ExporterStatus.LEASE_READY
+
 
 class TestStatusMonitorWaitForStatus:
     async def test_wait_for_status_already_at_target(self) -> None:
