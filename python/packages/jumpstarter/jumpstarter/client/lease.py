@@ -17,6 +17,7 @@ from anyio import (
     AsyncContextManagerMixin,
     CancelScope,
     ContextManagerMixin,
+    connect_unix,
     create_task_group,
     fail_after,
     sleep,
@@ -285,40 +286,28 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             yield path
 
     async def _wait_for_ready_connection(self, path: str):
-        """Wait for the basic gRPC connection to be established.
+        """Wait for the Unix socket listener to be ready.
 
-        This only waits for the connection to be available. It does NOT wait
-        for beforeLease hooks to complete - that should be done after log
-        streaming is started so hook output can be displayed in real-time.
+        This only verifies that the Unix socket is accepting connections.
+        It does NOT create a gRPC channel or call Dial, which would create
+        a spurious router connection that can interfere with the real
+        connection established later by client_from_path.
         """
         retries_left = 5
         logger.info("Waiting for ready connection at %s", path)
         while True:
             try:
-                with ExitStack() as stack:
-                    async with client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe) as _:
-                        # Connection established
-                        break
-            except AioRpcError as e:
-                # Check if Dial reported a hook failure - surface it immediately
-                if self._last_dial_error:
-                    logger.error("Dial rejected: %s", self._last_dial_error)
-                    raise ConnectionError(self._last_dial_error) from e
+                stream = await connect_unix(path)
+                await stream.aclose()
+                logger.debug("Socket is ready at %s", path)
+                break
+            except (OSError, ConnectionRefusedError) as e:
                 if retries_left > 1:
                     retries_left -= 1
+                    logger.debug("Socket not ready at %s, retrying (%d left)", path, retries_left)
+                    await sleep(1)
                 else:
-                    logger.error("Max retries reached while waiting for ready connection at %s", path)
-                    raise ConnectionError("Max retries reached while waiting for ready connection at %s" % path) from e
-                if e.code().name == "UNAVAILABLE":
-                    logger.warning("Still waiting for connection to be ready at %s", path)
-                else:
-                    logger.warning("Waiting for ready connection to %s: %s", path, e)
-                await sleep(1)
-            except ConnectionError:
-                raise
-            except Exception as e:
-                logger.error("Unexpected error while waiting for ready connection to %s: %s", path, e)
-                raise ConnectionError("Unexpected error while waiting for ready connection to %s" % path) from e
+                    raise ConnectionError("Socket not ready at %s" % path) from e
 
     @asynccontextmanager
     async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):

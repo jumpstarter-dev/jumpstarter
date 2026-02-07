@@ -371,7 +371,18 @@ class StatusMonitor:
                     # on wait_for_any_of is the real deadline. Only UNAVAILABLE indicates
                     # a true connection loss (server down/disconnected).
                     deadline_retries += 1
-                    if deadline_retries % 5 == 0:
+                    if deadline_retries >= 20:
+                        # 20 consecutive timeouts (~100s at 5s/timeout) indicates
+                        # a permanently stuck connection, not a transient issue
+                        logger.warning(
+                            "GetStatus timed out %d times consecutively, marking connection as lost",
+                            deadline_retries,
+                        )
+                        self._connection_lost = True
+                        self._any_change_event.set()
+                        self._any_change_event = Event()
+                        break
+                    elif deadline_retries % 5 == 0:
                         logger.warning("GetStatus timed out %d times consecutively", deadline_retries)
                     else:
                         logger.debug("GetStatus timed out (attempt %d), retrying...", deadline_retries)
