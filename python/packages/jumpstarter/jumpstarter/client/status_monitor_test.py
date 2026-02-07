@@ -274,25 +274,31 @@ class TestStatusMonitorPolling:
         assert monitor.connection_lost
 
     async def test_poll_loop_handles_deadline_exceeded(self) -> None:
-        """Test that poll loop sets connection_lost on DEADLINE_EXCEEDED.
+        """Test that poll loop treats DEADLINE_EXCEEDED as transient.
 
-        When GetStatus times out (DEADLINE_EXCEEDED), the monitor should treat
-        this as a connection loss to avoid waiting for gRPC keepalive timeout.
+        DEADLINE_EXCEEDED means the RPC timed out, not that the connection is
+        dead. The monitor should continue polling rather than setting
+        connection_lost. Only UNAVAILABLE indicates a true connection loss.
         """
         responses = [
             create_status_response(ExporterStatus.AVAILABLE, version=1),
             create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_status_response(ExporterStatus.LEASE_READY, version=2),
         ]
         stub = MockExporterStub(responses)
         monitor = StatusMonitor(stub, poll_interval=0.05)
 
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
-            await anyio.sleep(0.15)
+            await anyio.sleep(0.5)
             await monitor.stop()
 
-        assert monitor.connection_lost
-        assert not monitor._running
+        # DEADLINE_EXCEEDED should NOT cause connection_lost
+        assert not monitor.connection_lost
+        # Monitor should have recovered and reached LEASE_READY
+        assert monitor.current_status == ExporterStatus.LEASE_READY
 
 
 class TestStatusMonitorWaitForStatus:
@@ -392,16 +398,17 @@ class TestStatusMonitorWaitForStatus:
         # Monitor should have stopped running
         assert not monitor._running
 
-    async def test_wait_for_status_deadline_exceeded_returns_promptly(self) -> None:
-        """Test wait_for_status returns promptly when DEADLINE_EXCEEDED is received.
+    async def test_wait_for_status_deadline_exceeded_keeps_polling(self) -> None:
+        """Test wait_for_status keeps waiting through DEADLINE_EXCEEDED.
 
-        When GetStatus times out (DEADLINE_EXCEEDED), the monitor should signal
-        waiters so they don't hang waiting for gRPC keepalive timeout (24s).
+        DEADLINE_EXCEEDED is transient - the monitor should keep polling and
+        the wait should succeed once the status eventually arrives.
         """
-        # First return AVAILABLE, then DEADLINE_EXCEEDED to simulate timeout
         responses = [
             create_status_response(ExporterStatus.AVAILABLE, version=1),
             create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_status_response(ExporterStatus.LEASE_READY, version=2),
         ]
         stub = MockExporterStub(responses)
         monitor = StatusMonitor(stub, poll_interval=0.05)
@@ -409,18 +416,14 @@ class TestStatusMonitorWaitForStatus:
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
 
-            # Wait for a status that will never be reached - should return promptly
-            # when DEADLINE_EXCEEDED is received, not hang until timeout
+            # Wait should succeed after DEADLINE_EXCEEDED errors clear
             result = await monitor.wait_for_status(ExporterStatus.LEASE_READY, timeout=2.0)
 
             await monitor.stop()
 
-        # Should return False promptly (well before the 2s timeout)
-        assert result is False
-        # Monitor should have marked connection as lost
-        assert monitor.connection_lost
-        # Monitor should have stopped running
-        assert not monitor._running
+        assert result is True
+        assert not monitor.connection_lost
+        assert monitor.current_status == ExporterStatus.LEASE_READY
 
 
 class TestStatusMonitorWaitForAnyOf:
