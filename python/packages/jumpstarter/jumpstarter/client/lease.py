@@ -305,7 +305,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     logger.warning("Still waiting for connection to be ready at %s", path)
                 else:
                     logger.warning("Waiting for ready connection to %s: %s", path, e)
-                await sleep(5)
+                await sleep(1)
             except ConnectionError:
                 raise
             except Exception as e:
