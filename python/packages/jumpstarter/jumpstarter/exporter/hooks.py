@@ -525,6 +525,9 @@ class HookExecutor:
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=endLease): {e}",
                 )
+                # Delay to allow client's status monitor to poll and cache failure reason
+                # before request_lease_release triggers session close
+                await anyio.sleep(1.0)
                 # Request the controller to release the lease
                 if request_lease_release:
                     logger.info("Requesting lease release due to beforeLease hook failure")
