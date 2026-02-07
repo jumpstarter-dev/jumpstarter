@@ -123,7 +123,7 @@ wait_for_exporter() {
     --label example.com/board=legacy
   assert_success
 
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-legacy.yaml
   run jmp config exporter list -o yaml
   assert_success
@@ -171,7 +171,7 @@ wait_for_exporter() {
     --username test-exporter-oidc@example.com --password password
   assert_success
   # add the mock export paths to those files
-  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporter.yaml\")" \
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/exporter.yaml\")" \
     /etc/jumpstarter/exporters/test-exporter-oidc.yaml
   run jmp config exporter list -o yaml
   assert_success
