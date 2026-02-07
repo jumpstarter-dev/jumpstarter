@@ -71,7 +71,9 @@ start_hooks_exporter() {
 
   stop_hooks_exporter
 
-  # Merge config into exporter yaml
+  # Clear any leftover hooks config from previous test, then merge new config
+  go run github.com/mikefarah/yq/v4@latest -i 'del(.hooks)' \
+    /etc/jumpstarter/exporters/test-exporter-hooks.yaml
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/${config_file}\")" \
     /etc/jumpstarter/exporters/test-exporter-hooks.yaml
 
@@ -91,7 +93,9 @@ start_hooks_exporter_single() {
 
   stop_hooks_exporter
 
-  # Merge config into exporter yaml
+  # Clear any leftover hooks config from previous test, then merge new config
+  go run github.com/mikefarah/yq/v4@latest -i 'del(.hooks)' \
+    /etc/jumpstarter/exporters/test-exporter-hooks.yaml
   go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/${config_file}\")" \
     /etc/jumpstarter/exporters/test-exporter-hooks.yaml
 
