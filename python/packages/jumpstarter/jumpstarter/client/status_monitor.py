@@ -366,15 +366,15 @@ class StatusMonitor:
                     self._any_change_event = Event()
                     break
                 elif e.code() == StatusCode.DEADLINE_EXCEEDED:
+                    # DEADLINE_EXCEEDED is a transient error (RPC timed out), not a
+                    # permanent connection loss. Keep polling - the shell's own timeout
+                    # on wait_for_any_of is the real deadline. Only UNAVAILABLE indicates
+                    # a true connection loss (server down/disconnected).
                     deadline_retries += 1
-                    if deadline_retries >= 3:
-                        logger.info("GetStatus timed out %d times, treating as connection lost", deadline_retries)
-                        self._connection_lost = True
-                        self._running = False
-                        self._any_change_event.set()
-                        self._any_change_event = Event()
-                        break
-                    logger.debug("GetStatus timed out (attempt %d/3), retrying...", deadline_retries)
+                    if deadline_retries % 5 == 0:
+                        logger.warning("GetStatus timed out %d times consecutively", deadline_retries)
+                    else:
+                        logger.debug("GetStatus timed out (attempt %d), retrying...", deadline_retries)
                     continue
                 logger.debug(f"GetStatus poll error: {e.code()}")
             except Exception as e:
