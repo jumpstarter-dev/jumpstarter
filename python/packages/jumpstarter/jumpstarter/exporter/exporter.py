@@ -689,34 +689,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 status_tx,
             )
             async for status in status_rx:
-                # Check if lease name changed (and there was a previous active lease)
-                lease_changed = (
-                    self._lease_context
-                    and self._lease_context.is_active()
-                    and self._lease_context.lease_name != status.lease_name
-                )
-                if lease_changed:
-                    # Lease name changed - need to restart with new lease
-                    # Signal handle_lease() that the lease has ended so it can exit its loop
-                    # and run the afterLease hook in its finally block (where session is still open)
-                    logger.info("Lease status changed, signaling lease ended")
-                    self._lease_context.lease_ended.set()
-
-                    # Wait for the afterLease hook to complete (run by handle_lease finally block)
-                    # This ensures the session stays open for the hook subprocess
-                    with CancelScope(shield=True):
-                        await self._lease_context.after_lease_hook_done.wait()
-                        logger.info("afterLease hook completed, stopping exporter")
-
-                        # Brief yield to let pending gRPC callbacks complete before cancellation
-                        # This prevents InvalidStateError on Future cleanup during stop()
-                        await sleep(0.1)
-
-                    # Clear lease scope for next lease
-                    self._lease_context = None
-                    self.stop()
-                    break
-
                 # Check for lease state transitions
                 previous_leased = self._previous_leased
                 current_leased = status.leased

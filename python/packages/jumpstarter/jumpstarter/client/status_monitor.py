@@ -384,14 +384,28 @@ class StatusMonitor:
             # Use critical (very fast) polling when there are active waiters
             # Use slow polling when idle in LEASE_READY state
             # Use normal polling otherwise
+            # Break sleep into chunks to detect new active waiters quickly
             if self._active_waiters > 0:
                 interval = self._critical_poll_interval  # 0.1s when actively waiting
             elif self._current_status == ExporterStatus.LEASE_READY:
                 interval = self._slow_poll_interval  # 5s when idle in LEASE_READY
             else:
                 interval = self._poll_interval  # 0.3s normal polling
-            with anyio.move_on_after(interval):
-                await self._stop_event.wait()
+
+            remaining = interval
+            stop_requested = False
+            while remaining > 0:
+                chunk = min(0.5, remaining)
+                with anyio.move_on_after(chunk):
+                    await self._stop_event.wait()
+                    stop_requested = True
+                    break
+                remaining -= chunk
+                # If a waiter appeared while sleeping, switch to fast polling
+                if self._active_waiters > 0 and interval > self._critical_poll_interval:
+                    break
+
+            if stop_requested:
                 logger.debug("Stop event received, exiting poll loop")
                 break
 
