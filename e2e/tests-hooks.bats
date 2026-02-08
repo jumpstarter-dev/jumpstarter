@@ -12,6 +12,24 @@ CURRENT_HOOKS_CONFIG=""
 setup_file() {
   # Initialize the PIDs file at the start of all tests
   echo "" > "$HOOKS_EXPORTER_PIDS_FILE"
+
+  # Create client and exporter for hooks tests
+  jmp admin create client -n "${JS_NAMESPACE}" test-client-hooks --unsafe --out "${BATS_RUN_TMPDIR}/test-client-hooks.yaml" \
+    --oidc-username dex:test-client-hooks
+
+  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-hooks --out "${BATS_RUN_TMPDIR}/test-exporter-hooks.yaml" \
+    --oidc-username dex:test-exporter-hooks \
+    --label example.com/board=hooks
+
+  jmp login --client test-client-hooks \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-client-hooks \
+    --issuer https://dex.dex.svc.cluster.local:5556 \
+    --username test-client-hooks@example.com --password password --unsafe
+
+  jmp login --exporter test-exporter-hooks \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-exporter-hooks \
+    --issuer https://dex.dex.svc.cluster.local:5556 \
+    --username test-exporter-hooks@example.com --password password
 }
 
 setup() {
@@ -19,6 +37,12 @@ setup() {
   bats_load_library bats-assert
 
   bats_require_minimum_version 1.5.0
+}
+
+teardown() {
+  # Clean up temp files that may leak if assertions fail before in-test cleanup
+  rm -f /tmp/jumpstarter-e2e-hook-python.py
+  rm -f /tmp/jumpstarter-e2e-hook-script.sh
 }
 
 teardown_file() {
@@ -80,6 +104,7 @@ start_hooks_exporter() {
   cat <<EOF | bash 3>&- &
 while true; do
   jmp run --exporter test-exporter-hooks
+  sleep 2
 done
 EOF
   echo "$!" >> "$HOOKS_EXPORTER_PIDS_FILE"
@@ -145,33 +170,6 @@ exporter_process_running() {
     done < "$HOOKS_EXPORTER_PIDS_FILE"
   fi
   return 1
-}
-
-# ============================================================================
-# Setup: Create client and exporter for hooks tests
-# ============================================================================
-
-@test "hooks: create client and exporter" {
-  # Create client
-  jmp admin create client -n "${JS_NAMESPACE}" test-client-hooks --unsafe --out "${BATS_RUN_TMPDIR}/test-client-hooks.yaml" \
-    --oidc-username dex:test-client-hooks
-
-  # Create exporter with hooks label
-  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-hooks --out "${BATS_RUN_TMPDIR}/test-exporter-hooks.yaml" \
-    --oidc-username dex:test-exporter-hooks \
-    --label example.com/board=hooks
-
-  # Login client
-  jmp login --client test-client-hooks \
-    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-client-hooks \
-    --issuer https://dex.dex.svc.cluster.local:5556 \
-    --username test-client-hooks@example.com --password password --unsafe
-
-  # Login exporter
-  jmp login --exporter test-exporter-hooks \
-    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-exporter-hooks \
-    --issuer https://dex.dex.svc.cluster.local:5556 \
-    --username test-exporter-hooks@example.com --password password
 }
 
 # ============================================================================
