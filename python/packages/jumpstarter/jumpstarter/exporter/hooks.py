@@ -196,18 +196,18 @@ class HookExecutor:
             logger.info("Starting hook subprocess...")
             logger.info("Creating PTY pair...")
             try:
-                master_fd, slave_fd = pty.openpty()
+                parent_fd, child_fd = pty.openpty()
             except Exception as e:
                 logger.error("Failed to create PTY: %s", e, exc_info=True)
                 raise
-            logger.info("PTY created: master_fd=%d, slave_fd=%d", master_fd, slave_fd)
+            logger.info("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
 
             # Track which fds are still open (use list for mutability in nested scope)
-            fds_open = {"master": True, "slave": True}
+            fds_open = {"parent": True, "child": True}
 
             process: subprocess.Popen | None = None
             try:
-                # Use subprocess.Popen with the PTY slave as stdin/stdout/stderr
+                # Use subprocess.Popen with the PTY child as stdin/stdout/stderr
                 # This avoids the issues with os.fork() in async contexts
                 # Determine interpreter and invocation mode
                 script_stripped = command.strip()
@@ -239,33 +239,33 @@ class HookExecutor:
                 try:
                     process = subprocess.Popen(
                         cmd,
-                        stdin=slave_fd,
-                        stdout=slave_fd,
-                        stderr=slave_fd,
+                        stdin=child_fd,
+                        stdout=child_fd,
+                        stderr=child_fd,
                         env=hook_env,
                         start_new_session=True,  # Equivalent to os.setsid()
-                        close_fds=True,  # Close inherited fds to prevent interference with parent's gRPC connections
+                        close_fds=True,  # Close inherited fds to prevent interference with gRPC connections
                     )
                 except Exception as e:
                     logger.error("Failed to spawn subprocess: %s", e, exc_info=True)
                     raise
                 logger.info("Subprocess spawned with PID %d", process.pid)
-                # Close slave in parent - subprocess has it now
-                os.close(slave_fd)
-                fds_open["slave"] = False
-                logger.debug("Closed slave_fd in parent")
+                # Close child fd in parent process - subprocess has it now
+                os.close(child_fd)
+                fds_open["child"] = False
+                logger.debug("Closed child_fd in parent process")
 
                 output_lines: list[str] = []
 
-                # Set master fd to non-blocking mode
+                # Set parent fd to non-blocking mode
                 import fcntl
 
-                flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
-                fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-                logger.debug("Master fd set to non-blocking")
+                flags = fcntl.fcntl(parent_fd, fcntl.F_GETFL)
+                fcntl.fcntl(parent_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                logger.debug("Parent fd set to non-blocking")
 
                 async def read_pty_output() -> None:  # noqa: C901
-                    """Read from PTY master fd line by line using non-blocking I/O."""
+                    """Read from PTY parent fd line by line using non-blocking I/O."""
                     logger.debug("read_pty_output task started")
                     buffer = b""
                     read_count = 0
@@ -274,15 +274,15 @@ class HookExecutor:
 
                     start_time = time.monotonic()
                     try:
-                        while fds_open["master"]:
+                        while fds_open["parent"]:
                             try:
                                 # Wait for fd to be readable with timeout
                                 with anyio.move_on_after(0.1):
-                                    await anyio.wait_readable(master_fd)
+                                    await anyio.wait_readable(parent_fd)
 
                                 # Check stop flag immediately after timeout
                                 # (main task may have signaled us to stop)
-                                if not fds_open["master"]:
+                                if not fds_open["parent"]:
                                     logger.debug("read_pty_output: stop flag set, exiting")
                                     break
 
@@ -297,7 +297,7 @@ class HookExecutor:
 
                                 # Read available data (non-blocking)
                                 try:
-                                    chunk = os.read(master_fd, 4096)
+                                    chunk = os.read(parent_fd, 4096)
                                     if not chunk:
                                         # EOF
                                         logger.debug("read_pty_output: EOF received")
@@ -384,7 +384,7 @@ class HookExecutor:
                         # Signal the read task to stop by marking fd as closed
                         # The read task checks this flag after each 0.1s timeout
                         # and also receives EOF when the subprocess exits
-                        fds_open["master"] = False
+                        fds_open["parent"] = False
                         logger.debug("Stop flag set, waiting for read task to exit")
                         # Don't cancel - let the task exit naturally via EOF or flag check
                         # Cancellation can cause unexpected side effects on gRPC connections
@@ -421,15 +421,18 @@ class HookExecutor:
                 cause = e
                 logger.error(error_msg, exc_info=True)
             finally:
-                # Clean up the file descriptors (always close, fds_open tracks logical state)
-                try:
-                    os.close(master_fd)
-                except OSError:
-                    pass
-                try:
-                    os.close(slave_fd)
-                except OSError:
-                    pass
+                # Clean up file descriptors — only close those still open to avoid
+                # closing an unrelated fd that reused the same number.
+                if fds_open["parent"]:
+                    try:
+                        os.close(parent_fd)
+                    except OSError:
+                        pass
+                if fds_open["child"]:
+                    try:
+                        os.close(child_fd)
+                    except OSError:
+                        pass
 
         # Handle failure if one occurred
         if error_msg is not None:
