@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -220,21 +221,8 @@ class RideSXDriver(Driver):
             self.logger.warning(f"stdout: {e.stdout}")
             self.logger.warning(f"stderr: {e.stderr}")
 
-    @export
-    def flash_oci_image(
-        self,
-        oci_url: str,
-        partitions: Dict[str, str] | None = None,
-    ):
-        """Flash OCI image using FLS fastboot CLI
-
-        Args:
-            oci_url: OCI image reference (e.g., "quay.io/bzlotnik/ridesx-image:latest")
-            partitions: Optional mapping of partition -> filename inside OCI image
-        """
-        if not oci_url.startswith("oci://"):
-            raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
-
+    def _build_fls_command(self, oci_url, partitions):
+        """Build FLS fastboot command and environment."""
         fls_binary = get_fls_binary(
             fls_version=self.fls_version,
             fls_binary_url=self.fls_custom_binary_url,
@@ -251,13 +239,47 @@ class RideSXDriver(Driver):
                     )
                 fls_cmd.extend(["-t", f"{partition_name}:{filename}"])
 
-        # Align fastboot timeout with driver timeout
         fls_cmd.extend(["--timeout", str(self.flash_timeout)])
+        return fls_cmd
+
+    @export
+    def flash_oci_image(
+        self,
+        oci_url: str,
+        partitions: Dict[str, str] | None = None,
+        oci_username: str | None = None,
+        oci_password: str | None = None,
+    ):
+        """Flash OCI image using FLS fastboot CLI
+
+        Args:
+            oci_url: OCI image reference (e.g., "quay.io/bzlotnik/ridesx-image:latest")
+            partitions: Optional mapping of partition -> filename inside OCI image
+            oci_username: Registry username for OCI authentication
+            oci_password: Registry password for OCI authentication
+        """
+        if not oci_url.startswith("oci://"):
+            raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
+
+        if bool(oci_username) != bool(oci_password):
+            raise ValueError("OCI authentication requires both --username and --password")
+
+        fls_cmd = self._build_fls_command(oci_url, partitions)
+
+        fls_env = os.environ.copy()
+        if oci_username and oci_password:
+            fls_env["FLS_REGISTRY_USERNAME"] = oci_username
+            fls_env["FLS_REGISTRY_PASSWORD"] = oci_password
 
         self.logger.info(f"Running FLS fastboot: {' '.join(fls_cmd)}")
+        if oci_username:
+            self.logger.info("Using OCI registry credentials from environment")
 
         try:
-            result = subprocess.run(fls_cmd, capture_output=True, text=True, check=True, timeout=self.flash_timeout)
+            result = subprocess.run(
+                fls_cmd, capture_output=True, text=True,
+                check=True, timeout=self.flash_timeout + 30, env=fls_env,
+            )
 
             self.logger.info("FLS fastboot auto-detection completed successfully")
             self.logger.debug(f"FLS stdout: {result.stdout}")
@@ -267,10 +289,11 @@ class RideSXDriver(Driver):
             return {"status": "success", "output": result.stdout}
 
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"FLS fastboot auto-detection failed - return code: {e.returncode}")
+            self.logger.error(f"FLS fastboot failed - return code: {e.returncode}")
             self.logger.error(f"stdout: {e.stdout}")
             self.logger.error(f"stderr: {e.stderr}")
-            raise RuntimeError(f"FLS fastboot auto-detection failed: {e}") from e
+            output = (e.stderr or e.stdout or "").strip()
+            raise RuntimeError(f"FLS fastboot failed: {output}") from e
 
         except subprocess.TimeoutExpired:
             self.logger.error("FLS fastboot auto-detection timed out")

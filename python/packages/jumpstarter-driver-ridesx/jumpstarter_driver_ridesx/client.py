@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -215,12 +216,33 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return self._execute_flash_operation(_flash_operation)
 
+    def _read_oci_credentials(self):
+        """Read OCI registry credentials from environment variables.
+
+        Returns:
+            Tuple of (username, password), both None if not set.
+
+        Raises:
+            click.ClickException: If only one of username/password is set.
+        """
+        username = os.environ.get("OCI_USERNAME")
+        password = os.environ.get("OCI_PASSWORD")
+
+        if bool(username) != bool(password):
+            raise click.ClickException(
+                "OCI authentication requires both OCI_USERNAME and OCI_PASSWORD environment variables"
+            )
+
+        return username, password
+
     def _flash_oci_auto_impl(
         self,
         oci_url: str,
         partitions: Dict[str, str] | None = None,
     ):
         """Core implementation of OCI flash without wrapper logic."""
+        oci_username, oci_password = self._read_oci_credentials()
+
         self.logger.info("Checking for fastboot devices on Exporter...")
         detection_result = self.call("detect_fastboot_device", 5, 2.0)
 
@@ -230,7 +252,10 @@ class RideSXClient(FlasherClient, CompositeClient):
         device_id = detection_result["device_id"]
         self.logger.info(f"Found fastboot device: {device_id}")
 
-        flash_result = self.call("flash_oci_image", oci_url, partitions)
+        flash_result = self.call(
+            "flash_oci_image", oci_url, partitions,
+            oci_username, oci_password,
+        )
 
         # Display FLS output to user
         if flash_result.get("status") == "success" and flash_result.get("output"):
@@ -360,6 +385,9 @@ class RideSXClient(FlasherClient, CompositeClient):
               # OCI with explicit partition->filename mapping
               j storage flash -t boot_a:boot.img oci://registry.com/image:tag
 
+              # OCI with registry credentials (via env vars)
+              OCI_USERNAME=user OCI_PASSWORD=pass j storage flash oci://registry.com/image:tag
+
               # Single file to partition
               j storage flash /local/boot.img --target boot_a
 
@@ -368,6 +396,11 @@ class RideSXClient(FlasherClient, CompositeClient):
 
               # HTTP URLs
               j storage flash -t boot_a:https://example.com/boot.img
+
+            \b
+            Environment variables:
+              OCI_USERNAME  Registry username for private OCI images
+              OCI_PASSWORD  Registry password for private OCI images
             """
             self._execute_flash_command(path, target_specs)
 

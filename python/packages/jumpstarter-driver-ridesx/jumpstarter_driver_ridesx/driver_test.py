@@ -515,7 +515,7 @@ def test_flash_oci_image_error_cases(temp_storage_dir, ridesx_driver):
                 error.stderr = "Flash failed"
                 mock_subprocess.side_effect = error
 
-                with pytest.raises(DriverError, match="FLS fastboot auto-detection failed"):
+                with pytest.raises(DriverError, match="FLS fastboot failed: Flash failed"):
                     client.call("flash_oci_image", "oci://image:tag", None)
 
                 # TimeoutExpired
@@ -529,6 +529,67 @@ def test_flash_oci_image_error_cases(temp_storage_dir, ridesx_driver):
 
                 with pytest.raises(DriverError, match="FLS command not found"):
                     client.call("flash_oci_image", "oci://image:tag", None)
+
+
+def test_flash_oci_image_with_credentials(temp_storage_dir, ridesx_driver):
+    """Test that OCI credentials are passed via env vars to FLS"""
+    with serve(ridesx_driver) as client:
+        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
+            with patch("subprocess.run") as mock_subprocess:
+                mock_result = MagicMock()
+                mock_result.stdout = "Flashing complete"
+                mock_result.stderr = ""
+                mock_result.returncode = 0
+                mock_subprocess.return_value = mock_result
+
+                result = client.call(
+                    "flash_oci_image", "oci://quay.io/private/image:tag", None, "myuser", "mypass"
+                )
+
+                assert result["status"] == "success"
+                # Credentials should NOT appear in the command args
+                call_args = mock_subprocess.call_args[0][0]
+                assert "-u" not in call_args
+                assert "-p" not in call_args
+                assert "myuser" not in call_args
+                assert "mypass" not in call_args
+                # Credentials should be passed via env vars
+                call_kwargs = mock_subprocess.call_args[1]
+                env = call_kwargs["env"]
+                assert env["FLS_REGISTRY_USERNAME"] == "myuser"
+                assert env["FLS_REGISTRY_PASSWORD"] == "mypass"
+
+
+def test_flash_oci_image_partial_credentials_rejected(temp_storage_dir, ridesx_driver):
+    """Test that providing only username or only password is rejected"""
+    from jumpstarter.client.core import DriverError
+
+    with serve(ridesx_driver) as client:
+        with pytest.raises(DriverError, match="OCI authentication requires both"):
+            client.call("flash_oci_image", "oci://image:tag", None, "myuser", None)
+
+        with pytest.raises(DriverError, match="OCI authentication requires both"):
+            client.call("flash_oci_image", "oci://image:tag", None, None, "mypass")
+
+
+def test_flash_oci_image_no_credentials(temp_storage_dir, ridesx_driver):
+    """Test that omitting credentials works (anonymous access)"""
+    with serve(ridesx_driver) as client:
+        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
+            with patch("subprocess.run") as mock_subprocess:
+                mock_result = MagicMock()
+                mock_result.stdout = "Flashing complete"
+                mock_result.stderr = ""
+                mock_result.returncode = 0
+                mock_subprocess.return_value = mock_result
+
+                result = client.call("flash_oci_image", "oci://image:tag", None, None, None)
+
+                assert result["status"] == "success"
+                call_kwargs = mock_subprocess.call_args[1]
+                env = call_kwargs["env"]
+                assert "FLS_REGISTRY_USERNAME" not in env
+                assert "FLS_REGISTRY_PASSWORD" not in env
 
 
 def test_flash_oci_image_requires_oci_scheme(temp_storage_dir, ridesx_driver):
