@@ -14,7 +14,6 @@ from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1
 from jumpstarter.exporter.session import Session
 
 if TYPE_CHECKING:
-    from jumpstarter.driver import Driver
     from jumpstarter.exporter.lease_context import LeaseContext
 
 logger = logging.getLogger(__name__)
@@ -51,7 +50,6 @@ class HookExecutor:
     """Executes lifecycle hooks with access to the j CLI."""
 
     config: HookConfigV1Alpha1
-    device_factory: Callable[[], "Driver"]
 
     def _create_hook_env(self, lease_scope: "LeaseContext") -> dict[str, str]:
         """Create standardized hook environment variables.
@@ -368,7 +366,7 @@ class HookExecutor:
                         # Give it a moment to terminate gracefully
                         try:
                             with anyio.move_on_after(5):
-                                await anyio.to_thread.run_sync(process.wait)
+                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         except Exception:
                             pass
                         # Force kill if still running

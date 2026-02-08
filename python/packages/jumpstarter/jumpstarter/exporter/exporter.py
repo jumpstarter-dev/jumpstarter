@@ -716,7 +716,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
                 # Check if this is a new lease assignment (no active lease context and we have a lease name)
                 # This handles both first lease and subsequent leases after the previous one ended
-                if self._lease_context is None and status.lease_name != "":
+                if self._lease_context is None and status.lease_name != "" and current_leased:
                     self._started = True
                     logger.info("Starting new lease: %s", status.lease_name)
                     # Create lease scope and start handling the lease

@@ -469,7 +469,10 @@ class AsyncDriverClient(
 
                         # Determine log source
                         if response.HasField("source"):
-                            source = LogSource(response.source)
+                            try:
+                                source = LogSource(response.source)
+                            except ValueError:
+                                source = LogSource.SYSTEM
                             is_hook = source in (LogSource.BEFORE_LEASE_HOOK, LogSource.AFTER_LEASE_HOOK)
                         else:
                             source = LogSource.SYSTEM

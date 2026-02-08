@@ -233,7 +233,6 @@ class ExporterConfigV1Alpha1(BaseModel):
 
             hook_executor = HookExecutor(
                 config=self.hooks,
-                device_factory=ExporterConfigV1Alpha1DriverInstance(children=self.export).instantiate,
             )
 
         exporter = None

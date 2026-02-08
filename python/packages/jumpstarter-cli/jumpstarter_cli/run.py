@@ -87,7 +87,7 @@ def _handle_child(config):
         # 2. Exporter's exit code if set (for hook failure with on_failure='exit')
         # 3. 0 for immediate restart (normal exit without signal or explicit exit code)
         if received_signal:
-            return received_signal
+            return 128 + received_signal
         elif exporter_exit_code is not None:
             return exporter_exit_code
         else:
@@ -129,13 +129,12 @@ def _handle_parent(pid):
         return None
 
     if os.WIFEXITED(status):
-        # Interpret child exit code
         child_exit_code = os.WEXITSTATUS(status)
         if child_exit_code == 0:
             return None  # restart child (unexpected exit/exception)
         else:
-            # Child indicates termination (signal number)
-            return 128 + child_exit_code  # Return standard Unix exit code
+            # Child already encodes signals as 128+N; pass through directly
+            return child_exit_code
     else:
         # Child killed by unhandled signal - terminate
         child_exit_signal = os.WTERMSIG(status) if os.WIFSIGNALED(status) else 0
