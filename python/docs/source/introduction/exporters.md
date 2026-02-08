@@ -75,3 +75,14 @@ $ jmp run --exporter myexporter
 Exporters can also be run in a privileged container or as a systemd daemon. It
 is recommended to run the Exporter service in the background with auto-restart
 capabilities in case something goes wrong and it needs to be restarted.
+
+## Lifecycle Hooks
+
+Exporters support lifecycle hooks that execute shell scripts at lease
+boundaries. A `beforeLease` hook runs after a lease is assigned but before
+the client can access drivers, and an `afterLease` hook runs after the
+session ends but before the lease is released.
+
+Hooks are configured in the `hooks` section of the exporter config file and
+use the `j` CLI to interact with exported devices. For full details, see
+[Hooks](hooks.md).

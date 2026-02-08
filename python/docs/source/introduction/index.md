@@ -29,6 +29,7 @@ Jumpstarter architecture is based on the following key components:
 - [Drivers](drivers.md) - Interfaces for DUT communication
 - [Adapters](adapters.md) - Convert driver connections into various formats
 - [Exporters](exporters.md) - Expose device interfaces over network via gRPC
+- [Hooks](hooks.md) - Lifecycle scripts that run at lease boundaries
 - [Clients](clients.md) - Libraries and CLI tools for device interaction
 - [Service](service.md) - Kubernetes controller for resource management
 
@@ -40,6 +41,8 @@ Component interactions include:
   specialized use cases
 - **Drivers/Adapters and Exporters** - Exporters manage drivers/adapters and
   expose them via gRPC
+- **Hooks and Exporters** - Hooks execute shell scripts at lease boundaries,
+  running before drivers are available and after the session ends
 - **Exporters and Clients** - Clients connect to exporters to control devices
 - **Clients/Exporters and Service** - Service manages access control and
   resource allocation in distributed mode
@@ -195,6 +198,7 @@ preventing conflicts with other users or pipelines in the shared environment.
 drivers.md
 adapters.md
 exporters.md
+hooks.md
 clients.md
 service.md
 ```

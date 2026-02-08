@@ -25,6 +25,15 @@ class HookInstanceConfigV1Alpha1(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    exec_: str | None = Field(
+        default=None,
+        alias="exec",
+        description=(
+            "Interpreter used to execute the script (e.g. /bin/bash, python3). "
+            "When not set, auto-detected from the script file extension "
+            "(.py uses the exporter's Python, .sh uses /bin/sh) or defaults to /bin/sh for inline scripts."
+        ),
+    )
     script: str = Field(alias="script", description="The j script to execute for this hook")
     timeout: int = Field(default=120, description="The hook execution timeout in seconds (default: 120s)")
     on_failure: Literal[

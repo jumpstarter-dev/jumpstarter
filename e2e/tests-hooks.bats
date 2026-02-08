@@ -350,3 +350,62 @@ exporter_process_running() {
   [[ "$output" =~ lease=[0-9a-f-]+ ]]
   [[ "$output" =~ client= ]]
 }
+
+# ============================================================================
+# Group F: Custom Executors (exec field)
+# ============================================================================
+
+@test "hooks F1: exec /bin/bash runs bash-specific syntax" {
+  start_hooks_exporter "exporter-hooks-exec-bash.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "BASH_HOOK: complete"
+}
+
+@test "hooks F2: .py file auto-detects Python and uses driver API" {
+  # Create a Python hook script that uses the Jumpstarter client API
+  cat > /tmp/jumpstarter-e2e-hook-python.py << 'PYEOF'
+import os
+from jumpstarter.utils.env import env
+
+lease = os.environ.get("LEASE_NAME", "unknown")
+print(f"PYTHON_HOOK: lease={lease}")
+
+with env() as client:
+    client.power.on()
+    print("PYTHON_HOOK: driver API works")
+
+print("PYTHON_HOOK: complete")
+PYEOF
+
+  start_hooks_exporter "exporter-hooks-exec-python.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "PYTHON_HOOK: driver API works"
+  assert_output --partial "PYTHON_HOOK: complete"
+
+  rm -f /tmp/jumpstarter-e2e-hook-python.py
+}
+
+@test "hooks F3: script as file path executes the file" {
+  # Create a temporary script file on the exporter host
+  cat > /tmp/jumpstarter-e2e-hook-script.sh << 'SCRIPT'
+#!/bin/sh
+echo "SCRIPTFILE_HOOK: executed from file"
+echo "SCRIPTFILE_HOOK: complete"
+SCRIPT
+  chmod +x /tmp/jumpstarter-e2e-hook-script.sh
+
+  start_hooks_exporter "exporter-hooks-exec-script-file.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "SCRIPTFILE_HOOK: complete"
+
+  rm -f /tmp/jumpstarter-e2e-hook-script.sh
+}

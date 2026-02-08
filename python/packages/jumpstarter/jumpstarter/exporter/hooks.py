@@ -70,11 +70,17 @@ class HookExecutor:
         # Falls back to main socket if hook socket not available (backward compatibility)
         socket_path = lease_scope.hook_socket_path or lease_scope.socket_path
         if lease_scope.hook_socket_path:
-            logger.info("Using dedicated hook socket: %s (main socket: %s)",
-                       lease_scope.hook_socket_path, lease_scope.socket_path)
+            logger.info(
+                "Using dedicated hook socket: %s (main socket: %s)",
+                lease_scope.hook_socket_path,
+                lease_scope.socket_path,
+            )
         else:
-            logger.warning("No dedicated hook socket available, using main socket: %s "
-                          "(may cause SSL issues if client is connected)", socket_path)
+            logger.warning(
+                "No dedicated hook socket available, using main socket: %s "
+                "(may cause SSL issues if client is connected)",
+                socket_path,
+            )
         hook_env.update(
             {
                 JUMPSTARTER_HOST: str(socket_path),
@@ -110,10 +116,12 @@ class HookExecutor:
 
         # Use existing session from lease_scope
         hook_env = self._create_hook_env(lease_scope)
-        logger.debug("Hook environment: JUMPSTARTER_HOST=%s, LEASE_NAME=%s, CLIENT_NAME=%s",
-                    hook_env.get("JUMPSTARTER_HOST", "NOT_SET"),
-                    hook_env.get("LEASE_NAME", "NOT_SET"),
-                    hook_env.get("CLIENT_NAME", "NOT_SET"))
+        logger.debug(
+            "Hook environment: JUMPSTARTER_HOST=%s, LEASE_NAME=%s, CLIENT_NAME=%s",
+            hook_env.get("JUMPSTARTER_HOST", "NOT_SET"),
+            hook_env.get("LEASE_NAME", "NOT_SET"),
+            hook_env.get("CLIENT_NAME", "NOT_SET"),
+        )
 
         return await self._execute_hook_process(
             hook_config, lease_scope, log_source, hook_env, lease_scope.session, hook_type
@@ -201,10 +209,36 @@ class HookExecutor:
             try:
                 # Use subprocess.Popen with the PTY slave as stdin/stdout/stderr
                 # This avoids the issues with os.fork() in async contexts
-                logger.info("Spawning subprocess with command: %s", command[:100])
+                # Determine interpreter and invocation mode
+                script_stripped = command.strip()
+                is_file = "\n" not in script_stripped and os.path.isfile(script_stripped)
+
+                interpreter = hook_config.exec_
+                if is_file and interpreter is None:
+                    # Auto-detect interpreter from file extension
+                    import sys
+
+                    ext = os.path.splitext(script_stripped)[1].lower()
+                    if ext == ".py":
+                        interpreter = sys.executable
+                        logger.info("Auto-detected Python script: %s (interpreter: %s)", script_stripped, interpreter)
+                    else:
+                        interpreter = "/bin/sh"
+                        logger.info("Detected script file: %s (interpreter: %s)", script_stripped, interpreter)
+                elif interpreter is None:
+                    interpreter = "/bin/sh"
+
+                if is_file:
+                    logger.info("Executing script file: %s (interpreter: %s)", script_stripped, interpreter)
+                    cmd = [interpreter, script_stripped]
+                else:
+                    logger.info("Executing inline script (interpreter: %s)", interpreter)
+                    cmd = [interpreter, "-c", command]
+
+                logger.info("Spawning subprocess with command: %s", cmd)
                 try:
                     process = subprocess.Popen(
-                        ["/bin/sh", "-c", command],
+                        cmd,
                         stdin=slave_fd,
                         stdout=slave_fd,
                         stderr=slave_fd,
@@ -225,6 +259,7 @@ class HookExecutor:
 
                 # Set master fd to non-blocking mode
                 import fcntl
+
                 flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
                 fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
                 logger.debug("Master fd set to non-blocking")
@@ -236,6 +271,7 @@ class HookExecutor:
                     read_count = 0
                     last_heartbeat = 0
                     import time
+
                     start_time = time.monotonic()
                     try:
                         while fds_open["master"]:
@@ -304,10 +340,7 @@ class HookExecutor:
                     """
                     logger.debug("wait_for_process: waiting for PID %d", process.pid)
                     try:
-                        result = await anyio.to_thread.run_sync(
-                            process.wait,
-                            abandon_on_cancel=True
-                        )
+                        result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
                         return result
                     finally:
