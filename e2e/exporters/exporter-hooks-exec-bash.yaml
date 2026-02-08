@@ -1,0 +1,14 @@
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+  storage:
+    type: jumpstarter_driver_opendal.driver.MockStorageMux
+
+hooks:
+  beforeLease:
+    exec: /bin/bash
+    script: |
+      [[ -n "$LEASE_NAME" ]] && echo "BASH_HOOK: lease=$LEASE_NAME"
+      echo "BASH_HOOK: complete"
+    timeout: 60
+    onFailure: warn
