@@ -45,6 +45,19 @@ class HookExecutionError(Exception):
         return self.on_failure in ("endLease", "exit")
 
 
+@dataclass
+class PtyState:
+    """Mutable state for PTY file descriptors and reader coordination.
+
+    Tracks which fds are still open (for cleanup) and provides a separate
+    stop flag to signal the reader task without affecting fd lifecycle.
+    """
+
+    parent_fd_open: bool = True
+    child_fd_open: bool = True
+    reader_stop: bool = False
+
+
 @dataclass(kw_only=True)
 class HookExecutor:
     """Executes lifecycle hooks with access to the j CLI."""
@@ -206,8 +219,7 @@ class HookExecutor:
                 raise
             logger.info("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
 
-            # Track which fds are still open (use list for mutability in nested scope)
-            fds_open = {"parent": True, "child": True}
+            pty_state = PtyState()
 
             process: subprocess.Popen | None = None
             try:
@@ -256,7 +268,7 @@ class HookExecutor:
                 logger.info("Subprocess spawned with PID %d", process.pid)
                 # Close child fd in parent process - subprocess has it now
                 os.close(child_fd)
-                fds_open["child"] = False
+                pty_state.child_fd_open = False
                 logger.debug("Closed child_fd in parent process")
 
                 output_lines: list[str] = []
@@ -278,7 +290,7 @@ class HookExecutor:
 
                     start_time = time.monotonic()
                     try:
-                        while fds_open["parent"]:
+                        while not pty_state.reader_stop:
                             try:
                                 # Wait for fd to be readable with timeout
                                 with anyio.move_on_after(0.1):
@@ -286,7 +298,7 @@ class HookExecutor:
 
                                 # Check stop flag immediately after timeout
                                 # (main task may have signaled us to stop)
-                                if not fds_open["parent"]:
+                                if pty_state.reader_stop:
                                     logger.debug("read_pty_output: stop flag set, exiting")
                                     break
 
@@ -385,10 +397,12 @@ class HookExecutor:
                         logger.info("Subprocess completed with code: %s", returncode)
                         # Give a brief moment for any final output to be read
                         await anyio.sleep(0.2)
-                        # Signal the read task to stop by marking fd as closed
+                        # Signal the read task to stop via the dedicated stop flag.
                         # The read task checks this flag after each 0.1s timeout
-                        # and also receives EOF when the subprocess exits
-                        fds_open["parent"] = False
+                        # and also receives EOF when the subprocess exits.
+                        # Note: pty_state.parent_fd_open stays True so the finally block
+                        # properly closes parent_fd.
+                        pty_state.reader_stop = True
                         logger.debug("Stop flag set, waiting for read task to exit")
                         # Don't cancel - let the task exit naturally via EOF or flag check
                         # Cancellation can cause unexpected side effects on gRPC connections
@@ -427,12 +441,12 @@ class HookExecutor:
             finally:
                 # Clean up file descriptors — only close those still open to avoid
                 # closing an unrelated fd that reused the same number.
-                if fds_open["parent"]:
+                if pty_state.parent_fd_open:
                     try:
                         os.close(parent_fd)
                     except OSError:
                         pass
-                if fds_open["child"]:
+                if pty_state.child_fd_open:
                     try:
                         os.close(child_fd)
                     except OSError:
@@ -638,22 +652,25 @@ class HookExecutor:
                 shutdown(exit_code=1)
                 shutdown_called = True
             else:
-                # on_failure='endLease' - lease already ended, just report the failure
-                # The exporter remains available for new leases
+                # on_failure='endLease' - report failure to the client, then release the lease.
+                # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
+                # the lease is released in the finally block, and the exporter's main loop
+                # clears the lease context and accepts new leases.
                 logger.error("afterLease hook failed with on_failure='endLease': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                     f"afterLease hook failed (on_failure=endLease): {e}",
                 )
-                # Note: Lease has already ended - no shutdown needed, exporter remains available
 
         except Exception as e:
+            # Unexpected errors: report failure but do not shut down.
+            # Same transient status — the lease is released and the exporter
+            # accepts new leases after the finally block completes.
             logger.error("afterLease hook failed with unexpected error: %s", e, exc_info=True)
             await report_status(
                 ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                 f"afterLease hook failed: {e}",
             )
-            # Unexpected errors don't trigger shutdown - exporter remains available
 
         finally:
             # Only delay if shutdown wasn't called (normal flow needs time for client to poll)
