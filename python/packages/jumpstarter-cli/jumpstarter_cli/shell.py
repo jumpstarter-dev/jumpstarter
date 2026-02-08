@@ -154,32 +154,29 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                     if success:
                                         # Wait for hook to complete using background monitor
                                         # This allows afterLease logs to be displayed in real-time
-                                        with anyio.move_on_after(30) as timeout_scope:  # 30 second timeout
-                                            result = await monitor.wait_for_any_of(
-                                                [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
-                                                timeout=30.0
-                                            )
-                                            if result == ExporterStatus.AVAILABLE:
-                                                logger.info("afterLease hook completed")
-                                            elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                                                from jumpstarter.common.exceptions import ExporterOfflineError
-                                                reason = monitor.status_message or "afterLease hook failed"
-                                                raise ExporterOfflineError(reason)
-                                            elif monitor.connection_lost:
-                                                from jumpstarter.common.exceptions import ExporterOfflineError
-                                                # If connection lost during AFTER_LEASE_HOOK, the hook
-                                                # likely failed and the exporter shut down (onFailure=exit)
-                                                if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
-                                                    reason = "afterLease hook failed"
-                                                else:
-                                                    reason = (
-                                                        monitor.status_message
-                                                        or "Connection to exporter lost during afterLease hook"
-                                                    )
-                                                raise ExporterOfflineError(reason)
+                                        result = await monitor.wait_for_any_of(
+                                            [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+                                            timeout=30.0
+                                        )
+                                        if result == ExporterStatus.AVAILABLE:
+                                            logger.info("afterLease hook completed")
+                                        elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
+                                            from jumpstarter.common.exceptions import ExporterOfflineError
+                                            reason = monitor.status_message or "afterLease hook failed"
+                                            raise ExporterOfflineError(reason)
+                                        elif monitor.connection_lost:
+                                            from jumpstarter.common.exceptions import ExporterOfflineError
+                                            # If connection lost during AFTER_LEASE_HOOK, the hook
+                                            # likely failed and the exporter shut down (onFailure=exit)
+                                            if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
+                                                reason = "afterLease hook failed"
                                             else:
-                                                logger.debug("Hook completion not confirmed")
-                                        if timeout_scope.cancelled_caught:
+                                                reason = (
+                                                    monitor.status_message
+                                                    or "Connection to exporter lost during afterLease hook"
+                                                )
+                                            raise ExporterOfflineError(reason)
+                                        elif result is None:
                                             logger.warning("Timeout waiting for afterLease hook to complete")
                                     else:
                                         logger.debug("EndSession not implemented, skipping hook wait")
