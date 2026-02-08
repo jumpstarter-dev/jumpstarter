@@ -61,8 +61,6 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     lease_ending_callback: Callable[[Self, timedelta], None] | None = field(
         default=None, init=False
     )  # Called when lease is ending
-    _last_dial_error: str | None = field(default=None, init=False)  # Stores hook failure errors from Dial
-
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
@@ -267,9 +265,6 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     await sleep(delay)
                     attempt += 1
                     continue
-                # Store hook failure errors so _wait_for_ready_connection can surface them
-                if e.code() == grpc.StatusCode.FAILED_PRECONDITION and "hook failed" in str(e.details()):
-                    self._last_dial_error = str(e.details())
                 # Exporter went offline or lease ended - log and exit gracefully
                 logger.warning("Connection to exporter lost: %s", e.details())
                 return

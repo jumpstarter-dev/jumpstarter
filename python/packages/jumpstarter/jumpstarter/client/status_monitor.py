@@ -196,7 +196,7 @@ class StatusMonitor:
             finally:
                 self._active_waiters -= 1
 
-        if timeout:
+        if timeout is not None:
             with anyio.move_on_after(timeout):
                 return await wait_loop()
             return False
@@ -280,7 +280,7 @@ class StatusMonitor:
             finally:
                 self._active_waiters -= 1
 
-        if timeout:
+        if timeout is not None:
             with anyio.move_on_after(timeout):
                 return await wait_for_first()
             return None
@@ -379,6 +379,7 @@ class StatusMonitor:
                             deadline_retries,
                         )
                         self._connection_lost = True
+                        self._running = False
                         self._any_change_event.set()
                         self._any_change_event = Event()
                         break

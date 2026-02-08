@@ -250,7 +250,8 @@ exporter_process_running() {
 
   # Shell should fail - error includes reason from exporter status
   assert_failure
-  assert_output --partial "beforeLease hook failed"
+  # Exporter exit may drop connection before status propagates to client
+  assert_output --regexp "(beforeLease hook failed|Connection to exporter lost)"
 
   # Exporter process should have exited
   sleep 2
