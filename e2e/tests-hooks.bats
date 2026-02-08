@@ -284,7 +284,8 @@ exporter_process_running() {
 
   # Shell should fail because afterLease hook failed and exporter shut down
   assert_failure
-  assert_output --partial "afterLease hook failed"
+  # Exporter exit may drop connection before status propagates to client
+  assert_output --regexp "(afterLease hook failed|Connection to exporter lost)"
 
   # Exporter process should have exited
   sleep 2
