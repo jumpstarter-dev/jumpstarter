@@ -114,6 +114,10 @@ class HookExecutor:
         # Determine hook type from log source
         hook_type = "before_lease" if log_source == LogSource.BEFORE_LEASE_HOOK else "after_lease"
 
+        # Validate session is available for logging
+        if lease_scope.session is None:
+            raise RuntimeError("Cannot execute hook: lease_scope.session is None")
+
         # Use existing session from lease_scope
         hook_env = self._create_hook_env(lease_scope)
         logger.debug(
