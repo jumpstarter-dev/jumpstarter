@@ -585,7 +585,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # Link session to lease context for EndSession RPC
             session.lease_context = lease_scope
             # Sync status from LeaseContext to Session (status may have been updated
-            # before session was created, e.g., LEASE_READY when no hooks configured)
+            # before session was created, e.g., BEFORE_LEASE_HOOK when hooks are configured)
             session.update_status(lease_scope.current_status, lease_scope.status_message)
             logger.debug("Session sockets: main=%s, hook=%s", main_path, hook_path)
 
@@ -596,7 +596,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
             # Note: Status is managed by _report_status() which updates both LeaseContext
             # and Session. The sync above handles the case where status was updated before
-            # session creation (e.g., LEASE_READY when no hooks configured).
+            # session creation (e.g., BEFORE_LEASE_HOOK when hooks are configured).
 
             # Start task to handle EndSession requests (runs afterLease hook when client signals done)
             tg.start_soon(self._handle_end_session, lease_scope)
@@ -625,6 +625,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
                     async def process_connections():
                         """Process incoming connection requests."""
+                        # Wait for beforeLease hook to complete before routing connections.
+                        # The Listen buffer holds early Dials; we process them after ready.
+                        await lease_scope.before_lease_hook.wait()
                         logger.debug("Starting to process connection requests from Listen stream")
                         async for request in listen_rx:
                             logger.info(
@@ -643,6 +646,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
                     conn_tg.start_soon(wait_for_lease_end)
                     conn_tg.start_soon(process_connections)
+
+                    # Report LEASE_READY if no beforeLease hook is configured.
+                    # This MUST happen after Listen stream is started so the
+                    # controller can forward client Dial requests.
+                    if not self.hook_executor:
+                        await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                        lease_scope.before_lease_hook.set()
             finally:
                 # Close the listen stream to signal termination to listen_rx
                 await listen_tx.aclose()
@@ -733,11 +743,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                                 self.stop,  # Pass shutdown callback
                                 self._request_lease_release,  # Pass lease release callback
                             )
-                        else:
-                            # No hook configured, set event immediately
-                            await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
-                            if self._lease_context:
-                                self._lease_context.before_lease_hook.set()
+                        # else: No hook configured — LEASE_READY is set inside handle_lease()
+                        # after session and Listen stream are established
                 else:
                     logger.info("Currently not leased")
 
@@ -761,6 +768,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                             self._exporter_status in terminal_statuses
                             or self._lease_context.end_session_requested.is_set()
                             or self._lease_context.lease_ended.is_set()
+                            # Non-hook exporters stay in LEASE_READY — this IS a legitimate end
+                            or (not self.hook_executor and self._exporter_status == ExporterStatus.LEASE_READY)
                         )
                         if not legitimate:
                             logger.warning(
