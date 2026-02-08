@@ -623,4 +623,7 @@ class HookExecutor:
             # Request lease release from controller after hook completes (success or failure)
             # This ensures the lease is always released even if the client disconnects
             if request_lease_release:
-                await request_lease_release()
+                try:
+                    await request_lease_release()
+                except Exception as e:
+                    logger.error("Failed to request lease release: %s", e, exc_info=True)
