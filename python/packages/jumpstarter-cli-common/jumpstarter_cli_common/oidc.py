@@ -75,7 +75,9 @@ class Config:
         return list(self.scope)
 
     def client(self, **kwargs):
-        return OAuth2Session(client_id=self.client_id, scope=self._scopes(), **kwargs)
+        session = OAuth2Session(client_id=self.client_id, scope=self._scopes(), **kwargs)
+        session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()
+        return session
 
     async def token_exchange_grant(self, token: str, **kwargs):
         config = await self.configuration()

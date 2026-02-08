@@ -361,6 +361,7 @@ class StatusMonitor:
                     # Connection lost - exporter closed or restarted
                     logger.info("Connection lost (UNAVAILABLE), signaling waiters")
                     self._connection_lost = True
+                    self._running = False
                     # Fire the change event to wake up any waiters
                     self._any_change_event.set()
                     self._any_change_event = Event()

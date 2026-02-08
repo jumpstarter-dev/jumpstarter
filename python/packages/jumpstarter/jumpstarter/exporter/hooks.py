@@ -373,7 +373,7 @@ class HookExecutor:
                         if process.poll() is None:
                             process.kill()
                             try:
-                                process.wait()
+                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                             except Exception:
                                 pass
 
