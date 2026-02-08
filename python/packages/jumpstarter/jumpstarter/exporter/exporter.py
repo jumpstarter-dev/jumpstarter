@@ -110,6 +110,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     waits for the current lease to exit before stopping.
     """
 
+    _deferred_unregister: bool = field(init=False, default=True)
+    """Preserved should_unregister value for deferred stop.
+
+    When stop(wait_for_lease_exit=True) is called, the should_unregister
+    preference is stored here and applied when the deferred stop executes.
+    """
+
     _started: bool = field(init=False, default=False)
     """Internal flag tracking whether the exporter has started serving.
 
@@ -188,6 +195,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._tg.cancel_scope.cancel()
         elif not self._stop_requested:
             self._stop_requested = True
+            self._deferred_unregister = should_unregister
             logger.info("Exporter marked for stop upon lease exit")
 
     @property
@@ -798,7 +806,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     logger.debug("Ready for next lease")
 
                     if self._stop_requested:
-                        self.stop(should_unregister=True)
+                        self.stop(should_unregister=self._deferred_unregister)
                         break
 
                 self._previous_leased = current_leased
