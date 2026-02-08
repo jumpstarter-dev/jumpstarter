@@ -289,7 +289,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     def _get_lease_end_time(self, lease) -> datetime | None:
         """Extract the end time from a lease response, or None if not available."""
-        if not (lease.effective_begin_time and lease.effective_duration):
+        if not (lease.effective_begin_time and lease.duration):
             return None
         if lease.effective_end_time:
             return lease.effective_end_time

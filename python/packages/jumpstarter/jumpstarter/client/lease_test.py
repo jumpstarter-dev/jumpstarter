@@ -396,7 +396,7 @@ class TestGetLeaseEndTime:
 
     def test_returns_none_when_no_begin_time(self):
         lease = self._make_lease()
-        response = Mock(effective_begin_time=None, effective_duration=timedelta(minutes=30))
+        response = Mock(effective_begin_time=None, duration=timedelta(minutes=30))
 
         assert lease._get_lease_end_time(response) is None
 
@@ -404,7 +404,7 @@ class TestGetLeaseEndTime:
         lease = self._make_lease()
         response = Mock(
             effective_begin_time=datetime.now(tz=timezone.utc),
-            effective_duration=None,
+            duration=None,
         )
 
         assert lease._get_lease_end_time(response) is None
@@ -414,7 +414,7 @@ class TestGetLeaseEndTime:
         end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
         response = Mock(
             effective_begin_time=datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
-            effective_duration=timedelta(hours=1),
+            duration=timedelta(hours=1),
             effective_end_time=end_time,
         )
 
@@ -426,7 +426,7 @@ class TestGetLeaseEndTime:
         duration = timedelta(hours=2)
         response = Mock(
             effective_begin_time=begin,
-            effective_duration=duration,
+            effective_duration=timedelta(hours=1),  # elapsed time, not used for calculation
             effective_end_time=None,
             duration=duration,
         )
