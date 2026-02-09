@@ -452,3 +452,151 @@ def test_power_rescue(ridesx_power_driver):
         with pytest.raises(NotImplementedError, match="Rescue mode not available"):
             client.call("rescue")
 
+
+# Flash OCI Image Tests
+# Note: FLS download utilities are tested in jumpstarter.common.fls_test
+
+
+def test_flash_oci_image_success(temp_storage_dir, ridesx_driver):
+    with serve(ridesx_driver) as client:
+        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="/usr/local/bin/fls"):
+            with patch("subprocess.run") as mock_subprocess:
+                mock_result = MagicMock()
+                mock_result.stdout = "Flashing complete"
+                mock_result.stderr = ""
+                mock_result.returncode = 0
+                mock_subprocess.return_value = mock_result
+
+                result = client.call("flash_oci_image", "oci://quay.io/image:tag", None)
+
+                assert result["status"] == "success"
+                mock_subprocess.assert_called_once()
+                call_args = mock_subprocess.call_args[0][0]
+                assert call_args[0] == "/usr/local/bin/fls"
+                assert call_args[1] == "fastboot"
+                assert call_args[2] == "oci://quay.io/image:tag"
+
+
+def test_flash_oci_image_with_partitions(temp_storage_dir, ridesx_driver):
+    with serve(ridesx_driver) as client:
+        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
+            with patch("subprocess.run") as mock_subprocess:
+                mock_result = MagicMock()
+                mock_result.stdout = "Flashing complete"
+                mock_result.stderr = ""
+                mock_result.returncode = 0
+                mock_subprocess.return_value = mock_result
+
+                partitions = {"boot_a": "boot.img", "system_a": "rootfs.simg"}
+                result = client.call("flash_oci_image", "oci://image:tag", partitions)
+
+                assert result["status"] == "success"
+                call_args = mock_subprocess.call_args[0][0]
+                # Check that -t flags are present for partitions
+                assert "-t" in call_args
+                assert "boot_a:boot.img" in call_args
+                assert "system_a:rootfs.simg" in call_args
+
+
+def test_flash_oci_image_error_cases(temp_storage_dir, ridesx_driver):
+    """Test flash_oci_image error handling for various failure modes"""
+    from jumpstarter.client.core import DriverError
+
+    with serve(ridesx_driver) as client:
+        # Reject non-oci:// schemes
+        with pytest.raises(DriverError, match="OCI URL must start with oci://"):
+            client.call("flash_oci_image", "docker://image:tag", None)
+
+        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
+            with patch("subprocess.run") as mock_subprocess:
+                # CalledProcessError
+                error = subprocess.CalledProcessError(1, "fls")
+                error.stdout = ""
+                error.stderr = "Flash failed"
+                mock_subprocess.side_effect = error
+
+                with pytest.raises(DriverError, match="FLS fastboot failed: Flash failed"):
+                    client.call("flash_oci_image", "oci://image:tag", None)
+
+                # TimeoutExpired
+                mock_subprocess.side_effect = subprocess.TimeoutExpired("fls", 1800)
+
+                with pytest.raises(DriverError, match="FLS fastboot auto-detection timeout"):
+                    client.call("flash_oci_image", "oci://image:tag", None)
+
+                # FileNotFoundError
+                mock_subprocess.side_effect = FileNotFoundError("fls not found")
+
+                with pytest.raises(DriverError, match="FLS command not found"):
+                    client.call("flash_oci_image", "oci://image:tag", None)
+
+
+def test_flash_oci_image_with_credentials(temp_storage_dir, ridesx_driver):
+    """Test that OCI credentials are passed via env vars to FLS"""
+    with serve(ridesx_driver) as client:
+        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
+            with patch("subprocess.run") as mock_subprocess:
+                mock_result = MagicMock()
+                mock_result.stdout = "Flashing complete"
+                mock_result.stderr = ""
+                mock_result.returncode = 0
+                mock_subprocess.return_value = mock_result
+
+                result = client.call(
+                    "flash_oci_image", "oci://quay.io/private/image:tag", None, "myuser", "mypass"
+                )
+
+                assert result["status"] == "success"
+                # Credentials should NOT appear in the command args
+                call_args = mock_subprocess.call_args[0][0]
+                assert "-u" not in call_args
+                assert "-p" not in call_args
+                assert "myuser" not in call_args
+                assert "mypass" not in call_args
+                # Credentials should be passed via env vars
+                call_kwargs = mock_subprocess.call_args[1]
+                env = call_kwargs["env"]
+                assert env["FLS_REGISTRY_USERNAME"] == "myuser"
+                assert env["FLS_REGISTRY_PASSWORD"] == "mypass"
+
+
+def test_flash_oci_image_partial_credentials_rejected(temp_storage_dir, ridesx_driver):
+    """Test that providing only username or only password is rejected"""
+    from jumpstarter.client.core import DriverError
+
+    with serve(ridesx_driver) as client:
+        with pytest.raises(DriverError, match="OCI authentication requires both"):
+            client.call("flash_oci_image", "oci://image:tag", None, "myuser", None)
+
+        with pytest.raises(DriverError, match="OCI authentication requires both"):
+            client.call("flash_oci_image", "oci://image:tag", None, None, "mypass")
+
+
+def test_flash_oci_image_no_credentials(temp_storage_dir, ridesx_driver):
+    """Test that omitting credentials works (anonymous access)"""
+    with serve(ridesx_driver) as client:
+        with patch("jumpstarter_driver_ridesx.driver.get_fls_binary", return_value="fls"):
+            with patch("subprocess.run") as mock_subprocess:
+                mock_result = MagicMock()
+                mock_result.stdout = "Flashing complete"
+                mock_result.stderr = ""
+                mock_result.returncode = 0
+                mock_subprocess.return_value = mock_result
+
+                result = client.call("flash_oci_image", "oci://image:tag", None, None, None)
+
+                assert result["status"] == "success"
+                call_kwargs = mock_subprocess.call_args[1]
+                env = call_kwargs["env"]
+                assert "FLS_REGISTRY_USERNAME" not in env
+                assert "FLS_REGISTRY_PASSWORD" not in env
+
+
+def test_flash_oci_image_requires_oci_scheme(temp_storage_dir, ridesx_driver):
+    """Test that only oci:// URLs are accepted"""
+    from jumpstarter.client.core import DriverError
+
+    with serve(ridesx_driver) as client:
+        # Bare registry URL should be rejected
+        with pytest.raises(DriverError, match="OCI URL must start with oci://"):
+            client.call("flash_oci_image", "quay.io/org/image:v1", None)

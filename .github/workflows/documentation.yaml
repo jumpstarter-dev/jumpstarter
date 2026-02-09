@@ -44,7 +44,7 @@ jobs:
           fetch-tags: true
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6.0.1
+        uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
         with:
           version: "latest"
 
@@ -84,7 +84,7 @@ jobs:
           fetch-tags: true
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6.0.1
+        uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
         with:
           version: "latest"
 
