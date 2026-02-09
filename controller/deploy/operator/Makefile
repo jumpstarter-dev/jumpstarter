@@ -3,7 +3,16 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.8.1-rc1
+VERSION ?= 0.8.1-rc.1
+
+# REPLACES defines the previous operator version this release replaces in the OLM upgrade graph.
+# Used to generate the release-config.yaml for FBC auto-release.
+# Set to empty for the first release in a channel.
+# See: https://redhat-openshift-ecosystem.github.io/operator-pipelines/users/fbc_autorelease/
+REPLACES ?= jumpstarter-operator.v0.8.0
+
+# FBC_CHANNELS defines the FBC catalog channels for this release.
+FBC_CHANNELS ?= alpha
 
 # OPENSHIFT_VERSIONS defines the Red Hat OpenShift version range injected into bundle metadata.
 OPENSHIFT_VERSIONS ?= v4.18-v4.21
@@ -313,6 +322,17 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 		echo '  com.redhat.openshift.versions: $(OPENSHIFT_VERSIONS)' >> bundle/metadata/annotations.yaml; \
 	fi
 	$(OPERATOR_SDK) bundle validate ./bundle
+	@# Generate release-config.yaml for FBC auto-release
+	@echo "---" > bundle/release-config.yaml
+	@echo "catalog_templates:" >> bundle/release-config.yaml
+	@echo "  - template_name: basic.yaml" >> bundle/release-config.yaml
+	@echo "    channels: [$(FBC_CHANNELS)]" >> bundle/release-config.yaml
+ifneq ($(REPLACES),)
+	@echo "    replaces: $(REPLACES)" >> bundle/release-config.yaml
+	@REPLACES_VER=$$(echo "$(REPLACES)" | sed 's/jumpstarter-operator\.v//'); \
+	echo "    skipRange: '>=$${REPLACES_VER} <$(VERSION)'" >> bundle/release-config.yaml
+endif
+	@echo "Generated bundle/release-config.yaml"
 
 .PHONY: contribute
 contribute: bundle ## Update community-operators repos with the current bundle.

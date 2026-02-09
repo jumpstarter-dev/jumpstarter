@@ -70,7 +70,6 @@ metadata:
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
-  replaces: jumpstarter-operator.v0.8.0
   customresourcedefinitions:
     owned:
     - description: Client represents a user identity for accessing the Jumpstarter
