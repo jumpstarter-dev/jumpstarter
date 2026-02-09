@@ -25,6 +25,7 @@ from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
 from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError, JumpstarterException
+from jumpstarter.common.fls import get_fls_github_url
 
 
 class FlashError(JumpstarterException):
@@ -533,8 +534,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self._download_fls_binary(console, prompt, fls_binary_url, f"Failed to download FLS from {fls_binary_url}")
         elif fls_version != "":
             self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
-            # Download fls binary to the target device (until it is available on the target device)
-            fls_url = f"https://github.com/jumpstarter-dev/fls/releases/download/{fls_version}/fls-aarch64-linux"
+            # Download fls binary to the target device (always aarch64 for target devices)
+            fls_url = get_fls_github_url(fls_version, arch="aarch64")
             self._download_fls_binary(console, prompt, fls_url, f"Failed to download FLS from {fls_url}")
 
         # Flash the image
