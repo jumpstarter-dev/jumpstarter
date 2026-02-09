@@ -55,7 +55,7 @@ type Exporter struct {
 	// Exporters represent the services that connect to the physical or virtual
 	// devices. They are responsible for providing the access to the devices and
 	// for the communication with the devices. A jumpstarter exporter service
-	// should be ran on a linux machine, or a pod, with the exporter credentials
+	// should be run on a linux machine, or a pod, with the exporter credentials
 	// and the right configuration for this resource to become online. For
 	// more information see the Jumpstarter documentation:
 	// https://jumpstarter.dev/main/introduction/exporters.html#exporters

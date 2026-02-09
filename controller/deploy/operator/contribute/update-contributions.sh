@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Target repos: "clone-url local-directory"
 # Add or remove entries here to sync to more/fewer upstreams.
@@ -22,7 +23,42 @@ if [ ! -f "$CSV_PATH" ]; then
 fi
 
 VERSION=$(grep "^  version:" "$CSV_PATH" | awk '{print $2}')
+if [ -z "$VERSION" ]; then
+  echo "Error: failed to extract VERSION from $CSV_PATH" >&2
+  echo "Expected a line matching '^  version:' in $CSV_PATH but got nothing." >&2
+  exit 1
+fi
 echo "Bundle version: ${VERSION}"
+
+REPLACES=$(grep "^  replaces:" "$CSV_PATH" | awk '{print $2}')
+if [ -z "$REPLACES" ]; then
+  echo "Error: 'spec.replaces' is not set in $CSV_PATH" >&2
+  echo "Set 'replaces: jumpstarter-operator.vX.Y.Z' in the CSV base before contributing." >&2
+  exit 1
+fi
+
+REPLACES_VERSION="${REPLACES#jumpstarter-operator.v}"
+if [ "$REPLACES_VERSION" = "$VERSION" ]; then
+  echo "Error: 'spec.replaces' version ($REPLACES_VERSION) is the same as the bundle version ($VERSION)." >&2
+  echo "Update 'replaces' in the CSV base to point to the previous release." >&2
+  exit 1
+fi
+
+echo ""
+echo "============================================"
+echo "  Bundle version : ${VERSION}"
+echo "  Replaces       : ${REPLACES} (v${REPLACES_VERSION})"
+echo "============================================"
+echo ""
+read -r -p "Proceed with contribution? [y/N] " confirm
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+  echo ""
+  echo "Aborted. To update these values, edit:"
+  echo "  - VERSION in: ${OPERATOR_DIR}/Makefile"
+  echo "  - replaces in: ${OPERATOR_DIR}/config/manifests/bases/jumpstarter-operator.clusterserviceversion.yaml"
+  echo "Then re-run 'make bundle' followed by 'make contribute'."
+  exit 1
+fi
 
 # Clone any missing repos and ensure "user" remote points to the GITHUB_USER fork
 for entry in "${COMMUNITY_OPS[@]}"; do
@@ -40,7 +76,7 @@ for entry in "${COMMUNITY_OPS[@]}"; do
 
   # Add or update the "user" remote for the fork
   (
-    cd "$dir"
+    cd "$dir" || exit 1
     if git remote get-url user &>/dev/null; then
       git remote set-url user "$user_fork"
     else
@@ -55,7 +91,7 @@ BRANCH="jumpstarter-operator-release-${VERSION}"
 for entry in "${COMMUNITY_OPS[@]}"; do
   read -r url dir <<< "$entry"
   echo "--- $dir: switching to branch $BRANCH ---"
-  (cd "$dir" && git fetch --all && git checkout remotes/origin/main -B "$BRANCH")
+  (cd "$dir" || exit 1; git fetch --all && git checkout remotes/origin/main -B "$BRANCH")
 done
 
 # Copy bundle into each repo and commit
@@ -65,7 +101,7 @@ for entry in "${COMMUNITY_OPS[@]}"; do
   echo "Updating ${dir} to version ${VERSION}"
   mkdir -p "$dest"
   cp -v -r -f "${BUNDLE_DIR}"/* "$dest"
-  (cd "$dir" && git add -A && git commit -s -m "operator jumpstarter-operator (${VERSION})")
+  (cd "$dir" || exit 1; git add -A && git commit -s -m "operator jumpstarter-operator (${VERSION})")
 done
 
 echo ""

@@ -5,4 +5,4 @@ metadata:
   labels:
     type: developer
 spec:
-  username: "keycloak:user-name-in-keycloak"
+  username: "kc:user-name-in-keycloak"

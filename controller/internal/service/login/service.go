@@ -21,6 +21,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"html/template"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -131,9 +132,16 @@ func (s *Service) Start(ctx context.Context) error {
 	})
 
 	port := getEnvOrDefault("LOGIN_SERVICE_PORT", defaultPort)
-	// Ensure port has the ":" prefix for net.Listen format
-	if port != "" && port[0] != ':' {
-		port = ":" + port
+	// Normalize into a valid net.Listen address.
+	// If it's already a host:port (or [IPv6]:port), keep it as-is.
+	// Otherwise treat it as a bare port and prepend ":".
+	if port != "" {
+		if _, _, err := net.SplitHostPort(port); err != nil {
+			// Not a valid host:port — assume bare port (e.g. "8086")
+			if port[0] != ':' {
+				port = ":" + port
+			}
+		}
 	}
 
 	server := &http.Server{

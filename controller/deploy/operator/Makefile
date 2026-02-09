@@ -3,7 +3,10 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.7.5
+VERSION ?= 0.8.1-rc1
+
+# OPENSHIFT_VERSIONS defines the Red Hat OpenShift version range injected into bundle metadata.
+OPENSHIFT_VERSIONS ?= v4.18-v4.21
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -307,7 +310,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	@# Inject Red Hat OpenShift version range into bundle metadata (not handled by operator-sdk)
 	@if ! grep -q 'com.redhat.openshift.versions' bundle/metadata/annotations.yaml; then \
-		echo '  com.redhat.openshift.versions: v4.18-v4.21' >> bundle/metadata/annotations.yaml; \
+		echo '  com.redhat.openshift.versions: $(OPENSHIFT_VERSIONS)' >> bundle/metadata/annotations.yaml; \
 	fi
 	$(OPERATOR_SDK) bundle validate ./bundle
 

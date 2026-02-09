@@ -751,7 +751,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 							Args: []string{
 								"--leader-elect",
 								"--health-probe-bind-address=:8081",
-								"--metrics-bind-address=:8080",
+								"-metrics-bind-address=:8080",
 							},
 							Env:          envVars,
 							VolumeMounts: volumeMounts,
