@@ -1,0 +1,7 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  name: exporter-sample
+  labels:
+    type: nxp-imx8mm-evk
+spec: {}

@@ -50,6 +50,8 @@ type ExporterAccessPolicyStatus struct {
 
 // ExporterAccessPolicy is the Schema for the exporteraccesspolicies API.
 type ExporterAccessPolicy struct {
+	// ExporterAccessPolicies are used to define the access policies for the exporters.
+	// they help organize, prioritize and restrict access to the exporters by clients.
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
