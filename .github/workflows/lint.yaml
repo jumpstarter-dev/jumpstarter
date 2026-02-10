@@ -105,6 +105,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run typos
-        uses: crate-ci/typos@a1d64977b4aa1709d6328d518aa753f4899352d8 # v1.42.2
+        uses: crate-ci/typos@78bc6fb2c0d734235d57a2d6b9de923cc325ebdd # v1.43.4
         with:
           config: ./typos.toml
