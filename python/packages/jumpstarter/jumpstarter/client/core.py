@@ -80,6 +80,7 @@ class AsyncDriverClient(
         self.logger.setLevel(self.log_level)
         # Initialize status monitor (not a dataclass field to avoid Pydantic type resolution issues)
         self._status_monitor = None
+        self._get_status_unsupported = False
 
         # add default handler
         if not self.logger.handlers:
@@ -103,13 +104,19 @@ class AsyncDriverClient(
         Returns:
             The current ExporterStatus, or None if GetStatus is not implemented.
         """
+        if self._get_status_unsupported:
+            return None
         try:
             response = await self.stub.GetStatus(jumpstarter_pb2.GetStatusRequest())
             return ExporterStatus.from_proto(response.status)
+        except NotImplementedError:
+            self.logger.debug("GetStatus not implemented")
+            self._get_status_unsupported = True
+            return None
         except AioRpcError as e:
-            # If GetStatus is not implemented, return None for backward compatibility
             if e.code() == StatusCode.UNIMPLEMENTED:
                 self.logger.debug("GetStatus not implemented")
+                self._get_status_unsupported = True
                 return None
             raise DriverError(f"Failed to get exporter status: {e.details()}") from e
 
@@ -303,7 +310,7 @@ class AsyncDriverClient(
         """
         from jumpstarter.client.status_monitor import StatusMonitor
 
-        monitor = StatusMonitor(self.stub, poll_interval)
+        monitor = StatusMonitor(self.stub, poll_interval, get_status_unsupported=self._get_status_unsupported)
         self._status_monitor = monitor
 
         async with create_task_group() as tg:
@@ -311,6 +318,8 @@ class AsyncDriverClient(
             try:
                 yield monitor
             finally:
+                if monitor._get_status_unsupported:
+                    self._get_status_unsupported = True
                 await monitor.stop()
                 self._status_monitor = None
 
