@@ -1,3 +1,4 @@
+import shlex
 from concurrent.futures import CancelledError
 
 import click
@@ -13,6 +14,7 @@ class MockFlasherClient(BaseFlasherClient):
     def __init__(self):
         self._manifest = None
         self._console_debug = False
+        self._redaction_values = set()
         self.logger = type(
             "MockLogger",
             (),
@@ -40,6 +42,132 @@ def test_validate_bearer_token_fails_invalid():
 
     with pytest.raises(click.ClickException, match="Bearer token contains invalid characters"):
         client._validate_bearer_token('token"with"quotes')
+
+
+def test_validate_oci_credentials_fails_when_partial():
+    """Test OCI credential validation fails when only one value is provided"""
+    client = MockFlasherClient()
+
+    with pytest.raises(click.ClickException, match="OCI authentication requires both"):
+        client._validate_oci_credentials("myuser", None)
+
+    with pytest.raises(click.ClickException, match="OCI authentication requires both"):
+        client._validate_oci_credentials(None, "mypassword")
+
+
+def test_validate_oci_credentials_accepts_pair_and_strips_whitespace():
+    """Test OCI credential validation accepts full username/password pair"""
+    client = MockFlasherClient()
+
+    username, password = client._validate_oci_credentials(" myuser ", " mypassword ")
+    assert username == "myuser"
+    assert password == "mypassword"
+
+
+def test_fls_oci_auth_env_sources_credentials_file():
+    """Test OCI auth shell snippet sources the on-target credentials file"""
+    client = MockFlasherClient()
+
+    env_args = client._fls_oci_auth_env("oci://quay.io/org/image:tag", "/tmp/fls_creds")
+    assert "set -o allexport;" in env_args
+    assert "set +o allexport;" in env_args
+    parsed = shlex.split(env_args)
+    assert "." in parsed
+    assert "/tmp/fls_creds;" in parsed
+
+
+def test_fls_oci_auth_env_empty_for_non_oci_paths():
+    """Test OCI auth env assignment is empty for non-OCI paths"""
+    client = MockFlasherClient()
+
+    env_args = client._fls_oci_auth_env("https://example.com/image.raw.xz", "/tmp/fls_creds")
+    assert env_args == ""
+
+    env_args = client._fls_oci_auth_env("oci://quay.io/org/image:tag", None)
+    assert env_args == ""
+
+
+def test_redact_sensitive_values_masks_username_and_password():
+    """Test that sensitive values are redacted from output."""
+    client = MockFlasherClient()
+    client._redaction_values.update({"myuser", "mypassword"})
+
+    result = client._redact_sensitive_values("user=myuser pass=mypassword")
+    assert result == "user=*** pass=***"
+
+
+def test_setup_and_cleanup_fls_oci_credential_file():
+    """Test secure credentials file setup and cleanup commands."""
+    client = MockFlasherClient()
+
+    class MockConsole:
+        def __init__(self):
+            self.logfile_read = object()
+            self.sent_lines = []
+            self.expect_calls = []
+
+        def sendline(self, line):
+            self.sent_lines.append(line)
+
+        def expect(self, prompt, timeout=None):
+            self.expect_calls.append((prompt, timeout))
+
+    console = MockConsole()
+    creds_path = client._setup_fls_oci_credential_file(console, "#", "myuser", "my'password")
+    assert creds_path == "/tmp/fls_creds"
+    assert "cat > /tmp/fls_creds <<'EOF_FLS_CREDS'" in console.sent_lines[0]
+    assert "FLS_REGISTRY_USERNAME=myuser" in console.sent_lines[1]
+    assert "FLS_REGISTRY_PASSWORD='my'\"'\"'password'" in console.sent_lines[2]
+    assert "chmod 600 /tmp/fls_creds" in console.sent_lines[4]
+    assert console.logfile_read is not None
+
+    client._cleanup_fls_oci_credential_file(console, "#", "/tmp/fls_creds")
+    assert "rm -f /tmp/fls_creds" in console.sent_lines[-1]
+
+
+def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
+    """Ensure OCI credential warning does not alter HTTP source selection."""
+    client = MockFlasherClient()
+
+    class DummyService:
+        def __init__(self):
+            self.storage = object()
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def get_url(self):
+            return "http://exporter"
+
+    client.http = DummyService()
+    client.tftp = DummyService()
+    client.call = lambda *args, **kwargs: None
+
+    captured = {}
+
+    def capture_perform(*args):
+        captured["image_url"] = args[2]
+        captured["should_download_to_httpd"] = args[3]
+        captured["oci_username"] = args[13]
+        captured["oci_password"] = args[14]
+
+    client._perform_flash_operation = capture_perform
+
+    client.flash(
+        "https://example.com/image.raw.xz",
+        method="fls",
+        oci_username="myuser",
+        oci_password="mypassword",
+        fls_version="",
+    )
+
+    assert captured["image_url"] == "https://example.com/image.raw.xz"
+    assert captured["should_download_to_httpd"] is False
+    assert captured["oci_username"] is None
+    assert captured["oci_password"] is None
 
 
 def test_curl_header_args_handles_quotes():
