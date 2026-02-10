@@ -39,6 +39,7 @@ jobs:
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
             dockerfile: controller/deploy/operator/bundle.Dockerfile
             context: controller/deploy/operator
+            generate_bundle: true
           # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
             dockerfile: python/Dockerfile
@@ -85,6 +86,11 @@ jobs:
           echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
           echo "GIT_COMMIT=${GIT_COMMIT}"
           echo "BUILD_DATE=${BUILD_DATE}"
+
+      - name: Generate operator bundle
+        if: ${{ matrix.generate_bundle }}
+        run: make bundle VERSION=${{ env.VERSION }}
+        working-directory: controller/deploy/operator
 
       - name: Set image tags
         if: ${{ env.PUSH == 'true' }}
