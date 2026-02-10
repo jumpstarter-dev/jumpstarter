@@ -38,15 +38,17 @@ class StatusMonitor:
             reached = await monitor.wait_for_status(ExporterStatus.LEASE_READY)
     """
 
-    def __init__(self, stub, poll_interval: float = 0.3):
+    def __init__(self, stub, poll_interval: float = 0.3, get_status_unsupported: bool = False):
         """Initialize the status monitor.
 
         Args:
             stub: gRPC stub with GetStatus method
             poll_interval: Seconds between status polls (default: 0.3)
+            get_status_unsupported: If True, skip polling and assume LEASE_READY
         """
         self._stub = stub
         self._poll_interval = poll_interval
+        self._get_status_unsupported = get_status_unsupported
 
         # Current cached status (updated by background task)
         self._current_status: ExporterStatus | None = None
@@ -85,6 +87,14 @@ class StatusMonitor:
 
         # Track if connection was lost (UNAVAILABLE)
         self._connection_lost: bool = False
+
+    def _signal_unsupported(self):
+        """Mark GetStatus as unsupported and signal waiters with LEASE_READY."""
+        self._get_status_unsupported = True
+        self._current_status = ExporterStatus.LEASE_READY
+        self._running = False
+        self._any_change_event.set()
+        self._any_change_event = Event()
 
     @property
     def current_status(self) -> ExporterStatus | None:
@@ -276,6 +286,12 @@ class StatusMonitor:
                     # Wait for status change notification
                     # Don't reset the event here - only the poll loop manages it
                     await current_event.wait()
+                # Loop exited (running=False or connection_lost) - check status one
+                # last time. The poll loop may have set _current_status (e.g. to
+                # LEASE_READY when GetStatus is unimplemented) before stopping.
+                for target in targets:
+                    if self._current_status == target:
+                        return target
                 return None
             finally:
                 self._active_waiters -= 1
@@ -291,6 +307,12 @@ class StatusMonitor:
         """Background polling loop."""
         self._poll_task_started.set()
         logger.debug("Status monitor poll loop started")
+
+        if self._get_status_unsupported:
+            logger.debug("GetStatus known unsupported, assuming LEASE_READY without polling")
+            self._signal_unsupported()
+            return
+
         deadline_retries = 0
 
         while self._running:
@@ -348,14 +370,14 @@ class StatusMonitor:
                         except Exception as e:
                             logger.error(f"Status change callback error: {e}")
 
+            except NotImplementedError:
+                logger.debug("GetStatus not implemented (stub), assuming LEASE_READY")
+                self._signal_unsupported()
+                break
             except AioRpcError as e:
                 if e.code() == StatusCode.UNIMPLEMENTED:
-                    # GetStatus not implemented - old exporter, stop polling
-                    logger.debug("GetStatus not implemented, stopping monitor and signaling waiters")
-                    self._running = False
-                    # Fire the change event to wake up any waiters
-                    self._any_change_event.set()
-                    self._any_change_event = Event()
+                    logger.debug("GetStatus not implemented (server), assuming LEASE_READY")
+                    self._signal_unsupported()
                     break
                 elif e.code() == StatusCode.UNAVAILABLE:
                     # Connection lost - exporter closed or restarted

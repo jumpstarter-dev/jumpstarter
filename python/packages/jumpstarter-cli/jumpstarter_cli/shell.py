@@ -103,6 +103,10 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                 async with client_from_path(
                     path, lease.portal, stack, allow=lease.allow, unsafe=lease.unsafe
                 ) as client:
+                    # Probe GetStatus before log stream so the server-side error
+                    # from unsupported exporters is not streamed to the terminal.
+                    await client.get_status_async()
+
                     # Start log streaming and status monitor together
                     # The status monitor polls in the background for reliable status tracking
                     async with client.log_stream_async(show_all_logs=exporter_logs):
