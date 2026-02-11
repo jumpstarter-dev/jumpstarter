@@ -255,6 +255,33 @@ class TestHookExecutor:
             # Should NOT say "Auto-detected" since exec was explicitly set
             assert not any("Auto-detected" in call for call in info_calls)
 
+    async def test_noninteractive_environment(self, lease_scope) -> None:
+        """Test that hooks receive noninteractive environment variables.
+
+        Verifies TERM=dumb, DEBIAN_FRONTEND=noninteractive, GIT_TERMINAL_PROMPT=0,
+        and that PS1 is not set.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script=(
+                    'echo "TERM=$TERM";'
+                    ' echo "DEBIAN_FRONTEND=$DEBIAN_FRONTEND";'
+                    ' echo "GIT_TERMINAL_PROMPT=$GIT_TERMINAL_PROMPT";'
+                    ' echo "PS1=${PS1:-UNSET}"'
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            await executor.execute_before_lease_hook(lease_scope)
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            assert any("TERM=dumb" in call for call in info_calls)
+            assert any("DEBIAN_FRONTEND=noninteractive" in call for call in info_calls)
+            assert any("GIT_TERMINAL_PROMPT=0" in call for call in info_calls)
+            assert any("PS1=UNSET" in call for call in info_calls)
+
     async def test_exec_default_is_none(self) -> None:
         """Test that the default exec is None (auto-detect)."""
         hook = HookInstanceConfigV1Alpha1(script="echo hello")
