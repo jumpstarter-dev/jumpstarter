@@ -227,7 +227,7 @@ class Driver(
         )
 
     @asynccontextmanager
-    async def resource(self, handle: str, timeout: int = 300):
+    async def resource(self, handle: str, timeout: int = 7200):
         handle = TypeAdapter(Resource).validate_python(handle)
         match handle:
             case ClientStreamResource(uuid=uuid, x_jmp_content_encoding=content_encoding):
