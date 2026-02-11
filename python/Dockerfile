@@ -12,7 +12,7 @@ RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod curl
     rm -rf /var/cache/dnf
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-ARG FLS_VERSION=0.1.9
+ARG FLS_VERSION=0.2.0
 RUN ARCH=$(uname -m) && \
     URL="https://github.com/jumpstarter-dev/fls/releases/download/${FLS_VERSION}/fls-${ARCH}-linux" && \
     TEMP_FILE="/tmp/fls-${ARCH}-linux.tmp" && \
