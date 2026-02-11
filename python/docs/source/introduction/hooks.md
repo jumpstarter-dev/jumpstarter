@@ -146,6 +146,20 @@ communicate with the exporter session:
 These variables are set automatically. The hook uses a dedicated Unix socket
 separate from the client connection to avoid protocol interference.
 
+The hook environment is also configured to signal noninteractive mode. Even
+though hooks run in a PTY (for line-buffered output), they are not interactive
+sessions. The following variables are set to prevent programs from displaying
+prompts or interactive UI:
+
+| Variable                | Value              | Purpose                                              |
+| ----------------------- | ------------------ | ---------------------------------------------------- |
+| `TERM`                  | `dumb`             | Disables colors, cursor movement, and terminal UI    |
+| `DEBIAN_FRONTEND`       | `noninteractive`   | Prevents `apt`/`dpkg` prompts on Debian-based hosts  |
+| `GIT_TERMINAL_PROMPT`   | `0`                | Prevents git from prompting for credentials          |
+
+Additionally, `PS1` is removed from the environment so the shell does not
+emit a prompt.
+
 ## Logging
 
 Hook output is streamed to the client in real time. Every line written to
