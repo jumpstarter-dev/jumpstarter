@@ -184,7 +184,7 @@ class Session(
         if self._current_status not in ALLOWED_STATUSES:
             context.abort(
                 grpc.StatusCode.FAILED_PRECONDITION,
-                f"Exporter not ready for driver calls (status: {self._current_status})"
+                f"Exporter not ready for driver calls (status: {self._current_status})",
             )
 
     async def GetReport(self, request, context):
@@ -269,7 +269,6 @@ class Session(
 
     async def GetStatus(self, request, context):
         """Get the current exporter status with transition tracking."""
-        logger.info("GetStatus() -> %s (version=%d)", self._current_status, self._status_version)
         response = jumpstarter_pb2.GetStatusResponse(
             status=self._current_status.to_proto(),
             message=self._status_message,
