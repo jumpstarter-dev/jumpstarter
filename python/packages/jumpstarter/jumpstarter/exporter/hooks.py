@@ -100,8 +100,17 @@ class HookExecutor:
                 JMP_DRIVERS_ALLOW: "UNSAFE",  # Allow all drivers for local access
                 "LEASE_NAME": lease_scope.lease_name,
                 "CLIENT_NAME": lease_scope.client_name,
+                # Signal noninteractive mode to the child process.
+                # Even though hooks run in a PTY (for line-buffered output), they
+                # are not interactive sessions. These variables prevent programs
+                # from displaying prompts or interactive UI.
+                "TERM": "dumb",
+                "DEBIAN_FRONTEND": "noninteractive",
+                "GIT_TERMINAL_PROMPT": "0",
             }
         )
+        # Remove PS1 so the shell does not emit a prompt
+        hook_env.pop("PS1", None)
         return hook_env
 
     async def _execute_hook(
