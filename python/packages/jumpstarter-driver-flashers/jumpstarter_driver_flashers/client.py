@@ -654,7 +654,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # Flash the image
         creds_file = None
         with self._redaction_scope([oci_username, oci_password]):
-            if path.startswith("oci://") and oci_username:
+            if str(path).startswith("oci://") and oci_username:
                 creds_file = self._setup_fls_oci_credential_file(console, prompt, oci_username, oci_password or "")
 
             fls_oci_auth_env = self._fls_oci_auth_env(path, creds_file)
@@ -1311,7 +1311,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return username, password
 
     def _fls_oci_auth_env(self, path: PathBuf, creds_file: str | None) -> str:
-        if not path.startswith("oci://") or not creds_file:
+        if not str(path).startswith("oci://") or not creds_file:
             return ""
 
         return f"set -o allexport; . {shlex.quote(creds_file)}; set +o allexport;"
