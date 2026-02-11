@@ -65,6 +65,38 @@ def test_validate_oci_credentials_accepts_pair_and_strips_whitespace():
     assert password == "mypassword"
 
 
+def test_resolve_oci_credentials_reads_env_for_oci_path(monkeypatch):
+    """Test OCI credentials are read from environment for OCI paths."""
+    client = MockFlasherClient()
+    monkeypatch.setenv("OCI_USERNAME", "env-user")
+    monkeypatch.setenv("OCI_PASSWORD", "env-pass")
+
+    username, password = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+    assert username == "env-user"
+    assert password == "env-pass"
+
+
+def test_resolve_oci_credentials_ignores_env_for_non_oci_path(monkeypatch):
+    """Test OCI credential env vars are ignored for non-OCI image paths."""
+    client = MockFlasherClient()
+    monkeypatch.setenv("OCI_USERNAME", "env-user")
+    monkeypatch.setenv("OCI_PASSWORD", "env-pass")
+
+    username, password = client._resolve_oci_credentials("https://example.com/image.raw.xz", None, None)
+    assert username is None
+    assert password is None
+
+
+def test_resolve_oci_credentials_rejects_partial_env_for_oci_path(monkeypatch):
+    """Test partial OCI env credentials are rejected for OCI paths."""
+    client = MockFlasherClient()
+    monkeypatch.setenv("OCI_USERNAME", "env-user")
+    monkeypatch.delenv("OCI_PASSWORD", raising=False)
+
+    with pytest.raises(click.ClickException, match="OCI authentication requires both"):
+        client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+
+
 def test_fls_oci_auth_env_sources_credentials_file():
     """Test OCI auth shell snippet sources the on-target credentials file"""
     client = MockFlasherClient()
@@ -101,8 +133,8 @@ def test_redact_sensitive_values_masks_username_and_password():
     assert result == "user=*** pass=***"
 
 
-def test_setup_and_cleanup_fls_oci_credential_file():
-    """Test secure credentials file setup and cleanup commands."""
+def test_setup_fls_oci_credential_file():
+    """Test secure credentials file setup commands."""
     client = MockFlasherClient()
 
     class MockConsole:
@@ -120,14 +152,75 @@ def test_setup_and_cleanup_fls_oci_credential_file():
     console = MockConsole()
     creds_path = client._setup_fls_oci_credential_file(console, "#", "myuser", "my'password")
     assert creds_path == "/tmp/fls_creds"
-    assert "cat > /tmp/fls_creds <<'EOF_FLS_CREDS'" in console.sent_lines[0]
-    assert "FLS_REGISTRY_USERNAME=myuser" in console.sent_lines[1]
-    assert "FLS_REGISTRY_PASSWORD='my'\"'\"'password'" in console.sent_lines[2]
-    assert "chmod 600 /tmp/fls_creds" in console.sent_lines[4]
+
+    # Verify chunked base64 approach: creates file, writes b64 chunks, decodes, cleans up
+    assert "true > /tmp/fls_creds" in console.sent_lines[0]
+    assert "true > /tmp/fls_creds.b64" in console.sent_lines[1]
+
+    # Find the base64 chunk lines (printf commands)
+    b64_lines = [line for line in console.sent_lines if "printf" in line and ".b64" in line]
+    assert len(b64_lines) >= 1
+
+    # Verify decode step
+    assert any("base64 -d" in line for line in console.sent_lines)
+    assert any("chmod 600 /tmp/fls_creds" in line for line in console.sent_lines)
+
+    # Verify the decoded content is correct
+    import base64
+
+    b64_data = ""
+    for line in b64_lines:
+        # Extract the base64 chunk from: printf '%s' <chunk> >> /tmp/fls_creds.b64
+        parts = shlex.split(line)
+        b64_data += parts[2]  # the chunk argument
+    decoded = base64.b64decode(b64_data).decode()
+    assert "FLS_REGISTRY_USERNAME=myuser" in decoded
+    assert "FLS_REGISTRY_PASSWORD='my'\"'\"'password'" in decoded
+
     assert console.logfile_read is not None
 
-    client._cleanup_fls_oci_credential_file(console, "#", "/tmp/fls_creds")
-    assert "rm -f /tmp/fls_creds" in console.sent_lines[-1]
+
+def test_setup_fls_oci_credential_file_chunks_long_tokens():
+    """Test that long JWT tokens are split into multiple base64 chunks."""
+    client = MockFlasherClient()
+
+    class MockConsole:
+        def __init__(self):
+            self.logfile_read = object()
+            self.sent_lines = []
+            self.expect_calls = []
+
+        def sendline(self, line):
+            self.sent_lines.append(line)
+
+        def expect(self, prompt, timeout=None):
+            self.expect_calls.append((prompt, timeout))
+
+    console = MockConsole()
+    # Simulate a 1400-char JWT token (similar to real Kubernetes service account tokens)
+    long_token = "eyJ" + "a" * 1397
+
+    creds_path = client._setup_fls_oci_credential_file(console, "#", "serviceaccount", long_token)
+    assert creds_path == "/tmp/fls_creds"
+
+    # With a 1400+ char token, the base64 encoding should produce multiple chunks
+    b64_lines = [line for line in console.sent_lines if "printf" in line and ".b64" in line]
+    assert len(b64_lines) > 1, f"Expected multiple chunks for long token, got {len(b64_lines)}"
+
+    # Each printf line should be well under serial buffer limits
+    for line in b64_lines:
+        assert len(line) < 600, f"Chunk line too long ({len(line)} chars): {line[:80]}..."
+
+    # Verify roundtrip: reassemble and decode
+    import base64
+
+    b64_data = ""
+    for line in b64_lines:
+        parts = shlex.split(line)
+        b64_data += parts[2]
+    decoded = base64.b64decode(b64_data).decode()
+    assert f"FLS_REGISTRY_PASSWORD={long_token}" in decoded
+    assert "FLS_REGISTRY_USERNAME=serviceaccount" in decoded
 
 
 def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
