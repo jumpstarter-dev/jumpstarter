@@ -1,16 +1,25 @@
 import logging
 import sys
+from contextlib import ExitStack
 from datetime import timedelta
 
 import anyio
 import click
 from anyio import create_task_group, get_cancelled_exc_class
 from jumpstarter_cli_common.config import opt_config
-from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
+from jumpstarter_cli_common.exceptions import find_exception_in_group, handle_exceptions_with_reauthentication
+from jumpstarter_cli_common.oidc import (
+    TOKEN_EXPIRY_WARNING_SECONDS,
+    format_duration,
+    get_token_remaining_seconds,
+)
 from jumpstarter_cli_common.signal import signal_handler
 
 from .common import opt_acquisition_timeout, opt_duration_partial, opt_selector
 from .login import relogin_client
+from jumpstarter.client.client import client_from_path
+from jumpstarter.common import ExporterStatus
+from jumpstarter.common.exceptions import ConnectionError, ExporterOfflineError
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -21,8 +30,13 @@ logger = logging.getLogger(__name__)
 def _run_shell_only(lease, config, command, path: str) -> int:
     """Run just the shell command without log streaming."""
     return launch_shell(
-        path, lease.exporter_name, config.drivers.allow, config.drivers.unsafe,
-        config.shell.use_profiles, command=command, lease=lease
+        path,
+        lease.exporter_name,
+        config.drivers.allow,
+        config.drivers.unsafe,
+        config.shell.use_profiles,
+        command=command,
+        lease=lease,
     )
 
 
@@ -35,16 +49,6 @@ def _warn_about_expired_token(lease_name: str, selector: str) -> None:
 
 async def _monitor_token_expiry(config, cancel_scope) -> None:
     """Monitor token expiry and warn user."""
-    try:
-        from jumpstarter_cli_common.oidc import (
-            TOKEN_EXPIRY_WARNING_SECONDS,
-            format_duration,
-            get_token_remaining_seconds,
-        )
-    except ImportError:
-        # OIDC support not available
-        return
-
     token = getattr(config, "token", None)
     if not token:
         return
@@ -91,11 +95,6 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
     Uses non-blocking polling via StatusMonitor for robust status tracking.
     If Ctrl+C is pressed during EndSession, the wait is skipped but the lease is still released.
     """
-    from contextlib import ExitStack
-
-    from jumpstarter.client.client import client_from_path
-    from jumpstarter.common import ExporterStatus
-
     async with lease.serve_unix_async() as path:
         async with lease.monitor_async():
             # Use ExitStack for the client (required by client_from_path)
@@ -118,20 +117,16 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
 
                             # Wait for LEASE_READY or hook failure using background monitor
                             result = await monitor.wait_for_any_of(
-                                [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED],
-                                timeout=300.0
+                                [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED], timeout=300.0
                             )
 
                             if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
-                                from jumpstarter.common.exceptions import ExporterOfflineError
                                 reason = monitor.status_message or "beforeLease hook failed"
                                 raise ExporterOfflineError(reason)
                             elif result is None:
-                                from jumpstarter.common.exceptions import ExporterOfflineError
                                 if monitor.connection_lost:
                                     reason = (
-                                        monitor.status_message
-                                        or "Connection to exporter lost during beforeLease hook"
+                                        monitor.status_message or "Connection to exporter lost during beforeLease hook"
                                     )
                                     raise ExporterOfflineError(reason)
                                 else:
@@ -141,9 +136,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             logger.debug("Exporter ready (status: %s), launching shell...", result)
 
                             # Run the shell command
-                            exit_code = await anyio.to_thread.run_sync(
-                                _run_shell_only, lease, config, command, path
-                            )
+                            exit_code = await anyio.to_thread.run_sync(_run_shell_only, lease, config, command, path)
 
                             # Shell has exited. Call EndSession to trigger afterLease hook
                             # while keeping log stream and status monitor open.
@@ -151,7 +144,6 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # to wait for hook completion.
                             if lease.name and not cancel_scope.cancel_called:
                                 logger.info("Running afterLease hook (Ctrl+C to skip)...")
-                                from jumpstarter.common.exceptions import ExporterOfflineError
                                 try:
                                     # EndSession triggers the afterLease hook asynchronously
                                     success = await client.end_session_async()
@@ -160,16 +152,14 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                         # This allows afterLease logs to be displayed in real-time
                                         result = await monitor.wait_for_any_of(
                                             [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
-                                            timeout=30.0
+                                            timeout=30.0,
                                         )
                                         if result == ExporterStatus.AVAILABLE:
                                             logger.info("afterLease hook completed")
                                         elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                                            from jumpstarter.common.exceptions import ExporterOfflineError
                                             reason = monitor.status_message or "afterLease hook failed"
                                             raise ExporterOfflineError(reason)
                                         elif monitor.connection_lost:
-                                            from jumpstarter.common.exceptions import ExporterOfflineError
                                             # If connection lost during AFTER_LEASE_HOOK, the hook
                                             # likely failed and the exporter shut down (onFailure=exit)
                                             if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
@@ -203,14 +193,9 @@ async def _shell_with_signal_handling(  # noqa: C901
     # Check token before starting
     token = getattr(config, "token", None)
     if token:
-        try:
-            from jumpstarter_cli_common.oidc import get_token_remaining_seconds
-            remaining = get_token_remaining_seconds(token)
-            if remaining is not None and remaining <= 0:
-                from jumpstarter.common.exceptions import ConnectionError
-                raise ConnectionError("token is expired")
-        except ImportError:
-            pass
+        remaining = get_token_remaining_seconds(token)
+        if remaining is not None and remaining <= 0:
+            raise ConnectionError("token is expired")
 
     async with create_task_group() as tg:
         tg.start_soon(signal_handler, tg.cancel_scope)
@@ -231,9 +216,6 @@ async def _shell_with_signal_handling(  # noqa: C901
                 for exc in eg.exceptions:
                     if isinstance(exc, TimeoutError):
                         raise exc from None
-                from jumpstarter_cli_common.exceptions import find_exception_in_group
-
-                from jumpstarter.common.exceptions import ExporterOfflineError
                 offline_exc = find_exception_in_group(eg, ExporterOfflineError)
                 if offline_exc:
                     raise offline_exc from None
@@ -244,13 +226,9 @@ async def _shell_with_signal_handling(  # noqa: C901
                 # Check if cancellation was due to token expiry
                 token = getattr(config, "token", None)
                 if lease_used and token:
-                    try:
-                        from jumpstarter_cli_common.oidc import get_token_remaining_seconds
-                        remaining = get_token_remaining_seconds(token)
-                        if remaining is not None and remaining <= 0:
-                            _warn_about_expired_token(lease_used.name, selector)
-                    except ImportError:
-                        pass
+                    remaining = get_token_remaining_seconds(token)
+                    if remaining is not None and remaining <= 0:
+                        _warn_about_expired_token(lease_used.name, selector)
                 exit_code = 2
         finally:
             if not tg.cancel_scope.cancel_called:

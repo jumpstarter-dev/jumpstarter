@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+import anyio
 from anyio import create_task_group
 from google.protobuf import empty_pb2
 from grpc import StatusCode
@@ -16,7 +17,8 @@ from grpc.aio import AioRpcError
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from rich.logging import RichHandler
 
-from jumpstarter.common import ExporterStatus, Metadata
+from jumpstarter.client.status_monitor import StatusMonitor
+from jumpstarter.common import ExporterStatus, LogSource, Metadata
 from jumpstarter.common.exceptions import JumpstarterException
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
@@ -154,8 +156,6 @@ class AsyncDriverClient(
         Args:
             timeout: Maximum time to wait in seconds (default: 5 minutes)
         """
-        import anyio
-
         poll_interval = 0.5  # seconds
         elapsed = 0.0
         poll_count = 0
@@ -250,8 +250,6 @@ class AsyncDriverClient(
         Returns:
             True if target status was reached, False if timed out
         """
-        import anyio
-
         poll_interval = 0.5  # seconds
         elapsed = 0.0
 
@@ -308,8 +306,6 @@ class AsyncDriverClient(
                 # Check current status at any time
                 current = monitor.current_status
         """
-        from jumpstarter.client.status_monitor import StatusMonitor
-
         monitor = StatusMonitor(self.stub, poll_interval, get_status_unsupported=self._get_status_unsupported)
         self._status_monitor = monitor
 
@@ -459,11 +455,7 @@ class AsyncDriverClient(
 
     @asynccontextmanager
     async def log_stream_async(self, show_all_logs: bool = True):  # noqa: C901
-        import anyio
-
         async def log_stream():  # noqa: C901
-            from jumpstarter.common import LogSource
-
             reconnect_delay = 0.1  # Start with 100ms delay
             max_reconnect_delay = 2.0  # Max 2 seconds between reconnects
             max_reconnects = 10  # Give up after this many reconnects
