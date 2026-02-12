@@ -1,0 +1,11 @@
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+  storage:
+    type: jumpstarter_driver_opendal.driver.MockStorageMux
+
+hooks:
+  beforeLease:
+    script: /tmp/jumpstarter-e2e-hook-script.sh
+    timeout: 60
+    onFailure: warn
