@@ -150,8 +150,6 @@ Options:
   --insecure-tls                 Skip TLS certificate verification
   --header TEXT                  Custom HTTP header in 'Key: Value' format
   --bearer TEXT                  Bearer token for HTTP authentication
-  --oci-username TEXT            OCI registry username (or OCI_USERNAME environment variable)
-  --oci-password TEXT            OCI registry password (or OCI_PASSWORD environment variable)
   --retries INTEGER              Number of retry attempts for flash operation
                                  (default: 3)
   --method [fls|shell]           Method to use for flash operation (default:
