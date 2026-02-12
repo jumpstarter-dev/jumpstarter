@@ -1,5 +1,6 @@
 import shlex
 from concurrent.futures import CancelledError
+from pathlib import PosixPath
 
 import click
 import pytest
@@ -86,6 +87,10 @@ def test_fls_oci_auth_env_empty_for_non_oci_paths():
     env_args = client._fls_oci_auth_env("oci://quay.io/org/image:tag", None)
     assert env_args == ""
 
+    # PosixPath (converted by operator_for_path) must not crash
+    env_args = client._fls_oci_auth_env(PosixPath("/images/image.raw.xz"), "/tmp/fls_creds")
+    assert env_args == ""
+
 
 def test_redact_sensitive_values_masks_username_and_password():
     """Test that sensitive values are redacted from output."""
@@ -149,10 +154,10 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
     captured = {}
 
     def capture_perform(*args):
-        captured["image_url"] = args[2]
-        captured["should_download_to_httpd"] = args[3]
-        captured["oci_username"] = args[13]
-        captured["oci_password"] = args[14]
+        captured["image_url"] = args[3]
+        captured["should_download_to_httpd"] = args[4]
+        captured["oci_username"] = args[14]
+        captured["oci_password"] = args[15]
 
     client._perform_flash_operation = capture_perform
 
@@ -326,3 +331,22 @@ def test_categorize_exception_preserves_cause_for_wrapped_exceptions():
     # IOError is an alias for OSError in Python 3
     assert "OSError" in str(result) or "IOError" in str(result)
     assert "File not found" in str(result)
+
+
+def test_resolve_flash_parameters():
+    """Test flash parameter resolution for single file, partitions, and error cases"""
+    client = MockFlasherClient()
+
+    assert client._resolve_flash_parameters("image.img", None, None) == [("image.img", None, None)]
+    assert client._resolve_flash_parameters("image.img", None, "emmc") == [("image.img", None, "emmc")]
+    assert client._resolve_flash_parameters(None, ("rootfs:rootfs.img", "boot:boot.img"), "emmc") == [
+        ("rootfs.img", "rootfs", "emmc"),
+        ("boot.img", "boot", "emmc"),
+    ]
+
+    with pytest.raises(click.UsageError):
+        client._resolve_flash_parameters("image.img", ("rootfs:rootfs.img",), None)
+    with pytest.raises(click.UsageError):
+        client._resolve_flash_parameters(None, None, None)
+    with pytest.raises(click.UsageError):
+        client._resolve_flash_parameters(None, ("rootfs_no_colon",), None)
