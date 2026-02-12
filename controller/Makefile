@@ -63,7 +63,7 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) 	rbac:roleName=jumpstarter-manager-role crd webhook paths="./api/..." paths="./internal/..." \
-						output:crd:artifacts:config=deploy/helm/jumpstarter/crds/ \
+						output:crd:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/ \
 						output:rbac:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/
 
 	# Add ArgoCD sync-wave annotation to RBAC role for proper deployment ordering (PR #207)
@@ -73,8 +73,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 		mv deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml.tmp \
 		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml
 
-	cp deploy/helm/jumpstarter/crds/* deploy/operator/config/crd/bases/
-	cp deploy/helm/jumpstarter/crds/* deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/
+	cp deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/* deploy/operator/config/crd/bases/
 
 	# Regenerate operator install.yaml to include updated CRDs
 	$(MAKE) -C deploy/operator build-installer

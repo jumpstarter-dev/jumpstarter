@@ -191,30 +191,14 @@ create_cluster() {
     log_info "Kind cluster created"
 }
 
-# Deploy old controller using the helm chart from the old tag
+# Deploy old controller using the OCI helm chart from quay.io
 deploy_old_controller() {
-    log_info "Deploying old controller (tag: $COMPAT_CONTROLLER_TAG)..."
+    log_info "Deploying old controller (version: $COMPAT_CONTROLLER_TAG)..."
 
     cd "$REPO_ROOT"
 
-    local OLD_IMG="quay.io/jumpstarter-dev/jumpstarter-controller:${COMPAT_CONTROLLER_TAG}"
-
-    # Pull the old controller image
-    log_info "Pulling old controller image: $OLD_IMG"
-    docker pull "$OLD_IMG"
-
-    # Extract old helm chart from the release tag
-    local OLD_CHART_DIR
-    OLD_CHART_DIR=$(mktemp -d)
-    log_info "Extracting helm chart from ${COMPAT_CONTROLLER_TAG} to ${OLD_CHART_DIR}..."
-    git archive "${COMPAT_CONTROLLER_TAG}" -- controller/deploy/helm/jumpstarter/ | tar -x -C "$OLD_CHART_DIR"
-
-    local OLD_CHART_PATH="$OLD_CHART_DIR/controller/deploy/helm/jumpstarter"
-
-    # Load image into kind
-    local KIND="${REPO_ROOT}/controller/bin/kind"
-    log_info "Loading image into kind..."
-    ${KIND} load docker-image "$OLD_IMG" --name jumpstarter
+    # Strip leading 'v' for helm version (v0.7.1 -> 0.7.1)
+    local HELM_VERSION="${COMPAT_CONTROLLER_TAG#v}"
 
     # Compute networking variables
     local IP
@@ -223,24 +207,20 @@ deploy_old_controller() {
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 
-    local IMAGE_REPO="${OLD_IMG%:*}"
-    local IMAGE_TAG="${OLD_IMG##*:}"
-
     kubectl config use-context kind-jumpstarter
 
-    # Deploy with old chart via helm
-    log_info "Installing old controller via helm..."
+    # Install old controller from OCI helm chart
+    log_info "Installing old controller via helm (version: ${HELM_VERSION})..."
     helm install --namespace jumpstarter-lab \
         --create-namespace \
         --set global.baseDomain="${BASEDOMAIN}" \
         --set jumpstarter-controller.grpc.endpoint="${GRPC_ENDPOINT}" \
         --set jumpstarter-controller.grpc.routerEndpoint="${GRPC_ROUTER_ENDPOINT}" \
         --set jumpstarter-controller.grpc.nodeport.enabled=true \
-        --set jumpstarter-controller.image="${IMAGE_REPO}" \
-        --set jumpstarter-controller.tag="${IMAGE_TAG}" \
-        --set global.timestamp="$(date +%s)" \
-        --values "${OLD_CHART_PATH}/values.kind.yaml" \
-        jumpstarter "${OLD_CHART_PATH}/"
+        --set jumpstarter-controller.grpc.mode=nodeport \
+        --set global.metrics.enabled=false \
+        --version="${HELM_VERSION}" \
+        jumpstarter oci://quay.io/jumpstarter-dev/helm/jumpstarter
 
     kubectl config set-context --current --namespace=jumpstarter-lab
 
@@ -259,9 +239,6 @@ deploy_old_controller() {
             fi
         done
     done
-
-    # Clean up temp directory
-    rm -rf "$OLD_CHART_DIR"
 
     log_info "Old controller deployed"
 }
