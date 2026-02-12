@@ -286,6 +286,7 @@ install_old_client() {
     uv pip install --python "$OLD_JMP_DIR/.venv/bin/python" \
         "jumpstarter-cli==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter==${COMPAT_CLIENT_VERSION}" \
+        "jumpstarter-driver-composite==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter-driver-power==${COMPAT_CLIENT_VERSION}" \
         "jumpstarter-driver-opendal==${COMPAT_CLIENT_VERSION}"
 
