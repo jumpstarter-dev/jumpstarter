@@ -169,6 +169,23 @@ e2e-clean:
 .PHONY: test-e2e
 test-e2e: e2e-run
 
+# Compatibility E2E testing (cross-version tests, separate from main e2e)
+COMPAT_SCENARIO ?= old-controller
+COMPAT_TEST ?= old-controller
+COMPAT_CONTROLLER_TAG ?= v0.7.1
+COMPAT_CLIENT_VERSION ?= 0.7.1
+
+.PHONY: e2e-compat-setup
+e2e-compat-setup:
+	@echo "Setting up compat e2e (scenario: $(COMPAT_SCENARIO))..."
+	@COMPAT_SCENARIO=$(COMPAT_SCENARIO) COMPAT_CONTROLLER_TAG=$(COMPAT_CONTROLLER_TAG) \
+	 COMPAT_CLIENT_VERSION=$(COMPAT_CLIENT_VERSION) bash e2e/compat/setup.sh
+
+.PHONY: e2e-compat-run
+e2e-compat-run:
+	@echo "Running compat e2e (test: $(COMPAT_TEST))..."
+	@COMPAT_TEST=$(COMPAT_TEST) bash e2e/compat/run.sh
+
 # Per-project clean targets
 .PHONY: clean-python clean-protocol clean-controller clean-e2e
 clean-python:
