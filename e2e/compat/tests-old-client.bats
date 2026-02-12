@@ -27,7 +27,7 @@ setup_file() {
 
   echo "Using OLD_JMP: $OLD_JMP" >&2
   echo "OLD_JMP version:" >&2
-  $OLD_JMP --version >&2 2>/dev/null || echo "(version flag not supported)" >&2
+  $OLD_JMP version >&2 2>/dev/null || echo "(version command not supported)" >&2
 }
 
 setup() {

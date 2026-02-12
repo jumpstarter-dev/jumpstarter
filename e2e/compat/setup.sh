@@ -29,7 +29,7 @@ export METHOD="helm"
 
 # Scenario configuration
 COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
-COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.7.1}"
+COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.7.0}"
 COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.1}"
 
 # Color output
@@ -290,7 +290,7 @@ install_old_client() {
         "jumpstarter-driver-opendal==${COMPAT_CLIENT_VERSION}"
 
     # Verify the old jmp works
-    "$OLD_JMP_DIR/.venv/bin/jmp" --version || log_warn "Old jmp --version failed (may not support --version flag)"
+    "$OLD_JMP_DIR/.venv/bin/jmp" version || log_warn "Old jmp version command failed"
 
     export OLD_JMP="$OLD_JMP_DIR/.venv/bin/jmp"
     log_info "Old jmp CLI installed at: $OLD_JMP"
