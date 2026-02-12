@@ -1,0 +1,11 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Lease
+metadata:
+  name: lease-sample
+spec:
+  clientRef:
+    name: client-sample
+  selector:
+    matchLabels:
+      board: rcar-s4
+  duration: "1h"

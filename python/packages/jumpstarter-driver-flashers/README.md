@@ -126,6 +126,10 @@ Options:
   --console-debug                Enable console debug mode
   --cacert FILE                  CA certificate to use for HTTPS
   --insecure-tls                 Skip TLS certificate verification
+  --header TEXT                  Custom HTTP header in 'Key: Value' format
+  --bearer TEXT                  Bearer token for HTTP authentication
+  --oci-username TEXT            OCI registry username (or OCI_USERNAME environment variable)
+  --oci-password TEXT            OCI registry password (or OCI_PASSWORD environment variable)
   --help                         Show this message and exit.
 ```
 
@@ -161,6 +165,16 @@ BaseFlasherClient - INFO - Flushing buffers
 BaseFlasherClient - INFO - Flashing completed in 7:26
 BaseFlasherClient - INFO - Powering off target
 ```
+
+Flash from a private OCI registry with credentials:
+```shell
+OCI_USERNAME=myuser OCI_PASSWORD=mypassword \
+  j storage flash oci://registry.example.com/org/image:tag
+```
+
+Environment variables for OCI auth:
+- `OCI_USERNAME`: registry username
+- `OCI_PASSWORD`: registry password
 
 ### bootloader-shell
 ```shell

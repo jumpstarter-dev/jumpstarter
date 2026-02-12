@@ -78,6 +78,14 @@ const (
 
 // Lease is the Schema for the exporters API
 type Lease struct {
+	// Lease is the schema for the Leases API. Leases represent a
+	// request for a specific exporter by a client. The lease is
+	// acquired by the client and the exporter is assigned to the lease.
+	// The lease is released by the client when the client is done with
+	// the exporter. For more information see the Jumpstarter documentation:
+	//
+	// https://jumpstarter.dev/main/reference/man-pages/jmp.html#jmp-create-lease
+	// https://jumpstarter.dev/main/reference/man-pages/jmp.html#jmp-shell
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 

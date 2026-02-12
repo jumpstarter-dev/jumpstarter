@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import threading
 import time
@@ -46,6 +47,26 @@ EXPECT_TIMEOUT_DEFAULT = 60
 EXPECT_TIMEOUT_SYNC = 1200
 
 
+class _RedactingConsoleWriter:
+    """Wrap console debug stream and redact sensitive values before writing."""
+
+    def __init__(self, stream, redact_callback):
+        self._stream = stream
+        self._redact_callback = redact_callback
+
+    def write(self, data):
+        if isinstance(data, (bytes, bytearray)):
+            redacted = self._redact_callback(bytes(data).decode(errors="ignore"))
+            self._stream.write(redacted.encode())
+            return
+
+        redacted = self._redact_callback(str(data))
+        self._stream.write(redacted)
+
+    def flush(self):
+        self._stream.flush()
+
+
 @dataclass(kw_only=True)
 class BaseFlasherClient(FlasherClient, CompositeClient):
     """
@@ -58,6 +79,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         super().__post_init__()
         self._manifest = None
         self._console_debug = False
+        self._redaction_values: set[str] = set()
 
     def set_console_debug(self, debug: bool):
         """Set console debug mode"""
@@ -103,19 +125,28 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         method: str = "fls",
         fls_version: str = "",
         fls_binary_url: str | None = None,
+        oci_username: str | None = None,
+        oci_password: str | None = None,
     ):
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
 
         if headers:
             headers = self._validate_header_dict(headers)
+        oci_username, oci_password = self._validate_oci_credentials(oci_username, oci_password)
 
         """Flash image to DUT"""
         should_download_to_httpd = True
         image_url = ""
         original_http_url = None
         operator_scheme = None
-        if path.startswith("oci://"):
+        is_oci_path = path.startswith("oci://")
+        if oci_username and not is_oci_path:
+            self.logger.warning("OCI credentials provided for non-OCI image path; ignoring credentials")
+            oci_username = None
+            oci_password = None
+
+        if is_oci_path:
             # OCI URLs are always passed directly to fls
             image_url = path
             should_download_to_httpd = False
@@ -190,6 +221,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                         method,
                         fls_version,
                         fls_binary_url,
+                        oci_username,
+                        oci_password,
                     )
                     self.logger.info(f"Flash operation succeeded on attempt {attempt + 1}")
                     break
@@ -315,6 +348,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         method: str,
         fls_version: str,
         fls_binary_url: str | None,
+        oci_username: str | None,
+        oci_password: str | None,
     ):
         """Perform the actual flash operation with console setup.
 
@@ -379,6 +414,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     header_args,
                     fls_version,
                     fls_binary_url,
+                    oci_username,
+                    oci_password,
                 )
             elif method == "shell":
                 self._flash_with_progress(
@@ -509,6 +546,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         header_args: str,
         fls_version: str,
         fls_binary_url: str | None,
+        oci_username: str | None,
+        oci_password: str | None,
     ):
         """Flash image to target device with progress monitoring.
 
@@ -539,11 +578,24 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self._download_fls_binary(console, prompt, fls_url, f"Failed to download FLS from {fls_url}")
 
         # Flash the image
-        flash_cmd = f'fls from-url -i 1.0 -n {tls_args} {header_args} --o-direct "{image_url}" {target_path}'
-        console.sendline(flash_cmd)
+        creds_file = None
+        with self._redaction_scope([oci_username, oci_password]):
+            if path.startswith("oci://") and oci_username:
+                creds_file = self._setup_fls_oci_credential_file(console, prompt, oci_username, oci_password or "")
 
-        # Start monitoring the flash operation
-        self._monitor_fls_progress(console, prompt)
+            fls_oci_auth_env = self._fls_oci_auth_env(path, creds_file)
+            flash_cmd = (
+                f"{fls_oci_auth_env} "
+                f'fls from-url -i 1.0 -n {tls_args} {header_args} --o-direct "{image_url}" {target_path}'
+            )
+            console.sendline(flash_cmd)
+
+            try:
+                # Start monitoring the flash operation
+                self._monitor_fls_progress(console, prompt)
+            finally:
+                if creds_file:
+                    self._cleanup_fls_oci_credential_file(console, prompt, creds_file)
 
         self.logger.info("Flushing buffers")
         console.sendline("sync")
@@ -551,7 +603,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
     def _monitor_fls_progress(self, console, prompt):
         """Monitor FLS flash progress by printing console output as it arrives."""
-        last_printed_length = 0
+        last_processed_length = 0
         while True:
             try:
                 # Try to expect the prompt with a short timeout to read output incrementally
@@ -559,14 +611,14 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
                 # Get the output that was read - this contains all output since last match
                 # We need to track what we've already printed to avoid duplicates
-                current_output = console.before.decode(errors="ignore")
+                raw_output = console.before.decode(errors="ignore")
 
                 # Only process new output that we haven't seen before
-                if len(current_output) > last_printed_length:
-                    new_output = current_output[last_printed_length:]
+                if len(raw_output) > last_processed_length:
+                    new_output = raw_output[last_processed_length:]
                     if new_output:
-                        print(new_output, end="", flush=True)
-                    last_printed_length = len(current_output)
+                        print(self._redact_sensitive_values(new_output), end="", flush=True)
+                    last_processed_length = len(raw_output)
 
                 # Check if we matched the prompt (index 0 means prompt matched)
                 if console.match_index == 0:
@@ -574,8 +626,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     break
                 # If match_index is 1, it means TIMEOUT was matched, so we continue the loop
 
-                if "panicked at" in current_output:
-                    raise FlashRetryableError(f"FLS panicked: {current_output}")
+                if "panicked at" in raw_output:
+                    raise FlashRetryableError(f"FLS panicked: {self._redact_sensitive_values(raw_output)}")
 
             except pexpect.EOF as err:
                 # End of file - connection closed
@@ -1047,7 +1099,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         with self.serial.pexpect() as console:
             if self._console_debug:
-                console.logfile_read = sys.stdout.buffer
+                console.logfile_read = _RedactingConsoleWriter(sys.stdout.buffer, self._redact_sensitive_values)
 
             bootcmd = self.call("get_bootcmd")
 
@@ -1163,6 +1215,77 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return token
 
+    def _validate_oci_credentials(
+        self, username: str | None, password: str | None
+    ) -> tuple[str | None, str | None]:
+        if username is not None:
+            username = username.strip()
+        if password is not None:
+            password = password.strip()
+
+        if username == "":
+            username = None
+        if password == "":
+            password = None
+
+        if bool(username) != bool(password):
+            raise click.ClickException(
+                "OCI authentication requires both --oci-username and --oci-password "
+                "(or OCI_USERNAME and OCI_PASSWORD environment variables)"
+            )
+
+        return username, password
+
+    def _fls_oci_auth_env(self, path: PathBuf, creds_file: str | None) -> str:
+        if not path.startswith("oci://") or not creds_file:
+            return ""
+
+        return f"set -o allexport; . {shlex.quote(creds_file)}; set +o allexport;"
+
+    def _redact_sensitive_values(self, text: str) -> str:
+        redacted = text
+        for value in sorted((v for v in self._redaction_values if v), key=len, reverse=True):
+            redacted = redacted.replace(value, "***")
+        return redacted
+
+    @contextmanager
+    def _redaction_scope(self, values: list[str | None]):
+        previous = set(self._redaction_values)
+        self._redaction_values.update(v for v in values if v)
+        try:
+            yield
+        finally:
+            self._redaction_values = previous
+
+    @contextmanager
+    def _temporarily_disable_console_debug_stream(self, console):
+        original_logfile_read = getattr(console, "logfile_read", None)
+        if original_logfile_read is not None:
+            console.logfile_read = None
+        try:
+            yield
+        finally:
+            if original_logfile_read is not None:
+                console.logfile_read = original_logfile_read
+
+    def _setup_fls_oci_credential_file(
+        self, console, prompt: str, oci_username: str, oci_password: str, creds_file: str = "/tmp/fls_creds"
+    ) -> str:
+        with self._temporarily_disable_console_debug_stream(console):
+            console.sendline(f"umask 077 && cat > {shlex.quote(creds_file)} <<'EOF_FLS_CREDS'")
+            console.sendline(f"FLS_REGISTRY_USERNAME={shlex.quote(oci_username)}")
+            console.sendline(f"FLS_REGISTRY_PASSWORD={shlex.quote(oci_password)}")
+            console.sendline("EOF_FLS_CREDS")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+            console.sendline(f"chmod 600 {shlex.quote(creds_file)}")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        return creds_file
+
+    def _cleanup_fls_oci_credential_file(self, console, prompt: str, creds_file: str):
+        with self._temporarily_disable_console_debug_stream(console):
+            console.sendline(f"rm -f {shlex.quote(creds_file)}")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
     def cli(self):
         @driver_click_group(self)
         def base():
@@ -1192,6 +1315,18 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             "--bearer",
             type=str,
             help="Bearer token for HTTP authentication",
+        )
+        @click.option(
+            "--oci-username",
+            type=str,
+            envvar="OCI_USERNAME",
+            help="OCI registry username (or OCI_USERNAME environment variable)",
+        )
+        @click.option(
+            "--oci-password",
+            type=str,
+            envvar="OCI_PASSWORD",
+            help="OCI registry password (or OCI_PASSWORD environment variable)",
         )
         @click.option(
             "--retries",
@@ -1229,6 +1364,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             insecure_tls,
             header,
             bearer,
+            oci_username,
+            oci_password,
             retries,
             method,
             fls_version,
@@ -1253,6 +1390,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 insecure_tls=insecure_tls,
                 headers=headers,
                 bearer_token=bearer,
+                oci_username=oci_username,
+                oci_password=oci_password,
                 retries=retries,
                 method=method,
                 fls_version=fls_version,
