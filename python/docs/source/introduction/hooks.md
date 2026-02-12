@@ -88,7 +88,6 @@ hooks:
     script: |
       j power on
       sleep 5
-      j devices validate
     timeout: 60
     onFailure: endLease
   afterLease:
@@ -100,14 +99,14 @@ hooks:
 
 ### Field Reference
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `hooks.beforeLease` | object | *(none)* | Hook that runs after lease assignment, before drivers are available |
-| `hooks.afterLease` | object | *(none)* | Hook that runs after the session ends, before the lease is released |
-| `hooks.<hook>.exec` | string | *(auto)* | Interpreter used to execute the script. Auto-detected from file extension when not set (`.py` uses the exporter's Python, `.sh` uses `/bin/sh`). Defaults to `/bin/sh` for inline scripts. |
-| `hooks.<hook>.script` | string | *(required)* | Inline script or path to a script file (auto-detected) |
-| `hooks.<hook>.timeout` | integer | `120` | Maximum execution time in seconds |
-| `hooks.<hook>.onFailure` | string | `"warn"` | Action on failure: `"warn"`, `"endLease"`, or `"exit"` |
+| Field                    | Type    | Default      | Description                                                                                                                                                                                |
+| ------------------------ | ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hooks.beforeLease`      | object  | *(none)*     | Hook that runs after lease assignment, before drivers are available                                                                                                                        |
+| `hooks.afterLease`       | object  | *(none)*     | Hook that runs after the session ends, before the lease is released                                                                                                                        |
+| `hooks.<hook>.exec`      | string  | *(auto)*     | Interpreter used to execute the script. Auto-detected from file extension when not set (`.py` uses the exporter's Python, `.sh` uses `/bin/sh`). Defaults to `/bin/sh` for inline scripts. |
+| `hooks.<hook>.script`    | string  | *(required)* | Inline script or path to a script file (auto-detected)                                                                                                                                     |
+| `hooks.<hook>.timeout`   | integer | `120`        | Maximum execution time in seconds                                                                                                                                                          |
+| `hooks.<hook>.onFailure` | string  | `"warn"`     | Action on failure: `"warn"`, `"endLease"`, or `"exit"`                                                                                                                                     |
 
 ### Script Modes
 
@@ -122,11 +121,11 @@ The `script` field supports two modes, detected automatically:
 When `exec` is not set and the script is a file, the interpreter is
 auto-detected from the file extension:
 
-| Extension | Interpreter | Notes |
-| --- | --- | --- |
-| `.py` | Exporter's Python (`sys.executable`) | Has access to all installed packages including the Jumpstarter client library |
-| `.sh` | `/bin/sh` | POSIX shell |
-| *(other)* | `/bin/sh` | Fallback for unrecognized extensions |
+| Extension | Interpreter                          | Notes                                                                         |
+| --------- | ------------------------------------ | ----------------------------------------------------------------------------- |
+| `.py`     | Exporter's Python (`sys.executable`) | Has access to all installed packages including the Jumpstarter client library |
+| `.sh`     | `/bin/sh`                            | POSIX shell                                                                   |
+| *(other)* | `/bin/sh`                            | Fallback for unrecognized extensions                                          |
 
 Set `exec` explicitly to override auto-detection (e.g. `exec: /bin/bash` for
 a `.sh` file that needs bash features).
@@ -151,11 +150,11 @@ though hooks run in a PTY (for line-buffered output), they are not interactive
 sessions. The following variables are set to prevent programs from displaying
 prompts or interactive UI:
 
-| Variable                | Value              | Purpose                                              |
-| ----------------------- | ------------------ | ---------------------------------------------------- |
-| `TERM`                  | `dumb`             | Disables colors, cursor movement, and terminal UI    |
-| `DEBIAN_FRONTEND`       | `noninteractive`   | Prevents `apt`/`dpkg` prompts on Debian-based hosts  |
-| `GIT_TERMINAL_PROMPT`   | `0`                | Prevents git from prompting for credentials          |
+| Variable              | Value            | Purpose                                             |
+| --------------------- | ---------------- | --------------------------------------------------- |
+| `TERM`                | `dumb`           | Disables colors, cursor movement, and terminal UI   |
+| `DEBIAN_FRONTEND`     | `noninteractive` | Prevents `apt`/`dpkg` prompts on Debian-based hosts |
+| `GIT_TERMINAL_PROMPT` | `0`              | Prevents git from prompting for credentials         |
 
 Additionally, `PS1` is removed from the environment so the shell does not
 emit a prompt.
