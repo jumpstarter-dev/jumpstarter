@@ -36,7 +36,7 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         filename = Path(path_buf).name
 
-        if self._should_upload_file(self.storage, filename, path_buf, operator):
+        if self._should_upload_file(self.storage, filename, path_buf, operator, operator_scheme):
             if operator_scheme == "http":
                 self.logger.info(f"Downloading {file_path} to storage as {filename}")
             else:
