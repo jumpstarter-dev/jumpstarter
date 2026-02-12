@@ -1343,7 +1343,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--fls-version",
             type=str,
-            default="0.1.9",  # TODO(majopela): set default to "" once fls is included in our images
+            default="0.2.0",  # TODO(majopela): set default to "" once fls is included in our images
             help="Download an specific fls version from the github releases",
         )
         @click.option(
