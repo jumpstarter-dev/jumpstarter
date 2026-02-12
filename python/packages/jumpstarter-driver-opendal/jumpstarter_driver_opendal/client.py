@@ -593,9 +593,15 @@ class FlasherClientInterface(metaclass=ABCMeta):
 
 
 class FlasherClient(FlasherClientInterface, DriverClient):
-    def _should_upload_file(self, storage, filename: str, src_path: PathBuf, src_operator: Operator) -> bool:
+    def _should_upload_file(
+        self, storage, filename: str, src_path: PathBuf, src_operator: Operator, operator_scheme: str = "fs"
+    ) -> bool:
         """Check if file should be uploaded by comparing existence and hash."""
         if not storage.exists(filename):
+            return True
+
+        if operator_scheme != "fs":
+            # For HTTP/remote sources, always re-download and overwrite
             return True
 
         try:
@@ -611,11 +617,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
             src_hash = m.hexdigest()
 
             storage_hash = storage.hash(filename)
-
-            if storage_hash == src_hash:
-                return False
-            else:
-                return True
+            return storage_hash != src_hash
         except Exception:
             return True
 
