@@ -155,6 +155,8 @@ Pipe serial port data to stdout or a file. Automatically detects if stdin is pip
 
 When stdin is used, commands are sent until EOF, then continues monitoring serial output until Ctrl+C.
 
+Use `--no-output` for fire-and-forget mode: send stdin to serial and exit at EOF without reading serial output.
+
 ```bash
 # Log serial output to stdout
 j serial pipe
@@ -176,6 +178,9 @@ j serial pipe -o serial.log -a
 
 # Disable stdin input even when piped
 cat data.txt | j serial pipe --no-input
+
+# Fire-and-forget: send stdin to serial and exit at EOF (no serial output)
+cat commands.txt | j serial pipe --no-output
 ```
 
 #### Options
@@ -184,6 +189,11 @@ cat data.txt | j serial pipe --no-input
 - `-i, --input`: Force enable stdin to serial port (auto-detected if piped)
 - `--no-input`: Disable stdin to serial port, even if stdin is piped
 - `-a, --append`: Append to output file instead of overwriting
+- `--no-output`: Disable serial output handling (stdin -> serial only, exits at EOF)
+
+Notes:
+- `--no-output` cannot be combined with `--output` or `--append`.
+- `--no-output` requires stdin input (piped stdin or `--input`).
 
 Exit with Ctrl+C.
 

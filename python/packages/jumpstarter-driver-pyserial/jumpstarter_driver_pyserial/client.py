@@ -45,6 +45,7 @@ class PySerialClient(DriverClient):
         output_file: Optional[str] = None,
         input_enabled: bool = False,
         append: bool = False,
+        no_output: bool = False,
     ):
         """
         Pipe serial port data to stdout or a file, optionally reading from stdin.
@@ -53,8 +54,15 @@ class PySerialClient(DriverClient):
             output_file: Path to output file. If None, writes to stdout.
             input_enabled: If True, also pipe stdin to serial port.
             append: If True, append to file instead of overwriting.
+            no_output: If True, do not read serial output; only forward stdin to serial.
         """
         async with self.stream_async(method="connect") as stream:
+            # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
+            if no_output:
+                if input_enabled:
+                    await self._stdin_to_serial(stream)
+                return
+
             async with create_task_group() as tg:
                 # Output task: serial -> file/stdout
                 tg.start_soon(self._serial_to_output, stream, output_file, append)
@@ -143,7 +151,13 @@ class PySerialClient(DriverClient):
             default=False,
             help="Append to output file instead of overwriting.",
         )
-        def pipe(output, input_flag, no_input, append):  # noqa: C901
+        @click.option(
+            "--no-output",
+            is_flag=True,
+            default=False,
+            help="Disable serial output handling. Send stdin to serial and exit at EOF.",
+        )
+        def pipe(output, input_flag, no_input, append, no_output):  # noqa: C901
             """Pipe serial port data to stdout or file.
 
             By default, reads from the serial port and writes to stdout.
@@ -155,6 +169,7 @@ class PySerialClient(DriverClient):
             Use -o/--output to write to a file instead.
             Use -i/--input to force enable stdin to serial (auto-detected).
             Use --no-input to disable stdin even when piped.
+            Use --no-output for fire-and-forget input (send stdin to serial and exit).
 
             Exit with Ctrl+C.
 
@@ -167,12 +182,20 @@ class PySerialClient(DriverClient):
               echo "hello" | j serial pipe # Send to serial, continue monitoring
 
               cat commands.txt | j serial pipe -o serial.log # Send commands, log output
-            """
-            if append and not output:
-                raise click.UsageError("--append requires --output")
 
+              cat commands.txt | j serial pipe --no-output # Fire-and-forget: send and exit at EOF
+            """
             if input_flag and no_input:
                 raise click.UsageError("Cannot use both --input and --no-input")
+
+            if no_output and output:
+                raise click.UsageError("Cannot use both --no-output and --output")
+
+            if no_output and append:
+                raise click.UsageError("Cannot use both --no-output and --append")
+
+            if append and not output:
+                raise click.UsageError("--append requires --output")
 
             # Auto-detect stdin: if it's not a TTY (i.e., piped or redirected), enable input
             stdin_is_piped = not sys.stdin.isatty()
@@ -185,6 +208,9 @@ class PySerialClient(DriverClient):
             else:
                 input_enabled = stdin_is_piped
 
+            if no_output and not input_enabled:
+                raise click.UsageError("--no-output requires stdin input (pipe stdin or use --input)")
+
             # Show appropriate status message
             if input_enabled and stdin_is_piped and not input_flag:
                 mode_desc = "auto-detected piped stdin"
@@ -195,7 +221,9 @@ class PySerialClient(DriverClient):
             else:
                 mode_desc = "read-only"
 
-            if not output and not input_enabled:
+            if no_output:
+                click.echo(f"Fire-and-forget mode ({mode_desc}): stdin→serial, no output (exits at EOF)", err=True)
+            elif not output and not input_enabled:
                 click.echo(f"Reading from serial port ({mode_desc})... (Ctrl+C to exit)", err=True)
             elif not output and input_enabled:
                 msg = f"Bidirectional mode ({mode_desc}): stdin→serial, serial→stdout (Ctrl+C to exit)"
@@ -207,7 +235,7 @@ class PySerialClient(DriverClient):
                 click.echo(msg, err=True)
 
             try:
-                self.portal.call(self._pipe_serial, output, input_enabled, append)
+                self.portal.call(self._pipe_serial, output, input_enabled, append, no_output)
             except KeyboardInterrupt:
                 click.echo("\nStopped.", err=True)
 
