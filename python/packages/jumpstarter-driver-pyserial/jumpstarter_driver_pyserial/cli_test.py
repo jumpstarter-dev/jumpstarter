@@ -120,6 +120,55 @@ def test_pipe_command_with_no_input_flag(pyserial_client):
         assert args[2] is False  # input_enabled
 
 
+def test_pipe_command_with_no_output_flag(pyserial_client):
+    """Test pipe command with --no-output flag."""
+    runner = CliRunner()
+    cli = pyserial_client.cli()
+
+    with patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt
+
+        runner.invoke(cli, ["pipe", "--no-output", "--input"])
+
+        assert mock_call.called
+        args = mock_call.call_args[0]
+        assert args[2] is True  # input_enabled
+        assert args[4] is True  # no_output
+
+
+def test_pipe_command_no_output_conflict_with_output(pyserial_client):
+    """Test that --no-output and --output cannot be used together."""
+    runner = CliRunner()
+    cli = pyserial_client.cli()
+
+    with patch.object(pyserial_client, "portal"):
+        result = runner.invoke(cli, ["pipe", "--no-output", "-o", "test.log"])
+        assert result.exit_code != 0
+        assert "Cannot use both --no-output and --output" in result.output
+
+
+def test_pipe_command_no_output_conflict_with_append(pyserial_client):
+    """Test that --no-output and --append cannot be used together."""
+    runner = CliRunner()
+    cli = pyserial_client.cli()
+
+    with patch.object(pyserial_client, "portal"):
+        result = runner.invoke(cli, ["pipe", "--no-output", "--append"])
+        assert result.exit_code != 0
+        assert "Cannot use both --no-output and --append" in result.output
+
+
+def test_pipe_command_no_output_requires_input(pyserial_client):
+    """Test that --no-output requires stdin input."""
+    runner = CliRunner()
+    cli = pyserial_client.cli()
+
+    with patch.object(pyserial_client, "portal"):
+        result = runner.invoke(cli, ["pipe", "--no-output", "--no-input"])
+        assert result.exit_code != 0
+        assert "--no-output requires stdin input" in result.output
+
+
 def test_pipe_command_stdin_auto_detection(pyserial_client):
     """Test that pipe command auto-detects piped stdin with CliRunner."""
     runner = CliRunner()
@@ -170,6 +219,10 @@ def test_pipe_command_status_messages(pyserial_client):
         # Test bidirectional mode (CliRunner stdin is not a TTY, so it auto-detects)
         result = runner.invoke(cli, ["pipe"])
         assert "Bidirectional mode" in result.output or "auto-detected" in result.output
+
+        # Test fire-and-forget mode
+        result = runner.invoke(cli, ["pipe", "--no-output", "--input"])
+        assert "Fire-and-forget mode" in result.output
 
 
 def test_pipe_command_with_file_and_input(pyserial_client):
