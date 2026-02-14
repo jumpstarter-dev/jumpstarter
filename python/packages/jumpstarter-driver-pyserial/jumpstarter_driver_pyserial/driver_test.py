@@ -1,12 +1,12 @@
 import time
-from typing import cast
 from types import SimpleNamespace
+from typing import cast
 
 from anyio import create_memory_object_stream
 from anyio.streams.stapled import StapledObjectStream
 
-from .client import PySerialClient
 from . import driver as driver_module
+from .client import PySerialClient
 from .driver import PySerial, ThrottledStream
 from jumpstarter.common.utils import serve
 
