@@ -176,6 +176,8 @@ def test_disable_hupcl_applies_termios_flags(monkeypatch):
         calls["when"] = when
         calls["attrs"] = attrs
 
+    monkeypatch.setattr(driver_module.os, "name", "posix")
+
     monkeypatch.setattr(
         driver_module,
         "termios",
