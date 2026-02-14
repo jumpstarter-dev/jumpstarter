@@ -1,6 +1,7 @@
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from anyio import (
     create_memory_object_stream,
@@ -13,6 +14,11 @@ from serial import serial_for_url
 from serial_asyncio import open_serial_connection
 
 from jumpstarter.driver import Driver, exportstream
+
+try:
+    import termios
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    termios = None
 
 LOOP = "loop://"
 
@@ -92,6 +98,7 @@ class PySerial(Driver):
     baudrate: int = field(default=115200)
     check_present: bool = field(default=True)
     cps: Optional[float] = field(default=None)  # characters per second throttling
+    disable_hupcl: bool = field(default=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -103,6 +110,24 @@ class PySerial(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_pyserial.client.PySerialClient"
 
+    def _maybe_disable_hupcl(self, serial_port: Any):
+        """Disable HUPCL to avoid MCU reset on serial port close when supported."""
+        if not self.disable_hupcl or os.name != "posix" or termios is None:
+            return
+
+        if serial_port is None:
+            self.logger.warning("disable_hupcl is enabled but serial transport has no serial handle")
+            return
+
+        try:
+            fd = serial_port.fileno()
+            attrs = termios.tcgetattr(fd)
+            attrs[2] &= ~termios.HUPCL
+            termios.tcsetattr(fd, termios.TCSANOW, attrs)
+            self.logger.info("Disabled HUPCL on %s", self.url)
+        except (AttributeError, OSError, TypeError):
+            self.logger.warning("Failed to disable HUPCL on %s", self.url)
+
     @exportstream
     @asynccontextmanager
     async def connect(self):
@@ -111,6 +136,7 @@ class PySerial(Driver):
         if self.url != LOOP:
             reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate, limit=1)
             writer.transport.set_write_buffer_limits(high=4096, low=0)
+            self._maybe_disable_hupcl(getattr(writer.transport, "serial", None))
             async with AsyncSerial(
                 reader=StreamReaderWrapper(reader),
                 writer=StreamWriterWrapper(writer),

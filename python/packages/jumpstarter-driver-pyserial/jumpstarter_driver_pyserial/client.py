@@ -60,7 +60,11 @@ class PySerialClient(DriverClient):
             # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
             if no_output:
                 if input_enabled:
-                    await self._stdin_to_serial(stream)
+                    bytes_read, bytes_sent = await self._stdin_to_serial(stream)
+                    if bytes_read != bytes_sent:
+                        raise RuntimeError(
+                            f"stdin forwarding incomplete: read {bytes_read} bytes but sent {bytes_sent} bytes"
+                        )
                 return
 
             async with create_task_group() as tg:
@@ -98,19 +102,32 @@ class PySerialClient(DriverClient):
                 "\nSerial connection lost (broken resource). The connection may have been interrupted.", err=True
             )
 
-    async def _stdin_to_serial(self, stream):
-        """Read from stdin and write to serial. Returns when stdin reaches EOF."""
+    async def _stdin_to_serial(self, stream) -> tuple[int, int]:
+        """Read from stdin and write to serial. Returns (bytes_read, bytes_sent)."""
         stdin = FileReadStream(sys.stdin.buffer)
+        bytes_read = 0
+        bytes_sent = 0
         try:
             while True:
                 data = await stdin.receive(max_bytes=1024)
                 if not data:
                     # EOF on stdin, just stop reading but keep serial output running
-                    return
+                    break
+                bytes_read += len(data)
                 await stream.send(data)
+                bytes_sent += len(data)
         except EndOfStream:
             # EOF on stdin, just stop reading but keep serial output running
-            return
+            pass
+
+        # Signal write completion for streams that support half-close.
+        if hasattr(stream, "send_eof"):
+            try:
+                await stream.send_eof()
+            except (AttributeError, BrokenResourceError, EndOfStream):
+                pass
+
+        return bytes_read, bytes_sent
 
     def cli(self):  # noqa: C901
         @driver_click_group(self)

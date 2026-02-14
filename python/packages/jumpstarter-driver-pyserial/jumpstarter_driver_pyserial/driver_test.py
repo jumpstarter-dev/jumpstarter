@@ -1,10 +1,12 @@
 import time
 from typing import cast
+from types import SimpleNamespace
 
 from anyio import create_memory_object_stream
 from anyio.streams.stapled import StapledObjectStream
 
 from .client import PySerialClient
+from . import driver as driver_module
 from .driver import PySerial, ThrottledStream
 from jumpstarter.common.utils import serve
 
@@ -155,3 +157,54 @@ def test_cps_with_pexpect():
             pexpect.sendline("test")
             assert pexpect.expect("test") == 0
             # We don't test timing here since pexpect has complex buffering
+
+
+def test_disable_hupcl_applies_termios_flags(monkeypatch):
+    calls = {}
+
+    class FakeSerial:
+        @staticmethod
+        def fileno():
+            return 42
+
+    def fake_tcgetattr(fd):
+        calls["fd_get"] = fd
+        return [0, 0, 0x4000 | 0x0008, 0, 0, 0, []]
+
+    def fake_tcsetattr(fd, when, attrs):
+        calls["fd_set"] = fd
+        calls["when"] = when
+        calls["attrs"] = attrs
+
+    monkeypatch.setattr(
+        driver_module,
+        "termios",
+        SimpleNamespace(HUPCL=0x4000, TCSANOW=0, tcgetattr=fake_tcgetattr, tcsetattr=fake_tcsetattr),
+    )
+
+    driver = PySerial(url="/dev/ttyUSB0", check_present=False, disable_hupcl=True)
+    driver._maybe_disable_hupcl(FakeSerial())
+
+    assert calls["fd_get"] == 42
+    assert calls["fd_set"] == 42
+    assert calls["when"] == 0
+    assert calls["attrs"][2] & 0x4000 == 0
+
+
+def test_disable_hupcl_noop_when_disabled(monkeypatch):
+    called = {"tcgetattr": False}
+
+    def fake_tcgetattr(_fd):
+        called["tcgetattr"] = True
+        return [0, 0, 0x4000, 0, 0, 0, []]
+
+    monkeypatch.setattr(
+        driver_module,
+        "termios",
+        SimpleNamespace(HUPCL=0x4000, TCSANOW=0, tcgetattr=fake_tcgetattr, tcsetattr=lambda *_: None),
+    )
+
+    driver = PySerial(url="/dev/ttyUSB0", check_present=False, disable_hupcl=False)
+    driver._maybe_disable_hupcl(None)
+
+    assert called["tcgetattr"] is False

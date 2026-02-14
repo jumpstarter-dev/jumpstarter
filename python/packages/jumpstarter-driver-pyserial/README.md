@@ -24,6 +24,19 @@ export:
       cps: 10  # Optional: throttle to 10 characters per second
 ```
 
+Example configuration to send commands to a MCU over serial port, with --no-output (fire-and-forget mode):
+```yaml
+export:
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+      disable_hupcl: true # Prevents MCU reset on each command/close.
+      #cps: Avoid using cps when using --no-output.
+```
+
+
 ### Config parameters
 
 | Parameter      | Description                                                                                                                                          | Type  | Required | Default |
@@ -32,6 +45,7 @@ export:
 | baudrate       | The baudrate to use for the serial connection                                                                                                        | int   | no       | 115200  |
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
+| disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
 
 ## NVDemuxSerial Driver
 
