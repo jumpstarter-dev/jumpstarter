@@ -24,6 +24,19 @@ export:
       cps: 10  # Optional: throttle to 10 characters per second
 ```
 
+Example configuration to send commands to a MCU with DTR/RTS controlling boot process over serial port, with --no-output (fire-and-forget mode):
+```yaml
+export:
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+      disable_hupcl: true # Prevents MCU reset on each command/close.
+      #cps: Avoid using cps when using --no-output.
+```
+
+
 ### Config parameters
 
 | Parameter      | Description                                                                                                                                          | Type  | Required | Default |
@@ -32,6 +45,7 @@ export:
 | baudrate       | The baudrate to use for the serial connection                                                                                                        | int   | no       | 115200  |
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
+| disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
 
 ## NVDemuxSerial Driver
 
@@ -155,6 +169,8 @@ Pipe serial port data to stdout or a file. Automatically detects if stdin is pip
 
 When stdin is used, commands are sent until EOF, then continues monitoring serial output until Ctrl+C.
 
+Use `--no-output` for fire-and-forget mode: send stdin to serial and exit at EOF without reading serial output.
+
 ```bash
 # Log serial output to stdout
 j serial pipe
@@ -176,6 +192,9 @@ j serial pipe -o serial.log -a
 
 # Disable stdin input even when piped
 cat data.txt | j serial pipe --no-input
+
+# Fire-and-forget: send stdin to serial and exit at EOF (no serial output)
+cat commands.txt | j serial pipe --no-output
 ```
 
 #### Options
@@ -184,6 +203,11 @@ cat data.txt | j serial pipe --no-input
 - `-i, --input`: Force enable stdin to serial port (auto-detected if piped)
 - `--no-input`: Disable stdin to serial port, even if stdin is piped
 - `-a, --append`: Append to output file instead of overwriting
+- `--no-output`: Disable serial output handling (stdin -> serial only, exits at EOF)
+
+Notes:
+- `--no-output` cannot be combined with `--output` or `--append`.
+- `--no-output` requires stdin input (piped stdin or `--input`).
 
 Exit with Ctrl+C.
 
