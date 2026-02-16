@@ -85,7 +85,7 @@ class UbootConsoleClient(CompositeClient):
         while tries > 0:
             tries-=1
             self.logger.info(f"Running command checked: {cmd}")
-            output = self.run_command("{}; echo $?".format(cmd), _internal_log=False)
+            output = self.run_command("{}; echo $?".format(cmd), timeout=timeout, _internal_log=False)
             parsed = output.strip().decode().splitlines()
 
             if len(parsed) < 2:
@@ -167,7 +167,7 @@ class UbootConsoleClient(CompositeClient):
             cmd = "setenv {}".format(key)
 
         try:
-            self.run_command_checked(cmd, timeout=5)
+            self.run_command_checked(cmd, timeout=timeout)
         except TimeoutError as err:
             raise TimeoutError(f"Timed out setting var {key}") from err
 
