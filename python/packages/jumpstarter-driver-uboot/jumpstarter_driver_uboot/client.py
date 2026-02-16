@@ -94,7 +94,7 @@ class UbootConsoleClient(CompositeClient):
             try:
                 retval = int(parsed[-1])
             except ValueError:
-                raise ValueError("Failed to parse command return value: {}", parsed[-1]) from None
+                raise ValueError(f"Failed to parse command return value: {parsed[-1]}") from None
 
             if retval == 0:
                 break
