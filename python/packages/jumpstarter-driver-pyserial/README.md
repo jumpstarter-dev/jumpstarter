@@ -24,7 +24,7 @@ export:
       cps: 10  # Optional: throttle to 10 characters per second
 ```
 
-Example configuration to send commands to a MCU over serial port, with --no-output (fire-and-forget mode):
+Example configuration to send commands to a MCU with DTR/RTS controlling boot process over serial port, with --no-output (fire-and-forget mode):
 ```yaml
 export:
   serial:
