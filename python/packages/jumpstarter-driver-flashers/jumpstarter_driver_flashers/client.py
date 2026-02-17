@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -129,14 +130,13 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         oci_username: str | None = None,
         oci_password: str | None = None,
     ):
+        """Flash image to DUT"""
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
 
         if headers:
             headers = self._validate_header_dict(headers)
-        oci_username, oci_password = self._validate_oci_credentials(oci_username, oci_password)
-
-        """Flash image to DUT"""
+        oci_username, oci_password = self._resolve_oci_credentials(path, oci_username, oci_password)
         should_download_to_httpd = True
         image_url = ""
         original_http_url = None
@@ -653,7 +653,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         # Flash the image
         creds_file = None
-        with self._redaction_scope([oci_username, oci_password]):
+        with self._redaction_scope([oci_password]):
             if str(path).startswith("oci://") and oci_username:
                 creds_file = self._setup_fls_oci_credential_file(console, prompt, oci_username, oci_password or "")
 
@@ -664,12 +664,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             )
             console.sendline(flash_cmd)
 
-            try:
-                # Start monitoring the flash operation
-                self._monitor_fls_progress(console, prompt)
-            finally:
-                if creds_file:
-                    self._cleanup_fls_oci_credential_file(console, prompt, creds_file)
+            # Start monitoring the flash operation
+            self._monitor_fls_progress(console, prompt)
 
         self.logger.info("Flushing buffers")
         console.sendline("sync")
@@ -1304,11 +1300,23 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         if bool(username) != bool(password):
             raise click.ClickException(
-                "OCI authentication requires both --oci-username and --oci-password "
-                "(or OCI_USERNAME and OCI_PASSWORD environment variables)"
+                "OCI authentication requires both OCI_USERNAME and OCI_PASSWORD "
+                "environment variables (or both oci_username and oci_password arguments)"
             )
 
         return username, password
+
+    def _resolve_oci_credentials(
+        self, path: PathBuf, username: str | None, password: str | None
+    ) -> tuple[str | None, str | None]:
+        if username is None and password is None and path.startswith("oci://"):
+            username = os.environ.get("OCI_USERNAME")
+            password = os.environ.get("OCI_PASSWORD")
+
+            if username or password:
+                self.logger.info("Using OCI registry credentials from environment variables")
+
+        return self._validate_oci_credentials(username, password)
 
     def _fls_oci_auth_env(self, path: PathBuf, creds_file: str | None) -> str:
         if not str(path).startswith("oci://") or not creds_file:
@@ -1345,20 +1353,35 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _setup_fls_oci_credential_file(
         self, console, prompt: str, oci_username: str, oci_password: str, creds_file: str = "/tmp/fls_creds"
     ) -> str:
+        # Write credential file using base64-encoded chunks to avoid serial
+        # console line buffer overflow with long tokens (e.g. 1400+ char JWTs).
+        creds_content = (
+            f"FLS_REGISTRY_USERNAME={shlex.quote(oci_username)}\n"
+            f"FLS_REGISTRY_PASSWORD={shlex.quote(oci_password)}\n"
+        )
+        encoded = base64.b64encode(creds_content.encode()).decode()
+
+        chunk_size = 512
         with self._temporarily_disable_console_debug_stream(console):
-            console.sendline(f"umask 077 && cat > {shlex.quote(creds_file)} <<'EOF_FLS_CREDS'")
-            console.sendline(f"FLS_REGISTRY_USERNAME={shlex.quote(oci_username)}")
-            console.sendline(f"FLS_REGISTRY_PASSWORD={shlex.quote(oci_password)}")
-            console.sendline("EOF_FLS_CREDS")
+            console.sendline(f"true > {shlex.quote(creds_file)}")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+            # Write base64 data in chunks to a temp file
+            b64_file = f"{creds_file}.b64"
+            console.sendline(f"true > {shlex.quote(b64_file)}")
+            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+            for i in range(0, len(encoded), chunk_size):
+                chunk = encoded[i : i + chunk_size]
+                console.sendline(f"printf '%s' {shlex.quote(chunk)} >> {shlex.quote(b64_file)}")
+                console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+
+            # Decode into the actual creds file
+            console.sendline(f"base64 -d {shlex.quote(b64_file)} > {shlex.quote(creds_file)}")
             console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
             console.sendline(f"chmod 600 {shlex.quote(creds_file)}")
             console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
         return creds_file
-
-    def _cleanup_fls_oci_credential_file(self, console, prompt: str, creds_file: str):
-        with self._temporarily_disable_console_debug_stream(console):
-            console.sendline(f"rm -f {shlex.quote(creds_file)}")
-            console.expect(prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
     def _resolve_flash_parameters(
         self, file: str | None, partitions: tuple[str, ...] | None, block_device: str | None
@@ -1425,6 +1448,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return flash_ops
 
+
     def cli(self):
         @driver_click_group(self)
         def base():
@@ -1466,18 +1490,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             help="Bearer token for HTTP authentication",
         )
         @click.option(
-            "--oci-username",
-            type=str,
-            envvar="OCI_USERNAME",
-            help="OCI registry username (or OCI_USERNAME environment variable)",
-        )
-        @click.option(
-            "--oci-password",
-            type=str,
-            envvar="OCI_PASSWORD",
-            help="OCI registry password (or OCI_PASSWORD environment variable)",
-        )
-        @click.option(
             "--retries",
             type=int,
             default=3,
@@ -1514,8 +1526,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             insecure_tls,
             header,
             bearer,
-            oci_username,
-            oci_password,
             retries,
             method,
             fls_version,
@@ -1576,8 +1586,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     insecure_tls=insecure_tls,
                     headers=headers_dict,
                     bearer_token=bearer,
-                    oci_username=oci_username,
-                    oci_password=oci_password,
                     retries=retries,
                     method=method,
                     fls_version=fls_version,
