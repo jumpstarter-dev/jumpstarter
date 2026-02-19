@@ -8,6 +8,26 @@ from rich import traceback
 from rich.logging import RichHandler
 
 
+class SourcePrefixFormatter(logging.Formatter):
+    """Shows [logger_name] prefix only on the first line of consecutive same-source blocks."""
+
+    def __init__(self):
+        super().__init__("%(message)s")
+        self._last_name = None
+
+    def format(self, record):
+        msg = record.getMessage()
+        if record.name != self._last_name:
+            self._last_name = record.name
+            formatted_msg = f"[{record.name}] {msg}"
+        else:
+            formatted_msg = msg
+        # Replace the message for RichHandler rendering
+        record.msg = formatted_msg
+        record.args = None
+        return super().format(record)
+
+
 def _opt_log_level_callback(ctx, param, value):
     traceback.install()
     # there is no way to determine if the command is invoked for jmp run or something else at this
@@ -16,9 +36,9 @@ def _opt_log_level_callback(ctx, param, value):
         # on a exporter run we don't want to use RichHandler for logs, just plain logs for the system journal
         basicConfig = partial(logging.basicConfig)
     else:
-        basicConfig = partial(
-            logging.basicConfig, format="%(message)s [%(name)s]", handlers=[RichHandler(show_path=False)]
-        )
+        handler = RichHandler(show_path=False)
+        handler.setFormatter(SourcePrefixFormatter())
+        basicConfig = partial(logging.basicConfig, handlers=[handler])
 
     if value:
         basicConfig(level=value.upper())

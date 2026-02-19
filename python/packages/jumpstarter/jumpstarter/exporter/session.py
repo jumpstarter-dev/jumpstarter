@@ -75,7 +75,7 @@ class Session(
         self.root_device = root_device
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
-        self._logging_queue = deque(maxlen=32)
+        self._logging_queue = deque(maxlen=256)
         self._logging_handler = LogHandler(self._logging_queue, LogSource.SYSTEM)
         self._status_update_event = Event()
 
