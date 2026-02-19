@@ -1,0 +1,60 @@
+# Example Jumpstarter exporter configuration with mitmproxy integration.
+#
+# Install to: /etc/jumpstarter/exporters/my-bench.yaml
+#
+# This config exposes:
+#   - DUT Link for power control and storage mux
+#   - Serial console for shell access
+#   - Video capture for screenshot-based assertions
+#   - mitmproxy for HTTP(S) interception and backend mocking
+#
+# Usage:
+#   jmp exporter start my-bench
+#   jmp shell --exporter my-bench
+
+export:
+  # -- Hardware interfaces ---------------------------------------------------
+
+  dutlink:
+    type: jumpstarter_driver_dutlink.driver.Dutlink
+    config: {}
+
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/serial/by-id/usb-FTDI_debug_console-if00-port0"
+      baudrate: 115200
+
+  video:
+    type: jumpstarter_driver_ustreamer.driver.UStreamer
+    config:
+      args:
+        device: "/dev/video0"
+
+  # -- Network proxy / mocking -----------------------------------------------
+
+  proxy:
+    type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
+    config:
+      # Proxy listener (DUT connects here)
+      listen_host: "0.0.0.0"
+      listen_port: 8080
+
+      # Web UI (mitmweb)
+      web_host: "0.0.0.0"
+      web_port: 8081
+
+      # mitmproxy CA and config directory
+      confdir: "/etc/mitmproxy"
+
+      # Recorded traffic flows
+      flow_dir: "/var/log/mitmproxy"
+
+      # Addon scripts directory
+      addon_dir: "/opt/jumpstarter/mitmproxy/addons"
+
+      # Mock endpoint definitions
+      mock_dir: "/opt/jumpstarter/mitmproxy/mock-responses"
+
+      # Skip upstream SSL verification (DUT talks to test infra)
+      ssl_insecure: true
