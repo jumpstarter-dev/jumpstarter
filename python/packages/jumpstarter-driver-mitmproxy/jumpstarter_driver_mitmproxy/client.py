@@ -39,6 +39,7 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from ipaddress import IPv6Address, ip_address
+from pathlib import Path
 from threading import Event
 from typing import Any, Generator
 
@@ -261,10 +262,11 @@ class MitmproxyClient(DriverClient):
         def scenario_load_cmd(scenario_file: str):
             """Load a mock scenario from a YAML or JSON file.
 
-            SCENARIO_FILE is a filename relative to the mocks directory
-            on the exporter, or an absolute path.
+            SCENARIO_FILE is a path to a scenario file. Relative paths
+            are resolved against the current working directory.
             """
-            click.echo(self.load_mock_scenario(scenario_file))
+            resolved = str(Path(scenario_file).resolve())
+            click.echo(self.load_mock_scenario(resolved))
 
         # ── Flow file commands ─────────────────────────────────
 
@@ -355,7 +357,8 @@ class MitmproxyClient(DriverClient):
                     url = f"http://[{host}]:{actual_port}"
                 else:
                     url = f"http://{host}:{actual_port}"
-                click.echo(f"mitmweb UI available at: {url}")
+                auth_url = f"{url}/?token=jumpstarter"
+                click.echo(f"mitmweb UI available at: {auth_url}")
                 click.echo("Press Ctrl+C to stop forwarding.")
                 Event().wait()
 

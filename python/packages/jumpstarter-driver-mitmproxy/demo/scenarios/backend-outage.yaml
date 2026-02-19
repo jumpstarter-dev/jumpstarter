@@ -1,0 +1,18 @@
+# Backend-outage scenario: all API endpoints return 503.
+# Demonstrates failure simulation — the DUT sees "Service Unavailable"
+# for every request while this scenario is active.
+
+endpoints:
+  GET /api/v1/*:
+    status: 503
+    body:
+      error: Service Unavailable
+      message: "Backend is down for maintenance"
+      source: mock
+
+  POST /api/v1/*:
+    status: 503
+    body:
+      error: Service Unavailable
+      message: "Backend is down for maintenance"
+      source: mock
