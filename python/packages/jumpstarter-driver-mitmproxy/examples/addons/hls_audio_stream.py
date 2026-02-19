@@ -83,6 +83,9 @@ class Handler:
     def handle(self, flow: http.HTTPFlow, config: dict) -> bool:
         """Route HLS requests to the appropriate handler."""
         path = flow.request.path
+        files_dir = Path(
+            config.get("files_dir", "/opt/jumpstarter/mitmproxy/mock-files")
+        )
         segments_dir = config.get("segments_dir", "audio/segments")
         segment_duration = config.get("segment_duration_s", 6)
         channels = config.get("channels", {
@@ -113,8 +116,8 @@ class Handler:
             )
         elif resource.startswith("seg_") and resource.endswith(".aac"):
             self._serve_segment(
-                flow, channel_id, resource, segments_dir,
-                segment_duration,
+                flow, channel_id, resource, files_dir,
+                segments_dir, segment_duration,
             )
         else:
             return False
@@ -200,6 +203,7 @@ class Handler:
         flow: http.HTTPFlow,
         channel_id: str,
         resource: str,
+        files_dir: Path,
         segments_dir: str,
         segment_duration: float,
     ):
@@ -209,8 +213,6 @@ class Handler:
         generated silence if no file exists. This lets you test with
         real audio when available, but always have a working stream.
         """
-        # Try to load a real segment from disk
-        files_dir = Path("/opt/jumpstarter/mitmproxy/mock-files")
 
         # Try channel-specific segment
         seg_path = files_dir / segments_dir / f"{channel_id}_{resource}"

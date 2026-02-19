@@ -108,18 +108,19 @@ class MitmproxyClient(DriverClient):
     # ── Lifecycle ───────────────────────────────────────────────
 
     def start(self, mode: str = "mock", web_ui: bool = False,
-              replay_file: str = "") -> str:
+              replay_file: str = "", port: int = 0) -> str:
         """Start the proxy in the specified mode.
 
         Args:
             mode: One of "mock", "passthrough", "record", "replay".
             web_ui: Launch mitmweb (browser UI) instead of mitmdump.
             replay_file: Flow file path for replay mode.
+            port: Override the listen port (0 uses the configured default).
 
         Returns:
             Status message with connection details.
         """
-        return self.call("start", mode, web_ui, replay_file)
+        return self.call("start", mode, web_ui, replay_file, port)
 
     def stop(self) -> str:
         """Stop the proxy process.
@@ -130,18 +131,19 @@ class MitmproxyClient(DriverClient):
         return self.call("stop")
 
     def restart(self, mode: str = "", web_ui: bool = False,
-                replay_file: str = "") -> str:
+                replay_file: str = "", port: int = 0) -> str:
         """Restart the proxy (optionally with new config).
 
         Args:
             mode: New mode (empty string keeps current mode).
             web_ui: Enable/disable web UI.
             replay_file: Flow file for replay mode.
+            port: Override the listen port (0 keeps current port).
 
         Returns:
             Status message from start().
         """
-        return self.call("restart", mode, web_ui, replay_file)
+        return self.call("restart", mode, web_ui, replay_file, port)
 
     # ── Status ──────────────────────────────────────────────────
 
@@ -182,9 +184,11 @@ class MitmproxyClient(DriverClient):
         )
         @click.option("--web-ui", "-w", is_flag=True, help="Enable mitmweb browser UI.")
         @click.option("--replay-file", default="", help="Flow file for replay mode.")
-        def start_cmd(mode: str, web_ui: bool, replay_file: str):
+        @click.option("--port", "-p", default=0, type=int,
+                       help="Override listen port (default: from exporter config).")
+        def start_cmd(mode: str, web_ui: bool, replay_file: str, port: int):
             """Start the mitmproxy process."""
-            click.echo(self.start(mode=mode, web_ui=web_ui, replay_file=replay_file))
+            click.echo(self.start(mode=mode, web_ui=web_ui, replay_file=replay_file, port=port))
 
         @base.command("stop")
         def stop_cmd():
@@ -200,9 +204,12 @@ class MitmproxyClient(DriverClient):
         )
         @click.option("--web-ui", "-w", is_flag=True, help="Enable mitmweb browser UI.")
         @click.option("--replay-file", default="", help="Flow file for replay mode.")
-        def restart_cmd(mode: str | None, web_ui: bool, replay_file: str):
+        @click.option("--port", "-p", default=0, type=int,
+                       help="Override listen port (default: keeps current port).")
+        def restart_cmd(mode: str | None, web_ui: bool, replay_file: str, port: int):
             """Stop and restart the mitmproxy process."""
-            click.echo(self.restart(mode=mode or "", web_ui=web_ui, replay_file=replay_file))
+            click.echo(self.restart(mode=mode or "", web_ui=web_ui,
+                                    replay_file=replay_file, port=port))
 
         # ── Status command ─────────────────────────────────────
 
@@ -262,11 +269,21 @@ class MitmproxyClient(DriverClient):
         def scenario_load_cmd(scenario_file: str):
             """Load a mock scenario from a YAML or JSON file.
 
-            SCENARIO_FILE is a path to a scenario file. Relative paths
-            are resolved against the current working directory.
+            SCENARIO_FILE is a path to a local scenario file. The file
+            is read on the client and uploaded to the exporter.
             """
-            resolved = str(Path(scenario_file).resolve())
-            click.echo(self.load_mock_scenario(resolved))
+            local_path = Path(scenario_file)
+            if not local_path.exists():
+                click.echo(f"File not found: {local_path}")
+                return
+            try:
+                content = local_path.read_text()
+            except OSError as e:
+                click.echo(f"Error reading file: {e}")
+                return
+            click.echo(
+                self.load_mock_scenario_content(local_path.name, content)
+            )
 
         # ── Flow file commands ─────────────────────────────────
 
@@ -360,7 +377,14 @@ class MitmproxyClient(DriverClient):
                 auth_url = f"{url}/?token=jumpstarter"
                 click.echo(f"mitmweb UI available at: {auth_url}")
                 click.echo("Press Ctrl+C to stop forwarding.")
-                Event().wait()
+                try:
+                    # Loop with a timeout so the main thread can
+                    # receive and handle KeyboardInterrupt promptly.
+                    stop = Event()
+                    while not stop.wait(timeout=0.5):
+                        pass
+                except KeyboardInterrupt:
+                    pass
 
         # ── CA certificate ─────────────────────────────────────
 
@@ -372,7 +396,6 @@ class MitmproxyClient(DriverClient):
             OUTPUT is the local file path to write the PEM certificate to.
             Defaults to mitmproxy-ca-cert.pem in the current directory.
             """
-            from pathlib import Path
 
             pem = self.get_ca_cert()
             out = Path(output)
@@ -583,6 +606,21 @@ class MitmproxyClient(DriverClient):
             Status message with endpoint count.
         """
         return self.call("load_mock_scenario", scenario_file)
+
+    def load_mock_scenario_content(self, filename: str, content: str) -> str:
+        """Upload and load a mock scenario from raw file content.
+
+        Reads a local scenario file on the client side and sends its
+        contents to the exporter for parsing and activation.
+
+        Args:
+            filename: Original filename (extension determines parser).
+            content: Raw file content as a string.
+
+        Returns:
+            Status message with endpoint count.
+        """
+        return self.call("load_mock_scenario_content", filename, content)
 
     # ── V2: Conditional mocks ──────────────────────────────────
 
