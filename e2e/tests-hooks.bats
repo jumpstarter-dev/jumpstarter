@@ -408,3 +408,17 @@ SCRIPT
 
   rm -f /tmp/jumpstarter-e2e-hook-script.sh
 }
+
+# ============================================================================
+# Group G: Lease Timeout (no hooks)
+# ============================================================================
+
+@test "hooks G1: no hooks with lease timeout exits cleanly" {
+  start_hooks_exporter "exporter-hooks-none.yaml"
+
+  run timeout 60 jmp shell --client test-client-hooks \
+    --selector example.com/board=hooks --duration 10s -- sleep 30
+
+  # Should not produce an error (exit code may be non-zero from killed sleep)
+  refute_output --partial "Error:"
+}
