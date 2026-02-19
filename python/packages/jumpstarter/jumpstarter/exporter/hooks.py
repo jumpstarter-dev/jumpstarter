@@ -225,17 +225,17 @@ class HookExecutor:
         timed_out = False
 
         # Route hook output logs to the client via the session's log stream
-        logger.info("Entering log source context for %s", log_source)
+        logger.debug("Entering log source context for %s", log_source)
         with logging_session.context_log_source(__name__, log_source):
             # Create a PTY pair - this forces line buffering in the subprocess
-            logger.info("Starting hook subprocess...")
-            logger.info("Creating PTY pair...")
+            logger.debug("Starting hook subprocess...")
+            logger.debug("Creating PTY pair...")
             try:
                 parent_fd, child_fd = pty.openpty()
             except Exception as e:
                 logger.error("Failed to create PTY: %s", e, exc_info=True)
                 raise
-            logger.info("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
+            logger.debug("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
 
             pty_state = PtyState()
 
@@ -255,21 +255,21 @@ class HookExecutor:
                     ext = os.path.splitext(script_stripped)[1].lower()
                     if ext == ".py":
                         interpreter = sys.executable
-                        logger.info("Auto-detected Python script: %s (interpreter: %s)", script_stripped, interpreter)
+                        logger.debug("Auto-detected Python script: %s (interpreter: %s)", script_stripped, interpreter)
                     else:
                         interpreter = "/bin/sh"
-                        logger.info("Detected script file: %s (interpreter: %s)", script_stripped, interpreter)
+                        logger.debug("Detected script file: %s (interpreter: %s)", script_stripped, interpreter)
                 elif interpreter is None:
                     interpreter = "/bin/sh"
 
                 if is_file:
-                    logger.info("Executing script file: %s (interpreter: %s)", script_stripped, interpreter)
+                    logger.debug("Executing script file: %s (interpreter: %s)", script_stripped, interpreter)
                     cmd = [interpreter, script_stripped]
                 else:
-                    logger.info("Executing inline script (interpreter: %s)", interpreter)
+                    logger.debug("Executing inline script (interpreter: %s)", interpreter)
                     cmd = [interpreter, "-c", command]
 
-                logger.info("Spawning subprocess with command: %s", cmd)
+                logger.debug("Spawning subprocess with command: %s", cmd)
                 try:
                     process = subprocess.Popen(
                         cmd,
@@ -283,7 +283,7 @@ class HookExecutor:
                 except Exception as e:
                     logger.error("Failed to spawn subprocess: %s", e, exc_info=True)
                     raise
-                logger.info("Subprocess spawned with PID %d", process.pid)
+                logger.debug("Subprocess spawned with PID %d", process.pid)
                 # Close child fd in parent process - subprocess has it now
                 os.close(child_fd)
                 pty_state.child_fd_open = False
@@ -399,7 +399,7 @@ class HookExecutor:
 
                 # Use move_on_after for timeout
                 returncode: int | None = None
-                logger.info("Starting PTY output reader and process waiter (timeout=%d)", timeout)
+                logger.debug("Starting PTY output reader and process waiter (timeout=%d)", timeout)
 
                 # Yield to event loop to ensure other tasks can progress
                 # This helps prevent race conditions in task scheduling
@@ -408,11 +408,11 @@ class HookExecutor:
                 with anyio.move_on_after(timeout) as cancel_scope:
                     # Run output reading and process waiting concurrently
                     async with anyio.create_task_group() as tg:
-                        logger.info("Task group created, starting tasks...")
+                        logger.debug("Task group created, starting tasks...")
                         tg.start_soon(read_pty_output)
-                        logger.info("Waiting for subprocess to complete...")
+                        logger.debug("Waiting for subprocess to complete...")
                         returncode = await wait_for_process()
-                        logger.info("Subprocess completed with code: %s", returncode)
+                        logger.debug("Subprocess completed with code: %s", returncode)
                         # Give a brief moment for any final output to be read
                         await anyio.sleep(0.2)
                         # Signal the read task to stop via the dedicated stop flag.
@@ -447,7 +447,7 @@ class HookExecutor:
                                 pass
 
                 elif returncode == 0:
-                    logger.info("Hook executed successfully")
+                    logger.debug("Hook executed successfully")
                     return None
                 else:
                     error_msg = f"Hook failed with exit code {returncode}"

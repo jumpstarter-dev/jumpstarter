@@ -228,7 +228,8 @@ class TestHookExecutor:
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("SHFILE_OK" in call for call in info_calls)
-            assert any("Executing script file" in call for call in info_calls)
+            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+            assert any("Executing script file" in call for call in debug_calls)
 
     async def test_script_file_py_autodetects_python(self, lease_scope, tmp_path) -> None:
         """Test that a .py file auto-detects the exporter's Python as interpreter."""
@@ -250,10 +251,11 @@ class TestHookExecutor:
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("PYFILE_OK" in call for call in info_calls)
-            # Verify it auto-detected Python
-            assert any("Auto-detected Python script" in call for call in info_calls)
+            # Verify it auto-detected Python (now logged at DEBUG level)
+            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+            assert any("Auto-detected Python script" in call for call in debug_calls)
             # Verify it used the exporter's own Python interpreter
-            assert any(sys.executable in call for call in info_calls)
+            assert any(sys.executable in call for call in debug_calls)
 
     async def test_script_file_py_exec_override(self, lease_scope, tmp_path) -> None:
         """Test that explicit exec overrides .py auto-detection."""
@@ -275,7 +277,8 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("OVERRIDE_OK" in call for call in info_calls)
             # Should NOT say "Auto-detected" since exec was explicitly set
-            assert not any("Auto-detected" in call for call in info_calls)
+            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+            assert not any("Auto-detected" in call for call in debug_calls)
 
     async def test_noninteractive_environment(self, lease_scope) -> None:
         """Test that hooks receive noninteractive environment variables.
