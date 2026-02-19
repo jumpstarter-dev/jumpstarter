@@ -110,6 +110,12 @@ class RideSXDriver(Driver):
                 raise RuntimeError("decompression failed: output file is missing or empty")
 
             self.logger.info(f"successfully decompressed {compressed_file.name}")
+
+            # Register with Opendal for automatic cleanup on close
+            storage = self.children["storage"]
+            relative_path = decompressed_file.relative_to(Path(self.storage_dir))
+            storage.register_path(str(relative_path))
+
             return decompressed_file
 
         except subprocess.CalledProcessError as e:
