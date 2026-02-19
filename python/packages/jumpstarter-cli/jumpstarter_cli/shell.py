@@ -163,12 +163,9 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                             # If connection lost during AFTER_LEASE_HOOK, the hook
                                             # likely failed and the exporter shut down (onFailure=exit)
                                             if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
-                                                reason = "afterLease hook failed"
+                                                reason = "afterLease hook failed (connection lost)"
                                             else:
-                                                reason = (
-                                                    monitor.status_message
-                                                    or "Connection to exporter lost during afterLease hook"
-                                                )
+                                                reason = "Connection to exporter lost during afterLease hook"
                                             raise ExporterOfflineError(reason)
                                         elif result is None:
                                             logger.warning("Timeout waiting for afterLease hook to complete")
