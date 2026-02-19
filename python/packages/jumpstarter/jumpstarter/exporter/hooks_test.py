@@ -1,5 +1,5 @@
 from contextlib import nullcontext
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -310,6 +310,45 @@ class TestHookExecutor:
             assert any("TERM=dumb" in call for call in info_calls)
             assert any("DEBIAN_FRONTEND=noninteractive" in call for call in info_calls)
             assert any("GIT_TERMINAL_PROMPT=0" in call for call in info_calls)
+
+    async def test_before_lease_hook_exit_sets_skip_flag(self, lease_scope) -> None:
+        """Test that beforeLease hook failure with on_failure=exit sets skip_after_lease_hook flag."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        mock_report_status = AsyncMock()
+        mock_shutdown = MagicMock()
+
+        assert lease_scope.skip_after_lease_hook is False
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert lease_scope.skip_after_lease_hook is True
+        mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
+
+    async def test_before_lease_hook_endlease_does_not_set_skip_flag(self, lease_scope) -> None:
+        """Test that beforeLease hook failure with on_failure=endLease does NOT set skip_after_lease_hook."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        mock_report_status = AsyncMock()
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert lease_scope.skip_after_lease_hook is False
 
     async def test_exec_default_is_none(self) -> None:
         """Test that the default exec is None (auto-detect)."""
