@@ -38,6 +38,33 @@ from urllib.parse import parse_qs, urlparse
 
 from mitmproxy import ctx, http
 
+# ── Helpers ──────────────────────────────────────────────────
+
+
+def _resolve_dotted_path(obj, path: str):
+    """Traverse a dotted path into a nested dict/list structure.
+
+    Returns None if any segment is missing or the structure
+    doesn't support indexing.
+
+    Examples::
+
+        _resolve_dotted_path({"a": {"b": 1}}, "a.b")  # → 1
+        _resolve_dotted_path({"x": [10, 20]}, "x.1")  # → 20
+    """
+    for part in path.split("."):
+        if isinstance(obj, dict):
+            obj = obj.get(part)
+        elif isinstance(obj, list):
+            try:
+                obj = obj[int(part)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+    return obj
+
+
 # ── Template engine (lightweight, no dependencies) ──────────
 
 
@@ -55,39 +82,60 @@ class TemplateEngine:
         {{env(VAR_NAME)}}              → Environment variable
         {{request_path}}               → The matched request path
         {{request_header(name)}}       → Value of a request header
+        {{request_body}}               → Raw request body text
+        {{request_body_json(key)}}     → JSON field from request body
+        {{request_query(param)}}       → Query parameter value
+        {{request_path_segment(idx)}}  → URL path segment by index
+        {{state(key)}}                 → Value from shared state store
+        {{state(key, default)}}        → Value with fallback default
     """
 
     _counters: dict[str, int] = defaultdict(int)
     _pattern = re.compile(r"\{\{(.+?)\}\}")
 
     @classmethod
-    def render(cls, template: Any, flow: http.HTTPFlow | None = None) -> Any:
+    def render(
+        cls,
+        template: Any,
+        flow: http.HTTPFlow | None = None,
+        state: dict | None = None,
+    ) -> Any:
         """Recursively render template expressions in a value."""
         if isinstance(template, str):
-            return cls._render_string(template, flow)
+            return cls._render_string(template, flow, state)
         elif isinstance(template, dict):
-            return {k: cls.render(v, flow) for k, v in template.items()}
+            return {k: cls.render(v, flow, state) for k, v in template.items()}
         elif isinstance(template, list):
-            return [cls.render(v, flow) for v in template]
+            return [cls.render(v, flow, state) for v in template]
         return template
 
     @classmethod
-    def _render_string(cls, s: str, flow: http.HTTPFlow | None) -> Any:
+    def _render_string(
+        cls,
+        s: str,
+        flow: http.HTTPFlow | None,
+        state: dict | None = None,
+    ) -> Any:
         """Render a single string, resolving all {{...}} expressions."""
         # If the entire string is one expression, return native type
         match = cls._pattern.fullmatch(s.strip())
         if match:
-            return cls._evaluate(match.group(1).strip(), flow)
+            return cls._evaluate(match.group(1).strip(), flow, state)
 
         # Otherwise, substitute within the string
         def replacer(m):
-            result = cls._evaluate(m.group(1).strip(), flow)
+            result = cls._evaluate(m.group(1).strip(), flow, state)
             return str(result)
 
         return cls._pattern.sub(replacer, s)
 
     @classmethod
-    def _evaluate(cls, expr: str, flow: http.HTTPFlow | None) -> Any:
+    def _evaluate(
+        cls,
+        expr: str,
+        flow: http.HTTPFlow | None,
+        state: dict | None = None,
+    ) -> Any:
         """Evaluate a single template expression."""
         if expr == "now_iso":
             return datetime.now(timezone.utc).isoformat()
@@ -118,6 +166,32 @@ class TemplateEngine:
         elif expr.startswith("request_header(") and flow:
             args = cls._parse_args(expr)
             return flow.request.headers.get(args[0], "")
+        elif expr == "request_body" and flow:
+            return flow.request.get_text() or ""
+        elif expr.startswith("request_body_json(") and flow:
+            args = cls._parse_args(expr)
+            try:
+                body_obj = json.loads(flow.request.get_text() or "{}")
+            except json.JSONDecodeError:
+                return None
+            return _resolve_dotted_path(body_obj, args[0])
+        elif expr.startswith("request_query(") and flow:
+            args = cls._parse_args(expr)
+            return flow.request.query.get(args[0], "")
+        elif expr.startswith("request_path_segment(") and flow:
+            args = cls._parse_args(expr)
+            segments = [s for s in flow.request.path.split("/") if s]
+            try:
+                return segments[int(args[0])]
+            except (IndexError, ValueError):
+                return ""
+        elif expr.startswith("state("):
+            args = cls._parse_args(expr)
+            key = args[0]
+            default = args[1] if len(args) > 1 else None
+            if state is not None:
+                return state.get(key, default)
+            return default
         else:
             ctx.log.warn(f"Unknown template expression: {{{{{expr}}}}}")
             return f"{{{{{expr}}}}}"
@@ -293,6 +367,9 @@ class MitmproxyMockAddon:
         self._config_path = Path(self.MOCK_DIR) / "endpoints.json"
         self._sequence_state: dict[str, int] = defaultdict(int)
         self._capture_client = CaptureClient(CAPTURE_SOCKET)
+        self._state: dict = {}
+        self._state_mtime: float = 0
+        self._state_path = Path(self.MOCK_DIR) / "state.json"
         self._load_config()
 
     # ── Config loading ──────────────────────────────────────
@@ -341,6 +418,23 @@ class MitmproxyMockAddon:
 
         except Exception as e:
             ctx.log.error(f"Failed to load config: {e}")
+
+    def _load_state(self):
+        """Load or reload shared state if the file has changed on disk."""
+        if not self._state_path.exists():
+            return
+
+        try:
+            mtime = self._state_path.stat().st_mtime
+            if mtime <= self._state_mtime:
+                return  # No changes
+
+            with open(self._state_path) as f:
+                self._state = json.load(f)
+
+            self._state_mtime = mtime
+        except Exception as e:
+            ctx.log.error(f"Failed to load state: {e}")
 
     # ── Request matching ────────────────────────────────────
 
@@ -446,14 +540,32 @@ class MitmproxyMockAddon:
             if body_contains not in body:
                 return False
 
+        # Body JSON field check (exact match on parsed JSON fields)
+        body_json_match = match_rules.get("body_json", {})
+        if body_json_match:
+            try:
+                body_obj = json.loads(flow.request.get_text() or "{}")
+            except json.JSONDecodeError:
+                return False
+            for field_path, expected in body_json_match.items():
+                actual = _resolve_dotted_path(body_obj, field_path)
+                if actual != expected:
+                    return False
+
         return True
 
     # ── Response generation ─────────────────────────────────
 
     def request(self, flow: http.HTTPFlow):
         """Main request hook: find and apply mock responses."""
+        self._load_state()
+
+        # Strip query string for endpoint key matching; query params
+        # remain available in flow for _matches_conditions.
+        path = flow.request.path.split("?")[0]
+
         result = self._find_endpoint(
-            flow.request.method, flow.request.path, flow,
+            flow.request.method, path, flow,
         )
 
         if result is None:
@@ -464,6 +576,11 @@ class MitmproxyMockAddon:
         # Delegate to custom addon
         if "addon" in endpoint:
             self._handle_addon(flow, endpoint)
+            return
+
+        # Handle conditional rules (multiple response variants)
+        if "rules" in endpoint:
+            self._handle_rules(flow, key, endpoint)
             return
 
         # Handle response sequences (stateful)
@@ -508,7 +625,7 @@ class MitmproxyMockAddon:
                 return
         elif "body_template" in endpoint:
             rendered = TemplateEngine.render(
-                endpoint["body_template"], flow,
+                endpoint["body_template"], flow, self._state,
             )
             body = json.dumps(rendered).encode()
         elif "body" in endpoint:
@@ -555,6 +672,30 @@ class MitmproxyMockAddon:
         # Past the end of the sequence: use last entry
         self._send_response(flow, sequence[-1])
         self._sequence_state[key] += 1
+
+    def _handle_rules(
+        self, flow: http.HTTPFlow, key: str, endpoint: dict,
+    ):
+        """Handle conditional mock rules.
+
+        Evaluates rules in order. First rule whose ``match`` conditions
+        are satisfied wins. A rule with no ``match`` key is a default
+        fallback.
+        """
+        rules = endpoint["rules"]
+
+        for rule in rules:
+            if self._matches_conditions(rule, flow):
+                if "sequence" in rule:
+                    self._handle_sequence(flow, key, rule)
+                else:
+                    self._send_response(flow, rule)
+                return
+
+        # No rule matched — passthrough
+        ctx.log.info(
+            f"No conditional rule matched for {key}, passing through"
+        )
 
     def _handle_addon(self, flow: http.HTTPFlow, endpoint: dict):
         """Delegate request handling to a custom addon script."""
