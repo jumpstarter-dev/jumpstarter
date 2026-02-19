@@ -160,6 +160,7 @@ class StatusMonitor:
                 self._connection_lost = False
                 new_status = ExporterStatus.from_proto(response.status)
                 self._current_status = new_status
+                self._status_message = response.message or ""
                 self._status_version = response.status_version
                 # Check if we're already at target
                 if new_status == target:
@@ -242,6 +243,7 @@ class StatusMonitor:
                 self._connection_lost = False
                 new_status = ExporterStatus.from_proto(response.status)
                 self._current_status = new_status
+                self._status_message = response.message or ""
                 self._status_version = response.status_version
                 # Check if we're already at target
                 if new_status in targets:

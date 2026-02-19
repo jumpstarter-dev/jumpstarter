@@ -148,6 +148,24 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 and not cancel_scope.cancel_called
                                 and not monitor._get_status_unsupported
                             ):
+                                # Quick probe to catch exporter restarts the slow-poll loop
+                                # (5s interval in LEASE_READY) may not have detected yet.
+                                if not monitor.connection_lost:
+                                    try:
+                                        probe_status = await client.get_status_async()
+                                        if probe_status is not None and probe_status not in (
+                                            ExporterStatus.LEASE_READY,
+                                            ExporterStatus.AFTER_LEASE_HOOK,
+                                        ):
+                                            logger.debug(
+                                                "Exporter in unexpected state (%s), skipping afterLease hook",
+                                                probe_status,
+                                            )
+                                            monitor._connection_lost = True
+                                    except Exception:
+                                        logger.debug("Connection probe failed, marking connection as lost")
+                                        monitor._connection_lost = True
+
                                 if monitor.connection_lost:
                                     logger.debug("Connection already lost, skipping afterLease hook")
                                 else:
