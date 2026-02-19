@@ -228,6 +228,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             )
                     except TimeoutError:
                         logger.warning("Timeout while deleting lease %s during cleanup", self.name)
+                    except Exception:
+                        logger.debug("Error during lease cleanup for %s (likely already expired)", self.name)
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
@@ -304,12 +306,28 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 else:
                     raise ConnectionError("Socket not ready at %s" % path) from e
 
+    def _notify_lease_ending(self, remaining: timedelta):
+        """Log lease status and invoke the ending callback if set."""
+        if remaining <= timedelta(0):
+            logger.info("Lease {} ended at {}".format(self.name, datetime.now().astimezone()))
+        if self.lease_ending_callback is not None:
+            self.lease_ending_callback(self, remaining)
+
     @asynccontextmanager
     async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):
         async def _monitor():
             check_interval = 30  # seconds - check periodically for external lease changes
+            end_time = None  # Track across iterations for error recovery
             while True:
-                lease = await self.get()
+                try:
+                    lease = await self.get()
+                except Exception:
+                    # gRPC channel broken — check if lease was expected to have ended
+                    if end_time and datetime.now().astimezone() >= end_time:
+                        self._notify_lease_ending(timedelta(0))
+                    else:
+                        logger.debug("Lease monitor: connection lost unexpectedly")
+                    break
                 if lease.effective_begin_time and lease.effective_duration:
                     if lease.effective_end_time:  # already ended
                         end_time = lease.effective_end_time
@@ -317,10 +335,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         end_time = lease.effective_begin_time + lease.duration
                     remain = end_time - datetime.now().astimezone()
                     if remain < timedelta(0):
-                        # lease already expired, stopping monitor
-                        logger.info("Lease {} ended at {}".format(self.name, end_time))
-                        if self.lease_ending_callback is not None:
-                            self.lease_ending_callback(self, timedelta(0))
+                        self._notify_lease_ending(timedelta(0))
                         break
                     # Log once when entering the threshold window
                     if threshold - timedelta(seconds=check_interval) <= remain < threshold:
@@ -329,9 +344,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                                 self.name, int((remain.total_seconds() + 30) // 60), end_time
                             )
                         )
-                        # Notify callback about approaching expiration
-                        if self.lease_ending_callback is not None:
-                            self.lease_ending_callback(self, remain)
+                        self._notify_lease_ending(remain)
                     await sleep(min(remain.total_seconds(), check_interval))
                 else:
                     await sleep(1)

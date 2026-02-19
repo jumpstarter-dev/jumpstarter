@@ -422,3 +422,23 @@ SCRIPT
   # Should not produce an error (exit code may be non-zero from killed sleep)
   refute_output --partial "Error:"
 }
+
+@test "hooks G2: lease timeout during slow beforeLease hook exits cleanly" {
+  start_hooks_exporter "exporter-hooks-slow-before.yaml"
+
+  # Lease (5s) expires before hook (8s sleep) completes
+  run timeout 60 jmp shell --client test-client-hooks \
+    --selector example.com/board=hooks --duration 5s -- sleep 30
+
+  refute_output --partial "Error:"
+}
+
+@test "hooks G3: lease timeout shortly after beforeLease hook exits cleanly" {
+  start_hooks_exporter "exporter-hooks-slow-before.yaml"
+
+  # Hook takes ~8s, lease is 12s, shell runs briefly before lease expires
+  run timeout 60 jmp shell --client test-client-hooks \
+    --selector example.com/board=hooks --duration 12s -- sleep 30
+
+  refute_output --partial "Error:"
+}
