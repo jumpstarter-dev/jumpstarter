@@ -689,8 +689,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                             )
                         else:
                             # No hook configured or no client, transition to AVAILABLE
-                            logger.debug("No afterLease hook or no client on session close, transitioning to AVAILABLE")
-                            await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+                            # Don't report AVAILABLE if the exporter is shutting down
+                            if not self._stop_requested:
+                                logger.debug("No afterLease hook or no client on session close, transitioning to AVAILABLE")
+                                await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+                            else:
+                                logger.debug("Exporter is shutting down, skipping AVAILABLE status report")
                         # Mark hook as done if we didn't run it (no hook configured or no client)
                         if not lease_scope.after_lease_hook_done.is_set():
                             lease_scope.after_lease_hook_done.set()
