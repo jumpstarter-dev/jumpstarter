@@ -756,14 +756,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 else:
                     logger.info("Currently not leased")
 
-                    # After-lease hook when transitioning from leased to unleased
-                    # Signal handle_lease() that the lease has ended so it can exit its loop
-                    # and run the afterLease hook in its finally block (where session is still open)
-                    if (
-                        previous_leased
-                        and self._lease_context
-                        and self._lease_context.has_client()
-                    ):
+                    # Lease ended: signal handle_lease() so it can exit its loop and run
+                    # cleanup/afterLease hook in its finally block (where session is still open)
+                    if previous_leased and self._lease_context:
                         lease_ctx = self._lease_context
                         logger.info("Lease ended, signaling handle_lease to run afterLease hook")
                         lease_ctx.lease_ended.set()
