@@ -137,64 +137,93 @@ class TemplateEngine:
         state: dict | None = None,
     ) -> Any:
         """Evaluate a single template expression."""
+        result = cls._evaluate_builtin(expr)
+        if result is not None:
+            return result
+
+        result = cls._evaluate_flow(expr, flow)
+        if result is not None:
+            return result
+
+        if expr.startswith("state("):
+            return cls._evaluate_state(expr, state)
+
+        ctx.log.warn(f"Unknown template expression: {{{{{expr}}}}}")
+        return f"{{{{{expr}}}}}"
+
+    @classmethod
+    def _evaluate_builtin(cls, expr: str) -> Any | None:
+        """Evaluate built-in expressions (no flow needed)."""
         if expr == "now_iso":
             return datetime.now(timezone.utc).isoformat()
-        elif expr == "now_epoch":
+        if expr == "now_epoch":
             return int(time.time())
-        elif expr == "uuid":
+        if expr == "uuid":
             import uuid
             return str(uuid.uuid4())
-        elif expr.startswith("random_int("):
+        if expr.startswith("random_int("):
             args = cls._parse_args(expr)
             return random.randint(int(args[0]), int(args[1]))
-        elif expr.startswith("random_float("):
+        if expr.startswith("random_float("):
             args = cls._parse_args(expr)
             return round(random.uniform(float(args[0]), float(args[1])), 2)
-        elif expr.startswith("random_choice("):
+        if expr.startswith("random_choice("):
             args = cls._parse_args(expr)
             return random.choice(args)
-        elif expr.startswith("counter("):
+        if expr.startswith("counter("):
             args = cls._parse_args(expr)
             name = args[0]
             cls._counters[name] += 1
             return cls._counters[name]
-        elif expr.startswith("env("):
+        if expr.startswith("env("):
             args = cls._parse_args(expr)
             return os.environ.get(args[0], "")
-        elif expr == "request_path" and flow:
+        return None
+
+    @classmethod
+    def _evaluate_flow(
+        cls, expr: str, flow: http.HTTPFlow | None,
+    ) -> Any | None:
+        """Evaluate flow-dependent expressions."""
+        if flow is None:
+            return None
+        if expr == "request_path":
             return flow.request.path
-        elif expr.startswith("request_header(") and flow:
+        if expr.startswith("request_header("):
             args = cls._parse_args(expr)
             return flow.request.headers.get(args[0], "")
-        elif expr == "request_body" and flow:
+        if expr == "request_body":
             return flow.request.get_text() or ""
-        elif expr.startswith("request_body_json(") and flow:
+        if expr.startswith("request_body_json("):
             args = cls._parse_args(expr)
             try:
                 body_obj = json.loads(flow.request.get_text() or "{}")
             except json.JSONDecodeError:
                 return None
             return _resolve_dotted_path(body_obj, args[0])
-        elif expr.startswith("request_query(") and flow:
+        if expr.startswith("request_query("):
             args = cls._parse_args(expr)
             return flow.request.query.get(args[0], "")
-        elif expr.startswith("request_path_segment(") and flow:
+        if expr.startswith("request_path_segment("):
             args = cls._parse_args(expr)
             segments = [s for s in flow.request.path.split("/") if s]
             try:
                 return segments[int(args[0])]
             except (IndexError, ValueError):
                 return ""
-        elif expr.startswith("state("):
-            args = cls._parse_args(expr)
-            key = args[0]
-            default = args[1] if len(args) > 1 else None
-            if state is not None:
-                return state.get(key, default)
-            return default
-        else:
-            ctx.log.warn(f"Unknown template expression: {{{{{expr}}}}}")
-            return f"{{{{{expr}}}}}"
+        return None
+
+    @classmethod
+    def _evaluate_state(
+        cls, expr: str, state: dict | None,
+    ) -> Any:
+        """Evaluate state() expressions."""
+        args = cls._parse_args(expr)
+        key = args[0]
+        default = args[1] if len(args) > 1 else None
+        if state is not None:
+            return state.get(key, default)
+        return default
 
     @staticmethod
     def _parse_args(expr: str) -> list[str]:
@@ -472,6 +501,27 @@ class MitmproxyMockAddon:
                     candidates.append((priority, key, ep))
 
         # Wildcard matching
+        self._collect_wildcard_matches(
+            method, path, is_websocket, flow, candidates,
+        )
+
+        if not candidates:
+            return None
+
+        # Sort by priority (highest first), then by specificity
+        # (longer patterns = more specific)
+        candidates.sort(key=lambda c: (-c[0], -len(c[1])))
+        return (candidates[0][1], candidates[0][2])
+
+    def _collect_wildcard_matches(
+        self,
+        method: str,
+        path: str,
+        is_websocket: bool,
+        flow: http.HTTPFlow,
+        candidates: list[tuple[int, str, dict]],
+    ):
+        """Collect wildcard endpoint matches into candidates list."""
         for pattern, ep in self.endpoints.items():
             if not pattern.endswith("*"):
                 continue
@@ -493,14 +543,6 @@ class MitmproxyMockAddon:
                     priority = ep.get("priority", 0)
                     candidates.append((priority, pattern, ep))
 
-        if not candidates:
-            return None
-
-        # Sort by priority (highest first), then by specificity
-        # (longer patterns = more specific)
-        candidates.sort(key=lambda c: (-c[0], -len(c[1])))
-        return (candidates[0][1], candidates[0][2])
-
     def _matches_conditions(
         self, endpoint: dict, flow: http.HTTPFlow,
     ) -> bool:
@@ -509,38 +551,57 @@ class MitmproxyMockAddon:
         if not match_rules:
             return True
 
-        # Header presence check
-        required_headers = match_rules.get("headers", {})
-        for header, value in required_headers.items():
+        return (
+            self._check_headers(match_rules, flow)
+            and self._check_headers_absent(match_rules, flow)
+            and self._check_query(match_rules, flow)
+            and self._check_body_contains(match_rules, flow)
+            and self._check_body_json(match_rules, flow)
+        )
+
+    @staticmethod
+    def _check_headers(match_rules: dict, flow: http.HTTPFlow) -> bool:
+        """Check required header presence and values."""
+        for header, value in match_rules.get("headers", {}).items():
             actual = flow.request.headers.get(header)
             if actual is None:
                 return False
             if value and actual != value:
                 return False
+        return True
 
-        # Header absence check
-        absent_headers = match_rules.get("headers_absent", [])
-        for header in absent_headers:
+    @staticmethod
+    def _check_headers_absent(match_rules: dict, flow: http.HTTPFlow) -> bool:
+        """Check that certain headers are absent."""
+        for header in match_rules.get("headers_absent", []):
             if header in flow.request.headers:
                 return False
+        return True
 
-        # Query parameter check
-        required_params = match_rules.get("query", {})
-        for param, value in required_params.items():
+    @staticmethod
+    def _check_query(match_rules: dict, flow: http.HTTPFlow) -> bool:
+        """Check required query parameter presence and values."""
+        for param, value in match_rules.get("query", {}).items():
             actual = flow.request.query.get(param)
             if actual is None:
                 return False
             if value and actual != value:
                 return False
+        return True
 
-        # Body content check (substring)
+    @staticmethod
+    def _check_body_contains(match_rules: dict, flow: http.HTTPFlow) -> bool:
+        """Check that request body contains a substring."""
         body_contains = match_rules.get("body_contains")
         if body_contains:
             body = flow.request.get_text() or ""
             if body_contains not in body:
                 return False
+        return True
 
-        # Body JSON field check (exact match on parsed JSON fields)
+    @staticmethod
+    def _check_body_json(match_rules: dict, flow: http.HTTPFlow) -> bool:
+        """Check exact match on parsed JSON fields in request body."""
         body_json_match = match_rules.get("body_json", {})
         if body_json_match:
             try:
@@ -551,7 +612,6 @@ class MitmproxyMockAddon:
                 actual = _resolve_dotted_path(body_obj, field_path)
                 if actual != expected:
                     return False
-
         return True
 
     # ── Response generation ─────────────────────────────────
