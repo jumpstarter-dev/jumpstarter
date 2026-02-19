@@ -442,3 +442,66 @@ SCRIPT
 
   refute_output --partial "Error:"
 }
+
+# ============================================================================
+# Group H: PR Regression Tests
+# ============================================================================
+
+@test "hooks H1: infrastructure messages not visible in client output" {
+  # Issue A1: Hook infra messages (Starting hook subprocess, Creating PTY, etc.)
+  # are logged at DEBUG level. At default INFO level they should never enter
+  # the LogStream deque, so clients should not see them.
+  start_hooks_exporter "exporter-hooks-before-only.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  # User output from hook should be visible
+  assert_output --partial "BEFORE_HOOK_MARKER: executed"
+  # Infrastructure messages should NOT be visible (they are at DEBUG level)
+  refute_output --partial "Starting hook subprocess"
+  refute_output --partial "Creating PTY"
+  refute_output --partial "Hook executed successfully"
+}
+
+@test "hooks H2: beforeLease fail+exit does NOT run afterLease hook" {
+  # Issue E1: When beforeLease fails with on_failure=exit, skip_after_lease_hook
+  # is set to True, preventing afterLease hook from executing in handle_lease's
+  # finally block.
+  start_hooks_exporter_single "exporter-hooks-before-fail-exit-with-after.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_failure
+  # afterLease hook should NOT have run
+  refute_output --partial "AFTER_SHOULD_NOT_RUN"
+
+  # Exporter should exit
+  wait_for_hooks_exporter_offline
+}
+
+@test "hooks H3: warning displayed when beforeLease hook fails with warn" {
+  # Issue E5: When beforeLease hook fails with on_failure=warn, shell.py detects
+  # HOOK_WARNING_PREFIX in the status message and prints a user-visible warning.
+  start_hooks_exporter "exporter-hooks-before-fail-warn.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should succeed despite warning
+  assert_success
+  # Client should display warning from hook failure
+  assert_output --partial "Warning:"
+}
+
+@test "hooks H4: warning displayed when afterLease hook fails with warn" {
+  # Issue E5: When afterLease hook fails with on_failure=warn, shell.py waits
+  # for AVAILABLE status, detects HOOK_WARNING_PREFIX, and prints the warning.
+  start_hooks_exporter "exporter-hooks-after-fail-warn.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should complete normally
+  assert_success
+  # Client should display afterLease hook warning
+  assert_output --partial "Warning:"
+}
