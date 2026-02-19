@@ -221,7 +221,8 @@ exporter_process_running() {
 
   # Shell should succeed despite hook failure
   assert_success
-  assert_output --partial "HOOK_FAIL_WARN: will fail but continue"
+  # Use short substring to avoid Rich text wrapping breaking the match
+  assert_output --partial "HOOK_FAIL_WARN"
 
   # Exporter should still be available
   wait_for_hooks_exporter
@@ -271,7 +272,8 @@ exporter_process_running() {
 
   # Shell should succeed (afterLease runs after shell completes)
   assert_success
-  assert_output --partial "HOOK_FAIL_WARN: afterLease failed but continuing"
+  # Use short substring to avoid Rich text wrapping breaking the match
+  assert_output --partial "HOOK_FAIL_WARN"
 
   # Exporter should still be available
   wait_for_hooks_exporter

@@ -61,6 +61,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     lease_ending_callback: Callable[[Self, timedelta], None] | None = field(
         default=None, init=False
     )  # Called when lease is ending
+    lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
+
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
@@ -323,6 +325,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     def _notify_lease_ending(self, remaining: timedelta):
         """Log lease status and invoke the ending callback if set."""
         if remaining <= timedelta(0):
+            self.lease_ended = True
             logger.info("Lease {} ended at {}".format(self.name, datetime.now().astimezone()))
         if self.lease_ending_callback is not None:
             self.lease_ending_callback(self, remaining)
