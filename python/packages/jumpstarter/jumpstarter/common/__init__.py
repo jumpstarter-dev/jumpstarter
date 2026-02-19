@@ -9,11 +9,14 @@ from .types import (
     RouterStub,
 )
 
+HOOK_WARNING_PREFIX = "[HOOK_WARNING] "
+
 __all__ = [
     "AsyncChannel",
     "ControllerStub",
     "ExporterStatus",
     "ExporterStub",
+    "HOOK_WARNING_PREFIX",
     "LogSource",
     "Metadata",
     "RouterStub",

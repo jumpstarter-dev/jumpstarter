@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Callable, Literal
 
 import anyio
 
-from jumpstarter.common import ExporterStatus, LogSource
+from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.exporter.session import Session
@@ -118,18 +118,21 @@ class HookExecutor:
         hook_config: HookInstanceConfigV1Alpha1,
         lease_scope: "LeaseContext",
         log_source: LogSource,
-    ) -> None:
+    ) -> str | None:
         """Execute a single hook command.
 
         Args:
             hook_config: Hook configuration including script, timeout, and on_failure
             lease_scope: LeaseScope containing lease metadata and session
             log_source: Log source for hook output
+
+        Returns:
+            Warning message string if hook failed with on_failure='warn', None otherwise
         """
         command = hook_config.script
         if not command or not command.strip():
             logger.debug("Hook command is empty, skipping")
-            return
+            return None
 
         logger.debug("Executing hook: %s", command.strip().split("\n")[0][:100])
 
@@ -159,7 +162,7 @@ class HookExecutor:
         on_failure: Literal["warn", "endLease", "exit"],
         hook_type: Literal["before_lease", "after_lease"],
         cause: Exception | None = None,
-    ) -> None:
+    ) -> str | None:
         """Handle hook failure according to on_failure setting.
 
         Args:
@@ -168,12 +171,15 @@ class HookExecutor:
             hook_type: The type of hook that failed
             cause: Optional exception that caused the failure
 
+        Returns:
+            Warning message string if on_failure is 'warn', None otherwise
+
         Raises:
             HookExecutionError: If on_failure is 'endLease' or 'exit'
         """
         if on_failure == "warn":
             logger.warning("%s (on_failure=warn, continuing)", error_msg)
-            return
+            return error_msg
 
         logger.error("%s (on_failure=%s, raising exception)", error_msg, on_failure)
 
@@ -197,11 +203,14 @@ class HookExecutor:
         hook_env: dict[str, str],
         logging_session: Session,
         hook_type: Literal["before_lease", "after_lease"],
-    ) -> None:
+    ) -> str | None:
         """Execute the hook process with the given environment and logging session.
 
         Uses subprocess with a PTY to force line buffering in the subprocess,
         ensuring logs stream in real-time rather than being block-buffered.
+
+        Returns:
+            Warning message string if hook failed with on_failure='warn', None otherwise
         """
         import pty
         import subprocess
@@ -439,7 +448,7 @@ class HookExecutor:
 
                 elif returncode == 0:
                     logger.info("Hook executed successfully")
-                    return
+                    return None
                 else:
                     error_msg = f"Hook failed with exit code {returncode}"
 
@@ -466,43 +475,50 @@ class HookExecutor:
             # For timeout, create a TimeoutError as the cause
             if timed_out and cause is None:
                 cause = TimeoutError(error_msg)
-            self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
+            return self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
+        return None
 
-    async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> None:
+    async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
         """Execute the before-lease hook.
 
         Args:
             lease_scope: LeaseScope with lease metadata and session
+
+        Returns:
+            Warning message string if hook failed with on_failure='warn', None otherwise
 
         Raises:
             HookExecutionError: If hook fails and on_failure is set to 'endLease' or 'exit'
         """
         if not self.config.before_lease:
             logger.debug("No before-lease hook configured")
-            return
+            return None
 
         logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
-        await self._execute_hook(
+        return await self._execute_hook(
             self.config.before_lease,
             lease_scope,
             LogSource.BEFORE_LEASE_HOOK,
         )
 
-    async def execute_after_lease_hook(self, lease_scope: "LeaseContext") -> None:
+    async def execute_after_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
         """Execute the after-lease hook.
 
         Args:
             lease_scope: LeaseScope with lease metadata and session
+
+        Returns:
+            Warning message string if hook failed with on_failure='warn', None otherwise
 
         Raises:
             HookExecutionError: If hook fails and on_failure is set to 'endLease' or 'exit'
         """
         if not self.config.after_lease:
             logger.debug("No after-lease hook configured")
-            return
+            return None
 
         logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
-        await self._execute_hook(
+        return await self._execute_hook(
             self.config.after_lease,
             lease_scope,
             LogSource.AFTER_LEASE_HOOK,
@@ -556,13 +572,17 @@ class HookExecutor:
 
             # Execute hook with lease scope
             logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
-            await self._execute_hook(
+            warning = await self._execute_hook(
                 self.config.before_lease,
                 lease_scope,
                 LogSource.BEFORE_LEASE_HOOK,
             )
 
-            await report_status(ExporterStatus.LEASE_READY, "Ready for commands")
+            if warning:
+                msg = f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {warning}"
+            else:
+                msg = "Ready for commands"
+            await report_status(ExporterStatus.LEASE_READY, msg)
             logger.info("beforeLease hook completed successfully")
 
         except HookExecutionError as e:
@@ -638,13 +658,17 @@ class HookExecutor:
 
             # Execute hook with lease scope
             logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
-            await self._execute_hook(
+            warning = await self._execute_hook(
                 self.config.after_lease,
                 lease_scope,
                 LogSource.AFTER_LEASE_HOOK,
             )
 
-            await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+            if warning:
+                msg = f"{HOOK_WARNING_PREFIX}afterLease hook warning: {warning}"
+            else:
+                msg = "Available for new lease"
+            await report_status(ExporterStatus.AVAILABLE, msg)
             logger.info("afterLease hook completed successfully")
 
         except HookExecutionError as e:

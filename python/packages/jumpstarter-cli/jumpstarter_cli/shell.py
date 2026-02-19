@@ -18,7 +18,7 @@ from jumpstarter_cli_common.signal import signal_handler
 from .common import opt_acquisition_timeout, opt_duration_partial, opt_selector
 from .login import relogin_client
 from jumpstarter.client.client import client_from_path
-from jumpstarter.common import ExporterStatus
+from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import ConnectionError, ExporterOfflineError
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
@@ -134,6 +134,10 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
 
                             logger.debug("Exporter ready (status: %s), launching shell...", result)
 
+                            if monitor.status_message and monitor.status_message.startswith(HOOK_WARNING_PREFIX):
+                                warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX):]
+                                click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
+
                             # Run the shell command
                             exit_code = await anyio.to_thread.run_sync(_run_shell_only, lease, config, command, path)
 
@@ -185,6 +189,15 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                                 timeout=300.0,
                                             )
                                             if result == ExporterStatus.AVAILABLE:
+                                                if monitor.status_message and monitor.status_message.startswith(
+                                                    HOOK_WARNING_PREFIX
+                                                ):
+                                                    warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX):]
+                                                    click.echo(
+                                                        click.style(
+                                                            f"Warning: {warning_text}", fg="yellow", bold=True
+                                                        )
+                                                    )
                                                 logger.info("afterLease hook completed")
                                             elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
                                                 reason = monitor.status_message or "afterLease hook failed"
