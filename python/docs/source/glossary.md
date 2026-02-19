@@ -40,6 +40,12 @@
   * Storage device (USB Muxer, SD-Wire, etc.)
   * CAN bus interface
 
+* `hook`: A shell script configured on an exporter that runs automatically at
+  lease boundaries. A `beforeLease` hook runs after a lease is assigned but
+  before drivers are available to the client, and an `afterLease` hook runs
+  after the session ends but before the lease is released. Hooks use the `j`
+  CLI to interact with exported devices.
+
 * `lease`: A time-limited reservation of an exporter. A lease is created by a
   client and allows the client to use the exporter resources for a limited time.
   Leases ensure exclusive access to specific devices/exporters.
@@ -90,3 +96,9 @@
 * `message`: Commands sent from driver clients to driver implementations,
   allowing the client to trigger actions or retrieve information from the
   device.
+
+* `exporter status`: The current state of an exporter in its lifecycle. States
+  include `AVAILABLE`, `BEFORE_LEASE_HOOK`, `LEASE_READY`,
+  `AFTER_LEASE_HOOK`, `BEFORE_LEASE_HOOK_FAILED`, `AFTER_LEASE_HOOK_FAILED`,
+  and `OFFLINE`. The status tracks transitions through the lease and hook
+  lifecycle.
