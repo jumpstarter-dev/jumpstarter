@@ -191,6 +191,15 @@ class TestStatus:
         assert driver.is_running() is False
 
 
+class TestConnectWeb:
+    """Test the connect_web exportstream method."""
+
+    def test_connect_web_is_exported(self, driver):
+        """Verify connect_web is registered as an exported stream method."""
+        assert hasattr(driver, "connect_web")
+        assert callable(driver.connect_web)
+
+
 class TestLifecycle:
     """Test start/stop with mocked subprocess."""
 
@@ -308,7 +317,7 @@ class TestAddonGeneration:
 
 
 class TestCACert:
-    """Test CA certificate path reporting."""
+    """Test CA certificate path and content retrieval."""
 
     def test_ca_cert_not_found(self, driver):
         result = driver.get_ca_cert_path()
@@ -320,6 +329,19 @@ class TestCACert:
         cert_path.write_text("FAKE CERT")
         result = driver.get_ca_cert_path()
         assert result == str(cert_path)
+
+    def test_get_ca_cert_not_found(self, driver):
+        result = driver.get_ca_cert()
+        assert result.startswith("Error:")
+        assert "not found" in result
+
+    def test_get_ca_cert_returns_contents(self, driver, tmp_path):
+        pem_content = "-----BEGIN CERTIFICATE-----\nFAKEDATA\n-----END CERTIFICATE-----\n"
+        cert_path = tmp_path / "confdir" / "mitmproxy-ca-cert.pem"
+        cert_path.parent.mkdir(parents=True, exist_ok=True)
+        cert_path.write_text(pem_content)
+        result = driver.get_ca_cert()
+        assert result == pem_content
 
 
 class TestCaptureManagement:

@@ -38,9 +38,14 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from ipaddress import IPv6Address, ip_address
+from threading import Event
 from typing import Any, Generator
 
+import click
+
 from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
 
 
 class CaptureContext:
@@ -157,6 +162,79 @@ class MitmproxyClient(DriverClient):
         """Get the mitmweb UI URL if available."""
         info = self.status()
         return info.get("web_ui_address")
+
+    # ── CLI (jmp shell) ────────────────────────────────────────
+
+    def cli(self):
+        @driver_click_group(self)
+        def base():
+            """Mitmproxy driver"""
+            pass
+
+        @base.command("web")
+        @click.option("--address", default="localhost", show_default=True)
+        @click.option("--port", default=8081, show_default=True, type=int)
+        def web_cmd(address: str, port: int):
+            """Forward mitmweb UI to a local TCP port.
+
+            Opens a local listener that tunnels to the mitmweb web UI
+            running on the exporter host.
+            """
+            from contextlib import asynccontextmanager
+            from functools import partial
+
+            from jumpstarter.client.adapters import blocking
+            from jumpstarter.common import TemporaryTcpListener
+            from jumpstarter.streams.common import forward_stream
+
+            async def handler(client, method, conn):
+                async with conn:
+                    async with client.stream_async(method) as stream:
+                        async with forward_stream(conn, stream):
+                            pass
+
+            @blocking
+            @asynccontextmanager
+            async def portforward(*, client, method, local_host, local_port):
+                async with TemporaryTcpListener(
+                    partial(handler, client, method),
+                    local_host=local_host,
+                    local_port=local_port,
+                ) as addr:
+                    yield addr
+
+            with portforward(
+                client=self,
+                method="connect_web",
+                local_host=address,
+                local_port=port,
+            ) as addr:
+                host = ip_address(addr[0])
+                actual_port = addr[1]
+                if isinstance(host, IPv6Address):
+                    url = f"http://[{host}]:{actual_port}"
+                else:
+                    url = f"http://{host}:{actual_port}"
+                click.echo(f"mitmweb UI available at: {url}")
+                click.echo("Press Ctrl+C to stop forwarding.")
+                Event().wait()
+
+        @base.command("ca-cert")
+        @click.argument("output", default="mitmproxy-ca-cert.pem")
+        def ca_cert_cmd(output: str):
+            """Download the mitmproxy CA certificate to a local file.
+
+            OUTPUT is the local file path to write the PEM certificate to.
+            Defaults to mitmproxy-ca-cert.pem in the current directory.
+            """
+            pem = self.get_ca_cert()
+            from pathlib import Path
+
+            out = Path(output)
+            out.write_text(pem)
+            click.echo(f"CA certificate written to: {out.resolve()}")
+
+        return base
 
     # ── Mock management ─────────────────────────────────────────
 
@@ -495,6 +573,29 @@ class MitmproxyClient(DriverClient):
             Path to the PEM certificate file.
         """
         return self.call("get_ca_cert_path")
+
+    def get_ca_cert(self) -> str:
+        """Read the mitmproxy CA certificate from the exporter.
+
+        Returns the PEM-encoded certificate contents so it can be
+        saved locally or pushed to the DUT.
+
+        Returns:
+            PEM-encoded CA certificate string.
+
+        Raises:
+            RuntimeError: If the certificate has not been generated yet
+                (start the proxy once to create it).
+
+        Example::
+
+            pem = proxy.get_ca_cert()
+            Path("/tmp/mitmproxy-ca.pem").write_text(pem)
+        """
+        result = self.call("get_ca_cert")
+        if result.startswith("Error:"):
+            raise RuntimeError(result)
+        return result
 
     # ── Capture management ──────────────────────────────────────
 
