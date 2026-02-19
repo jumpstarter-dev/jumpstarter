@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def copy_stream(dst: AnyByteStream, src: AnyByteStream):
-    with suppress(BrokenResourceError, ClosedResourceError, asyncio.exceptions.InvalidStateError):
+    try:
         async for v in src:
             await dst.send(v)
         with suppress(
@@ -26,6 +26,10 @@ async def copy_stream(dst: AnyByteStream, src: AnyByteStream):
             OSError,
         ):
             await dst.send_eof()
+    except (BrokenResourceError, ClosedResourceError, asyncio.exceptions.InvalidStateError) as e:
+        logger.warning("stream copy interrupted (%s): %s", type(e).__name__, e)
+        if e.__cause__ is not None:
+            logger.debug("stream copy root cause: %r", e.__cause__)
 
 
 @asynccontextmanager

@@ -76,6 +76,17 @@ class AsyncDriverClient(
             handler = RichHandler()
             self.logger.addHandler(handler)
 
+    def _format_rpc_error(self, method: str, error: AioRpcError) -> str:
+        details = error.details() or "<no details>"
+        message = f"DriverCall '{method}' failed with gRPC {error.code().name}: {details}"
+        try:
+            debug = error.debug_error_string()
+        except Exception:
+            debug = ""
+        if debug:
+            message = f"{message} | debug={debug}"
+        return message
+
     async def call_async(self, method, *args):
         """Make DriverCall by method name and arguments"""
 
@@ -88,17 +99,18 @@ class AsyncDriverClient(
         try:
             response = await self.stub.DriverCall(request)
         except AioRpcError as e:
+            error_message = self._format_rpc_error(method, e)
             match e.code():
                 case StatusCode.NOT_FOUND:
-                    raise DriverMethodNotImplemented(e.details()) from None
+                    raise DriverMethodNotImplemented(error_message) from None
                 case StatusCode.UNIMPLEMENTED:
-                    raise DriverMethodNotImplemented(e.details()) from None
+                    raise DriverMethodNotImplemented(error_message) from None
                 case StatusCode.INVALID_ARGUMENT:
-                    raise DriverInvalidArgument(e.details()) from None
+                    raise DriverInvalidArgument(error_message) from None
                 case StatusCode.UNKNOWN:
-                    raise DriverError(e.details()) from None
+                    raise DriverError(error_message) from None
                 case _:
-                    raise DriverError(e.details()) from e
+                    raise DriverError(error_message) from e
 
         return decode_value(response.result)
 
