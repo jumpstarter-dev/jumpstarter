@@ -84,7 +84,7 @@ class AsyncDriverClient(
         except Exception:
             debug = ""
         if debug:
-            message = f"{message} | debug={debug}"
+            self.logger.debug("gRPC debug for %s: %s", method, debug)
         return message
 
     async def call_async(self, method, *args):

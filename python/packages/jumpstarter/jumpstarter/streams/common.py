@@ -26,7 +26,7 @@ async def copy_stream(dst: AnyByteStream, src: AnyByteStream):
             OSError,
         ):
             await dst.send_eof()
-    except (BrokenResourceError, ClosedResourceError, asyncio.exceptions.InvalidStateError) as e:
+    except (BrokenResourceError, ClosedResourceError, asyncio.InvalidStateError) as e:
         logger.warning("stream copy interrupted (%s): %s", type(e).__name__, e)
         if e.__cause__ is not None:
             logger.debug("stream copy root cause: %r", e.__cause__)

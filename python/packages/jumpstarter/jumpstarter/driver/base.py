@@ -15,7 +15,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import aiohttp
-from anyio import to_thread
+from anyio import BrokenResourceError, to_thread
 from grpc import StatusCode
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from pydantic import TypeAdapter
@@ -227,34 +227,67 @@ class Driver(
         )
 
     @asynccontextmanager
+    async def _resource_from_client_stream(self, resource_uuid: UUID, content_encoding):
+        async with self.resources[resource_uuid] as stream:
+            try:
+                yield compress_stream(stream, content_encoding)
+            finally:
+                del self.resources[resource_uuid]
+
+    @asynccontextmanager
+    async def _resource_from_presigned(self, headers, url: str, method: str, timeout: int):
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+        try:
+            match method:
+                case "GET":
+                    async with aiohttp.request(
+                        method, url, headers=headers, raise_for_status=True, timeout=client_timeout
+                    ) as resp:
+                        async with AiohttpStreamReaderStream(reader=resp.content) as stream:
+                            yield ProgressStream(stream=stream, logging=True)
+                case "PUT":
+                    remote, stream = create_memory_stream()
+                    async with aiohttp.request(
+                        method, url, headers=headers, raise_for_status=True, data=remote, timeout=client_timeout
+                    ) as resp:
+                        async with stream:
+                            yield ProgressStream(stream=stream, logging=True)
+                case _:
+                    # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
+                    raise ValueError("unreachable")
+        except aiohttp.ClientResponseError as e:
+            raise RuntimeError(
+                f"Presigned HTTP {method} request failed: status={e.status}, reason={e.message!r}, url={url}"
+            ) from e
+        except BrokenResourceError as e:
+            cause = e.__cause__
+            if cause is not None:
+                raise RuntimeError(
+                    f"Presigned HTTP {method} stream interrupted for {url}: {type(cause).__name__}: {cause!s}"
+                ) from e
+            raise RuntimeError(f"Presigned HTTP {method} stream interrupted for {url}") from e
+        except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError, aiohttp.ServerTimeoutError) as e:
+            raise RuntimeError(
+                f"Presigned HTTP {method} stream failed (connection/read error) for {url}: "
+                f"{type(e).__name__}: {e!s}"
+            ) from e
+        except TimeoutError as e:
+            raise TimeoutError(f"Presigned HTTP {method} request timed out after {timeout}s for {url}") from e
+        except OSError as e:
+            raise RuntimeError(
+                f"Presigned HTTP {method} stream failed with OS error for {url}: {type(e).__name__}: {e!s}"
+            ) from e
+
+    @asynccontextmanager
     async def resource(self, handle: str, timeout: int = 7200):
         handle = TypeAdapter(Resource).validate_python(handle)
         match handle:
             case ClientStreamResource(uuid=uuid, x_jmp_content_encoding=content_encoding):
-                async with self.resources[uuid] as stream:
-                    try:
-                        yield compress_stream(stream, content_encoding)
-                    finally:
-                        del self.resources[uuid]
+                async with self._resource_from_client_stream(uuid, content_encoding) as stream:
+                    yield stream
             case PresignedRequestResource(headers=headers, url=url, method=method):
-                client_timeout = aiohttp.ClientTimeout(total=timeout)
-                match method:
-                    case "GET":
-                        async with aiohttp.request(
-                            method, url, headers=headers, raise_for_status=True, timeout=client_timeout
-                        ) as resp:
-                            async with AiohttpStreamReaderStream(reader=resp.content) as stream:
-                                yield ProgressStream(stream=stream, logging=True)
-                    case "PUT":
-                        remote, stream = create_memory_stream()
-                        async with aiohttp.request(
-                            method, url, headers=headers, raise_for_status=True, data=remote, timeout=client_timeout
-                        ) as resp:
-                            async with stream:
-                                yield ProgressStream(stream=stream, logging=True)
-                    case _:
-                        # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
-                        raise ValueError("unreachable")
+                async with self._resource_from_presigned(headers, url, method, timeout) as stream:
+                    yield stream
 
     async def __lookup_drivercall(self, name, context, marker):
         """Lookup drivercall by method name
