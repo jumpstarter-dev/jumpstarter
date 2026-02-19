@@ -143,42 +143,46 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # EndSession returns immediately, so we use the status monitor
                             # to wait for hook completion.
                             if lease.name and not cancel_scope.cancel_called and not monitor._get_status_unsupported:
-                                logger.info("Running afterLease hook (Ctrl+C to skip)...")
-                                try:
-                                    # EndSession triggers the afterLease hook asynchronously
-                                    # Wrap in anyio timeout as safety net in case gRPC deadline
-                                    # doesn't fire on a broken channel (e.g. lease timeout)
-                                    success = False
-                                    with anyio.move_on_after(10):
-                                        success = await client.end_session_async()
-                                    if success:
-                                        # Wait for hook to complete using background monitor
-                                        # This allows afterLease logs to be displayed in real-time
-                                        result = await monitor.wait_for_any_of(
-                                            [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
-                                            timeout=30.0,
-                                        )
-                                        if result == ExporterStatus.AVAILABLE:
-                                            logger.info("afterLease hook completed")
-                                        elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                                            reason = monitor.status_message or "afterLease hook failed"
-                                            raise ExporterOfflineError(reason)
-                                        elif monitor.connection_lost:
-                                            # If connection lost during AFTER_LEASE_HOOK, the hook
-                                            # likely failed and the exporter shut down (onFailure=exit)
-                                            if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
-                                                reason = "afterLease hook failed (connection lost)"
-                                            else:
-                                                reason = "Connection to exporter lost during afterLease hook"
-                                            raise ExporterOfflineError(reason)
-                                        elif result is None:
-                                            logger.warning("Timeout waiting for afterLease hook to complete")
-                                    else:
-                                        logger.debug("EndSession not implemented, skipping hook wait")
-                                except ExporterOfflineError:
-                                    raise
-                                except Exception as e:
-                                    logger.warning("Error during afterLease hook: %s", e)
+                                if monitor.connection_lost:
+                                    logger.debug("Connection already lost, skipping afterLease hook")
+                                else:
+                                    logger.info("Running afterLease hook (Ctrl+C to skip)...")
+                                    try:
+                                        # EndSession triggers the afterLease hook asynchronously
+                                        # Wrap in anyio timeout as safety net in case gRPC deadline
+                                        # doesn't fire on a broken channel (e.g. lease timeout)
+                                        success = False
+                                        with anyio.move_on_after(10):
+                                            success = await client.end_session_async()
+                                        if success:
+                                            # Wait for hook to complete using background monitor
+                                            # This allows afterLease logs to be displayed in real-time
+                                            result = await monitor.wait_for_any_of(
+                                                [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+                                                timeout=30.0,
+                                            )
+                                            if result == ExporterStatus.AVAILABLE:
+                                                logger.info("afterLease hook completed")
+                                            elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
+                                                reason = monitor.status_message or "afterLease hook failed"
+                                                raise ExporterOfflineError(reason)
+                                            elif monitor.connection_lost:
+                                                # If connection lost during AFTER_LEASE_HOOK, the hook
+                                                # likely failed and the exporter shut down (onFailure=exit)
+                                                if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
+                                                    reason = "afterLease hook failed (connection lost)"
+                                                    raise ExporterOfflineError(reason)
+                                                # Connection lost but hook wasn't running. This is expected when
+                                                # the lease times out — exporter handles its own cleanup.
+                                                logger.info("Connection lost, skipping afterLease hook wait")
+                                            elif result is None:
+                                                logger.warning("Timeout waiting for afterLease hook to complete")
+                                        else:
+                                            logger.debug("EndSession not implemented, skipping hook wait")
+                                    except ExporterOfflineError:
+                                        raise
+                                    except Exception as e:
+                                        logger.warning("Error during afterLease hook: %s", e)
 
                             return exit_code
 
