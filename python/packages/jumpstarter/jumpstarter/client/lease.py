@@ -173,6 +173,20 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         # lease unsatisfiable
                         if condition_true(result.conditions, "Unsatisfiable"):
                             message = condition_message(result.conditions, "Unsatisfiable")
+                            # Old controllers (pre-918d6341) mark offline-but-matching
+                            # exporters as Unsatisfiable with reason "NoExporter".
+                            # This is transient — retry with a new lease.
+                            if condition_present_and_equal(
+                                result.conditions, "Unsatisfiable", "True", "NoExporter"
+                            ):
+                                spinner.update_status(
+                                    f"Waiting for lease: {message}"
+                                )
+                                for _ in range(5):
+                                    await sleep(1)
+                                    spinner.tick()
+                                await self._create()
+                                continue
                             logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
                             raise LeaseError(f"the lease cannot be satisfied: {message}")
 
