@@ -137,11 +137,17 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # Run the shell command
                             exit_code = await anyio.to_thread.run_sync(_run_shell_only, lease, config, command, path)
 
-                            # Shell has exited. Call EndSession to trigger afterLease hook
-                            # while keeping log stream and status monitor open.
-                            # EndSession returns immediately, so we use the status monitor
-                            # to wait for hook completion.
-                            if lease.name and not cancel_scope.cancel_called and not monitor._get_status_unsupported:
+                            # Shell has exited. For auto-created leases (release=True), call
+                            # EndSession to trigger afterLease hook while keeping log stream
+                            # and status monitor open. For pre-created leases (release=False),
+                            # skip EndSession so the exporter stays in LEASE_READY and the
+                            # user can reconnect later.
+                            if (
+                                lease.release
+                                and lease.name
+                                and not cancel_scope.cancel_called
+                                and not monitor._get_status_unsupported
+                            ):
                                 if monitor.connection_lost:
                                     logger.debug("Connection already lost, skipping afterLease hook")
                                 else:
