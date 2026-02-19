@@ -514,3 +514,291 @@ class TestRequestCapture:
             assert idx_first < idx_second < idx_third
         finally:
             client.stop()
+
+
+class TestConditionalMocks:
+    """Conditional mock rules with real HTTP requests through the proxy."""
+
+    def test_conditional_body_json_match(self, client, proxy_port):
+        """POST with matching JSON body → 200, non-matching → 401."""
+        client.set_mock_conditional("POST", "/api/auth", [
+            {
+                "match": {"body_json": {"username": "admin",
+                                        "password": "secret"}},
+                "status": 200,
+                "body": {"token": "mock-token-001"},
+            },
+            {"status": 401, "body": {"error": "unauthorized"}},
+        ])
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            # Matching credentials → 200
+            resp_ok = requests.post(
+                "http://example.com/api/auth",
+                json={"username": "admin", "password": "secret"},
+                proxies=proxies, timeout=10,
+            )
+            assert resp_ok.status_code == 200
+            assert resp_ok.json()["token"] == "mock-token-001"
+
+            # Wrong credentials → 401 (fallback)
+            resp_fail = requests.post(
+                "http://example.com/api/auth",
+                json={"username": "hacker", "password": "wrong"},
+                proxies=proxies, timeout=10,
+            )
+            assert resp_fail.status_code == 401
+            assert resp_fail.json()["error"] == "unauthorized"
+        finally:
+            client.stop()
+
+    def test_conditional_header_match(self, client, proxy_port):
+        """GET with matching header → 200, without → 401."""
+        client.set_mock_conditional("GET", "/api/data", [
+            {
+                "match": {"headers": {"Authorization": "Bearer tok123"}},
+                "status": 200,
+                "body": {"items": [1, 2, 3]},
+            },
+            {"status": 401, "body": {"error": "unauthorized"}},
+        ])
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            # With correct auth header → 200
+            resp_ok = requests.get(
+                "http://example.com/api/data",
+                headers={"Authorization": "Bearer tok123"},
+                proxies=proxies, timeout=10,
+            )
+            assert resp_ok.status_code == 200
+            assert resp_ok.json()["items"] == [1, 2, 3]
+
+            # Without auth header → 401
+            resp_fail = requests.get(
+                "http://example.com/api/data",
+                proxies=proxies, timeout=10,
+            )
+            assert resp_fail.status_code == 401
+        finally:
+            client.stop()
+
+    def test_conditional_query_match(self, client, proxy_port):
+        """GET with matching query param → 200, without → default."""
+        client.set_mock_conditional("GET", "/api/search", [
+            {
+                "match": {"query": {"q": "hello"}},
+                "status": 200,
+                "body": {"results": ["hello world"]},
+            },
+            {"status": 200, "body": {"results": []}},
+        ])
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            # Matching query param
+            resp_match = requests.get(
+                "http://example.com/api/search?q=hello",
+                proxies=proxies, timeout=10,
+            )
+            assert resp_match.status_code == 200
+            assert resp_match.json()["results"] == ["hello world"]
+
+            # No query param → fallback
+            resp_default = requests.get(
+                "http://example.com/api/search",
+                proxies=proxies, timeout=10,
+            )
+            assert resp_default.status_code == 200
+            assert resp_default.json()["results"] == []
+        finally:
+            client.stop()
+
+    def test_conditional_with_template(self, client, proxy_port):
+        """Rule containing body_template with dynamic expressions."""
+        client.set_mock_conditional("GET", "/api/echo", [
+            {
+                "match": {"headers": {"X-Mode": "dynamic"}},
+                "status": 200,
+                "body_template": {
+                    "path": "{{request_path}}",
+                    "mode": "dynamic",
+                },
+            },
+            {"status": 200, "body": {"mode": "static"}},
+        ])
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            # With dynamic header → template response
+            resp = requests.get(
+                "http://example.com/api/echo",
+                headers={"X-Mode": "dynamic"},
+                proxies=proxies, timeout=10,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["mode"] == "dynamic"
+            assert "/api/echo" in data["path"]
+
+            # Without header → static fallback
+            resp_static = requests.get(
+                "http://example.com/api/echo",
+                proxies=proxies, timeout=10,
+            )
+            assert resp_static.json()["mode"] == "static"
+        finally:
+            client.stop()
+
+
+class TestEnhancedTemplates:
+    """Tests for enhanced template expressions with real HTTP requests."""
+
+    def test_request_body_json_in_template(self, client, proxy_port):
+        """Echo a JSON field from request body via template."""
+        client.set_mock_template(
+            "POST", "/api/echo",
+            template={"echoed_name": "{{request_body_json(name)}}"},
+        )
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            resp = requests.post(
+                "http://example.com/api/echo",
+                json={"name": "Alice", "age": 30},
+                proxies=proxies, timeout=10,
+            )
+            assert resp.status_code == 200
+            assert resp.json()["echoed_name"] == "Alice"
+        finally:
+            client.stop()
+
+    def test_request_query_in_template(self, client, proxy_port):
+        """Echo a query param in the response via template."""
+        client.set_mock_template(
+            "GET", "/api/greet",
+            template={"greeting": "Hello, {{request_query(name)}}!"},
+        )
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            resp = requests.get(
+                "http://example.com/api/greet?name=Bob",
+                proxies=proxies, timeout=10,
+            )
+            assert resp.status_code == 200
+            assert resp.json()["greeting"] == "Hello, Bob!"
+        finally:
+            client.stop()
+
+    def test_state_in_template(self, client, proxy_port):
+        """Set state then read it via {{state(key)}} in template."""
+        client.set_state("current_user", "Alice")
+        client.set_mock_template(
+            "GET", "/api/whoami",
+            template={"user": "{{state(current_user)}}"},
+        )
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            resp = requests.get(
+                "http://example.com/api/whoami",
+                proxies=proxies, timeout=10,
+            )
+            assert resp.status_code == 200
+            assert resp.json()["user"] == "Alice"
+        finally:
+            client.stop()
+
+
+class TestAuthScenario:
+    """Full auth token flow using conditional rules."""
+
+    def test_auth_token_flow(self, client, proxy_port):
+        """Login with credentials → get token → use token for data."""
+        # Auth endpoint: correct creds → token, else 401
+        client.set_mock_conditional("POST", "/api/auth", [
+            {
+                "match": {"body_json": {"username": "admin",
+                                        "password": "secret"}},
+                "status": 200,
+                "body": {"token": "mock-token-001"},
+            },
+            {"status": 401, "body": {"error": "unauthorized"}},
+        ])
+
+        # Data endpoint: valid token → data, else 401
+        client.set_mock_conditional("GET", "/api/data", [
+            {
+                "match": {"headers": {
+                    "Authorization": "Bearer mock-token-001",
+                }},
+                "status": 200,
+                "body": {"items": [1, 2, 3]},
+            },
+            {"status": 401, "body": {"error": "unauthorized"}},
+        ])
+
+        client.start("mock")
+        assert _wait_for_port("127.0.0.1", proxy_port)
+
+        try:
+            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+
+            # Step 1: Login with correct credentials
+            login_resp = requests.post(
+                "http://example.com/api/auth",
+                json={"username": "admin", "password": "secret"},
+                proxies=proxies, timeout=10,
+            )
+            assert login_resp.status_code == 200
+            token = login_resp.json()["token"]
+            assert token == "mock-token-001"
+
+            # Step 2: Access data with token
+            data_resp = requests.get(
+                "http://example.com/api/data",
+                headers={"Authorization": f"Bearer {token}"},
+                proxies=proxies, timeout=10,
+            )
+            assert data_resp.status_code == 200
+            assert data_resp.json()["items"] == [1, 2, 3]
+
+            # Step 3: Access data without token → 401
+            unauth_resp = requests.get(
+                "http://example.com/api/data",
+                proxies=proxies, timeout=10,
+            )
+            assert unauth_resp.status_code == 401
+
+            # Step 4: Login with wrong credentials → 401
+            bad_login = requests.post(
+                "http://example.com/api/auth",
+                json={"username": "hacker", "password": "nope"},
+                proxies=proxies, timeout=10,
+            )
+            assert bad_login.status_code == 401
+        finally:
+            client.stop()

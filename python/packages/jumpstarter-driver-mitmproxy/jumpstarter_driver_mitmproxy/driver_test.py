@@ -380,3 +380,110 @@ class TestCaptureSocket:
         finally:
             sock.close()
             driver.stop()
+
+
+class TestConditionalMocks:
+    """Test conditional mock endpoint operations (no subprocess needed)."""
+
+    def test_set_conditional_creates_config(self, driver, tmp_path):
+        rules = [
+            {
+                "match": {"body_json": {"username": "admin"}},
+                "status": 200,
+                "body": {"token": "abc"},
+            },
+            {"status": 401, "body": {"error": "unauthorized"}},
+        ]
+        result = driver.set_mock_conditional(
+            "POST", "/api/auth", json.dumps(rules),
+        )
+        assert "Conditional mock set" in result
+        assert "2 rule(s)" in result
+
+        config = tmp_path / "mocks" / "endpoints.json"
+        assert config.exists()
+
+        data = json.loads(config.read_text())
+        endpoints = data.get("endpoints", data)
+        assert "POST /api/auth" in endpoints
+        assert "rules" in endpoints["POST /api/auth"]
+        assert len(endpoints["POST /api/auth"]["rules"]) == 2
+
+    def test_set_conditional_invalid_json(self, driver):
+        result = driver.set_mock_conditional(
+            "POST", "/api/auth", "not-valid-json",
+        )
+        assert "Invalid JSON" in result
+
+    def test_set_conditional_empty_rules(self, driver):
+        result = driver.set_mock_conditional(
+            "POST", "/api/auth", "[]",
+        )
+        assert "non-empty" in result
+
+    def test_conditional_and_remove(self, driver):
+        rules = [{"status": 200, "body": {"ok": True}}]
+        driver.set_mock_conditional(
+            "GET", "/api/test", json.dumps(rules),
+        )
+        result = driver.remove_mock("GET", "/api/test")
+        assert "Removed" in result
+
+        mocks = json.loads(driver.list_mocks())
+        assert "GET /api/test" not in mocks
+
+    def test_conditional_listed_in_mocks(self, driver):
+        rules = [
+            {"match": {"headers": {"X-Key": "abc"}},
+             "status": 200, "body": {"ok": True}},
+            {"status": 403, "body": {"error": "forbidden"}},
+        ]
+        driver.set_mock_conditional(
+            "GET", "/api/data", json.dumps(rules),
+        )
+
+        mocks = json.loads(driver.list_mocks())
+        assert "GET /api/data" in mocks
+        assert "rules" in mocks["GET /api/data"]
+
+
+class TestStateStore:
+    """Test shared state store operations (no subprocess needed)."""
+
+    def test_set_and_get_state(self, driver):
+        driver.set_state("token", json.dumps("abc-123"))
+        result = json.loads(driver.get_state("token"))
+        assert result == "abc-123"
+
+    def test_set_state_complex_value(self, driver):
+        driver.set_state("config", json.dumps({"retries": 3, "debug": True}))
+        result = json.loads(driver.get_state("config"))
+        assert result == {"retries": 3, "debug": True}
+
+    def test_get_nonexistent_state(self, driver):
+        result = json.loads(driver.get_state("nonexistent"))
+        assert result is None
+
+    def test_clear_state(self, driver):
+        driver.set_state("a", json.dumps(1))
+        driver.set_state("b", json.dumps(2))
+        result = driver.clear_state()
+        assert "Cleared 2" in result
+
+        assert json.loads(driver.get_state("a")) is None
+        assert json.loads(driver.get_state("b")) is None
+
+    def test_get_all_state(self, driver):
+        driver.set_state("x", json.dumps(10))
+        driver.set_state("y", json.dumps("hello"))
+        all_state = json.loads(driver.get_all_state())
+        assert all_state == {"x": 10, "y": "hello"}
+
+    def test_state_file_written(self, driver, tmp_path):
+        driver.set_state("key", json.dumps("value"))
+
+        state_file = tmp_path / "mocks" / "state.json"
+        assert state_file.exists()
+
+        data = json.loads(state_file.read_text())
+        assert data["key"] == "value"
