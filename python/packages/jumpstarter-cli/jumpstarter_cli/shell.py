@@ -142,11 +142,15 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # while keeping log stream and status monitor open.
                             # EndSession returns immediately, so we use the status monitor
                             # to wait for hook completion.
-                            if lease.name and not cancel_scope.cancel_called:
+                            if lease.name and not cancel_scope.cancel_called and not monitor._get_status_unsupported:
                                 logger.info("Running afterLease hook (Ctrl+C to skip)...")
                                 try:
                                     # EndSession triggers the afterLease hook asynchronously
-                                    success = await client.end_session_async()
+                                    # Wrap in anyio timeout as safety net in case gRPC deadline
+                                    # doesn't fire on a broken channel (e.g. lease timeout)
+                                    success = False
+                                    with anyio.move_on_after(10):
+                                        success = await client.end_session_async()
                                     if success:
                                         # Wait for hook to complete using background monitor
                                         # This allows afterLease logs to be displayed in real-time
