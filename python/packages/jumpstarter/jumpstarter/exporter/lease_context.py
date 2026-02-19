@@ -50,6 +50,7 @@ class LeaseContext:
     client_name: str = field(default="")
     current_status: ExporterStatus = field(default=ExporterStatus.AVAILABLE)
     status_message: str = field(default="")
+    skip_after_lease_hook: bool = False
 
     def __post_init__(self):
         """Validate that required resources are present."""

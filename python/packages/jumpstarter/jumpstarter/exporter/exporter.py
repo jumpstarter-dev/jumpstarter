@@ -487,7 +487,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("Marking afterLease hook as started")
             lease_context.after_lease_hook_started.set()
 
-            if self.hook_executor and lease_context.has_client():
+            if self.hook_executor and lease_context.has_client() and not lease_context.skip_after_lease_hook:
                 logger.debug("Calling run_after_lease_hook")
                 with CancelScope(shield=True):
                     await self.hook_executor.run_after_lease_hook(
@@ -498,7 +498,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     )
                 logger.info("afterLease hook completed via EndSession")
             else:
-                logger.debug("No afterLease hook configured or no client, transitioning to AVAILABLE")
+                if lease_context.skip_after_lease_hook:
+                    logger.info("Skipping afterLease hook: beforeLease hook failed")
+                else:
+                    logger.debug("No afterLease hook configured or no client, transitioning to AVAILABLE")
                 await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
         except Exception as e:
             logger.error("Error running afterLease hook via EndSession: %s", e)
@@ -679,7 +682,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     # Skip if already started via EndSession or lease state transition
                     if not lease_scope.after_lease_hook_started.is_set():
                         lease_scope.after_lease_hook_started.set()
-                        if self.hook_executor and lease_scope.has_client():
+                        if self.hook_executor and lease_scope.has_client() and not lease_scope.skip_after_lease_hook:
                             logger.info("Running afterLease hook on session close")
                             await self.hook_executor.run_after_lease_hook(
                                 lease_scope,
@@ -688,7 +691,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                                 self._request_lease_release,
                             )
                         else:
-                            # No hook configured or no client, transition to AVAILABLE
+                            if lease_scope.skip_after_lease_hook:
+                                logger.info("Skipping afterLease hook: beforeLease hook failed")
+                            # No hook configured, no client, or skip flag set — transition to AVAILABLE
                             # Don't report AVAILABLE if the exporter is shutting down
                             if not self._stop_requested:
                                 logger.debug("No afterLease hook or no client on session close, transitioning to AVAILABLE")

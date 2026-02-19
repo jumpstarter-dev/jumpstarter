@@ -589,6 +589,7 @@ class HookExecutor:
             if e.should_shutdown_exporter():
                 # on_failure='exit' - defer shutdown until client handles the failure
                 logger.error("beforeLease hook failed with on_failure='exit': %s", e)
+                lease_scope.skip_after_lease_hook = True
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
