@@ -227,60 +227,16 @@ class MitmproxyDriver(Driver):
         # Start capture server (before addon generation so socket path is set)
         self._start_capture_server()
 
-        # Select binary: mitmweb for UI, mitmdump for headless
-        binary = "mitmweb" if web_ui else "mitmdump"
-
-        cmd = [
-            binary,
-            "--listen-host", self.listen.host,
-            "--listen-port", str(self.listen.port),
-            "--set", f"confdir={self.directories.conf}",
-            "--quiet",
-        ]
-
-        if web_ui:
-            cmd.extend([
-                "--web-host", self.web.host,
-                "--web-port", str(self.web.port),
-                "--set", "web_open_browser=false",
-                "--set", "web_password=jumpstarter",
-            ])
-
-        if self.ssl_insecure:
-            cmd.extend(["--set", "ssl_insecure=true"])
+        cmd = self._build_base_cmd(web_ui)
 
         # Mode-specific flags
-        if mode == "mock":
-            self._load_startup_mocks()
-            self._write_mock_config()
-            addon_path = Path(self.directories.addons) / "mock_addon.py"
-            if not addon_path.exists():
-                self._generate_default_addon(addon_path)
-            cmd.extend(["-s", str(addon_path)])
-
-        elif mode == "record":
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            flow_file = str(
-                Path(self.directories.flows) / f"capture_{timestamp}.bin"
-            )
-            cmd.extend(["-w", flow_file])
-            self._current_flow_file = flow_file
-
-        elif mode == "replay":
-            # Resolve relative paths against flow_dir
-            replay_path = Path(replay_file)
-            if not replay_path.is_absolute():
-                replay_path = Path(self.directories.flows) / replay_path
-            if not replay_path.exists():
-                self._stop_capture_server()
-                return f"Replay file not found: {replay_path}"
-            cmd.extend([
-                "--server-replay", str(replay_path),
-                "--server-replay-nopop",
-            ])
+        error = self._apply_mode_flags(cmd, mode, replay_file)
+        if error:
+            return error
 
         # passthrough: no extra flags needed
 
+        binary = cmd[0]
         logger.info("Starting %s: %s", binary, " ".join(cmd))
 
         self._process = subprocess.Popen(
@@ -301,6 +257,68 @@ class MitmproxyDriver(Driver):
         self._current_mode = mode
         self._web_ui_enabled = web_ui
 
+        return self._build_start_message(mode, web_ui)
+
+    def _build_base_cmd(self, web_ui: bool) -> list[str]:
+        """Build the base mitmproxy command with common flags."""
+        binary = "mitmweb" if web_ui else "mitmdump"
+        cmd = [
+            binary,
+            "--listen-host", self.listen.host,
+            "--listen-port", str(self.listen.port),
+            "--set", f"confdir={self.directories.conf}",
+            "--quiet",
+        ]
+
+        if web_ui:
+            cmd.extend([
+                "--web-host", self.web.host,
+                "--web-port", str(self.web.port),
+                "--set", "web_open_browser=false",
+                "--set", "web_password=jumpstarter",
+            ])
+
+        if self.ssl_insecure:
+            cmd.extend(["--set", "ssl_insecure=true"])
+
+        return cmd
+
+    def _apply_mode_flags(
+        self, cmd: list[str], mode: str, replay_file: str,
+    ) -> str | None:
+        """Append mode-specific flags to cmd. Returns error string or None."""
+        if mode == "mock":
+            self._load_startup_mocks()
+            self._write_mock_config()
+            addon_path = Path(self.directories.addons) / "mock_addon.py"
+            if not addon_path.exists():
+                self._generate_default_addon(addon_path)
+            cmd.extend(["-s", str(addon_path)])
+
+        elif mode == "record":
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            flow_file = str(
+                Path(self.directories.flows) / f"capture_{timestamp}.bin"
+            )
+            cmd.extend(["-w", flow_file])
+            self._current_flow_file = flow_file
+
+        elif mode == "replay":
+            replay_path = Path(replay_file)
+            if not replay_path.is_absolute():
+                replay_path = Path(self.directories.flows) / replay_path
+            if not replay_path.exists():
+                self._stop_capture_server()
+                return f"Replay file not found: {replay_path}"
+            cmd.extend([
+                "--server-replay", str(replay_path),
+                "--server-replay-nopop",
+            ])
+
+        return None
+
+    def _build_start_message(self, mode: str, web_ui: bool) -> str:
+        """Build the status message after successful startup."""
         msg = (
             f"Started in '{mode}' mode on "
             f"{self.listen.host}:{self.listen.port} "

@@ -242,12 +242,11 @@ class Handler:
         MJPEG server alongside mitmproxy.
         """
         boundary = "frame"
-        frame_interval = 1.0 / fps
         burst_duration_s = 10  # Generate 10 seconds of frames
         num_frames = int(burst_duration_s * fps)
 
         parts = []
-        for i in range(num_frames):
+        for _ in range(num_frames):
             frame = self._get_frame(
                 camera_id, frames_dir, resolution,
             )
