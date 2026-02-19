@@ -11,6 +11,10 @@
 # Usage:
 #   jmp exporter start my-bench
 #   jmp shell --exporter my-bench
+#
+# To forward the mitmweb UI to your local machine during a shell session:
+#   j proxy web                        # defaults to localhost:8081
+#   j proxy web --port 9090            # custom local port
 
 export:
   # -- Hardware interfaces ---------------------------------------------------

@@ -37,13 +37,14 @@ import subprocess
 import tempfile
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, model_validator
 
-from jumpstarter.driver import Driver, export
+from jumpstarter.driver import Driver, export, exportstream
 
 logger = logging.getLogger(__name__)
 
@@ -424,6 +425,18 @@ class MitmproxyDriver(Driver):
             self._process is not None
             and self._process.poll() is None
         )
+
+    @exportstream
+    @asynccontextmanager
+    async def connect_web(self):
+        """Stream a TCP connection to the mitmweb UI."""
+        from anyio import connect_tcp
+
+        async with await connect_tcp(
+            remote_host=self.web.host,
+            remote_port=self.web.port,
+        ) as stream:
+            yield stream
 
     # ── Mock management ─────────────────────────────────────────
 
@@ -894,6 +907,22 @@ class MitmproxyDriver(Driver):
         if cert_path.exists():
             return str(cert_path)
         return f"CA cert not found at {cert_path}. Start proxy once to generate."
+
+    @export
+    def get_ca_cert(self) -> str:
+        """Read and return the mitmproxy CA certificate (PEM).
+
+        Returns:
+            The PEM-encoded CA certificate contents, or an error
+            message starting with ``"Error:"`` if not found.
+        """
+        cert_path = Path(self.directories.conf) / "mitmproxy-ca-cert.pem"
+        if not cert_path.exists():
+            return (
+                f"Error: CA cert not found at {cert_path}. "
+                f"Start proxy once to generate."
+            )
+        return cert_path.read_text()
 
     # ── Capture management ────────────────────────────────────
 
