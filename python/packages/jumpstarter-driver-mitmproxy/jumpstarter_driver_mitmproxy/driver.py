@@ -124,13 +124,13 @@ class MitmproxyDriver(Driver):
 
     # ── Configuration (from exporter YAML) ──────────────────────
 
-    listen: dict = field(default_factory=dict)
+    listen: ListenConfig | dict = field(default_factory=dict)
     """Proxy listener address (host/port). See :class:`ListenConfig`."""
 
-    web: dict = field(default_factory=dict)
+    web: WebConfig | dict = field(default_factory=dict)
     """mitmweb UI address (host/port). See :class:`WebConfig`."""
 
-    directories: dict = field(default_factory=dict)
+    directories: DirectoriesConfig | dict = field(default_factory=dict)
     """Directory layout. See :class:`DirectoriesConfig`."""
 
     ssl_insecure: bool = True
@@ -145,9 +145,12 @@ class MitmproxyDriver(Driver):
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
-        self.listen = ListenConfig.model_validate(self.listen)
-        self.web = WebConfig.model_validate(self.web)
-        self.directories = DirectoriesConfig.model_validate(self.directories)
+        if not isinstance(self.listen, ListenConfig):
+            self.listen = ListenConfig.model_validate(self.listen)
+        if not isinstance(self.web, WebConfig):
+            self.web = WebConfig.model_validate(self.web)
+        if not isinstance(self.directories, DirectoriesConfig):
+            self.directories = DirectoriesConfig.model_validate(self.directories)
 
     # ── Internal state (not from config) ────────────────────────
 
@@ -178,6 +181,9 @@ class MitmproxyDriver(Driver):
         default_factory=threading.Lock, init=False
     )
     _capture_running: bool = field(default=False, init=False)
+    _stderr_thread: threading.Thread | None = field(
+        default=None, init=False, repr=False
+    )
 
     @classmethod
     def client(cls) -> str:
@@ -186,9 +192,21 @@ class MitmproxyDriver(Driver):
 
     # ── Lifecycle ───────────────────────────────────────────────
 
+    def close(self):
+        """Clean up resources when the session ends.
+
+        Called automatically by the Jumpstarter session context manager
+        (e.g., when the shell exits). Ensures the mitmproxy subprocess
+        and capture server are stopped so ports are released.
+        """
+        if self._process is not None and self._process.poll() is None:
+            logger.info("Stopping mitmproxy on session teardown (PID %s)", self._process.pid)
+            self.stop()
+        super().close()
+
     @export
     def start(self, mode: str = "mock", web_ui: bool = False,
-              replay_file: str = "") -> str:
+              replay_file: str = "", port: int = 0) -> str:
         """Start the mitmproxy process.
 
         Args:
@@ -201,10 +219,13 @@ class MitmproxyDriver(Driver):
                 mitmdump (headless CLI).
             replay_file: Path to a flow file (required for replay mode).
                 Can be absolute or relative to ``flow_dir``.
+            port: Override the listen port (0 uses the configured default).
 
         Returns:
             Status message with proxy and (optionally) web UI URLs.
         """
+        if port:
+            self.listen.port = port
         if self._process is not None and self._process.poll() is None:
             return (
                 f"Already running in '{self._current_mode}' mode "
@@ -241,7 +262,7 @@ class MitmproxyDriver(Driver):
 
         self._process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
 
@@ -249,10 +270,33 @@ class MitmproxyDriver(Driver):
         time.sleep(2)
 
         if self._process.poll() is not None:
+            exit_code = self._process.returncode
             stderr = self._process.stderr.read().decode() if self._process.stderr else ""
             self._process = None
             self._stop_capture_server()
-            return f"Failed to start: {stderr[:500]}"
+            # Check if the port is in use (common cause of startup failure)
+            port_hint = ""
+            if self._is_port_in_use(self.listen.host, self.listen.port):
+                port_hint = (
+                    f" (port {self.listen.port} is already in use"
+                    " — is another mitmproxy instance running?)"
+                )
+            elif web_ui and self._is_port_in_use(self.web.host, self.web.port):
+                port_hint = (
+                    f" (web UI port {self.web.port} is already in use"
+                    " — is another mitmproxy instance running?)"
+                )
+            logger.error(
+                "mitmproxy exited during startup (exit code %s)%s: %s",
+                exit_code, port_hint, stderr.strip(),
+            )
+            return f"Failed to start{port_hint}: {stderr[:500]}"
+
+        # Drain stderr in a background thread to prevent pipe buffer deadlock
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr, daemon=True,
+        )
+        self._stderr_thread.start()
 
         self._current_mode = mode
         self._web_ui_enabled = web_ui
@@ -336,6 +380,32 @@ class MitmproxyDriver(Driver):
 
         return msg
 
+    @staticmethod
+    def _is_port_in_use(host: str, port: int) -> bool:
+        """Check whether a TCP port is already bound."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                s.bind((host, port))
+            return False
+        except OSError:
+            return True
+
+    def _drain_stderr(self):
+        """Read and discard stderr from the mitmproxy process.
+
+        Runs in a daemon thread to prevent the pipe buffer from filling
+        up, which would block (deadlock) the subprocess.
+        """
+        proc = self._process
+        if proc is None or proc.stderr is None:
+            return
+        try:
+            for _line in proc.stderr:
+                pass  # discard; prevents pipe buffer from filling
+        except (OSError, ValueError):
+            pass  # pipe closed or process terminated
+
     @export
     def stop(self) -> str:
         """Stop the running mitmproxy process.
@@ -370,6 +440,11 @@ class MitmproxyDriver(Driver):
         prev_mode = self._current_mode
         flow_file = self._current_flow_file
 
+        # Join the stderr drain thread now that the process has exited
+        if self._stderr_thread is not None:
+            self._stderr_thread.join(timeout=5)
+            self._stderr_thread = None
+
         self._process = None
         self._current_mode = "stopped"
         self._web_ui_enabled = False
@@ -387,7 +462,7 @@ class MitmproxyDriver(Driver):
 
     @export
     def restart(self, mode: str = "", web_ui: bool = False,
-                replay_file: str = "") -> str:
+                replay_file: str = "", port: int = 0) -> str:
         """Stop and restart with the given (or previous) configuration.
 
         If mode is empty, restarts with the same mode as before.
@@ -403,7 +478,7 @@ class MitmproxyDriver(Driver):
 
         self.stop()
         time.sleep(1)
-        return self.start(restart_mode, restart_web, replay_file)
+        return self.start(restart_mode, restart_web, replay_file, port)
 
     # ── Status ──────────────────────────────────────────────────
 
@@ -888,6 +963,45 @@ class MitmproxyDriver(Driver):
         return (
             f"Loaded {len(self._mock_endpoints)} endpoint(s) "
             f"from {path.name}"
+        )
+
+    @export
+    def load_mock_scenario_content(self, filename: str, content: str) -> str:
+        """Load a mock scenario from raw file content.
+
+        Used by the client CLI to upload a local scenario file to the
+        exporter. The content is parsed according to the file extension
+        and applied the same way as :meth:`load_mock_scenario`.
+
+        Args:
+            filename: Original filename (used to determine YAML vs JSON
+                parsing from the extension).
+            content: Raw file content as a string.
+
+        Returns:
+            Status message with count of loaded endpoints.
+        """
+        try:
+            if filename.endswith((".yaml", ".yml")):
+                raw = yaml.safe_load(content)
+            else:
+                raw = json.loads(content)
+        except (json.JSONDecodeError, yaml.YAMLError) as e:
+            return f"Failed to parse scenario: {e}"
+
+        if not isinstance(raw, dict):
+            return "Invalid scenario: expected a JSON/YAML object"
+
+        # Handle v2 format (with "endpoints" wrapper) or v1 flat format
+        if "endpoints" in raw:
+            self._mock_endpoints = raw["endpoints"]
+        else:
+            self._mock_endpoints = raw
+
+        self._write_mock_config()
+        return (
+            f"Loaded {len(self._mock_endpoints)} endpoint(s) "
+            f"from {filename}"
         )
 
     # ── Flow file management ────────────────────────────────────

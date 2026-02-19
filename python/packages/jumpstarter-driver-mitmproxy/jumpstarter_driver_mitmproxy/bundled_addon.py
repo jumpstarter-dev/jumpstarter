@@ -22,6 +22,8 @@ The addon hot-reloads config when the file changes on disk.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -79,7 +81,7 @@ class TemplateEngine:
         {{random_choice(a, b, c)}}     → Random selection from list
         {{uuid}}                       → Random UUID v4
         {{counter(name)}}              → Auto-incrementing counter
-        {{env(VAR_NAME)}}              → Environment variable
+        {{env(VAR_NAME)}}              → Environment variable (allowlisted only)
         {{request_path}}               → The matched request path
         {{request_header(name)}}       → Value of a request header
         {{request_body}}               → Raw request body text
@@ -91,6 +93,18 @@ class TemplateEngine:
     """
 
     _counters: dict[str, int] = defaultdict(int)
+
+    # Only these environment variables may be read via {{env(...)}} templates.
+    # This prevents mock configs from leaking secrets such as credentials or
+    # API keys.  Extend this set when new env-driven behaviour is needed.
+    ALLOWED_ENV_VARS: set[str] = {
+        "JUMPSTARTER_ENV",
+        "JUMPSTARTER_DEVICE_ID",
+        "JUMPSTARTER_MOCK_PROFILE",
+        "JUMPSTARTER_REGION",
+        "NODE_ENV",
+        "MOCK_SCENARIO",
+    }
     _pattern = re.compile(r"\{\{(.+?)\}\}")
 
     @classmethod
@@ -177,7 +191,12 @@ class TemplateEngine:
             return cls._counters[name]
         if expr.startswith("env("):
             args = cls._parse_args(expr)
-            return os.environ.get(args[0], "")
+            var_name = args[0]
+            if var_name in cls.ALLOWED_ENV_VARS:
+                ctx.log.warn(f"env() template used: allowed variable '{var_name}'")
+                return os.environ.get(var_name, "")
+            ctx.log.warn(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
+            return ""
         return None
 
     @classmethod
@@ -273,6 +292,12 @@ class AddonRegistry:
             spec = importlib.util.spec_from_file_location(
                 f"hil_addon_{name}", script_path,
             )
+            if spec is None or spec.loader is None:
+                ctx.log.error(
+                    f"Failed to create import spec for addon '{name}' "
+                    f"at {script_path}"
+                )
+                return None
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
@@ -300,6 +325,11 @@ class AddonRegistry:
 # ── Capture client ──────────────────────────────────────────
 
 CAPTURE_SOCKET = "/opt/jumpstarter/mitmproxy/capture.sock"
+CAPTURE_SPOOL_DIR = "/opt/jumpstarter/mitmproxy/capture-spool"
+
+# Response bodies at or below this size are sent inline in capture events.
+# Larger or binary bodies are spooled to disk and only the file path is sent.
+_INLINE_BODY_LIMIT = 256 * 1024  # 256 KB
 
 
 class CaptureClient:
@@ -399,6 +429,9 @@ class MitmproxyMockAddon:
         self._state: dict = {}
         self._state_mtime: float = 0
         self._state_path = Path(self.MOCK_DIR) / "state.json"
+        self._spool_dir = Path(CAPTURE_SPOOL_DIR)
+        self._spool_dir.mkdir(parents=True, exist_ok=True)
+        self._spool_counter = 0
         self._load_config()
 
     # ── Config loading ──────────────────────────────────────
@@ -616,7 +649,7 @@ class MitmproxyMockAddon:
 
     # ── Response generation ─────────────────────────────────
 
-    def request(self, flow: http.HTTPFlow):
+    async def request(self, flow: http.HTTPFlow):
         """Main request hook: find and apply mock responses."""
         self._load_state()
 
@@ -640,18 +673,18 @@ class MitmproxyMockAddon:
 
         # Handle conditional rules (multiple response variants)
         if "rules" in endpoint:
-            self._handle_rules(flow, key, endpoint)
+            await self._handle_rules(flow, key, endpoint)
             return
 
         # Handle response sequences (stateful)
         if "sequence" in endpoint:
-            self._handle_sequence(flow, key, endpoint)
+            await self._handle_sequence(flow, key, endpoint)
             return
 
         # Handle regular response
-        self._send_response(flow, endpoint)
+        await self._send_response(flow, endpoint)
 
-    def _send_response(self, flow: http.HTTPFlow, endpoint: dict):
+    async def _send_response(self, flow: http.HTTPFlow, endpoint: dict):
         """Build and send a mock response from an endpoint definition."""
         status = int(endpoint.get("status", 200))
         content_type = endpoint.get(
@@ -665,7 +698,7 @@ class MitmproxyMockAddon:
             self.config.get("default_latency_ms", 0),
         )
         if latency_ms > 0:
-            time.sleep(latency_ms / 1000.0)
+            await asyncio.sleep(latency_ms / 1000.0)
 
         # Build response headers
         resp_headers = {"Content-Type": content_type}
@@ -707,7 +740,7 @@ class MitmproxyMockAddon:
         flow.response = http.Response.make(status, body, resp_headers)
         flow.metadata["_jmp_mocked"] = True
 
-    def _handle_sequence(
+    async def _handle_sequence(
         self, flow: http.HTTPFlow, key: str, endpoint: dict,
     ):
         """Handle stateful response sequences.
@@ -724,16 +757,16 @@ class MitmproxyMockAddon:
         for step in sequence:
             repeat = step.get("repeat", float("inf"))
             if call_num < position + repeat:
-                self._send_response(flow, step)
+                await self._send_response(flow, step)
                 self._sequence_state[key] += 1
                 return
             position += repeat
 
         # Past the end of the sequence: use last entry
-        self._send_response(flow, sequence[-1])
+        await self._send_response(flow, sequence[-1])
         self._sequence_state[key] += 1
 
-    def _handle_rules(
+    async def _handle_rules(
         self, flow: http.HTTPFlow, key: str, endpoint: dict,
     ):
         """Handle conditional mock rules.
@@ -747,9 +780,9 @@ class MitmproxyMockAddon:
         for rule in rules:
             if self._matches_conditions(rule, flow):
                 if "sequence" in rule:
-                    self._handle_sequence(flow, key, rule)
+                    await self._handle_sequence(flow, key, rule)
                 else:
-                    self._send_response(flow, rule)
+                    await self._send_response(flow, rule)
                 return
 
         # No rule matched — passthrough
@@ -761,6 +794,10 @@ class MitmproxyMockAddon:
         """Delegate request handling to a custom addon script."""
         addon_name = endpoint["addon"]
         addon_config = endpoint.get("addon_config", {})
+
+        # Inject files_dir so addons can locate data files without hardcoding
+        if "files_dir" not in addon_config:
+            addon_config["files_dir"] = str(self.files_dir)
 
         if self.addon_registry is None:
             ctx.log.error("Addon registry not initialized")
