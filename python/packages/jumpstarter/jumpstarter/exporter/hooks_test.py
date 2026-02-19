@@ -259,20 +259,28 @@ class TestHookExecutor:
         """Test that hooks receive noninteractive environment variables.
 
         Verifies TERM=dumb, DEBIAN_FRONTEND=noninteractive, GIT_TERMINAL_PROMPT=0,
-        and that PS1 is not set.
+        and that PS1 is not set in the env dict passed to the subprocess.
+
+        Note: PS1 is verified via _create_hook_env directly because shells
+        started in a PTY may re-set PS1 from init files despite it being
+        removed from the environment.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
                 script=(
                     'echo "TERM=$TERM";'
                     ' echo "DEBIAN_FRONTEND=$DEBIAN_FRONTEND";'
-                    ' echo "GIT_TERMINAL_PROMPT=$GIT_TERMINAL_PROMPT";'
-                    ' echo "PS1=${PS1:-UNSET}"'
+                    ' echo "GIT_TERMINAL_PROMPT=$GIT_TERMINAL_PROMPT"'
                 ),
                 timeout=10,
             ),
         )
         executor = HookExecutor(config=hook_config)
+
+        # Verify PS1 is removed from the env dict (not via subprocess, since
+        # shells in a PTY may re-set PS1 from profile/init files)
+        hook_env = executor._create_hook_env(lease_scope)
+        assert "PS1" not in hook_env
 
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             await executor.execute_before_lease_hook(lease_scope)
@@ -280,7 +288,6 @@ class TestHookExecutor:
             assert any("TERM=dumb" in call for call in info_calls)
             assert any("DEBIAN_FRONTEND=noninteractive" in call for call in info_calls)
             assert any("GIT_TERMINAL_PROMPT=0" in call for call in info_calls)
-            assert any("PS1=UNSET" in call for call in info_calls)
 
     async def test_exec_default_is_none(self) -> None:
         """Test that the default exec is None (auto-detect)."""
