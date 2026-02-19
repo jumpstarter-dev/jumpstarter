@@ -190,10 +190,16 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                                 reason = monitor.status_message or "afterLease hook failed"
                                                 raise ExporterOfflineError(reason)
                                             elif monitor.connection_lost:
-                                                # If connection lost during AFTER_LEASE_HOOK, the hook
-                                                # likely failed and the exporter shut down (onFailure=exit)
-                                                if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
-                                                    reason = "afterLease hook failed (connection lost)"
+                                                # If connection lost during afterLease hook lifecycle
+                                                # (running or failed), the exporter shut down
+                                                if monitor.current_status in (
+                                                    ExporterStatus.AFTER_LEASE_HOOK,
+                                                    ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                                                ):
+                                                    reason = (
+                                                        monitor.status_message
+                                                        or "afterLease hook failed (connection lost)"
+                                                    )
                                                     raise ExporterOfflineError(reason)
                                                 # Connection lost but hook wasn't running. This is expected when
                                                 # the lease times out — exporter handles its own cleanup.
