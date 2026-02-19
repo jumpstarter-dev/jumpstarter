@@ -238,6 +238,19 @@ class Opendal(Driver):
         """Get set of all paths that have been created during this session."""
         return self._created_paths.copy()
 
+    @export
+    @validate_call(validate_return=True)
+    def register_path(self, path: str) -> None:
+        """Register a path for cleanup on close.
+
+        This allows external callers to register files they've created outside
+        of Opendal's normal file operations for automatic cleanup when
+        remove_created_on_close=True.
+
+        Args:
+            path: Path to register (will be normalized)
+        """
+        self._created_paths.add(self._normalize_path(path))
 
     def close(self):
         """Close driver and report what was created."""
