@@ -721,3 +721,146 @@ class TestStatusMonitorStatusMessageUpdate:
 
         assert result == ExporterStatus.AFTER_LEASE_HOOK_FAILED
         assert monitor.status_message == "hook script exited with code 1"
+
+
+class TestStatusMonitorPRIssues:
+    """Regression tests for issues reported during PR review of hooks feature."""
+
+    async def test_unimplemented_assumes_lease_ready_for_compat(self) -> None:
+        """Issue B1: Old exporter without GetStatus should assume LEASE_READY.
+
+        When GetStatus returns UNIMPLEMENTED, the monitor should set
+        _get_status_unsupported=True and current_status=LEASE_READY for
+        backward compatibility with exporters that don't support the status API.
+        """
+        error = create_mock_rpc_error(StatusCode.UNIMPLEMENTED)
+        stub = MockExporterStub([error])
+        monitor = StatusMonitor(stub, poll_interval=0.05)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+            await anyio.sleep(0.1)
+            await monitor.stop()
+
+        assert monitor._get_status_unsupported is True
+        assert monitor.current_status == ExporterStatus.LEASE_READY
+
+    async def test_unimplemented_wait_for_after_hook_returns_promptly(self) -> None:
+        """Issue B2: Old exporter afterLease hook freeze must not happen.
+
+        When GetStatus returns UNIMPLEMENTED, wait_for_any_of should return
+        promptly (within 1 second) rather than hanging for the full timeout.
+        This prevents the afterLease hook freeze with old exporters.
+        """
+        error = create_mock_rpc_error(StatusCode.UNIMPLEMENTED)
+        stub = MockExporterStub([
+            create_status_response(ExporterStatus.AVAILABLE, version=1),
+            error,
+        ])
+        monitor = StatusMonitor(stub, poll_interval=0.05)
+
+        import time
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+
+            start = time.monotonic()
+            # This is the wait that was freezing in the old exporter scenario
+            await monitor.wait_for_any_of(
+                [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+                timeout=5.0,
+            )
+            elapsed = time.monotonic() - start
+
+            await monitor.stop()
+
+        # Should return within 1 second (not freeze for 5s)
+        assert elapsed < 1.0, f"wait_for_any_of took {elapsed:.1f}s, expected < 1.0s"
+
+    async def test_lease_timeout_no_hooks_detects_connection_loss(self) -> None:
+        """Issue C1: Lease timeout with no hooks should detect connection loss promptly.
+
+        When the exporter goes from LEASE_READY to UNAVAILABLE (lease timeout
+        with no hooks), wait_for_any_of should detect the connection loss and
+        return None within 2 seconds.
+        """
+        responses = [
+            create_status_response(ExporterStatus.LEASE_READY, version=1),
+            create_mock_rpc_error(StatusCode.UNAVAILABLE),
+        ]
+        stub = MockExporterStub(responses)
+        monitor = StatusMonitor(stub, poll_interval=0.05)
+
+        import time
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+
+            start = time.monotonic()
+            result = await monitor.wait_for_any_of(
+                [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK],
+                timeout=5.0,
+            )
+            elapsed = time.monotonic() - start
+
+            await monitor.stop()
+
+        assert monitor.connection_lost is True
+        assert result is None
+        assert elapsed < 2.0, f"Connection loss detection took {elapsed:.1f}s, expected < 2.0s"
+
+    async def test_lease_timeout_during_before_hook_detects_connection_loss(self) -> None:
+        """Issue C2: Lease timeout during beforeLease should detect connection loss.
+
+        When the exporter transitions from BEFORE_LEASE_HOOK to UNAVAILABLE
+        (lease timeout at boundary of beforeLease), wait_for_status(LEASE_READY)
+        should return False with connection_lost=True.
+        """
+        responses = [
+            create_status_response(ExporterStatus.BEFORE_LEASE_HOOK, version=1),
+            create_mock_rpc_error(StatusCode.UNAVAILABLE),
+        ]
+        stub = MockExporterStub(responses)
+        monitor = StatusMonitor(stub, poll_interval=0.05)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+
+            result = await monitor.wait_for_status(ExporterStatus.LEASE_READY, timeout=2.0)
+
+            await monitor.stop()
+
+        assert result is False
+        assert monitor.connection_lost is True
+
+    async def test_long_after_hook_survives_deadline_exceeded(self) -> None:
+        """Issue E4: Long afterLease hook should survive DEADLINE_EXCEEDED.
+
+        When the afterLease hook takes a long time, the client may see
+        DEADLINE_EXCEEDED from GetStatus polling. The monitor should continue
+        polling through these transient errors and eventually see AVAILABLE
+        when the hook completes. The 300s timeout fix in shell.py relies on
+        this behavior.
+        """
+        responses = [
+            create_status_response(ExporterStatus.AFTER_LEASE_HOOK, version=1),
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_mock_rpc_error(StatusCode.DEADLINE_EXCEEDED),
+            create_status_response(ExporterStatus.AVAILABLE, version=2),
+        ]
+        stub = MockExporterStub(responses)
+        monitor = StatusMonitor(stub, poll_interval=0.05)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+
+            result = await monitor.wait_for_any_of(
+                [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+                timeout=10.0,
+            )
+
+            await monitor.stop()
+
+        assert result == ExporterStatus.AVAILABLE
+        assert monitor.connection_lost is False
