@@ -10,8 +10,13 @@ from jumpstarter_driver_power.client import PowerClient
 from opendal import Operator
 
 from jumpstarter.client.decorators import driver_click_group
+from jumpstarter.common.exceptions import JumpstarterException
 
 PROMPT = "CMD >> "
+
+
+class RideSXFlashError(JumpstarterException):
+    """User-facing flash operation failure."""
 
 
 @dataclass(kw_only=True)
@@ -42,7 +47,13 @@ class RideSXClient(FlasherClient, CompositeClient):
             else:
                 self.logger.info(f"Uploading {file_path} to storage as {filename}")
 
-            self.storage.write_from_path(filename, path_buf, operator=operator)
+            try:
+                self.storage.write_from_path(filename, path_buf, operator=operator)
+            except Exception as e:
+                raise RideSXFlashError(
+                    f"Failed to transfer '{file_path}' to exporter storage as '{filename}' "
+                    f"(scheme={operator_scheme})"
+                ) from e
         else:
             self.logger.info(f"File {filename} already exists in storage with matching hash, skipping upload")
 
@@ -64,7 +75,12 @@ class RideSXClient(FlasherClient, CompositeClient):
         for partition, file_path in partitions.items():
             self.logger.info(f"Processing {partition} image: {file_path}")
             operator = operators.get(partition)
-            remote_files[partition] = self._upload_file_if_needed(file_path, operator)
+            try:
+                remote_files[partition] = self._upload_file_if_needed(file_path, operator)
+            except Exception as e:
+                raise RideSXFlashError(
+                    f"Failed preparing image for partition '{partition}': {file_path}"
+                ) from e
 
         self.logger.info("Checking for fastboot devices on Exporter...")
         detection_result = self.call("detect_fastboot_device", 5, 2.0)
@@ -112,9 +128,38 @@ class RideSXClient(FlasherClient, CompositeClient):
         try:
             result = operation_func(*args, **kwargs)
             self.logger.info("flash operation completed successfully")
-            return result
-        finally:
+        except Exception as flash_error:
+            # Capture failure details before best-effort power-off cleanup.
+            self.logger.error(
+                "flash error details: type=%s repr=%r args=%r",
+                type(flash_error).__name__,
+                flash_error,
+                getattr(flash_error, "args", ()),
+            )
+
+            wrapped_error = None
+            if not str(flash_error).strip():
+                wrapped_error = RideSXFlashError(
+                    "Flash operation failed with an empty error message "
+                    f"(type={type(flash_error).__name__}, repr={flash_error!r})"
+                )
+
+            try:
+                self._power_off_if_available()
+            except Exception as power_error:
+                self.logger.exception("power-off cleanup failed after flash operation error: %s", power_error)
+
+            if wrapped_error is not None:
+                raise wrapped_error from flash_error
+            raise
+
+        try:
             self._power_off_if_available()
+        except Exception as power_error:
+            # Keep successful flashes successful, but make cleanup failures visible.
+            self.logger.exception("power-off cleanup failed after successful flash operation: %s", power_error)
+
+        return result
 
     def flash(
         self,
