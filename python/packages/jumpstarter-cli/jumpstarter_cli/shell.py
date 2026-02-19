@@ -267,8 +267,14 @@ async def _shell_with_signal_handling(  # noqa: C901
                 if offline_exc:
                     raise offline_exc from None
                 if lease_used is not None:
-                    raise ExporterOfflineError("Connection to exporter lost") from None
-                raise
+                    if lease_used.lease_ended:
+                        # Lease expired naturally (e.g. during beforeLease hook)
+                        # — exit gracefully instead of showing a scary error
+                        pass
+                    else:
+                        raise ExporterOfflineError("Connection to exporter lost") from None
+                else:
+                    raise
             except cancelled_exc_class:
                 # Check if cancellation was due to token expiry
                 token = getattr(config, "token", None)
