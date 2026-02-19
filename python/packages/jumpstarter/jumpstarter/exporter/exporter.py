@@ -366,8 +366,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # or the lease will eventually expire
 
         # Directly signal lease ended so handle_lease can exit.
-        # The controller may have already sent leased=False (which we ignored as
-        # spurious) and won't send another one after our release request.
+        # The controller may not send another leased=False after our release request,
+        # so we signal it ourselves as a fallback.
         if self._lease_context and not self._lease_context.lease_ended.is_set():
             self._lease_context.lease_ended.set()
 
@@ -764,31 +764,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         and self._lease_context
                         and self._lease_context.has_client()
                     ):
-                        # Only process leased→unleased when the lease lifecycle is complete.
-                        # The controller may send spurious leased=False during active sessions
-                        # (observed right after LEASE_READY is reported). Ignore these.
-                        terminal_statuses = {
-                            ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
-                            ExporterStatus.AFTER_LEASE_HOOK_FAILED,
-                            ExporterStatus.AVAILABLE,
-                        }
-                        legitimate = (
-                            self._exporter_status in terminal_statuses
-                            or self._lease_context.end_session_requested.is_set()
-                            or self._lease_context.lease_ended.is_set()
-                            # Non-hook exporters stay in LEASE_READY — this IS a legitimate end
-                            or (not self.hook_executor and self._exporter_status == ExporterStatus.LEASE_READY)
-                        )
-                        if not legitimate:
-                            logger.warning(
-                                "Ignoring spurious leased=False during active session (status: %s)",
-                                self._exporter_status,
-                            )
-                            # Keep previous_leased=True so the next status is processed correctly
-                            self._previous_leased = True
-                            continue
-
-                        # Legitimate termination
                         lease_ctx = self._lease_context
                         logger.info("Lease ended, signaling handle_lease to run afterLease hook")
                         lease_ctx.lease_ended.set()
