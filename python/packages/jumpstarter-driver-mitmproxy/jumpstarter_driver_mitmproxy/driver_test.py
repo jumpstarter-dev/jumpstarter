@@ -22,14 +22,16 @@ from jumpstarter_driver_mitmproxy.driver import MitmproxyDriver
 def driver(tmp_path):
     """Create a MitmproxyDriver with temp directories."""
     d = MitmproxyDriver(
-        listen_host="127.0.0.1",
-        listen_port=18080,
-        web_host="127.0.0.1",
-        web_port=18081,
-        confdir=str(tmp_path / "confdir"),
-        flow_dir=str(tmp_path / "flows"),
-        addon_dir=str(tmp_path / "addons"),
-        mock_dir=str(tmp_path / "mocks"),
+        listen={"host": "127.0.0.1", "port": 18080},
+        web={"host": "127.0.0.1", "port": 18081},
+        directories={
+            "data": str(tmp_path / "data"),
+            "conf": str(tmp_path / "confdir"),
+            "flows": str(tmp_path / "flows"),
+            "addons": str(tmp_path / "addons"),
+            "mocks": str(tmp_path / "mocks"),
+            "files": str(tmp_path / "files"),
+        },
         ssl_insecure=True,
     )
     yield d
@@ -97,6 +99,83 @@ class TestMockManagement:
     def test_load_missing_scenario(self, driver):
         result = driver.load_mock_scenario("nonexistent.json")
         assert "not found" in result
+
+    def test_load_yaml_scenario(self, driver, tmp_path):
+        yaml_content = (
+            "endpoints:\n"
+            "  GET /api/v1/status:\n"
+            "    status: 200\n"
+            "    body:\n"
+            "      id: device-001\n"
+            "      firmware_version: \"2.5.1\"\n"
+        )
+        scenario_file = tmp_path / "mocks" / "test.yaml"
+        scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        scenario_file.write_text(yaml_content)
+
+        result = driver.load_mock_scenario("test.yaml")
+        assert "1 endpoint(s)" in result
+
+        config = tmp_path / "mocks" / "endpoints.json"
+        data = json.loads(config.read_text())
+        ep = data["endpoints"]["GET /api/v1/status"]
+        assert ep["status"] == 200
+        assert ep["body"]["id"] == "device-001"
+        assert ep["body"]["firmware_version"] == "2.5.1"
+
+    def test_load_yml_extension(self, driver, tmp_path):
+        yaml_content = (
+            "endpoints:\n"
+            "  POST /api/v1/data:\n"
+            "    status: 201\n"
+            "    body: {accepted: true}\n"
+        )
+        scenario_file = tmp_path / "mocks" / "test.yml"
+        scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        scenario_file.write_text(yaml_content)
+
+        result = driver.load_mock_scenario("test.yml")
+        assert "1 endpoint(s)" in result
+
+    def test_load_yaml_with_comments(self, driver, tmp_path):
+        yaml_content = (
+            "# This is a comment\n"
+            "endpoints:\n"
+            "  # Auth endpoint\n"
+            "  GET /api/v1/auth:\n"
+            "    status: 200\n"
+            "    body: {token: abc}\n"
+        )
+        scenario_file = tmp_path / "mocks" / "commented.yaml"
+        scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        scenario_file.write_text(yaml_content)
+
+        result = driver.load_mock_scenario("commented.yaml")
+        assert "1 endpoint(s)" in result
+
+    def test_load_invalid_yaml(self, driver, tmp_path):
+        scenario_file = tmp_path / "mocks" / "bad.yaml"
+        scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        scenario_file.write_text("endpoints:\n  - :\n    bad:: [yaml\n")
+
+        result = driver.load_mock_scenario("bad.yaml")
+        assert "Failed to load scenario" in result
+
+    def test_load_json_still_works(self, driver, tmp_path):
+        scenario = {
+            "endpoints": {
+                "GET /api/v1/health": {
+                    "status": 200,
+                    "body": {"ok": True},
+                }
+            }
+        }
+        scenario_file = tmp_path / "mocks" / "compat.json"
+        scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        scenario_file.write_text(json.dumps(scenario))
+
+        result = driver.load_mock_scenario("compat.json")
+        assert "1 endpoint(s)" in result
 
 
 class TestStatus:
@@ -487,3 +566,55 @@ class TestStateStore:
 
         data = json.loads(state_file.read_text())
         assert data["key"] == "value"
+
+
+class TestConfigValidation:
+    """Test Pydantic config validation and defaults."""
+
+    def test_defaults_from_data_dir(self):
+        d = MitmproxyDriver(
+            directories={"data": "/tmp/myproxy"},
+        )
+        try:
+            assert d.directories.data == "/tmp/myproxy"
+            assert d.directories.conf == "/tmp/myproxy/conf"
+            assert d.directories.flows == "/tmp/myproxy/flows"
+            assert d.directories.addons == "/tmp/myproxy/addons"
+            assert d.directories.mocks == "/tmp/myproxy/mock-responses"
+            assert d.directories.files == "/tmp/myproxy/mock-files"
+            assert d.listen.host == "0.0.0.0"
+            assert d.listen.port == 8080
+            assert d.web.host == "0.0.0.0"
+            assert d.web.port == 8081
+        finally:
+            d._stop_capture_server()
+
+    def test_partial_directory_override(self):
+        d = MitmproxyDriver(
+            directories={
+                "data": "/tmp/myproxy",
+                "conf": "/etc/mitmproxy",
+            },
+        )
+        try:
+            assert d.directories.conf == "/etc/mitmproxy"
+            assert d.directories.flows == "/tmp/myproxy/flows"
+        finally:
+            d._stop_capture_server()
+
+    def test_inline_mocks_preloaded(self, tmp_path):
+        inline = {
+            "GET /api/health": {"status": 200, "body": {"ok": True}},
+        }
+        d = MitmproxyDriver(
+            directories={
+                "data": str(tmp_path / "data"),
+                "mocks": str(tmp_path / "mocks"),
+                "addons": str(tmp_path / "addons"),
+            },
+            mocks=inline,
+        )
+        try:
+            assert d.mocks == inline
+        finally:
+            d._stop_capture_server()
