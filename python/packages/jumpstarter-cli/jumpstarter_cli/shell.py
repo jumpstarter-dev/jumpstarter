@@ -113,7 +113,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # Wait for beforeLease hook to complete while logs are streaming
                             # This allows hook output to be displayed in real-time
                             # Uses non-blocking polling instead of streaming for robustness
-                            logger.debug("Waiting for beforeLease hook to complete...")
+                            logger.info("Waiting for beforeLease hook to complete...")
 
                             # Wait for LEASE_READY or hook failure using background monitor
                             result = await monitor.wait_for_any_of(
@@ -125,10 +125,9 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 raise ExporterOfflineError(reason)
                             elif result is None:
                                 if monitor.connection_lost:
-                                    reason = (
-                                        monitor.status_message or "Connection to exporter lost during beforeLease hook"
-                                    )
-                                    raise ExporterOfflineError(reason)
+                                    # Connection lost while waiting for hook — lease expired
+                                    logger.info("Lease expired while waiting for beforeLease hook to complete")
+                                    return 0
                                 else:
                                     reason = monitor.status_message or "Timeout waiting for beforeLease hook"
                                     raise ExporterOfflineError(reason)
