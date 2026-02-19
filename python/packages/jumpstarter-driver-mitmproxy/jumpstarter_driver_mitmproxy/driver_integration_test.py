@@ -75,14 +75,16 @@ def web_port():
 def client(tmp_path, proxy_port, web_port):
     """Create a MitmproxyDriver wrapped in Jumpstarter's local serve harness."""
     instance = MitmproxyDriver(
-        listen_host="127.0.0.1",
-        listen_port=proxy_port,
-        web_host="127.0.0.1",
-        web_port=web_port,
-        confdir=str(tmp_path / "confdir"),
-        flow_dir=str(tmp_path / "flows"),
-        addon_dir=str(tmp_path / "addons"),
-        mock_dir=str(tmp_path / "mocks"),
+        listen={"host": "127.0.0.1", "port": proxy_port},
+        web={"host": "127.0.0.1", "port": web_port},
+        directories={
+            "data": str(tmp_path / "data"),
+            "conf": str(tmp_path / "confdir"),
+            "flows": str(tmp_path / "flows"),
+            "addons": str(tmp_path / "addons"),
+            "mocks": str(tmp_path / "mocks"),
+            "files": str(tmp_path / "files"),
+        },
         ssl_insecure=True,
     )
     with serve(instance) as client:

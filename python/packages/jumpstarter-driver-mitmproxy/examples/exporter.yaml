@@ -37,24 +37,28 @@ export:
     type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
     config:
       # Proxy listener (DUT connects here)
-      listen_host: "0.0.0.0"
-      listen_port: 8080
+      listen:
+        host: "0.0.0.0"
+        port: 8080
 
       # Web UI (mitmweb)
-      web_host: "0.0.0.0"
-      web_port: 8081
+      web:
+        host: "0.0.0.0"
+        port: 8081
 
-      # mitmproxy CA and config directory
-      confdir: "/etc/mitmproxy"
-
-      # Recorded traffic flows
-      flow_dir: "/var/log/mitmproxy"
-
-      # Addon scripts directory
-      addon_dir: "/opt/jumpstarter/mitmproxy/addons"
-
-      # Mock endpoint definitions
-      mock_dir: "/opt/jumpstarter/mitmproxy/mock-responses"
+      # Directory layout (subdirs default to {data}/<name>)
+      directories:
+        data: /opt/jumpstarter/mitmproxy
+        conf: /etc/mitmproxy          # override default {data}/conf
 
       # Skip upstream SSL verification (DUT talks to test infra)
       ssl_insecure: true
+
+      # Auto-load a scenario file on startup (relative to mocks dir)
+      # mock_scenario: happy-path.yaml
+
+      # Inline mock definitions (loaded at startup, overlaid on scenario)
+      # mocks:
+      #   GET /api/v1/health:
+      #     status: 200
+      #     body: {ok: true}

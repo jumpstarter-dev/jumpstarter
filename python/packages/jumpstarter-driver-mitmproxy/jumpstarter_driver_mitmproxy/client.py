@@ -347,13 +347,14 @@ class MitmproxyClient(DriverClient):
         return json.loads(self.call("list_addons"))
 
     def load_mock_scenario(self, scenario_file: str) -> str:
-        """Load a mock scenario from a JSON file on the exporter.
+        """Load a mock scenario from a JSON or YAML file on the exporter.
 
-        Replaces all current mocks.
+        Replaces all current mocks. Files with ``.yaml`` or ``.yml``
+        extensions are parsed as YAML; all others as JSON.
 
         Args:
             scenario_file: Filename (relative to mock_dir) or
-                absolute path.
+                absolute path (.json, .yaml, .yml).
 
         Returns:
             Status message with endpoint count.
@@ -678,11 +679,11 @@ class MitmproxyClient(DriverClient):
         Loads a scenario file on entry and clears all mocks on exit.
 
         Args:
-            scenario_file: Path to scenario JSON file.
+            scenario_file: Path to scenario file (.json, .yaml, .yml).
 
         Example::
 
-            with proxy.mock_scenario("update-available.json"):
+            with proxy.mock_scenario("update-available.yaml"):
                 # all endpoints from the scenario are active
                 test_full_update_flow()
         """

@@ -40,9 +40,54 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
+from pydantic import BaseModel, model_validator
+
 from jumpstarter.driver import Driver, export
 
 logger = logging.getLogger(__name__)
+
+
+class ListenConfig(BaseModel):
+    """Proxy listener address configuration."""
+
+    host: str = "0.0.0.0"
+    port: int = 8080
+
+
+class WebConfig(BaseModel):
+    """mitmweb UI address configuration."""
+
+    host: str = "0.0.0.0"
+    port: int = 8081
+
+
+class DirectoriesConfig(BaseModel):
+    """Directory layout configuration.
+
+    All subdirectories default to ``{data}/<name>`` when left empty.
+    """
+
+    data: str = "/opt/jumpstarter/mitmproxy"
+    conf: str = ""
+    flows: str = ""
+    addons: str = ""
+    mocks: str = ""
+    files: str = ""
+
+    @model_validator(mode="after")
+    def _resolve_defaults(self) -> "DirectoriesConfig":
+        if not self.conf:
+            self.conf = str(Path(self.data) / "conf")
+        if not self.flows:
+            self.flows = str(Path(self.data) / "flows")
+        if not self.addons:
+            self.addons = str(Path(self.data) / "addons")
+        if not self.mocks:
+            self.mocks = str(Path(self.data) / "mock-responses")
+        if not self.files:
+            self.files = str(Path(self.data) / "mock-files")
+        return self
 
 
 @dataclass(kw_only=True)
@@ -62,39 +107,46 @@ class MitmproxyDriver(Driver):
           proxy:
             type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
             config:
-              listen_port: 8080
-              web_port: 8081
-              addon_dir: "/opt/jumpstarter/mitmproxy/addons"
+              listen:
+                port: 8080
+              web:
+                port: 8081
+              directories:
+                data: /opt/jumpstarter/mitmproxy
+              ssl_insecure: true
+              mock_scenario: happy-path.yaml
+              mocks:
+                GET /api/v1/health:
+                  status: 200
+                  body: {ok: true}
     """
 
     # ── Configuration (from exporter YAML) ──────────────────────
 
-    listen_host: str = "0.0.0.0"
-    """Network interface to bind the proxy listener to."""
+    listen: dict = field(default_factory=dict)
+    """Proxy listener address (host/port). See :class:`ListenConfig`."""
 
-    listen_port: int = 8080
-    """Port for the proxy listener (DUT connects here)."""
+    web: dict = field(default_factory=dict)
+    """mitmweb UI address (host/port). See :class:`WebConfig`."""
 
-    web_host: str = "0.0.0.0"
-    """Network interface to bind the mitmweb UI to."""
-
-    web_port: int = 8081
-    """Port for the mitmweb browser UI."""
-
-    confdir: str = "/etc/mitmproxy"
-    """Directory for mitmproxy configuration and CA certificates."""
-
-    flow_dir: str = "/var/log/mitmproxy"
-    """Directory for recorded traffic flow files."""
-
-    addon_dir: str = "/opt/jumpstarter/mitmproxy/addons"
-    """Directory containing mitmproxy addon scripts."""
-
-    mock_dir: str = "/opt/jumpstarter/mitmproxy/mock-responses"
-    """Directory for mock endpoint definition files."""
+    directories: dict = field(default_factory=dict)
+    """Directory layout. See :class:`DirectoriesConfig`."""
 
     ssl_insecure: bool = True
     """Skip upstream SSL certificate verification (useful for dev/test)."""
+
+    mock_scenario: str = ""
+    """Scenario file to auto-load on startup (relative to mocks dir or absolute)."""
+
+    mocks: dict = field(default_factory=dict)
+    """Inline mock endpoint definitions, loaded at startup."""
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+        self.listen = ListenConfig.model_validate(self.listen)
+        self.web = WebConfig.model_validate(self.web)
+        self.directories = DirectoriesConfig.model_validate(self.directories)
 
     # ── Internal state (not from config) ────────────────────────
 
@@ -168,8 +220,8 @@ class MitmproxyDriver(Driver):
             return "Error: replay_file is required for replay mode"
 
         # Ensure directories exist
-        Path(self.flow_dir).mkdir(parents=True, exist_ok=True)
-        Path(self.mock_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.directories.flows).mkdir(parents=True, exist_ok=True)
+        Path(self.directories.mocks).mkdir(parents=True, exist_ok=True)
 
         # Start capture server (before addon generation so socket path is set)
         self._start_capture_server()
@@ -179,16 +231,16 @@ class MitmproxyDriver(Driver):
 
         cmd = [
             binary,
-            "--listen-host", self.listen_host,
-            "--listen-port", str(self.listen_port),
-            "--set", f"confdir={self.confdir}",
+            "--listen-host", self.listen.host,
+            "--listen-port", str(self.listen.port),
+            "--set", f"confdir={self.directories.conf}",
             "--quiet",
         ]
 
         if web_ui:
             cmd.extend([
-                "--web-host", self.web_host,
-                "--web-port", str(self.web_port),
+                "--web-host", self.web.host,
+                "--web-port", str(self.web.port),
                 "--set", "web_open_browser=false",
             ])
 
@@ -197,8 +249,9 @@ class MitmproxyDriver(Driver):
 
         # Mode-specific flags
         if mode == "mock":
+            self._load_startup_mocks()
             self._write_mock_config()
-            addon_path = Path(self.addon_dir) / "mock_addon.py"
+            addon_path = Path(self.directories.addons) / "mock_addon.py"
             if not addon_path.exists():
                 self._generate_default_addon(addon_path)
             cmd.extend(["-s", str(addon_path)])
@@ -206,7 +259,7 @@ class MitmproxyDriver(Driver):
         elif mode == "record":
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             flow_file = str(
-                Path(self.flow_dir) / f"capture_{timestamp}.bin"
+                Path(self.directories.flows) / f"capture_{timestamp}.bin"
             )
             cmd.extend(["-w", flow_file])
             self._current_flow_file = flow_file
@@ -215,7 +268,7 @@ class MitmproxyDriver(Driver):
             # Resolve relative paths against flow_dir
             replay_path = Path(replay_file)
             if not replay_path.is_absolute():
-                replay_path = Path(self.flow_dir) / replay_path
+                replay_path = Path(self.directories.flows) / replay_path
             if not replay_path.exists():
                 self._stop_capture_server()
                 return f"Replay file not found: {replay_path}"
@@ -248,12 +301,12 @@ class MitmproxyDriver(Driver):
 
         msg = (
             f"Started in '{mode}' mode on "
-            f"{self.listen_host}:{self.listen_port} "
+            f"{self.listen.host}:{self.listen.port} "
             f"(PID {self._process.pid})"
         )
 
         if web_ui:
-            msg += f" | Web UI: http://{self.web_host}:{self.web_port}"
+            msg += f" | Web UI: http://{self.web.host}:{self.web.port}"
 
         if mode == "record" and self._current_flow_file:
             msg += f" | Recording to: {self._current_flow_file}"
@@ -347,12 +400,12 @@ class MitmproxyDriver(Driver):
             "mode": self._current_mode,
             "pid": self._process.pid if running else None,
             "proxy_address": (
-                f"{self.listen_host}:{self.listen_port}"
+                f"{self.listen.host}:{self.listen.port}"
                 if running else None
             ),
             "web_ui_enabled": self._web_ui_enabled,
             "web_ui_address": (
-                f"http://{self.web_host}:{self.web_port}"
+                f"http://{self.web.host}:{self.web.port}"
                 if running and self._web_ui_enabled else None
             ),
             "mock_count": len(self._mock_endpoints),
@@ -456,7 +509,7 @@ class MitmproxyDriver(Driver):
         """Mock an endpoint to serve a file from disk.
 
         The file path is relative to the files directory
-        (default: ``mock_dir/../mock-files/``).
+        (default: ``{data}/mock-files/``).
 
         Args:
             method: HTTP method (GET, POST, etc.)
@@ -748,7 +801,7 @@ class MitmproxyDriver(Driver):
         Returns:
             JSON array of addon names (without .py extension).
         """
-        addon_path = Path(self.addon_dir)
+        addon_path = Path(self.directories.addons)
         if not addon_path.exists():
             return json.dumps([])
 
@@ -760,28 +813,33 @@ class MitmproxyDriver(Driver):
 
     @export
     def load_mock_scenario(self, scenario_file: str) -> str:
-        """Load a complete mock scenario from a JSON file.
+        """Load a complete mock scenario from a JSON or YAML file.
 
         Replaces all current mocks with the contents of the file.
+        Files with ``.yaml`` or ``.yml`` extensions are parsed as YAML;
+        all other extensions are parsed as JSON.
 
         Args:
             scenario_file: Filename (relative to mock_dir) or absolute
-                path to a JSON mock definitions file.
+                path to a mock definitions file (.json, .yaml, .yml).
 
         Returns:
             Status message with count of loaded endpoints.
         """
         path = Path(scenario_file)
         if not path.is_absolute():
-            path = Path(self.mock_dir) / path
+            path = Path(self.directories.mocks) / path
 
         if not path.exists():
             return f"Scenario file not found: {path}"
 
         try:
             with open(path) as f:
-                raw = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
+                if path.suffix in (".yaml", ".yml"):
+                    raw = yaml.safe_load(f)
+                else:
+                    raw = json.load(f)
+        except (json.JSONDecodeError, yaml.YAMLError, OSError) as e:
             return f"Failed to load scenario: {e}"
 
         # Handle v2 format (with "endpoints" wrapper) or v1 flat format
@@ -805,7 +863,7 @@ class MitmproxyDriver(Driver):
         Returns:
             JSON array of flow file info (name, size, modified time).
         """
-        flow_path = Path(self.flow_dir)
+        flow_path = Path(self.directories.flows)
         files = []
         for f in sorted(flow_path.glob("*.bin")):
             stat = f.stat()
@@ -832,7 +890,7 @@ class MitmproxyDriver(Driver):
         Returns:
             Absolute path to the CA certificate file.
         """
-        cert_path = Path(self.confdir) / "mitmproxy-ca-cert.pem"
+        cert_path = Path(self.directories.conf) / "mitmproxy-ca-cert.pem"
         if cert_path.exists():
             return str(cert_path)
         return f"CA cert not found at {cert_path}. Start proxy once to generate."
@@ -895,8 +953,8 @@ class MitmproxyDriver(Driver):
     def _start_capture_server(self):
         """Create a Unix domain socket for receiving capture events."""
         # Use a short path to avoid the ~104-char AF_UNIX limit on macOS.
-        # Try mock_dir/../capture.sock first; fall back to a temp file.
-        preferred = str(Path(self.mock_dir).parent / "capture.sock")
+        # Try {data}/capture.sock first; fall back to a temp file.
+        preferred = str(Path(self.directories.data) / "capture.sock")
         if len(preferred) < 100:
             sock_path = preferred
             Path(sock_path).parent.mkdir(parents=True, exist_ok=True)
@@ -1011,18 +1069,41 @@ class MitmproxyDriver(Driver):
 
     # ── Internal helpers ────────────────────────────────────────
 
+    def _load_startup_mocks(self):
+        """Load mock_scenario file and inline mocks at startup.
+
+        The scenario file is loaded first as a base layer, then inline
+        ``mocks`` from the exporter config are overlaid on top (higher
+        priority).
+        """
+        if self.mock_scenario:
+            scenario_path = Path(self.mock_scenario)
+            if not scenario_path.is_absolute():
+                scenario_path = Path(self.directories.mocks) / scenario_path
+            if scenario_path.exists():
+                with open(scenario_path) as f:
+                    if scenario_path.suffix in (".yaml", ".yml"):
+                        raw = yaml.safe_load(f)
+                    else:
+                        raw = json.load(f)
+                if "endpoints" in raw:
+                    self._mock_endpoints = raw["endpoints"]
+                else:
+                    self._mock_endpoints = raw
+
+        if self.mocks:
+            self._mock_endpoints.update(self.mocks)
+
     def _write_mock_config(self):
         """Write mock endpoint definitions to disk in v2 format."""
-        mock_path = Path(self.mock_dir)
+        mock_path = Path(self.directories.mocks)
         mock_path.mkdir(parents=True, exist_ok=True)
         config_file = mock_path / "endpoints.json"
 
-        files_dir = str(Path(self.mock_dir).parent / "mock-files")
-
         v2_config = {
             "config": {
-                "files_dir": files_dir,
-                "addons_dir": self.addon_dir,
+                "files_dir": self.directories.files,
+                "addons_dir": self.directories.addons,
                 "default_latency_ms": 0,
                 "default_content_type": "application/json",
             },
@@ -1039,7 +1120,7 @@ class MitmproxyDriver(Driver):
 
     def _write_state(self):
         """Write shared state store to disk for addon hot-reload."""
-        mock_path = Path(self.mock_dir)
+        mock_path = Path(self.directories.mocks)
         mock_path.mkdir(parents=True, exist_ok=True)
         state_file = mock_path / "state.json"
 
@@ -1070,12 +1151,11 @@ class MitmproxyDriver(Driver):
             content = path.read_text()
             content = content.replace(
                 '/opt/jumpstarter/mitmproxy/mock-responses',
-                self.mock_dir,
+                self.directories.mocks,
             )
             content = content.replace(
                 '/opt/jumpstarter/mitmproxy/capture.sock',
-                self._capture_socket_path
-                or '/opt/jumpstarter/mitmproxy/capture.sock',
+                self._capture_socket_path or '',
             )
             path.write_text(content)
             logger.info("Installed bundled v2 addon: %s", path)
@@ -1085,7 +1165,7 @@ class MitmproxyDriver(Driver):
         addon_code = f'''\
 """
 Auto-generated mitmproxy addon (v2 format) for DUT backend mocking.
-Reads from: {self.mock_dir}/endpoints.json
+Reads from: {self.directories.mocks}/endpoints.json
 Managed by jumpstarter-driver-mitmproxy.
 """
 import json, os, time
@@ -1093,7 +1173,7 @@ from pathlib import Path
 from mitmproxy import http, ctx
 
 class MitmproxyMockAddon:
-    MOCK_DIR = "{self.mock_dir}"
+    MOCK_DIR = "{self.directories.mocks}"
     def __init__(self):
         self.config = {{}}
         self.endpoints = {{}}
