@@ -131,7 +131,7 @@ class TestHookExecutor:
             assert any("Post-lease cleanup completed" in call for call in info_calls)
 
     async def test_hook_timeout_with_warn(self, lease_scope) -> None:
-        """Test that hook succeeds when timeout occurs but on_failure='warn'."""
+        """Test that hook returns warning string when timeout occurs and on_failure='warn'."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="sleep 60", timeout=1, on_failure="warn"),
         )
@@ -139,10 +139,32 @@ class TestHookExecutor:
 
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
+            assert result is not None
+            assert "timed out" in result.lower()
             # Verify WARNING log was created
             warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
             assert any("on_failure=warn, continuing" in call for call in warning_calls)
+
+    async def test_failed_hook_with_warn_returns_warning(self, lease_scope) -> None:
+        """Test that hook with exit 1 and on_failure='warn' returns a warning string."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        result = await executor.execute_before_lease_hook(lease_scope)
+        assert result is not None
+        assert "exit code 1" in result.lower()
+
+    async def test_successful_hook_returns_none(self, lease_scope) -> None:
+        """Test that a successful hook returns None (no warning)."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo 'hello'", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        result = await executor.execute_before_lease_hook(lease_scope)
+        assert result is None
 
     async def test_exec_bash(self, lease_scope) -> None:
         """Test that exec=/bin/bash allows bash-specific syntax.
