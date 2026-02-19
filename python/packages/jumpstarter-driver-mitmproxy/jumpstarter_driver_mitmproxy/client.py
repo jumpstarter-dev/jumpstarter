@@ -165,11 +165,127 @@ class MitmproxyClient(DriverClient):
 
     # ── CLI (jmp shell) ────────────────────────────────────────
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         @driver_click_group(self)
         def base():
             """Mitmproxy driver"""
             pass
+
+        # ── Lifecycle commands ─────────────────────────────────
+
+        @base.command("start")
+        @click.option(
+            "--mode", "-m",
+            type=click.Choice(["mock", "passthrough", "record", "replay"]),
+            default="mock", show_default=True,
+        )
+        @click.option("--web-ui", "-w", is_flag=True, help="Enable mitmweb browser UI.")
+        @click.option("--replay-file", default="", help="Flow file for replay mode.")
+        def start_cmd(mode: str, web_ui: bool, replay_file: str):
+            """Start the mitmproxy process."""
+            click.echo(self.start(mode=mode, web_ui=web_ui, replay_file=replay_file))
+
+        @base.command("stop")
+        def stop_cmd():
+            """Stop the mitmproxy process."""
+            click.echo(self.stop())
+
+        @base.command("restart")
+        @click.option(
+            "--mode", "-m",
+            type=click.Choice(["mock", "passthrough", "record", "replay"]),
+            default=None,
+            help="New mode (keeps current mode if omitted).",
+        )
+        @click.option("--web-ui", "-w", is_flag=True, help="Enable mitmweb browser UI.")
+        @click.option("--replay-file", default="", help="Flow file for replay mode.")
+        def restart_cmd(mode: str | None, web_ui: bool, replay_file: str):
+            """Stop and restart the mitmproxy process."""
+            click.echo(self.restart(mode=mode or "", web_ui=web_ui, replay_file=replay_file))
+
+        # ── Status command ─────────────────────────────────────
+
+        @base.command("status")
+        def status_cmd():
+            """Show proxy status."""
+            info = self.status()
+            running = info.get("running", False)
+            mode = info.get("mode", "unknown")
+            pid = info.get("pid")
+
+            if not running:
+                click.echo("Proxy is not running.")
+                return
+
+            click.echo(f"Proxy is running (PID {pid})")
+            click.echo(f"  Mode:    {mode}")
+            click.echo(f"  Listen:  {info.get('proxy_address')}")
+            if info.get("web_ui_enabled"):
+                click.echo(f"  Web UI:  {info.get('web_ui_address')}")
+            click.echo(f"  Mocks:   {info.get('mock_count', 0)} endpoint(s)")
+            if info.get("flow_file"):
+                click.echo(f"  Flow:    {info.get('flow_file')}")
+
+        # ── Mock management commands ───────────────────────────
+
+        @base.command("list-mocks")
+        def list_mocks_cmd():
+            """List configured mock endpoints."""
+            mocks = self.list_mocks()
+            if not mocks:
+                click.echo("No mocks configured.")
+                return
+            for key, defn in mocks.items():
+                summary = _mock_summary(defn)
+                click.echo(f"  {key}  ->  {summary}")
+
+        @base.command("clear-mocks")
+        def clear_mocks_cmd():
+            """Remove all mock endpoint definitions."""
+            click.echo(self.clear_mocks())
+
+        @base.command("load-scenario")
+        @click.argument("scenario_file")
+        def load_scenario_cmd(scenario_file: str):
+            """Load a mock scenario from a YAML or JSON file.
+
+            SCENARIO_FILE is a filename relative to the mocks directory
+            on the exporter, or an absolute path.
+            """
+            click.echo(self.load_mock_scenario(scenario_file))
+
+        # ── Flow file commands ─────────────────────────────────
+
+        @base.command("list-flows")
+        def list_flows_cmd():
+            """List recorded flow files on the exporter."""
+            files = self.list_flow_files()
+            if not files:
+                click.echo("No flow files found.")
+                return
+            for f in files:
+                size = _human_size(f.get("size_bytes", 0))
+                click.echo(f"  {f['name']}  ({size}, {f.get('modified', '')})")
+
+        # ── Capture commands ───────────────────────────────────
+
+        @base.command("captures")
+        @click.option("--clear", is_flag=True, help="Clear captures after displaying.")
+        def captures_cmd(clear: bool):
+            """Show captured requests."""
+            reqs = self.get_captured_requests()
+            if not reqs:
+                click.echo("No captured requests.")
+            else:
+                click.echo(f"{len(reqs)} captured request(s):")
+                for r in reqs:
+                    status = r.get("response_status", "")
+                    status_str = f" -> {status}" if status else ""
+                    click.echo(f"  {r.get('method')} {r.get('path')}{status_str}")
+            if clear and reqs:
+                click.echo(self.clear_captured_requests())
+
+        # ── Web UI forwarding ──────────────────────────────────
 
         @base.command("web")
         @click.option("--address", default="localhost", show_default=True)
@@ -219,6 +335,8 @@ class MitmproxyClient(DriverClient):
                 click.echo("Press Ctrl+C to stop forwarding.")
                 Event().wait()
 
+        # ── CA certificate ─────────────────────────────────────
+
         @base.command("ca-cert")
         @click.argument("output", default="mitmproxy-ca-cert.pem")
         def ca_cert_cmd(output: str):
@@ -227,9 +345,9 @@ class MitmproxyClient(DriverClient):
             OUTPUT is the local file path to write the PEM certificate to.
             Defaults to mitmproxy-ca-cert.pem in the current directory.
             """
-            pem = self.get_ca_cert()
             from pathlib import Path
 
+            pem = self.get_ca_cert()
             out = Path(output)
             out.write_text(pem)
             click.echo(f"CA certificate written to: {out.resolve()}")
@@ -853,3 +971,35 @@ class MitmproxyClient(DriverClient):
             method, path, 504,
             body={"error": "Gateway Timeout"},
         )
+
+
+# ── CLI helpers ────────────────────────────────────────────────
+
+
+def _mock_summary(defn: dict) -> str:
+    """One-line summary of a mock endpoint definition."""
+    if "rules" in defn:
+        return f"{len(defn['rules'])} rule(s)"
+    if "sequence" in defn:
+        return f"{len(defn['sequence'])} step(s)"
+    if "body_template" in defn:
+        return f"{defn.get('status', 200)} (template)"
+    if "addon" in defn:
+        return f"addon:{defn['addon']}"
+    if "file" in defn:
+        return f"{defn.get('status', 200)} file:{defn['file']}"
+    status = defn.get("status", 200)
+    latency = defn.get("latency_ms")
+    s = str(status)
+    if latency:
+        s += f" (+{latency}ms)"
+    return s
+
+
+def _human_size(nbytes: int) -> str:
+    """Format a byte count as a human-readable string."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if nbytes < 1024:
+            return f"{nbytes:.0f} {unit}" if unit == "B" else f"{nbytes:.1f} {unit}"
+        nbytes /= 1024
+    return f"{nbytes:.1f} TB"
