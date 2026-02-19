@@ -550,7 +550,8 @@ class TestStatusMonitorWaitForAnyOf:
         """Test wait_for_any_of returns promptly when UNIMPLEMENTED is received.
 
         When GetStatus returns UNIMPLEMENTED (old exporter without status support),
-        the monitor should signal waiters so they don't hang indefinitely.
+        the monitor assumes LEASE_READY for backward compatibility. If the caller
+        is waiting for LEASE_READY, it should be returned promptly without hanging.
         """
         # First return AVAILABLE, then UNIMPLEMENTED to simulate an old exporter
         responses = [
@@ -563,15 +564,15 @@ class TestStatusMonitorWaitForAnyOf:
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
 
-            # Wait for statuses that will never be reached - should return promptly
-            # when UNIMPLEMENTED is received, not hang until timeout
+            # _signal_unsupported sets status to LEASE_READY for backward compat,
+            # so wait_for_any_of should return LEASE_READY promptly
             targets = [ExporterStatus.LEASE_READY, ExporterStatus.AFTER_LEASE_HOOK]
             result = await monitor.wait_for_any_of(targets, timeout=2.0)
 
             await monitor.stop()
 
-        # Should return None promptly (well before the 2s timeout)
-        assert result is None
+        # Should return LEASE_READY promptly (backward compat fallback)
+        assert result == ExporterStatus.LEASE_READY
         # Monitor should have stopped running
         assert not monitor._running
 

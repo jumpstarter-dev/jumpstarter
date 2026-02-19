@@ -151,7 +151,10 @@ class StatusMonitor:
         if self._connection_lost:
             logger.debug("Connection was marked as lost, verifying...")
             try:
-                response = await self._stub.GetStatus(jumpstarter_pb2.GetStatusRequest())
+                response = await self._stub.GetStatus(
+                    jumpstarter_pb2.GetStatusRequest(),
+                    timeout=5.0
+                )
                 # Connection recovered!
                 logger.info("Connection recovered during verification poll")
                 self._connection_lost = False
@@ -162,8 +165,8 @@ class StatusMonitor:
                 if new_status == target:
                     return True
             except AioRpcError as e:
-                if e.code() == StatusCode.UNAVAILABLE:
-                    logger.debug("Connection still lost (UNAVAILABLE)")
+                if e.code() in (StatusCode.UNAVAILABLE, StatusCode.DEADLINE_EXCEEDED):
+                    logger.debug("Connection still lost (%s)", e.code())
                     return False
                 # Other errors - connection might still work, continue waiting
                 logger.debug("GetStatus error during verification: %s", e.code())
@@ -230,7 +233,10 @@ class StatusMonitor:
         if self._connection_lost:
             logger.debug("Connection was marked as lost, verifying...")
             try:
-                response = await self._stub.GetStatus(jumpstarter_pb2.GetStatusRequest())
+                response = await self._stub.GetStatus(
+                    jumpstarter_pb2.GetStatusRequest(),
+                    timeout=5.0
+                )
                 # Connection recovered!
                 logger.info("Connection recovered during verification poll")
                 self._connection_lost = False
@@ -241,8 +247,8 @@ class StatusMonitor:
                 if new_status in targets:
                     return new_status
             except AioRpcError as e:
-                if e.code() == StatusCode.UNAVAILABLE:
-                    logger.debug("Connection still lost (UNAVAILABLE)")
+                if e.code() in (StatusCode.UNAVAILABLE, StatusCode.DEADLINE_EXCEEDED):
+                    logger.debug("Connection still lost (%s)", e.code())
                     return None
                 # Other errors - connection might still work, continue waiting
                 logger.debug("GetStatus error during verification: %s", e.code())
