@@ -1,0 +1,45 @@
+{
+  "config": {
+    "files_dir": "/opt/jumpstarter/mitmproxy/mock-files",
+    "addons_dir": "/opt/jumpstarter/mitmproxy/addons"
+  },
+
+  "endpoints": {
+    "GET /api/v1/updates/check": {
+      "status": 200,
+      "body": {
+        "update_available": true,
+        "current_version": "2.5.1",
+        "latest_version": "2.6.0",
+        "release_notes": "Bug fixes and performance improvements",
+        "size_bytes": 524288000,
+        "checksum_sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+      }
+    },
+
+    "GET /api/v1/updates/download/v2.6.0.bin": {
+      "$comment": "Serve a real test firmware binary from disk",
+      "status": 200,
+      "file": "firmware/v2.6.0-test.bin",
+      "content_type": "application/octet-stream",
+      "headers": {
+        "Content-Disposition": "attachment; filename=\"v2.6.0.bin\"",
+        "X-Checksum-SHA256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+      }
+    },
+
+    "POST /api/v1/updates/report-status": {
+      "status": 200,
+      "body": {"acknowledged": true}
+    },
+
+    "GET /api/v1/status": {
+      "status": 200,
+      "body": {
+        "id": "device-001",
+        "status": "active",
+        "battery_pct": 85
+      }
+    }
+  }
+}
