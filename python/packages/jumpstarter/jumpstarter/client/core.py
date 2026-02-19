@@ -217,7 +217,10 @@ class AsyncDriverClient(
             is not implemented.
         """
         try:
-            response = await self.stub.EndSession(jumpstarter_pb2.EndSessionRequest())
+            response = await self.stub.EndSession(
+                jumpstarter_pb2.EndSessionRequest(),
+                timeout=5.0
+            )
             self.logger.debug("EndSession completed: success=%s, message=%s", response.success, response.message)
             return response.success
         except AioRpcError as e:
@@ -227,7 +230,7 @@ class AsyncDriverClient(
                 return False
             # Connection errors (UNAVAILABLE, CANCELLED, UNKNOWN with "Stream removed")
             # indicate the exporter has released the lease and restarted
-            if e.code() in (StatusCode.UNAVAILABLE, StatusCode.CANCELLED):
+            if e.code() in (StatusCode.UNAVAILABLE, StatusCode.CANCELLED, StatusCode.DEADLINE_EXCEEDED):
                 self.logger.debug("Connection disrupted during EndSession (lease released): %s", e.code())
                 return True
             if e.code() == StatusCode.UNKNOWN and "Stream removed" in str(e.details()):
