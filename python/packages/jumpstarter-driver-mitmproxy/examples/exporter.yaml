@@ -17,13 +17,14 @@
 #   j proxy stop                        # stop the proxy
 #   j proxy restart [-m passthrough]    # restart with new mode
 #   j proxy status                      # show proxy status
-#   j proxy load-scenario happy.yaml    # load mock scenario
-#   j proxy list-mocks                  # list configured mocks
-#   j proxy clear-mocks                 # remove all mocks
-#   j proxy list-flows                  # list recorded flow files
-#   j proxy captures [--clear]          # show captured requests
+#   j proxy scenario load happy.yaml    # load mock scenario
+#   j proxy mock list                   # list configured mocks
+#   j proxy mock clear                  # remove all mocks
+#   j proxy flow list                   # list recorded flow files
+#   j proxy capture list                # show captured requests
+#   j proxy capture clear               # clear captured requests
 #   j proxy web [--port 9090]           # forward mitmweb UI
-#   j proxy ca-cert [output.pem]        # download CA certificate
+#   j proxy cert [output.pem]           # download CA certificate
 
 export:
   # -- Hardware interfaces ---------------------------------------------------

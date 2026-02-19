@@ -6,11 +6,13 @@ A [Jumpstarter](https://jumpstarter.dev) driver for [mitmproxy](https://mitmprox
 
 This driver manages a `mitmdump` or `mitmweb` process on the Jumpstarter exporter host, providing your pytest HiL tests with:
 
-- **Backend mocking** — Return deterministic JSON responses for any API endpoint, with hot-reloadable definitions and wildcard path matching
-- **SSL/TLS interception** — Inspect and modify HTTPS traffic from your DUT
+- **Backend mocking** — Return deterministic JSON responses for any API endpoint, with hot-reloadable definitions, wildcard path matching, conditional rules, sequences, templates, and custom addons
+- **SSL/TLS interception** — Inspect and modify HTTPS traffic from your DUT, with easy CA certificate retrieval for DUT provisioning
 - **Traffic recording & replay** — Capture a "golden" session against real servers, then replay it offline in CI
-- **Browser-based UI** — Launch `mitmweb` for interactive traffic inspection during development
-- **Scenario files** — Load complete mock configurations from JSON, swap between test scenarios instantly
+- **Request capture** — Record every request the DUT makes and assert on them in your tests
+- **Browser-based UI** — Launch `mitmweb` for interactive traffic inspection, with TCP port forwarding through the Jumpstarter tunnel
+- **Scenario files** — Load complete mock configurations from YAML or JSON, swap between test scenarios instantly
+- **Full CLI** — Control the proxy interactively from `jmp shell` sessions
 
 ## Installation
 
@@ -35,16 +37,103 @@ export:
   proxy:
     type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
     config:
-      listen_port: 8080     # Proxy port (DUT connects here)
-      web_port: 8081        # mitmweb browser UI port
-      ssl_insecure: true    # Skip upstream cert verification
+      listen:
+        host: "0.0.0.0"
+        port: 8080          # Proxy port (DUT connects here)
+      web:
+        host: "0.0.0.0"
+        port: 8081           # mitmweb browser UI port
+      directories:
+        data: /opt/jumpstarter/mitmproxy
+      ssl_insecure: true     # Skip upstream cert verification
+
+      # Auto-load a scenario on startup (relative to mocks dir)
+      # mock_scenario: happy-path.yaml
+
+      # Inline mock definitions (overlaid on scenario)
+      # mocks:
+      #   GET /api/v1/health:
+      #     status: 200
+      #     body: {ok: true}
 ```
 
-See `examples/exporter.yaml` for a full exporter config with DUT Link, serial, and video drivers.
+### Configuration Reference
 
-## Usage
+| Parameter | Description | Type | Default |
+| --------- | ----------- | ---- | ------- |
+| `listen.host` | Proxy listener bind address | str | `0.0.0.0` |
+| `listen.port` | Proxy listener port | int | `8080` |
+| `web.host` | mitmweb UI bind address | str | `0.0.0.0` |
+| `web.port` | mitmweb UI port | int | `8081` |
+| `directories.data` | Base data directory | str | `/opt/jumpstarter/mitmproxy` |
+| `directories.conf` | mitmproxy config/certs dir | str | `{data}/conf` |
+| `directories.flows` | Recorded flow files dir | str | `{data}/flows` |
+| `directories.addons` | Custom addon scripts dir | str | `{data}/addons` |
+| `directories.mocks` | Mock definitions dir | str | `{data}/mock-responses` |
+| `directories.files` | Files to serve from mocks | str | `{data}/mock-files` |
+| `ssl_insecure` | Skip upstream SSL verification | bool | `true` |
+| `mock_scenario` | Scenario file to auto-load on startup | str | `""` |
+| `mocks` | Inline mock endpoint definitions | dict | `{}` |
 
-### In pytest
+See [`examples/exporter.yaml`](examples/exporter.yaml) for a full exporter config with DUT Link, serial, and video drivers.
+
+## Modes
+
+| Mode          | Description                                      |
+|---------------|--------------------------------------------------|
+| `mock`        | Intercept traffic, return mock responses         |
+| `passthrough` | Transparent proxy, log only                      |
+| `record`      | Capture all traffic to a binary flow file        |
+| `replay`      | Serve responses from a previously recorded flow  |
+
+Add `web_ui=True` (Python) or `--web-ui` (CLI) to any mode for the mitmweb browser interface.
+
+## CLI Commands
+
+During a `jmp shell` session, control the proxy with `j proxy <command>`:
+
+### Lifecycle
+
+```console
+j proxy start                            # start in mock mode (default)
+j proxy start -m passthrough             # start in passthrough mode
+j proxy start -m mock -w                 # start with mitmweb UI
+j proxy start -m record                  # start recording traffic
+j proxy start -m replay --replay-file capture_20260213.bin
+j proxy stop                             # stop the proxy
+j proxy restart                          # restart with same config
+j proxy restart -m passthrough           # restart with new mode
+j proxy status                           # show proxy status
+```
+
+### Mock Management
+
+```console
+j proxy mock list                        # list configured mocks
+j proxy mock clear                       # remove all mocks
+j proxy scenario load happy-path.yaml    # load a scenario file
+```
+
+### Traffic Inspection
+
+```console
+j proxy capture list                     # show captured requests
+j proxy capture clear                    # clear captured requests
+j proxy flow list                        # list recorded flow files
+```
+
+### Web UI & Certificates
+
+```console
+j proxy web                              # forward mitmweb UI to localhost:8081
+j proxy web --port 9090                  # forward to a custom port
+j proxy cert                             # download CA cert to ./mitmproxy-ca-cert.pem
+j proxy cert /tmp/ca.pem                # download to a specific path
+```
+
+## Python API
+
+### Basic Usage
 
 ```python
 def test_device_status(client):
@@ -59,12 +148,14 @@ def test_device_status(client):
         body={"id": "device-001", "status": "active"},
     )
 
-    # ... interact with DUT via client.serial, client.video ...
+    # ... interact with DUT ...
 
     proxy.stop()
 ```
 
-### With context managers
+### Context Managers
+
+Context managers ensure clean teardown even if the test fails:
 
 ```python
 def test_firmware_update(client):
@@ -82,54 +173,206 @@ def test_firmware_update(client):
     # Proxy auto-stopped here
 ```
 
-### From jmp shell
+Available context managers:
 
+| Context Manager | Description |
+| --------------- | ----------- |
+| `proxy.session(mode, web_ui)` | Start/stop the proxy |
+| `proxy.mock_endpoint(method, path, ...)` | Temporary mock endpoint |
+| `proxy.mock_scenario(file)` | Load/clear a scenario file |
+| `proxy.mock_conditional(method, path, rules)` | Temporary conditional mock |
+| `proxy.recording()` | Record traffic to a flow file |
+| `proxy.capture()` | Capture and assert on requests |
+
+### Request Capture
+
+Verify that the DUT is making the right API calls:
+
+```python
+def test_telemetry_sent(client):
+    proxy = client.proxy
+
+    with proxy.capture() as cap:
+        # ... DUT sends telemetry through the proxy ...
+        cap.wait_for_request("POST", "/api/v1/telemetry", timeout=10)
+
+    # After the block, cap.requests is a frozen snapshot
+    assert len(cap.requests) >= 1
+    cap.assert_request_made("POST", "/api/v1/telemetry")
 ```
-$ jmp shell --exporter my-bench
 
-jumpstarter local > j proxy start --mode mock --web-ui
-Started in 'mock' mode on 0.0.0.0:8080 | Web UI: http://0.0.0.0:8081
+### Advanced Mocking
 
-jumpstarter local > j proxy status
-{"running": true, "mode": "mock", "web_ui_address": "http://0.0.0.0:8081", ...}
+#### Conditional responses
 
-jumpstarter local > j proxy stop
-Stopped (was 'mock' mode)
+Return different responses based on request headers, body, or query params:
+
+```python
+proxy.set_mock_conditional("POST", "/api/auth", [
+    {
+        "match": {"body_json": {"username": "admin", "password": "secret"}},
+        "status": 200,
+        "body": {"token": "mock-token-001"},
+    },
+    {"status": 401, "body": {"error": "unauthorized"}},
+])
 ```
 
-## Modes
+#### Response sequences
 
-| Mode          | Binary           | Description                              |
-| ------------- | ---------------- | ---------------------------------------- |
-| `mock`        | mitmdump/mitmweb | Intercept traffic, return mock responses |
-| `passthrough` | mitmdump/mitmweb | Transparent proxy, log only              |
-| `record`      | mitmdump/mitmweb | Capture all traffic to a flow file       |
-| `replay`      | mitmdump/mitmweb | Serve responses from a recorded flow     |
+Return different responses on successive calls:
 
-Add `web_ui=True` to any mode for the browser-based mitmweb interface.
+```python
+proxy.set_mock_sequence("GET", "/api/v1/auth/token", [
+    {"status": 200, "body": {"token": "aaa"}, "repeat": 3},
+    {"status": 401, "body": {"error": "expired"}, "repeat": 1},
+    {"status": 200, "body": {"token": "bbb"}},
+])
+```
+
+#### Dynamic templates
+
+Responses with per-request dynamic values:
+
+```python
+proxy.set_mock_template("GET", "/api/v1/weather", {
+    "temp_f": "{{random_int(60, 95)}}",
+    "condition": "{{random_choice('sunny', 'rain')}}",
+    "timestamp": "{{now_iso}}",
+    "request_id": "{{uuid}}",
+})
+```
+
+#### Simulated latency
+
+```python
+proxy.set_mock_with_latency(
+    "GET", "/api/v1/status",
+    body={"status": "online"},
+    latency_ms=3000,
+)
+```
+
+#### File serving
+
+```python
+proxy.set_mock_file(
+    "GET", "/api/v1/downloads/firmware.bin",
+    "firmware/test.bin",
+    content_type="application/octet-stream",
+)
+```
+
+#### Custom addon scripts
+
+```python
+proxy.set_mock_addon(
+    "GET", "/streaming/audio/channel/*",
+    "hls_audio_stream",
+    addon_config={"segment_duration_s": 6},
+)
+```
+
+### State Store
+
+Share state between tests and conditional mock rules:
+
+```python
+proxy.set_state("auth_token", "mock-token-001")
+proxy.set_state("retries", 3)
+
+token = proxy.get_state("auth_token")   # "mock-token-001"
+all_state = proxy.get_all_state()       # {"auth_token": "...", "retries": 3}
+
+proxy.clear_state()
+```
+
+## SSL/TLS Setup
+
+For HTTPS interception, the mitmproxy CA certificate must be installed on the DUT. The certificate is generated the first time the proxy starts.
+
+### From the CLI
+
+```console
+j proxy cert                             # writes ./mitmproxy-ca-cert.pem
+j proxy cert /tmp/ca.pem               # custom output path
+```
+
+### From Python
+
+```python
+# Get the PEM certificate contents
+pem = proxy.get_ca_cert()
+
+# Write to a local file
+from pathlib import Path
+Path("/tmp/mitmproxy-ca.pem").write_text(pem)
+
+# Or push directly to the DUT via serial/ssh/adb
+dut.write_file("/etc/ssl/certs/mitmproxy-ca.pem", pem)
+```
+
+### Exporter-side path
+
+If you need the path on the exporter host itself (for provisioning scripts that run locally):
+
+```python
+cert_path = proxy.get_ca_cert_path()
+# -> /opt/jumpstarter/mitmproxy/conf/mitmproxy-ca-cert.pem
+```
 
 ## Mock Scenarios
 
-Create JSON files with endpoint definitions:
+Create YAML or JSON files with endpoint definitions:
 
-```json
-{
-  "GET /api/v1/status": {
-    "status": 200,
-    "body": {"id": "device-001", "status": "active"}
-  },
-  "POST /api/v1/telemetry": {
-    "status": 202,
-    "body": {"accepted": true}
-  },
-  "GET /api/v1/search*": {
-    "status": 200,
-    "body": {"results": []}
-  }
-}
+```yaml
+# scenarios/happy-path.yaml
+endpoints:
+  GET /api/v1/status:
+    status: 200
+    body:
+      id: device-001
+      status: active
+      firmware_version: "2.5.1"
+
+  POST /api/v1/telemetry/upload:
+    status: 202
+    body:
+      accepted: true
+
+  GET /api/v1/search*:      # wildcard prefix match
+    status: 200
+    body:
+      results: []
 ```
 
-Load in tests with `proxy.load_mock_scenario("my-scenario.json")` or the `mock_scenario` context manager.
+Load from CLI or Python:
+
+```console
+j proxy scenario load happy-path.yaml
+```
+
+```python
+proxy.load_mock_scenario("happy-path.yaml")
+
+# Or with automatic cleanup:
+with proxy.mock_scenario("happy-path.yaml"):
+    run_tests()
+```
+
+See [`examples/scenarios/`](examples/scenarios/) for complete scenario examples including conditional rules, templates, and sequences.
+
+## Web UI Port Forwarding
+
+The mitmweb UI runs on the exporter host and is not directly reachable from the test client. The `web` command tunnels it through the Jumpstarter gRPC transport:
+
+```console
+j proxy start -m mock -w                 # start with web UI on the exporter
+j proxy web                              # tunnel to localhost:8081
+j proxy web --port 9090                  # use a custom local port
+```
+
+Then open `http://localhost:8081` in your browser to inspect traffic in real time.
 
 ## Container Deployment
 
@@ -143,18 +386,6 @@ podman run --rm -it --privileged \
   jumpstarter-mitmproxy:latest \
   jmp exporter start my-bench
 ```
-
-## SSL/TLS Setup
-
-For HTTPS interception, install the mitmproxy CA cert on your DUT:
-
-```python
-# Get the cert path from your test
-cert_path = proxy.get_ca_cert_path()
-# -> /etc/mitmproxy/mitmproxy-ca-cert.pem
-```
-
-Then install it on the DUT via serial, adb, or your provisioning system.
 
 ## License
 

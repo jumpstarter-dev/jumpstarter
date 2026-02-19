@@ -228,8 +228,13 @@ class MitmproxyClient(DriverClient):
 
         # ── Mock management commands ───────────────────────────
 
-        @base.command("list-mocks")
-        def list_mocks_cmd():
+        @base.group("mock")
+        def mock_group():
+            """Mock endpoint management."""
+            pass
+
+        @mock_group.command("list")
+        def mock_list_cmd():
             """List configured mock endpoints."""
             mocks = self.list_mocks()
             if not mocks:
@@ -239,14 +244,21 @@ class MitmproxyClient(DriverClient):
                 summary = _mock_summary(defn)
                 click.echo(f"  {key}  ->  {summary}")
 
-        @base.command("clear-mocks")
-        def clear_mocks_cmd():
+        @mock_group.command("clear")
+        def mock_clear_cmd():
             """Remove all mock endpoint definitions."""
             click.echo(self.clear_mocks())
 
-        @base.command("load-scenario")
+        # ── Scenario commands ─────────────────────────────────
+
+        @base.group("scenario")
+        def scenario_group():
+            """Mock scenario management."""
+            pass
+
+        @scenario_group.command("load")
         @click.argument("scenario_file")
-        def load_scenario_cmd(scenario_file: str):
+        def scenario_load_cmd(scenario_file: str):
             """Load a mock scenario from a YAML or JSON file.
 
             SCENARIO_FILE is a filename relative to the mocks directory
@@ -256,8 +268,13 @@ class MitmproxyClient(DriverClient):
 
         # ── Flow file commands ─────────────────────────────────
 
-        @base.command("list-flows")
-        def list_flows_cmd():
+        @base.group("flow")
+        def flow_group():
+            """Recorded flow file management."""
+            pass
+
+        @flow_group.command("list")
+        def flow_list_cmd():
             """List recorded flow files on the exporter."""
             files = self.list_flow_files()
             if not files:
@@ -269,21 +286,28 @@ class MitmproxyClient(DriverClient):
 
         # ── Capture commands ───────────────────────────────────
 
-        @base.command("captures")
-        @click.option("--clear", is_flag=True, help="Clear captures after displaying.")
-        def captures_cmd(clear: bool):
+        @base.group("capture")
+        def capture_group():
+            """Request capture management."""
+            pass
+
+        @capture_group.command("list")
+        def capture_list_cmd():
             """Show captured requests."""
             reqs = self.get_captured_requests()
             if not reqs:
                 click.echo("No captured requests.")
-            else:
-                click.echo(f"{len(reqs)} captured request(s):")
-                for r in reqs:
-                    status = r.get("response_status", "")
-                    status_str = f" -> {status}" if status else ""
-                    click.echo(f"  {r.get('method')} {r.get('path')}{status_str}")
-            if clear and reqs:
-                click.echo(self.clear_captured_requests())
+                return
+            click.echo(f"{len(reqs)} captured request(s):")
+            for r in reqs:
+                status = r.get("response_status", "")
+                status_str = f" -> {status}" if status else ""
+                click.echo(f"  {r.get('method')} {r.get('path')}{status_str}")
+
+        @capture_group.command("clear")
+        def capture_clear_cmd():
+            """Clear all captured requests."""
+            click.echo(self.clear_captured_requests())
 
         # ── Web UI forwarding ──────────────────────────────────
 
@@ -337,9 +361,9 @@ class MitmproxyClient(DriverClient):
 
         # ── CA certificate ─────────────────────────────────────
 
-        @base.command("ca-cert")
+        @base.command("cert")
         @click.argument("output", default="mitmproxy-ca-cert.pem")
-        def ca_cert_cmd(output: str):
+        def cert_cmd(output: str):
             """Download the mitmproxy CA certificate to a local file.
 
             OUTPUT is the local file path to write the PEM certificate to.
