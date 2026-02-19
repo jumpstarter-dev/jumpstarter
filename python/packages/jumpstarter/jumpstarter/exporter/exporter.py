@@ -350,6 +350,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("No active lease to release")
             return
 
+        # If the lease has already ended (controller sent leased=false, or a previous
+        # call already released it), skip the release RPC. A stale release_lease=true
+        # would release a subsequently-assigned lease on the controller.
+        if self._lease_context.lease_ended.is_set():
+            logger.debug("Lease already ended, skipping release request")
+            return
+
         try:
             async with self._controller_stub() as controller:
                 await controller.ReportStatus(
