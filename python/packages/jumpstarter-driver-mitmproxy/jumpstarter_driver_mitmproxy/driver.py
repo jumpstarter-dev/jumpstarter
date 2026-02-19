@@ -102,6 +102,7 @@ class MitmproxyDriver(Driver):
         default=None, init=False, repr=False
     )
     _mock_endpoints: dict = field(default_factory=dict, init=False)
+    _state_store: dict = field(default_factory=dict, init=False)
     _current_mode: str = field(default="stopped", init=False)
     _web_ui_enabled: bool = field(default=False, init=False)
     _current_flow_file: str | None = field(default=None, init=False)
@@ -635,6 +636,112 @@ class MitmproxyDriver(Driver):
         return f"Addon mock set: {key} → {addon_name}"
 
     @export
+    def set_mock_conditional(self, method: str, path: str,
+                             rules_json: str) -> str:
+        """Mock an endpoint with conditional response rules.
+
+        Rules are evaluated in order; the first rule whose ``match``
+        conditions are satisfied wins. A rule with no ``match`` key
+        acts as a default fallback.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            path: URL path to match.
+            rules_json: JSON array of rule objects, each containing
+                optional ``match`` conditions and response fields
+                (``status``, ``body``, ``body_template``, ``headers``,
+                ``content_type``, ``latency_ms``, ``sequence``).
+
+        Returns:
+            Confirmation message.
+
+        Example rules_json::
+
+            [
+                {
+                    "match": {"body_json": {"username": "admin"}},
+                    "status": 200,
+                    "body": {"token": "abc"}
+                },
+                {
+                    "status": 401,
+                    "body": {"error": "unauthorized"}
+                }
+            ]
+        """
+        key = f"{method.upper()} {path}"
+        try:
+            rules = json.loads(rules_json)
+        except json.JSONDecodeError as e:
+            return f"Invalid JSON: {e}"
+
+        if not isinstance(rules, list) or len(rules) == 0:
+            return "Rules must be a non-empty JSON array"
+
+        self._mock_endpoints[key] = {"rules": rules}
+        self._write_mock_config()
+        return (
+            f"Conditional mock set: {key} → "
+            f"{len(rules)} rule(s)"
+        )
+
+    # ── State store ────────────────────────────────────────────
+
+    @export
+    def set_state(self, key: str, value_json: str) -> str:
+        """Set a key in the shared state store.
+
+        The value is stored as a decoded JSON value (any type: str,
+        int, dict, list, bool, null). The state is written to
+        ``state.json`` alongside ``endpoints.json`` so the addon
+        can hot-reload it.
+
+        Args:
+            key: State key name.
+            value_json: JSON-encoded value.
+
+        Returns:
+            Confirmation message.
+        """
+        value = json.loads(value_json)
+        self._state_store[key] = value
+        self._write_state()
+        return f"State set: {key}"
+
+    @export
+    def get_state(self, key: str) -> str:
+        """Get a value from the shared state store.
+
+        Args:
+            key: State key name.
+
+        Returns:
+            JSON-encoded value, or ``"null"`` if not found.
+        """
+        return json.dumps(self._state_store.get(key))
+
+    @export
+    def clear_state(self) -> str:
+        """Clear all keys from the shared state store.
+
+        Returns:
+            Confirmation message.
+        """
+        count = len(self._state_store)
+        self._state_store.clear()
+        self._write_state()
+        return f"Cleared {count} state key(s)"
+
+    @export
+    def get_all_state(self) -> str:
+        """Get the entire shared state store.
+
+        Returns:
+            JSON-encoded dict of all state key-value pairs.
+        """
+        return json.dumps(self._state_store)
+
+    @export
     def list_addons(self) -> str:
         """List available addon scripts in the addons directory.
 
@@ -928,6 +1035,20 @@ class MitmproxyDriver(Driver):
             "Wrote %d mock(s) to %s",
             len(self._mock_endpoints),
             config_file,
+        )
+
+    def _write_state(self):
+        """Write shared state store to disk for addon hot-reload."""
+        mock_path = Path(self.mock_dir)
+        mock_path.mkdir(parents=True, exist_ok=True)
+        state_file = mock_path / "state.json"
+
+        with open(state_file, "w") as f:
+            json.dump(self._state_store, f, indent=2)
+        logger.debug(
+            "Wrote %d state key(s) to %s",
+            len(self._state_store),
+            state_file,
         )
 
     def _generate_default_addon(self, path: Path):
