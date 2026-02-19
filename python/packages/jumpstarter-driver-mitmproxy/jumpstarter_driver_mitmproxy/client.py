@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
-from typing import Generator
+from typing import Any, Generator
 
 from jumpstarter.client import DriverClient
 
@@ -359,6 +359,118 @@ class MitmproxyClient(DriverClient):
             Status message with endpoint count.
         """
         return self.call("load_mock_scenario", scenario_file)
+
+    # ── V2: Conditional mocks ──────────────────────────────────
+
+    def set_mock_conditional(self, method: str, path: str,
+                             rules: list[dict]) -> str:
+        """Mock an endpoint with conditional response rules.
+
+        Rules are evaluated in order. First match wins. A rule with
+        no ``match`` key is the default fallback.
+
+        Args:
+            method: HTTP method.
+            path: URL path.
+            rules: List of rule dicts, each with optional ``match``
+                conditions and response fields (``status``, ``body``,
+                ``body_template``, ``headers``, etc.).
+
+        Returns:
+            Confirmation message.
+
+        Example::
+
+            proxy.set_mock_conditional("POST", "/api/auth", [
+                {
+                    "match": {"body_json": {"username": "admin",
+                                            "password": "secret"}},
+                    "status": 200,
+                    "body": {"token": "mock-token-001"},
+                },
+                {"status": 401, "body": {"error": "unauthorized"}},
+            ])
+        """
+        return self.call(
+            "set_mock_conditional", method, path,
+            json.dumps(rules),
+        )
+
+    @contextmanager
+    def mock_conditional(
+        self,
+        method: str,
+        path: str,
+        rules: list[dict],
+    ) -> Generator[None, None, None]:
+        """Context manager for a temporary conditional mock.
+
+        Sets up conditional rules on entry and removes the mock
+        on exit.
+
+        Args:
+            method: HTTP method.
+            path: URL path.
+            rules: Conditional rules list.
+
+        Example::
+
+            with proxy.mock_conditional("POST", "/api/auth", [
+                {"match": {"body_json": {"user": "admin"}},
+                 "status": 200, "body": {"token": "t1"}},
+                {"status": 401, "body": {"error": "denied"}},
+            ]):
+                # test auth flow
+                pass
+        """
+        self.set_mock_conditional(method, path, rules)
+        try:
+            yield
+        finally:
+            self.remove_mock(method, path)
+
+    # ── State store ────────────────────────────────────────────
+
+    def set_state(self, key: str, value: Any) -> str:
+        """Set a key in the shared state store.
+
+        Accepts any JSON-serializable value.
+
+        Args:
+            key: State key name.
+            value: Any JSON-serializable value.
+
+        Returns:
+            Confirmation message.
+        """
+        return self.call("set_state", key, json.dumps(value))
+
+    def get_state(self, key: str) -> Any:
+        """Get a value from the shared state store.
+
+        Args:
+            key: State key name.
+
+        Returns:
+            The deserialized value, or None if not found.
+        """
+        return json.loads(self.call("get_state", key))
+
+    def clear_state(self) -> str:
+        """Clear all keys from the shared state store.
+
+        Returns:
+            Confirmation message.
+        """
+        return self.call("clear_state")
+
+    def get_all_state(self) -> dict:
+        """Get the entire shared state store.
+
+        Returns:
+            Dict of all state key-value pairs.
+        """
+        return json.loads(self.call("get_all_state"))
 
     # ── Flow file management ────────────────────────────────────
 
