@@ -666,3 +666,58 @@ class TestStatusMonitorCallbacks:
 
         # Monitor should still have polled multiple times despite callback errors
         assert stub._call_count >= 2
+
+
+class TestStatusMonitorStatusMessageUpdate:
+    async def test_wait_for_status_updates_status_message(self) -> None:
+        """Test that wait_for_status verification poll updates _status_message.
+
+        When connection_lost is True and the verification poll recovers,
+        _status_message must be updated from the response so callers don't
+        read a stale message from a previous status.
+        """
+        stub = MockExporterStub([
+            create_status_response(
+                ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                version=5,
+                message="hook script exited with code 1",
+            ),
+        ])
+        monitor = StatusMonitor(stub, poll_interval=0.1)
+        monitor._running = True
+        monitor._connection_lost = True
+        monitor._status_message = "Ready for commands"  # stale from LEASE_READY
+
+        result = await monitor.wait_for_status(
+            ExporterStatus.AFTER_LEASE_HOOK_FAILED, timeout=2.0
+        )
+
+        assert result is True
+        assert monitor.status_message == "hook script exited with code 1"
+
+    async def test_wait_for_any_of_updates_status_message(self) -> None:
+        """Test that wait_for_any_of verification poll updates _status_message.
+
+        When connection_lost is True and the verification poll recovers,
+        _status_message must be updated from the response so callers don't
+        read a stale message from a previous status.
+        """
+        stub = MockExporterStub([
+            create_status_response(
+                ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                version=5,
+                message="hook script exited with code 1",
+            ),
+        ])
+        monitor = StatusMonitor(stub, poll_interval=0.1)
+        monitor._running = True
+        monitor._connection_lost = True
+        monitor._status_message = "Ready for commands"  # stale from LEASE_READY
+
+        result = await monitor.wait_for_any_of(
+            [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+            timeout=2.0,
+        )
+
+        assert result == ExporterStatus.AFTER_LEASE_HOOK_FAILED
+        assert monitor.status_message == "hook script exited with code 1"
