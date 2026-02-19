@@ -243,6 +243,7 @@ class MitmproxyDriver(Driver):
                 "--web-host", self.web.host,
                 "--web-port", str(self.web.port),
                 "--set", "web_open_browser=false",
+                "--set", "web_password=jumpstarter",
             ])
 
         if self.ssl_insecure:
@@ -307,7 +308,10 @@ class MitmproxyDriver(Driver):
         )
 
         if web_ui:
-            msg += f" | Web UI: http://{self.web.host}:{self.web.port}"
+            msg += (
+                f" | Web UI: http://{self.web.host}:{self.web.port}"
+                f"/?token=jumpstarter"
+            )
 
         if mode == "record" and self._current_flow_file:
             msg += f" | Recording to: {self._current_flow_file}"
@@ -407,6 +411,7 @@ class MitmproxyDriver(Driver):
             "web_ui_enabled": self._web_ui_enabled,
             "web_ui_address": (
                 f"http://{self.web.host}:{self.web.port}"
+                f"/?token=jumpstarter"
                 if running and self._web_ui_enabled else None
             ),
             "mock_count": len(self._mock_endpoints),

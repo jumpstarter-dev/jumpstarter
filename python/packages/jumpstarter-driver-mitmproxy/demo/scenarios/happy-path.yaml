@@ -1,0 +1,37 @@
+# Happy-path scenario: all endpoints return mock success data.
+# Device ID is "DUT-MOCK-999" and firmware "2.5.1" — contrast with the
+# real backend's "DUT-REAL-001" / "1.0.0" to see the switch visually.
+
+endpoints:
+  GET /api/v1/status:
+    status: 200
+    body:
+      device_id: DUT-MOCK-999
+      status: online
+      firmware_version: "2.5.1"
+      uptime_s: 172800
+      source: mock
+
+  GET /api/v1/updates/check:
+    status: 200
+    body:
+      update_available: false
+      current_version: "2.5.1"
+      latest_version: "2.5.1"
+      source: mock
+
+  POST /api/v1/telemetry:
+    status: 200
+    body:
+      accepted: true
+      source: mock
+
+  GET /api/v1/config:
+    status: 200
+    body:
+      log_level: info
+      features:
+        ota_updates: true
+        remote_diagnostics: true
+        telemetry: true
+      source: mock
