@@ -16,7 +16,7 @@ from jumpstarter_cli_common.signal import signal_handler
 from .common import opt_acquisition_timeout, opt_duration_partial, opt_selector
 from .login import relogin_client
 from jumpstarter.common.utils import launch_shell
-from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.client import ClientConfigV1Alpha1, raise_expired_token_error
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 
@@ -98,8 +98,7 @@ async def _shell_with_signal_handling(
     if token:
         remaining = get_token_remaining_seconds(token)
         if remaining is not None and remaining <= 0:
-            from jumpstarter.common.exceptions import ConnectionError
-            raise ConnectionError("token is expired")
+            raise_expired_token_error(config)
 
     async with create_task_group() as tg:
         tg.start_soon(signal_handler, tg.cancel_scope)

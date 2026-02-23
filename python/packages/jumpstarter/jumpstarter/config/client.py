@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Optional, Self
+from typing import Annotated, ClassVar, Literal, NoReturn, Optional, Self
 
 import grpc
 import yaml
@@ -50,17 +50,27 @@ def _blocking_compat(f):
     return wrapper
 
 
+def _attach_config_if_expired_token(exc: ConnectionError, config: ClientConfigV1Alpha1) -> None:
+    """Attach config to a ConnectionError so re-auth can use it. No-op if not token-expired."""
+    if "token is expired" in str(exc):
+        exc.set_config(config)
+
+
+def raise_expired_token_error(config: ClientConfigV1Alpha1) -> NoReturn:
+    """Raise ConnectionError for expired token with config attached so re-auth can run."""
+    err = ConnectionError("token is expired")
+    err.set_config(config)
+    raise err
+
+
 def _handle_connection_error(f):
     @wraps(f)
     async def wrapper(*args, **kwargs):
         try:
             return await f(*args, **kwargs)
         except ConnectionError as e:
-            if "token is expired" in str(e):
-                # args[0] should be self for instance methods
-                e.set_config(args[0])
-            raise e
-        except Exception:
+            # args[0] is self for instance methods
+            _attach_config_if_expired_token(e, args[0])
             raise
 
     return wrapper
@@ -291,13 +301,9 @@ class ClientConfigV1Alpha1(BaseSettings):
             ) as lease:
                 yield lease
 
-        # this replicates _handle_connection_error, the decorator doesn't work with asynccontextmanager
+        # decorator doesn't work with asynccontextmanager, so we use the same helper
         except ConnectionError as e:
-            if "token is expired" in str(e):
-                # args[0] should be self for instance methods
-                e.set_config(self)
-            raise e
-        except Exception:
+            _attach_config_if_expired_token(e, self)
             raise
 
     @classmethod
