@@ -75,7 +75,7 @@ export:
 | `mock_scenario` | Scenario file to auto-load on startup | str | `""` |
 | `mocks` | Inline mock endpoint definitions | dict | `{}` |
 
-See [`examples/exporter.yaml`](examples/exporter.yaml) for a full exporter config with DUT Link, serial, and video drivers.
+See `examples/exporter.yaml` in the package source for a full exporter config with DUT Link, serial, and video drivers.
 
 ## Modes
 
@@ -372,7 +372,7 @@ with proxy.mock_scenario("happy-path.yaml"):
     run_tests()
 ```
 
-See [`examples/scenarios/`](examples/scenarios/) for complete scenario examples including conditional rules, templates, and sequences.
+See `examples/scenarios/` in the package source for complete scenario examples including conditional rules, templates, and sequences.
 
 ## Web UI Port Forwarding
 
