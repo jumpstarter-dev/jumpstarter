@@ -103,3 +103,10 @@ class Handler:
             #     "inject.websocket", flow, True,
             #     b'{"type": "echo", "data": ...}',
             # )
+
+    def cleanup(self) -> None:
+        """Called when the addon is unloaded.
+
+        Reserved for future use — not yet triggered automatically.
+        Add teardown logic here (close connections, flush buffers, etc.).
+        """

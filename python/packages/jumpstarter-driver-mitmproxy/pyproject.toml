@@ -15,7 +15,11 @@ MitmproxyDriver = "jumpstarter_driver_mitmproxy.driver:MitmproxyDriver"
 addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
-testpaths = ["jumpstarter_driver_mitmproxy"]
+testpaths = [
+    "jumpstarter_driver_mitmproxy",
+    # demo/ and examples/ require a live HiL exporter; run them manually
+    # with: jmp shell --exporter demo/exporter.yaml -- pytest demo/ -v
+]
 
 [dependency-groups]
 dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3", "requests>=2.28.0"]

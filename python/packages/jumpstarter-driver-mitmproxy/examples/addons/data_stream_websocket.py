@@ -163,6 +163,7 @@ class Handler:
             new_scenario = cmd.get("scenario", "normal")
             if flow_id in self._tasks:
                 self._tasks[flow_id].cancel()
+                del self._tasks[flow_id]
             scenarios = config.get("scenarios", DEFAULT_SCENARIOS)
             scenario = scenarios.get(new_scenario, DEFAULT_SCENARIOS.get(
                 new_scenario, DEFAULT_SCENARIOS["normal"],

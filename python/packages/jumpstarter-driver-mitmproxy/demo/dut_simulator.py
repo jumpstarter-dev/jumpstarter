@@ -18,6 +18,7 @@ import argparse
 import json
 import sys
 import time
+from urllib.parse import urlsplit
 
 import requests
 
@@ -82,7 +83,7 @@ def run_cycle(session: requests.Session, backend: str):
     ]
 
     for method, url in endpoints:
-        path = url.split(backend)[-1]
+        path = urlsplit(url).path
         try:
             if method == "POST":
                 resp = session.post(

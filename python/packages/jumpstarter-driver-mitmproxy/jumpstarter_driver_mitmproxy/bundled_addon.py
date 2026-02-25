@@ -920,7 +920,7 @@ class MitmproxyMockAddon:
         try:
             file_path = file_path.resolve()
             files_dir_resolved = self.files_dir.resolve()
-            if not str(file_path).startswith(str(files_dir_resolved)):
+            if not file_path.is_relative_to(files_dir_resolved):
                 ctx.log.error(f"Path traversal blocked: {relative_path}")
                 return None
         except (OSError, ValueError):

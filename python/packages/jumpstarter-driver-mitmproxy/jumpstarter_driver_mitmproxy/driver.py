@@ -258,14 +258,14 @@ def _query_file_suffix(query: dict) -> str:
 class ListenConfig(BaseModel):
     """Proxy listener address configuration."""
 
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8080
 
 
 class WebConfig(BaseModel):
     """mitmweb UI address configuration."""
 
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8081
 
 
