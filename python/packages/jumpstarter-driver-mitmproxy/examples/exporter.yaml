@@ -17,7 +17,7 @@
 #   j proxy stop                        # stop the proxy
 #   j proxy restart [-m passthrough]    # restart with new mode
 #   j proxy status                      # show proxy status
-#   j proxy scenario load happy.yaml    # load mock scenario
+#   j proxy mock load happy.yaml        # load mock scenario
 #   j proxy mock list                   # list configured mocks
 #   j proxy mock clear                  # remove all mocks
 #   j proxy flow list                   # list recorded flow files
