@@ -562,6 +562,43 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 yield session, main_path, hook_path
         logger.info("Session closed")
 
+    async def _cleanup_after_lease(self, lease_scope: LeaseContext) -> None:
+        """Run afterLease hook cleanup when handle_lease exits.
+
+        This handles the finally-block logic: shielding from cancellation,
+        running the afterLease hook if appropriate, and transitioning to AVAILABLE.
+        """
+        with CancelScope(shield=True):
+            if not lease_scope.after_lease_hook_started.is_set():
+                lease_scope.after_lease_hook_started.set()
+                if (self.hook_executor
+                        and lease_scope.has_client()
+                        and not lease_scope.skip_after_lease_hook):
+                    logger.info("Running afterLease hook on session close")
+                    await self.hook_executor.run_after_lease_hook(
+                        lease_scope,
+                        self._report_status,
+                        self.stop,
+                        self._request_lease_release,
+                    )
+                else:
+                    if lease_scope.skip_after_lease_hook:
+                        logger.info("Skipping afterLease hook: beforeLease hook failed")
+                    if not self._stop_requested:
+                        logger.debug(
+                            "No afterLease hook or no client on session close,"
+                            " transitioning to AVAILABLE"
+                        )
+                        await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+                    else:
+                        logger.debug("Exporter is shutting down, skipping AVAILABLE status report")
+                if not lease_scope.after_lease_hook_done.is_set():
+                    lease_scope.after_lease_hook_done.set()
+            else:
+                logger.debug("Waiting for afterLease hook to complete before closing session")
+                await lease_scope.after_lease_hook_done.wait()
+                logger.debug("afterLease hook completed, closing session")
+
     async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:
         """Handle all incoming client connections for a lease.
 
@@ -677,37 +714,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # Run afterLease hook before closing the session
                 # This ensures the socket is still available for driver calls within the hook
                 # Shield from cancellation so the hook can complete even during shutdown
-                with CancelScope(shield=True):
-                    # Always run afterLease hook when handle_lease exits (session closing)
-                    # Skip if already started via EndSession or lease state transition
-                    if not lease_scope.after_lease_hook_started.is_set():
-                        lease_scope.after_lease_hook_started.set()
-                        if self.hook_executor and lease_scope.has_client() and not lease_scope.skip_after_lease_hook:
-                            logger.info("Running afterLease hook on session close")
-                            await self.hook_executor.run_after_lease_hook(
-                                lease_scope,
-                                self._report_status,
-                                self.stop,
-                                self._request_lease_release,
-                            )
-                        else:
-                            if lease_scope.skip_after_lease_hook:
-                                logger.info("Skipping afterLease hook: beforeLease hook failed")
-                            # No hook configured, no client, or skip flag set — transition to AVAILABLE
-                            # Don't report AVAILABLE if the exporter is shutting down
-                            if not self._stop_requested:
-                                logger.debug("No afterLease hook or no client on session close, transitioning to AVAILABLE")
-                                await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
-                            else:
-                                logger.debug("Exporter is shutting down, skipping AVAILABLE status report")
-                        # Mark hook as done if we didn't run it (no hook configured or no client)
-                        if not lease_scope.after_lease_hook_done.is_set():
-                            lease_scope.after_lease_hook_done.set()
-                    else:
-                        # Hook was already started elsewhere, wait for it to complete
-                        logger.debug("Waiting for afterLease hook to complete before closing session")
-                        await lease_scope.after_lease_hook_done.wait()
-                        logger.debug("afterLease hook completed, closing session")
+                await self._cleanup_after_lease(lease_scope)
 
         # Fallback: clear _lease_context if leased→unleased handler didn't fire
         # (e.g., controller didn't send another leased=False after our release request)

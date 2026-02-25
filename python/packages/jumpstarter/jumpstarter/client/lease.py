@@ -154,6 +154,19 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         else:
             spinner.update_status("Waiting for server to provide status updates...")
 
+    async def _handle_no_exporter_retry(self, spinner, message):
+        """Handle transient NoExporter condition by retrying with a new lease.
+
+        Old controllers (pre-918d6341) mark offline-but-matching exporters as
+        Unsatisfiable with reason "NoExporter". This is transient, so we update
+        the spinner, wait briefly, and create a new lease.
+        """
+        spinner.update_status(f"Waiting for lease: {message}")
+        for _ in range(5):
+            await sleep(1)
+            spinner.tick()
+        await self._create()
+
     async def _acquire(self):
         """Acquire a lease.
 
@@ -181,13 +194,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             if condition_present_and_equal(
                                 result.conditions, "Unsatisfiable", "True", "NoExporter"
                             ):
-                                spinner.update_status(
-                                    f"Waiting for lease: {message}"
-                                )
-                                for _ in range(5):
-                                    await sleep(1)
-                                    spinner.tick()
-                                await self._create()
+                                await self._handle_no_exporter_retry(spinner, message)
                                 continue
                             logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
                             raise LeaseError(f"the lease cannot be satisfied: {message}")

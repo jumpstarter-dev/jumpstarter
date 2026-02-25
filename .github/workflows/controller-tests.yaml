@@ -16,6 +16,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Cache controller bin directory
+        uses: actions/cache@v4
+        with:
+          path: controller/bin/
+          key: ${{ runner.os }}-controller-bin-${{ hashFiles('controller/go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-controller-bin-
+
       - name: Run controller tests
         working-directory: controller
         run: make test
