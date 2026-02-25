@@ -491,7 +491,8 @@ class AsyncDriverClient(
                             # Skip gRPC "Method not implemented" errors from old exporters
                             # that don't implement newer RPC methods (e.g. GetStatus, EndSession).
                             # These are expected and already handled client-side.
-                            if "raised by servicer method" in response.message and "NotImplementedError" in response.message:
+                            if ("raised by servicer method" in response.message
+                                    and "NotImplementedError" in response.message):
                                 continue
 
                             # Route to appropriate logger based on source

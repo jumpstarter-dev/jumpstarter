@@ -246,7 +246,7 @@ GRPCURL = $(LOCALBIN)/grpcurl
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.1
 CONTROLLER_TOOLS_VERSION ?= v0.16.3
-ENVTEST_VERSION ?= release-0.18
+ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 GOLANGCI_LINT_VERSION ?= v2.5.0
 KIND_VERSION ?= v0.27.0
 GRPCURL_VERSION ?= v1.9.2
