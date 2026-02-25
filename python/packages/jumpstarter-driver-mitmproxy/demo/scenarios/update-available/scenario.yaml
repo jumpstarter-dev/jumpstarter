@@ -1,0 +1,55 @@
+# Update-available scenario: OTA update reported as available.
+#
+# Demonstrates match.headers: devices that already report the latest
+# firmware version via X-Current-Version are told they are up to date;
+# all other devices receive the update notification.
+
+endpoints:
+  http://example.com/api/v1/status:
+  - method: GET
+    status: 200
+    body:
+      device_id: DUT-MOCK-999
+      status: online
+      firmware_version: "2.5.1"
+      uptime_s: 172800
+      source: mock
+
+  http://example.com/api/v1/updates/check:
+  - method: GET
+    match:
+      headers:
+        X-Current-Version: "3.0.0"   # device already on latest → no-op
+    status: 200
+    body:
+      update_available: false
+      current_version: "3.0.0"
+      latest_version: "3.0.0"
+      source: mock
+  - method: GET                       # default → update available
+    status: 200
+    body:
+      update_available: true
+      current_version: "2.5.1"
+      latest_version: "3.0.0"
+      release_notes: "Major update: improved power management and new diagnostic API"
+      size_bytes: 524288000
+      source: mock
+
+  http://example.com/api/v1/telemetry:
+  - method: POST
+    status: 200
+    body:
+      accepted: true
+      source: mock
+
+  http://example.com/api/v1/config:
+  - method: GET
+    status: 200
+    body:
+      log_level: info
+      features:
+        ota_updates: true
+        remote_diagnostics: true
+        telemetry: true
+      source: mock
