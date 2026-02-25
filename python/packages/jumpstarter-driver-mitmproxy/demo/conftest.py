@@ -82,5 +82,9 @@ def proxy_client(proxy):
 def http_session():
     """Requests session pre-configured to route through the proxy."""
     session = requests.Session()
-    session.proxies = {"http": f"http://127.0.0.1:{PROXY_PORT}"}
+    session.proxies = {
+        "http": f"http://127.0.0.1:{PROXY_PORT}",
+        "https": f"http://127.0.0.1:{PROXY_PORT}",
+    }
+    session.verify = False
     return session
