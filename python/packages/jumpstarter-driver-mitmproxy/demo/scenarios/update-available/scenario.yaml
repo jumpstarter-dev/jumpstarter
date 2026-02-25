@@ -5,7 +5,7 @@
 # all other devices receive the update notification.
 
 endpoints:
-  http://example.com/api/v1/status:
+  http://127.0.0.1:9000/api/v1/status:
   - method: GET
     status: 200
     body:
@@ -15,7 +15,7 @@ endpoints:
       uptime_s: 172800
       source: mock
 
-  http://example.com/api/v1/updates/check:
+  http://127.0.0.1:9000/api/v1/updates/check:
   - method: GET
     match:
       headers:
@@ -36,14 +36,14 @@ endpoints:
       size_bytes: 524288000
       source: mock
 
-  http://example.com/api/v1/telemetry:
+  http://127.0.0.1:9000/api/v1/telemetry:
   - method: POST
     status: 200
     body:
       accepted: true
       source: mock
 
-  http://example.com/api/v1/config:
+  http://127.0.0.1:9000/api/v1/config:
   - method: GET
     status: 200
     body:

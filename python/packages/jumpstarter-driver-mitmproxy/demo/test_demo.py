@@ -145,7 +145,7 @@ class TestScenarioLoading:
         time.sleep(1)
 
         resp = http_session.get(
-            "http://example.com/api/v1/status", timeout=10,
+            f"{BACKEND_URL}/api/v1/status", timeout=10,
         )
         data = resp.json()
         assert data["source"] == "mock"
@@ -161,7 +161,7 @@ class TestScenarioLoading:
         time.sleep(1)
 
         resp = http_session.get(
-            "http://example.com/api/v1/updates/check", timeout=10,
+            f"{BACKEND_URL}/api/v1/updates/check", timeout=10,
         )
         data = resp.json()
         assert data["source"] == "mock"
@@ -177,7 +177,7 @@ class TestScenarioLoading:
         time.sleep(1)
 
         resp = http_session.get(
-            "http://example.com/api/v1/status", timeout=10,
+            f"{BACKEND_URL}/api/v1/status", timeout=10,
         )
         assert resp.status_code == 503
         assert resp.json()["error"] == "Service Unavailable"
@@ -191,7 +191,7 @@ class TestScenarioLoading:
         ):
             time.sleep(1)
             resp = http_session.get(
-                "http://example.com/api/v1/status", timeout=10,
+                f"{BACKEND_URL}/api/v1/status", timeout=10,
             )
             assert resp.json()["source"] == "mock"
 

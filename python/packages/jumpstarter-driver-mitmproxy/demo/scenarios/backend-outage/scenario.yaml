@@ -6,7 +6,7 @@
 # the monitoring system does not raise false alerts.
 
 endpoints:
-  http://example.com/api/v1/*:
+  http://127.0.0.1:9000/api/v1/*:
   - method: GET
     match:
       headers_absent:
