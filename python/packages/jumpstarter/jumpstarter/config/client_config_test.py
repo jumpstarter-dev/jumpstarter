@@ -8,7 +8,12 @@ import yaml
 from pydantic import ValidationError
 
 from jumpstarter.common.exceptions import FileNotFoundError
-from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ShellConfigV1Alpha1
+from jumpstarter.config.client import (
+    ClientConfigV1Alpha1,
+    ClientConfigV1Alpha1Drivers,
+    ClientConfigV1Alpha1Lease,
+    ShellConfigV1Alpha1,
+)
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_ENDPOINT, JMP_NAME, JMP_NAMESPACE, JMP_TOKEN
 
@@ -214,8 +219,6 @@ drivers:
   unsafe: false
 shell:
   use_profiles: false
-leases:
-  acquisition_timeout: 7200
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -255,8 +258,6 @@ drivers:
   unsafe: false
 shell:
   use_profiles: false
-leases:
-  acquisition_timeout: 7200
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -292,8 +293,6 @@ drivers:
   unsafe: true
 shell:
   use_profiles: false
-leases:
-  acquisition_timeout: 7200
 """
     config = ClientConfigV1Alpha1(
         alias="testclient",
@@ -302,6 +301,43 @@ leases:
         token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
         drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=True),
         shell=ShellConfigV1Alpha1(use_profiles=False),
+    )
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        with patch.object(ClientConfigV1Alpha1, "ensure_exists"):
+            ClientConfigV1Alpha1.save(config, f.name)
+            with open(f.name) as loaded:
+                value = loaded.read()
+                assert value == CLIENT_CONFIG
+        os.unlink(f.name)
+
+
+def test_client_config_save_custom_lease_timeout():
+    """Non-default lease values should be preserved in saved config."""
+    CLIENT_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
+kind: ClientConfig
+metadata:
+  namespace: default
+  name: testclient
+endpoint: jumpstarter.my-lab.com:1443
+tls:
+  ca: ''
+  insecure: false
+token: dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz
+grpcOptions: {}
+drivers:
+  allow: []
+  unsafe: false
+shell:
+  use_profiles: false
+leases:
+  acquisition_timeout: 3600
+"""
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz",
+        leases=ClientConfigV1Alpha1Lease(acquisition_timeout=3600),
     )
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         with patch.object(ClientConfigV1Alpha1, "ensure_exists"):

@@ -167,10 +167,14 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Reason:             "Seen",
 			Message:            "Never seen",
 		})
-		// Reset status to OFFLINE when never seen
-		exporter.Status.ExporterStatusValue = jumpstarterdevv1alpha1.ExporterStatusOffline
+		// Do NOT set ExporterStatusValue to Offline here.
+		// Old exporters (v0.7.x) never call ReportStatus, so their status stays
+		// at whatever we set here. If we set it to Offline, they can never recover
+		// because the "LastSeen is recent + status is Offline" branch treats it as
+		// a graceful shutdown. Leaving it empty allows the reconciler to mark them
+		// Online once the Status stream connects and updates LastSeen.
 		exporter.Status.StatusMessage = "Never seen"
-		// marking the exporter offline, no need to requeue
+		// marking the exporter as not yet seen, no need to requeue
 	} else if time.Since(exporter.Status.LastSeen.Time) > time.Minute {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
