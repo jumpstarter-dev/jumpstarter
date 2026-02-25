@@ -321,7 +321,8 @@ class MitmproxyDriver(Driver):
               directories:
                 data: /opt/jumpstarter/mitmproxy
               ssl_insecure: true
-              mock_scenario: happy-path.yaml
+              mock_scenario: happy-path        # directory with scenario.yaml
+              # mock_scenario: happy-path.yaml  # or a raw YAML file
               mocks:
                 GET /api/v1/health:
                   status: 200
@@ -343,7 +344,12 @@ class MitmproxyDriver(Driver):
     """Skip upstream SSL certificate verification (useful for dev/test)."""
 
     mock_scenario: str = ""
-    """Scenario file to auto-load on startup (relative to mocks dir or absolute)."""
+    """Scenario to auto-load on startup.
+
+    Accepts either a directory containing ``scenario.yaml`` or a direct
+    path to a ``.yaml`` / ``.json`` file.  Relative paths are resolved
+    against the mocks directory.
+    """
 
     mocks: dict = field(default_factory=dict)
     """Inline mock endpoint definitions, loaded at startup."""
@@ -1811,6 +1817,8 @@ class MitmproxyDriver(Driver):
             scenario_path = Path(self.mock_scenario)
             if not scenario_path.is_absolute():
                 scenario_path = Path(self.directories.mocks) / scenario_path
+            if scenario_path.is_dir():
+                scenario_path = scenario_path / "scenario.yaml"
             if scenario_path.exists():
                 with open(scenario_path) as f:
                     if scenario_path.suffix in (".yaml", ".yml"):
