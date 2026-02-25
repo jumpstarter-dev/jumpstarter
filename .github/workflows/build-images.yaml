@@ -19,7 +19,7 @@ env:
 
 jobs:
   build-and-push-image:
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'build-pr-images')
+    if: github.event_name != 'pull_request' || contains(toJSON(github.event.pull_request.labels.*.name), 'build-pr-images')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,26 +31,33 @@ jobs:
         include:
           # Controller images
           - image_name: jumpstarter-dev/jumpstarter-controller
+            label: jumpstarter-controller
             dockerfile: controller/Dockerfile
             context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator
+            label: jumpstarter-operator
             dockerfile: controller/Dockerfile.operator
             context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
+            label: jumpstarter-operator-bundle
             dockerfile: controller/deploy/operator/bundle.Dockerfile
             context: controller/deploy/operator
             generate_bundle: true
           # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
+            label: jumpstarter
             dockerfile: python/Dockerfile
             context: .
           - image_name: jumpstarter-dev/jumpstarter-utils
+            label: jumpstarter-utils
             dockerfile: python/Dockerfile.utils
             context: python
           - image_name: jumpstarter-dev/jumpstarter-dev
+            label: jumpstarter-dev
             dockerfile: python/.devfile/Containerfile
             context: python
           - image_name: jumpstarter-dev/jumpstarter-devspace
+            label: jumpstarter-devspace
             dockerfile: python/.devfile/Containerfile.client
             context: .
     steps:
@@ -59,13 +66,30 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check if this image should be built
+        id: check
+        if: github.event_name == 'pull_request'
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          IMAGE_LABEL: ${{ matrix.label }}
+        run: |
+          # build-pr-images builds all images, build-pr-images/<label> builds a specific one
+          if echo "$LABELS" | jq -e 'index("build-pr-images")' > /dev/null 2>&1; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | jq -e --arg label "build-pr-images/$IMAGE_LABEL" 'index($label)' > /dev/null 2>&1; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Get version
+        if: steps.check.outputs.skip != 'true'
         run: |
           VERSION=$(git describe --tags)
           VERSION=${VERSION#v} # remove the leading v prefix for version
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "VERSION=${VERSION}"
-          
+
           # Convert to PEP 440 compliant version for Python packages
           # Format: 0.7.0-1051-g54cd2f08 -> 0.7.0.dev1051+g54cd2f08
           if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([a-f0-9]+)$ ]]; then
@@ -78,6 +102,7 @@ jobs:
           echo "PEP440_VERSION=${PEP440_VERSION}"
 
       - name: Set build args
+        if: steps.check.outputs.skip != 'true'
         id: build-args
         run: |
           GIT_COMMIT=$(git rev-parse HEAD)
@@ -88,12 +113,12 @@ jobs:
           echo "BUILD_DATE=${BUILD_DATE}"
 
       - name: Generate operator bundle
-        if: ${{ matrix.generate_bundle }}
+        if: ${{ matrix.generate_bundle && steps.check.outputs.skip != 'true' }}
         run: make bundle VERSION=${{ env.VERSION }}
         working-directory: controller/deploy/operator
 
       - name: Set image tags
-        if: ${{ env.PUSH == 'true' }}
+        if: ${{ env.PUSH == 'true' && steps.check.outputs.skip != 'true' }}
         id: set-tags
         run: |
           TAGS="${{ env.REGISTRY }}/${{ matrix.image_name }}:${{ env.VERSION }}"
@@ -110,20 +135,23 @@ jobs:
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
+        if: steps.check.outputs.skip != 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        if: steps.check.outputs.skip != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
-        if: ${{ env.PUSH == 'true' }}
+        if: ${{ env.PUSH == 'true' && steps.check.outputs.skip != 'true' }}
         with:
           registry: ${{ env.REGISTRY }}
           username: jumpstarter-dev+jumpstarter_ci
           password: ${{ secrets.QUAY_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Docker
+        if: steps.check.outputs.skip != 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -134,6 +162,7 @@ jobs:
             quay.expires-after=${{ github.event_name == 'pull_request' && '7d' || '' }}
 
       - name: Build and push Docker image
+        if: steps.check.outputs.skip != 'true'
         id: push
         uses: docker/build-push-action@v6
         with:
@@ -152,7 +181,7 @@ jobs:
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1
-        if: ${{ env.PUSH == 'true' }}
+        if: ${{ env.PUSH == 'true' && steps.check.outputs.skip != 'true' }}
         with:
           subject-name: ${{ env.REGISTRY }}/${{ matrix.image_name }}
           subject-digest: ${{ steps.push.outputs.digest }}
@@ -160,7 +189,7 @@ jobs:
 
   comment-pr-images:
     needs: build-and-push-image
-    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'build-pr-images')
+    if: github.event_name == 'pull_request' && contains(toJSON(github.event.pull_request.labels.*.name), 'build-pr-images')
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -172,7 +201,9 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const registry = 'quay.io';
             const tag = `pr-${prNumber}`;
-            const images = [
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const buildAll = labels.includes('build-pr-images');
+            const allImages = [
               'jumpstarter-dev/jumpstarter-controller',
               'jumpstarter-dev/jumpstarter-operator',
               'jumpstarter-dev/jumpstarter-operator-bundle',
@@ -181,6 +212,13 @@ jobs:
               'jumpstarter-dev/jumpstarter-dev',
               'jumpstarter-dev/jumpstarter-devspace',
             ];
+            const images = buildAll ? allImages : allImages.filter(img => {
+              const shortName = img.split('/')[1];
+              return labels.includes(`build-pr-images/${shortName}`);
+            });
+
+            if (images.length === 0) return;
+
             const body = [
               '## Container Images',
               '',
