@@ -78,7 +78,6 @@ class Handler:
 
     def __init__(self):
         self._sequence_counters: dict[str, int] = {}
-        self._segment_cache: bytes | None = None
 
     def handle(self, flow: http.HTTPFlow, config: dict) -> bool:
         """Route HLS requests to the appropriate handler."""

@@ -131,9 +131,12 @@ class TestProxyLifecycle:
         assert status["running"] is False
         assert status["mode"] == "stopped"
 
-    def test_start_passthrough_mode(self, client):
+    def test_start_passthrough_mode(self, client, proxy_port):
         result = client.start("passthrough")
         assert "passthrough" in result
+        assert _wait_for_port("127.0.0.1", proxy_port), (
+            f"mitmdump did not start on port {proxy_port}"
+        )
 
         status = client.status()
         assert status["running"] is True

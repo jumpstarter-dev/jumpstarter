@@ -177,16 +177,19 @@ class Handler:
         frames_dir = camera_config.get(
             "frames_dir", config.get("frames_dir", "video/frames"),
         )
+        files_dir = Path(
+            config.get("files_dir", "/opt/jumpstarter/mitmproxy/mock-files")
+        )
 
         if resource == "snapshot.jpg":
             self._serve_snapshot(
-                flow, camera_id, frames_dir, resolution,
+                flow, camera_id, frames_dir, files_dir, resolution,
             )
             return True
 
         elif resource == "stream.mjpeg":
             self._serve_mjpeg_stream(
-                flow, camera_id, frames_dir, resolution, fps,
+                flow, camera_id, frames_dir, files_dir, resolution, fps,
             )
             return True
 
@@ -197,10 +200,11 @@ class Handler:
         flow: http.HTTPFlow,
         camera_id: str,
         frames_dir: str,
+        files_dir: Path,
         resolution: list[int],
     ):
         """Serve a single JPEG snapshot."""
-        frame = self._get_frame(camera_id, frames_dir, resolution)
+        frame = self._get_frame(camera_id, frames_dir, files_dir, resolution)
 
         flow.response = http.Response.make(
             200,
@@ -217,6 +221,7 @@ class Handler:
         flow: http.HTTPFlow,
         camera_id: str,
         frames_dir: str,
+        files_dir: Path,
         resolution: list[int],
         fps: int,
     ):
@@ -248,7 +253,7 @@ class Handler:
         parts = []
         for _ in range(num_frames):
             frame = self._get_frame(
-                camera_id, frames_dir, resolution,
+                camera_id, frames_dir, files_dir, resolution,
             )
             parts.append(
                 f"--{boundary}\r\n"
@@ -280,6 +285,7 @@ class Handler:
         self,
         camera_id: str,
         frames_dir: str,
+        files_dir: Path,
         resolution: list[int],
     ) -> bytes:
         """Get the next frame for a camera.
@@ -291,8 +297,7 @@ class Handler:
         self._frame_counters[camera_id] = counter + 1
 
         # Try loading from files directory
-        files_base = Path("/opt/jumpstarter/mitmproxy/mock-files")
-        frame_dir = files_base / frames_dir
+        frame_dir = files_dir / frames_dir
 
         if frame_dir.exists():
             frames = sorted(frame_dir.glob("*.jpg"))
