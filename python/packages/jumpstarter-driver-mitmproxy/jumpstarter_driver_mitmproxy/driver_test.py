@@ -604,9 +604,9 @@ class TestConfigValidation:
             assert d.directories.addons == "/tmp/myproxy/addons"
             assert d.directories.mocks == "/tmp/myproxy/mock-responses"
             assert d.directories.files == "/tmp/myproxy/mock-files"
-            assert d.listen.host == "0.0.0.0"
+            assert d.listen.host == "127.0.0.1"
             assert d.listen.port == 8080
-            assert d.web.host == "0.0.0.0"
+            assert d.web.host == "127.0.0.1"
             assert d.web.port == 8081
         finally:
             d._stop_capture_server()
