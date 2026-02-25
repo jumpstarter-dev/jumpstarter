@@ -358,6 +358,11 @@ class ClientConfigV1Alpha1(BaseSettings):
             config.path = Path(path)
             config.path.parent.mkdir(parents=True, exist_ok=True)
         payload = config.model_dump(mode="json", exclude={"path", "alias"}, exclude_none=True)
+        # Backward compatibility: exclude 'leases' section when it only has default values
+        # so that old clients (v0.7.x) that don't recognize this field can still parse the config
+        default_leases = ClientConfigV1Alpha1Lease().model_dump(mode="json", exclude_none=True)
+        if payload.get("leases") == default_leases:
+            payload.pop("leases", None)
         temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
         try:
             os.fchmod(temp_fd, 0o600)
@@ -382,12 +387,17 @@ class ClientConfigV1Alpha1(BaseSettings):
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
         """Return YAML suitable for display"""
+        payload = config.model_dump(
+            mode="json",
+            exclude={"path", "alias", "refresh_token"},
+            exclude_none=True,
+        )
+        # Backward compatibility: exclude 'leases' section when it only has default values
+        default_leases = ClientConfigV1Alpha1Lease().model_dump(mode="json", exclude_none=True)
+        if payload.get("leases") == default_leases:
+            payload.pop("leases", None)
         return yaml.safe_dump(
-            config.model_dump(
-                mode="json",
-                exclude={"path", "alias", "refresh_token"},
-                exclude_none=True,
-            ),
+            payload,
             sort_keys=False,
         )
 
