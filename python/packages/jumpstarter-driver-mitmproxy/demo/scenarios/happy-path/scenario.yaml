@@ -1,0 +1,81 @@
+# Happy-path scenario: all endpoints return mock success data.
+#
+# Demonstrates per-entry match conditions — entries are evaluated in
+# order and the first matching one wins.  An entry with no "match" key
+# is an unconditional default.
+#
+#   match.query      — require specific query parameters
+#   match.body_json  — match on JSON fields in the request body
+#   match.headers    — require specific request headers
+
+endpoints:
+  http://example.com/api/v1/status:
+  - method: GET
+    match:
+      headers:
+        X-Device-Type: automotive   # automotive head-unit → richer response
+    status: 200
+    body:
+      device_id: DUT-MOCK-999
+      status: online
+      firmware_version: "2.5.1"
+      uptime_s: 172800
+      features:
+        climate_control: true
+        navigation: true
+      source: mock
+  - method: GET                     # default for any other device type
+    status: 200
+    body:
+      device_id: DUT-MOCK-999
+      status: online
+      firmware_version: "2.5.1"
+      uptime_s: 172800
+      source: mock
+
+  http://example.com/api/v1/updates/check:
+  - method: GET
+    match:
+      query:
+        channel: beta               # opt-in beta channel → newer pre-release
+    status: 200
+    body:
+      update_available: true
+      current_version: "2.5.1"
+      latest_version: "2.6.0-beta"
+      channel: beta
+      source: mock
+  - method: GET                     # default stable channel → no update
+    status: 200
+    body:
+      update_available: false
+      current_version: "2.5.1"
+      latest_version: "2.5.1"
+      source: mock
+
+  http://example.com/api/v1/telemetry:
+  - method: POST
+    match:
+      body_json:
+        level: critical             # critical alerts → extra acknowledgment
+    status: 200
+    body:
+      accepted: true
+      alert_triggered: true
+      source: mock
+  - method: POST                    # default for normal telemetry
+    status: 200
+    body:
+      accepted: true
+      source: mock
+
+  http://example.com/api/v1/config:
+  - method: GET
+    status: 200
+    body:
+      log_level: info
+      features:
+        ota_updates: true
+        remote_diagnostics: true
+        telemetry: true
+      source: mock

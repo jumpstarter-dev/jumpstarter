@@ -111,15 +111,26 @@ j proxy status                           # show proxy status
 ```console
 j proxy mock list                        # list configured mocks
 j proxy mock clear                       # remove all mocks
-j proxy scenario load happy-path.yaml    # load a scenario file
+j proxy mock load happy-path.yaml        # load a scenario file
+j proxy mock load my-capture/            # load a saved capture directory
 ```
 
-### Traffic Inspection
+### Traffic Capture
 
 ```console
 j proxy capture list                     # show captured requests
 j proxy capture clear                    # clear captured requests
+j proxy capture save ./my-capture        # export as scenario to directory
+j proxy capture save -f '/api/v1/*' ./my-capture  # with path filter
+j proxy capture save --exclude-mocked ./my-capture
+```
+
+### Flow Files
+
+```console
 j proxy flow list                        # list recorded flow files
+j proxy flow save capture_20260101.bin   # download to current directory
+j proxy flow save capture_20260101.bin /tmp/my.bin  # download to specific path
 ```
 
 ### Web UI & Certificates
@@ -349,7 +360,8 @@ endpoints:
 Load from CLI or Python:
 
 ```console
-j proxy scenario load happy-path.yaml
+j proxy mock load happy-path.yaml
+j proxy mock load my-capture/            # directory from 'capture save'
 ```
 
 ```python

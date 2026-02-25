@@ -141,7 +141,7 @@ class TestScenarioLoading:
     def test_load_happy_path(
         self, backend_server, proxy_client, http_session,
     ):
-        proxy_client.load_mock_scenario(str(SCENARIOS_DIR / "happy-path.yaml"))
+        proxy_client.load_mock_scenario(str(SCENARIOS_DIR / "happy-path"))
         time.sleep(1)
 
         resp = http_session.get(
@@ -156,7 +156,7 @@ class TestScenarioLoading:
         self, backend_server, proxy_client, http_session,
     ):
         proxy_client.load_mock_scenario(
-            str(SCENARIOS_DIR / "update-available.yaml"),
+            str(SCENARIOS_DIR / "update-available"),
         )
         time.sleep(1)
 
@@ -172,7 +172,7 @@ class TestScenarioLoading:
         self, backend_server, proxy_client, http_session,
     ):
         proxy_client.load_mock_scenario(
-            str(SCENARIOS_DIR / "backend-outage.yaml"),
+            str(SCENARIOS_DIR / "backend-outage"),
         )
         time.sleep(1)
 
@@ -187,7 +187,7 @@ class TestScenarioLoading:
     ):
         """mock_scenario() loads on entry, clears on exit."""
         with proxy_client.mock_scenario(
-            str(SCENARIOS_DIR / "happy-path.yaml"),
+            str(SCENARIOS_DIR / "happy-path"),
         ):
             time.sleep(1)
             resp = http_session.get(

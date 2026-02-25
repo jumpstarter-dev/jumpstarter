@@ -6,7 +6,7 @@
 #
 # Then inside the shell:
 #   j proxy start -m mock -w
-#   j proxy scenario load scenarios/happy-path.yaml
+#   j proxy mock load scenarios/happy-path
 #   j proxy mock clear
 
 apiVersion: jumpstarter.dev/v1alpha1
@@ -19,8 +19,8 @@ export:
     type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
     config:
       listen:
-        host: "127.0.0.1"
-        port: 8080
+        host: "192.168.105.10"
+        port: 8887
       web:
         host: "127.0.0.1"
         port: 8081
