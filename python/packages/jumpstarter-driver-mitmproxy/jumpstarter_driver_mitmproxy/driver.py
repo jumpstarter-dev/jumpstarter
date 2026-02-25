@@ -1151,6 +1151,8 @@ class MitmproxyDriver(Driver):
         path = Path(scenario_file)
         if not path.is_absolute():
             path = Path(self.directories.mocks) / path
+        if path.is_dir():
+            path = path / "scenario.yaml"
 
         if not path.exists():
             return f"Scenario file not found: {path}"
@@ -1244,6 +1246,39 @@ class MitmproxyDriver(Driver):
                 ),
             })
         return json.dumps(files, indent=2)
+
+    @export
+    async def get_flow_file(self, name: str) -> AsyncGenerator[str, None]:
+        """Stream a recorded flow file from the exporter in chunks.
+
+        Yields base64-encoded chunks so large files transfer without
+        hitting the gRPC message size limit.
+
+        Args:
+            name: Filename as returned by :meth:`list_flow_files`
+                (e.g. ``capture_20260101.bin``).
+
+        Yields:
+            Base64-encoded chunks of file content.
+
+        Raises:
+            ValueError: If ``name`` contains path traversal sequences.
+            FileNotFoundError: If the flow file does not exist.
+        """
+        flow_path = Path(self.directories.flows)
+        src = (flow_path / name).resolve()
+        # Guard against path traversal
+        if not str(src).startswith(str(flow_path.resolve())):
+            raise ValueError(f"Invalid flow file name: {name!r}")
+        if not src.exists():
+            raise FileNotFoundError(f"Flow file not found: {name}")
+        chunk_size = 2 * 1024 * 1024
+        with open(src, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                yield base64.b64encode(chunk).decode("ascii")
 
     # ── CA certificate access ───────────────────────────────────
 
