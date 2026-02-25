@@ -36,6 +36,8 @@ Or with context managers for cleaner test code::
 
 from __future__ import annotations
 
+import base64
+import fnmatch
 import json
 from contextlib import contextmanager
 from ipaddress import IPv6Address, ip_address
@@ -44,6 +46,7 @@ from threading import Event
 from typing import Any, Generator
 
 import click
+import yaml
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
@@ -257,20 +260,15 @@ class MitmproxyClient(DriverClient):
             """Remove all mock endpoint definitions."""
             click.echo(self.clear_mocks())
 
-        # ── Scenario commands ─────────────────────────────────
-
-        @base.group("scenario")
-        def scenario_group():
-            """Mock scenario management."""
-            pass
-
-        @scenario_group.command("load")
+        @mock_group.command("load")
         @click.argument("scenario_file")
-        def scenario_load_cmd(scenario_file: str):
+        def mock_load_cmd(scenario_file: str):
             """Load a mock scenario from a YAML or JSON file.
 
             SCENARIO_FILE is a path to a local scenario file. The file
-            is read on the client and uploaded to the exporter.
+            is read on the client and uploaded to the exporter. Any
+            companion files referenced by 'file:' entries are also
+            uploaded automatically.
             """
             local_path = Path(scenario_file)
             if not local_path.exists():
@@ -281,6 +279,10 @@ class MitmproxyClient(DriverClient):
             except OSError as e:
                 click.echo(f"Error reading file: {e}")
                 return
+
+            # Upload companion files referenced by file: entries
+            _upload_scenario_files(self, local_path, content)
+
             click.echo(
                 self.load_mock_scenario_content(local_path.name, content)
             )
@@ -305,10 +307,32 @@ class MitmproxyClient(DriverClient):
 
         # ── Capture commands ───────────────────────────────────
 
-        @base.group("capture")
-        def capture_group():
-            """Request capture management."""
-            pass
+        @base.group("capture", invoke_without_command=True)
+        @click.option(
+            "-f", "--filter",
+            "filter_pattern",
+            default="",
+            help="Path glob filter for watch (e.g. '/api/v1/*').",
+        )
+        @click.pass_context
+        def capture_group(ctx, filter_pattern: str):
+            """Request capture management.
+
+            When invoked without a subcommand, streams live requests
+            (equivalent to 'capture watch').
+            """
+            if ctx.invoked_subcommand is not None:
+                return
+            click.echo("Watching captured requests (Ctrl+C to stop)...")
+            try:
+                for event in self.watch_captured_requests():
+                    if filter_pattern:
+                        path = event.get("path", "").split("?")[0]
+                        if not fnmatch.fnmatch(path, filter_pattern):
+                            continue
+                    click.echo(_format_capture_entry(event))
+            except KeyboardInterrupt:
+                pass
 
         @capture_group.command("list")
         def capture_list_cmd():
@@ -319,14 +343,91 @@ class MitmproxyClient(DriverClient):
                 return
             click.echo(f"{len(reqs)} captured request(s):")
             for r in reqs:
-                status = r.get("response_status", "")
-                status_str = f" -> {status}" if status else ""
-                click.echo(f"  {r.get('method')} {r.get('path')}{status_str}")
+                click.echo(_format_capture_entry(r))
 
         @capture_group.command("clear")
         def capture_clear_cmd():
             """Clear all captured requests."""
             click.echo(self.clear_captured_requests())
+
+        @capture_group.command("watch")
+        @click.option(
+            "-f", "--filter",
+            "filter_pattern",
+            default="",
+            help="Path glob filter (e.g. '/api/v1/*').",
+        )
+        def capture_watch_cmd(filter_pattern: str):
+            """Watch captured requests in real-time.
+
+            Streams live requests to the terminal as they flow through
+            the proxy. Press Ctrl+C to stop.
+            """
+            click.echo("Watching captured requests (Ctrl+C to stop)...")
+            try:
+                for event in self.watch_captured_requests():
+                    if filter_pattern:
+                        path = event.get("path", "").split("?")[0]
+                        if not fnmatch.fnmatch(path, filter_pattern):
+                            continue
+                    click.echo(_format_capture_entry(event))
+            except KeyboardInterrupt:
+                pass
+
+        @capture_group.command("export")
+        @click.option(
+            "-o", "--output",
+            type=click.Path(),
+            default=None,
+            help="Output directory for scenario.yaml and response files.",
+        )
+        @click.option(
+            "-f", "--filter",
+            "filter_pattern",
+            default="",
+            help="Path glob filter (e.g. '/api/v1/*').",
+        )
+        @click.option(
+            "--exclude-mocked",
+            is_flag=True,
+            help="Skip requests served by the mock addon.",
+        )
+        def capture_export_cmd(output: str | None, filter_pattern: str,
+                               exclude_mocked: bool):
+            """Export captured traffic as a scenario.
+
+            Generates a v2 scenario from captured requests, suitable for
+            loading with 'j proxy mock load'. JSON response bodies are
+            included inline; binary/large bodies are saved as companion
+            files under responses/ preserving the URL path structure.
+
+            When -o is given, creates the directory and writes
+            scenario.yaml plus any response files inside it.
+            """
+            yaml_str, file_paths = self.export_captured_scenario(
+                filter_pattern=filter_pattern,
+                exclude_mocked=exclude_mocked,
+            )
+
+            if output:
+                out_dir = Path(output)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                yaml_path = out_dir / "scenario.yaml"
+                yaml_path.write_text(yaml_str)
+                click.echo(f"Scenario written to: {yaml_path.resolve()}")
+
+                # Download companion files from the exporter
+                for rel_path in file_paths:
+                    data = self.get_captured_file(rel_path)
+                    file_path = out_dir / rel_path
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    file_path.write_bytes(data)
+                    click.echo(f"  {rel_path}")
+
+                # Clean up spool files after successful export
+                click.echo(self.clean_capture_spool())
+            else:
+                click.echo(yaml_str)
 
         # ── Web UI forwarding ──────────────────────────────────
 
@@ -384,7 +485,15 @@ class MitmproxyClient(DriverClient):
                     while not stop.wait(timeout=0.5):
                         pass
                 except KeyboardInterrupt:
-                    pass
+                    click.echo("\nStopping...")
+                    # The portforward context manager teardown may block
+                    # waiting for active connections to drain. Install a
+                    # handler so a second Ctrl+C force-exits immediately.
+                    import os as _os
+                    import signal as _signal
+                    _signal.signal(
+                        _signal.SIGINT, lambda *_: _os._exit(0),
+                    )
 
         # ── CA certificate ─────────────────────────────────────
 
@@ -790,6 +899,17 @@ class MitmproxyClient(DriverClient):
         """
         return json.loads(self.call("get_captured_requests"))
 
+    def watch_captured_requests(self) -> Generator[dict, None, None]:
+        """Stream captured requests as they arrive.
+
+        Yields existing requests first, then new ones in real-time.
+
+        Yields:
+            Parsed capture event dicts.
+        """
+        for event_json in self.streamingcall("watch_captured_requests"):
+            yield json.loads(event_json)
+
     def clear_captured_requests(self) -> str:
         """Clear all captured requests.
 
@@ -797,6 +917,74 @@ class MitmproxyClient(DriverClient):
             Message with the count of cleared requests.
         """
         return self.call("clear_captured_requests")
+
+    def export_captured_scenario(
+        self, filter_pattern: str = "", exclude_mocked: bool = False,
+    ) -> tuple[str, list[str]]:
+        """Export captured requests as a v2 scenario YAML string.
+
+        Deduplicates by ``METHOD /path`` (last response wins). JSON
+        bodies are rendered as native YAML. Large/binary bodies are
+        written to files on the exporter and listed for download.
+
+        Args:
+            filter_pattern: Optional path glob (e.g. ``/api/v1/*``).
+            exclude_mocked: Skip requests served by the mock addon.
+
+        Returns:
+            Tuple of (yaml_string, file_paths_list) where file_paths
+            are relative paths that can be fetched with
+            :meth:`get_captured_file`.
+        """
+        result = json.loads(self.call(
+            "export_captured_scenario", filter_pattern, exclude_mocked,
+        ))
+        return result["yaml"], result.get("files", [])
+
+    def get_captured_file(self, relative_path: str) -> bytes:
+        """Download a captured file from the exporter via streaming.
+
+        Uses chunked streaming transfer so files of any size can be
+        downloaded without hitting gRPC message limits.
+
+        Args:
+            relative_path: Path relative to files_dir on the exporter.
+
+        Returns:
+            Raw file content.
+        """
+        chunks = []
+        for b64_chunk in self.streamingcall("get_captured_file", relative_path):
+            chunks.append(base64.b64decode(b64_chunk))
+        return b"".join(chunks)
+
+    def clean_capture_spool(self) -> str:
+        """Remove spooled response body files on the exporter.
+
+        Call after exporting a scenario to free disk space.
+
+        Returns:
+            Message with the count of removed files.
+        """
+        return self.call("clean_capture_spool")
+
+    def upload_mock_file(self, relative_path: str, data: bytes) -> str:
+        """Upload a binary file to the exporter's mock files directory.
+
+        Used when loading a scenario that has ``file:`` references
+        pointing to local files on the client.
+
+        Args:
+            relative_path: Path relative to files_dir on the exporter.
+            data: Raw file content.
+
+        Returns:
+            Confirmation message.
+        """
+        return self.call(
+            "upload_mock_file", relative_path,
+            base64.b64encode(data).decode("ascii"),
+        )
 
     def wait_for_request(self, method: str, path: str,
                          timeout: float = 10.0) -> dict:
@@ -1041,6 +1229,103 @@ class MitmproxyClient(DriverClient):
 # ── CLI helpers ────────────────────────────────────────────────
 
 
+# Fixed column widths (characters):
+#   2 (indent) + 8 (timestamp) + 1 + 7 (method) + 1 + PATH + 1 + 3 (status)
+#   + 1 + 7 (duration) + 1 + 8 (size) + 1 + 13 (tag) = 54 + PATH
+_FIXED_COLS_WIDTH = 54
+_MIN_PATH_WIDTH = 20
+
+_METHOD_COLORS: dict[str, str] = {
+    "GET": "green",
+    "POST": "blue",
+    "PUT": "yellow",
+    "PATCH": "yellow",
+    "DELETE": "red",
+    "HEAD": "cyan",
+    "OPTIONS": "cyan",
+}
+
+
+def _style_status(status: str | int) -> str:
+    """Color a status code string by HTTP status class."""
+    text = str(status).rjust(3)
+    code = int(status) if str(status).isdigit() else 0
+    if code >= 500:
+        return click.style(text, fg="red", bold=True)
+    if code >= 400:
+        return click.style(text, fg="yellow")
+    if code >= 300:
+        return click.style(text, fg="cyan")
+    if code >= 200:
+        return click.style(text, fg="green")
+    return click.style(text, fg="white")
+
+
+def _format_capture_entry(entry: dict) -> str:
+    """Format a captured request entry for terminal display.
+
+    Shows timestamp, method, path, status, duration, size, and mock tag
+    in fixed-width columns for consistent alignment.
+    """
+    method = entry.get("method", "")
+    path = entry.get("path", "")
+    status = entry.get("response_status", "")
+    was_mocked = entry.get("was_mocked", False)
+    timestamp = entry.get("timestamp", 0)
+    duration_ms = entry.get("duration_ms", 0)
+    response_size = entry.get("response_size", 0)
+
+    # Format timestamp as HH:MM:SS
+    import time as _time
+    if timestamp:
+        ts_str = click.style(
+            _time.strftime("%H:%M:%S", _time.localtime(timestamp)),
+            fg="bright_black",
+        )
+    else:
+        ts_str = click.style("--:--:--", fg="bright_black")
+
+    # Color-code HTTP method (padded to 7 chars — length of "OPTIONS")
+    styled_method = click.style(
+        method.ljust(7), fg=_METHOD_COLORS.get(method, "white"), bold=True,
+    )
+
+    # Compute path column width from terminal size, giving path all remaining space
+    import shutil as _shutil
+    term_width = _shutil.get_terminal_size((100, 24)).columns
+    path_width = max(term_width - _FIXED_COLS_WIDTH, _MIN_PATH_WIDTH)
+
+    # Pad or truncate path to computed column width
+    if len(path) > path_width:
+        path_col = path[: path_width - 1] + "\u2026"
+    else:
+        path_col = path.ljust(path_width)
+
+    # Color-code status by class (padded to 3 chars)
+    styled_status = _style_status(status) if status else click.style("  -", fg="bright_black")
+
+    # Format duration (fixed 7-char column)
+    if duration_ms:
+        if duration_ms >= 1000:
+            dur_text = f"{duration_ms / 1000:.1f}s"
+        else:
+            dur_text = f"{duration_ms}ms"
+    else:
+        dur_text = "-"
+    dur_str = click.style(dur_text.rjust(7), fg="bright_black")
+
+    # Format response size (fixed 8-char column)
+    size_str = click.style(_human_size(response_size).rjust(8), fg="bright_black")
+
+    # Mock/passthrough tag (fixed 13-char column — length of "[passthrough]")
+    if was_mocked:
+        tag = click.style("[mocked]".ljust(13), fg="green")
+    else:
+        tag = click.style("[passthrough]", fg="yellow")
+
+    return f"  {ts_str} {styled_method} {path_col} {styled_status} {dur_str} {size_str} {tag}"
+
+
 def _mock_summary(defn: dict) -> str:
     """One-line summary of a mock endpoint definition."""
     if "rules" in defn:
@@ -1068,3 +1353,58 @@ def _human_size(nbytes: int) -> str:
             return f"{nbytes:.0f} {unit}" if unit == "B" else f"{nbytes:.1f} {unit}"
         nbytes /= 1024
     return f"{nbytes:.1f} TB"
+
+
+def _collect_file_entries(endpoints: dict) -> list[dict]:
+    """Collect all dicts that might contain a ``file`` key from a scenario.
+
+    Walks top-level endpoints plus nested ``rules`` and ``sequence`` entries.
+    """
+    entries: list[dict] = []
+    for ep in endpoints.values():
+        if not isinstance(ep, dict):
+            continue
+        entries.append(ep)
+        for rule in ep.get("rules", []):
+            if isinstance(rule, dict):
+                entries.append(rule)
+        for step in ep.get("sequence", []):
+            if isinstance(step, dict):
+                entries.append(step)
+    return entries
+
+
+def _upload_scenario_files(
+    client: MitmproxyClient, scenario_path: Path, content: str,
+) -> None:
+    """Scan a scenario for ``file:`` references and upload them.
+
+    Reads each referenced file relative to the scenario file's parent
+    directory and uploads it to the exporter's mock files directory.
+    Handles files at the endpoint level and inside ``rules`` entries.
+    """
+    try:
+        if scenario_path.suffix in (".yaml", ".yml"):
+            raw = yaml.safe_load(content)
+        else:
+            raw = json.loads(content)
+    except (yaml.YAMLError, json.JSONDecodeError):
+        return
+
+    if not isinstance(raw, dict):
+        return
+
+    endpoints = raw.get("endpoints", raw)
+    if not isinstance(endpoints, dict):
+        return
+
+    base_dir = scenario_path.parent
+
+    for entry in _collect_file_entries(endpoints):
+        if "file" not in entry:
+            continue
+        file_ref = entry["file"]
+        file_path = base_dir / file_ref
+        if file_path.exists():
+            click.echo(f"  uploading {file_ref}")
+            client.upload_mock_file(file_ref, file_path.read_bytes())
