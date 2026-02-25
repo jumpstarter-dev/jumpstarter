@@ -28,6 +28,9 @@ debugging, or headless via mitmdump for CI/CD pipelines.
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import fnmatch
 import json
 import logging
 import os
@@ -37,9 +40,11 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 from pydantic import BaseModel, model_validator
@@ -47,6 +52,207 @@ from pydantic import BaseModel, model_validator
 from jumpstarter.driver import Driver, export, exportstream
 
 logger = logging.getLogger(__name__)
+
+# ── Capture export helpers ───────────────────────────────────
+
+# Content-type → file extension mapping for captured responses.
+_CONTENT_TYPE_EXTENSIONS: dict[str, str] = {
+    "application/json": ".json",
+    "application/xml": ".xml",
+    "application/pdf": ".pdf",
+    "application/zip": ".zip",
+    "application/gzip": ".gz",
+    "application/octet-stream": ".bin",
+    "application/javascript": ".js",
+    "application/x-protobuf": ".pb",
+    "application/x-tar": ".tar",
+    "application/x-firmware": ".fw",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "audio/mpeg": ".mp3",
+    "audio/aac": ".aac",
+    "audio/ogg": ".ogg",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/mpeg": ".mpg",
+    "text/html": ".html",
+    "text/css": ".css",
+    "text/plain": ".txt",
+    "text/xml": ".xml",
+    "text/csv": ".csv",
+}
+
+
+def _content_type_to_ext(content_type: str) -> str:
+    """Map a base content-type to a file extension.
+
+    Checks the explicit table first, then ``mimetypes.guess_extension``,
+    and finally returns ``.bin``.
+    """
+    if not content_type:
+        return ".bin"
+    ct = content_type.split(";")[0].strip().lower()
+    if ct in _CONTENT_TYPE_EXTENSIONS:
+        return _CONTENT_TYPE_EXTENSIONS[ct]
+    import mimetypes
+    ext = mimetypes.guess_extension(ct, strict=False)
+    if ext:
+        return ext
+    return ".bin"
+
+
+class _LiteralStr(str):
+    """String subclass that YAML renders as a literal block scalar (``|``).
+
+    When used as a value in a dict passed to ``yaml.dump()``, the string
+    is emitted with the ``|`` indicator so multi-line content (like
+    pretty-printed JSON) is preserved verbatim.
+    """
+
+
+class _ScenarioDumper(yaml.SafeDumper):
+    """YAML dumper that supports :class:`_LiteralStr` block scalars."""
+
+
+_ScenarioDumper.add_representer(
+    _LiteralStr,
+    lambda dumper, data: dumper.represent_scalar(
+        "tag:yaml.org,2002:str", data, style="|",
+    ),
+)
+
+
+def _flatten_entry(entry: dict) -> tuple[str, dict]:
+    """Extract method and flatten a URL-keyed endpoint entry.
+
+    Removes ``method``, un-nests ``response`` fields, and returns
+    ``(method, flat_dict)`` suitable for the addon.
+    """
+    entry = dict(entry)
+    method = entry.pop("method", "GET")
+    if "response" in entry:
+        response = entry.pop("response")
+        entry.update(response)
+    return method, entry
+
+
+def _convert_url_endpoints(endpoints: dict) -> dict:
+    """Convert URL-keyed endpoints to ``METHOD /path`` format for the addon.
+
+    Exported scenarios use full URLs as keys with each value being a
+    **list** of response definitions (each containing a ``method``
+    field).  The addon expects ``METHOD /path`` keys.  This function
+    detects the URL-keyed format and converts it.
+
+    Supported input formats:
+      - **List** (current): ``{url: [{method: GET, ...}, ...]}``
+      - **Dict with rules** (legacy v2): ``{url: {rules: [...]}}``
+      - **Dict** (legacy v2 single): ``{url: {method: GET, ...}}``
+      - **Legacy** ``METHOD /path`` keys: passed through unchanged.
+    """
+    converted: dict[str, dict] = {}
+    for key, ep in endpoints.items():
+        if not key.startswith(("http://", "https://")):
+            # Legacy format — keep as-is
+            converted[key] = ep
+            continue
+
+        parsed = urlparse(key)
+        path = parsed.path
+
+        # Normalise to a list of response entries
+        if isinstance(ep, list):
+            entries = ep
+        elif isinstance(ep, dict) and "rules" in ep:
+            entries = ep["rules"]
+        elif isinstance(ep, dict):
+            entries = [ep]
+        else:
+            continue
+
+        # Group entries by method → separate addon endpoints
+        by_method: dict[str, list[dict]] = {}
+        for entry in entries:
+            method, flat = _flatten_entry(entry)
+            by_method.setdefault(method, []).append(flat)
+
+        for method, method_entries in by_method.items():
+            new_key = f"{method} {path}"
+            if len(method_entries) == 1:
+                converted[new_key] = method_entries[0]
+            elif any("match" in e for e in method_entries):
+                # Different match conditions → conditional rules
+                converted[new_key] = {"rules": method_entries}
+            else:
+                # Same method, no match conditions → sequential replay
+                converted[new_key] = {"sequence": method_entries}
+
+    return converted
+
+
+def _write_captured_file(
+    method: str, url_path: str, ext: str, data: bytes,
+    endpoint: dict, files_dir: Path,
+) -> str:
+    """Write a captured response body to files_dir and set ``file:`` on endpoint.
+
+    The file path preserves the URL structure under ``responses/{METHOD}/``,
+    e.g. ``("GET", "/api/v1/status")`` → ``responses/GET/api/v1/status.json``.
+
+    Returns the relative path for the client to download later.
+    """
+    clean = url_path.lstrip("/")
+    # Sanitise characters that are unsafe in filenames but keep slashes
+    clean = "".join(c if (c.isalnum() or c in "/-_.") else "_" for c in clean)
+    clean = clean.strip("_")
+    rel = f"responses/{method}/{clean}{ext}"
+    dest = files_dir / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    endpoint["file"] = rel
+    return rel
+
+
+def _flatten_query(query: dict) -> dict[str, str]:
+    """Flatten a ``parse_qs`` query dict for use as ``match.query``.
+
+    ``parse_qs`` returns ``{"key": ["val1", "val2"]}``. For match
+    conditions, we want ``{"key": "val1"}`` (first value only) for
+    single-value params, or keep the list for multi-value ones.
+    Returns an empty dict if there are no query params.
+    """
+    if not query:
+        return {}
+    flat: dict[str, str] = {}
+    for k, v in query.items():
+        if isinstance(v, list):
+            flat[k] = v[0] if len(v) == 1 else ", ".join(v)
+        else:
+            flat[k] = str(v)
+    return flat
+
+
+def _query_file_suffix(query: dict) -> str:
+    """Build a filename-safe suffix from query parameters.
+
+    Example: ``{"id": ["ch101"]}`` → ``"_id-ch101"``
+             ``{"type": ["audio"], "fmt": ["mp3"]}`` → ``"_type-audio_fmt-mp3"``
+    Returns an empty string if there are no query params.
+    """
+    if not query:
+        return ""
+    parts = []
+    for k in sorted(query):
+        v = query[k]
+        val = v[0] if isinstance(v, list) and v else str(v)
+        # Keep only filename-safe characters
+        safe_val = "".join(c if c.isalnum() or c in "-." else "-" for c in str(val))
+        safe_key = "".join(c if c.isalnum() or c in "-." else "-" for c in str(k))
+        parts.append(f"{safe_key}-{safe_val}")
+    return "_" + "_".join(parts)
 
 
 class ListenConfig(BaseModel):
@@ -334,10 +540,6 @@ class MitmproxyDriver(Driver):
         if mode == "mock":
             self._load_startup_mocks()
             self._write_mock_config()
-            addon_path = Path(self.directories.addons) / "mock_addon.py"
-            if not addon_path.exists():
-                self._generate_default_addon(addon_path)
-            cmd.extend(["-s", str(addon_path)])
 
         elif mode == "record":
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -358,6 +560,15 @@ class MitmproxyDriver(Driver):
                 "--server-replay", str(replay_path),
                 "--server-replay-nopop",
             ])
+
+        # Always attach the bundled addon for capture event emission.
+        # In mock mode it also serves mock responses; in other modes
+        # it finds no matching endpoints and passes requests through
+        # while still recording traffic via the response() hook.
+        # Regenerate every session so the capture socket path is current.
+        addon_path = Path(self.directories.addons) / "mock_addon.py"
+        self._generate_default_addon(addon_path)
+        cmd.extend(["-s", str(addon_path)])
 
         return None
 
@@ -955,9 +1166,12 @@ class MitmproxyDriver(Driver):
 
         # Handle v2 format (with "endpoints" wrapper) or v1 flat format
         if "endpoints" in raw:
-            self._mock_endpoints = raw["endpoints"]
+            endpoints = raw["endpoints"]
         else:
-            self._mock_endpoints = raw
+            endpoints = raw
+
+        # Convert URL-keyed endpoints to METHOD /path format
+        self._mock_endpoints = _convert_url_endpoints(endpoints)
 
         self._write_mock_config()
         return (
@@ -994,9 +1208,12 @@ class MitmproxyDriver(Driver):
 
         # Handle v2 format (with "endpoints" wrapper) or v1 flat format
         if "endpoints" in raw:
-            self._mock_endpoints = raw["endpoints"]
+            endpoints = raw["endpoints"]
         else:
-            self._mock_endpoints = raw
+            endpoints = raw
+
+        # Convert URL-keyed endpoints to METHOD /path format
+        self._mock_endpoints = _convert_url_endpoints(endpoints)
 
         self._write_mock_config()
         return (
@@ -1074,6 +1291,31 @@ class MitmproxyDriver(Driver):
             return json.dumps(self._captured_requests)
 
     @export
+    async def watch_captured_requests(self) -> AsyncGenerator[str, None]:
+        """Stream captured requests as they arrive.
+
+        First yields all existing captured requests as individual JSON
+        events, then polls for new entries every 0.3s and yields them
+        as they appear. Runs until the client disconnects.
+
+        Yields:
+            JSON string of each capture event.
+        """
+        with self._capture_lock:
+            last_index = len(self._captured_requests)
+            for req in self._captured_requests:
+                yield json.dumps(req)
+
+        while True:
+            await asyncio.sleep(0.3)
+            with self._capture_lock:
+                new_count = len(self._captured_requests)
+                if new_count > last_index:
+                    for req in self._captured_requests[last_index:new_count]:
+                        yield json.dumps(req)
+                    last_index = new_count
+
+    @export
     def clear_captured_requests(self) -> str:
         """Clear all captured requests.
 
@@ -1084,6 +1326,289 @@ class MitmproxyDriver(Driver):
             count = len(self._captured_requests)
             self._captured_requests.clear()
         return f"Cleared {count} captured request(s)"
+
+    @export
+    def export_captured_scenario(self, filter_pattern: str = "",
+                                 exclude_mocked: bool = False) -> str:
+        """Export captured requests as a v2 scenario.
+
+        Deduplicates by ``METHOD /path`` (last response wins, query
+        strings stripped). JSON response bodies are included as native
+        YAML mappings. Binary/large response bodies are base64-encoded
+        and returned alongside the YAML for the client to write locally.
+
+        Args:
+            filter_pattern: Optional path glob filter (e.g. ``/api/v1/*``).
+                Only endpoints whose path matches are included.
+            exclude_mocked: If True, skip requests that were served by
+                the mock addon (``was_mocked=True``).
+
+        Returns:
+            JSON string with keys:
+            - ``yaml``: v2 scenario YAML string
+            - ``files``: list of relative file paths on the exporter
+              that the client should download via ``get_captured_file``
+        """
+        with self._capture_lock:
+            requests = list(self._captured_requests)
+
+        filtered = self._filter_captured_requests(
+            requests, filter_pattern, exclude_mocked,
+        )
+
+        empty = {"yaml": yaml.dump({"endpoints": {}}, default_flow_style=False), "files": []}
+        if not filtered:
+            return json.dumps(empty)
+
+        # Group requests by URL base (scheme + domain + path, no
+        # query and no method).  All requests are kept in order so
+        # repeated calls to the same endpoint become sequential
+        # entries in the exported array.
+        groups: dict[str, list[dict]] = {}
+        for req in filtered:
+            url = req.get("url", "")
+            base_path = req.get("path", "").split("?")[0]
+            parsed_url = urlparse(url)
+            url_base = f"{parsed_url.scheme}://{parsed_url.netloc}{base_path}"
+            groups.setdefault(url_base, []).append(req)
+
+        files_dir = Path(self.directories.files)
+        endpoints, file_paths = self._build_grouped_endpoints(
+            groups, files_dir,
+        )
+
+        scenario_yaml = yaml.dump(
+            {"endpoints": endpoints},
+            Dumper=_ScenarioDumper,
+            default_flow_style=False, sort_keys=False,
+        )
+        return json.dumps({"yaml": scenario_yaml, "files": file_paths})
+
+    @staticmethod
+    def _filter_captured_requests(
+        requests: list[dict],
+        filter_pattern: str,
+        exclude_mocked: bool,
+    ) -> list[dict]:
+        """Filter captured requests without deduplication.
+
+        All matching requests are returned in their original order so
+        repeated calls to the same endpoint are preserved as sequential
+        entries in the exported scenario.
+        """
+        result: list[dict] = []
+        for req in requests:
+            if exclude_mocked and req.get("was_mocked"):
+                continue
+
+            base_path = req.get("path", "").split("?")[0]
+            if filter_pattern and not fnmatch.fnmatch(base_path, filter_pattern):
+                continue
+
+            result.append(req)
+        return result
+
+    @staticmethod
+    def _build_grouped_endpoints(
+        groups: dict[str, list[dict]], files_dir: Path,
+    ) -> tuple[dict[str, list], list[str]]:
+        """Convert grouped captured requests into v2 scenario endpoints.
+
+        Keys are full URLs (scheme + domain + path).  Each endpoint
+        value is a **list** of response definitions, each containing a
+        ``method`` field.  This handles multiple HTTP methods and query
+        variants for the same URL cleanly.
+
+        Returns:
+            ``(endpoints_dict, file_paths_list)``
+        """
+        endpoints: dict[str, list] = {}
+        file_paths: list[str] = []
+
+        for ep_key, reqs in groups.items():
+            parsed_ep = urlparse(ep_key)
+            url_path = parsed_ep.path
+            first_ts = reqs[0].get("timestamp", 0) if reqs else 0
+
+            responses = []
+            for req in reqs:
+                method = req.get("method", "GET")
+                query = req.get("query", {})
+                file_key = url_path + _query_file_suffix(query)
+                resp_dict, fpath = MitmproxyDriver._build_scenario_response(
+                    method, file_key, req, files_dir,
+                )
+
+                # Assemble full entry with deliberate field ordering:
+                #   method → match → delay_ms → response
+                entry: dict = {"method": method}
+
+                query_match = _flatten_query(query)
+                if query_match:
+                    entry["match"] = {"query": query_match}
+
+                ts = req.get("timestamp", 0)
+                delay = round((ts - first_ts) * 1000) if first_ts else 0
+                entry["delay_ms"] = max(delay, 0)
+
+                entry["response"] = resp_dict
+
+                responses.append(entry)
+                if fpath:
+                    file_paths.append(fpath)
+
+            endpoints[ep_key] = responses
+
+        return endpoints, file_paths
+
+    @staticmethod
+    def _build_scenario_response(
+        method: str, file_key: str, req: dict, files_dir: Path,
+    ) -> tuple[dict, str | None]:
+        """Build the response portion of a scenario endpoint entry.
+
+        Returns only response-related fields (``status``, ``file``,
+        ``content_type``, ``headers``).  The caller is responsible for
+        adding request-level fields (``method``, ``match``,
+        ``delay_ms``) and nesting this under a ``response`` key.
+
+        Returns:
+            ``(response_dict, relative_file_path_or_None)``
+        """
+        status = req.get("response_status", 200)
+        content_type = req.get("response_content_type", "application/json")
+        response_body = req.get("response_body")
+        response_body_file = req.get("response_body_file")
+
+        response: dict = {"status": status}
+        file_path: str | None = None
+
+        if content_type and content_type != "application/json":
+            response["content_type"] = content_type
+
+        # Always write response bodies to files for consistency.
+        # Users can manually inline bodies in hand-written scenarios.
+        if response_body_file and Path(response_body_file).exists():
+            file_path = MitmproxyDriver._export_body_to_file(
+                method, file_key,
+                Path(response_body_file).read_bytes(),
+                content_type, response, files_dir,
+            )
+        elif response_body is not None and response_body != "":
+            file_path = MitmproxyDriver._export_body_to_file(
+                method, file_key,
+                response_body.encode("utf-8"),
+                content_type, response, files_dir,
+            )
+
+        # Include response headers, omitting standard framework-managed ones
+        resp_headers = req.get("response_headers", {})
+        filtered_headers = {
+            k: v for k, v in resp_headers.items()
+            if k.lower() not in (
+                "content-type", "content-length", "content-encoding",
+                "transfer-encoding", "connection", "date", "server",
+            )
+        }
+        if filtered_headers:
+            response["headers"] = filtered_headers
+
+        return response, file_path
+
+    @staticmethod
+    def _export_body_to_file(
+        method: str, file_key: str, raw: bytes,
+        content_type: str, endpoint: dict, files_dir: Path,
+    ) -> str:
+        """Write a response body to a file, formatting JSON if possible.
+
+        Always writes to a file — never inlines into the YAML. JSON
+        bodies are pretty-printed for readability.
+
+        Returns the relative file path for the client to download.
+        """
+        # Try to decode and pretty-print JSON
+        try:
+            text = raw.decode("utf-8")
+            parsed = json.loads(text)
+            data = json.dumps(parsed, indent=2, ensure_ascii=False).encode()
+            return _write_captured_file(
+                method, file_key, ".json", data, endpoint, files_dir,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+        # Non-JSON — write as-is with an appropriate extension
+        ext = _content_type_to_ext(content_type)
+        return _write_captured_file(
+            method, file_key, ext, raw, endpoint, files_dir,
+        )
+
+    @export
+    def clean_capture_spool(self) -> str:
+        """Remove all spooled response body files.
+
+        Call this after exporting a scenario to free disk space.
+
+        Returns:
+            Message with the number of removed files.
+        """
+        spool_dir = Path(self.directories.data) / "capture-spool"
+        if not spool_dir.exists():
+            return "No spool directory found"
+
+        count = 0
+        for f in spool_dir.iterdir():
+            if f.is_file():
+                f.unlink()
+                count += 1
+        return f"Removed {count} spool file(s)"
+
+    @export
+    async def get_captured_file(self, relative_path: str) -> AsyncGenerator[str, None]:
+        """Stream a captured file from the files directory in chunks.
+
+        Yields base64-encoded chunks so large files transfer without
+        hitting the gRPC message size limit.
+
+        Args:
+            relative_path: Path relative to files_dir (e.g.
+                ``captured-files/GET__endpoint.json``).
+
+        Yields:
+            Base64-encoded chunks of file content.
+        """
+        src = Path(self.directories.files) / relative_path
+        if not src.exists():
+            return
+        # 2 MB raw → ~2.7 MB base64, well under the 4 MB gRPC limit
+        chunk_size = 2 * 1024 * 1024
+        with open(src, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                yield base64.b64encode(chunk).decode("ascii")
+
+    @export
+    def upload_mock_file(self, relative_path: str, content_base64: str) -> str:
+        """Upload a binary file to the mock files directory.
+
+        Used by the client to transfer files referenced by ``file:``
+        entries in scenario YAML files.
+
+        Args:
+            relative_path: Path relative to files_dir (e.g.
+                ``captured-files/GET__firmware.bin``).
+            content_base64: Base64-encoded file content.
+
+        Returns:
+            Confirmation message.
+        """
+        dest = Path(self.directories.files) / relative_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(base64.b64decode(content_base64))
+        return f"Uploaded: {relative_path} ({dest.stat().st_size} bytes)"
 
     @export
     def wait_for_request(self, method: str, path: str,
@@ -1118,6 +1643,11 @@ class MitmproxyDriver(Driver):
 
     def _start_capture_server(self):
         """Create a Unix domain socket for receiving capture events."""
+        # Ensure the spool directory exists for response body capture
+        Path(self.directories.data, "capture-spool").mkdir(
+            parents=True, exist_ok=True,
+        )
+
         # Use a short path to avoid the ~104-char AF_UNIX limit on macOS.
         # Try {data}/capture.sock first; fall back to a temp file.
         preferred = str(Path(self.directories.data) / "capture.sock")
@@ -1253,9 +1783,11 @@ class MitmproxyDriver(Driver):
                     else:
                         raw = json.load(f)
                 if "endpoints" in raw:
-                    self._mock_endpoints = raw["endpoints"]
+                    endpoints = raw["endpoints"]
                 else:
-                    self._mock_endpoints = raw
+                    endpoints = raw
+                # Convert URL-keyed endpoints to METHOD /path format
+                self._mock_endpoints = _convert_url_endpoints(endpoints)
 
         if self.mocks:
             self._mock_endpoints.update(self.mocks)
@@ -1322,6 +1854,10 @@ class MitmproxyDriver(Driver):
             content = content.replace(
                 '/opt/jumpstarter/mitmproxy/capture.sock',
                 self._capture_socket_path or '',
+            )
+            content = content.replace(
+                '/opt/jumpstarter/mitmproxy/capture-spool',
+                str(Path(self.directories.data) / "capture-spool"),
             )
             path.write_text(content)
             logger.info("Installed bundled v2 addon: %s", path)
@@ -1409,3 +1945,4 @@ addons = [MitmproxyMockAddon()]
         with open(path, "w") as f:
             f.write(addon_code)
         logger.info("Generated fallback v2 addon: %s", path)
+

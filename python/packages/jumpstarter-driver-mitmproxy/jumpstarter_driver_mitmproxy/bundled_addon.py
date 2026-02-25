@@ -425,6 +425,7 @@ class MitmproxyMockAddon:
         self._config_mtime: float = 0
         self._config_path = Path(self.MOCK_DIR) / "endpoints.json"
         self._sequence_state: dict[str, int] = defaultdict(int)
+        self._sequence_start: dict[str, float] = {}
         self._capture_client = CaptureClient(CAPTURE_SOCKET)
         self._state: dict = {}
         self._state_mtime: float = 0
@@ -745,14 +746,84 @@ class MitmproxyMockAddon:
     ):
         """Handle stateful response sequences.
 
-        Each entry in the "sequence" list has an optional "repeat"
-        count. The addon tracks how many times each endpoint has
-        been called and advances through the sequence.
+        Supports two modes:
+
+        **Time-based** (when entries have ``delay_ms``): The addon
+        records when the first request arrived and serves the latest
+        step whose ``delay_ms`` has elapsed. This lets captured
+        traffic replay with realistic timing.
+
+        **Count-based** (legacy, when entries have ``repeat``): The
+        addon counts calls and advances through the sequence.
         """
         sequence = endpoint["sequence"]
+        has_delays = any("delay_ms" in step for step in sequence)
+
+        if has_delays:
+            self._handle_sequence_timed(flow, key, sequence)
+        else:
+            await self._handle_sequence_counted(flow, key, sequence)
+
+    def _handle_sequence_timed(
+        self, flow: http.HTTPFlow, key: str, sequence: list[dict],
+    ):
+        """Serve the latest step whose delay_ms has elapsed."""
+        now = time.time()
+        if key not in self._sequence_start:
+            self._sequence_start[key] = now
+
+        elapsed_ms = (now - self._sequence_start[key]) * 1000
+
+        # Walk forward through steps; the last one whose delay has
+        # elapsed is the active response.
+        active_step = sequence[0]
+        for step in sequence:
+            if step.get("delay_ms", 0) <= elapsed_ms:
+                active_step = step
+            else:
+                break
+
+        # Use _send_response synchronously-safe path: build the
+        # response inline (delay_ms is about *when* the step
+        # activates, not per-request latency).
+        status = int(active_step.get("status", 200))
+        self._build_mock_response(flow, active_step, status)
+
+    def _build_mock_response(
+        self, flow: http.HTTPFlow, step: dict, status: int,
+    ):
+        """Build a mock response from a sequence step (sync helper)."""
+        content_type = step.get(
+            "content_type",
+            self.config.get("default_content_type", "application/json"),
+        )
+        resp_headers = {"Content-Type": content_type}
+        resp_headers.update(step.get("headers", {}))
+
+        if "file" in step:
+            body = self._read_file(step["file"])
+            if body is None:
+                body = b""
+        elif "body" in step:
+            body_val = step["body"]
+            if isinstance(body_val, (dict, list)):
+                body = json.dumps(body_val).encode()
+            elif isinstance(body_val, str):
+                body = body_val.encode()
+            else:
+                body = str(body_val).encode()
+        else:
+            body = b""
+
+        flow.response = http.Response.make(status, body, resp_headers)
+        flow.metadata["_jmp_mocked"] = True
+
+    async def _handle_sequence_counted(
+        self, flow: http.HTTPFlow, key: str, sequence: list[dict],
+    ):
+        """Legacy count-based sequence progression."""
         call_num = self._sequence_state[key]
 
-        # Find which step we're on
         position = 0
         for step in sequence:
             repeat = step.get("repeat", float("inf"))
@@ -892,12 +963,123 @@ class MitmproxyMockAddon:
                     f"Addon {addon_name} websocket error: {e}"
                 )
 
+    def _classify_response_body(
+        self, flow: http.HTTPFlow,
+    ) -> dict:
+        """Classify the response body for capture event inclusion.
+
+        Text/JSON bodies within the inline limit are returned directly.
+        Large or binary bodies are spooled to disk and only the file
+        path is included in the event.
+
+        Returns a dict with keys: response_body, response_body_file,
+        response_content_type, response_headers, response_is_binary.
+        """
+        resp = flow.response
+        if resp is None:
+            return {
+                "response_body": None,
+                "response_body_file": None,
+                "response_content_type": None,
+                "response_headers": {},
+                "response_is_binary": False,
+            }
+
+        content_type = resp.headers.get("content-type", "")
+        base_ct = content_type.split(";")[0].strip().lower()
+        # The stored body is already decompressed by mitmproxy, so strip
+        # content-encoding to avoid confusing downstream consumers.
+        resp_headers = {
+            k: v for k, v in resp.headers.items()
+            if k.lower() != "content-encoding"
+        }
+
+        # Determine if content is text-like
+        text_types = (
+            "application/json", "text/", "application/xml",
+            "application/javascript", "application/x-www-form-urlencoded",
+        )
+        is_text = any(base_ct.startswith(t) for t in text_types)
+
+        raw_body = resp.get_content()
+        body_size = len(raw_body) if raw_body else 0
+
+        if is_text and body_size <= _INLINE_BODY_LIMIT:
+            # Inline text body
+            try:
+                body_text = raw_body.decode("utf-8") if raw_body else ""
+            except UnicodeDecodeError:
+                body_text = raw_body.decode("latin-1") if raw_body else ""
+            return {
+                "response_body": body_text,
+                "response_body_file": None,
+                "response_content_type": base_ct,
+                "response_headers": resp_headers,
+                "response_is_binary": False,
+            }
+
+        if body_size == 0:
+            return {
+                "response_body": "",
+                "response_body_file": None,
+                "response_content_type": base_ct,
+                "response_headers": resp_headers,
+                "response_is_binary": not is_text,
+            }
+
+        # Spool large or binary body to disk
+        self._spool_counter += 1
+        url_hash = hashlib.sha256(
+            flow.request.pretty_url.encode()
+        ).hexdigest()[:12]
+        spool_name = f"{self._spool_counter:06d}_{url_hash}.bin"
+        spool_path = self._spool_dir / spool_name
+        try:
+            spool_path.write_bytes(raw_body)
+        except OSError as e:
+            ctx.log.error(f"Failed to spool response body: {e}")
+            return {
+                "response_body": None,
+                "response_body_file": None,
+                "response_content_type": base_ct,
+                "response_headers": resp_headers,
+                "response_is_binary": not is_text,
+            }
+
+        return {
+            "response_body": None,
+            "response_body_file": str(spool_path),
+            "response_content_type": base_ct,
+            "response_headers": resp_headers,
+            "response_is_binary": not is_text,
+        }
+
     def _build_capture_event(
         self, flow: http.HTTPFlow, response_status: int,
     ) -> dict:
         """Build a capture event dict from a flow."""
         parsed = urlparse(flow.request.pretty_url)
-        return {
+        body_info = self._classify_response_body(flow)
+        # Compute request duration from mitmproxy timestamps
+        duration_ms = 0
+        if (
+            flow.response
+            and hasattr(flow.response, "timestamp_end")
+            and hasattr(flow.request, "timestamp_start")
+            and flow.response.timestamp_end
+            and flow.request.timestamp_start
+        ):
+            duration_ms = round(
+                (flow.response.timestamp_end - flow.request.timestamp_start) * 1000,
+            )
+
+        # Compute response size
+        response_size = 0
+        if flow.response:
+            raw = flow.response.get_content()
+            response_size = len(raw) if raw else 0
+
+        event = {
             "timestamp": time.time(),
             "method": flow.request.method,
             "url": flow.request.pretty_url,
@@ -907,7 +1089,11 @@ class MitmproxyMockAddon:
             "body": flow.request.get_text() or "",
             "response_status": response_status,
             "was_mocked": bool(flow.metadata.get("_jmp_mocked")),
+            "duration_ms": duration_ms,
+            "response_size": response_size,
         }
+        event.update(body_info)
+        return event
 
     def response(self, flow: http.HTTPFlow):
         """Log all responses and emit capture events."""
