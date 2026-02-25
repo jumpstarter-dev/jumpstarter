@@ -76,11 +76,22 @@ def _handle_child(config):
                 except* Exception as excgroup:
                     _handle_exporter_exceptions(excgroup)
 
+                # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')
+                exporter_exit_code = exporter.exit_code
+
             # Cancel the signal handler after exporter completes
             signal_tg.cancel_scope.cancel()
 
-        # Return signal number if received, otherwise 0 for immediate restart
-        return received_signal if received_signal else 0
+        # Return exit code in priority order:
+        # 1. Signal number if received (for signal-based termination)
+        # 2. Exporter's exit code if set (for hook failure with on_failure='exit')
+        # 3. 0 for immediate restart (normal exit without signal or explicit exit code)
+        if received_signal:
+            return 128 + received_signal
+        elif exporter_exit_code is not None:
+            return exporter_exit_code
+        else:
+            return 0
 
     sys.exit(anyio.run(serve_with_graceful_shutdown))
 
@@ -118,13 +129,12 @@ def _handle_parent(pid):
         return None
 
     if os.WIFEXITED(status):
-        # Interpret child exit code
         child_exit_code = os.WEXITSTATUS(status)
         if child_exit_code == 0:
             return None  # restart child (unexpected exit/exception)
         else:
-            # Child indicates termination (signal number)
-            return 128 + child_exit_code  # Return standard Unix exit code
+            # Child already encodes signals as 128+N; pass through directly
+            return child_exit_code
     else:
         # Child killed by unhandled signal - terminate
         child_exit_signal = os.WTERMSIG(status) if os.WIFSIGNALED(status) else 0

@@ -45,6 +45,12 @@ class ConnectionError(JumpstarterException):
     pass
 
 
+class ExporterOfflineError(ConnectionError):
+    """Raised when the connection to the exporter is lost during a lease."""
+
+    pass
+
+
 class ConfigurationError(JumpstarterException):
     """Raised when a configuration error exists."""
 

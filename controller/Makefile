@@ -63,10 +63,20 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) 	rbac:roleName=jumpstarter-manager-role crd webhook paths="./api/..." paths="./internal/..." \
-						output:crd:artifacts:config=deploy/helm/jumpstarter/crds/ \
+						output:crd:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/ \
 						output:rbac:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/
 
-	cp deploy/helm/jumpstarter/crds/* deploy/operator/config/crd/bases/
+	# Add ArgoCD sync-wave annotation to RBAC role for proper deployment ordering (PR #207)
+	@awk '/^  name: jumpstarter-manager-role$$/{print; print "  annotations:"; print "    argocd.argoproj.io/sync-wave: \"-1\""; next}1' \
+		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml > \
+		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml.tmp && \
+		mv deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml.tmp \
+		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml
+
+	cp deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/* deploy/operator/config/crd/bases/
+
+	# Regenerate operator install.yaml to include updated CRDs
+	$(MAKE) -C deploy/operator build-installer
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -236,7 +246,7 @@ GRPCURL = $(LOCALBIN)/grpcurl
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.1
 CONTROLLER_TOOLS_VERSION ?= v0.16.3
-ENVTEST_VERSION ?= release-0.18
+ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 GOLANGCI_LINT_VERSION ?= v2.5.0
 KIND_VERSION ?= v0.27.0
 GRPCURL_VERSION ?= v1.9.2

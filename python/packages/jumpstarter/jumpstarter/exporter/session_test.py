@@ -4,6 +4,7 @@ from google.protobuf import empty_pb2
 
 from jumpstarter.common.utils import serve
 from jumpstarter.driver import Driver
+from jumpstarter.exporter.session import Session
 
 
 class SimpleDriver(Driver):
@@ -309,4 +310,22 @@ def test_driverclickgroup_uses_methods_description_as_override():
 
         # Should fall back to client default
         assert help_text == "Client default: Power off"
+
+
+def test_logging_queue_maxlen_256():
+    """Issue A2: Logging queue deque maxlen should be 256 (not 32).
+
+    The deque was originally sized at 32, which caused log messages to be
+    dropped during hook execution. Verify the fix sets maxlen=256.
+    """
+    driver = SimpleDriver()
+
+    with serve(driver) as _:
+        session = Session(
+            uuid=driver.uuid,
+            labels=driver.labels,
+            root_device=driver,
+        )
+
+        assert session._logging_queue.maxlen == 256
 

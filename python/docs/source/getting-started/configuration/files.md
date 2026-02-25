@@ -100,7 +100,22 @@ export: # Configure drivers to expose to the clients
     config:
       url: "/dev/ttyUSB0"
       baudrate: 115200
+hooks: # Optional lifecycle hooks that run at lease boundaries
+  beforeLease:
+    script: |
+      j power on
+    timeout: 120       # Hook execution timeout in seconds (default: 120)
+    onFailure: warn    # Action on failure: "warn" (default), "endLease", or "exit"
+  afterLease:
+    script: |
+      j power off
+    timeout: 30
+    onFailure: warn
 ```
+
+The optional `hooks` section configures lifecycle scripts that run at lease
+boundaries. See [Hooks](../../introduction/hooks.md) for full details on
+hook configuration, environment variables, and failure handling.
 
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification

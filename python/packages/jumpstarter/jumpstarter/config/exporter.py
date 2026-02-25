@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Optional, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Self
 
 import grpc
 import yaml
@@ -15,7 +15,48 @@ from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.exceptions import ConfigurationError, MissingDriverError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
-from jumpstarter.driver import Driver
+
+if TYPE_CHECKING:
+    from jumpstarter.driver import Driver
+
+
+class HookInstanceConfigV1Alpha1(BaseModel):
+    """Configuration for a specific lifecycle hook."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    exec_: str | None = Field(
+        default=None,
+        alias="exec",
+        description=(
+            "Interpreter used to execute the script (e.g. /bin/bash, python3). "
+            "When not set, auto-detected from the script file extension "
+            "(.py uses the exporter's Python, .sh uses /bin/sh) or defaults to /bin/sh for inline scripts."
+        ),
+    )
+    script: str = Field(alias="script", description="The j script to execute for this hook")
+    timeout: int = Field(default=120, description="The hook execution timeout in seconds (default: 120s)")
+    on_failure: Literal[
+        "warn",
+        "endLease",
+        "exit",
+    ] = Field(
+        default="warn",
+        alias="onFailure",
+        description=(
+            "Action to take when the expected exit code is not returned: 'endLease' to end the lease, "
+            "'exit' takes the exporter offline and ends the lease, 'warn' continues and prints a warning"
+        ),
+    )
+
+
+class HookConfigV1Alpha1(BaseModel):
+    """Configuration for lifecycle hooks."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    before_lease: HookInstanceConfigV1Alpha1 | None = Field(default=None, alias="beforeLease")
+    after_lease: HookInstanceConfigV1Alpha1 | None = Field(default=None, alias="afterLease")
 
 
 class ExporterConfigV1Alpha1DriverInstanceProxy(BaseModel):
@@ -41,7 +82,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
         | ExporterConfigV1Alpha1DriverInstanceProxy
     )
 
-    def instantiate(self) -> Driver:
+    def instantiate(self) -> "Driver":
         match self.root:
             case ExporterConfigV1Alpha1DriverInstanceBase():
                 try:
@@ -57,7 +98,7 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                     description=self.root.description,
                     methods_description=self.root.methods_description,
                     children=children,
-                    **self.root.config
+                    **self.root.config,
                 )
 
             case ExporterConfigV1Alpha1DriverInstanceComposite():
@@ -98,6 +139,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     description: str | None = None
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+    hooks: HookConfigV1Alpha1 = Field(default_factory=HookConfigV1Alpha1)
 
     path: Path | None = Field(default=None)
 
@@ -132,7 +174,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @classmethod
     def dump_yaml(self, config: Self) -> str:
-        return yaml.safe_dump(config.model_dump(mode="json", exclude={"alias", "path"}), sort_keys=False)
+        return yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), sort_keys=False)
 
     @classmethod
     def save(cls, config: Self, path: Optional[str] = None) -> Path:
@@ -143,7 +185,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         else:
             config.path = Path(path)
         with config.path.open(mode="w") as f:
-            yaml.safe_dump(config.model_dump(mode="json", exclude={"alias", "path"}), f, sort_keys=False)
+            yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), f, sort_keys=False)
         return config.path
 
     @classmethod
@@ -155,6 +197,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     @asynccontextmanager
     async def serve_unix_async(self):
         # dynamic import to avoid circular imports
+        from jumpstarter.common import ExporterStatus
         from jumpstarter.exporter import Session
 
         with Session(
@@ -165,6 +208,8 @@ class ExporterConfigV1Alpha1(BaseModel):
             ).instantiate(),
         ) as session:
             async with session.serve_unix_async() as path:
+                # For local usage, set status to LEASE_READY since there's no lease/hook flow
+                session.update_status(ExporterStatus.LEASE_READY)
                 yield path
 
     @contextmanager
@@ -181,7 +226,7 @@ class ExporterConfigV1Alpha1(BaseModel):
 
         from jumpstarter.exporter import Exporter
 
-        async def channel_factory():
+        async def channel_factory() -> grpc.aio.Channel:
             if self.endpoint is None or self.token is None:
                 raise ConfigurationError("endpoint or token not set in exporter config")
             credentials = grpc.composite_channel_credentials(
@@ -189,6 +234,15 @@ class ExporterConfigV1Alpha1(BaseModel):
                 call_credentials("Exporter", self.metadata, self.token),
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
+
+        # Create hook executor if hooks are configured
+        hook_executor = None
+        if self.hooks.before_lease or self.hooks.after_lease:
+            from jumpstarter.exporter.hooks import HookExecutor
+
+            hook_executor = HookExecutor(
+                config=self.hooks,
+            )
 
         exporter = None
         entered = False
@@ -202,6 +256,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 ).instantiate,
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
+                hook_executor=hook_executor,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()

@@ -1,0 +1,509 @@
+#!/usr/bin/env bats
+# E2E tests for hooks feature (beforeLease/afterLease)
+
+JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
+
+# File to track bash wrapper process PIDs across tests
+HOOKS_EXPORTER_PIDS_FILE="${BATS_RUN_TMPDIR:-/tmp}/hooks_exporter_pids.txt"
+
+# Track which config is currently active
+CURRENT_HOOKS_CONFIG=""
+
+setup_file() {
+  # Initialize the PIDs file at the start of all tests
+  echo "" > "$HOOKS_EXPORTER_PIDS_FILE"
+
+  # Create client and exporter for hooks tests
+  jmp admin create client -n "${JS_NAMESPACE}" test-client-hooks --unsafe --out "${BATS_RUN_TMPDIR}/test-client-hooks.yaml" \
+    --oidc-username dex:test-client-hooks
+
+  jmp admin create exporter -n "${JS_NAMESPACE}" test-exporter-hooks --out "${BATS_RUN_TMPDIR}/test-exporter-hooks.yaml" \
+    --oidc-username dex:test-exporter-hooks \
+    --label example.com/board=hooks
+
+  jmp login --client test-client-hooks \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-client-hooks \
+    --issuer https://dex.dex.svc.cluster.local:5556 \
+    --username test-client-hooks@example.com --password password --unsafe
+
+  jmp login --exporter test-exporter-hooks \
+    --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name test-exporter-hooks \
+    --issuer https://dex.dex.svc.cluster.local:5556 \
+    --username test-exporter-hooks@example.com --password password
+}
+
+setup() {
+  bats_load_library bats-support
+  bats_load_library bats-assert
+
+  bats_require_minimum_version 1.5.0
+}
+
+teardown() {
+  # Clean up temp files that may leak if assertions fail before in-test cleanup
+  rm -f /tmp/jumpstarter-e2e-hook-python.py
+  rm -f /tmp/jumpstarter-e2e-hook-script.sh
+}
+
+teardown_file() {
+  echo "" >&2
+  echo "========================================" >&2
+  echo "HOOKS TESTS TEARDOWN_FILE RUNNING" >&2
+  echo "========================================" >&2
+
+  stop_hooks_exporter
+
+  # Clean up client and exporter CRDs
+  jmp admin delete client --namespace "${JS_NAMESPACE}" test-client-hooks --delete 2>/dev/null || true
+  jmp admin delete exporter --namespace "${JS_NAMESPACE}" test-exporter-hooks --delete 2>/dev/null || true
+
+  # Clean up the PIDs file
+  rm -f "$HOOKS_EXPORTER_PIDS_FILE"
+
+  echo "=== Hooks cleanup complete ===" >&2
+}
+
+# Helper: Stop hooks exporter processes
+stop_hooks_exporter() {
+  echo "=== Stopping hooks exporter processes ===" >&2
+
+  # Read PIDs from file
+  if [ -f "$HOOKS_EXPORTER_PIDS_FILE" ]; then
+    while IFS= read -r pid; do
+      if [ -n "$pid" ]; then
+        echo "Checking PID $pid..." >&2
+        if ps -p "$pid" > /dev/null 2>&1; then
+          echo "  Killing PID $pid" >&2
+          kill -9 "$pid" 2>/dev/null || true
+        fi
+      fi
+    done < "$HOOKS_EXPORTER_PIDS_FILE"
+    # Clear the file
+    echo "" > "$HOOKS_EXPORTER_PIDS_FILE"
+  fi
+
+  # Kill any orphaned jmp processes for hooks exporter
+  pkill -9 -f "jmp run --exporter test-exporter-hooks" 2>/dev/null || true
+
+  # Give time for cleanup
+  sleep 1
+}
+
+# Helper: Start hooks exporter with restart loop (normal mode)
+start_hooks_exporter() {
+  local config_file="$1"
+
+  stop_hooks_exporter
+
+  # Clear any leftover hooks config from previous test, then merge new config
+  go run github.com/mikefarah/yq/v4@latest -i 'del(.hooks)' \
+    /etc/jumpstarter/exporters/test-exporter-hooks.yaml
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/${config_file}\")" \
+    /etc/jumpstarter/exporters/test-exporter-hooks.yaml
+
+  cat <<EOF | bash 3>&- &
+while true; do
+  jmp run --exporter test-exporter-hooks
+  sleep 2
+done
+EOF
+  echo "$!" >> "$HOOKS_EXPORTER_PIDS_FILE"
+
+  wait_for_hooks_exporter
+}
+
+# Helper: Start hooks exporter without restart loop (for exit mode tests)
+start_hooks_exporter_single() {
+  local config_file="$1"
+
+  stop_hooks_exporter
+
+  # Clear any leftover hooks config from previous test, then merge new config
+  go run github.com/mikefarah/yq/v4@latest -i 'del(.hooks)' \
+    /etc/jumpstarter/exporters/test-exporter-hooks.yaml
+  go run github.com/mikefarah/yq/v4@latest -i ". * load(\"e2e/exporters/${config_file}\")" \
+    /etc/jumpstarter/exporters/test-exporter-hooks.yaml
+
+  jmp run --exporter test-exporter-hooks &
+  echo "$!" >> "$HOOKS_EXPORTER_PIDS_FILE"
+
+  wait_for_hooks_exporter
+}
+
+# Helper: Wait for hooks exporter to be online and registered
+wait_for_hooks_exporter() {
+  # Brief delay to avoid catching pre-connect state
+  sleep 2
+  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
+    exporters.jumpstarter.dev/test-exporter-hooks
+}
+
+# Helper: Wait for hooks exporter to go offline
+wait_for_hooks_exporter_offline() {
+  local max_wait=200
+  local count=0
+
+  while [ $count -lt $max_wait ]; do
+    local status=$(kubectl -n "${JS_NAMESPACE}" get exporters.jumpstarter.dev/test-exporter-hooks \
+      -o jsonpath='{.status.conditions[?(@.type=="Online")].status}' 2>/dev/null || echo "Unknown")
+
+    if [ "$status" = "False" ] || [ "$status" = "Unknown" ]; then
+      echo "Exporter is offline" >&2
+      return 0
+    fi
+
+    sleep 1
+    count=$((count + 1))
+  done
+
+  echo "Timed out waiting for exporter to go offline" >&2
+  return 1
+}
+
+# Helper: Check if exporter process is still running
+exporter_process_running() {
+  if [ -f "$HOOKS_EXPORTER_PIDS_FILE" ]; then
+    while IFS= read -r pid; do
+      if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+        return 0
+      fi
+    done < "$HOOKS_EXPORTER_PIDS_FILE"
+  fi
+  return 1
+}
+
+# ============================================================================
+# Group A: Basic Hook Execution
+# ============================================================================
+
+@test "hooks A1: beforeLease hook executes" {
+  start_hooks_exporter "exporter-hooks-before-only.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "BEFORE_HOOK_MARKER: executed"
+}
+
+@test "hooks A2: afterLease hook executes" {
+  start_hooks_exporter "exporter-hooks-after-only.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "AFTER_HOOK_MARKER: executed"
+}
+
+@test "hooks A3: both hooks execute in correct order" {
+  start_hooks_exporter "exporter-hooks-both.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "BEFORE_HOOK:"
+  assert_output --partial "AFTER_HOOK:"
+
+  # Verify order: BEFORE should appear before AFTER in output
+  local before_pos=$(echo "$output" | grep -n "BEFORE_HOOK:" | head -1 | cut -d: -f1)
+  local after_pos=$(echo "$output" | grep -n "AFTER_HOOK:" | head -1 | cut -d: -f1)
+
+  [ "$before_pos" -lt "$after_pos" ]
+}
+
+# ============================================================================
+# Group B: beforeLease Failure Modes
+# ============================================================================
+
+@test "hooks B1: beforeLease onFailure=warn allows shell to proceed" {
+  start_hooks_exporter "exporter-hooks-before-fail-warn.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should succeed despite hook failure
+  assert_success
+  # Use short substring to avoid Rich text wrapping breaking the match
+  assert_output --partial "HOOK_FAIL_WARN"
+
+  # Exporter should still be available
+  wait_for_hooks_exporter
+}
+
+@test "hooks B2: beforeLease onFailure=endLease fails shell" {
+  start_hooks_exporter "exporter-hooks-before-fail-endLease.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should fail because hook failed
+  assert_failure
+  # endLease may drop connection before status propagates to client
+  assert_output --regexp "(beforeLease hook failed|Connection to exporter lost)"
+
+  # Exporter should still be available after failure
+  wait_for_hooks_exporter
+}
+
+@test "hooks B3: beforeLease onFailure=exit shuts down exporter" {
+  start_hooks_exporter_single "exporter-hooks-before-fail-exit.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should fail - error includes reason from exporter status
+  assert_failure
+  # Exporter exit may drop connection before status propagates to client
+  assert_output --regexp "(beforeLease hook failed|Connection to exporter lost)"
+
+  # Exporter process should have exited
+  sleep 2
+  run exporter_process_running
+  assert_failure
+
+  # Exporter should go offline
+  wait_for_hooks_exporter_offline
+}
+
+# ============================================================================
+# Group C: afterLease Failure Modes
+# ============================================================================
+
+@test "hooks C1: afterLease onFailure=warn keeps exporter available" {
+  start_hooks_exporter "exporter-hooks-after-fail-warn.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should succeed (afterLease runs after shell completes)
+  assert_success
+  # Use short substring to avoid Rich text wrapping breaking the match
+  assert_output --partial "HOOK_FAIL_WARN"
+
+  # Exporter should still be available
+  wait_for_hooks_exporter
+}
+
+@test "hooks C2: afterLease onFailure=exit shuts down exporter" {
+  start_hooks_exporter_single "exporter-hooks-after-fail-exit.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should fail because afterLease hook failed and exporter shut down
+  assert_failure
+  # Exporter exit may drop connection before status propagates to client
+  assert_output --regexp "(afterLease hook failed|afterLease failed|Connection to exporter lost)" 
+
+  # Exporter process should have exited
+  sleep 2
+  run exporter_process_running
+  assert_failure
+
+  # Exporter should go offline
+  wait_for_hooks_exporter_offline
+}
+
+# ============================================================================
+# Group D: Timeout Tests
+# ============================================================================
+
+@test "hooks D1: beforeLease timeout is treated as failure" {
+  start_hooks_exporter "exporter-hooks-timeout.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Hook should timeout but shell proceeds (onFailure=warn)
+  assert_success
+  assert_output --partial "HOOK_TIMEOUT: starting"
+
+  # Exporter should still be available
+  wait_for_hooks_exporter
+}
+
+# ============================================================================
+# Group E: j Commands in Hooks
+# ============================================================================
+
+@test "hooks E1: beforeLease can use j power on" {
+  start_hooks_exporter "exporter-hooks-both.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "BEFORE_HOOK: complete"
+  # The j power on command in beforeLease should have executed
+}
+
+@test "hooks E2: afterLease can use j power off" {
+  start_hooks_exporter "exporter-hooks-both.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "AFTER_HOOK: complete"
+  # The j power off command in afterLease should have executed
+}
+
+@test "hooks E3: environment variables are available in hooks" {
+  start_hooks_exporter "exporter-hooks-both.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  # LEASE_NAME and CLIENT_NAME should be set (not empty)
+  assert_output --partial "BEFORE_HOOK:"
+  # Verify env vars are expanded (check components separately since Rich may wrap the line)
+  [[ "$output" =~ lease=[0-9a-f-]+ ]]
+  [[ "$output" =~ client= ]]
+}
+
+# ============================================================================
+# Group F: Custom Executors (exec field)
+# ============================================================================
+
+@test "hooks F1: exec /bin/bash runs bash-specific syntax" {
+  start_hooks_exporter "exporter-hooks-exec-bash.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "BASH_HOOK: complete"
+}
+
+@test "hooks F2: .py file auto-detects Python and uses driver API" {
+  # Create a Python hook script that uses the Jumpstarter client API
+  cat > /tmp/jumpstarter-e2e-hook-python.py << 'PYEOF'
+import os
+from jumpstarter.utils.env import env
+
+lease = os.environ.get("LEASE_NAME", "unknown")
+print(f"PYTHON_HOOK: lease={lease}")
+
+with env() as client:
+    client.power.on()
+    print("PYTHON_HOOK: driver API works")
+
+print("PYTHON_HOOK: complete")
+PYEOF
+
+  start_hooks_exporter "exporter-hooks-exec-python.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "PYTHON_HOOK: driver API works"
+  assert_output --partial "PYTHON_HOOK: complete"
+
+  rm -f /tmp/jumpstarter-e2e-hook-python.py
+}
+
+@test "hooks F3: script as file path executes the file" {
+  # Create a temporary script file on the exporter host
+  cat > /tmp/jumpstarter-e2e-hook-script.sh << 'SCRIPT'
+#!/bin/sh
+echo "SCRIPTFILE_HOOK: executed from file"
+echo "SCRIPTFILE_HOOK: complete"
+SCRIPT
+  chmod +x /tmp/jumpstarter-e2e-hook-script.sh
+
+  start_hooks_exporter "exporter-hooks-exec-script-file.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  assert_output --partial "SCRIPTFILE_HOOK: complete"
+
+  rm -f /tmp/jumpstarter-e2e-hook-script.sh
+}
+
+# ============================================================================
+# Group G: Lease Timeout (no hooks)
+# ============================================================================
+
+@test "hooks G1: no hooks with lease timeout exits cleanly" {
+  start_hooks_exporter "exporter-hooks-none.yaml"
+
+  run timeout 60 jmp shell --client test-client-hooks \
+    --selector example.com/board=hooks --duration 10s -- sleep 30
+
+  # Should not produce an error (exit code may be non-zero from killed sleep)
+  refute_output --partial "Error:"
+}
+
+@test "hooks G2: lease timeout during slow beforeLease hook exits cleanly" {
+  start_hooks_exporter "exporter-hooks-slow-before.yaml"
+
+  # Lease (5s) expires before hook (8s sleep) completes
+  run timeout 60 jmp shell --client test-client-hooks \
+    --selector example.com/board=hooks --duration 5s -- sleep 30
+
+  refute_output --partial "Error:"
+}
+
+@test "hooks G3: lease timeout shortly after beforeLease hook exits cleanly" {
+  start_hooks_exporter "exporter-hooks-slow-before.yaml"
+
+  # Hook takes ~8s, lease is 12s, shell runs briefly before lease expires
+  run timeout 60 jmp shell --client test-client-hooks \
+    --selector example.com/board=hooks --duration 12s -- sleep 30
+
+  refute_output --partial "Error:"
+}
+
+# ============================================================================
+# Group H: PR Regression Tests
+# ============================================================================
+
+@test "hooks H1: infrastructure messages not visible in client output" {
+  # Issue A1: Hook infra messages (Starting hook subprocess, Creating PTY, etc.)
+  # are logged at DEBUG level. At default INFO level they should never enter
+  # the LogStream deque, so clients should not see them.
+  start_hooks_exporter "exporter-hooks-before-only.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_success
+  # User output from hook should be visible
+  assert_output --partial "BEFORE_HOOK_MARKER: executed"
+  # Infrastructure messages should NOT be visible (they are at DEBUG level)
+  refute_output --partial "Starting hook subprocess"
+  refute_output --partial "Creating PTY"
+  refute_output --partial "Hook executed successfully"
+}
+
+@test "hooks H2: beforeLease fail+exit does NOT run afterLease hook" {
+  # Issue E1: When beforeLease fails with on_failure=exit, skip_after_lease_hook
+  # is set to True, preventing afterLease hook from executing in handle_lease's
+  # finally block.
+  start_hooks_exporter_single "exporter-hooks-before-fail-exit-with-after.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  assert_failure
+  # afterLease hook should NOT have run
+  refute_output --partial "AFTER_SHOULD_NOT_RUN"
+
+  # Exporter should exit
+  wait_for_hooks_exporter_offline
+}
+
+@test "hooks H3: warning displayed when beforeLease hook fails with warn" {
+  # Issue E5: When beforeLease hook fails with on_failure=warn, shell.py detects
+  # HOOK_WARNING_PREFIX in the status message and prints a user-visible warning.
+  start_hooks_exporter "exporter-hooks-before-fail-warn.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should succeed despite warning
+  assert_success
+  # Client should display warning from hook failure
+  assert_output --partial "Warning:"
+}
+
+@test "hooks H4: warning displayed when afterLease hook fails with warn" {
+  # Issue E5: When afterLease hook fails with on_failure=warn, shell.py waits
+  # for AVAILABLE status, detects HOOK_WARNING_PREFIX, and prints the warning.
+  start_hooks_exporter "exporter-hooks-after-fail-warn.yaml"
+
+  run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
+
+  # Shell should complete normally
+  assert_success
+  # Client should display afterLease hook warning
+  assert_output --partial "Warning:"
+}
