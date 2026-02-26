@@ -504,7 +504,21 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 	case <-ctx.Done():
 		return nil
 	default:
-		online()
+		// When the Status stream first connects, the exporter is alive.
+		// Clear any "Offline" ExporterStatusValue that may have been set by the
+		// reconciler when the exporter was temporarily disconnected.
+		// This is essential for old exporters (v0.7.x) that never call
+		// ReportStatus and thus can't clear their own Offline status.
+		original := client.MergeFrom(exporter.DeepCopy())
+		exporter.Status.LastSeen = metav1.Now()
+		if exporter.Status.ExporterStatusValue == jumpstarterdevv1alpha1.ExporterStatusOffline {
+			logger.Info("Clearing stale Offline status on Status stream connect")
+			exporter.Status.ExporterStatusValue = ""
+			exporter.Status.StatusMessage = ""
+		}
+		if err = s.Client.Status().Patch(ctx, exporter, original); err != nil {
+			logger.Error(err, "unable to update exporter status on initial connect")
+		}
 	}
 
 	var lastPbStatusResponse *pb.StatusResponse
