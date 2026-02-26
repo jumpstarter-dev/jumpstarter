@@ -78,6 +78,13 @@ wait_for_compat_exporter() {
     exporters.jumpstarter.dev/compat-old-exporter
 }
 
+stop_compat_exporter() {
+  # Kill the bash wrapper loop and any child jmp processes
+  pkill -9 -f "jmp run --exporter compat-old-exporter$" 2>/dev/null || true
+  # Clear tracked PIDs since they're now dead
+  echo "" > "$COMPAT_PIDS_FILE"
+}
+
 # ============================================================================
 # Setup: Use NEW admin CLI to create resources
 # ============================================================================
@@ -172,6 +179,42 @@ EOF
     -o jsonpath='{.status.conditions[?(@.type=="Registered")].status}'
   assert_success
   assert_output "True"
+}
+
+# ============================================================================
+# Reconnect after offline: exporter must recover from stale Offline status
+# ============================================================================
+
+@test "compat-old-client: stop exporter and wait for offline" {
+  stop_compat_exporter
+
+  # The reconciler marks Online=False after LastSeen is >1 minute stale
+  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m \
+    --for=condition=Online=False \
+    exporters.jumpstarter.dev/compat-old-exporter
+}
+
+@test "compat-old-client: old exporter recovers Online after reconnect" {
+  # Restart the exporter
+  cat <<EOF | bash 3>&- &
+while true; do
+  $OLD_JMP run --exporter compat-old-exporter
+  sleep 2
+done
+EOF
+  echo "$!" >> "$COMPAT_PIDS_FILE"
+
+  # This is the key assertion: the exporter must become Online again.
+  # Without the fix, it stays stuck as Offline forever.
+  wait_for_compat_exporter
+}
+
+@test "compat-old-client: lease works after reconnect" {
+  wait_for_compat_exporter
+
+  run $OLD_JMP shell --client compat-old-client \
+    --selector example.com/board=compat-old j power on
+  assert_success
 }
 
 # ============================================================================
