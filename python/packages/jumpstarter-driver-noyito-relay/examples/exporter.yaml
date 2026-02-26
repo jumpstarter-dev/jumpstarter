@@ -1,0 +1,48 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: noyito-relay-demo
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  relay1:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
+    config:
+      port: "/dev/cu.usbserial-9120"
+      channel: 1
+  relay2:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
+    config:
+      port: "/dev/cu.usbserial-9120"
+      channel: 2
+  # dual=true fires both serial channels simultaneously (high-current wiring)
+  relay_serial_dual:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
+    config:
+      port: "/dev/cu.usbserial-9120"
+      dual: true
+  # 4-channel HID board — individual channel
+  relay_4ch_ch1:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
+    config:
+      num_channels: 4
+      channel: 1
+  # 4-channel HID board — all_channels=true fires all 4 channels simultaneously
+  relay_4ch_all:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
+    config:
+      num_channels: 4
+      all_channels: true
+  # 8-channel HID board — individual channel
+  relay_8ch_ch1:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
+    config:
+      num_channels: 8
+      channel: 1
+  # 8-channel HID board — all_channels=true fires all 8 channels simultaneously
+  relay_8ch_all:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
+    config:
+      num_channels: 8
+      all_channels: true
