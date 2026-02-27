@@ -2,6 +2,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -88,11 +89,10 @@ class SSHWrapperClient(CompositeClient):
 
     # wrap the underlying tcp stream connections, so we can still use tcp forwarding or
     # the fabric driver adapter on top of client.ssh
-    def stream(self, method="connect"):
-        return self.tcp.stream(method)
-
+    @asynccontextmanager
     async def stream_async(self, method):
-        return await self.tcp.stream_async(method)
+        async with self.tcp.stream_async(method) as stream:
+            yield stream
 
     @property
     def command(self) -> str:
