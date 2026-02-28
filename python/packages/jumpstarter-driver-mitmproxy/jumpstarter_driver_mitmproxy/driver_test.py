@@ -640,3 +640,231 @@ class TestConfigValidation:
             assert d.mocks == inline
         finally:
             d._stop_capture_server()
+
+
+@pytest.fixture
+def deep_merge_patch():
+    """Import _deep_merge_patch lazily to avoid module-level side effects."""
+    import importlib
+    import sys
+    # Temporarily mock Path.mkdir to prevent /opt/jumpstarter creation
+    original_mkdir = Path.mkdir
+
+    def safe_mkdir(self, *args, **kwargs):
+        if str(self).startswith("/opt/"):
+            return
+        return original_mkdir(self, *args, **kwargs)
+
+    Path.mkdir = safe_mkdir
+    try:
+        if "jumpstarter_driver_mitmproxy.bundled_addon" in sys.modules:
+            mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
+        else:
+            mod = importlib.import_module(
+                "jumpstarter_driver_mitmproxy.bundled_addon"
+            )
+        return mod._deep_merge_patch
+    finally:
+        Path.mkdir = original_mkdir
+
+
+@pytest.fixture
+def apply_patches(deep_merge_patch):
+    """Import _apply_patches lazily."""
+    import sys
+    mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
+    return mod._apply_patches
+
+
+class TestDeepMergePatch:
+    """Unit tests for _deep_merge_patch."""
+
+    def test_simple_dict_merge(self, deep_merge_patch):
+        target = {"a": 1, "b": 2}
+        deep_merge_patch(target, {"b": 3, "c": 4})
+        assert target == {"a": 1, "b": 3, "c": 4}
+
+    def test_nested_dict_merge(self, deep_merge_patch):
+        target = {"outer": {"inner": 1, "keep": True}}
+        deep_merge_patch(target, {"outer": {"inner": 99}})
+        assert target == {"outer": {"inner": 99, "keep": True}}
+
+    def test_array_index(self, deep_merge_patch):
+        target = {"items": [{"name": "a"}, {"name": "b"}]}
+        deep_merge_patch(target, {"items[1]": {"name": "patched"}})
+        assert target["items"][1]["name"] == "patched"
+        assert target["items"][0]["name"] == "a"
+
+    def test_nested_array_index(self, deep_merge_patch):
+        target = {
+            "list": [
+                {"sub": {"val": "old", "extra": True}},
+            ],
+        }
+        deep_merge_patch(target, {"list[0]": {"sub": {"val": "new"}}})
+        assert target["list"][0]["sub"]["val"] == "new"
+        assert target["list"][0]["sub"]["extra"] is True
+
+    def test_scalar_replacement(self, deep_merge_patch):
+        target = {"a": {"b": [1, 2, 3]}}
+        deep_merge_patch(target, {"a": {"b": [10]}})
+        assert target["a"]["b"] == [10]
+
+    def test_sibling_fields_at_same_level(self, deep_merge_patch):
+        target = {"a": 1, "b": 2, "c": 3}
+        deep_merge_patch(target, {"a": 10, "c": 30})
+        assert target == {"a": 10, "b": 2, "c": 30}
+
+    def test_array_scalar_replacement(self, deep_merge_patch):
+        target = {"items": ["a", "b", "c"]}
+        deep_merge_patch(target, {"items[2]": "z"})
+        assert target["items"] == ["a", "b", "z"]
+
+    def test_missing_key_raises(self, deep_merge_patch):
+        target = {"a": 1}
+        with pytest.raises(KeyError):
+            deep_merge_patch(target, {"nonexistent[0]": "val"})
+
+
+class TestApplyPatches:
+    """Unit tests for _apply_patches."""
+
+    def test_basic_patch(self, apply_patches):
+        body = json.dumps({"status": "active", "count": 5}).encode()
+        result = apply_patches(body, {"status": "inactive"}, None, None)
+        assert result is not None
+        parsed = json.loads(result)
+        assert parsed["status"] == "inactive"
+        assert parsed["count"] == 5
+
+    def test_non_json_returns_none(self, apply_patches):
+        result = apply_patches(b"not json", {"key": "val"}, None, None)
+        assert result is None
+
+    def test_empty_body_returns_none(self, apply_patches):
+        result = apply_patches(b"", {"key": "val"}, None, None)
+        assert result is None
+
+    def test_nested_patch(self, apply_patches):
+        body = json.dumps({
+            "response": {"data": {"value": "old", "other": 1}},
+        }).encode()
+        result = apply_patches(
+            body, {"response": {"data": {"value": "new"}}}, None, None,
+        )
+        parsed = json.loads(result)
+        assert parsed["response"]["data"]["value"] == "new"
+        assert parsed["response"]["data"]["other"] == 1
+
+    def test_missing_key_continues_with_partial(self, apply_patches):
+        """Patches with bad keys log a warning but don't crash."""
+        body = json.dumps({"a": 1}).encode()
+        result = apply_patches(
+            body, {"missing[0]": "val"}, None, None,
+        )
+        # Should still return valid JSON (partial patch applied)
+        assert result is not None
+        parsed = json.loads(result)
+        assert parsed["a"] == 1
+
+
+class TestPatchMocks:
+    """Integration tests for set_mock_patch and patch scenario loading."""
+
+    def test_set_mock_patch(self, driver, tmp_path):
+        result = driver.set_mock_patch(
+            "GET", "/api/v1/status",
+            '{"data": {"status": "inactive"}}',
+        )
+        assert "Patch mock set" in result
+
+        config = tmp_path / "mocks" / "endpoints.json"
+        assert config.exists()
+
+        data = json.loads(config.read_text())
+        ep = data["endpoints"]["GET /api/v1/status"]
+        assert "patch" in ep
+        assert ep["patch"]["data"]["status"] == "inactive"
+
+    def test_set_mock_patch_invalid_json(self, driver):
+        result = driver.set_mock_patch("GET", "/test", "not json")
+        assert "Invalid JSON" in result
+
+    def test_set_mock_patch_non_object(self, driver):
+        result = driver.set_mock_patch("GET", "/test", '"string"')
+        assert "must be a JSON object" in result
+
+    def test_set_mock_patch_list_and_remove(self, driver):
+        driver.set_mock_patch(
+            "GET", "/api/v1/status",
+            '{"data": {"status": "inactive"}}',
+        )
+        mocks = json.loads(driver.list_mocks())
+        assert "GET /api/v1/status" in mocks
+        assert "patch" in mocks["GET /api/v1/status"]
+
+        result = driver.remove_mock("GET", "/api/v1/status")
+        assert "Removed" in result
+
+    def test_load_yaml_scenario_with_mocks_key(self, driver, tmp_path):
+        yaml_content = (
+            "mocks:\n"
+            "  https://api.example.com/rest/v3/status:\n"
+            "  - method: GET\n"
+            "    patch:\n"
+            "      account:\n"
+            "        subState: INACTIVE\n"
+        )
+        scenario_file = tmp_path / "mocks" / "test-patch.yaml"
+        scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        scenario_file.write_text(yaml_content)
+
+        result = driver.load_mock_scenario("test-patch.yaml")
+        assert "1 endpoint(s)" in result
+
+        config = tmp_path / "mocks" / "endpoints.json"
+        data = json.loads(config.read_text())
+        ep = data["endpoints"]["GET /rest/v3/status"]
+        assert "patch" in ep
+        assert ep["patch"]["account"]["subState"] == "INACTIVE"
+
+    def test_load_scenario_content_with_mocks_key(self, driver):
+        yaml_content = (
+            "mocks:\n"
+            "  https://api.example.com/rest/v3/status:\n"
+            "  - method: GET\n"
+            "    patch:\n"
+            "      status: inactive\n"
+        )
+        result = driver.load_mock_scenario_content(
+            "test.yaml", yaml_content,
+        )
+        assert "1 endpoint(s)" in result
+
+    def test_patch_survives_flatten_and_convert(self, driver, tmp_path):
+        """Verify a patch entry round-trips through _flatten_entry
+        and _convert_url_endpoints correctly."""
+        yaml_content = (
+            "mocks:\n"
+            "  https://api.example.com/rest/v3/modules/nonPII:\n"
+            "  - method: GET\n"
+            "    patch:\n"
+            "      ModuleListResponse:\n"
+            "        moduleList:\n"
+            "          modules[0]:\n"
+            "            status: Inactive\n"
+        )
+        scenario_file = tmp_path / "mocks" / "roundtrip.yaml"
+        scenario_file.parent.mkdir(parents=True, exist_ok=True)
+        scenario_file.write_text(yaml_content)
+
+        driver.load_mock_scenario("roundtrip.yaml")
+
+        config = tmp_path / "mocks" / "endpoints.json"
+        data = json.loads(config.read_text())
+        ep = data["endpoints"]["GET /rest/v3/modules/nonPII"]
+        assert "patch" in ep
+        assert (
+            ep["patch"]["ModuleListResponse"]["moduleList"]["modules[0]"]["status"]
+            == "Inactive"
+        )

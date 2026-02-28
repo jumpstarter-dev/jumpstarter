@@ -67,6 +67,54 @@ def _resolve_dotted_path(obj, path: str):
     return obj
 
 
+_ARRAY_KEY_RE = re.compile(r'^(.+)\[(\d+)\]$')
+
+
+def _deep_merge_patch(target, patch):
+    """Deep-merge a patch dict into a target dict/list in-place.
+
+    - Dict patch values recurse into the matching target key.
+    - Keys with ``[N]`` suffix target array elements: ``"modules[0]"``
+      navigates to ``target["modules"][0]``.
+    - Scalar/list patch values replace the target value.
+    """
+    for key, value in patch.items():
+        m = _ARRAY_KEY_RE.match(key)
+        if m:
+            base_key, index = m.group(1), int(m.group(2))
+            array = target[base_key]
+            if isinstance(value, dict):
+                _deep_merge_patch(array[index], value)
+            else:
+                array[index] = value
+        elif isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_merge_patch(target[key], value)
+        else:
+            target[key] = value
+
+
+def _apply_patches(body_bytes, patches, flow, state):
+    """Parse JSON body, render templates in patch values, deep-merge, re-serialize.
+
+    Returns patched body as bytes, or None if the body is not valid JSON.
+    """
+    try:
+        body = json.loads(body_bytes)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+    rendered = TemplateEngine.render(patches, flow, state)
+    try:
+        _deep_merge_patch(body, rendered)
+    except (KeyError, IndexError, TypeError) as e:
+        try:
+            ctx.log.warn(f"Patch merge error (continuing with partial patch): {e}")
+        except AttributeError:
+            pass  # ctx.log not available outside mitmproxy
+
+    return json.dumps(body).encode()
+
+
 # ── Template engine (lightweight, no dependencies) ──────────
 
 
@@ -682,6 +730,11 @@ class MitmproxyMockAddon:
             await self._handle_sequence(flow, key, endpoint)
             return
 
+        # Handle patch mode: passthrough to real server, patch response later
+        if "patch" in endpoint:
+            flow.metadata["_jmp_patch"] = endpoint["patch"]
+            return
+
         # Handle regular response
         await self._send_response(flow, endpoint)
 
@@ -1089,6 +1142,7 @@ class MitmproxyMockAddon:
             "body": flow.request.get_text() or "",
             "response_status": response_status,
             "was_mocked": bool(flow.metadata.get("_jmp_mocked")),
+            "was_patched": bool(flow.metadata.get("_jmp_patched")),
             "duration_ms": duration_ms,
             "response_size": response_size,
         }
@@ -1096,8 +1150,39 @@ class MitmproxyMockAddon:
         return event
 
     def response(self, flow: http.HTTPFlow):
-        """Log all responses and emit capture events."""
+        """Log all responses, apply patches, and emit capture events."""
         if flow.response:
+            # Apply patch if this flow was marked for patching
+            patch_data = flow.metadata.get("_jmp_patch")
+            if patch_data:
+                content_type = flow.response.headers.get("content-type", "")
+                if "json" in content_type.lower():
+                    patched = _apply_patches(
+                        flow.response.get_content(),
+                        patch_data,
+                        flow,
+                        self._state,
+                    )
+                    if patched is not None:
+                        flow.response.set_content(patched)
+                        flow.metadata["_jmp_mocked"] = True
+                        flow.metadata["_jmp_patched"] = True
+                        ctx.log.info(
+                            f"Patched: {flow.request.method} "
+                            f"{flow.request.pretty_url}"
+                        )
+                    else:
+                        ctx.log.warn(
+                            f"Patch skipped (invalid JSON body): "
+                            f"{flow.request.method} {flow.request.pretty_url}"
+                        )
+                else:
+                    ctx.log.warn(
+                        f"Patch skipped (non-JSON content-type: "
+                        f"{content_type}): {flow.request.method} "
+                        f"{flow.request.pretty_url}"
+                    )
+
             ctx.log.debug(
                 f"{flow.request.method} {flow.request.pretty_url} "
                 f"→ {flow.response.status_code}"
