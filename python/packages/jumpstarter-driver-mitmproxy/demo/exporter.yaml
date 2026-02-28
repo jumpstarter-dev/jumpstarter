@@ -1,0 +1,29 @@
+# Demo exporter config for local mode (no endpoint/token needed).
+#
+# Usage:
+#   cd python/packages/jumpstarter-driver-mitmproxy/demo
+#   jmp shell --exporter exporter.yaml
+#
+# Then inside the shell:
+#   j proxy start -m mock -w
+#   j proxy mock load scenarios/happy-path
+#   j proxy mock clear
+
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: mitmproxy-demo
+export:
+  proxy:
+    type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
+    config:
+      listen:
+        host: "127.0.0.1"
+        port: 8080
+      web:
+        host: "127.0.0.1"
+        port: 8081
+      directories:
+        data: /tmp/jumpstarter-demo/mitmproxy
+      ssl_insecure: true

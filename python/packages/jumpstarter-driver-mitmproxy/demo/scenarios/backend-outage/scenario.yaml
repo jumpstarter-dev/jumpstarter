@@ -1,0 +1,37 @@
+# Backend-outage scenario: all API endpoints return 503.
+#
+# Demonstrates match.headers_absent: ordinary DUT traffic (no
+# X-Internal-Monitor header) receives 503 Service Unavailable, while
+# internal health-check probes (carrying the header) still get 200 so
+# the monitoring system does not raise false alerts.
+
+endpoints:
+  http://127.0.0.1:9000/api/v1/*:
+  - method: GET
+    match:
+      headers_absent:
+        - X-Internal-Monitor        # no header → outage response
+    status: 503
+    body:
+      error: Service Unavailable
+      message: "Backend is down for maintenance"
+      source: mock
+  - method: GET                     # internal health-check → pass
+    status: 200
+    body:
+      status: ok
+      source: mock
+  - method: POST
+    match:
+      headers_absent:
+        - X-Internal-Monitor
+    status: 503
+    body:
+      error: Service Unavailable
+      message: "Backend is down for maintenance"
+      source: mock
+  - method: POST
+    status: 200
+    body:
+      accepted: true
+      source: mock
