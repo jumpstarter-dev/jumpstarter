@@ -130,6 +130,9 @@ def _flatten_entry(entry: dict) -> tuple[str, dict]:
 
     Removes ``method``, un-nests ``response`` fields, and returns
     ``(method, flat_dict)`` suitable for the addon.
+
+    Entries with a ``patch`` key (instead of ``response``) are left
+    as-is since the patch dict is consumed directly by the addon.
     """
     entry = dict(entry)
     method = entry.pop("method", "GET")
@@ -887,6 +890,36 @@ class MitmproxyDriver(Driver):
         return f"File mock set: {key} → {file_path} ({content_type})"
 
     @export
+    def set_mock_patch(self, method: str, path: str,
+                       patches_json: str) -> str:
+        """Mock an endpoint in patch mode (passthrough + field overwrite).
+
+        The request passes through to the real server. When the response
+        comes back, the specified fields are deep-merged into the JSON
+        body before delivery to the DUT.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            path: URL path to match.
+            patches_json: JSON string of the patch dict to deep-merge
+                into the response body.
+
+        Returns:
+            Confirmation message.
+        """
+        try:
+            patches = json.loads(patches_json)
+        except json.JSONDecodeError:
+            return "Invalid JSON for patches"
+        if not isinstance(patches, dict):
+            return "Patches must be a JSON object"
+
+        key = f"{method.upper()} {path}"
+        self._mock_endpoints[key] = {"patch": patches}
+        self._write_mock_config()
+        return f"Patch mock set: {key}"
+
+    @export
     def set_mock_with_latency(self, method: str, path: str,
                               status: int, body: str,
                               latency_ms: int,
@@ -1179,9 +1212,12 @@ class MitmproxyDriver(Driver):
         except (json.JSONDecodeError, yaml.YAMLError, OSError) as e:
             return f"Failed to load scenario: {e}"
 
-        # Handle v2 format (with "endpoints" wrapper) or v1 flat format
+        # Handle v2 format (with "endpoints" wrapper), "mocks" key,
+        # or v1 flat format
         if "endpoints" in raw:
             endpoints = raw["endpoints"]
+        elif "mocks" in raw:
+            endpoints = raw["mocks"]
         else:
             endpoints = raw
 
@@ -1221,9 +1257,12 @@ class MitmproxyDriver(Driver):
         if not isinstance(raw, dict):
             return "Invalid scenario: expected a JSON/YAML object"
 
-        # Handle v2 format (with "endpoints" wrapper) or v1 flat format
+        # Handle v2 format (with "endpoints" wrapper), "mocks" key,
+        # or v1 flat format
         if "endpoints" in raw:
             endpoints = raw["endpoints"]
+        elif "mocks" in raw:
+            endpoints = raw["mocks"]
         else:
             endpoints = raw
 
@@ -1857,6 +1896,8 @@ class MitmproxyDriver(Driver):
                         raw = json.load(f)
                 if "endpoints" in raw:
                     endpoints = raw["endpoints"]
+                elif "mocks" in raw:
+                    endpoints = raw["mocks"]
                 else:
                     endpoints = raw
                 # Convert URL-keyed endpoints to METHOD /path format
