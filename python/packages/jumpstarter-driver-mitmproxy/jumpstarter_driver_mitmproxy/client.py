@@ -613,6 +613,36 @@ class MitmproxyClient(DriverClient):
             content_type, status, json.dumps(headers or {}),
         )
 
+    def set_mock_patch(self, method: str, path: str,
+                       patches: dict) -> str:
+        """Mock an endpoint in patch mode (passthrough + field overwrite).
+
+        The request passes through to the real server. When the response
+        comes back, the specified fields are deep-merged into the JSON
+        body before delivery to the DUT.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            path: URL path to match.
+            patches: Dict to deep-merge into the response body. Use
+                ``key[N]`` syntax for array indexing.
+
+        Returns:
+            Confirmation message.
+
+        Example::
+
+            proxy.set_mock_patch(
+                "GET", "/rest/v3/experience/modules/nonPII",
+                {"ModuleListResponse": {"moduleList": {"modules[0]": {
+                    "status": "Inactive"
+                }}}},
+            )
+        """
+        return self.call(
+            "set_mock_patch", method, path, json.dumps(patches),
+        )
+
     def set_mock_with_latency(self, method: str, path: str,
                               status: int = 200,
                               body: dict | list | str = "",
@@ -1170,6 +1200,40 @@ class MitmproxyClient(DriverClient):
             self.remove_mock(method, path)
 
     @contextmanager
+    def mock_patch_endpoint(
+        self,
+        method: str,
+        path: str,
+        patches: dict,
+    ) -> Generator[None, None, None]:
+        """Context manager for a temporary patch mock endpoint.
+
+        Sets up a patch mock on entry and removes it on exit.
+
+        Args:
+            method: HTTP method.
+            path: URL path.
+            patches: Dict to deep-merge into the response body.
+
+        Example::
+
+            with proxy.mock_patch_endpoint(
+                "GET", "/rest/v3/experience/modules/nonPII",
+                {"ModuleListResponse": {"moduleList": {"modules[0]": {
+                    "status": "Inactive"
+                }}}},
+            ):
+                # real server response is patched
+                pass
+            # patch is automatically cleaned up
+        """
+        self.set_mock_patch(method, path, patches)
+        try:
+            yield
+        finally:
+            self.remove_mock(method, path)
+
+    @contextmanager
     def mock_scenario(
         self, scenario_file: str,
     ) -> Generator[None, None, None]:
@@ -1345,11 +1409,14 @@ def _format_capture_entry(entry: dict) -> str:
     # Format response size (fixed 8-char column)
     size_str = click.style(_human_size(response_size).rjust(8), fg="bright_black")
 
-    # Mock/passthrough tag (fixed 13-char column — length of "[passthrough]")
-    if was_mocked:
+    # Mock/patched/passthrough tag (fixed 13-char column — length of "[passthrough]")
+    was_patched = entry.get("was_patched", False)
+    if was_patched:
+        tag = click.style("[patched]".ljust(13), fg="yellow")
+    elif was_mocked:
         tag = click.style("[mocked]".ljust(13), fg="green")
     else:
-        tag = click.style("[passthrough]", fg="yellow")
+        tag = click.style("[passthrough]", fg="bright_black")
 
     return f"  {ts_str} {styled_method} {path_col} {styled_status} {dur_str} {size_str} {tag}"
 
@@ -1386,19 +1453,32 @@ def _human_size(nbytes: int) -> str:
 def _collect_file_entries(endpoints: dict) -> list[dict]:
     """Collect all dicts that might contain a ``file`` key from a scenario.
 
-    Walks top-level endpoints plus nested ``rules`` and ``sequence`` entries.
+    Walks top-level endpoints plus nested ``rules`` and ``sequence``
+    entries. Also handles URL-keyed list values (from ``mocks:`` key
+    format) where each list item is an endpoint dict.
     """
     entries: list[dict] = []
     for ep in endpoints.values():
-        if not isinstance(ep, dict):
+        if isinstance(ep, list):
+            # URL-keyed list format: each item is an endpoint dict
+            items = ep
+        elif isinstance(ep, dict):
+            items = [ep]
+        else:
             continue
-        entries.append(ep)
-        for rule in ep.get("rules", []):
-            if isinstance(rule, dict):
-                entries.append(rule)
-        for step in ep.get("sequence", []):
-            if isinstance(step, dict):
-                entries.append(step)
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            entries.append(item)
+            # Check nested response dict
+            if isinstance(item.get("response"), dict):
+                entries.append(item["response"])
+            for rule in item.get("rules", []):
+                if isinstance(rule, dict):
+                    entries.append(rule)
+            for step in item.get("sequence", []):
+                if isinstance(step, dict):
+                    entries.append(step)
     return entries
 
 
@@ -1422,7 +1502,12 @@ def _upload_scenario_files(
     if not isinstance(raw, dict):
         return
 
-    endpoints = raw.get("endpoints", raw)
+    if "endpoints" in raw:
+        endpoints = raw["endpoints"]
+    elif "mocks" in raw:
+        endpoints = raw["mocks"]
+    else:
+        endpoints = raw
     if not isinstance(endpoints, dict):
         return
 
