@@ -208,6 +208,8 @@ def _write_captured_file(
     # Sanitise characters that are unsafe in filenames but keep slashes
     clean = "".join(c if (c.isalnum() or c in "/-_.") else "_" for c in clean)
     clean = clean.strip("_")
+    if clean.endswith(ext):
+        clean = clean[:-len(ext)]
     rel = f"responses/{method}/{clean}{ext}"
     dest = files_dir / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -670,6 +672,11 @@ class MitmproxyDriver(Driver):
         # Stop capture server (do NOT clear _captured_requests — tests may
         # read captures after stop)
         self._stop_capture_server()
+
+        # Clean spool directories so temp files don't accumulate across
+        # stop/start cycles.  The directories themselves are recreated by
+        # _start_capture_server / export_captured_scenario on next start.
+        self._clean_spool_dirs()
 
         msg = f"Stopped (was '{prev_mode}' mode, PID {pid})"
         if prev_mode == "record" and flow_file:
@@ -1455,6 +1462,10 @@ class MitmproxyDriver(Driver):
     ) -> tuple[dict[str, list], list[str]]:
         """Convert grouped captured requests into v2 scenario endpoints.
 
+        .. note::
+            Also consumed by ``SiriusXmDriver`` (jumpstarter-driver-mimosa)
+            at runtime for IP capture export. Avoid renaming without updating.
+
         Keys are full URLs (scheme + domain + path).  Each endpoint
         value is a **list** of response definitions, each containing a
         ``method`` field.  This handles multiple HTTP methods and query
@@ -1790,6 +1801,25 @@ class MitmproxyDriver(Driver):
             except FileNotFoundError:
                 pass
             self._capture_socket_path = None
+
+    def _clean_spool_dirs(self) -> None:
+        """Remove all files from spool directories.
+
+        Called on ``stop()`` so temp files from capture/export don't
+        accumulate across stop/start cycles.
+        """
+        import shutil
+
+        for dirname in ("capture-spool",):
+            spool = Path(self.directories.data) / dirname
+            if spool.is_dir():
+                shutil.rmtree(spool, ignore_errors=True)
+                logger.debug("Cleaned spool directory: %s", spool)
+
+        files_dir = Path(self.directories.files)
+        if files_dir.is_dir():
+            shutil.rmtree(files_dir, ignore_errors=True)
+            logger.debug("Cleaned files directory: %s", files_dir)
 
     @staticmethod
     def _request_matches(req: dict, method: str, path: str) -> bool:
