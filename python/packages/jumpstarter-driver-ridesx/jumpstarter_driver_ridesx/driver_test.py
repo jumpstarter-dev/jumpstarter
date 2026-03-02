@@ -218,40 +218,43 @@ def test_decompress_file_timeout(temp_storage_dir, ridesx_driver):
 # Fastboot Flashing Tests
 
 
+def _make_ok_result(stdout="OK"):
+    r = MagicMock()
+    r.stdout = stdout
+    r.stderr = ""
+    r.returncode = 0
+    return r
+
+
+def _set_active_results():
+    """Two successful results for _reset_active_slot (set_active b, set_active a)."""
+    return [_make_ok_result("set_active b"), _make_ok_result("set_active a")]
+
+
 def test_flash_with_fastboot_single_partition(temp_storage_dir, ridesx_driver):
-    # Create test image file
     image_file = Path(temp_storage_dir) / "boot.img"
     image_file.write_bytes(b"boot image data")
 
     with serve(ridesx_driver) as client:
         with patch("subprocess.run") as mock_subprocess:
-            # Mock flash command
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing boot..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
-
-            # Mock continue command
-            continue_result = MagicMock()
-            continue_result.stdout = "Continuing..."
-            continue_result.stderr = ""
-            continue_result.returncode = 0
-
-            mock_subprocess.side_effect = [flash_result, continue_result]
+            mock_subprocess.side_effect = [
+                *_set_active_results(),
+                _make_ok_result("Flashing boot..."),
+                _make_ok_result("Continuing..."),
+            ]
 
             client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
-            assert mock_subprocess.call_count == 2
-            # Check flash command
-            flash_call = mock_subprocess.call_args_list[0]
-            assert flash_call[0][0] == ["fastboot", "-s", "ABC123", "flash", "boot", str(image_file)]
-            # Check continue command
-            continue_call = mock_subprocess.call_args_list[1]
-            assert continue_call[0][0] == ["fastboot", "-s", "ABC123", "continue"]
+            assert mock_subprocess.call_count == 4
+            assert mock_subprocess.call_args_list[0][0][0] == ["fastboot", "-s", "ABC123", "set_active", "b"]
+            assert mock_subprocess.call_args_list[1][0][0] == ["fastboot", "-s", "ABC123", "set_active", "a"]
+            assert mock_subprocess.call_args_list[2][0][0] == [
+                "fastboot", "-s", "ABC123", "flash", "boot", str(image_file),
+            ]
+            assert mock_subprocess.call_args_list[3][0][0] == ["fastboot", "-s", "ABC123", "continue"]
 
 
 def test_flash_with_fastboot_multiple_partitions(temp_storage_dir, ridesx_driver):
-    # Create test image files
     boot_file = Path(temp_storage_dir) / "boot.img"
     boot_file.write_bytes(b"boot image data")
     system_file = Path(temp_storage_dir) / "system.img"
@@ -259,57 +262,40 @@ def test_flash_with_fastboot_multiple_partitions(temp_storage_dir, ridesx_driver
 
     with serve(ridesx_driver) as client:
         with patch("subprocess.run") as mock_subprocess:
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
-
-            continue_result = MagicMock()
-            continue_result.stdout = "Continuing..."
-            continue_result.stderr = ""
-            continue_result.returncode = 0
-
-            mock_subprocess.side_effect = [flash_result, flash_result, continue_result]
+            mock_subprocess.side_effect = [
+                *_set_active_results(),
+                _make_ok_result("Flashing boot..."),
+                _make_ok_result("Flashing system..."),
+                _make_ok_result("Continuing..."),
+            ]
 
             client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img", "system": "system.img"})
 
-            assert mock_subprocess.call_count == 3
-            # Verify both partitions were flashed
-            flash_calls = [call[0][0] for call in mock_subprocess.call_args_list[:2]]
+            assert mock_subprocess.call_count == 5
+            flash_calls = [call[0][0] for call in mock_subprocess.call_args_list[2:4]]
             assert ["fastboot", "-s", "ABC123", "flash", "boot", str(boot_file)] in flash_calls
             assert ["fastboot", "-s", "ABC123", "flash", "system", str(system_file)] in flash_calls
 
 
 def test_flash_with_fastboot_compressed_file(temp_storage_dir, ridesx_driver):
-    # Create compressed file
     compressed_file = Path(temp_storage_dir) / "boot.img.gz"
     compressed_file.write_bytes(b"compressed data")
-
-    # Create decompressed file that will be "created" by decompression
     decompressed_file = Path(temp_storage_dir) / "boot.img"
     decompressed_file.write_bytes(b"decompressed data")
 
     with serve(ridesx_driver) as client:
         with patch.object(ridesx_driver, "_decompress_file", return_value=decompressed_file):
             with patch("subprocess.run") as mock_subprocess:
-                flash_result = MagicMock()
-                flash_result.stdout = "Flashing..."
-                flash_result.stderr = ""
-                flash_result.returncode = 0
-
-                continue_result = MagicMock()
-                continue_result.stdout = "Continuing..."
-                continue_result.stderr = ""
-                continue_result.returncode = 0
-
-                mock_subprocess.side_effect = [flash_result, continue_result]
+                mock_subprocess.side_effect = [
+                    *_set_active_results(),
+                    _make_ok_result("Flashing..."),
+                    _make_ok_result("Continuing..."),
+                ]
 
                 client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img.gz"})
 
-                # Verify decompression was called
                 ridesx_driver._decompress_file.assert_called_once_with(compressed_file)
-                # Verify flash used decompressed file
-                flash_call = mock_subprocess.call_args_list[0]
+                flash_call = mock_subprocess.call_args_list[2]
                 assert str(decompressed_file) in flash_call[0][0]
 
 
@@ -317,9 +303,11 @@ def test_flash_with_fastboot_file_not_found(temp_storage_dir, ridesx_driver):
     with serve(ridesx_driver) as client:
         from jumpstarter.client.core import DriverError
 
-        # When called through client, FileNotFoundError becomes DriverError
-        with pytest.raises(DriverError, match="Image not found in storage"):
-            client.call("flash_with_fastboot", "ABC123", {"boot": "nonexistent.img"})
+        with patch("subprocess.run") as mock_subprocess:
+            mock_subprocess.side_effect = [*_set_active_results()]
+
+            with pytest.raises(DriverError, match="Image not found in storage"):
+                client.call("flash_with_fastboot", "ABC123", {"boot": "nonexistent.img"})
 
 
 def test_flash_with_fastboot_empty_partitions(ridesx_driver):
@@ -336,9 +324,11 @@ def test_flash_with_fastboot_flash_failure(temp_storage_dir, ridesx_driver):
         from jumpstarter.client.core import DriverError
 
         with patch("subprocess.run") as mock_subprocess:
-            mock_subprocess.side_effect = subprocess.CalledProcessError(1, "fastboot", stderr=b"flash failed")
+            mock_subprocess.side_effect = [
+                *_set_active_results(),
+                subprocess.CalledProcessError(1, "fastboot", stderr=b"flash failed"),
+            ]
 
-            # When called through client, RuntimeError becomes DriverError
             with pytest.raises(DriverError, match="Failed to flash"):
                 client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
@@ -351,9 +341,11 @@ def test_flash_with_fastboot_flash_timeout(temp_storage_dir, ridesx_driver):
         from jumpstarter.client.core import DriverError
 
         with patch("subprocess.run") as mock_subprocess:
-            mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 20 * 60)
+            mock_subprocess.side_effect = [
+                *_set_active_results(),
+                subprocess.TimeoutExpired("fastboot", 20 * 60),
+            ]
 
-            # When called through client, RuntimeError becomes DriverError
             with pytest.raises(DriverError, match="timeout while flashing"):
                 client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
@@ -364,22 +356,15 @@ def test_flash_with_fastboot_continue_success(temp_storage_dir, ridesx_driver):
 
     with serve(ridesx_driver) as client:
         with patch("subprocess.run") as mock_subprocess:
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
-
-            continue_result = MagicMock()
-            continue_result.stdout = "Continuing..."
-            continue_result.stderr = ""
-            continue_result.returncode = 0
-
-            mock_subprocess.side_effect = [flash_result, continue_result]
+            mock_subprocess.side_effect = [
+                *_set_active_results(),
+                _make_ok_result("Flashing..."),
+                _make_ok_result("Continuing..."),
+            ]
 
             client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
-            # Verify continue was called
-            continue_call = mock_subprocess.call_args_list[1]
+            continue_call = mock_subprocess.call_args_list[3]
             assert continue_call[0][0] == ["fastboot", "-s", "ABC123", "continue"]
 
 
@@ -389,22 +374,178 @@ def test_flash_with_fastboot_continue_failure(temp_storage_dir, ridesx_driver):
 
     with serve(ridesx_driver) as client:
         with patch("subprocess.run") as mock_subprocess:
-            flash_result = MagicMock()
-            flash_result.stdout = "Flashing..."
-            flash_result.stderr = ""
-            flash_result.returncode = 0
-
-            # First call succeeds (flash), second call fails (continue)
             mock_subprocess.side_effect = [
-                flash_result,
+                *_set_active_results(),
+                _make_ok_result("Flashing..."),
                 subprocess.CalledProcessError(1, "fastboot", stderr=b"continue failed"),
             ]
 
-            # Should not raise, just log warning
             client.call("flash_with_fastboot", "ABC123", {"boot": "boot.img"})
 
-            # Verify both flash and continue were called
-            assert mock_subprocess.call_count == 2
+            assert mock_subprocess.call_count == 4
+
+
+# Reset Active Slot Tests
+
+
+def test_reset_active_slot(ridesx_driver):
+    """_reset_active_slot runs set_active b then set_active a"""
+    with patch("subprocess.run") as mock_subprocess:
+        mock_subprocess.side_effect = _set_active_results()
+
+        ridesx_driver._reset_active_slot("ABC123")
+
+        assert mock_subprocess.call_count == 2
+        assert mock_subprocess.call_args_list[0][0][0] == ["fastboot", "-s", "ABC123", "set_active", "b"]
+        assert mock_subprocess.call_args_list[1][0][0] == ["fastboot", "-s", "ABC123", "set_active", "a"]
+
+
+def test_reset_active_slot_failure(ridesx_driver):
+    """_reset_active_slot raises on fastboot failure"""
+    with patch("subprocess.run") as mock_subprocess:
+        mock_subprocess.side_effect = subprocess.CalledProcessError(1, "fastboot", stderr=b"error")
+
+        with pytest.raises(RuntimeError, match="Failed to set active slot to b"):
+            ridesx_driver._reset_active_slot("ABC123")
+
+
+def test_reset_active_slot_timeout(ridesx_driver):
+    """_reset_active_slot raises on timeout"""
+    with patch("subprocess.run") as mock_subprocess:
+        mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 30)
+
+        with pytest.raises(RuntimeError, match="Timeout while setting active slot to b"):
+            ridesx_driver._reset_active_slot("ABC123")
+
+
+def test_reset_active_slot_second_slot_failure(ridesx_driver):
+    """_reset_active_slot raises if second set_active (a) fails"""
+    with patch("subprocess.run") as mock_subprocess:
+        mock_subprocess.side_effect = [
+            _make_ok_result(),
+            subprocess.CalledProcessError(1, "fastboot", stderr=b"error"),
+        ]
+
+        with pytest.raises(RuntimeError, match="Failed to set active slot to a"):
+            ridesx_driver._reset_active_slot("ABC123")
+
+
+# Set Active Slot Tests
+
+
+def test_set_active_slot_success(ridesx_driver):
+    """set_active_slot boots to fastboot, detects device, and sets active slot"""
+    with serve(ridesx_driver) as client:
+        with patch.object(ridesx_driver, "boot_to_fastboot", new_callable=AsyncMock) as mock_boot:
+            mock_boot.return_value = {"status": "device_found", "device_id": "ABC123"}
+
+            with patch("subprocess.run") as mock_subprocess:
+                mock_subprocess.return_value = _make_ok_result()
+
+                result = client.call("set_active_slot", "a")
+
+                assert result["status"] == "success"
+                assert result["slot"] == "a"
+                assert result["device_id"] == "ABC123"
+                mock_boot.assert_called_once()
+                mock_subprocess.assert_called_once()
+                assert mock_subprocess.call_args[0][0] == ["fastboot", "-s", "ABC123", "set_active", "a"]
+
+
+def test_set_active_slot_b(ridesx_driver):
+    """set_active_slot works for slot b"""
+    with serve(ridesx_driver) as client:
+        with patch.object(ridesx_driver, "boot_to_fastboot", new_callable=AsyncMock) as mock_boot:
+            mock_boot.return_value = {"status": "device_found", "device_id": "DEV456"}
+
+            with patch("subprocess.run") as mock_subprocess:
+                mock_subprocess.return_value = _make_ok_result()
+
+                result = client.call("set_active_slot", "b")
+
+                assert result["status"] == "success"
+                assert result["slot"] == "b"
+                assert result["device_id"] == "DEV456"
+                assert mock_subprocess.call_args[0][0] == ["fastboot", "-s", "DEV456", "set_active", "b"]
+
+
+def test_set_active_slot_invalid(ridesx_driver):
+    """set_active_slot rejects invalid slot names"""
+    with serve(ridesx_driver) as client:
+        with pytest.raises(ValueError, match="Invalid slot 'c'"):
+            client.call("set_active_slot", "c")
+
+
+def test_set_active_slot_fastboot_failure(ridesx_driver):
+    """set_active_slot raises when fastboot set_active fails"""
+    from jumpstarter.client.core import DriverError
+
+    with serve(ridesx_driver) as client:
+        with patch.object(ridesx_driver, "boot_to_fastboot", new_callable=AsyncMock) as mock_boot:
+            mock_boot.return_value = {"status": "device_found", "device_id": "ABC123"}
+
+            with patch("subprocess.run") as mock_subprocess:
+                mock_subprocess.side_effect = subprocess.CalledProcessError(1, "fastboot", stderr=b"failed")
+
+                with pytest.raises(DriverError, match="Failed to set active slot to a"):
+                    client.call("set_active_slot", "a")
+
+
+def test_set_active_slot_fastboot_timeout(ridesx_driver):
+    """set_active_slot raises when fastboot times out"""
+    from jumpstarter.client.core import DriverError
+
+    with serve(ridesx_driver) as client:
+        with patch.object(ridesx_driver, "boot_to_fastboot", new_callable=AsyncMock) as mock_boot:
+            mock_boot.return_value = {"status": "device_found", "device_id": "ABC123"}
+
+            with patch("subprocess.run") as mock_subprocess:
+                mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 30)
+
+                with pytest.raises(DriverError, match="Timeout while setting active slot to a"):
+                    client.call("set_active_slot", "a")
+
+
+# Boot to Fastboot Tests
+
+
+@pytest.mark.asyncio
+async def test_boot_to_fastboot_detects_device(ridesx_driver):
+    """boot_to_fastboot calls detect_fastboot_device and returns result"""
+    mock_stream = AsyncMock()
+    mock_stream.receive.return_value = b"ok CMD >> "
+
+    mock_connect = AsyncMock()
+    mock_connect.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_connect.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(ridesx_driver.children["serial"], "connect", return_value=mock_connect):
+        with patch.object(ridesx_driver, "detect_fastboot_device") as mock_detect:
+            mock_detect.return_value = {"status": "device_found", "device_id": "ABC123"}
+
+            result = await ridesx_driver.boot_to_fastboot()
+
+            assert result["status"] == "device_found"
+            assert result["device_id"] == "ABC123"
+            mock_detect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_boot_to_fastboot_no_device(ridesx_driver):
+    """boot_to_fastboot raises when no fastboot device is detected after boot"""
+    mock_stream = AsyncMock()
+    mock_stream.receive.return_value = b"ok CMD >> "
+
+    mock_connect = AsyncMock()
+    mock_connect.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_connect.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(ridesx_driver.children["serial"], "connect", return_value=mock_connect):
+        with patch.object(ridesx_driver, "detect_fastboot_device") as mock_detect:
+            mock_detect.return_value = {"status": "no_device_found", "device_id": None}
+
+            with pytest.raises(RuntimeError, match="no fastboot device was detected"):
+                await ridesx_driver.boot_to_fastboot()
 
 
 def test_power_missing_serial():
