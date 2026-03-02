@@ -328,6 +328,11 @@ class RideSXDriver(Driver):
         if bool(oci_username) != bool(oci_password):
             raise ValueError("OCI authentication requires both --username and --password")
 
+        detection_result = self.detect_fastboot_device()
+        if detection_result["status"] != "device_found":
+            raise RuntimeError("No fastboot device found")
+        self._reset_active_slot(detection_result["device_id"])
+
         fls_cmd = self._build_fls_command(oci_url, partitions)
 
         fls_env = os.environ.copy()
