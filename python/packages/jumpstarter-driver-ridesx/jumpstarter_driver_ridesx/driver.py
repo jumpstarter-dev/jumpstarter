@@ -174,6 +174,62 @@ class RideSXDriver(Driver):
         return {"status": "no_device_found", "device_id": None}
 
     @export
+    async def set_active_slot(self, slot: str):
+        """Boot to fastboot, detect device, and set the active boot slot.
+
+        Args:
+            slot: Boot slot to activate (e.g. "a" or "b")
+        """
+        slot = str(slot).strip().lower()
+        if slot not in ("a", "b"):
+            raise ValueError(f"Invalid slot '{slot}', must be 'a' or 'b'")
+
+        detection_result = await self.boot_to_fastboot()
+        device_id = detection_result["device_id"]
+        self.logger.info(f"Setting active slot to {slot} on device {device_id}")
+
+        cmd = ["fastboot", "-s", device_id, "set_active", slot]
+        self.logger.debug(f"Running command: {' '.join(cmd)}")
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+            self.logger.info(f"Successfully set active slot to {slot}")
+            self.logger.debug(f"set_active stdout: {result.stdout}")
+            if result.stderr:
+                self.logger.debug(f"set_active stderr: {result.stderr}")
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to set active slot to {slot} - return code: {e.returncode}")
+            self.logger.error(f"stdout: {e.stdout}")
+            self.logger.error(f"stderr: {e.stderr}")
+            raise RuntimeError(f"Failed to set active slot to {slot}: {e}") from e
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Timeout while setting active slot to {slot}")
+            raise RuntimeError(f"Timeout while setting active slot to {slot}") from None
+
+        return {"status": "success", "slot": slot, "device_id": device_id}
+
+    def _reset_active_slot(self, device_id: str):
+        """Cycle active slot b -> a to ensure clean slot state before flashing."""
+        for slot in ("b", "a"):
+            self.logger.info(f"Setting active slot to {slot}...")
+            cmd = ["fastboot", "-s", device_id, "set_active", slot]
+            self.logger.debug(f"Running command: {' '.join(cmd)}")
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+                self.logger.info(f"Successfully set active slot to {slot}")
+                self.logger.debug(f"set_active stdout: {result.stdout}")
+                if result.stderr:
+                    self.logger.debug(f"set_active stderr: {result.stderr}")
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Failed to set active slot to {slot} - return code: {e.returncode}")
+                self.logger.error(f"stdout: {e.stdout}")
+                self.logger.error(f"stderr: {e.stderr}")
+                raise RuntimeError(f"Failed to set active slot to {slot}: {e}") from e
+            except subprocess.TimeoutExpired:
+                self.logger.error(f"Timeout while setting active slot to {slot}")
+                raise RuntimeError(f"Timeout while setting active slot to {slot}") from None
+
+    @export
     def flash_with_fastboot(self, device_id: str, partitions: Dict[str, str]):
         """Flash partitions using fastboot
 
@@ -185,6 +241,8 @@ class RideSXDriver(Driver):
             raise ValueError("At least one partition must be provided")
 
         self.logger.info(f"Flashing device {device_id} with partitions: {list(partitions.keys())}")
+
+        self._reset_active_slot(device_id)
 
         for partition_name, filename in partitions.items():
             file_path = Path(self.storage_dir) / filename
@@ -311,7 +369,7 @@ class RideSXDriver(Driver):
 
     @export
     async def boot_to_fastboot(self):
-        """Boot device to fastboot mode"""
+        """Boot device to fastboot mode and detect the fastboot device."""
         self.logger.info("Booting device to fastboot mode")
         commands = [
             # power off
@@ -347,6 +405,12 @@ class RideSXDriver(Driver):
                 self.logger.debug(f"prompt returned after command: {command}")
                 await asyncio.sleep(delay)
         self.logger.info("device should now be in fastboot mode")
+
+        detection_result = self.detect_fastboot_device()
+        if detection_result["status"] != "device_found":
+            raise RuntimeError("Device booted to fastboot but no fastboot device was detected")
+
+        return detection_result
 
 
 @dataclass(kw_only=True)

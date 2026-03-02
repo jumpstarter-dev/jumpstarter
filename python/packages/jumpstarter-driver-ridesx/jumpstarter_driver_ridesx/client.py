@@ -29,6 +29,10 @@ class RideSXClient(FlasherClient, CompositeClient):
     def boot_to_fastboot(self):
         return self.call("boot_to_fastboot")
 
+    def set_active_slot(self, slot: str):
+        """Boot to fastboot and set the active boot slot."""
+        return self.call("set_active_slot", slot)
+
     def _upload_file_if_needed(self, file_path: str, operator: Operator | None = None) -> str:
         if not file_path or not file_path.strip():
             raise ValueError("File path cannot be empty. Please provide a valid file path.")
@@ -453,6 +457,18 @@ class RideSXClient(FlasherClient, CompositeClient):
         def boot_to_fastboot():
             """Boot to fastboot"""
             self.boot_to_fastboot()
+
+        @base.command()
+        @click.argument("slot", type=click.Choice(["a", "b"]))
+        def set_active(slot):
+            """Set the active boot slot (boots to fastboot first).
+
+            \b
+            Examples:
+              j storage set-active a
+              j storage set-active b
+            """
+            self.set_active_slot(slot)
 
         return base
 
