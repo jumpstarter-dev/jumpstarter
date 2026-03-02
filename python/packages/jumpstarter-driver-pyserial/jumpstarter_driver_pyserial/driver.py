@@ -134,7 +134,7 @@ class PySerial(Driver):
         cps_info = f", cps: {self.cps}" if self.cps is not None else ""
         self.logger.info("Connecting to %s, baudrate: %d%s", self.url, self.baudrate, cps_info)
         if self.url != LOOP:
-            reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate, limit=1)
+            reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate)
             writer.transport.set_write_buffer_limits(high=4096, low=0)
             self._maybe_disable_hupcl(getattr(writer.transport, "serial", None))
             async with AsyncSerial(
