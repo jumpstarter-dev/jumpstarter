@@ -25,6 +25,8 @@ Drivers that control the power state and basic operation of devices:
 * **[Tasmota](tasmota.md)** (`jumpstarter-driver-tasmota`) - Tasmota hardware control
 * **[HTTP Power](http-power.md)** (`jumpstarter-driver-http-power`) - HTTP-based power
   control, useful for smart sockets, like the Shelly Smart Plug or similar
+* **[Noyito Relay](noyito-relay.md)** (`jumpstarter-driver-noyito-relay`) - NOYITO USB relay
+  board control (1/2-channel serial and 4/8-channel HID variants)
 
 ### Communication Drivers
 
@@ -96,6 +98,7 @@ http.md
 http-power.md
 iscsi.md
 network.md
+noyito-relay.md
 opendal.md
 power.md
 probe-rs.md
