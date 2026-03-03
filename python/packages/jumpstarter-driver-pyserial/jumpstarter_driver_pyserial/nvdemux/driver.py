@@ -109,7 +109,7 @@ class NVDemuxSerial(Driver):
         cps_info = f", cps: {self.cps}" if self.cps is not None else ""
         self.logger.info("Connecting to %s at %s, baudrate: %d%s", self.target, pts_path, self.baudrate, cps_info)
 
-        reader, writer = await open_serial_connection(url=pts_path, baudrate=self.baudrate, limit=1)
+        reader, writer = await open_serial_connection(url=pts_path, baudrate=self.baudrate)
         writer.transport.set_write_buffer_limits(high=4096, low=0)
         async with AsyncSerial(
             reader=StreamReaderWrapper(reader),
