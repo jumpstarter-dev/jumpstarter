@@ -154,9 +154,7 @@ Implements `PowerInterface` (provides `on`, `off`, `read`, and `cycle` via
 | `on()` | Energise the configured relay channel(s) |
 | `off()` | De-energise the configured relay channel(s) |
 | `read()` | Yields a single `PowerReading(voltage=0.0, current=0.0)` |
-
-> **Note**: `status()` is not available for HID boards. The hardware does not
-> support a status query command.
+| `status()` | Returns the channel state string, e.g. `"on"`, `"off"`, or `"partial"` |
 
 ### CLI Usage
 
