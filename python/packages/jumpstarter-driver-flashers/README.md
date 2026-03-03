@@ -352,4 +352,4 @@ An example bundle for the TI J784S4XEVM looks like this:
 ```
 
 You can find a script to build and push a bundle to a registry here:
-[oci_bundles](https://github.com/jumpstarter-dev/jumpstarter/tree/main/packages/jumpstarter-driver-flashers/oci_bundles)
+[oci_bundles](https://github.com/jumpstarter-dev/jumpstarter/tree/main/python/packages/jumpstarter-driver-flashers/oci_bundles)
