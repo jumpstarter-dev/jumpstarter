@@ -81,8 +81,8 @@ class NoyitoPowerSerial(PowerInterface, Driver):
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
-        # Power reading not supported
         raise NotImplementedError
+        yield  # makes this a generator function
 
     @export
     def status(self) -> str:

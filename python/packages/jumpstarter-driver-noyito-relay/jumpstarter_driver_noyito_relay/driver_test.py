@@ -103,11 +103,8 @@ def test_read(mock_serial_cls):
     mock_serial_cls.return_value = mock_ser
 
     with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", channel=1)) as client:
-        readings = list(client.read())
-
-    assert len(readings) == 1
-    assert readings[0].voltage == 0.0
-    assert readings[0].current == 0.0
+        with pytest.raises(Exception):
+            list(client.read())
 
 
 @patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
