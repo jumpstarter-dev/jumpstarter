@@ -140,7 +140,7 @@ def test_dual_on(mock_serial_cls):
     mock_ser = _make_serial_mock()
     mock_serial_cls.return_value = mock_ser
 
-    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", dual=True)) as client:
+    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", all_channels=True)) as client:
         client.on()
 
     write_calls = mock_ser.write.call_args_list
@@ -153,7 +153,7 @@ def test_dual_off(mock_serial_cls):
     mock_ser = _make_serial_mock()
     mock_serial_cls.return_value = mock_ser
 
-    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", dual=True)) as client:
+    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", all_channels=True)) as client:
         client.off()
 
     write_calls = mock_ser.write.call_args_list
@@ -167,7 +167,7 @@ def test_dual_status_both_on(mock_serial_cls):
     mock_ser.read.return_value = b"CH1:ON \r\nCH2:ON \r\n"
     mock_serial_cls.return_value = mock_ser
 
-    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", dual=True)) as client:
+    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", all_channels=True)) as client:
         assert client.status() == "on"
 
 
@@ -177,7 +177,7 @@ def test_dual_status_partial(mock_serial_cls):
     mock_ser.read.return_value = b"CH1:ON \r\nCH2:OFF \r\n"
     mock_serial_cls.return_value = mock_ser
 
-    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", dual=True)) as client:
+    with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", all_channels=True)) as client:
         assert client.status() == "partial"
 
 
@@ -310,3 +310,57 @@ def test_hid_cycle(mock_hid_cls):
     write_calls = mock_dev.write.call_args_list
     assert write_calls[0] == call(b"\x00" + bytes([0xA0, 0x01, 0x00, 0xA1]))
     assert write_calls[1] == call(b"\x00" + bytes([0xA0, 0x01, 0x01, 0xA2]))
+
+
+def _encode_status(text: str) -> list[int]:
+    """Encode an ASCII status string into a 32-byte HID read buffer."""
+    raw = list(text.encode("ascii"))
+    return raw + [0] * (32 - len(raw))
+
+
+@patch("hid.Device")
+def test_hid_status_ch1_on(mock_hid_cls):
+    mock_dev = _make_hid_mock()
+    mock_dev.read.return_value = _encode_status("CH1:ON\r\nCH2:OFF\r\n")
+    mock_hid_cls.return_value = mock_dev
+
+    with serve(NoyitoPowerHID(num_channels=4, channel=1)) as client:
+        assert client.status() == "on"
+
+    mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))
+
+
+@patch("hid.Device")
+def test_hid_status_ch2_off(mock_hid_cls):
+    mock_dev = _make_hid_mock()
+    mock_dev.read.return_value = _encode_status("CH1:ON\r\nCH2:OFF\r\n")
+    mock_hid_cls.return_value = mock_dev
+
+    with serve(NoyitoPowerHID(num_channels=4, channel=2)) as client:
+        assert client.status() == "off"
+
+    mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))
+
+
+@patch("hid.Device")
+def test_hid_status_all_on_4ch(mock_hid_cls):
+    mock_dev = _make_hid_mock()
+    mock_dev.read.return_value = _encode_status("CH1:ON\r\nCH2:ON\r\nCH3:ON\r\nCH4:ON\r\n")
+    mock_hid_cls.return_value = mock_dev
+
+    with serve(NoyitoPowerHID(num_channels=4, all_channels=True)) as client:
+        assert client.status() == "on"
+
+    mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))
+
+
+@patch("hid.Device")
+def test_hid_status_partial_4ch(mock_hid_cls):
+    mock_dev = _make_hid_mock()
+    mock_dev.read.return_value = _encode_status("CH1:ON\r\nCH2:OFF\r\nCH3:ON\r\nCH4:OFF\r\n")
+    mock_hid_cls.return_value = mock_dev
+
+    with serve(NoyitoPowerHID(num_channels=4, all_channels=True)) as client:
+        assert client.status() == "partial"
+
+    mock_dev.write.assert_called_once_with(b"\x00" + bytes([0xA0, 0x0F, 0x02, 0xB1]))

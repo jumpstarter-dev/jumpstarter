@@ -16,12 +16,12 @@ export:
     config:
       port: "/dev/cu.usbserial-9120"
       channel: 2
-  # dual=true fires both serial channels simultaneously (high-current wiring)
-  relay_serial_dual:
+  # all_channels=true switches both channels simultaneously
+  relay_serial_all:
     type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
     config:
       port: "/dev/cu.usbserial-9120"
-      dual: true
+      all_channels: true
   # 4-channel HID board — individual channel
   relay_4ch_ch1:
     type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID

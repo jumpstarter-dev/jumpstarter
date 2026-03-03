@@ -27,13 +27,13 @@ class NoyitoPowerSerial(PowerInterface, Driver):
     Controls one relay channel on the NOYITO USB relay board via the CH340
     USB-to-serial chip at 9600 baud with a 4-byte binary protocol.
 
-    Set ``dual=True`` to switch both channels simultaneously for high-current
-    applications where the two relay contacts are wired in parallel.
+    Set ``all_channels=True`` in the exporter config to switch both channels
+    simultaneously (e.g. for high-current applications).
     """
 
     port: str
     channel: int = 1
-    dual: bool = False
+    all_channels: bool = False
 
     @classmethod
     def client(cls) -> str:
@@ -42,7 +42,7 @@ class NoyitoPowerSerial(PowerInterface, Driver):
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
-        if not self.dual and self.channel not in (1, 2):
+        if not self.all_channels and self.channel not in (1, 2):
             raise ValueError(f"channel must be 1 or 2, got {self.channel!r}")
 
     def _send_command(self, cmd: bytes) -> None:
@@ -65,7 +65,7 @@ class NoyitoPowerSerial(PowerInterface, Driver):
         return result
 
     def _channels(self) -> list[int]:
-        return [1, 2] if self.dual else [self.channel]
+        return [1, 2] if self.all_channels else [self.channel]
 
     @export
     def on(self) -> None:
@@ -81,7 +81,8 @@ class NoyitoPowerSerial(PowerInterface, Driver):
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
-        yield PowerReading(voltage=0.0, current=0.0)
+        # Power reading not supported
+        raise NotImplementedError
 
     @export
     def status(self) -> str:
@@ -101,8 +102,7 @@ class NoyitoPowerSerial(PowerInterface, Driver):
 class NoyitoPowerHID(PowerInterface, Driver):
     """Driver for the NOYITO 4/8-Channel HID Drive-free USB Relay Module.
 
-    Uses USB HID (hid library) instead of serial. Status query is not
-    supported by this hardware series.
+    Uses USB HID (hid library) instead of serial.
 
     vendor_id / product_id default to the NOYITO HID module values (5131 / 2007).
     Set num_channels to 4 or 8 to match the physical board.
@@ -158,6 +158,44 @@ class NoyitoPowerHID(PowerInterface, Driver):
             self.logger.info("HID Relay channel %d OFF", ch)
             self._send_command(_build_command(ch, 0))
 
+    def _query_status(self) -> dict[str, str]:
+        if sys.platform == "darwin":
+            _brew_lib = os.path.join(os.environ.get("HOMEBREW_PREFIX", "/opt/homebrew"), "lib")
+            if os.path.isdir(_brew_lib):
+                _fallback = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+                if _brew_lib not in _fallback.split(":"):
+                    os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = _brew_lib + (":" + _fallback if _fallback else "")
+        import hid  # noqa: PLC0415
+
+        cmd = _build_command(0x0F, 0x02)  # 0x0F = all-channels status query pseudo-channel
+        with hid.Device(self.vendor_id, self.product_id) as device:
+            device.write(b"\x00" + cmd)
+            raw = device.read(32, timeout_ms=2000)
+
+        text = bytes(raw).decode("ascii", errors="replace")
+        result: dict[str, str] = {}
+        for line in text.split("\n"):
+            line = line.strip("\r").strip()
+            if ":" in line:
+                key, _, value = line.partition(":")
+                result[key.strip()] = value.strip()
+        if not result:
+            raise ValueError(f"Unexpected status response: {text!r}")
+        return result
+
     @export
     def read(self) -> Generator[PowerReading, None, None]:
         yield PowerReading(voltage=0.0, current=0.0)
+
+    @export
+    def status(self) -> str:
+        states = self._query_status()
+        channel_states = []
+        for ch in self._channels():
+            key = f"CH{ch}"
+            if key not in states:
+                raise ValueError(f"Channel {ch} not found in status response: {states!r}")
+            channel_states.append(states[key].lower())
+        if all(s == channel_states[0] for s in channel_states):
+            return channel_states[0]
+        return "partial"

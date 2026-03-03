@@ -8,7 +8,7 @@ Two hardware series are supported:
 - **`NoyitoPowerSerial`** — 1/2-channel boards using a CH340 USB-to-serial chip
   (serial port, supports status query)
 - **`NoyitoPowerHID`** — 4/8-channel "HID Drive-free" boards presenting as a
-  USB HID device (no serial port, status query not available)
+  USB HID device (no serial port, supports all-channels status query)
 
 Both use the same 4-byte binary command protocol (`A0` + channel + state +
 checksum).
@@ -56,7 +56,7 @@ port or a HID device:
 |-----------|------|---------|-------------|
 | `port` | `str` | *(required)* | Serial port path, e.g. `/dev/ttyUSB0` |
 | `channel` | `int` | `1` | Relay channel to control (`1` or `2`) |
-| `dual` | `bool` | `false` | Switch both channels simultaneously |
+| `all_channels` | `bool` | `false` | Switch both channels simultaneously |
 
 Example configuration controlling both channels independently:
 
@@ -115,7 +115,6 @@ j relay1 off
 - **Default VID/PID**: `5131` / `2007` (0x1409 / 0x07D7)
 - **Channels**: 4 or 8 independent relay channels
 - **Supply voltage**: 5 V via USB
-- **Status query**: Not supported by this hardware series
 
 ### Configuration
 
