@@ -1,8 +1,8 @@
 # Development Environment
 
 You can use
-[devspaces](https://github.com/jumpstarter-dev/jumpstarter/blob/main/.devfile.yaml),
-[devcontainers](https://github.com/jumpstarter-dev/jumpstarter/tree/main/.devcontainer),
+[devspaces](https://github.com/jumpstarter-dev/jumpstarter/blob/main/python/.devfile.yaml),
+[devcontainers](https://github.com/jumpstarter-dev/jumpstarter/tree/main/python/.devcontainer),
 or your favorite OS/distro to develop Jumpstarter, however the following
 examples are for Fedora 43.
 

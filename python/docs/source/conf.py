@@ -110,3 +110,6 @@ copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: 
 copybutton_prompt_is_regexp = True
 copybutton_only_copy_prompt_lines = True
 copybutton_line_continuation_character = "\\"
+
+# matrix.to uses client-side fragment routing; anchor checks are false positives.
+linkcheck_anchors_ignore_for_url = [r"^https://matrix\.to/"]

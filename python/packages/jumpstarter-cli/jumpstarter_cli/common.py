@@ -93,7 +93,7 @@ Human-readable: 30m, 3h30m, 1d, 1d3h40m, etc.
 ISO 8601: PT1H30M, P1DT2H30M, etc.
 Time format: 01:30:00, 2 days, 01:30:00, etc.
 
-See https://github.com/wroberts/pytimeparse2 for details
+See https://github.com/onegreyonewhite/pytimeparse2 for details
 """,
 )
 
