@@ -891,7 +891,8 @@ class MitmproxyDriver(Driver):
 
     @export
     def set_mock_patch(self, method: str, path: str,
-                       patches_json: str) -> str:
+                       patches_json: str,
+                       headers: str = "{}") -> str:
         """Mock an endpoint in patch mode (passthrough + field overwrite).
 
         The request passes through to the real server. When the response
@@ -899,10 +900,12 @@ class MitmproxyDriver(Driver):
         body before delivery to the DUT.
 
         Args:
-            method: HTTP method (GET, POST, etc.)
+            method: HTTP method (GET, POST, etc.). Use ``*`` to match
+                any method (wildcard).
             path: URL path to match.
             patches_json: JSON string of the patch dict to deep-merge
                 into the response body.
+            headers: JSON string of extra response headers to inject.
 
         Returns:
             Confirmation message.
@@ -915,7 +918,11 @@ class MitmproxyDriver(Driver):
             return "Patches must be a JSON object"
 
         key = f"{method.upper()} {path}"
-        self._mock_endpoints[key] = {"patch": patches}
+        ep: dict = {"patch": patches}
+        extra_headers = json.loads(headers) if headers else {}
+        if extra_headers:
+            ep["headers"] = extra_headers
+        self._mock_endpoints[key] = ep
         self._write_mock_config()
         return f"Patch mock set: {key}"
 
