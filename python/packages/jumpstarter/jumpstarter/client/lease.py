@@ -71,6 +71,16 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(self.channel)
         self.svc = ClientService(channel=self.channel, namespace=self.namespace)
 
+    def refresh_channel(self, channel: Channel):
+        """Update the gRPC channel used for controller communication.
+
+        This is used when the auth token is refreshed to update the
+        underlying gRPC channel with new credentials.
+        """
+        self.channel = channel
+        self.controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
+        self.svc = ClientService(channel=channel, namespace=self.namespace)
+
     async def _create(self):
         logger.debug("Creating lease request for selector %s for duration %s", self.selector, self.duration)
         with translate_grpc_exceptions():
@@ -331,7 +341,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 else:
                     raise ConnectionError("Socket not ready at %s" % path) from e
 
-    def _notify_lease_ending(self, remaining: timedelta):
+    def _notify_lease_ending(self, remaining: timedelta) -> None:
         """Log lease status and invoke the ending callback if set."""
         if remaining <= timedelta(0):
             self.lease_ended = True
@@ -339,41 +349,61 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         if self.lease_ending_callback is not None:
             self.lease_ending_callback(self, remaining)
 
+    def _get_lease_end_time(self, lease) -> datetime | None:
+        """Extract the end time from a lease response, or None if not available."""
+        if not (lease.effective_begin_time and lease.duration):
+            return None
+        if lease.effective_end_time:
+            return lease.effective_end_time
+        return lease.effective_begin_time + lease.duration
+
     @asynccontextmanager
     async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):
         async def _monitor():
             check_interval = 30  # seconds - check periodically for external lease changes
-            end_time = None  # Track across iterations for error recovery
+            last_known_end_time = None
             while True:
                 try:
                     lease = await self.get()
-                except Exception:
-                    # gRPC channel broken — check if lease was expected to have ended
-                    if end_time and datetime.now().astimezone() >= end_time:
-                        self._notify_lease_ending(timedelta(0))
-                    else:
-                        logger.debug("Lease monitor: connection lost unexpectedly")
-                    break
-                if lease.effective_begin_time and lease.effective_duration:
-                    if lease.effective_end_time:  # already ended
-                        end_time = lease.effective_end_time
-                    else:
-                        end_time = lease.effective_begin_time + lease.duration
-                    remain = end_time - datetime.now().astimezone()
-                    if remain < timedelta(0):
-                        self._notify_lease_ending(timedelta(0))
-                        break
-                    # Log once when entering the threshold window
-                    if threshold - timedelta(seconds=check_interval) <= remain < threshold:
-                        logger.info(
-                            "Lease {} ending in {} minutes at {}".format(
-                                self.name, int((remain.total_seconds() + 30) // 60), end_time
+                except Exception as e:
+                    logger.warning("Failed to check lease %s status: %s", self.name, e)
+                    # If we know when the lease should end, use it to bound the sleep
+                    if last_known_end_time is not None:
+                        remain = (last_known_end_time - datetime.now().astimezone()).total_seconds()
+                        if remain <= 0:
+                            logger.info(
+                                "Lease %s estimated to have ended at %s (unable to confirm with server)",
+                                self.name,
+                                last_known_end_time,
                             )
-                        )
-                        self._notify_lease_ending(remain)
-                    await sleep(min(remain.total_seconds(), check_interval))
-                else:
+                            self._notify_lease_ending(timedelta(0))
+                            break
+                        await sleep(min(check_interval, remain))
+                    else:
+                        await sleep(check_interval)
+                    continue
+
+                end_time = self._get_lease_end_time(lease)
+                if end_time is None:
                     await sleep(1)
+                    continue
+
+                last_known_end_time = end_time
+                remain = end_time - datetime.now().astimezone()
+                if remain < timedelta(0):
+                    logger.info("Lease {} ended at {}".format(self.name, end_time))
+                    self._notify_lease_ending(timedelta(0))
+                    break
+
+                # Log once when entering the threshold window
+                if threshold - timedelta(seconds=check_interval) <= remain < threshold:
+                    logger.info(
+                        "Lease {} ending in {} minutes at {}".format(
+                            self.name, int((remain.total_seconds() + 30) // 60), end_time
+                        )
+                    )
+                    self._notify_lease_ending(remain)
+                await sleep(min(remain.total_seconds(), check_interval))
 
         async with create_task_group() as tg:
             tg.start_soon(_monitor)
