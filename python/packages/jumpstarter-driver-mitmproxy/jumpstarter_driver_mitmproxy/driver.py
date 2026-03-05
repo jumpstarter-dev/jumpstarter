@@ -278,9 +278,11 @@ class DirectoriesConfig(BaseModel):
     """Directory layout configuration.
 
     All subdirectories default to ``{data}/<name>`` when left empty.
+    When ``data`` is not set explicitly, a per-user temp directory is used
+    (``$TMPDIR/jumpstarter-mitmproxy-<user>/``).
     """
 
-    data: str = "/opt/jumpstarter/mitmproxy"
+    data: str = ""
     conf: str = ""
     flows: str = ""
     addons: str = ""
@@ -289,6 +291,12 @@ class DirectoriesConfig(BaseModel):
 
     @model_validator(mode="after")
     def _resolve_defaults(self) -> "DirectoriesConfig":
+        if not self.data:
+            import getpass
+            import tempfile
+            self.data = str(
+                Path(tempfile.gettempdir()) / f"jumpstarter-mitmproxy-{getpass.getuser()}"
+            )
         if not self.conf:
             self.conf = str(Path(self.data) / "conf")
         if not self.flows:
@@ -324,7 +332,7 @@ class MitmproxyDriver(Driver):
               web:
                 port: 8081
               directories:
-                data: /opt/jumpstarter/mitmproxy
+                data: /tmp/jumpstarter-mitmproxy-myuser  # optional, auto-generated if omitted
               ssl_insecure: true
               mock_scenario: happy-path        # directory with scenario.yaml
               # mock_scenario: happy-path.yaml  # or a raw YAML file
