@@ -616,7 +616,8 @@ class MitmproxyMockAddon:
             prefix = pat_path.rstrip("*")
 
             match_method = (
-                pat_method == method
+                pat_method == "*"
+                or pat_method == method
                 or (is_websocket and pat_method == "WEBSOCKET")
             )
 
@@ -733,6 +734,8 @@ class MitmproxyMockAddon:
         # Handle patch mode: passthrough to real server, patch response later
         if "patch" in endpoint:
             flow.metadata["_jmp_patch"] = endpoint["patch"]
+            if "headers" in endpoint:
+                flow.metadata["_jmp_patch_headers"] = endpoint["headers"]
             return
 
         # Handle regular response
@@ -1182,6 +1185,13 @@ class MitmproxyMockAddon:
                         f"{content_type}): {flow.request.method} "
                         f"{flow.request.pretty_url}"
                     )
+
+            # Inject response headers from patch mode
+            patch_headers = flow.metadata.get("_jmp_patch_headers")
+            if patch_headers:
+                for k, v in patch_headers.items():
+                    flow.response.headers[k] = v
+                flow.metadata["_jmp_mocked"] = True
 
             ctx.log.debug(
                 f"{flow.request.method} {flow.request.pretty_url} "

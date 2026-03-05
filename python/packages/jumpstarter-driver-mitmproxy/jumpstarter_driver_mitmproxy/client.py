@@ -614,7 +614,8 @@ class MitmproxyClient(DriverClient):
         )
 
     def set_mock_patch(self, method: str, path: str,
-                       patches: dict) -> str:
+                       patches: dict,
+                       headers: dict | None = None) -> str:
         """Mock an endpoint in patch mode (passthrough + field overwrite).
 
         The request passes through to the real server. When the response
@@ -622,10 +623,12 @@ class MitmproxyClient(DriverClient):
         body before delivery to the DUT.
 
         Args:
-            method: HTTP method (GET, POST, etc.)
+            method: HTTP method (GET, POST, etc.). Use ``*`` to match
+                any method (wildcard).
             path: URL path to match.
             patches: Dict to deep-merge into the response body. Use
                 ``key[N]`` syntax for array indexing.
+            headers: Extra response headers to inject.
 
         Returns:
             Confirmation message.
@@ -641,6 +644,7 @@ class MitmproxyClient(DriverClient):
         """
         return self.call(
             "set_mock_patch", method, path, json.dumps(patches),
+            json.dumps(headers or {}),
         )
 
     def set_mock_with_latency(self, method: str, path: str,
