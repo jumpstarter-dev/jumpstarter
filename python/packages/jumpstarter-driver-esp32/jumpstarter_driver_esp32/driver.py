@@ -1,0 +1,165 @@
+import os
+import tempfile
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
+
+import esptool.cmds
+import serial
+from anyio import to_thread
+from anyio.streams.file import FileReadStream, FileWriteStream
+from jumpstarter_driver_opendal.driver import FlasherInterface
+
+from jumpstarter.driver import Driver, export
+
+
+@dataclass(kw_only=True)
+class Esp32Flasher(FlasherInterface, Driver):
+    """ESP32 flasher driver for Jumpstarter"""
+
+    port: str = "/dev/ttyUSB0"
+    baudrate: int = 115200
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        if not self.port.startswith(("/dev/null", "loop://")):
+            if not os.path.exists(self.port):
+                self.logger.warning("Serial port %s does not exist", self.port)
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_esp32.client.Esp32FlasherClient"
+
+    def _connect_esp(self):
+        self.logger.debug("Connecting to ESP32...")
+        esp = esptool.cmds.detect_chip(
+            port=self.port,
+            baud=self.baudrate,
+            connect_mode="default_reset",
+            trace_enabled=False,
+            connect_attempts=7,
+        )
+        self.logger.debug("Connected to %s", esp.get_chip_description())  # type: ignore[attr-defined]
+        return esp
+
+    def _close_esp(self, esp):
+        try:
+            if hasattr(esp, "_port") and esp._port:
+                esp._port.close()
+        except Exception:
+            pass
+
+    @export
+    async def flash(self, source, target: str | None = None):
+        address = int(target or "0", 0)
+        with _temporary_filename() as filename:
+            async with await FileWriteStream.from_path(filename) as stream:
+                async with self.resource(source) as res:
+                    async for chunk in res:
+                        await stream.send(chunk)
+
+            def _do_flash():
+                esp = self._connect_esp()
+                try:
+                    if not esp.IS_STUB:
+                        esp = esp.run_stub()
+                    with open(filename, "rb") as f:
+                        esptool.cmds.write_flash(esp, [(address, f)])
+                    esp.hard_reset()
+                finally:
+                    self._close_esp(esp)
+
+            await to_thread.run_sync(_do_flash)
+
+    @export
+    async def dump(self, target, partition: str | None = None):
+        address, size = _parse_region(partition)
+        with _temporary_filename() as filename:
+
+            def _do_read():
+                esp = self._connect_esp()
+                try:
+                    if not esp.IS_STUB:
+                        esp = esp.run_stub()
+                    esptool.cmds.read_flash(esp, address, size, filename)
+                    esp.hard_reset()
+                finally:
+                    self._close_esp(esp)
+
+            await to_thread.run_sync(_do_read)
+
+            async with await FileReadStream.from_path(filename) as stream:
+                async with self.resource(target) as res:
+                    async for chunk in stream:
+                        await res.send(chunk)
+
+    @export
+    def get_chip_info(self) -> dict[str, str]:
+        esp = self._connect_esp()
+        try:
+            mac = esp.read_mac()
+            return {
+                "chip": esp.get_chip_description(),
+                "features": ", ".join(esp.get_chip_features()),
+                "mac": ":".join(f"{b:02x}" for b in mac),
+            }
+        finally:
+            self._close_esp(esp)
+
+    @export
+    def erase(self):
+        esp = self._connect_esp()
+        try:
+            if not esp.IS_STUB:
+                esp = esp.run_stub()
+            esptool.cmds.erase_flash(esp)
+            esp.hard_reset()
+        finally:
+            self._close_esp(esp)
+
+    @export
+    def hard_reset(self):
+        esp = self._connect_esp()
+        try:
+            esp.hard_reset()
+        finally:
+            self._close_esp(esp)
+
+    @export
+    def enter_bootloader(self):
+        """Toggle DTR/RTS to enter ESP32 download mode."""
+        s = serial.Serial(self.port, self.baudrate)
+        try:
+            s.dtr = False
+            s.rts = True  # EN low (reset)
+            time.sleep(0.1)
+            s.dtr = True  # GPIO0 low (boot select)
+            s.rts = False  # EN high (release reset)
+            time.sleep(0.05)
+            s.dtr = False  # GPIO0 high (release)
+        finally:
+            s.close()
+
+
+def _parse_region(partition: str | None) -> tuple[int, int]:
+    if partition is None:
+        return (0x0, 0x400000)
+    if ":" in partition:
+        addr_str, size_str = partition.split(":", 1)
+        return (int(addr_str, 0), int(size_str, 0))
+    return (int(partition, 0), 0x400000)
+
+
+@contextmanager
+def _temporary_filename():
+    fd, name = tempfile.mkstemp()
+    os.close(fd)
+    try:
+        yield name
+    finally:
+        try:
+            os.unlink(name)
+        except FileNotFoundError:
+            pass

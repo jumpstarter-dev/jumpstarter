@@ -65,6 +65,8 @@ Drivers that handle media streams:
 
 Drivers for debugging and programming devices:
 
+* **[ESP32](esp32.md)** (`jumpstarter-driver-esp32`) - ESP32 flashing and
+  management via esptool
 * **[Flashers](flashers.md)** (`jumpstarter-driver-flashers`) - Flash memory
   programming tools
 * **[Probe-RS](probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe
@@ -91,6 +93,7 @@ can.md
 corellium.md
 dutlink.md
 energenie.md
+esp32.md
 flashers.md
 http.md
 http-power.md

@@ -1,0 +1,49 @@
+[project]
+name = "jumpstarter-driver-esp32"
+dynamic = ["version", "urls"]
+description = "ESP32 flasher driver for Jumpstarter"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.10.0",
+    "click>=8.1.7.2",
+    "esptool>=4.0",
+    "jumpstarter",
+    "jumpstarter-driver-opendal",
+    "pyserial>=3.5",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+Esp32Flasher = "jumpstarter_driver_esp32.driver:Esp32Flasher"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_esp32"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]
