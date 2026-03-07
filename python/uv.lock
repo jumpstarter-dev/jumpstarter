@@ -1727,7 +1727,7 @@ dependencies = [
     { name = "esptool" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-opendal" },
-    { name = "pyserial" },
+    { name = "jumpstarter-driver-pyserial" },
 ]
 
 [package.dev-dependencies]
@@ -1743,7 +1743,7 @@ requires-dist = [
     { name = "esptool", specifier = ">=4.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
-    { name = "pyserial", specifier = ">=3.5" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
 ]
 
 [package.metadata.requires-dev]

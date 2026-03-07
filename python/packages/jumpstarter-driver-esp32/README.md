@@ -17,11 +17,14 @@ Example configuration:
 
 ```yaml
 export:
-  esp32:
+  storage:
     type: jumpstarter_driver_esp32.driver.Esp32Flasher
     config:
-      port: "/dev/ttyUSB0"
-      baudrate: 460800
+      baudrate: 115200
+      chip: "esp32"
+    children:
+      serial:
+        ref: serial
   serial:
     type: jumpstarter_driver_pyserial.driver.PySerial
     config:
@@ -33,8 +36,14 @@ export:
 
 | Parameter | Description                          | Type | Required | Default       |
 | --------- | ------------------------------------ | ---- | -------- | ------------- |
-| port      | Serial port for the ESP32 device     | str  | no       | /dev/ttyUSB0  |
 | baudrate  | Baud rate for esptool communication  | int  | no       | 115200        |
+| chip      | Target chip type                     | str  | no       | esp32         |
+
+The ESP32 driver requires a `serial` child driver (PySerial) for serial port
+access. DTR/RTS control signals and the serial port path are managed through
+the child driver. Use a `ref` proxy to share the serial driver with the
+top-level composite, enabling both `j serial start-console` and
+`j storage flash` to work.
 
 ## API Reference
 
@@ -45,64 +54,76 @@ export:
 
 ### CLI
 
-The ESP32 driver client inherits flash/dump CLI commands from the
-`FlasherClient` and adds ESP32-specific commands:
-
-```
-jumpstarter ⚡ local ➤ j esp32
-Usage: j esp32 [OPTIONS] COMMAND [ARGS]...
-
-Options:
-  --help  Show this message and exit.
+```text
+$ j storage
+Usage: j storage [OPTIONS] COMMAND [ARGS]...
 
 Commands:
   bootloader  Enter download mode
   chip-info   Get chip info (name, features, MAC)
   dump        Dump flash content to file
   erase       Erase entire flash
-  flash       Flash firmware to device
+  flash       Flash firmware to ESP32
   reset       Hard reset the chip
+
+$ j serial
+Usage: j serial [OPTIONS] COMMAND [ARGS]...
+
+Commands:
+  start-console  Start serial port console
+  pipe           Pipe serial port data to stdout or file
 ```
 
 ## Examples
 
-### Get chip information
+### CLI usage
+
+```bash
+# Flash MicroPython firmware
+j storage flash firmware.bin --address 0x1000
+
+# Get chip info
+j storage chip-info
+
+# Enter download mode
+j storage bootloader
+
+# Erase entire flash
+j storage erase
+
+# Hard reset
+j storage reset
+
+# Open serial console
+j serial start-console
+
+# Read serial output
+j serial pipe
+```
+
+### Python API
 
 ```python
-info = esp32_client.get_chip_info()
+# Get chip information
+info = client.storage.get_chip_info()
 print(info["chip"])      # e.g. "ESP32-D0WD-V3 (revision v3.1)"
 print(info["features"])  # e.g. "Wi-Fi, BT, Dual Core"
 print(info["mac"])       # e.g. "5c:01:3b:68:ab:0c"
-```
 
-### Flash firmware
+# Flash firmware
+client.storage.flash("/path/to/firmware.bin", target="0x1000")
 
-```python
-# Flash to default address (0x0)
-esp32_client.flash("/path/to/firmware.bin")
+# Enter download mode
+client.storage.enter_bootloader()
 
-# Flash to specific address
-esp32_client.flash("/path/to/firmware.bin", target="0x10000")
-```
+# Erase flash
+client.storage.erase()
 
-### Dump flash contents
+# Hard reset
+client.storage.hard_reset()
 
-```python
-# Dump 4MB from address 0x0 (default)
-esp32_client.dump("/path/to/output.bin")
-
-# Dump specific region (address:size)
-esp32_client.dump("/path/to/output.bin", target="0x10000:0x1000")
-```
-
-### Erase flash
-
-```python
-esp32_client.erase()
-```
-
-### Hard reset
-
-```python
-esp32_client.hard_reset()
+# Serial console via pexpect
+console = client.serial.open()
+console.sendline("import machine")
+console.expect(">>>")
 ```

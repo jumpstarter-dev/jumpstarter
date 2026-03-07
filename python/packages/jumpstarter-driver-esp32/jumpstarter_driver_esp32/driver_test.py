@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from jumpstarter_driver_pyserial.driver import PySerial
 
 from .driver import Esp32Flasher, _parse_region
 from jumpstarter.common.utils import serve
@@ -27,6 +28,11 @@ class _MockEsp:
         pass
 
 
+def _make_driver():
+    serial = PySerial(url="loop://", check_present=False)
+    return Esp32Flasher(children={"serial": serial})
+
+
 @pytest.fixture()
 def mock_esptool(monkeypatch):
     mock_esp = _MockEsp()
@@ -43,7 +49,7 @@ def mock_esptool(monkeypatch):
 
 
 def test_get_chip_info(mock_esptool):
-    with serve(Esp32Flasher(port="/dev/null")) as client:
+    with serve(_make_driver()) as client:
         info = client.get_chip_info()
         assert "ESP32" in info["chip"]
         assert "Wi-Fi" in info["features"]
@@ -54,7 +60,7 @@ def test_flash(mock_esptool, tmp_path):
     firmware = tmp_path / "firmware.bin"
     firmware.write_bytes(b"\xde\xad" * 512)
 
-    with serve(Esp32Flasher(port="/dev/null")) as client:
+    with serve(_make_driver()) as client:
         client.flash(firmware, target="0x10000")
 
     mock_esptool["write_flash"].assert_called_once()
@@ -66,7 +72,7 @@ def test_flash_default_address(mock_esptool, tmp_path):
     firmware = tmp_path / "firmware.bin"
     firmware.write_bytes(b"\x00" * 64)
 
-    with serve(Esp32Flasher(port="/dev/null")) as client:
+    with serve(_make_driver()) as client:
         client.flash(firmware)
 
     _, flash_entries = mock_esptool["write_flash"].call_args[0]
@@ -83,34 +89,37 @@ def test_dump(mock_esptool, tmp_path):
     mock_esptool["read_flash"].side_effect = fake_read_flash
 
     output = tmp_path / "dump.bin"
-    with serve(Esp32Flasher(port="/dev/null")) as client:
+    with serve(_make_driver()) as client:
         client.dump(output, target="0x0:0x1000")
 
     assert output.read_bytes() == test_data
 
 
 def test_erase(mock_esptool):
-    with serve(Esp32Flasher(port="/dev/null")) as client:
+    with serve(_make_driver()) as client:
         client.erase()
 
     mock_esptool["erase_flash"].assert_called_once()
 
 
-def test_hard_reset(mock_esptool):
-    with serve(Esp32Flasher(port="/dev/null")) as client:
-        client.hard_reset()
+def test_hard_reset(mock_esptool, monkeypatch):
+    monkeypatch.setattr(
+        "jumpstarter_driver_pyserial.driver.serial_for_url",
+        MagicMock(return_value=MagicMock()),
+    )
 
-    mock_esptool["detect_chip"].assert_called()
+    with serve(_make_driver()) as client:
+        client.hard_reset()
 
 
 def test_enter_bootloader(mock_esptool, monkeypatch):
-    mock_serial = MagicMock()
-    monkeypatch.setattr("jumpstarter_driver_esp32.driver.serial.Serial", MagicMock(return_value=mock_serial))
+    monkeypatch.setattr(
+        "jumpstarter_driver_pyserial.driver.serial_for_url",
+        MagicMock(return_value=MagicMock()),
+    )
 
-    with serve(Esp32Flasher(port="/dev/null")) as client:
+    with serve(_make_driver()) as client:
         client.enter_bootloader()
-
-    mock_serial.close.assert_called_once()
 
 
 def test_parse_region_default():

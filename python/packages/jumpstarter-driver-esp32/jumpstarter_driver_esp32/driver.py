@@ -5,7 +5,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 import esptool.cmds
-import serial
 from anyio import to_thread
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_opendal.driver import FlasherInterface
@@ -15,27 +14,27 @@ from jumpstarter.driver import Driver, export
 
 @dataclass(kw_only=True)
 class Esp32Flasher(FlasherInterface, Driver):
-    """ESP32 flasher driver for Jumpstarter"""
+    """ESP32 flasher driver for Jumpstarter.
 
-    port: str = "/dev/ttyUSB0"
+    Requires a PySerial child driver named "serial" for serial port access.
+    """
+
     baudrate: int = 115200
+    chip: str = "esp32"
 
-    def __post_init__(self):
-        if hasattr(super(), "__post_init__"):
-            super().__post_init__()
-
-        if not self.port.startswith(("/dev/null", "loop://")):
-            if not os.path.exists(self.port):
-                self.logger.warning("Serial port %s does not exist", self.port)
+    @property
+    def _serial(self):
+        return self.children["serial"]
 
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_esp32.client.Esp32FlasherClient"
 
     def _connect_esp(self):
-        self.logger.debug("Connecting to ESP32...")
+        port = self._serial.url
+        self.logger.debug("Connecting to ESP32 on %s...", port)
         esp = esptool.cmds.detect_chip(
-            port=self.port,
+            port=port,
             baud=self.baudrate,
             connect_mode="default_reset",
             trace_enabled=False,
@@ -121,26 +120,21 @@ class Esp32Flasher(FlasherInterface, Driver):
 
     @export
     def hard_reset(self):
-        esp = self._connect_esp()
-        try:
-            esp.hard_reset()
-        finally:
-            self._close_esp(esp)
+        """Hard reset the ESP32 via RTS toggle."""
+        self._serial.set_rts(True)
+        time.sleep(0.1)
+        self._serial.set_rts(False)
 
     @export
     def enter_bootloader(self):
         """Toggle DTR/RTS to enter ESP32 download mode."""
-        s = serial.Serial(self.port, self.baudrate)
-        try:
-            s.dtr = False
-            s.rts = True  # EN low (reset)
-            time.sleep(0.1)
-            s.dtr = True  # GPIO0 low (boot select)
-            s.rts = False  # EN high (release reset)
-            time.sleep(0.05)
-            s.dtr = False  # GPIO0 high (release)
-        finally:
-            s.close()
+        self._serial.set_dtr(False)
+        self._serial.set_rts(True)  # EN low (reset)
+        time.sleep(0.1)
+        self._serial.set_dtr(True)  # GPIO0 low (boot select)
+        self._serial.set_rts(False)  # EN high (release reset)
+        time.sleep(0.05)
+        self._serial.set_dtr(False)  # GPIO0 high (release)
 
 
 def _parse_region(partition: str | None) -> tuple[int, int]:
