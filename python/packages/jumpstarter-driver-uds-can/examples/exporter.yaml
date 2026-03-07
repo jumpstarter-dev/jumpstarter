@@ -1,6 +1,7 @@
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
-endpoint:
+endpoint: ""
+token: ""
 export:
   uds:
     type: jumpstarter_driver_uds_can.driver.UdsCan

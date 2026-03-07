@@ -49,6 +49,12 @@ class UdsDoip(UdsInterface, Driver):
 
     def close(self):
         """Close the UDS and DoIP connections."""
-        self._uds_client.close()
-        self._doip_client.close()
+        try:
+            self._uds_client.close()
+        except Exception:
+            pass
+        try:
+            self._doip_client.close()
+        except Exception:
+            pass
         super().close()

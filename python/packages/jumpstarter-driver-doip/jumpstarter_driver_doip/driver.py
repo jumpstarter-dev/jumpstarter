@@ -96,10 +96,10 @@ class DoIP(Driver):
             kwargs["eid"] = eid
         resp = self._doip_client.request_vehicle_identification(**kwargs)
         return VehicleIdentificationResponse(
-            vin=resp.vin.decode() if isinstance(resp.vin, bytes) else resp.vin,
+            vin=resp.vin.decode() if isinstance(resp.vin, (bytes, bytearray)) else resp.vin,
             logical_address=resp.logical_address,
-            eid=resp.eid.hex() if isinstance(resp.eid, bytes) else resp.eid,
-            gid=resp.gid.hex() if isinstance(resp.gid, bytes) else resp.gid,
+            eid=resp.eid.hex() if isinstance(resp.eid, (bytes, bytearray)) else resp.eid,
+            gid=resp.gid.hex() if isinstance(resp.gid, (bytes, bytearray)) else resp.gid,
             further_action=resp.further_action,
             sync_status=getattr(resp, "sync_status", None),
         )

@@ -226,7 +226,7 @@ def test_doip_invalid_tcp_port_type():
         DoIP(ecu_ip="192.168.1.100", ecu_logical_address=0x00E0, tcp_port="not_a_port")
 
 
-def test_doip_invalid_request_timeout_type():
+def test_doip_invalid_auto_reconnect_tcp_type():
     with pytest.raises(ValidationError):
         DoIP(
             ecu_ip="192.168.1.100",

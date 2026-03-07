@@ -11,6 +11,7 @@ PROTOCOL_VERSION = 0x02
 # DoIP payload types
 ROUTING_ACTIVATION_REQUEST = 0x0005
 ROUTING_ACTIVATION_RESPONSE = 0x0006
+ALIVE_CHECK_REQUEST = 0x0007
 ALIVE_CHECK_RESPONSE = 0x0008
 VEHICLE_ID_REQUEST = 0x0001
 VEHICLE_ID_REQUEST_WITH_VIN = 0x0003
@@ -148,7 +149,7 @@ class MockDoIPServer:
             return [_handle_vehicle_identification()]
         if payload_type == ENTITY_STATUS_REQUEST:
             return [_handle_entity_status()]
-        if payload_type == 0x0007:  # Alive Check Request
+        if payload_type == ALIVE_CHECK_REQUEST:
             return [_handle_alive_check()]
         if payload_type == DIAG_POWER_MODE_REQUEST:
             return [_handle_diag_power_mode()]

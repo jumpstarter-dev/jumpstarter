@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+import re
+
+from pydantic import BaseModel, field_validator
 
 
 class EntityStatusResponse(BaseModel):
@@ -52,3 +54,10 @@ class DiagnosticPayload(BaseModel):
     """
 
     data: str
+
+    @field_validator("data")
+    @classmethod
+    def _validate_hex(cls, v: str) -> str:
+        if not re.fullmatch(r"[0-9a-fA-F]*", v):
+            raise ValueError(f"data must be a hex string, got {v!r}")
+        return v

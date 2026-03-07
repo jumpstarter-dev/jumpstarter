@@ -57,6 +57,17 @@ class UdsCan(UdsInterface, Driver):
 
     def close(self):
         """Close the UDS connection and CAN bus."""
-        self._uds_client.close()
+        try:
+            self._uds_client.close()
+        except Exception:
+            pass
+        try:
+            self._stack.stop()
+        except Exception:
+            pass
+        try:
+            self._notifier.stop()
+        except Exception:
+            pass
         self._bus.shutdown()
         super().close()

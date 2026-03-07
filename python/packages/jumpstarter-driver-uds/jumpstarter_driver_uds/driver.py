@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from pydantic import validate_call
 from udsoncan.exceptions import NegativeResponseException
 from udsoncan.services import DiagnosticSessionControl, ECUReset
@@ -13,6 +15,8 @@ from .common import (
     UdsSessionType,
 )
 from jumpstarter.driver import export
+
+logger = logging.getLogger(__name__)
 
 _SESSION_MAP = {
     UdsSessionType.DEFAULT: DiagnosticSessionControl.Session.defaultSession,
@@ -93,7 +97,8 @@ class UdsInterface:
                 DidValue(did=did, value=v.hex() if isinstance(v, (bytes, bytearray)) else v)
                 for did, v in values.items()
             ]
-        except NegativeResponseException:
+        except NegativeResponseException as e:
+            logger.warning("ReadDataByIdentifier NRC 0x%02X (%s)", e.response.code, e.response.code_name)
             return []
 
     @export
@@ -157,5 +162,6 @@ class UdsInterface:
                 )
                 for dtc in dtcs
             ]
-        except NegativeResponseException:
+        except NegativeResponseException as e:
+            logger.warning("ReadDTCByStatusMask NRC 0x%02X (%s)", e.response.code, e.response.code_name)
             return []

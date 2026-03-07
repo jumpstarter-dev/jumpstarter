@@ -1,6 +1,7 @@
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
-endpoint:
+endpoint: ""
+token: ""
 export:
   doip:
     type: jumpstarter_driver_doip.driver.DoIP
