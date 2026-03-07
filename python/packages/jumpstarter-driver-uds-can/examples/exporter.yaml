@@ -1,0 +1,16 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+endpoint:
+export:
+  uds:
+    type: jumpstarter_driver_uds_can.driver.UdsCan
+    config:
+      channel: "can0"
+      interface: "socketcan"
+      rxid: 1601  # 0x641
+      txid: 1602  # 0x642
+      request_timeout: 5
+      isotp_params:
+        stmin: 32
+        blocksize: 8
+        tx_data_length: 8
