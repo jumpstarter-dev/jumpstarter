@@ -703,6 +703,12 @@ class MitmproxyMockAddon:
         """Main request hook: find and apply mock responses."""
         self._load_state()
 
+        # Strip conditional headers so upstream always returns 200 with full body.
+        # Enabled by setting state key "strip_conditional_headers" to true.
+        if self._state.get("strip_conditional_headers"):
+            for h in ("If-Modified-Since", "If-None-Match", "If-Range"):
+                flow.request.headers.pop(h, None)
+
         # Strip query string for endpoint key matching; query params
         # remain available in flow for _matches_conditions.
         path = flow.request.path.split("?")[0]
