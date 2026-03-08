@@ -1,0 +1,10 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+endpoint:
+  xcp:
+    type: jumpstarter_driver_xcp.driver.Xcp
+    config:
+      transport: ETH
+      host: "192.168.1.100"
+      port: 5555
+      protocol: TCP
