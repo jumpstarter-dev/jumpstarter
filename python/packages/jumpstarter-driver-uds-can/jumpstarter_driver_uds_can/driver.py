@@ -78,5 +78,8 @@ class UdsCan(UdsInterface, Driver):
             self._notifier.stop()
         except Exception:
             logger.warning("failed to stop CAN notifier", exc_info=True)
-        self._bus.shutdown()
+        try:
+            self._bus.shutdown()
+        except Exception:
+            logger.warning("failed to shut down CAN bus", exc_info=True)
         super().close()
