@@ -402,6 +402,8 @@ class MockDiagnosticEcu:
             # Wire response: [+SID, task, returnValue, algoIndicator(16b),
             #                  lenPrefixed(sessionKeyInfo)]
             if task == 0x06:
+                if not self.state.auth_challenge:
+                    return _nrc(data[0], NRC_CONDITIONS_NOT_CORRECT)
                 algo = data[2:18] if len(data) >= 18 else bytes(16)
                 offset = 18
                 if len(data) < offset + 2:
