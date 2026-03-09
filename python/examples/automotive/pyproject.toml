@@ -1,7 +1,7 @@
 [project]
 name = "jumpstarter-example-automotive"
 version = "0.1.0"
-description = ""
+description = "Representative ECU diagnostic test using jumpstarter with a stateful mock ECU"
 authors = [
   { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
   { name = "Nick Cao", email = "ncao@redhat.com" },
@@ -10,4 +10,12 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter"]
+dependencies = [
+  "pytest>=8.3.2",
+  "jumpstarter",
+  "jumpstarter-driver-uds-doip",
+]
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"

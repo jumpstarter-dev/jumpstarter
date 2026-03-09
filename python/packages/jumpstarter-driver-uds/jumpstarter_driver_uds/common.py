@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel
+from udsoncan import DidCodec
+from udsoncan.configs import default_client_config
 
 
 class UdsSessionType(str, Enum):
@@ -54,3 +57,32 @@ class SecuritySeedResponse(BaseModel):
     success: bool = True
     nrc: int | None = None
     nrc_name: str | None = None
+
+
+class RawDidCodec(DidCodec):
+    """Pass-through codec that treats DID values as raw bytes.
+
+    Used as the default codec so that any DID can be read/written without
+    requiring per-DID configuration in the udsoncan client.
+    """
+
+    def encode(self, value: Any) -> bytes:
+        if isinstance(value, (bytes, bytearray)):
+            return bytes(value)
+        if isinstance(value, str):
+            return value.encode("utf-8")
+        raise TypeError(f"Cannot encode {type(value)} as DID payload")
+
+    def decode(self, payload: bytes) -> bytes:
+        return payload
+
+    def __len__(self) -> int:
+        raise DidCodec.ReadAllRemainingData()
+
+
+def make_uds_client_config(request_timeout: float = 5.0) -> dict:
+    """Build a udsoncan client config with a raw default DID codec."""
+    config = dict(default_client_config)
+    config["data_identifiers"] = {"default": RawDidCodec()}
+    config["request_timeout"] = request_timeout
+    return config

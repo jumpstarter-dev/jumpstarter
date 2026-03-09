@@ -4,6 +4,7 @@ from dataclasses import field
 
 from doipclient import DoIPClient
 from doipclient.connectors import DoIPClientUDSConnector
+from jumpstarter_driver_uds.common import make_uds_client_config
 from jumpstarter_driver_uds.driver import UdsInterface
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
@@ -44,7 +45,8 @@ class UdsDoip(UdsInterface, Driver):
             auto_reconnect_tcp=self.auto_reconnect_tcp,
         )
         conn = DoIPClientUDSConnector(self._doip_client)
-        self._uds_client = UdsoncanClient(conn, request_timeout=self.request_timeout)
+        config = make_uds_client_config(request_timeout=self.request_timeout)
+        self._uds_client = UdsoncanClient(conn, config=config)
         self._uds_client.open()
 
     def close(self):

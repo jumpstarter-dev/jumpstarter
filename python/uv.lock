@@ -2541,10 +2541,16 @@ version = "0.1.0"
 source = { virtual = "examples/automotive" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-uds-doip" },
+    { name = "pytest" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-uds-doip", editable = "packages/jumpstarter-driver-uds-doip" },
+    { name = "pytest", specifier = ">=8.3.2" },
+]
 
 [[package]]
 name = "jumpstarter-example-soc-pytest"

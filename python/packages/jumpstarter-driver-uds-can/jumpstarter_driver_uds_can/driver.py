@@ -5,6 +5,7 @@ from dataclasses import field
 import can
 import isotp
 from jumpstarter_driver_can.common import IsoTpParams
+from jumpstarter_driver_uds.common import make_uds_client_config
 from jumpstarter_driver_uds.driver import UdsInterface
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
@@ -52,7 +53,8 @@ class UdsCan(UdsInterface, Driver):
         )
 
         self._uds_conn = PythonIsoTpConnection(self._stack)
-        self._uds_client = UdsoncanClient(self._uds_conn, request_timeout=self.request_timeout)
+        config = make_uds_client_config(request_timeout=self.request_timeout)
+        self._uds_client = UdsoncanClient(self._uds_conn, config=config)
         self._uds_client.open()
 
     def close(self):
