@@ -129,6 +129,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         fls_binary_url: str | None = None,
         oci_username: str | None = None,
         oci_password: str | None = None,
+        power_off: bool = True,
     ):
         """Flash image to DUT"""
         if bearer_token:
@@ -225,6 +226,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                         fls_binary_url,
                         oci_username,
                         oci_password,
+                        power_off,
                     )
                     self.logger.info(f"Flash operation succeeded on attempt {attempt + 1}")
                     break
@@ -429,6 +431,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         fls_binary_url: str | None,
         oci_username: str | None,
         oci_password: str | None,
+        power_off: bool = True,
     ):
         """Perform the actual flash operation with console setup.
 
@@ -507,8 +510,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
             console.sendline("reboot")
             time.sleep(2)
-            self.logger.info("Powering off target")
-            self.power.off()
+            if power_off:
+                self.logger.info("Powering off target")
+                self.power.off()
+            else:
+                self.logger.info("Leaving target powered on (--no-power-off)")
 
     def _setup_flasher_ssl(self, console, manifest, cacert_file: str | None) -> str | None:
         """Setup SSL configuration for the flasher.
@@ -1512,6 +1518,14 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             type=str,
             help="Custom URL to download FLS binary from (overrides --fls-version)",
         )
+        @click.option(
+            "--no-power-off",
+            "power_off",
+            is_flag=True,
+            flag_value=False,
+            default=True,
+            help="Leave device powered on after flashing",
+        )
         @debug_console_option
         def flash(
             file,
@@ -1530,6 +1544,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             method,
             fls_version,
             fls_binary_url,
+            power_off,
         ):
             """Flash image(s) to DUT
 
@@ -1574,6 +1589,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
                 self.logger.info(f"Flashing {op_num} {op_desc} with '{image_file}'".strip())
 
+                is_last = idx == len(flash_operations) - 1
+
                 # Perform the flash operation
                 self.flash(
                     image_file,
@@ -1590,6 +1607,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     method=method,
                     fls_version=fls_version,
                     fls_binary_url=fls_binary_url,
+                    power_off=power_off if is_last else True,
                 )
 
         @base.command()
