@@ -4,11 +4,17 @@ import logging
 
 from pydantic import validate_call
 from udsoncan.exceptions import NegativeResponseException
-from udsoncan.services import DiagnosticSessionControl, ECUReset
+from udsoncan.services import (
+    DiagnosticSessionControl,
+    ECUReset,
+)
 
 from .common import (
+    AuthenticationResponse,
     DidValue,
     DtcInfo,
+    FileTransferResponse,
+    RoutineControlResponse,
     SecuritySeedResponse,
     UdsResetType,
     UdsResponse,
@@ -165,3 +171,144 @@ class UdsInterface:
         except NegativeResponseException as e:
             logger.warning("ReadDTCByStatusMask NRC 0x%02X (%s)", e.response.code, e.response.code_name)
             return []
+
+    # -- RoutineControl (0x31) ------------------------------------------------
+
+    @export
+    @validate_call(validate_return=True)
+    def start_routine(self, routine_id: int, data_hex: str = "") -> RoutineControlResponse:
+        """Start a routine on the ECU."""
+        data = bytes.fromhex(data_hex) if data_hex else None
+        try:
+            resp = self._uds_client.start_routine(routine_id, data)
+            return RoutineControlResponse(
+                routine_id=resp.service_data.routine_id_echo,
+                control_type="startRoutine",
+                success=resp.positive,
+                status_record=resp.service_data.routine_status_record.hex()
+                if resp.service_data.routine_status_record else None,
+            )
+        except NegativeResponseException as e:
+            return RoutineControlResponse(
+                routine_id=routine_id, control_type="startRoutine", success=False,
+                nrc=e.response.code, nrc_name=e.response.code_name,
+            )
+
+    @export
+    @validate_call(validate_return=True)
+    def stop_routine(self, routine_id: int, data_hex: str = "") -> RoutineControlResponse:
+        """Stop a running routine on the ECU."""
+        data = bytes.fromhex(data_hex) if data_hex else None
+        try:
+            resp = self._uds_client.stop_routine(routine_id, data)
+            return RoutineControlResponse(
+                routine_id=resp.service_data.routine_id_echo,
+                control_type="stopRoutine",
+                success=resp.positive,
+                status_record=resp.service_data.routine_status_record.hex()
+                if resp.service_data.routine_status_record else None,
+            )
+        except NegativeResponseException as e:
+            return RoutineControlResponse(
+                routine_id=routine_id, control_type="stopRoutine", success=False,
+                nrc=e.response.code, nrc_name=e.response.code_name,
+            )
+
+    @export
+    @validate_call(validate_return=True)
+    def get_routine_result(self, routine_id: int, data_hex: str = "") -> RoutineControlResponse:
+        """Get the result of a routine on the ECU."""
+        data = bytes.fromhex(data_hex) if data_hex else None
+        try:
+            resp = self._uds_client.get_routine_result(routine_id, data)
+            return RoutineControlResponse(
+                routine_id=resp.service_data.routine_id_echo,
+                control_type="requestRoutineResults",
+                success=resp.positive,
+                status_record=resp.service_data.routine_status_record.hex()
+                if resp.service_data.routine_status_record else None,
+            )
+        except NegativeResponseException as e:
+            return RoutineControlResponse(
+                routine_id=routine_id, control_type="requestRoutineResults", success=False,
+                nrc=e.response.code, nrc_name=e.response.code_name,
+            )
+
+    # -- Authentication (0x29) ------------------------------------------------
+
+    @export
+    @validate_call(validate_return=True)
+    def authentication(
+        self,
+        authentication_task: int,
+        communication_configuration: int | None = None,
+        certificate_client_hex: str = "",
+        challenge_client_hex: str = "",
+        algorithm_indicator_hex: str = "",
+        proof_of_ownership_client_hex: str = "",
+    ) -> AuthenticationResponse:
+        """Send an Authentication request (ISO-14229-1:2020)."""
+        kwargs: dict = {"authentication_task": authentication_task}
+        if communication_configuration is not None:
+            kwargs["communication_configuration"] = communication_configuration
+        if certificate_client_hex:
+            kwargs["certificate_client"] = bytes.fromhex(certificate_client_hex)
+        if challenge_client_hex:
+            kwargs["challenge_client"] = bytes.fromhex(challenge_client_hex)
+        if algorithm_indicator_hex:
+            kwargs["algorithm_indicator"] = bytes.fromhex(algorithm_indicator_hex)
+        if proof_of_ownership_client_hex:
+            kwargs["proof_of_ownership_client"] = bytes.fromhex(proof_of_ownership_client_hex)
+
+        try:
+            resp = self._uds_client.authentication(**kwargs)
+            sd = resp.service_data
+            return AuthenticationResponse(
+                authentication_task=sd.authentication_task_echo,
+                return_value=sd.return_value,
+                success=resp.positive,
+                challenge_server=sd.challenge_server.hex() if sd.challenge_server else None,
+                certificate_server=sd.certificate_server.hex() if sd.certificate_server else None,
+                proof_of_ownership_server=sd.proof_of_ownership_server.hex() if sd.proof_of_ownership_server else None,
+                session_key_info=sd.session_key_info.hex() if sd.session_key_info else None,
+                algorithm_indicator=sd.algorithm_indicator.hex() if sd.algorithm_indicator else None,
+                needed_additional_parameter=(
+                    sd.needed_additional_parameter.hex() if sd.needed_additional_parameter else None
+                ),
+            )
+        except NegativeResponseException as e:
+            return AuthenticationResponse(
+                authentication_task=authentication_task, return_value=0, success=False,
+                nrc=e.response.code, nrc_name=e.response.code_name,
+            )
+
+    # -- RequestFileTransfer (0x38) -------------------------------------------
+
+    @export
+    @validate_call(validate_return=True)
+    def request_file_transfer(
+        self, moop: int, path: str, filesize: int | None = None
+    ) -> FileTransferResponse:
+        """Request a file operation on the ECU (add, read, delete, readdir)."""
+        from udsoncan import Filesize as UdsFilesize
+
+        kwargs: dict = {"moop": moop, "path": path}
+        if filesize is not None:
+            kwargs["filesize"] = UdsFilesize(uncompressed=filesize, compressed=filesize)
+
+        try:
+            resp = self._uds_client.request_file_transfer(**kwargs)
+            sd = resp.service_data
+            return FileTransferResponse(
+                moop=sd.moop_echo,
+                success=resp.positive,
+                max_length=sd.max_length,
+                filesize_uncompressed=sd.filesize.uncompressed if sd.filesize else None,
+                filesize_compressed=sd.filesize.compressed if sd.filesize else None,
+                dirinfo_length=sd.dirinfo_length,
+            )
+        except NegativeResponseException as e:
+            return FileTransferResponse(
+                moop=moop, success=False,
+                nrc=e.response.code, nrc_name=e.response.code_name,
+            )

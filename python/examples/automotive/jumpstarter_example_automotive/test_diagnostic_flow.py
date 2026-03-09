@@ -7,8 +7,15 @@ a stateful mock ECU.
 """
 
 from jumpstarter_driver_uds.common import UdsResetType, UdsSessionType
+from udsoncan.services import Authentication, RequestFileTransfer
 
-from .mock_ecu import INITIAL_DIDS, INITIAL_DTCS, derive_key
+from .mock_ecu import (
+    INITIAL_DIDS,
+    INITIAL_DTCS,
+    INITIAL_FILES,
+    ROUTINE_SELF_TEST,
+    derive_key,
+)
 
 
 def test_full_diagnostic_workflow(ecu_client):
@@ -135,3 +142,177 @@ def test_security_access_in_default_session(ecu_client):
     seed_resp = ecu_client.request_seed(1)
     assert seed_resp.success is False
     assert seed_resp.nrc == 0x22
+
+
+# -- RoutineControl tests ----------------------------------------------------
+
+
+def test_routine_start_stop_result(ecu_client):
+    """Start a routine, request result while running, stop it, request result when stopped."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.start_routine(ROUTINE_SELF_TEST)
+    assert resp.success is True
+    assert resp.routine_id == ROUTINE_SELF_TEST
+    assert resp.control_type == "startRoutine"
+    assert resp.status_record is not None
+
+    resp = ecu_client.get_routine_result(ROUTINE_SELF_TEST)
+    assert resp.success is True
+    assert resp.status_record == "01"  # still running
+
+    resp = ecu_client.stop_routine(ROUTINE_SELF_TEST)
+    assert resp.success is True
+    assert resp.control_type == "stopRoutine"
+
+    resp = ecu_client.get_routine_result(ROUTINE_SELF_TEST)
+    assert resp.success is True
+    assert resp.status_record == "0200"  # completed, pass
+
+
+def test_routine_in_default_session_rejected(ecu_client):
+    """RoutineControl should fail in default session."""
+    resp = ecu_client.start_routine(ROUTINE_SELF_TEST)
+    assert resp.success is False
+    assert resp.nrc == 0x22
+
+
+def test_routine_unknown_id_rejected(ecu_client):
+    """Starting an unknown routine returns NRC 0x31 (requestOutOfRange)."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+    resp = ecu_client.start_routine(0xDEAD)
+    assert resp.success is False
+    assert resp.nrc == 0x31
+
+
+# -- Authentication tests ----------------------------------------------------
+
+
+ALGO_INDICATOR = bytes(16)
+
+
+def test_authentication_challenge_and_verify(ecu_client):
+    """Full authentication flow: request challenge, derive proof, verify ownership."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.authentication(
+        authentication_task=Authentication.AuthenticationTask.requestChallengeForAuthentication,
+        communication_configuration=0x00,
+        algorithm_indicator=ALGO_INDICATOR,
+    )
+    assert resp.success is True
+    assert resp.challenge_server is not None
+    challenge_bytes = bytes.fromhex(resp.challenge_server)
+    assert len(challenge_bytes) == 16
+
+    proof = derive_key(challenge_bytes)
+    resp = ecu_client.authentication(
+        authentication_task=Authentication.AuthenticationTask.verifyProofOfOwnershipUnidirectional,
+        algorithm_indicator=ALGO_INDICATOR,
+        proof_of_ownership_client=proof,
+    )
+    assert resp.success is True
+    assert resp.session_key_info is not None
+
+
+def test_authentication_wrong_proof_rejected(ecu_client):
+    """Sending a wrong proof of ownership returns NRC 0x35 (invalidKey)."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.authentication(
+        authentication_task=Authentication.AuthenticationTask.requestChallengeForAuthentication,
+        communication_configuration=0x00,
+        algorithm_indicator=ALGO_INDICATOR,
+    )
+    assert resp.success is True
+
+    resp = ecu_client.authentication(
+        authentication_task=Authentication.AuthenticationTask.verifyProofOfOwnershipUnidirectional,
+        algorithm_indicator=ALGO_INDICATOR,
+        proof_of_ownership_client=b"\x00" * 16,
+    )
+    assert resp.success is False
+    assert resp.nrc == 0x35
+
+
+def test_deauthenticate(ecu_client):
+    """deAuthenticate should succeed after authentication."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.authentication(
+        authentication_task=Authentication.AuthenticationTask.deAuthenticate,
+    )
+    assert resp.success is True
+
+
+# -- RequestFileTransfer tests -----------------------------------------------
+
+
+def test_file_transfer_read_file(ecu_client):
+    """Read a file from the ECU and verify metadata."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.request_file_transfer(
+        moop=RequestFileTransfer.ModeOfOperation.ReadFile,
+        path="/logs/crash.bin",
+    )
+    assert resp.success is True
+    assert resp.moop == RequestFileTransfer.ModeOfOperation.ReadFile
+    assert resp.max_length == 4096
+    expected_size = len(INITIAL_FILES["/logs/crash.bin"])
+    assert resp.filesize_uncompressed == expected_size
+    assert resp.filesize_compressed == expected_size
+
+
+def test_file_transfer_add_and_delete(ecu_client):
+    """Add a new file and then delete it."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.request_file_transfer(
+        moop=RequestFileTransfer.ModeOfOperation.AddFile,
+        path="/data/new_file.dat",
+        filesize=128,
+    )
+    assert resp.success is True
+    assert resp.max_length == 4096
+
+    resp = ecu_client.request_file_transfer(
+        moop=RequestFileTransfer.ModeOfOperation.DeleteFile,
+        path="/data/new_file.dat",
+    )
+    assert resp.success is True
+
+
+def test_file_transfer_read_nonexistent(ecu_client):
+    """Reading a non-existent file returns NRC 0x31 (requestOutOfRange)."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.request_file_transfer(
+        moop=RequestFileTransfer.ModeOfOperation.ReadFile,
+        path="/does/not/exist.bin",
+    )
+    assert resp.success is False
+    assert resp.nrc == 0x31
+
+
+def test_file_transfer_read_dir(ecu_client):
+    """ReadDir returns directory listing metadata."""
+    ecu_client.change_session(UdsSessionType.EXTENDED)
+
+    resp = ecu_client.request_file_transfer(
+        moop=RequestFileTransfer.ModeOfOperation.ReadDir,
+        path="/",
+    )
+    assert resp.success is True
+    assert resp.dirinfo_length is not None
+    assert resp.dirinfo_length > 0
+
+
+def test_file_transfer_in_default_session_rejected(ecu_client):
+    """FileTransfer should fail in default session."""
+    resp = ecu_client.request_file_transfer(
+        moop=RequestFileTransfer.ModeOfOperation.ReadFile,
+        path="/logs/crash.bin",
+    )
+    assert resp.success is False
+    assert resp.nrc == 0x22

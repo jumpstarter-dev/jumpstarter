@@ -59,6 +59,46 @@ class SecuritySeedResponse(BaseModel):
     nrc_name: str | None = None
 
 
+class RoutineControlResponse(BaseModel):
+    """Response from a RoutineControl request."""
+
+    routine_id: int
+    control_type: str
+    success: bool
+    status_record: str | None = None
+    nrc: int | None = None
+    nrc_name: str | None = None
+
+
+class AuthenticationResponse(BaseModel):
+    """Response from an Authentication request."""
+
+    authentication_task: int
+    return_value: int
+    success: bool
+    challenge_server: str | None = None
+    certificate_server: str | None = None
+    proof_of_ownership_server: str | None = None
+    session_key_info: str | None = None
+    algorithm_indicator: str | None = None
+    needed_additional_parameter: str | None = None
+    nrc: int | None = None
+    nrc_name: str | None = None
+
+
+class FileTransferResponse(BaseModel):
+    """Response from a RequestFileTransfer request."""
+
+    moop: int
+    success: bool
+    max_length: int | None = None
+    filesize_uncompressed: int | None = None
+    filesize_compressed: int | None = None
+    dirinfo_length: int | None = None
+    nrc: int | None = None
+    nrc_name: str | None = None
+
+
 class RawDidCodec(DidCodec):
     """Pass-through codec that treats DID values as raw bytes.
 

@@ -29,7 +29,10 @@ SID_CLEAR_DTC = 0x14
 SID_READ_DTC_INFO = 0x19
 SID_READ_DATA_BY_ID = 0x22
 SID_SECURITY_ACCESS = 0x27
+SID_AUTHENTICATION = 0x29
 SID_WRITE_DATA_BY_ID = 0x2E
+SID_ROUTINE_CONTROL = 0x31
+SID_REQUEST_FILE_TRANSFER = 0x38
 SID_TESTER_PRESENT = 0x3E
 
 # UDS session sub-function values
@@ -43,6 +46,29 @@ NRC_CONDITIONS_NOT_CORRECT = 0x22
 NRC_REQUEST_OUT_OF_RANGE = 0x31
 NRC_INVALID_KEY = 0x35
 NRC_REQUIRED_TIME_DELAY_NOT_EXPIRED = 0x37
+NRC_UPLOAD_DOWNLOAD_NOT_ACCEPTED = 0x70
+
+# Authentication return values (ISO-14229-1:2020)
+AUTH_RETURN_SUCCESS = 0x00
+AUTH_RETURN_CHALLENGE_REQUIRED = 0x01
+AUTH_RETURN_OWNERSHIP_VERIFIED = 0x02
+AUTH_RETURN_DEAUTHENTICATED = 0x10
+
+# RoutineControl sub-functions
+ROUTINE_START = 0x01
+ROUTINE_STOP = 0x02
+ROUTINE_REQUEST_RESULTS = 0x03
+
+# FileTransfer ModeOfOperation
+FT_ADD_FILE = 0x01
+FT_DELETE_FILE = 0x02
+FT_REPLACE_FILE = 0x03
+FT_READ_FILE = 0x04
+FT_READ_DIR = 0x05
+
+# Predefined routine IDs for mock
+ROUTINE_SELF_TEST = 0xFF00
+ROUTINE_CLEAR_LOGS = 0xFF01
 
 INITIAL_DTCS: list[tuple[int, int]] = [
     (0xC01234, 0x2F),
@@ -94,6 +120,12 @@ def derive_key(seed: bytes) -> bytes:
     return bytes(b ^ 0xFF for b in seed)
 
 
+INITIAL_FILES: dict[str, bytes] = {
+    "/logs/crash.bin": b"\x01\x02\x03\x04CRASH_DATA_PAYLOAD",
+    "/config/ecu.cfg": b"mode=normal\ndiag=enabled\n",
+}
+
+
 @dataclass
 class EcuState:
     """Mutable state for one logical ECU instance."""
@@ -101,8 +133,12 @@ class EcuState:
     session: int = SESSION_DEFAULT
     security_unlocked: bool = False
     security_seed: bytes = b""
+    authenticated: bool = False
+    auth_challenge: bytes = b""
     dids: dict[int, bytes] = field(default_factory=lambda: dict(INITIAL_DIDS))
     dtcs: list[tuple[int, int]] = field(default_factory=lambda: list(INITIAL_DTCS))
+    routines_running: set[int] = field(default_factory=set)
+    files: dict[str, bytes] = field(default_factory=lambda: dict(INITIAL_FILES))
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def reset(self) -> None:
@@ -110,7 +146,10 @@ class EcuState:
             self.session = SESSION_DEFAULT
             self.security_unlocked = False
             self.security_seed = b""
+            self.authenticated = False
+            self.auth_challenge = b""
             self.dtcs = list(INITIAL_DTCS)
+            self.routines_running.clear()
 
 
 class MockDiagnosticEcu:
@@ -207,8 +246,11 @@ class MockDiagnosticEcu:
             SID_READ_DATA_BY_ID: self._uds_read_did,
             SID_WRITE_DATA_BY_ID: self._uds_write_did,
             SID_SECURITY_ACCESS: self._uds_security_access,
+            SID_AUTHENTICATION: self._uds_authentication,
             SID_CLEAR_DTC: self._uds_clear_dtc,
             SID_READ_DTC_INFO: self._uds_read_dtc_info,
+            SID_ROUTINE_CONTROL: self._uds_routine_control,
+            SID_REQUEST_FILE_TRANSFER: self._uds_file_transfer,
         }
         handler = handlers.get(sid)
         if handler is None:
@@ -290,6 +332,146 @@ class MockDiagnosticEcu:
                 if status & mask:
                     result += struct.pack(">I", dtc_id)[1:] + bytes([status])
         return result
+
+    # -- RoutineControl (0x31) ------------------------------------------------
+
+    def _uds_routine_control(self, data: bytes) -> bytes:
+        if len(data) < 4:
+            return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
+        control_type = data[1]
+        routine_id = (data[2] << 8) | data[3]
+
+        with self.state._lock:
+            if self.state.session == SESSION_DEFAULT:
+                return _nrc(data[0], NRC_CONDITIONS_NOT_CORRECT)
+
+            known_routines = {ROUTINE_SELF_TEST, ROUTINE_CLEAR_LOGS}
+            if routine_id not in known_routines:
+                return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
+
+            if control_type == ROUTINE_START:
+                self.state.routines_running.add(routine_id)
+                status_record = b"\x01"  # "running"
+            elif control_type == ROUTINE_STOP:
+                self.state.routines_running.discard(routine_id)
+                status_record = b"\x00"  # "stopped"
+            elif control_type == ROUTINE_REQUEST_RESULTS:
+                if routine_id in self.state.routines_running:
+                    status_record = b"\x01"  # still running
+                else:
+                    status_record = b"\x02\x00"  # completed, result=pass
+            else:
+                return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
+
+        return bytes([data[0] + 0x40, control_type, data[2], data[3]]) + status_record
+
+    # -- Authentication (0x29) ------------------------------------------------
+
+    def _uds_authentication(self, data: bytes) -> bytes:
+        if len(data) < 2:
+            return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
+        task = data[1]
+        positive_sid = data[0] + 0x40
+
+        with self.state._lock:
+            # deAuthenticate (task=0)
+            if task == 0x00:
+                self.state.authenticated = False
+                self.state.auth_challenge = b""
+                return bytes([positive_sid, task, AUTH_RETURN_DEAUTHENTICATED])
+
+            # requestChallengeForAuthentication (task=5)
+            # Wire request: [SID, task, commConfig(1b), algorithmIndicator(16b)]
+            # Wire response: [+SID, task, returnValue, algoIndicator(16b),
+            #                  lenPrefixed(challenge), lenPrefixed(neededAdditionalParam)]
+            if task == 0x05:
+                algo = data[3:19] if len(data) >= 19 else bytes(16)
+                challenge = os.urandom(16)
+                self.state.auth_challenge = challenge
+                resp = bytes([positive_sid, task, AUTH_RETURN_CHALLENGE_REQUIRED])
+                resp += algo
+                resp += struct.pack(">H", len(challenge)) + challenge
+                resp += struct.pack(">H", 0)  # no neededAdditionalParameter
+                return resp
+
+            # verifyProofOfOwnershipUnidirectional (task=6)
+            # Wire request: [SID, task, algorithmIndicator(16b),
+            #                lenPrefixed(proof), lenPrefixed(challenge), lenPrefixed(additional)]
+            # Wire response: [+SID, task, returnValue, algoIndicator(16b),
+            #                  lenPrefixed(sessionKeyInfo)]
+            if task == 0x06:
+                algo = data[2:18] if len(data) >= 18 else bytes(16)
+                offset = 18
+                if len(data) < offset + 2:
+                    return _nrc(data[0], NRC_CONDITIONS_NOT_CORRECT)
+                proof_len = struct.unpack_from(">H", data, offset)[0]
+                offset += 2
+                proof = data[offset:offset + proof_len]
+                expected = derive_key(self.state.auth_challenge)
+                if proof != expected:
+                    return _nrc(data[0], NRC_INVALID_KEY)
+                self.state.authenticated = True
+                self.state.auth_challenge = b""
+                session_key = os.urandom(8)
+                resp = bytes([positive_sid, task, AUTH_RETURN_OWNERSHIP_VERIFIED])
+                resp += algo
+                resp += struct.pack(">H", len(session_key)) + session_key
+                return resp
+
+        return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
+
+    # -- RequestFileTransfer (0x38) -------------------------------------------
+
+    def _uds_file_transfer(self, data: bytes) -> bytes:
+        if len(data) < 4:
+            return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
+        moop = data[1]
+        path_len = (data[2] << 8) | data[3]
+        if len(data) < 4 + path_len:
+            return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
+        path = data[4:4 + path_len].decode("ascii", errors="replace")
+
+        with self.state._lock:
+            if self.state.session == SESSION_DEFAULT:
+                return _nrc(data[0], NRC_CONDITIONS_NOT_CORRECT)
+
+            ft_handlers = {
+                FT_DELETE_FILE: self._ft_delete,
+                FT_READ_FILE: self._ft_read,
+                FT_ADD_FILE: self._ft_add_or_replace,
+                FT_REPLACE_FILE: self._ft_add_or_replace,
+                FT_READ_DIR: self._ft_read_dir,
+            }
+            handler = ft_handlers.get(moop)
+            if handler is None:
+                return _nrc(data[0], NRC_UPLOAD_DOWNLOAD_NOT_ACCEPTED)
+            return handler(data[0], moop, path)
+
+    def _ft_delete(self, sid: int, moop: int, path: str) -> bytes:
+        if path not in self.state.files:
+            return _nrc(sid, NRC_REQUEST_OUT_OF_RANGE)
+        del self.state.files[path]
+        return bytes([sid + 0x40, moop])
+
+    def _ft_read(self, sid: int, moop: int, path: str) -> bytes:
+        if path not in self.state.files:
+            return _nrc(sid, NRC_REQUEST_OUT_OF_RANGE)
+        size = len(self.state.files[path])
+        # moop_echo + lfid(1=2bytes) + maxBlockLen(2b) + DFI(0x00) + fsodipl(2b) + uncompressed(2b) + compressed(2b)
+        return (bytes([sid + 0x40, moop, 0x02]) + struct.pack(">H", 4096)
+                + bytes([0x00]) + struct.pack(">HHH", 2, size, size))
+
+    def _ft_add_or_replace(self, sid: int, moop: int, path: str) -> bytes:
+        if moop == FT_REPLACE_FILE and path not in self.state.files:
+            return _nrc(sid, NRC_REQUEST_OUT_OF_RANGE)
+        self.state.files[path] = b""
+        return bytes([sid + 0x40, moop, 0x02]) + struct.pack(">H", 4096) + bytes([0x00])
+
+    def _ft_read_dir(self, sid: int, moop: int, path: str) -> bytes:
+        entries = [p for p in self.state.files if p.startswith(path) or path == "/"]
+        size = len("\n".join(entries).encode("ascii"))
+        return (bytes([sid + 0x40, moop, 0x02]) + struct.pack(">H", 4096)
+                + bytes([0x00]) + struct.pack(">HH", 2, size))
 
     def stop(self) -> None:
         self._running = False

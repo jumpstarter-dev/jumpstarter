@@ -3,8 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .common import (
+    AuthenticationResponse,
     DidValue,
     DtcInfo,
+    FileTransferResponse,
+    RoutineControlResponse,
     SecuritySeedResponse,
     UdsResponse,
 )
@@ -56,3 +59,51 @@ class UdsClient(DriverClient):
         """Read DTCs matching the given status mask."""
         result = self.call("read_dtc_by_status_mask", mask)
         return [DtcInfo.model_validate(v) for v in result]
+
+    def start_routine(self, routine_id: int, data: bytes | None = None) -> RoutineControlResponse:
+        """Start a routine on the ECU."""
+        return RoutineControlResponse.model_validate(
+            self.call("start_routine", routine_id, data.hex() if data else "")
+        )
+
+    def stop_routine(self, routine_id: int, data: bytes | None = None) -> RoutineControlResponse:
+        """Stop a running routine on the ECU."""
+        return RoutineControlResponse.model_validate(
+            self.call("stop_routine", routine_id, data.hex() if data else "")
+        )
+
+    def get_routine_result(self, routine_id: int, data: bytes | None = None) -> RoutineControlResponse:
+        """Get the result of a routine on the ECU."""
+        return RoutineControlResponse.model_validate(
+            self.call("get_routine_result", routine_id, data.hex() if data else "")
+        )
+
+    def authentication(
+        self,
+        authentication_task: int,
+        communication_configuration: int | None = None,
+        certificate_client: bytes | None = None,
+        challenge_client: bytes | None = None,
+        algorithm_indicator: bytes | None = None,
+        proof_of_ownership_client: bytes | None = None,
+    ) -> AuthenticationResponse:
+        """Send an Authentication request (ISO-14229-1:2020)."""
+        return AuthenticationResponse.model_validate(
+            self.call(
+                "authentication",
+                authentication_task,
+                communication_configuration,
+                certificate_client.hex() if certificate_client else "",
+                challenge_client.hex() if challenge_client else "",
+                algorithm_indicator.hex() if algorithm_indicator else "",
+                proof_of_ownership_client.hex() if proof_of_ownership_client else "",
+            )
+        )
+
+    def request_file_transfer(
+        self, moop: int, path: str, filesize: int | None = None
+    ) -> FileTransferResponse:
+        """Request a file operation on the ECU."""
+        return FileTransferResponse.model_validate(
+            self.call("request_file_transfer", moop, path, filesize)
+        )
