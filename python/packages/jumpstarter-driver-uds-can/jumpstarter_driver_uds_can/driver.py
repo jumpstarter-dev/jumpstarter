@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import field
 
 import can
@@ -13,6 +14,8 @@ from udsoncan.client import Client as UdsoncanClient
 from udsoncan.connections import PythonIsoTpConnection
 
 from jumpstarter.driver import Driver
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -42,34 +45,38 @@ class UdsCan(UdsInterface, Driver):
             super().__post_init__()
 
         self._bus = can.Bus(channel=self.channel, interface=self.interface)
-        self._notifier = can.Notifier(self._bus, [])
+        try:
+            self._notifier = can.Notifier(self._bus, [])
 
-        address = isotp.Address(rxid=self.rxid, txid=self.txid)
-        self._stack = isotp.NotifierBasedCanStack(
-            self._bus,
-            self._notifier,
-            address=address,
-            params=self.isotp_params.model_dump() if self.isotp_params else None,
-        )
+            address = isotp.Address(rxid=self.rxid, txid=self.txid)
+            self._stack = isotp.NotifierBasedCanStack(
+                self._bus,
+                self._notifier,
+                address=address,
+                params=self.isotp_params.model_dump() if self.isotp_params else None,
+            )
 
-        self._uds_conn = PythonIsoTpConnection(self._stack)
-        config = make_uds_client_config(request_timeout=self.request_timeout)
-        self._uds_client = UdsoncanClient(self._uds_conn, config=config)
-        self._uds_client.open()
+            self._uds_conn = PythonIsoTpConnection(self._stack)
+            config = make_uds_client_config(request_timeout=self.request_timeout)
+            self._uds_client = UdsoncanClient(self._uds_conn, config=config)
+            self._uds_client.open()
+        except Exception:
+            self.close()
+            raise
 
     def close(self):
         """Close the UDS connection and CAN bus."""
         try:
             self._uds_client.close()
         except Exception:
-            pass
+            logger.warning("failed to close UDS client", exc_info=True)
         try:
             self._stack.stop()
         except Exception:
-            pass
+            logger.warning("failed to stop ISO-TP stack", exc_info=True)
         try:
             self._notifier.stop()
         except Exception:
-            pass
+            logger.warning("failed to stop CAN notifier", exc_info=True)
         self._bus.shutdown()
         super().close()
