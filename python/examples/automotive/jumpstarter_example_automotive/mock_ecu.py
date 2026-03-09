@@ -309,6 +309,8 @@ class MockDiagnosticEcu:
                 self.state.security_seed = seed
                 return bytes([data[0] + 0x40, sub]) + seed
             else:
+                if not self.state.security_seed:
+                    return _nrc(data[0], NRC_CONDITIONS_NOT_CORRECT)
                 expected_key = derive_key(self.state.security_seed)
                 provided_key = data[2:]
                 if provided_key != expected_key:
