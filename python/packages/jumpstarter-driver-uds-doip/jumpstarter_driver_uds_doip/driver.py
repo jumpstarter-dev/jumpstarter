@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import field
 
 from doipclient import DoIPClient
@@ -11,6 +12,8 @@ from pydantic.dataclasses import dataclass
 from udsoncan.client import Client as UdsoncanClient
 
 from jumpstarter.driver import Driver
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -44,19 +47,23 @@ class UdsDoip(UdsInterface, Driver):
             client_logical_address=self.client_logical_address,
             auto_reconnect_tcp=self.auto_reconnect_tcp,
         )
-        conn = DoIPClientUDSConnector(self._doip_client)
-        config = make_uds_client_config(request_timeout=self.request_timeout)
-        self._uds_client = UdsoncanClient(conn, config=config)
-        self._uds_client.open()
+        try:
+            conn = DoIPClientUDSConnector(self._doip_client)
+            config = make_uds_client_config(request_timeout=self.request_timeout)
+            self._uds_client = UdsoncanClient(conn, config=config)
+            self._uds_client.open()
+        except Exception:
+            self.close()
+            raise
 
     def close(self):
         """Close the UDS and DoIP connections."""
         try:
             self._uds_client.close()
         except Exception:
-            pass
+            logger.warning("failed to close UDS client", exc_info=True)
         try:
             self._doip_client.close()
         except Exception:
-            pass
+            logger.warning("failed to close DoIP client", exc_info=True)
         super().close()
