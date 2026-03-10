@@ -112,15 +112,18 @@ class RideSXClient(FlasherClient, CompositeClient):
                     f"Please provide a valid file path (e.g., -t {partition_name}:/path/to/image)"
                 )
 
-    def _power_off_if_available(self) -> None:
-        """Power off device if power child is present."""
+    def _power_off_if_available(self, power_off: bool = True) -> None:
+        """Power off device if power child is present and power_off is True."""
+        if not power_off:
+            self.logger.info("leaving device powered on")
+            return
         if "power" in self.children:
             self.power.off()
             self.logger.info("device powered off")
         else:
             self.logger.info("device left running")
 
-    def _execute_flash_operation(self, operation_func, *args, **kwargs):
+    def _execute_flash_operation(self, operation_func, *args, power_off: bool = True, **kwargs):
         """Common wrapper for flash operations with logging and power management."""
         self.logger.info("Starting RideSX flash operation")
         self.boot_to_fastboot()
@@ -145,7 +148,7 @@ class RideSXClient(FlasherClient, CompositeClient):
                 )
 
             try:
-                self._power_off_if_available()
+                self._power_off_if_available(power_off)
             except Exception as power_error:
                 self.logger.exception("power-off cleanup failed after flash operation error: %s", power_error)
 
@@ -154,7 +157,7 @@ class RideSXClient(FlasherClient, CompositeClient):
             raise
 
         try:
-            self._power_off_if_available()
+            self._power_off_if_available(power_off)
         except Exception as power_error:
             # Keep successful flashes successful, but make cleanup failures visible.
             self.logger.exception("power-off cleanup failed after successful flash operation: %s", power_error)
@@ -168,6 +171,7 @@ class RideSXClient(FlasherClient, CompositeClient):
         target: str | None = None,
         operator: Operator | Dict[str, Operator] | None = None,
         compression=None,
+        power_off: bool = True,
     ):
         """Flash image to DUT - supports both OCI and traditional paths.
 
@@ -176,12 +180,13 @@ class RideSXClient(FlasherClient, CompositeClient):
             target: Target partition (for single file mode)
             operator: Optional operator for file access (usually auto-detected)
             compression: Compression type
+            power_off: Whether to power off the device after flashing (default: True)
         """
         # Auto-detect flash mode based on path type
         if isinstance(path, dict):
             # Dictionary mode: {partition: file_path, ...}
             operators_dict = operator if isinstance(operator, dict) else None
-            return self.flash_local(path, operators_dict)
+            return self.flash_local(path, operators_dict, power_off=power_off)
 
         elif isinstance(path, str) and (path.startswith("oci://") or self._is_oci_path(path)):
             # OCI mode: auto-detect partitions or use target as partition->filename mapping
@@ -189,10 +194,10 @@ class RideSXClient(FlasherClient, CompositeClient):
                 # Target is "partition:filename" format for OCI explicit mapping
                 partition_name, filename = target.split(":", 1)
                 partitions = {partition_name: filename}
-                return self.flash_with_targets(path, partitions)
+                return self.flash_with_targets(path, partitions, power_off=power_off)
             else:
                 # OCI auto-detection mode
-                return self.flash_oci_auto(path, None)
+                return self.flash_oci_auto(path, None, power_off=power_off)
 
         else:
             # Traditional single file mode
@@ -211,18 +216,21 @@ class RideSXClient(FlasherClient, CompositeClient):
                 operators = None
 
             partitions = {target: path}
-            return self.flash_local(partitions, operators)
+            return self.flash_local(partitions, operators, power_off=power_off)
 
     def flash_with_targets(
         self,
         oci_url: str,
         partitions: Dict[str, str],
+        *,
+        power_off: bool = True,
     ):
         """Flash OCI image with explicit partition mappings.
 
         Args:
             oci_url: OCI image URL (must start with oci://)
             partitions: Mapping of partition name -> filename in OCI image
+            power_off: Whether to power off the device after flashing (default: True)
 
         Raises:
             ValueError: If partitions is empty or None
@@ -239,18 +247,21 @@ class RideSXClient(FlasherClient, CompositeClient):
         def _flash_operation():
             return self._flash_oci_auto_impl(oci_url, partitions)
 
-        return self._execute_flash_operation(_flash_operation)
+        return self._execute_flash_operation(_flash_operation, power_off=power_off)
 
     def flash_local(
         self,
         partitions: Dict[str, str],
         operators: Dict[str, Operator] | None = None,
+        *,
+        power_off: bool = True,
     ):
         """Flash local files or URLs to partitions.
 
         Args:
             partitions: Mapping of partition name -> file path or URL
             operators: Optional mapping of partition name -> operator
+            power_off: Whether to power off the device after flashing (default: True)
         """
         self._validate_partition_mappings(partitions)
 
@@ -259,7 +270,7 @@ class RideSXClient(FlasherClient, CompositeClient):
         def _flash_operation():
             return self.flash_images(partitions, operators)
 
-        return self._execute_flash_operation(_flash_operation)
+        return self._execute_flash_operation(_flash_operation, power_off=power_off)
 
     def _read_oci_credentials(self):
         """Read OCI registry credentials from environment variables.
@@ -316,12 +327,15 @@ class RideSXClient(FlasherClient, CompositeClient):
         self,
         oci_url: str,
         partitions: Dict[str, str] | None = None,
+        *,
+        power_off: bool = True,
     ):
         """Flash OCI image using auto-detection or explicit partition mapping
 
         Args:
             oci_url: OCI image reference (e.g., "oci://registry.com/image:latest")
             partitions: Optional mapping of partition -> filename inside OCI image
+            power_off: Whether to power off the device after flashing (default: True)
         """
         # Normalize OCI URL
         if not oci_url.startswith("oci://"):
@@ -340,7 +354,7 @@ class RideSXClient(FlasherClient, CompositeClient):
         def _flash_operation():
             return self._flash_oci_auto_impl(oci_url, partitions)
 
-        return self._execute_flash_operation(_flash_operation)
+        return self._execute_flash_operation(_flash_operation, power_off=power_off)
 
     def _parse_target_specs(self, target_specs: tuple[str, ...]) -> dict[str, str]:
         """Parse -t target specs into a partition->path mapping."""
@@ -373,7 +387,7 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return mapping, single_target
 
-    def _execute_flash_command(self, path, target_specs):
+    def _execute_flash_command(self, path, target_specs, power_off: bool = True):
         """Execute flash command logic with proper argument handling."""
         # Parse target specifications
         if target_specs:
@@ -382,18 +396,18 @@ class RideSXClient(FlasherClient, CompositeClient):
             if mapping:
                 if path:
                     # Multi-partition mode with path: extract specific files from OCI image
-                    self.flash_with_targets(path, mapping)
+                    self.flash_with_targets(path, mapping, power_off=power_off)
                 else:
                     # Multi-partition mode: use mapping as dict for local files
-                    self.flash(mapping)
+                    self.flash(mapping, power_off=power_off)
             else:
                 # Single partition mode: use path with target
                 if not path:
                     raise click.ClickException("Path argument required when using single-partition target")
-                self.flash(path, target=single_target)
+                self.flash(path, target=single_target, power_off=power_off)
         elif path:
             # Path only - should be OCI for auto-detection
-            self.flash(path)
+            self.flash(path, power_off=power_off)
         else:
             raise click.ClickException("Provide a path or use -t to specify partition mappings")
 
@@ -419,7 +433,15 @@ class RideSXClient(FlasherClient, CompositeClient):
             multiple=True,
             help="Target spec as partition:path for multi-partition or just partition for single file",
         )
-        def flash(path, target_specs):
+        @click.option(
+            "--no-power-off",
+            "power_off",
+            is_flag=True,
+            flag_value=False,
+            default=True,
+            help="Leave device powered on after flashing",
+        )
+        def flash(path, target_specs, power_off):
             """Flash image to device.
 
             \b
@@ -447,7 +469,7 @@ class RideSXClient(FlasherClient, CompositeClient):
               OCI_USERNAME  Registry username for private OCI images
               OCI_PASSWORD  Registry password for private OCI images
             """
-            self._execute_flash_command(path, target_specs)
+            self._execute_flash_command(path, target_specs, power_off=power_off)
 
         @base.command()
         def boot_to_fastboot():
