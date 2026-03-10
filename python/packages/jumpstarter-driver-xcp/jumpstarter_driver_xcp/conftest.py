@@ -278,3 +278,220 @@ def mock_xcp_server():
         yield server.port
     finally:
         server.stop()
+
+
+# =========================================================================
+# Stateful XCP mock master for comprehensive integration-style testing
+# =========================================================================
+
+
+class _SlaveProperties(dict):
+    """Mimics pyxcp's SlaveProperties (dict with attribute access)."""
+
+    def __getattr__(self, name: str):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+    def __setattr__(self, name: str, value) -> None:
+        self[name] = value
+
+
+class XcpNotConnected(RuntimeError):
+    pass
+
+
+class XcpSequenceError(RuntimeError):
+    pass
+
+
+class StatefulXcpMaster:
+    """A drop-in replacement for pyxcp's Master that enforces XCP state rules.
+
+    Tracks connection state, simulated memory, MTA pointer,
+    DAQ list allocation, and programming sequence ordering.
+    """
+
+    SLAVE_ID = "XCP_STATEFUL_SIM_v2.0"
+    MAX_CTO = 8
+    MAX_DTO = 256
+
+    def __init__(self) -> None:
+        self._connected = False
+        self._memory: dict[int, bytes] = {}
+        self._mta_address = 0
+        self._mta_ext = 0
+        self._daq_lists = 0
+        self._daq_ptr: tuple[int, int, int] | None = None
+        self._programming = False
+        self._program_cleared = False
+        self._protection = {
+            "dbg": True,
+            "pgm": True,
+            "stim": False,
+            "daq": False,
+            "calpag": True,
+        }
+        self._unlocked = False
+
+        self.slaveProperties = _SlaveProperties(
+            maxCto=self.MAX_CTO,
+            maxDto=self.MAX_DTO,
+            byteOrder="INTEL",
+            supportsPgm=True,
+            supportsStim=False,
+            supportsDaq=True,
+            supportsCalpag=True,
+            protocolLayerVersion=1,
+            transportLayerVersion=1,
+            addressGranularity="BYTE",
+            slaveBlockMode=False,
+        )
+
+    def _require_connected(self):
+        if not self._connected:
+            raise XcpNotConnected("Not connected – call connect() first")
+
+    # -- session --------------------------------------------------------
+
+    def connect(self, mode: int = 0):
+        if self._connected:
+            return
+        self._connected = True
+
+    def close(self):
+        self._connected = False
+        self._programming = False
+        self._program_cleared = False
+
+    def identifier(self, id_value: int) -> str:
+        self._require_connected()
+        return self.SLAVE_ID
+
+    def getStatus(self):
+        self._require_connected()
+        status = _SlaveProperties(store_cal_req=False)
+        return status
+
+    def getCurrentProtectionStatus(self) -> dict[str, bool]:
+        return dict(self._protection)
+
+    # -- security -------------------------------------------------------
+
+    def cond_unlock(self, resources=None):
+        self._require_connected()
+        self._unlocked = True
+        for key in self._protection:
+            self._protection[key] = False
+
+    # -- memory access --------------------------------------------------
+
+    def setMta(self, address: int, ext: int = 0):
+        self._require_connected()
+        self._mta_address = address
+        self._mta_ext = ext
+
+    def shortUpload(self, length: int, address: int, ext: int = 0) -> bytes:
+        self._require_connected()
+        stored = self._memory.get(address, b"")
+        if len(stored) < length:
+            stored = stored + b"\x00" * (length - len(stored))
+        return stored[:length]
+
+    def download(self, data: bytes):
+        self._require_connected()
+        self._memory[self._mta_address] = data
+
+    # -- checksum -------------------------------------------------------
+
+    def buildChecksum(self, block_size: int):
+        self._require_connected()
+        raw = self._memory.get(self._mta_address, b"\x00" * block_size)[:block_size]
+        raw = raw.ljust(block_size, b"\x00")
+        csum = sum(raw) & 0xFFFFFFFF
+        return _SlaveProperties(checksumType=0x01, checksum=csum)
+
+    # -- DAQ ------------------------------------------------------------
+
+    def getDaqInfo(self):
+        self._require_connected()
+        return {
+            "processor": {"minDaq": 0, "maxDaq": max(self._daq_lists, 4)},
+            "resolution": {"timestampTicks": 1},
+            "channels": [],
+        }
+
+    def freeDaq(self):
+        self._require_connected()
+        self._daq_lists = 0
+        self._daq_ptr = None
+
+    def allocDaq(self, daq_count: int):
+        self._require_connected()
+        self._daq_lists = daq_count
+
+    def allocOdt(self, daq_list_number: int, odt_count: int):
+        self._require_connected()
+        if daq_list_number >= self._daq_lists:
+            raise RuntimeError(f"DAQ list {daq_list_number} not allocated")
+
+    def allocOdtEntry(self, daq_list_number: int, odt_number: int, odt_entries_count: int):
+        self._require_connected()
+
+    def setDaqPtr(self, daq_list: int, odt: int, entry: int):
+        self._require_connected()
+        self._daq_ptr = (daq_list, odt, entry)
+
+    def writeDaq(self, bit_offset: int, size: int, ext: int, address: int):
+        self._require_connected()
+        if self._daq_ptr is None:
+            raise XcpSequenceError("setDaqPtr must be called before writeDaq")
+
+    def setDaqListMode(self, mode: int, daq_list: int, event: int, prescaler: int, priority: int):
+        self._require_connected()
+
+    def startStopDaqList(self, mode: int, daq_list: int):
+        self._require_connected()
+
+    def startStopSynch(self, mode: int):
+        self._require_connected()
+
+    # -- programming ----------------------------------------------------
+
+    def programStart(self):
+        self._require_connected()
+        self._programming = True
+        self._program_cleared = False
+        return _SlaveProperties(
+            commModePgm=0, maxCtoPgm=self.MAX_CTO,
+            maxBsPgm=0, minStPgm=0, queueSizePgm=0,
+        )
+
+    def programClear(self, mode: int, clear_range: int):
+        self._require_connected()
+        if not self._programming:
+            raise XcpSequenceError("programStart must be called before programClear")
+        self._program_cleared = True
+        for addr in list(self._memory):
+            if addr < clear_range:
+                del self._memory[addr]
+
+    def program(self, data: bytes, block_length: int, last: bool = False):
+        self._require_connected()
+        if not self._programming:
+            raise XcpSequenceError("programStart must be called before program")
+        if not self._program_cleared:
+            raise XcpSequenceError("programClear must be called before program")
+        self._memory[self._mta_address] = data
+
+    def programReset(self, wait_for_optional_response: bool = True):
+        self._require_connected()
+        self._programming = False
+        self._program_cleared = False
+
+
+@pytest.fixture
+def stateful_master():
+    """Provide a fresh StatefulXcpMaster instance."""
+    return StatefulXcpMaster()
