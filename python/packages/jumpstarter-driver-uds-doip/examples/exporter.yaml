@@ -1,5 +1,8 @@
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
+metadata:
+  namespace: default
+  name: uds-doip-exporter
 endpoint: ""
 token: ""
 export:
