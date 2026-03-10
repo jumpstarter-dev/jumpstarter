@@ -1,6 +1,6 @@
 module github.com/jumpstarter-dev/jumpstarter-controller
 
-go 1.24.0
+go 1.25.0
 
 require (
 	filippo.io/keygen v0.0.0-20240718133620-7f162efbbd87
@@ -15,7 +15,7 @@ require (
 	github.com/onsi/gomega v1.36.2
 	github.com/zitadel/oidc/v3 v3.34.1
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
-	golang.org/x/sync v0.12.0
+	golang.org/x/sync v0.20.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250204164813-702378808489
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.5
