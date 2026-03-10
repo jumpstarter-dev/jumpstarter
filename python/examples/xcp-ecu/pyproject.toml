@@ -1,0 +1,22 @@
+[project]
+name = "jumpstarter-example-xcp-ecu"
+version = "0.1.0"
+description = "Representative XCP ECU measurement, calibration, and flash programming tests using jumpstarter with a stateful mock ECU"
+authors = [
+  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
+  { name = "Nick Cao", email = "ncao@redhat.com" },
+  { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
+  { name = "Vinicius Zein", email = "vzein@redhat.com" },
+]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+  "pytest>=8.3.2",
+  "jumpstarter",
+  "jumpstarter-driver-xcp",
+]
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"

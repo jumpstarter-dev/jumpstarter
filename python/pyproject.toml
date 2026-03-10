@@ -40,6 +40,7 @@ jumpstarter-driver-iscsi = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }
 jumpstarter-driver-vnc = { workspace = true }
+jumpstarter-driver-xcp = { workspace = true }
 jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-protocol = { workspace = true }

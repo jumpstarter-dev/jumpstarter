@@ -435,10 +435,278 @@ def test_custom_config_forwarded(mock_create):
 
 
 # =============================================================================
-# Integration tests with simulated XCP server
-# (These use the mock_xcp_server fixture from conftest.py but require
-# pyxcp to actually connect. They are currently skipped because pyxcp's
-# Master + ArgumentParser flow needs a full traitlets config setup that
-# is complex to wire in a test. The mock-based tests above provide
-# equivalent coverage through the gRPC boundary.)
+# Stateful integration tests
+#
+# These use a StatefulXcpMaster (conftest.py) that behaves like a real
+# XCP ECU: it tracks connection state, memory, MTA pointer, DAQ
+# allocation, and programming sequence.  Each test exercises a realistic
+# multi-step workflow through the full gRPC boundary.
 # =============================================================================
+
+
+def _stateful_client_ctx(stateful_master):
+    """Context manager helper: serve() an Xcp driver backed by the stateful mock."""
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    with patch(
+        "jumpstarter_driver_xcp.driver._create_xcp_master",
+        return_value=stateful_master,
+    ):
+        with serve(instance) as c:
+            yield c
+
+
+@pytest.fixture
+def stateful_client(stateful_master):
+    yield from _stateful_client_ctx(stateful_master)
+
+
+# -- session & identification --------------------------------------------------
+
+
+def test_stateful_connect_disconnect(stateful_client, stateful_master):
+    info = stateful_client.connect()
+    assert info.max_cto == 8
+    assert info.max_dto == 256
+    assert info.byte_order == "INTEL"
+    assert stateful_master._connected is True
+
+    stateful_client.disconnect()
+    assert stateful_master._connected is False
+
+
+def test_stateful_get_id_after_connect(stateful_client):
+    stateful_client.connect()
+    result = stateful_client.get_id(1)
+    assert result.identifier == "XCP_STATEFUL_SIM_v2.0"
+
+
+def test_stateful_get_status_shows_protection(stateful_client):
+    stateful_client.connect()
+    status = stateful_client.get_status()
+    assert status.resource_protection["pgm"] is True
+    assert status.resource_protection["calpag"] is True
+    assert status.resource_protection["daq"] is False
+
+
+# -- unlock flow ---------------------------------------------------------------
+
+
+def test_stateful_unlock_clears_protection(stateful_client):
+    stateful_client.connect()
+    result = stateful_client.unlock()
+    assert result["pgm"] is False
+    assert result["calpag"] is False
+    assert result["dbg"] is False
+
+
+# -- memory read / write round-trip -------------------------------------------
+
+
+def test_stateful_download_then_upload(stateful_client):
+    """Write data to an address and read it back — verifies memory state."""
+    stateful_client.connect()
+    stateful_client.download(0x1000, b"\x0C\x0A", 0)
+
+    data = stateful_client.upload(2, 0x1000, 0)
+    raw = bytes(data, "latin-1") if isinstance(data, str) else data
+    assert raw == b"\x0C\x0A"
+
+
+def test_stateful_upload_unwritten_address_returns_zeros(stateful_client):
+    stateful_client.connect()
+    data = stateful_client.upload(4, 0x9999, 0)
+    raw = bytes(data, "latin-1") if isinstance(data, str) else data
+    assert raw == b"\x00\x00\x00\x00"
+
+
+def test_stateful_overwrite_memory(stateful_client):
+    """Download twice to the same address — second write wins."""
+    stateful_client.connect()
+    stateful_client.download(0x2000, b"\x11\x22", 0)
+    stateful_client.download(0x2000, b"\x33\x44", 0)
+
+    data = stateful_client.upload(2, 0x2000, 0)
+    raw = bytes(data, "latin-1") if isinstance(data, str) else data
+    assert raw == b"\x33\x44"
+
+
+def test_stateful_multiple_addresses(stateful_client):
+    """Write to different addresses and verify each independently."""
+    stateful_client.connect()
+    stateful_client.download(0x1000, b"\x01", 0)
+    stateful_client.download(0x2000, b"\x02", 0)
+    stateful_client.download(0x3000, b"\x03", 0)
+
+    for addr, expected in [(0x1000, b"\x01"), (0x2000, b"\x02"), (0x3000, b"\x03")]:
+        data = stateful_client.upload(1, addr, 0)
+        raw = bytes(data, "latin-1") if isinstance(data, str) else data
+        assert raw == expected, f"Mismatch at 0x{addr:X}"
+
+
+# -- checksum ------------------------------------------------------------------
+
+
+def test_stateful_checksum_over_written_data(stateful_client):
+    stateful_client.connect()
+    stateful_client.download(0x4000, b"\x01\x02\x03\x04", 0)
+
+    stateful_client.set_mta(0x4000, 0)
+    result = stateful_client.build_checksum(4)
+    assert result.checksum_type == 1
+    assert result.checksum_value == 0x01 + 0x02 + 0x03 + 0x04
+
+
+# -- DAQ allocation workflow ---------------------------------------------------
+
+
+def test_stateful_daq_alloc_flow(stateful_client, stateful_master):
+    stateful_client.connect()
+
+    info = stateful_client.get_daq_info()
+    assert info.processor["maxDaq"] >= 4
+
+    stateful_client.free_daq()
+    assert stateful_master._daq_lists == 0
+
+    stateful_client.alloc_daq(3)
+    assert stateful_master._daq_lists == 3
+
+    stateful_client.alloc_odt(0, 2)
+    stateful_client.alloc_odt_entry(0, 0, 4)
+
+    stateful_client.set_daq_ptr(0, 0, 0)
+    assert stateful_master._daq_ptr == (0, 0, 0)
+
+    stateful_client.write_daq(0xFF, 4, 0, 0x1000)
+    stateful_client.set_daq_list_mode(0x10, 0, 1, 1, 0)
+    stateful_client.start_stop_daq_list(1, 0)
+    stateful_client.start_stop_synch(1)
+
+    stateful_client.start_stop_synch(0)
+    stateful_client.free_daq()
+    assert stateful_master._daq_lists == 0
+
+
+# -- programming sequence -----------------------------------------------------
+
+
+def test_stateful_full_programming_flow(stateful_client, stateful_master):
+    """Exercise the complete flash-programming lifecycle."""
+    stateful_client.connect()
+
+    # Pre-load memory that will be cleared
+    stateful_client.download(0x0000, b"\x7F" * 16, 0)
+
+    info = stateful_client.program_start()
+    assert info.max_cto_pgm == 8
+    assert stateful_master._programming is True
+
+    stateful_client.program_clear(0x10000)
+    assert stateful_master._program_cleared is True
+    # Memory below clear_range should be wiped
+    data = stateful_client.upload(4, 0x0000, 0)
+    raw = bytes(data, "latin-1") if isinstance(data, str) else data
+    assert raw == b"\x00\x00\x00\x00"
+
+    # Program new data
+    stateful_client.set_mta(0x0000, 0)
+    stateful_client.program(b"\x0D\x0A", block_length=2)
+
+    # Verify programmed data is in memory
+    data = stateful_client.upload(2, 0x0000, 0)
+    raw = bytes(data, "latin-1") if isinstance(data, str) else data
+    assert raw == b"\x0D\x0A"
+
+    stateful_client.program_reset()
+    assert stateful_master._programming is False
+
+    stateful_client.disconnect()
+    assert stateful_master._connected is False
+
+
+def test_stateful_program_clear_before_start_raises(stateful_master):
+    """programClear without programStart should fail."""
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    with patch(
+        "jumpstarter_driver_xcp.driver._create_xcp_master",
+        return_value=stateful_master,
+    ):
+        with serve(instance) as c:
+            c.connect()
+            with pytest.raises(DriverError, match="programStart must be called"):
+                c.program_clear(0x10000)
+
+
+def test_stateful_program_before_clear_raises(stateful_master):
+    """program without programClear should fail."""
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    with patch(
+        "jumpstarter_driver_xcp.driver._create_xcp_master",
+        return_value=stateful_master,
+    ):
+        with serve(instance) as c:
+            c.connect()
+            c.program_start()
+            with pytest.raises(DriverError, match="programClear must be called"):
+                c.program(b"\x00" * 8)
+
+
+# -- end-to-end calibration workflow ------------------------------------------
+
+
+def test_stateful_calibration_workflow(stateful_client):
+    """Simulate a typical calibration session: connect, unlock, read,
+    modify, write-back, verify, disconnect."""
+    stateful_client.connect()
+    stateful_client.unlock()
+
+    # Initial state: zeros
+    orig = stateful_client.upload(4, 0x5000, 0)
+    raw_orig = bytes(orig, "latin-1") if isinstance(orig, str) else orig
+    assert raw_orig == b"\x00\x00\x00\x00"
+
+    # Calibrate: write a new parameter value
+    stateful_client.download(0x5000, b"\x42\x00\x00\x00", 0)
+
+    # Read back and verify
+    modified = stateful_client.upload(4, 0x5000, 0)
+    raw_mod = bytes(modified, "latin-1") if isinstance(modified, str) else modified
+    assert raw_mod == b"\x42\x00\x00\x00"
+
+    # Checksum verification
+    stateful_client.set_mta(0x5000, 0)
+    csum = stateful_client.build_checksum(4)
+    assert csum.checksum_value == 0x42
+
+    stateful_client.disconnect()
+
+
+# -- connect-required enforcement ---------------------------------------------
+
+
+def test_stateful_operations_before_connect_raise(stateful_master):
+    """Methods called before connect() should fail."""
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    with patch(
+        "jumpstarter_driver_xcp.driver._create_xcp_master",
+        return_value=stateful_master,
+    ):
+        with serve(instance) as c:
+            with pytest.raises(DriverError, match="Not connected"):
+                c.get_id()
+
+
+def test_stateful_reconnect_after_disconnect(stateful_client, stateful_master):
+    """After disconnect, a new connect should succeed and reset state."""
+    stateful_client.connect()
+    stateful_client.download(0x7000, b"\x7F", 0)
+    stateful_client.disconnect()
+    assert stateful_master._connected is False
+
+    stateful_client.connect()
+    assert stateful_master._connected is True
+
+    # Memory persists across reconnect (simulates non-volatile storage)
+    data = stateful_client.upload(1, 0x7000, 0)
+    raw = bytes(data, "latin-1") if isinstance(data, str) else data
+    assert raw == b"\x7F"
