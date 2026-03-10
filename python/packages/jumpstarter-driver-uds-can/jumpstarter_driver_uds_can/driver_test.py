@@ -402,7 +402,11 @@ def test_uds_can_custom_config_forwarded(mock_bus_cls, mock_notifier_cls, mock_s
     )
 
     mock_bus_cls.assert_called_once_with(channel="can1", interface="pcan")
-    mock_uds_cls.assert_called_once_with(conn_mock, request_timeout=15.0)
+    call_args = mock_uds_cls.call_args
+    assert call_args[0][0] is conn_mock
+    config = call_args.kwargs["config"]
+    assert config["request_timeout"] == 15.0
+    assert "default" in config["data_identifiers"]
 
 
 # --- Integration tests with virtual CAN bus + MockUdsEcu ---
