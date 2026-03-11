@@ -80,6 +80,13 @@ wait_for_compat_exporter() {
 
 stop_compat_exporter() {
   # Kill the bash wrapper loop and any child jmp processes
+  if [ -f "$COMPAT_PIDS_FILE" ]; then
+    while IFS= read -r pid; do
+      if [ -n "$pid" ]; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done < "$COMPAT_PIDS_FILE"
+  fi
   pkill -9 -f "jmp run --exporter compat-old-exporter$" 2>/dev/null || true
   # Clear tracked PIDs since they're now dead
   echo "" > "$COMPAT_PIDS_FILE"
