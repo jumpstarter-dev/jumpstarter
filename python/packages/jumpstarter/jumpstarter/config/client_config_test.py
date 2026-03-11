@@ -1,7 +1,8 @@
 import os
 import tempfile
+from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import yaml
@@ -410,3 +411,35 @@ def test_client_config_delete_does_not_exist_raises():
         with pytest.raises(FileNotFoundError):
             ClientConfigV1Alpha1.delete("xyz")
         _get_path_mock.assert_called_once_with("xyz")
+
+
+@pytest.mark.asyncio
+async def test_create_lease_passes_exporter_name():
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+    mock_service = Mock()
+    mock_service.CreateLease = AsyncMock(return_value="lease")
+
+    with (
+        patch("jumpstarter.config.client.ClientConfigV1Alpha1.channel", AsyncMock(return_value=Mock())),
+        patch("jumpstarter.config.client.ClientService", return_value=mock_service),
+    ):
+        result = await config.create_lease(
+            selector=None,
+            exporter_name="laptop-test-exporter",
+            duration=timedelta(minutes=5),
+        )
+
+    assert result == "lease"
+    mock_service.CreateLease.assert_awaited_once_with(
+        selector=None,
+        exporter_name="laptop-test-exporter",
+        duration=timedelta(minutes=5),
+        begin_time=None,
+        lease_id=None,
+    )
