@@ -75,6 +75,20 @@ spec:
                   Can be omitted (nil) when both BeginTime and EndTime are provided,
                   in which case it's calculated as EndTime - BeginTime.
                 type: string
+              exporterRef:
+                description: Optionally pin this lease to a specific exporter name.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               endTime:
                 description: |-
                   Requested end time. If specified with BeginTime, Duration is calculated.

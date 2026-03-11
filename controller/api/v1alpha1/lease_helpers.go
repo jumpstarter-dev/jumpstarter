@@ -205,6 +205,12 @@ func LeaseFromProtobuf(
 			ClientRef: clientRef,
 			Duration:  duration,
 			Selector:  *selector,
+			ExporterRef: func() *corev1.LocalObjectReference {
+				if req.ExporterName == nil || *req.ExporterName == "" {
+					return nil
+				}
+				return &corev1.LocalObjectReference{Name: *req.ExporterName}
+			}(),
 			BeginTime: beginTime,
 			EndTime:   endTime,
 		},
@@ -232,6 +238,9 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		Selector:   metav1.FormatLabelSelector(&l.Spec.Selector),
 		Client:     ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
 		Conditions: conditions,
+	}
+	if l.Spec.ExporterRef != nil {
+		lease.ExporterName = ptr.To(l.Spec.ExporterRef.Name)
 	}
 	if l.Spec.Duration != nil {
 		lease.Duration = durationpb.New(l.Spec.Duration.Duration)
