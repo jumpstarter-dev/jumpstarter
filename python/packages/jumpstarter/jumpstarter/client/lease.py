@@ -45,7 +45,8 @@ logger = logging.getLogger(__name__)
 class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     channel: Channel
     duration: timedelta
-    selector: str
+    selector: str | None
+    requested_exporter_name: str | None = None
     portal: BlockingPortal
     namespace: str
     name: str | None = field(default=None)
@@ -76,6 +77,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             self.name = (
                 await self.svc.CreateLease(
                     selector=self.selector,
+                    exporter_name=self.requested_exporter_name,
                     duration=self.duration,
                     lease_id=self.name,
                 )

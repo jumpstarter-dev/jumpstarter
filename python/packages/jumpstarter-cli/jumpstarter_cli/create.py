@@ -6,7 +6,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 from jumpstarter_cli_common.opt import OutputType, opt_output_all
 from jumpstarter_cli_common.print import model_print
 
-from .common import opt_begin_time, opt_duration_partial, opt_selector
+from .common import opt_begin_time, opt_duration_partial, opt_exporter_name, opt_selector
 from .login import relogin_client
 
 
@@ -20,6 +20,7 @@ def create():
 @create.command(name="lease")
 @opt_config(exporter=False)
 @opt_selector
+@opt_exporter_name
 @opt_duration_partial(required=True)
 @opt_begin_time
 @click.option(
@@ -31,7 +32,13 @@ def create():
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
 def create_lease(
-    config, selector: str, duration: timedelta, begin_time: datetime | None, lease_id: str | None, output: OutputType
+    config,
+    selector: str | None,
+    exporter_name: str | None,
+    duration: timedelta,
+    begin_time: datetime | None,
+    lease_id: str | None,
+    output: OutputType,
 ):
     """
     Create a lease
@@ -64,6 +71,15 @@ def create_lease(
 
     """
 
-    lease = config.create_lease(selector=selector, duration=duration, begin_time=begin_time, lease_id=lease_id)
+    if not selector and not exporter_name:
+        raise click.UsageError("one of --selector/-l or --name/-n is required")
+
+    lease = config.create_lease(
+        selector=selector,
+        exporter_name=exporter_name,
+        duration=duration,
+        begin_time=begin_time,
+        lease_id=lease_id,
+    )
 
     model_print(lease, output)
