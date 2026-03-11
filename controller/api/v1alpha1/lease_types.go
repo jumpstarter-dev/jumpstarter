@@ -31,6 +31,8 @@ type LeaseSpec struct {
 	Duration *metav1.Duration `json:"duration,omitempty"`
 	// The selector for the exporter to be used
 	Selector metav1.LabelSelector `json:"selector"`
+	// Optionally pin this lease to a specific exporter name.
+	ExporterRef *corev1.LocalObjectReference `json:"exporterRef,omitempty"`
 	// The release flag requests the controller to end the lease now
 	Release bool `json:"release,omitempty"`
 	// Requested start time. If omitted, lease starts when exporter is acquired.
