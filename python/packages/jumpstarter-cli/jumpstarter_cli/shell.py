@@ -21,7 +21,7 @@ from jumpstarter.client.client import client_from_path
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import ConnectionError, ExporterOfflineError
 from jumpstarter.common.utils import launch_shell
-from jumpstarter.config.client import ClientConfigV1Alpha1, raise_expired_token_error
+from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 logger = logging.getLogger(__name__)

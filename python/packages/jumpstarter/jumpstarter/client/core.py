@@ -520,6 +520,10 @@ class AsyncDriverClient(
                         # Stream was cancelled, likely shutting down
                         self.logger.debug("Log stream cancelled")
                         break
+                    elif e.code() == StatusCode.UNIMPLEMENTED:
+                        # Old exporters don't support LogStream — stop retrying permanently
+                        self.logger.debug("Log stream not implemented (old exporter), skipping")
+                        break
                     else:
                         self.logger.debug("Log stream error: %s", e.code())
 
