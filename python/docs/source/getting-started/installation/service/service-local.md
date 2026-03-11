@@ -8,7 +8,6 @@ Before installing locally, ensure you have:
 
 - Docker or Podman installed (for kind)
 - `kubectl` installed and configured to access your cluster
-- [Helm](https://helm.sh/docs/intro/install/) (version 3.x or newer)
 - Administrator access to your cluster (required for CRD installation)
 
 ## Install with Jumpstarter CLI
@@ -56,7 +55,6 @@ Additional options for cluster creation:
 
 - Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
 - `--kind <PATH>`: Path to the kind binary to use for cluster management
-- `--helm <PATH>`: Path to the Helm binary to install the Jumpstarter service with
 - `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
 - `--kind-extra-args`: Pass additional arguments to kind cluster creation
 - `--skip-install`: Create the cluster without installing Jumpstarter
@@ -72,7 +70,6 @@ Additional options for cluster creation:
 
 - Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
 - `--minikube <PATH>`: Path to the minikube binary to use for cluster management
-- `--helm <PATH>`: Path to the Helm binary to install the Jumpstarter service with
 - `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
 - `--minikube-extra-args`: Pass additional arguments to minikube cluster creation
 - `--skip-install`: Create the cluster without installing Jumpstarter
@@ -211,61 +208,12 @@ $ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 ```
 ````
 
-### Install Local Jumpstarter with Helm
+### Install Local Jumpstarter with Operator
 
-For manual installation with Helm, use these commands:
-
-````{tab} kind
-```{code-block} console
-:substitutions:
-$ export IP="X.X.X.X" # Enter the IP address of your computer on the local network
-$ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
-$ export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
-$ export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
-$ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-    --create-namespace --namespace jumpstarter-lab \
-    --set global.baseDomain=${BASEDOMAIN} \
-    --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
-    --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
-    --set global.metrics.enabled=false \
-    --set jumpstarter-controller.grpc.nodeport.enabled=true \
-    --set jumpstarter-controller.grpc.mode=nodeport \
-    --version={{controller_version}}
-```
-````
-
-````{tab} minikube
-```{code-block} console
-:substitutions:
-$ export IP=$(minikube ip)
-$ export BASEDOMAIN="jumpstarter.${IP}.nip.io"
-$ export GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
-$ export GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
-$ helm upgrade jumpstarter --install oci://quay.io/jumpstarter-dev/helm/jumpstarter \
-    --create-namespace --namespace jumpstarter-lab \
-    --set global.baseDomain=${BASEDOMAIN} \
-    --set jumpstarter-controller.grpc.endpoint=${GRPC_ENDPOINT} \
-    --set jumpstarter-controller.grpc.routerEndpoint=${GRPC_ROUTER_ENDPOINT} \
-    --set global.metrics.enabled=false \
-    --set jumpstarter-controller.grpc.nodeport.enabled=true \
-    --set jumpstarter-controller.grpc.nodeport.port=8082 \
-    --set jumpstarter-controller.grpc.nodeport.routerPort=8083 \
-    --set jumpstarter-controller.grpc.mode=nodeport \
-    --version={{controller_version}}
-```
-````
+For manual installation after creating the local cluster, follow [Install with Operator](service-operator.md). Use a `baseDomain` and endpoint addresses appropriate for your local environment (for example, `nip.io` based hostnames), then apply your `Jumpstarter` CR.
 
 To check the status of the installation, run:
 
 ```{code-block} console
 $ kubectl get pods -n jumpstarter-lab --watch
-NAME                                    READY   STATUS      RESTARTS   AGE
-jumpstarter-controller-cc74d879-6b22b   1/1     Running     0          48s
-jumpstarter-secrets-w42z4               0/1     Completed   0          48s
-```
-
-To uninstall the Helm release, run:
-
-```{code-block} console
-$ helm uninstall jumpstarter --namespace jumpstarter-lab
 ```

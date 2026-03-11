@@ -4,10 +4,15 @@ Jumpstarter uses internally issued JWT tokens to authenticate clients and
 exporters by default. You can also configure Jumpstarter to use external OpenID
 Connect (OIDC) providers.
 
+When installing with the operator, authentication is configured directly on the
+`Jumpstarter` custom resource, under `spec.authentication`. 
+
+For operator installation context, see
+[Install with Operator](../installation/service/service-operator.md).
+
 To use OIDC with your Jumpstarter installation:
 
-1. Set the helm value `jumpstarter-controller.authenticationConfiguration` to a
-   valid `AuthenticationConfiguration` yaml configuration
+1. Set `spec.authentication.jwt` on your `Jumpstarter` resource
 2. Configure your OIDC provider to work with Jumpstarter
 3. Create users with appropriate OIDC usernames
 
@@ -22,22 +27,21 @@ Set up Keycloak for Jumpstarter authentication:
    - `Valid redirect URIs`: `http://localhost/callback`
    - Leave remaining fields as default
 
-2. Use this configuration for
-   `jumpstarter-controller.authenticationConfiguration` during installation:
+2. Configure `spec.authentication.jwt` on your `Jumpstarter` resource:
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: AuthenticationConfiguration
-jwt:
-- issuer:
-    url: https://<keycloak domain>/realms/<realm name>
-    certificateAuthority: <PEM encoded CA certificates>
-    audiences:
-    - jumpstarter-cli
-  claimMappings:
-    username:
-      claim: preferred_username
-      prefix: "keycloak:"
+spec:
+  authentication:
+    jwt:
+    - issuer:
+        url: https://<keycloak domain>/realms/<realm name>
+        certificateAuthority: <PEM encoded CA certificates>
+        audiences:
+        - jumpstarter-cli
+      claimMappings:
+        username:
+          claim: preferred_username
+          prefix: "keycloak:"
 ```
 
 Note, the HTTPS URL is mandatory, and you only need to include
@@ -107,7 +111,7 @@ $ kubectl -n dex create secret tls dex-tls \
     --key=pki/private/dex.dex.svc.cluster.local.key
 ```
 
-2. Install Dex with Helm using the following `values.yaml`:
+2. Install Dex using your preferred deployment method with the following equivalent configuration:
 
 ```yaml
 https:
@@ -161,31 +165,25 @@ $ kubectl create clusterrolebinding oidc-reviewer  \
     --group=system:unauthenticated
 ```
 
-Then install Dex:
+Then deploy Dex in the `dex` namespace with this configuration applied.
 
-```console
-$ helm repo add dex https://charts.dexidp.io
-$ helm install --namespace dex --wait -f values.yaml dex dex/dex
-```
-
-3. Configure Jumpstarter to trust Dex. Use this configuration for
-   `jumpstarter-controller.authenticationConfiguration` during installation:
+3. Configure Jumpstarter to trust Dex by setting `spec.authentication.jwt`:
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: AuthenticationConfiguration
-jwt:
-  - issuer:
-      url: https://dex.dex.svc.cluster.local:5556
-      audiences:
-      - jumpstarter-cli
-      audienceMatchPolicy: MatchAny
-      certificateAuthority: |
-        <content of pki/ca.crt>
-    claimMappings:
-      username:
-        claim: "name"
-        prefix: "dex:"
+spec:
+  authentication:
+    jwt:
+    - issuer:
+        url: https://dex.dex.svc.cluster.local:5556
+        audiences:
+        - jumpstarter-cli
+        audienceMatchPolicy: MatchAny
+        certificateAuthority: |
+          <content of pki/ca.crt>
+      claimMappings:
+        username:
+          claim: "name"
+          prefix: "dex:"
 ```
 
 4. Create clients and exporters with appropriate OIDC usernames. Prefix the full
@@ -225,9 +223,8 @@ $ jmp login --exporter <exporter alias> \
 
 ## Reference
 
-The reference section provides a complete example of an
-`AuthenticationConfiguration` resource with detailed comments. Use this as a
-template for creating your own configuration.
+The reference section provides a complete example of `spec.authentication.jwt`
+with detailed comments. Use this as a template for your `Jumpstarter` resource.
 
 Key components include:
 
@@ -237,62 +234,62 @@ Key components include:
 - User validation rules
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: AuthenticationConfiguration
-# JWT authenticators for OIDC-issued tokens
-jwt:
-- issuer:
-    # URL of the OIDC provider (must use https://)
-    url: https://example.com
-    # Optional: override URL for discovery information
-    discoveryURL: https://discovery.example.com/.well-known/openid-configuration
-    # Optional: PEM encoded CA certificates for validation
-    certificateAuthority: <PEM encoded CA certificates>
-    # List of acceptable token audiences
-    audiences:
-    - my-app
-    - my-other-app
-    # Required when multiple audiences are specified
-    audienceMatchPolicy: MatchAny
-  # rules applied to validate token claims to authenticate users.
-  claimValidationRules:
-    # Validate specific claim values
-  - claim: hd
-    requiredValue: example.com
-    # Alternative: use CEL expressions for complex validation
-  - expression: 'claims.hd == "example.com"'
-    message: the hd claim must be set to example.com
-  - expression: 'claims.exp - claims.nbf <= 86400'
-    message: total token lifetime must not exceed 24 hours
-  # Map OIDC claims to Jumpstarter user properties
-  claimMappings:
-    # Required: configure username mapping
-    username:
-      # JWT claim to use as username
-      claim: "sub"
-      # Prefix for username (required when claim is set)
-      prefix: ""
-      # Alternative: use CEL expression (mutually exclusive with claim+prefix)
-      # expression: 'claims.username + ":external-user"'
-    # Optional: configure groups mapping
-    groups:
-      claim: "sub"
-      prefix: ""
-      # Alternative: use CEL expression
-      # expression: 'claims.roles.split(",")'
-    # Optional: configure UID mapping
-    uid:
-      claim: 'sub'
-      # Alternative: use CEL expression
-      # expression: 'claims.sub'
-    # Optional: add extra attributes to UserInfo
-    extra:
-    - key: 'example.com/tenant'
-      valueExpression: 'claims.tenant'
-  # validation rules applied to the final user object.
-  userValidationRules:
-  - expression: "!user.username.startsWith('system:')"
-    message: 'username cannot used reserved system: prefix'
-  - expression: "user.groups.all(group, !group.startsWith('system:'))"
-    message: 'groups cannot used reserved system: prefix'
+spec:
+  authentication:
+    # JWT authenticators for OIDC-issued tokens
+    jwt:
+    - issuer:
+        # URL of the OIDC provider (must use https://)
+        url: https://example.com
+        # Optional: override URL for discovery information
+        discoveryURL: https://discovery.example.com/.well-known/openid-configuration
+        # Optional: PEM encoded CA certificates for validation
+        certificateAuthority: <PEM encoded CA certificates>
+        # List of acceptable token audiences
+        audiences:
+        - my-app
+        - my-other-app
+        # Required when multiple audiences are specified
+        audienceMatchPolicy: MatchAny
+      # rules applied to validate token claims to authenticate users.
+      claimValidationRules:
+        # Validate specific claim values
+      - claim: hd
+        requiredValue: example.com
+        # Alternative: use CEL expressions for complex validation
+      - expression: 'claims.hd == "example.com"'
+        message: the hd claim must be set to example.com
+      - expression: 'claims.exp - claims.nbf <= 86400'
+        message: total token lifetime must not exceed 24 hours
+      # Map OIDC claims to Jumpstarter user properties
+      claimMappings:
+        # Required: configure username mapping
+        username:
+          # JWT claim to use as username
+          claim: "sub"
+          # Prefix for username (required when claim is set)
+          prefix: ""
+          # Alternative: use CEL expression (mutually exclusive with claim+prefix)
+          # expression: 'claims.username + ":external-user"'
+        # Optional: configure groups mapping
+        groups:
+          claim: "sub"
+          prefix: ""
+          # Alternative: use CEL expression
+          # expression: 'claims.roles.split(",")'
+        # Optional: configure UID mapping
+        uid:
+          claim: 'sub'
+          # Alternative: use CEL expression
+          # expression: 'claims.sub'
+        # Optional: add extra attributes to UserInfo
+        extra:
+        - key: 'example.com/tenant'
+          valueExpression: 'claims.tenant'
+      # validation rules applied to the final user object.
+      userValidationRules:
+      - expression: "!user.username.startsWith('system:')"
+        message: 'username cannot used reserved system: prefix'
+      - expression: "user.groups.all(group, !group.startsWith('system:'))"
+        message: 'groups cannot used reserved system: prefix'
 ```

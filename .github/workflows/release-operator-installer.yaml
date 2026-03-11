@@ -1,0 +1,38 @@
+name: Release operator installer
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-operator-installer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: controller/deploy/operator/go.mod
+
+      - name: Build operator installer manifest
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          IMG="quay.io/jumpstarter-dev/jumpstarter-operator:${VERSION}"
+          make -C controller/deploy/operator build-installer IMG="${IMG}"
+          cp controller/deploy/operator/dist/install.yaml operator-installer.yaml
+
+      - name: Upload installer to release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "${RELEASE_TAG}" operator-installer.yaml --clobber

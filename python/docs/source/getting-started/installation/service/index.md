@@ -11,6 +11,7 @@ For most users, we recommend starting with a **local installation** to get famil
 
 service-local.md
 service-production.md
+service-operator.md
 ```
 
 ## Quick Start
@@ -18,3 +19,5 @@ service-production.md
 **New to Jumpstarter?** Start with the [Local Installation](service-local.md) guide to get up and running quickly on your development machine.
 
 **Ready for production?** See the [Production Deployment](service-production.md) guide for Kubernetes and OpenShift clusters with proper security, monitoring, and ingress configurations.
+
+**Installing with the Kubernetes operator?** Use [Install with Operator](service-operator.md) for `Jumpstarter` CR examples using Kubernetes Ingress or OpenShift Routes.
