@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
 
+
 def _run_shell_only(lease, config, command, path: str) -> int:
     """Run just the shell command without log streaming."""
     return launch_shell(
@@ -196,6 +197,7 @@ async def _monitor_token_expiry(config, lease, cancel_scope) -> None:
 
     warned_expiry = False
     warned_refresh_failed = False
+    warned_token_expired = False
     while not cancel_scope.cancel_called:
         try:
             # Re-read config.token each iteration since it may have been refreshed
@@ -210,7 +212,11 @@ async def _monitor_token_expiry(config, lease, cancel_scope) -> None:
                     click.echo(click.style(f"\n{recovery_msg}", fg="green"))
                     warned_expiry = False
                     warned_refresh_failed = False
-                elif not warned_refresh_failed:
+                    warned_token_expired = False
+                elif remaining <= 0 and not warned_token_expired:
+                    _warn_refresh_failed(remaining)
+                    warned_token_expired = True
+                elif remaining > 0 and not warned_refresh_failed:
                     _warn_refresh_failed(remaining)
                     warned_refresh_failed = True
 

@@ -375,3 +375,30 @@ class TestMonitorTokenExpiry:
         await _monitor_token_expiry(config, _make_lease(), cancel_scope)
 
         cancel_scope.cancel.assert_not_called()
+
+    @patch("jumpstarter_cli.shell.click")
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
+    async def test_warns_red_when_token_transitions_to_expired(
+        self, mock_remaining, mock_recovery, mock_sleep, mock_click
+    ):
+        """After a yellow 'approaching expiry' warning, a red 'expired' warning
+        must still appear when the token actually crosses zero."""
+        mock_remaining.side_effect = [60, -5, Exception("done")]
+        mock_recovery.return_value = None  # all recovery fails
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, _make_lease(), cancel_scope)
+
+        from jumpstarter_cli.shell import _warn_refresh_failed
+
+        warn_calls = mock_click.style.call_args_list
+        # Find the yellow warning (remaining > 0)
+        yellow_calls = [c for c in warn_calls if c[1].get("fg") == "yellow"]
+        # Find the red warning (remaining <= 0)
+
+        red_calls = [c for c in warn_calls if c[1].get("fg") == "red"]
+        assert len(yellow_calls) >= 1, "Expected yellow warning for near-expiry"
+        assert len(red_calls) >= 1, "Expected red warning for actual expiry"
