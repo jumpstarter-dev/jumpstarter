@@ -33,6 +33,7 @@ jumpstarter-driver-shell = { workspace = true }
 jumpstarter-driver-ssh = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-iscsi = { workspace = true }
+jumpstarter-driver-mitmproxy = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }
 jumpstarter-driver-vnc = { workspace = true }
