@@ -43,7 +43,7 @@ jobs:
             dockerfile: controller/deploy/operator/bundle.Dockerfile
             context: controller/deploy/operator
             generate_bundle: true
-          - image_name: quay.io/jumpstarter-dev/microshift/bootc
+          - image_name: jumpstarter-dev/microshift/bootc
             dockerfile: controller/deploy/microshift-bootc/Containerfile
             context: controller
             generate_installer: true
