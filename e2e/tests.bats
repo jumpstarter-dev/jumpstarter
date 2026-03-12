@@ -360,6 +360,9 @@ EOF
   jmp shell --client test-client-sa     --name test-exporter-sa     j power on
   jmp shell --client test-client-legacy --name test-exporter-legacy j power on
 
+  # Reusing the same exporter immediately can be flaky while it reconnects.
+  wait_for_exporter
+
   # --name and --selector together should work when they match.
   jmp shell --client test-client-oidc --name test-exporter-oidc --selector example.com/board=oidc j power on
 }
