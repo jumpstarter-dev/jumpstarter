@@ -13,7 +13,7 @@ from anyio.streams.stapled import StapledObjectStream
 from serial import serial_for_url
 from serial_asyncio import open_serial_connection
 
-from jumpstarter.driver import Driver, exportstream
+from jumpstarter.driver import Driver, export, exportstream
 
 try:
     import termios
@@ -127,6 +127,24 @@ class PySerial(Driver):
             self.logger.info("Disabled HUPCL on %s", self.url)
         except (AttributeError, OSError, TypeError):
             self.logger.warning("Failed to disable HUPCL on %s", self.url)
+
+    @export
+    def set_dtr(self, value: bool):
+        """Set the DTR control signal."""
+        s = serial_for_url(self.url, baudrate=self.baudrate)
+        try:
+            s.dtr = value
+        finally:
+            s.close()
+
+    @export
+    def set_rts(self, value: bool):
+        """Set the RTS control signal."""
+        s = serial_for_url(self.url, baudrate=self.baudrate)
+        try:
+            s.rts = value
+        finally:
+            s.close()
 
     @exportstream
     @asynccontextmanager
