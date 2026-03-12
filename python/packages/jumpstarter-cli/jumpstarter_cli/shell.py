@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from contextlib import ExitStack
 from datetime import timedelta
@@ -22,6 +23,7 @@ from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import ConnectionError, ExporterOfflineError
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
@@ -305,7 +307,16 @@ async def _shell_with_signal_handling(  # noqa: C901
 @opt_acquisition_timeout()
 # end client specific
 @handle_exceptions_with_reauthentication(relogin_client)
-def shell(config, command: tuple[str, ...], lease_name, selector, exporter_name, duration, exporter_logs, acquisition_timeout):
+def shell(
+    config,
+    command: tuple[str, ...],
+    lease_name,
+    selector,
+    exporter_name,
+    duration,
+    exporter_logs,
+    acquisition_timeout,
+):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
 
@@ -320,7 +331,8 @@ def shell(config, command: tuple[str, ...], lease_name, selector, exporter_name,
 
     match config:
         case ClientConfigV1Alpha1():
-            if not selector and not exporter_name:
+            has_existing_lease = bool(lease_name or os.environ.get(JMP_LEASE))
+            if not selector and not exporter_name and not has_existing_lease:
                 raise click.UsageError("one of --selector/-l or --name/-n is required")
             exit_code = anyio.run(
                 _shell_with_signal_handling,

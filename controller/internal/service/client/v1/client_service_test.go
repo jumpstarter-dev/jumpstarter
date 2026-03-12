@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"testing"
 
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
@@ -64,4 +65,24 @@ func TestValidateLeaseTarget(t *testing.T) {
 			t.Fatalf("unexpected message: %q", st.Message())
 		}
 	})
+}
+
+func TestCreateLeaseRejectsNilRequest(t *testing.T) {
+	svc := &ClientService{}
+
+	_, err := svc.CreateLease(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected nil request to fail")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected grpc status error, got: %T", err)
+	}
+	if st.Code() != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got: %v", st.Code())
+	}
+	if st.Message() != "request is required" {
+		t.Fatalf("unexpected message: %q", st.Message())
+	}
 }

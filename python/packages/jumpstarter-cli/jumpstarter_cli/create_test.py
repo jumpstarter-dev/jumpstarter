@@ -1,8 +1,8 @@
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
-import pytest
 import click
+import pytest
 
 from jumpstarter_cli.create import create_lease
 

@@ -177,6 +177,10 @@ func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesReque
 }
 
 func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseRequest) (*cpb.Lease, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+
 	if err := validateLeaseTarget(req.Lease); err != nil {
 		return nil, err
 	}
