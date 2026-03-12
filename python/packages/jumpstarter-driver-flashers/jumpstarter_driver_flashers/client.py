@@ -514,7 +514,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 self.logger.info("Powering off target")
                 self.power.off()
             else:
-                self.logger.info("Leaving target powered on (--no-power-off)")
+                self.logger.info("Leaving target powered on")
 
     def _setup_flasher_ssl(self, console, manifest, cacert_file: str | None) -> str | None:
         """Setup SSL configuration for the flasher.
@@ -1519,12 +1519,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             help="Custom URL to download FLS binary from (overrides --fls-version)",
         )
         @click.option(
-            "--no-power-off",
+            "--power-off/--no-power-off",
             "power_off",
-            is_flag=True,
-            flag_value=False,
             default=True,
-            help="Leave device powered on after flashing",
+            help="Power off device after flashing (default)",
         )
         @debug_console_option
         def flash(
