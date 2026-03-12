@@ -222,8 +222,8 @@ class ClientConfigV1Alpha1(BaseSettings):
     @_handle_connection_error
     async def create_lease(
         self,
-        selector: str | None,
         duration: timedelta,
+        selector: str | None = None,
         exporter_name: str | None = None,
         begin_time: datetime | None = None,
         lease_id: str | None = None,

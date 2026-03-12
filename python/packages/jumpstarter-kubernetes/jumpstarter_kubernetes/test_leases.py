@@ -115,7 +115,7 @@ status:
     )
 
 
-def test_lease_from_dict_without_match_labels():
+def test_lease_from_dict_without_match_labels_name_targeted():
     lease = V1Alpha1Lease.from_dict(
         {
             "apiVersion": "jumpstarter.dev/v1alpha1",
@@ -133,6 +133,7 @@ def test_lease_from_dict_without_match_labels():
                 "clientRef": {"name": "test-client"},
                 "duration": "1h",
                 "selector": {},
+                "exporterRef": {"name": "test-exporter"},
             },
             "status": {
                 "ended": False,
