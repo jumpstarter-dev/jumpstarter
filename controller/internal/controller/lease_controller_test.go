@@ -78,16 +78,9 @@ var _ = Describe("Lease Controller", func() {
 			lease.Spec.Selector.MatchLabels = nil
 
 			ctx := context.Background()
-			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
-			_ = reconcileLease(ctx, lease)
-
-			updatedLease := getLease(ctx, lease.Name)
-			Expect(updatedLease.Status.ExporterRef).To(BeNil())
-
-			Expect(meta.IsStatusConditionTrue(
-				updatedLease.Status.Conditions,
-				string(jumpstarterdevv1alpha1.LeaseConditionTypeInvalid),
-			)).To(BeTrue())
+			err := k8sClient.Create(ctx, lease)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("one of selector or exporterRef.name is required"))
 		})
 	})
 

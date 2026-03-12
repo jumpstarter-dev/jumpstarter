@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// +kubebuilder:validation:XValidation:rule="((has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && self.exporterRef.name != '')",message="one of selector or exporterRef.name is required"
+// +kubebuilder:validation:XValidation:rule="((has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name) > 0)",message="one of selector or exporterRef.name is required"
 // LeaseSpec defines the desired state of Lease
 type LeaseSpec struct {
 	// The client that is requesting the lease
