@@ -192,7 +192,8 @@ Check CR status and workloads:
 
 ```{code-block} console
 $ kubectl get jumpstarter -n jumpstarter-lab
-$ kubectl get deploy,svc,ingress,route -n jumpstarter-lab
+$ kubectl get deploy,svc,ingress -n jumpstarter-lab   # Kubernetes
+$ kubectl get deploy,svc,route -n jumpstarter-lab     # OpenShift/OKD
 ```
 
 ```{note}

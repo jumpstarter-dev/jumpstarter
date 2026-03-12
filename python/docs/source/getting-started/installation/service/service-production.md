@@ -46,11 +46,11 @@ Choose one of these TLS termination approaches:
 gRPC over HTTP/1.1 is not supported. Ensure your ingress controller supports HTTP/2 and is properly configured for gRPC traffic.
 ```
 
-## Install with Operator
+## Installation
 
-If you prefer operator-managed installation and reconciliation, see [Install with Operator](service-operator.md). That guide includes:
+To install Jumpstarter, see [Install with Operator](service-operator.md). That guide includes:
 
-- Installing the operator from the release asset (`operator-installer.yaml`)
+- Installing the operator from the release asset (`operator-installer.yaml`), OperatorHub and OLM.
 - Creating a `Jumpstarter` custom resource for vanilla Kubernetes with Ingress
 - Creating a `Jumpstarter` custom resource for OpenShift with Routes
 - Notes on integrating external OAuth/OIDC and cert-manager setups

@@ -111,7 +111,7 @@ $ kubectl -n dex create secret tls dex-tls \
     --key=pki/private/dex.dex.svc.cluster.local.key
 ```
 
-2. Install Dex using your preferred deployment method with the following equivalent configuration:
+2. Install Dex with Helm using the following `values.yaml`:
 
 ```yaml
 https:
@@ -165,9 +165,15 @@ $ kubectl create clusterrolebinding oidc-reviewer  \
     --group=system:unauthenticated
 ```
 
-Then deploy Dex in the `dex` namespace with this configuration applied.
+Then install Dex:
 
-3. Configure Jumpstarter to trust Dex by setting `spec.authentication.jwt`:
+```console
+$ helm repo add dex https://charts.dexidp.io
+$ helm install --namespace dex --wait -f values.yaml dex dex/dex
+```
+
+3. Configure Jumpstarter to trust Dex. Use this configuration for
+   `jumpstarter-controller.authenticationConfiguration` during installation:
 
 ```yaml
 spec:
@@ -289,7 +295,7 @@ spec:
       # validation rules applied to the final user object.
       userValidationRules:
       - expression: "!user.username.startsWith('system:')"
-        message: 'username cannot used reserved system: prefix'
+        message: 'username cannot use reserved system: prefix'
       - expression: "user.groups.all(group, !group.startsWith('system:'))"
-        message: 'groups cannot used reserved system: prefix'
+        message: 'groups cannot use reserved system: prefix'
 ```
