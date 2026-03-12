@@ -113,3 +113,41 @@ status:
     name: test-exporter
 """
     )
+
+
+def test_lease_from_dict_without_match_labels():
+    lease = V1Alpha1Lease.from_dict(
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {
+                "creationTimestamp": "2021-10-01T00:00:00Z",
+                "generation": 1,
+                "managedFields": [],
+                "name": "test-lease",
+                "namespace": "default",
+                "resourceVersion": "1",
+                "uid": "7a25eb81-6443-47ec-a62f-50165bffede8",
+            },
+            "spec": {
+                "clientRef": {"name": "test-client"},
+                "duration": "1h",
+                "selector": {},
+            },
+            "status": {
+                "ended": False,
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2021-10-01T00:00:00Z",
+                        "message": "",
+                        "observedGeneration": 1,
+                        "reason": "",
+                        "status": "True",
+                        "type": "Active",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert lease.spec.selector.match_labels == {}

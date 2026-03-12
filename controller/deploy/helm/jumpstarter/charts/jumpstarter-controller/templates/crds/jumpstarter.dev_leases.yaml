@@ -154,8 +154,8 @@ spec:
             - message: one of selector or exporterRef.name is required
               rule: ((has(self.selector.matchLabels) && size(self.selector.matchLabels)
                 > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions)
-                > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && self.exporterRef.name
-                != '')
+                > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name)
+                > 0)
           status:
             description: LeaseStatus defines the observed state of Lease
             properties:

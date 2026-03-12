@@ -80,6 +80,7 @@ var _ = Describe("ControllerService Integration", func() {
 				},
 				Spec: jumpstarterdevv1alpha1.LeaseSpec{
 					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
 					Release:   false,
 				},
 			}
@@ -125,6 +126,7 @@ var _ = Describe("ControllerService Integration", func() {
 				},
 				Spec: jumpstarterdevv1alpha1.LeaseSpec{
 					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
 					Release:   true, // Already marked for release
 				},
 			}
@@ -162,6 +164,7 @@ var _ = Describe("ControllerService Integration", func() {
 				},
 				Spec: jumpstarterdevv1alpha1.LeaseSpec{
 					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
 					Release:   false,
 				},
 			}
@@ -199,6 +202,7 @@ var _ = Describe("ControllerService Integration", func() {
 				},
 				Spec: jumpstarterdevv1alpha1.LeaseSpec{
 					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
@@ -236,6 +240,7 @@ var _ = Describe("ControllerService Integration", func() {
 				},
 				Spec: jumpstarterdevv1alpha1.LeaseSpec{
 					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, lease)).To(Succeed())

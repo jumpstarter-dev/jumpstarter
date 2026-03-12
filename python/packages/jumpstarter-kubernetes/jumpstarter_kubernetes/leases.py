@@ -37,6 +37,7 @@ class V1Alpha1Lease(JsonBaseModel):
 
     @staticmethod
     def from_dict(dict: dict):
+        selector_data = dict["spec"].get("selector", {})
         return V1Alpha1Lease(
             api_version=dict["apiVersion"],
             kind=dict["kind"],
@@ -73,7 +74,7 @@ class V1Alpha1Lease(JsonBaseModel):
                 if "clientRef" in dict["spec"]
                 else None,
                 duration=dict["spec"]["duration"] if "duration" in dict["spec"] else None,
-                selector=V1Alpha1LeaseSelector(match_labels=dict["spec"]["selector"]["matchLabels"]),
+                selector=V1Alpha1LeaseSelector(match_labels=selector_data.get("matchLabels", {})),
             ),
         )
 
