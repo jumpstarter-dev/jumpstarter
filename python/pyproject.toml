@@ -10,6 +10,7 @@ jumpstarter-cli-driver = { workspace = true }
 jumpstarter-driver-ble = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
+jumpstarter-driver-doip = { workspace = true }
 jumpstarter-driver-corellium = { workspace = true }
 jumpstarter-driver-dutlink = { workspace = true }
 jumpstarter-driver-energenie = { workspace = true }
@@ -32,6 +33,9 @@ jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
 jumpstarter-driver-ssh = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
+jumpstarter-driver-uds = { workspace = true }
+jumpstarter-driver-uds-can = { workspace = true }
+jumpstarter-driver-uds-doip = { workspace = true }
 jumpstarter-driver-iscsi = { workspace = true }
 jumpstarter-driver-ustreamer = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }

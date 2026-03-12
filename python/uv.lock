@@ -15,6 +15,7 @@ members = [
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-corellium",
+    "jumpstarter-driver-doip",
     "jumpstarter-driver-dutlink",
     "jumpstarter-driver-energenie",
     "jumpstarter-driver-flashers",
@@ -38,6 +39,9 @@ members = [
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-tmt",
     "jumpstarter-driver-uboot",
+    "jumpstarter-driver-uds",
+    "jumpstarter-driver-uds-can",
+    "jumpstarter-driver-uds-doip",
     "jumpstarter-driver-ustreamer",
     "jumpstarter-driver-vnc",
     "jumpstarter-driver-yepkit",
@@ -743,6 +747,15 @@ wheels = [
 ]
 
 [[package]]
+name = "doipclient"
+version = "1.1.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/39/28684a9cdc9c2c5e836a802a4457685c777d89ce9d47ff1261d578957f45/doipclient-1.1.8.tar.gz", hash = "sha256:5728b46ca150baa48bfc63d7783371d0425771c99aeaeb822784bb48b440b0fc", size = 25044, upload-time = "2025-12-17T06:44:23.96Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/54/1336b3b1176d2cccbeccbe1935867d8cebfc4a3e7271d31089195875bcc4/doipclient-1.1.8-py3-none-any.whl", hash = "sha256:cbc7d538f0e1c9ce040753d9a8066710c646c27aacd679d1da8bc66687ff435e", size = 20211, upload-time = "2025-12-17T06:44:22.846Z" },
+]
+
+[[package]]
 name = "durationpy"
 version = "0.10"
 source = { registry = "https://pypi.org/simple" }
@@ -1212,6 +1225,7 @@ dependencies = [
     { name = "jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-corellium" },
+    { name = "jumpstarter-driver-doip" },
     { name = "jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod" },
@@ -1230,6 +1244,9 @@ dependencies = [
     { name = "jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot" },
+    { name = "jumpstarter-driver-uds" },
+    { name = "jumpstarter-driver-uds-can" },
+    { name = "jumpstarter-driver-uds-doip" },
     { name = "jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-yepkit" },
@@ -1250,6 +1267,7 @@ requires-dist = [
     { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-corellium", editable = "packages/jumpstarter-driver-corellium" },
+    { name = "jumpstarter-driver-doip", editable = "packages/jumpstarter-driver-doip" },
     { name = "jumpstarter-driver-dutlink", editable = "packages/jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-flashers", editable = "packages/jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
@@ -1268,6 +1286,9 @@ requires-dist = [
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-tmt", editable = "packages/jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
+    { name = "jumpstarter-driver-uds", editable = "packages/jumpstarter-driver-uds" },
+    { name = "jumpstarter-driver-uds-can", editable = "packages/jumpstarter-driver-uds-can" },
+    { name = "jumpstarter-driver-uds-doip", editable = "packages/jumpstarter-driver-uds-doip" },
     { name = "jumpstarter-driver-ustreamer", editable = "packages/jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-vnc", editable = "packages/jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-yepkit", editable = "packages/jumpstarter-driver-yepkit" },
@@ -1535,6 +1556,32 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests-mock" },
     { name = "trio", specifier = ">=0.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-doip"
+source = { editable = "packages/jumpstarter-driver-doip" }
+dependencies = [
+    { name = "doipclient" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "doipclient", specifier = ">=1.1.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
 [[package]]
@@ -2311,6 +2358,96 @@ dev = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-uds"
+source = { editable = "packages/jumpstarter-driver-uds" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "udsoncan" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "udsoncan", specifier = ">=1.21" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-uds-can"
+source = { editable = "packages/jumpstarter-driver-uds-can" }
+dependencies = [
+    { name = "can-isotp" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-can" },
+    { name = "jumpstarter-driver-uds" },
+    { name = "python-can" },
+    { name = "udsoncan" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "can-isotp", specifier = ">=2.0.6" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
+    { name = "jumpstarter-driver-uds", editable = "packages/jumpstarter-driver-uds" },
+    { name = "python-can", specifier = ">=4.5.0" },
+    { name = "udsoncan", specifier = ">=1.21" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-uds-doip"
+source = { editable = "packages/jumpstarter-driver-uds-doip" }
+dependencies = [
+    { name = "doipclient" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-uds" },
+    { name = "udsoncan" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "doipclient", specifier = ">=1.1.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-uds", editable = "packages/jumpstarter-driver-uds" },
+    { name = "udsoncan", specifier = ">=1.21" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
 name = "jumpstarter-driver-ustreamer"
 source = { editable = "packages/jumpstarter-driver-ustreamer" }
 dependencies = [
@@ -2404,10 +2541,16 @@ version = "0.1.0"
 source = { virtual = "examples/automotive" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-uds-doip" },
+    { name = "pytest" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-uds-doip", editable = "packages/jumpstarter-driver-uds-doip" },
+    { name = "pytest", specifier = ">=8.3.2" },
+]
 
 [[package]]
 name = "jumpstarter-example-soc-pytest"
@@ -4401,6 +4544,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/89/36/1f6aed427f77cf3a72e8b3bb7174e9e387e506b553da6d81b721a1fe0715/typos-1.33.1-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:2cedb8e13c3cb9e2755061297d464962c66561f0b30bb12432d9d05497483be8", size = 7554311, upload-time = "2025-06-02T17:58:30.965Z" },
     { url = "https://files.pythonhosted.org/packages/6f/91/913e49bbd440dfcaf2ca994ae5e23d672255be9c54f930e1a3c4353836c4/typos-1.33.1-py3-none-win32.whl", hash = "sha256:88717b9849faa363534b79fa20526d1e9ada506501c9f0f4ab52fdbc9085fa8a", size = 2755043, upload-time = "2025-06-02T17:58:32.87Z" },
     { url = "https://files.pythonhosted.org/packages/48/69/edc11139256a27b9917fa0c9efba5dbe9403f7cfd8822349725aab1b397a/typos-1.33.1-py3-none-win_amd64.whl", hash = "sha256:05dc54433a296acde0bfb729dda122ff86723568f2d38f8a9de8708b3d4866dc", size = 2904956, upload-time = "2025-06-02T17:58:35.033Z" },
+]
+
+[[package]]
+name = "udsoncan"
+version = "1.25.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/b5/50bdde3a075808038236f629382eeb3c29504546bdc41556035d7422e734/udsoncan-1.25.2.tar.gz", hash = "sha256:ae9e3c240c7d143106611d17a9a32ac6b8e0cec210520e7ca6c912c85f293774", size = 95063, upload-time = "2026-02-13T02:11:28.355Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/b7/3ce55ec6ad06ded79d93ba09f217a8f7d4b277abc79158bb1d1f7eb66666/udsoncan-1.25.2-py3-none-any.whl", hash = "sha256:96b34b643558ab0dfbb56947c15d6d8c5106aa8c8739553dad7c896170deb684", size = 119927, upload-time = "2026-02-13T02:11:26.907Z" },
 ]
 
 [[package]]

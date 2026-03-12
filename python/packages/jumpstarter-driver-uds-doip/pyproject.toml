@@ -1,0 +1,46 @@
+[project]
+name = "jumpstarter-driver-uds-doip"
+dynamic = ["version", "urls"]
+description = "UDS (Unified Diagnostic Services) over DoIP driver for Jumpstarter"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Vinicius Zein", email = "vtzein@gmail.com" },
+]
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter",
+    "jumpstarter-driver-uds",
+    "doipclient>=1.1.0",
+    "udsoncan>=1.21",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+UdsDoip = "jumpstarter_driver_uds_doip.driver:UdsDoip"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-cov>=5.0.0",
+]
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../' }
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_uds_doip"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
