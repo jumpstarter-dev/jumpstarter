@@ -158,6 +158,7 @@ Options:
                                  github releases
   --fls-binary-url TEXT          Custom URL to download FLS binary from
                                  (overrides --fls-version)
+  --power-off / --no-power-off   Power off device after flashing (default)
   --console-debug                Enable console debug mode
   --help                         Show this message and exit.
 ```

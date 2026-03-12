@@ -62,6 +62,9 @@ $$ j power on
 $$ j serial start-console
 ```
 
+By default the device is powered off after flashing. Use ``--no-power-off`` to
+leave it on.
+
 ### Config parameters
 
 #### RideSXDriver
