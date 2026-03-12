@@ -392,8 +392,6 @@ class TestMonitorTokenExpiry:
 
         await _monitor_token_expiry(config, _make_lease(), cancel_scope)
 
-        from jumpstarter_cli.shell import _warn_refresh_failed
-
         warn_calls = mock_click.style.call_args_list
         # Find the yellow warning (remaining > 0)
         yellow_calls = [c for c in warn_calls if c[1].get("fg") == "yellow"]
