@@ -517,7 +517,7 @@ class TestAttemptTokenRecovery:
     async def test_returns_message_on_oidc_success(self, mock_refresh, mock_disk):
         mock_refresh.return_value = True
 
-        result = await _attempt_token_recovery(Mock(), Mock(), 60)
+        result = await _attempt_token_recovery(Mock(), Mock())
 
         assert result == "Token refreshed automatically."
         mock_disk.assert_not_awaited()  # should not fall through
@@ -528,7 +528,7 @@ class TestAttemptTokenRecovery:
         mock_refresh.return_value = False
         mock_disk.return_value = True
 
-        result = await _attempt_token_recovery(Mock(), Mock(), 60)
+        result = await _attempt_token_recovery(Mock(), Mock())
 
         assert result == "Token reloaded from login."
 
@@ -538,7 +538,7 @@ class TestAttemptTokenRecovery:
         mock_refresh.return_value = False
         mock_disk.return_value = False
 
-        result = await _attempt_token_recovery(Mock(), Mock(), 60)
+        result = await _attempt_token_recovery(Mock(), Mock())
 
         assert result is None
 
@@ -701,8 +701,6 @@ class TestMonitorTokenExpiry:
         cancel_scope = Mock(cancel_called=False)
 
         await _monitor_token_expiry(config, _make_lease(), cancel_scope)
-
-        from jumpstarter_cli.shell import _warn_refresh_failed
 
         warn_calls = mock_click.style.call_args_list
         # Find the yellow warning (remaining > 0)
