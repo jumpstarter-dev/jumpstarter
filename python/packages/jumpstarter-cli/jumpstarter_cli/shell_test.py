@@ -646,8 +646,11 @@ class TestMonitorTokenExpiry:
             return call_count > 1
 
         config = _make_config()
-        cancel_scope = Mock()
-        type(cancel_scope).cancel_called = property(lambda self: check_cancelled())
+
+        class _CancelScope(Mock):
+            cancel_called = property(lambda self: check_cancelled())
+
+        cancel_scope = _CancelScope()
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
