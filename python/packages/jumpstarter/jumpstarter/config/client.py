@@ -106,6 +106,12 @@ class ClientConfigV1Alpha1Lease(BaseSettings):
         description="Timeout in seconds for lease acquisition",
         ge=5,  # Must be at least 5 seconds (polling interval)
     )
+    dial_timeout: float = Field(
+        default=30.0,
+        description="Timeout in seconds for Dial retry loop when exporter not ready",
+        gt=0,
+        exclude=True,  # Internal field, not serialized to config files
+    )
 
 
 class ClientConfigV1Alpha1(BaseSettings):
@@ -133,7 +139,7 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     leases: ClientConfigV1Alpha1Lease = Field(default_factory=ClientConfigV1Alpha1Lease)
 
-    async def channel(self):
+    async def channel(self) -> grpc.aio.Channel:
         if self.endpoint is None or self.token is None:
             raise ConfigurationError("endpoint or token not set in client config")
 
@@ -173,12 +179,14 @@ class ClientConfigV1Alpha1(BaseSettings):
         filter: str | None = None,
         include_leases: bool = False,
         include_online: bool = False,
+        include_status: bool = False,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         exporters_response = await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
 
-        # Set the include_online flag for display purposes
+        # Set the include flags for display purposes
         exporters_response.include_online = include_online
+        exporters_response.include_status = include_status
 
         if not include_leases:
             return exporters_response
@@ -298,6 +306,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
                 acquisition_timeout=acquisition_timeout_seconds,
+                dial_timeout=self.leases.dial_timeout,
             ) as lease:
                 yield lease
 
@@ -355,6 +364,11 @@ class ClientConfigV1Alpha1(BaseSettings):
             config.path = Path(path)
             config.path.parent.mkdir(parents=True, exist_ok=True)
         payload = config.model_dump(mode="json", exclude={"path", "alias"}, exclude_none=True)
+        # Backward compatibility: exclude 'leases' section when it only has default values
+        # so that old clients (v0.7.x) that don't recognize this field can still parse the config
+        default_leases = ClientConfigV1Alpha1Lease().model_dump(mode="json", exclude_none=True)
+        if payload.get("leases") == default_leases:
+            payload.pop("leases", None)
         temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
         try:
             os.fchmod(temp_fd, 0o600)
@@ -379,12 +393,17 @@ class ClientConfigV1Alpha1(BaseSettings):
     @classmethod
     def dump_yaml(cls, config: Self) -> str:
         """Return YAML suitable for display"""
+        payload = config.model_dump(
+            mode="json",
+            exclude={"path", "alias", "refresh_token"},
+            exclude_none=True,
+        )
+        # Backward compatibility: exclude 'leases' section when it only has default values
+        default_leases = ClientConfigV1Alpha1Lease().model_dump(mode="json", exclude_none=True)
+        if payload.get("leases") == default_leases:
+            payload.pop("leases", None)
         return yaml.safe_dump(
-            config.model_dump(
-                mode="json",
-                exclude={"path", "alias", "refresh_token"},
-                exclude_none=True,
-            ),
+            payload,
             sort_keys=False,
         )
 

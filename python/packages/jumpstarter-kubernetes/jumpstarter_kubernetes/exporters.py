@@ -27,6 +27,8 @@ class V1Alpha1ExporterStatus(JsonBaseModel):
     credential: SerializeV1ObjectReference
     devices: list[V1Alpha1ExporterDevice]
     endpoint: str
+    exporter_status: str | None = Field(alias="exporterStatus", default=None)
+    status_message: str | None = Field(alias="statusMessage", default=None)
 
 
 class V1Alpha1Exporter(JsonBaseModel):
@@ -56,6 +58,8 @@ class V1Alpha1Exporter(JsonBaseModel):
                 devices=[V1Alpha1ExporterDevice(labels=d["labels"], uuid=d["uuid"]) for d in dict["status"]["devices"]]
                 if "devices" in dict["status"]
                 else [],
+                exporter_status=dict["status"].get("exporterStatus"),
+                status_message=dict["status"].get("statusMessage"),
             ),
         )
 
@@ -63,17 +67,20 @@ class V1Alpha1Exporter(JsonBaseModel):
     def rich_add_columns(cls, table, devices: bool = False):
         if devices:
             table.add_column("NAME", no_wrap=True)
+            table.add_column("STATUS")
             table.add_column("ENDPOINT")
             table.add_column("AGE")
             table.add_column("LABELS")
             table.add_column("UUID")
         else:
             table.add_column("NAME", no_wrap=True)
+            table.add_column("STATUS")
             table.add_column("ENDPOINT")
             table.add_column("DEVICES")
             table.add_column("AGE")
 
     def rich_add_rows(self, table, devices: bool = False):
+        status = self.status.exporter_status if self.status else "Unknown"
         if devices:
             if self.status is not None:
                 for d in self.status.devices:
@@ -83,6 +90,7 @@ class V1Alpha1Exporter(JsonBaseModel):
                             labels.append(f"{label}:{str(d.labels[label])}")
                     table.add_row(
                         self.metadata.name,
+                        status or "Unknown",
                         self.status.endpoint,
                         time_since(self.metadata.creation_timestamp),
                         ",".join(labels),
@@ -92,6 +100,7 @@ class V1Alpha1Exporter(JsonBaseModel):
         else:
             table.add_row(
                 self.metadata.name,
+                status or "Unknown",
                 self.status.endpoint,
                 str(len(self.status.devices) if self.status and self.status.devices else 0),
                 time_since(self.metadata.creation_timestamp),
