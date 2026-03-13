@@ -102,6 +102,7 @@ message Lease {
     (google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}
   ];
   repeated jumpstarter.v1.Condition conditions = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional string exporter_name = 12 [(google.api.field_behavior) = IMMUTABLE];
 }
 
 message GetExporterRequest {

@@ -313,5 +313,23 @@ var _ = Describe("LeaseFromProtobuf", func() {
 			Expect(lease).NotTo(BeNil())
 			Expect(lease.Labels).To(BeEmpty()) // nil or empty map is fine
 		})
+
+		It("should keep requested exporter name in spec exporterRef", func() {
+			exporterName := "device-1"
+			pbLease := &cpb.Lease{
+				Selector:     "",
+				Duration:     durationpb.New(time.Hour),
+				ExporterName: &exporterName,
+			}
+			key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+			clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+			lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease).NotTo(BeNil())
+			Expect(lease.Spec.ExporterRef).NotTo(BeNil())
+			Expect(lease.Spec.ExporterRef.Name).To(Equal(exporterName))
+		})
 	})
 })

@@ -353,6 +353,20 @@ EOF
   jmp shell --client test-client-oidc-provisioning --selector example.com/board=oidc j power on
 }
 
+@test "can lease and connect to exporters by name" {
+  wait_for_exporter
+
+  jmp shell --client test-client-oidc   --name test-exporter-oidc   j power on
+  jmp shell --client test-client-sa     --name test-exporter-sa     j power on
+  jmp shell --client test-client-legacy --name test-exporter-legacy j power on
+
+  # Reusing the same exporter immediately can be flaky while it reconnects.
+  wait_for_exporter
+
+  # --name and --selector together should work when they match.
+  jmp shell --client test-client-oidc --name test-exporter-oidc --selector example.com/board=oidc j power on
+}
+
 @test "can get crds with admin cli" {
   jmp admin get client --namespace "${JS_NAMESPACE}"
   jmp admin get exporter --namespace "${JS_NAMESPACE}"

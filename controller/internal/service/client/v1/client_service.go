@@ -25,6 +25,8 @@ import (
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/auth"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -175,6 +177,14 @@ func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesReque
 }
 
 func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseRequest) (*cpb.Lease, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+
+	if err := validateLeaseTarget(req.Lease); err != nil {
+		return nil, err
+	}
+
 	namespace, err := utils.ParseNamespaceIdentifier(req.Parent)
 	if err != nil {
 		return nil, err
@@ -210,6 +220,20 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 	}
 
 	return jlease.ToProtobuf(), nil
+}
+
+func validateLeaseTarget(lease *cpb.Lease) error {
+	if lease == nil {
+		return status.Error(codes.InvalidArgument, "lease is required")
+	}
+
+	hasSelector := lease.Selector != ""
+	hasExporterName := lease.ExporterName != nil && *lease.ExporterName != ""
+	if !hasSelector && !hasExporterName {
+		return status.Error(codes.InvalidArgument, "one of selector or exporter_name is required")
+	}
+
+	return nil
 }
 
 func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseRequest) (*cpb.Lease, error) {

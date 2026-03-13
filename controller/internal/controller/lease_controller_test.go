@@ -78,16 +78,68 @@ var _ = Describe("Lease Controller", func() {
 			lease.Spec.Selector.MatchLabels = nil
 
 			ctx := context.Background()
+			err := k8sClient.Create(ctx, lease)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("one of selector or exporterRef.name is required"))
+		})
+	})
+
+	When("trying to lease with a requested exporter and empty selector", func() {
+		It("should acquire the requested exporter", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Selector.MatchLabels = nil
+			lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: testExporter1DutA.Name}
+
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter1DutA.Name))
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			)).To(BeTrue())
+		})
+	})
+
+	When("trying to lease with a missing requested exporter", func() {
+		It("should stay pending with ExporterNotFound reason", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Selector.MatchLabels = nil
+			lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: "does-not-exist"}
+
+			ctx := context.Background()
 			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 			_ = reconcileLease(ctx, lease)
 
 			updatedLease := getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("ExporterNotFound"))
+		})
+	})
 
-			Expect(meta.IsStatusConditionTrue(
+	When("trying to lease with requested exporter that does not match selector", func() {
+		It("should fail with SelectorMismatch reason", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Selector.MatchLabels["dut"] = "b"
+			lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: testExporter1DutA.Name}
+
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+			condition := meta.FindStatusCondition(
 				updatedLease.Status.Conditions,
-				string(jumpstarterdevv1alpha1.LeaseConditionTypeInvalid),
-			)).To(BeTrue())
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("SelectorMismatch"))
 		})
 	})
 

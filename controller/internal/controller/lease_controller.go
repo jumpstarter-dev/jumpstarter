@@ -25,6 +25,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -214,18 +215,49 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		selector, err := lease.GetExporterSelector()
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to get exporter selector: %w", err)
-		} else if selector.Empty() {
+		} else if selector.Empty() && lease.Spec.ExporterRef == nil {
 			lease.SetStatusInvalid("InvalidSelector", "The selector for the lease is empty, a selector is required")
 			return nil
 		}
 
-		// List all Exporter matching selector
-		matchingExporters, err := r.ListMatchingExporters(ctx, lease, selector)
-		if err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
+		var matchingExporters []jumpstarterdevv1alpha1.Exporter
+		if lease.Spec.ExporterRef != nil {
+			var exporter jumpstarterdevv1alpha1.Exporter
+			if err := r.Get(ctx, types.NamespacedName{
+				Namespace: lease.Namespace,
+				Name:      lease.Spec.ExporterRef.Name,
+			}, &exporter); err != nil {
+				if k8serrors.IsNotFound(err) {
+					lease.SetStatusPending(
+						"ExporterNotFound",
+						"Requested exporter %s was not found",
+						lease.Spec.ExporterRef.Name,
+					)
+					result.RequeueAfter = time.Second
+					return nil
+				}
+				return fmt.Errorf("reconcileStatusExporterRef: failed to get requested exporter: %w", err)
+			}
+			if !selector.Empty() && !selector.Matches(labels.Set(exporter.Labels)) {
+				lease.SetStatusUnsatisfiable(
+					"SelectorMismatch",
+					"Requested exporter %s does not match selector %s",
+					exporter.Name,
+					metav1.FormatLabelSelector(&lease.Spec.Selector),
+				)
+				return nil
+			}
+			matchingExporters = []jumpstarterdevv1alpha1.Exporter{exporter}
+		} else {
+			// List all exporters matching selector
+			listed, err := r.ListMatchingExporters(ctx, lease, selector)
+			if err != nil {
+				return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
+			}
+			matchingExporters = listed.Items
 		}
 
-		approvedExporters, err := r.attachMatchingPolicies(ctx, lease, matchingExporters.Items)
+		approvedExporters, err := r.attachMatchingPolicies(ctx, lease, matchingExporters)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to handle policy approval: %w", err)
 		}
@@ -234,7 +266,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			lease.SetStatusUnsatisfiable(
 				"NoAccess",
 				"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
-				len(matchingExporters.Items),
+				len(matchingExporters),
 			)
 			return nil
 		}
