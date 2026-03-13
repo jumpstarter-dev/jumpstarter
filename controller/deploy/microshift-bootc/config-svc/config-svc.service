@@ -1,0 +1,21 @@
+[Unit]
+Description=Jumpstarter Configuration Web UI
+Documentation=https://github.com/jumpstarter-dev/jumpstarter-controller
+After=network-online.target
+Wants=network-online.target
+Before=getty@.service systemd-user-sessions.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/config-svc
+Restart=on-failure
+RestartSec=5
+Environment="PORT=8880"
+
+# Security and resource limits
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=config-svc
+
+[Install]
+WantedBy=multi-user.target

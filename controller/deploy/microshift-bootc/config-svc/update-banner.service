@@ -1,0 +1,19 @@
+[Unit]
+Description=Update Jumpstarter Login Banner
+Documentation=https://github.com/jumpstarter-dev/jumpstarter-controller
+After=network-online.target
+Wants=network-online.target
+Before=getty@.service getty.target systemd-user-sessions.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update-banner.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=update-banner
+
+[Install]
+WantedBy=multi-user.target
+

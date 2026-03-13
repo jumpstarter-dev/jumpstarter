@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jumpstarter Configuration</title>
+    <link href="https://jumpstarter.dev/_static/favicon.png" rel="shortcut icon">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="banner">
+            <div class="banner-text">Jumpstarter Controller Community Edition • Powered by MicroShift</div>
+            <div class="logos">
+                <a href="https://jumpstarter.dev/" target="_blank" rel="noopener noreferrer" class="logo-link" title="Jumpstarter - Remote device management and testing">
+                    <img src="https://jumpstarter.dev/main/_static/logo-light-theme.svg" alt="Jumpstarter" class="jumpstarter-logo" />
+                </a>
+                <a href="https://microshift.io/" target="_blank" rel="noopener noreferrer" class="logo-link" title="MicroShift - Optimized OpenShift for the device edge">
+                    <img src="https://microshift.io/images/microshift_logo_white.png" alt="MicroShift" class="microshift-logo" />
+                </a>
+            </div>
+        </div>
+        
+        <nav class="nav-bar">
+            <a href="#configuration" class="nav-link">Configuration</a>
+            <a href="#change-password" class="nav-link">Change Password</a>
+            <a href="#system" class="nav-link">System</a>
+            <a href="#microshift" class="nav-link">MicroShift</a>
+        </nav>
+        
+        <div class="content-area">
+            {% for msg in messages %}
+            <div class="message {{ msg.type }}">{{ msg.text }}</div>
+            {% endfor %}
+            
+            <div class="section" id="configuration">
+                <h2>Jumpstarter Deployment Configuration</h2>
+                <div id="operator-status-container"></div>
+                <form method="POST" action="/configure-jumpstarter" id="jumpstarter-form">
+                    <div class="form-group">
+                        <label for="baseDomain">Base Domain</label>
+                        <input type="text" id="baseDomain" name="baseDomain" value="{{ jumpstarter_config.base_domain }}" required>
+                        <div class="hint">The base domain for Jumpstarter routes</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="image">Controller Image</label>
+                        <input type="text" id="image" name="image" value="{{ jumpstarter_config.image }}" required>
+                        <div class="hint">The Jumpstarter controller container image to use</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="imagePullPolicy">Image Pull Policy</label>
+                        <select id="imagePullPolicy" name="imagePullPolicy" required>
+                            <option value="IfNotPresent" {% if jumpstarter_config.image_pull_policy == 'IfNotPresent' %}selected{% endif %}>IfNotPresent</option>
+                            <option value="Always" {% if jumpstarter_config.image_pull_policy == 'Always' %}selected{% endif %}>Always</option>
+                            <option value="Never" {% if jumpstarter_config.image_pull_policy == 'Never' %}selected{% endif %}>Never</option>
+                        </select>
+                        <div class="hint">When to pull the container image</div>
+                    </div>
+                    <button type="submit" id="apply-config-btn">Apply Configuration</button>
+                </form>
+            </div>
+        
+        <div class="section" id="change-password">
+            <h2>Change Root Password</h2>
+            <form id="main-password-change-form">
+                <div id="main-password-messages-container"></div>
+                <div class="form-group">
+                    <label for="mainNewPassword">New Password (Optional)</label>
+                    <input type="password" id="mainNewPassword" name="newPassword" minlength="8">
+                    <div class="hint">Leave empty to only update SSH keys. Minimum 8 characters if provided.</div>
+                </div>
+                <div class="form-group">
+                    <label for="mainConfirmPassword">Confirm Password (Optional)</label>
+                    <input type="password" id="mainConfirmPassword" name="confirmPassword" minlength="8">
+                    <div class="hint">Re-enter your new password (required if password is provided)</div>
+                </div>
+                <div class="form-group">
+                    <label for="mainSshKeys">SSH Authorized Keys (Optional)</label>
+                    <textarea id="mainSshKeys" name="sshKeys" rows="6">{{ ssh_keys }}</textarea>
+                    <div class="hint">One SSH public key per line. Leave empty to clear existing keys.</div>
+                </div>
+                <button type="submit" id="main-password-submit-btn">Change Password</button>
+            </form>
+        </div>
+        
+        <div class="section" id="system">
+            <h2>BootC Operations</h2>
+            <div id="bootc-operations-container">
+                <div class="form-group">
+                    <label for="bootcSwitchImage">Switch to Image (Optional)</label>
+                    <input type="text" id="bootcSwitchImage" name="bootcSwitchImage" placeholder="quay.io/jumpstarter-dev/microshift/bootc:latest">
+                    <div class="hint">Container image reference to switch to (e.g., quay.io/jumpstarter-dev/microshift/bootc:latest)</div>
+                </div>
+                <div id="bootc-messages-container"></div>
+                <button type="button" id="bootc-upgrade-btn" style="margin-right: 10px;">Check for Upgrades</button>
+                <button type="button" id="bootc-upgrade-apply-btn" style="margin-right: 10px;">Apply Upgrade</button>
+                <button type="button" id="bootc-switch-btn">Switch Image</button>
+            </div>
+            
+            <h2 style="margin-top: 40px;">System Information</h2>
+            <div id="system-stats-container">
+                <div class="loading" style="padding: 40px; text-align: center;">Loading system statistics...</div>
+            </div>
+            
+            <h2 style="margin-top: 40px;">BootC Status</h2>
+            <div id="bootc-status-container">
+                <div class="loading" style="padding: 40px; text-align: center;">Loading BootC status...</div>
+            </div>
+            
+            <h2 style="margin-top: 40px;">Kernel Log</h2>
+            <div id="kernel-log-container">
+                <div class="loading" style="padding: 40px; text-align: center;">Loading kernel log...</div>
+            </div>
+        </div>
+        
+        <div class="section" id="microshift">
+            <div class="microshift-section">
+                <h2>Kubeconfig</h2>
+                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">
+                    Download the MicroShift kubeconfig file to access the Kubernetes cluster from your local machine.
+                </p>
+                <a href="/kubeconfig" class="download-btn">Download Kubeconfig</a>
+            </div>
+            
+            <div class="microshift-section">
+                <h2>Routes</h2>
+                <div id="route-error-container"></div>
+                
+                <div class="table-wrapper">
+                    <table id="routes-table">
+                        <thead>
+                            <tr>
+                                <th>Namespace</th>
+                                <th>Name</th>
+                                <th>Host</th>
+                                <th>Service</th>
+                                <th>Port</th>
+                                <th>TLS</th>
+                                <th>Admitted</th>
+                                <th>Age</th>
+                            </tr>
+                        </thead>
+                        <tbody id="routes-body">
+                            <tr>
+                                <td colspan="8" class="loading">Loading routes...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="microshift-section">
+                <h2>Pod Status</h2>
+                <div id="error-container"></div>
+                
+                <div class="table-wrapper">
+                    <table id="pods-table">
+                        <thead>
+                            <tr>
+                                <th>Namespace</th>
+                                <th>Name</th>
+                                <th>Ready</th>
+                                <th>Status</th>
+                                <th>Restarts</th>
+                                <th>Age</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pods-body">
+                            <tr>
+                                <td colspan="7" class="loading">Loading pods...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        </div>
+    </div>
+    
+    <script>
+        // Function to show only the active section
+        function showSection(sectionId) {
+            // Clear all message and error containers when switching tabs
+            const messageContainers = [
+                '#main-password-messages-container',
+                '#bootc-messages-container',
+                '#configuration .messages-container',
+                '#error-container',
+                '#route-error-container'
+            ];
+            messageContainers.forEach(selector => {
+                const container = document.querySelector(selector);
+                if (container) {
+                    container.innerHTML = '';
+                }
+            });
+            
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Show the target section
+            const targetSection = document.querySelector(sectionId);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+            }
+            
+            // Update active nav link
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            const activeLink = document.querySelector(`.nav-link[href="${sectionId}"]`);
+            if (activeLink) {
+                activeLink.classList.add('active');
+            }
+            
+            // Update URL hash
+            window.location.hash = sectionId;
+        }
+        
+        // Handle navigation clicks
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                showSection(this.getAttribute('href'));
+            });
+        });
+        
+        // Note: Initial section will be set at the end after all functions are defined
+        
+        function checkOperatorStatus() {
+            fetch('/api/operator-status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusContainer = document.getElementById('operator-status-container');
+                    const form = document.getElementById('jumpstarter-form');
+                    const submitBtn = document.getElementById('apply-config-btn');
+                    const baseDomainInput = document.getElementById('baseDomain');
+                    const imageInput = document.getElementById('image');
+                    
+                    if (data.ready) {
+                        // Operator is ready - enable form
+                        statusContainer.innerHTML = '';
+                        baseDomainInput.disabled = false;
+                        imageInput.disabled = false;
+                        submitBtn.disabled = false;
+                        form.style.opacity = '1';
+                    } else {
+                        // Operator not ready - disable form and show status
+                        statusContainer.innerHTML = '<div class="info" style="background: #fff3cd; border: 1px solid #ffc107; margin-bottom: 15px;"><strong>⏳ ' + data.message + '</strong><br><span style="font-size: 13px;">The configuration form will be available once the operator is ready. Checking status every 5 seconds...</span></div>';
+                        baseDomainInput.disabled = true;
+                        imageInput.disabled = true;
+                        submitBtn.disabled = true;
+                        form.style.opacity = '0.6';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking operator status:', error);
+                });
+        }
+        
+        // Check immediately on page load
+        checkOperatorStatus();
+        
+        // Check every 5 seconds
+        setInterval(checkOperatorStatus, 5000);
+        
+        // Handle jumpstarter form submission via API
+        const jumpstarterForm = document.getElementById('jumpstarter-form');
+        if (jumpstarterForm) {
+            jumpstarterForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(this);
+                const data = {
+                    baseDomain: formData.get('baseDomain'),
+                    image: formData.get('image'),
+                    imagePullPolicy: formData.get('imagePullPolicy')
+                };
+                
+                const submitBtn = document.getElementById('apply-config-btn');
+                const originalText = submitBtn.textContent;
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Applying...';
+                
+                // Find or create messages container
+                let messagesContainer = document.querySelector('#configuration .messages-container');
+                if (!messagesContainer) {
+                    messagesContainer = document.createElement('div');
+                    messagesContainer.className = 'messages-container';
+                    messagesContainer.style.marginBottom = '15px';
+                    jumpstarterForm.parentNode.insertBefore(messagesContainer, jumpstarterForm);
+                }
+                
+                fetch('/api/configure-jumpstarter', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(result => {
+                    // Clear previous messages
+                    messagesContainer.innerHTML = '';
+                    
+                    // Display messages
+                    result.messages.forEach(msg => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `message ${msg.type}`;
+                        messageDiv.textContent = msg.text;
+                        messagesContainer.appendChild(messageDiv);
+                    });
+                    
+                    // If successful, update form values
+                    if (result.success && result.config) {
+                        document.getElementById('baseDomain').value = result.config.base_domain;
+                        document.getElementById('image').value = result.config.image;
+                        document.getElementById('imagePullPolicy').value = result.config.image_pull_policy;
+                    }
+                    
+                    // Scroll to messages
+                    messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                })
+                .catch(error => {
+                    messagesContainer.innerHTML = '<div class="message error">Failed to apply configuration: ' + error.message + '</div>';
+                })
+                .finally(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalText;
+                });
+            });
+        }
+        
+        // Handle password change form submission via API
+        const mainPasswordForm = document.getElementById('main-password-change-form');
+        if (mainPasswordForm) {
+            mainPasswordForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const data = {
+                    newPassword: document.getElementById('mainNewPassword').value,
+                    confirmPassword: document.getElementById('mainConfirmPassword').value,
+                    sshKeys: document.getElementById('mainSshKeys').value
+                };
+                
+                const submitBtn = document.getElementById('main-password-submit-btn');
+                const messagesContainer = document.getElementById('main-password-messages-container');
+                const originalText = submitBtn.textContent;
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Processing...';
+                
+                // Clear previous messages
+                messagesContainer.innerHTML = '';
+                
+                fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(result => {
+                    // Display messages
+                    result.messages.forEach(msg => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `message ${msg.type}`;
+                        messageDiv.textContent = msg.text;
+                        messagesContainer.appendChild(messageDiv);
+                    });
+                    
+                    // Update SSH keys textarea if they were updated
+                    if (result.ssh_updated && result.ssh_keys !== undefined) {
+                        document.getElementById('mainSshKeys').value = result.ssh_keys;
+                    }
+                    
+                    // Clear password fields if password was successfully updated
+                    if (result.password_updated) {
+                        document.getElementById('mainNewPassword').value = '';
+                        document.getElementById('mainConfirmPassword').value = '';
+                    }
+                    
+                    // Scroll to messages
+                    messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                })
+                .catch(error => {
+                    messagesContainer.innerHTML = '<div class="message error">Failed to update: ' + error.message + '</div>';
+                })
+                .finally(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalText;
+                });
+            });
+        }
+        
+        function loadSystemStats() {
+            const container = document.getElementById('system-stats-container');
+            if (!container) {
+                console.error('system-stats-container not found');
+                return;
+            }
+            
+            fetch('/api/system-stats')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = '<div class="error">' + data.error + '</div>';
+                        return;
+                    }
+                    
+                    const diskColor = data.disk.percent > 80 ? '#f44336' : '#ffc107';
+                    const memoryColor = data.memory.percent > 80 ? '#f44336' : '#4caf50';
+                    const cpuColor = data.cpu.usage > 80 ? '#f44336' : '#2196f3';
+                    const networkInfo = data.network.interfaces.map(iface => iface.name + ': ' + iface.ip).join('<br>');
+                    
+                    // Build info boxes
+                    let infoBoxes = '<div class="info"><strong>💾 Disk Usage</strong><br><div style="margin-top: 10px;">Root: ' + data.disk.used + ' / ' + data.disk.total + ' (' + data.disk.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + diskColor + '; width: ' + data.disk.percent + '%; height: 100%;"></div></div>Available: ' + data.disk.available + '</div></div>';
+                    
+                    // Add LVM PV info if available
+                    if (data.lvm) {
+                        const lvmColor = data.lvm.percent > 80 ? '#f44336' : '#2196f3';
+                        infoBoxes += '<div class="info"><strong>💿 LVM Physical Volume</strong><br><div style="margin-top: 10px;">PV: ' + data.lvm.pv_device + '<br>VG: ' + data.lvm.vg_name + '<br>Used: ' + data.lvm.used + ' / ' + data.lvm.total + ' (' + data.lvm.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + lvmColor + '; width: ' + data.lvm.percent + '%; height: 100%;"></div></div>Free: ' + data.lvm.free + '</div></div>';
+                    }
+                    
+                    infoBoxes += '<div class="info"><strong>🧠 Memory</strong><br><div style="margin-top: 10px;">Used: ' + data.memory.used + ' / ' + data.memory.total + ' (' + data.memory.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + memoryColor + '; width: ' + data.memory.percent + '%; height: 100%;"></div></div>Available: ' + data.memory.available + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>⚙️ CPU</strong><br><div style="margin-top: 10px;">Cores: ' + data.cpu.cores + '<br>Usage: ' + data.cpu.usage + '%<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + cpuColor + '; width: ' + data.cpu.usage + '%; height: 100%;"></div></div></div></div>';
+                    infoBoxes += '<div class="info"><strong>🖥️ System</strong><br><div style="margin-top: 10px;">Kernel: ' + data.system.kernel + '<br>Uptime: ' + data.system.uptime + '<br>Hostname: ' + data.system.hostname + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>🌐 Network</strong><br><div style="margin-top: 10px;">' + networkInfo + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>📊 Load Average</strong><br><div style="margin-top: 10px;">1 min: ' + data.system.load_1 + '<br>5 min: ' + data.system.load_5 + '<br>15 min: ' + data.system.load_15 + '</div></div>';
+                    
+                    container.innerHTML = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">' + infoBoxes + '</div>';
+                })
+                .catch(error => {
+                    console.error('Error fetching system stats:', error);
+                    if (container) {
+                        container.innerHTML = '<div class="error">Failed to fetch system statistics: ' + error.message + '</div>';
+                    }
+                });
+        }
+        
+        function loadKernelLog() {
+            const container = document.getElementById('kernel-log-container');
+            if (!container) {
+                console.error('kernel-log-container not found');
+                return;
+            }
+            
+            fetch('/api/dmesg')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = '<div class="error">' + data.error + '</div>';
+                        return;
+                    }
+                    
+                    if (!data.log) {
+                        container.innerHTML = '<div class="error">No log data received</div>';
+                        return;
+                    }
+                    
+                    // Escape HTML and format the log
+                    const logLines = data.log.split('\n').map(line => {
+                        // Escape HTML
+                        const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        // Highlight error/warning lines
+                        if (line.toLowerCase().includes('error') || line.toLowerCase().includes('fail')) {
+                            return '<span style="color: #f44336;">' + escaped + '</span>';
+                        } else if (line.toLowerCase().includes('warn')) {
+                            return '<span style="color: #ff9800;">' + escaped + '</span>';
+                        }
+                        return escaped;
+                    }).join('<br>');
+                    
+                    const lineCount = data.line_count || logLines.split('<br>').length;
+                    container.innerHTML = '<div style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; font-family: \'Consolas\', \'Monaco\', \'Courier New\', monospace; font-size: 12px; max-height: 600px; overflow-y: auto; line-height: 1.5;"><div style="margin-bottom: 10px; color: #888; font-size: 11px;">Showing ' + lineCount + ' lines (last 10,000 if more)</div><pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">' + logLines + '</pre></div>';
+                })
+                .catch(error => {
+                    console.error('Error fetching kernel log:', error);
+                    if (container) {
+                        container.innerHTML = '<div class="error">Failed to fetch kernel log: ' + error.message + '</div>';
+                    }
+                });
+        }
+        
+        function loadBootcStatus() {
+            const container = document.getElementById('bootc-status-container');
+            if (!container) {
+                console.error('bootc-status-container not found');
+                return;
+            }
+            
+            fetch('/api/bootc-status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        container.innerHTML = '<div class="error">' + data.error + '</div>';
+                        return;
+                    }
+                    
+                    let html = '<div class="info">';
+                    if (data.status) {
+                        html += '<strong>📦 BootC Status</strong><br><div style="margin-top: 10px;">';
+                        html += '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">' + 
+                                data.status.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                        html += '</div>';
+                    }
+                    if (data.upgrade_check) {
+                        html += '<strong>🔄 Upgrade Check</strong><br><div style="margin-top: 10px;">';
+                        html += '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">' + 
+                                data.upgrade_check.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                    container.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error fetching bootc status:', error);
+                    if (container) {
+                        container.innerHTML = '<div class="error">Failed to fetch BootC status: ' + error.message + '</div>';
+                    }
+                });
+        }
+        
+        // BootC operation handlers
+        document.addEventListener('DOMContentLoaded', function() {
+            const upgradeCheckBtn = document.getElementById('bootc-upgrade-btn');
+            const upgradeApplyBtn = document.getElementById('bootc-upgrade-apply-btn');
+            const switchBtn = document.getElementById('bootc-switch-btn');
+            const messagesContainer = document.getElementById('bootc-messages-container');
+            
+            if (upgradeCheckBtn) {
+                upgradeCheckBtn.addEventListener('click', function() {
+                    const originalText = upgradeCheckBtn.textContent;
+                    upgradeCheckBtn.disabled = true;
+                    upgradeCheckBtn.textContent = 'Checking...';
+                    messagesContainer.innerHTML = '';
+                    
+                    fetch('/api/bootc-upgrade-check', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'same-origin'
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            messagesContainer.innerHTML = '<div class="message success">Upgrade check completed. Status updated.</div>';
+                            loadBootcStatus(); // Refresh status
+                        } else {
+                            messagesContainer.innerHTML = '<div class="message error">' + (result.error || 'Failed to check for upgrades') + '</div>';
+                        }
+                    })
+                    .catch(error => {
+                        messagesContainer.innerHTML = '<div class="message error">Error: ' + error.message + '</div>';
+                    })
+                    .finally(() => {
+                        upgradeCheckBtn.disabled = false;
+                        upgradeCheckBtn.textContent = originalText;
+                    });
+                });
+            }
+            
+            if (upgradeApplyBtn) {
+                upgradeApplyBtn.addEventListener('click', function() {
+                    if (!confirm('Are you sure you want to apply the upgrade? This will download and install the new image.')) {
+                        return;
+                    }
+                    
+                    const originalText = upgradeApplyBtn.textContent;
+                    upgradeApplyBtn.disabled = true;
+                    upgradeApplyBtn.textContent = 'Upgrading...';
+                    messagesContainer.innerHTML = '<div class="message info">Upgrade in progress. This may take several minutes...</div>';
+                    
+                    fetch('/api/bootc-upgrade', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'same-origin'
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            messagesContainer.innerHTML = '<div class="message success">Upgrade completed successfully! ' + 
+                                (result.message || '') + '</div>';
+                            loadBootcStatus(); // Refresh status
+                        } else {
+                            messagesContainer.innerHTML = '<div class="message error">' + (result.error || 'Failed to apply upgrade') + '</div>';
+                        }
+                    })
+                    .catch(error => {
+                        messagesContainer.innerHTML = '<div class="message error">Error: ' + error.message + '</div>';
+                    })
+                    .finally(() => {
+                        upgradeApplyBtn.disabled = false;
+                        upgradeApplyBtn.textContent = originalText;
+                    });
+                });
+            }
+            
+            if (switchBtn) {
+                switchBtn.addEventListener('click', function() {
+                    const imageInput = document.getElementById('bootcSwitchImage');
+                    const image = imageInput ? imageInput.value.trim() : '';
+                    
+                    if (!image) {
+                        messagesContainer.innerHTML = '<div class="message error">Please enter an image reference to switch to.</div>';
+                        return;
+                    }
+                    
+                    if (!confirm('Are you sure you want to switch to image: ' + image + '? This will download and install the new image.')) {
+                        return;
+                    }
+                    
+                    const originalText = switchBtn.textContent;
+                    switchBtn.disabled = true;
+                    switchBtn.textContent = 'Switching...';
+                    messagesContainer.innerHTML = '<div class="message info">Switching to new image. This may take several minutes...</div>';
+                    
+                    fetch('/api/bootc-switch', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ image: image })
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success) {
+                            messagesContainer.innerHTML = '<div class="message success">Switch completed successfully! ' + 
+                                (result.message || '') + '</div>';
+                            if (imageInput) imageInput.value = '';
+                            loadBootcStatus(); // Refresh status
+                        } else {
+                            messagesContainer.innerHTML = '<div class="message error">' + (result.error || 'Failed to switch image') + '</div>';
+                        }
+                    })
+                    .catch(error => {
+                        messagesContainer.innerHTML = '<div class="message error">Error: ' + error.message + '</div>';
+                    })
+                    .finally(() => {
+                        switchBtn.disabled = false;
+                        switchBtn.textContent = originalText;
+                    });
+                });
+            }
+        });
+        
+        // MicroShift pod and route functions
+        let podsInterval = null;
+        let routesInterval = null;
+        
+        function getStatusClass(status) {
+            const statusLower = status.toLowerCase();
+            if (statusLower === 'running') return 'status-running';
+            if (statusLower === 'pending') return 'status-pending';
+            if (statusLower === 'terminating') return 'status-terminating';
+            if (statusLower === 'failed' || statusLower === 'error') return 'status-failed';
+            if (statusLower === 'succeeded' || statusLower === 'completed') return 'status-succeeded';
+            if (statusLower.includes('crashloop')) return 'status-crashloopbackoff';
+            return 'status-unknown';
+        }
+        
+        function getAdmittedClass(admitted) {
+            return admitted === 'True' ? 'status-running' : 'status-failed';
+        }
+        
+        function restartPod(namespace, podName) {
+            if (!confirm(`Are you sure you want to restart pod ${podName} in namespace ${namespace}?`)) {
+                return;
+            }
+            
+            fetch(`/api/pods/${namespace}/${podName}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Pod ${podName} has been deleted and will be recreated by its controller.`);
+                    updatePods();
+                } else {
+                    alert(`Failed to restart pod: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                alert(`Error restarting pod: ${error.message}`);
+            });
+        }
+        
+        function updatePods() {
+            fetch('/api/pods')
+                .then(response => response.json())
+                .then(data => {
+                    const errorContainer = document.getElementById('error-container');
+                    const tbody = document.getElementById('pods-body');
+                    
+                    if (data.error) {
+                        errorContainer.innerHTML = '<div class="error">' + data.error + '</div>';
+                        tbody.innerHTML = '<tr><td colspan="7" class="loading">Failed to load pods</td></tr>';
+                        return;
+                    }
+                    
+                    errorContainer.innerHTML = '';
+                    
+                    if (data.pods.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" class="loading">No pods found</td></tr>';
+                        return;
+                    }
+                    
+                    // Sort pods: jumpstarter pods first
+                    data.pods.sort((a, b) => {
+                        const aHasJumpstarter = a.name.toLowerCase().includes('jumpstarter');
+                        const bHasJumpstarter = b.name.toLowerCase().includes('jumpstarter');
+                        if (aHasJumpstarter && !bHasJumpstarter) return -1;
+                        if (!aHasJumpstarter && bHasJumpstarter) return 1;
+                        return 0;
+                    });
+                    
+                    tbody.innerHTML = data.pods.map(pod => `
+                        <tr>
+                            <td>${pod.namespace}</td>
+                            <td>${pod.name}</td>
+                            <td>${pod.ready}</td>
+                            <td><span class="status-badge ${getStatusClass(pod.status)}">${pod.status}</span></td>
+                            <td>${pod.restarts}</td>
+                            <td>${pod.age}</td>
+                            <td>
+                                <a href="/logs/${pod.namespace}/${pod.name}" target="_blank" class="action-icon" title="View Logs">📋</a>
+                                <a href="#" onclick="restartPod('${pod.namespace}', '${pod.name}'); return false;" class="action-icon" title="Restart Pod">🔄</a>
+                            </td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('Error fetching pods:', error);
+                    document.getElementById('error-container').innerHTML = 
+                        '<div class="error">Failed to fetch pod data: ' + error.message + '</div>';
+                });
+        }
+        
+        function updateRoutes() {
+            fetch('/api/routes')
+                .then(response => response.json())
+                .then(data => {
+                    const errorContainer = document.getElementById('route-error-container');
+                    const tbody = document.getElementById('routes-body');
+                    
+                    if (data.error) {
+                        errorContainer.innerHTML = '<div class="error">' + data.error + '</div>';
+                        tbody.innerHTML = '<tr><td colspan="8" class="loading">Failed to load routes</td></tr>';
+                        return;
+                    }
+                    
+                    errorContainer.innerHTML = '';
+                    
+                    if (data.routes.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="8" class="loading">No routes found</td></tr>';
+                        return;
+                    }
+                    
+                    tbody.innerHTML = data.routes.map(route => `
+                        <tr>
+                            <td>${route.namespace}</td>
+                            <td>${route.name}</td>
+                            <td><a href="https://${route.host}" target="_blank" style="color: #f57c00; text-decoration: none;">${route.host}</a></td>
+                            <td>${route.service}</td>
+                            <td>${route.port}</td>
+                            <td>${route.tls}</td>
+                            <td><span class="status-badge ${getAdmittedClass(route.admitted)}">${route.admitted}</span></td>
+                            <td>${route.age}</td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('Error fetching routes:', error);
+                    document.getElementById('route-error-container').innerHTML = 
+                        '<div class="error">Failed to fetch route data: ' + error.message + '</div>';
+                });
+        }
+        
+        function startMicroshiftUpdates() {
+            // Initial load
+            updatePods();
+            updateRoutes();
+            
+            // Start intervals
+            if (podsInterval) clearInterval(podsInterval);
+            if (routesInterval) clearInterval(routesInterval);
+            podsInterval = setInterval(updatePods, 5000);
+            routesInterval = setInterval(updateRoutes, 5000);
+        }
+        
+        function stopMicroshiftUpdates() {
+            if (podsInterval) {
+                clearInterval(podsInterval);
+                podsInterval = null;
+            }
+            if (routesInterval) {
+                clearInterval(routesInterval);
+                routesInterval = null;
+            }
+        }
+        
+        // Load content when sections are shown
+        const originalShowSection = showSection;
+        showSection = function(sectionId) {
+            originalShowSection(sectionId);
+            
+            // Stop microshift updates when leaving the section
+            stopMicroshiftUpdates();
+            
+            if (sectionId === '#system') {
+                loadSystemStats();
+                loadBootcStatus();
+                loadKernelLog();
+            } else if (sectionId === '#microshift') {
+                startMicroshiftUpdates();
+            }
+        };
+        
+        // Set active section on page load and load its content
+        const initialSection = window.location.hash || '#configuration';
+        showSection(initialSection);
+        
+        // Explicitly load content for initial section (showSection override is now active)
+        if (initialSection === '#system') {
+            loadSystemStats();
+            loadBootcStatus();
+            loadKernelLog();
+        } else if (initialSection === '#microshift') {
+            startMicroshiftUpdates();
+        }
+    </script>
+</body>
+</html>
