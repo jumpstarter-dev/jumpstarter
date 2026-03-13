@@ -62,6 +62,9 @@ $$ j power on
 $$ j serial start-console
 ```
 
+By default the device is powered off after flashing. Use ``--no-power-off`` to
+leave it on.
+
 ### Config parameters
 
 #### RideSXDriver
@@ -102,14 +105,14 @@ Both drivers require:
 
 ### Flash Single Partition
 
-```{testcode}
-# Flash a single partition
+```{code-block} python
+# Flash a single partition (paths must exist; flash runs fastboot on the exporter)
 ridesx_client.flash("/path/to/boot.img", target="boot")
 ```
 
 ### Flash Multiple Partitions
 
-```{testcode}
+```{code-block} python
 # Flash multiple partitions
 partitions = {
     "boot": "/path/to/boot.img",
@@ -123,22 +126,22 @@ ridesx_client.flash(partitions)
 
 The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`):
 
-```{testcode}
+```{code-block} python
 # Flash compressed images - decompression is automatic
 ridesx_client.flash("/path/to/boot.img.gz", target="boot")
 ```
 
 ### Power Control
 
-```{testcode}
+```{code-block} python
 # Turn device power on
-ridesx_power_client.on()
+power_client.on()
 
 # Turn device power off
-ridesx_power_client.off()
+power_client.off()
 
 # Power cycle the device
-ridesx_power_client.cycle(wait=5)  # Wait 5 seconds between off/on
+power_client.cycle(wait=5)  # Wait 5 seconds between off/on
 ```
 
 ## Features
