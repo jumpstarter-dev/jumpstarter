@@ -1,7 +1,16 @@
-.PHONY: help build bootc-build bootc-build-multi push bootc-push bootc-push-multi bootc-run bootc-stop bootc-sh bootc-rm build-image build-iso build-all build-all-multi push-all push-all-multi
+.PHONY: help build bootc-build bootc-build-multi push bootc-push bootc-push-multi bootc-run bootc-stop bootc-sh bootc-rm build-image build-iso build-all build-all-multi push-all push-all-multi download-centos-iso build-ks-iso upload-ks-iso
 
 # Default image tags
 BOOTC_IMG ?= quay.io/jumpstarter-dev/microshift/bootc:latest
+
+# Kickstart ISO configuration (set ARCH=aarch64 for ARM builds)
+ARCH ?= $(shell uname -m)
+VERSION_TAG ?= latest
+KS_ISO_DIR = output/ksiso
+CENTOS_ISO_FILENAME = CentOS-Stream-10-latest-$(ARCH)-boot.iso
+CENTOS_ISO = $(KS_ISO_DIR)/$(CENTOS_ISO_FILENAME)
+CENTOS_ISO_URL = https://mirrors.centos.org/mirrorlist?path=/10-stream/BaseOS/$(ARCH)/iso/$(CENTOS_ISO_FILENAME)&redirect=1&protocol=https
+KS_ISO = $(KS_ISO_DIR)/cs10-js-$(ARCH)-$(VERSION_TAG).iso
 
 
 help: ## Display this help
@@ -91,6 +100,36 @@ build-iso: bootc-build ## Build the bootc based ISO image
 	make output/iso/disk.iso
 	@echo "ISO image built successfully in ./output/"
 
+##@ Kickstart ISO
+
+$(CENTOS_ISO):
+	@mkdir -p $(KS_ISO_DIR)
+	@echo "Downloading CentOS Stream 10 DVD ISO for $(ARCH)..."
+	curl -L -C - -o "$@.partial" "$(CENTOS_ISO_URL)"
+	mv "$@.partial" "$@"
+
+download-centos-iso: $(CENTOS_ISO) ## Download CentOS Stream 10 ISO (set ARCH=aarch64 for ARM)
+
+build-ks-iso: $(CENTOS_ISO) ## Build a kickstart ISO from CentOS Stream 10 (set ARCH=aarch64 for ARM)
+	@echo "Building kickstart ISO for $(ARCH): $(KS_ISO) (needs sudo to run mkksiso)"
+	sudo mkksiso kickstart.ks $(CENTOS_ISO) $(KS_ISO)
+	@echo "Kickstart ISO built successfully: $(KS_ISO)"
+
+upload-ks-iso: ## Upload kickstart ISO to gofile.io and print download URL
+	@test -f "$(KS_ISO)" || { echo "Error: $(KS_ISO) not found. Run 'make build-ks-iso' first."; exit 1; }
+	@echo "Uploading $(KS_ISO) to gofile.io..."
+	@SERVER=$$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name') && \
+	RESPONSE=$$(curl -F "file=@$(KS_ISO)" "https://$${SERVER}.gofile.io/uploadFile") && \
+	URL=$$(echo "$$RESPONSE" | jq -r '.data.downloadPage') && \
+	if [ "$$URL" = "null" ] || [ -z "$$URL" ]; then \
+		echo "Upload failed:"; \
+		echo "$$RESPONSE" | jq .; \
+		exit 1; \
+	fi && \
+	echo "" && \
+	echo "Upload complete!" && \
+	echo "Download URL: $$URL"
+
 ##@ Push
 
 push: bootc-push ## Push bootc image to registry
@@ -156,6 +195,8 @@ clean: ## Clean up local images and build artifacts
 	-sudo rm -rf output/qcow2/disk.qcow2
 	@echo "Removing ISO output..."
 	-sudo rm -rf output/iso/disk.iso
+	@echo "Removing kickstart ISO output..."
+	-rm -rf $(KS_ISO_DIR)
 	@echo "Removing LVM disk image..."
 	-sudo rm -f /var/lib/microshift-okd/lvmdisk.image
 
