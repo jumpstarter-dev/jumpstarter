@@ -1,0 +1,16 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: test-exporter-direct-hooks
+  namespace: default
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+hooks:
+  beforeLease:
+    script: |
+      echo "BEFORE_HOOK_DIRECT: executed"
+      j power on
+      echo "BEFORE_HOOK_DIRECT: complete"
+    timeout: 60
+    onFailure: warn

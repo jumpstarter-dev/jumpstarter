@@ -13,24 +13,58 @@ setup() {
   bats_require_minimum_version 1.5.0
 }
 
-start_exporter() {
-  jmp run --exporter-config "$EXPORTER_CONFIG" \
-    --tls-grpc-listener "$LISTENER_PORT" \
-    --tls-grpc-insecure &
+# Start the exporter in the background.
+#   $1 - config file (default: $EXPORTER_CONFIG)
+#   $2 - readiness: "grpc" waits via jmp shell (drains LogStream),
+#                   "port" waits via nc -z (preserves LogStream queue)
+#   $3 - if set, redirect stderr to ${BATS_TEST_TMPDIR}/exporter.log
+_start_exporter() {
+  local config="${1:-$EXPORTER_CONFIG}"
+  local readiness="${2:-grpc}"
+  local capture_logs="${3:-}"
+
+  if [ -n "$capture_logs" ]; then
+    jmp run --exporter-config "$config" \
+      --tls-grpc-listener "$LISTENER_PORT" \
+      --tls-grpc-insecure 2>"${BATS_TEST_TMPDIR}/exporter.log" &
+  else
+    jmp run --exporter-config "$config" \
+      --tls-grpc-listener "$LISTENER_PORT" \
+      --tls-grpc-insecure &
+  fi
   LISTENER_PID=$!
   echo "$LISTENER_PID" > "${BATS_TEST_TMPDIR}/exporter.pid"
 
-  # Wait for the gRPC server to be ready
   local retries=30
-  while ! jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure -- j --help >/dev/null 2>&1; do
-    retries=$((retries - 1))
-    if [ "$retries" -le 0 ]; then
-      echo "Exporter did not become ready in time" >&2
-      return 1
-    fi
-    sleep 0.5
-  done
+  if [ "$readiness" = "port" ]; then
+    # TCP-only check: doesn't drain the LogStream queue, so hook output
+    # remains buffered for the test command to consume.
+    while ! nc -z 127.0.0.1 "$LISTENER_PORT" 2>/dev/null; do
+      retries=$((retries - 1))
+      if [ "$retries" -le 0 ]; then
+        echo "Port $LISTENER_PORT did not become available" >&2
+        return 1
+      fi
+      sleep 0.5
+    done
+  else
+    # Full gRPC check: ensures exporter is ready for commands.
+    # Drains LogStream queue (unsuitable for hook output tests).
+    while ! jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure -- j --help >/dev/null 2>&1; do
+      retries=$((retries - 1))
+      if [ "$retries" -le 0 ]; then
+        echo "Exporter did not become ready in time" >&2
+        return 1
+      fi
+      sleep 0.5
+    done
+  fi
 }
+
+start_exporter()              { _start_exporter "$1" grpc; }
+start_exporter_with_logs()    { _start_exporter "$1" grpc logs; }
+start_exporter_bg()           { _start_exporter "$1" port; }
+start_exporter_bg_with_logs() { _start_exporter "$1" port logs; }
 
 stop_exporter() {
   if [ -f "${BATS_TEST_TMPDIR}/exporter.pid" ]; then
@@ -70,4 +104,33 @@ teardown() {
 
   run jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" -- j power on
   assert_failure
+}
+
+@test "direct listener hooks: beforeLease hook executes and j commands work" {
+  # Use start_exporter_bg (TCP-only readiness check) to avoid draining
+  # the LogStream queue before the test command connects.
+  start_exporter_bg "${SCRIPT_DIR}/exporters/exporter-direct-hooks-before.yaml"
+
+  run jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure \
+    --exporter-logs -- j power off
+  assert_success
+  assert_output --partial "BEFORE_HOOK_DIRECT: executed"
+  assert_output --partial "BEFORE_HOOK_DIRECT: complete"
+}
+
+@test "direct listener hooks: afterLease hook runs on exporter shutdown" {
+  start_exporter_bg_with_logs "${SCRIPT_DIR}/exporters/exporter-direct-hooks-both.yaml"
+
+  run jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure \
+    --exporter-logs -- j power on
+  assert_success
+  assert_output --partial "BEFORE_HOOK_DIRECT: executed"
+
+  # Stop the exporter (SIGTERM triggers _cleanup_after_lease).
+  # stop_exporter waits for the process to exit, so the log is complete.
+  stop_exporter
+
+  # afterLease hook output should appear in the exporter's stderr log
+  run cat "${BATS_TEST_TMPDIR}/exporter.log"
+  assert_output --partial "AFTER_HOOK_DIRECT: executed"
 }

@@ -591,7 +591,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             if not lease_scope.after_lease_hook_started.is_set():
                 lease_scope.after_lease_hook_started.set()
                 if (self.hook_executor
-                        and lease_scope.has_client()
+                        and (lease_scope.has_client() or self._standalone)
                         and not lease_scope.skip_after_lease_hook):
                     logger.info("Running afterLease hook on session close")
                     await self.hook_executor.run_after_lease_hook(
@@ -856,22 +856,25 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 async with session.serve_tcp_and_unix_async(
                     host, port, hook_path_str, tls_credentials=tls_credentials
                 ):
-                    async with create_task_group() as tg:
-                        self._tg = tg
-                        tg.start_soon(self._handle_end_session, lease_scope)
+                    try:
+                        async with create_task_group() as tg:
+                            self._tg = tg
+                            tg.start_soon(self._handle_end_session, lease_scope)
 
-                        if self.hook_executor:
-                            await self.hook_executor.run_before_lease_hook(
-                                lease_scope,
-                                self._report_status,
-                                self.stop,
-                                self._request_lease_release,
-                            )
-                        else:
-                            await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
-                            lease_scope.before_lease_hook.set()
+                            if self.hook_executor:
+                                await self.hook_executor.run_before_lease_hook(
+                                    lease_scope,
+                                    self._report_status,
+                                    self.stop,
+                                    self._request_lease_release,
+                                )
+                            else:
+                                await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                                lease_scope.before_lease_hook.set()
 
-                        await _standalone_shutdown_waiter()
+                            await _standalone_shutdown_waiter()
+                    finally:
+                        await self._cleanup_after_lease(lease_scope)
 
         self._lease_context = None
         self._tg = None
