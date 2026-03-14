@@ -1,0 +1,8 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: test-exporter-direct
+  namespace: default
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
