@@ -129,7 +129,7 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
 
 async def ssl_channel_credentials(target: str, tls_config, timeout=5):
     """Get SSL channel credentials for gRPC connection."""
-    if tls_config.insecure or os.getenv("JUMPSTARTER_GRPC_INSECURE") == "1":
+    if tls_config.insecure or os.getenv("JUMPSTARTER_GRPC_INSECURE") == "1" or os.getenv("JMP_GRPC_INSECURE") == "1":
         return await _ssl_channel_credentials_insecure(target, timeout)
     elif tls_config.ca != "":
         ca_certificate = base64.b64decode(tls_config.ca)

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Self
 
+import anyio
 import grpc
 from anyio import (
     AsyncContextManagerMixin,
@@ -22,7 +23,7 @@ from jumpstarter_protocol import (
     jumpstarter_pb2_grpc,
 )
 
-from jumpstarter.common import ExporterStatus, Metadata
+from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter.hooks import HookExecutor
@@ -33,6 +34,11 @@ if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
 logger = logging.getLogger(__name__)
+
+
+async def _standalone_shutdown_waiter():
+    """Wait forever; used so serve_standalone_tcp can be cancelled by stop()."""
+    await anyio.sleep_forever()
 
 
 @dataclass(kw_only=True)
@@ -152,6 +158,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     When set to a non-zero value, the exporter should terminate permanently
     (not restart). This is used by hooks with on_failure='exit' to signal
     that the exporter should shut down and not be restarted by the CLI.
+    """
+
+    _standalone: bool = field(init=False, default=False)
+    """When True, exporter runs without a controller (TCP listener only).
+
+    _report_status and __aexit__ skip controller calls when _standalone is True.
     """
 
     _lease_context: LeaseContext | None = field(init=False, default=None)
@@ -327,6 +339,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._lease_context:
             self._lease_context.update_status(status, message)
 
+        if self._standalone:
+            logger.debug("Updated status to %s: %s (standalone, no controller)", status, message)
+            return
+
         try:
             async with self._controller_stub() as controller:
                 await controller.ReportStatus(
@@ -355,6 +371,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         # would release a subsequently-assigned lease on the controller.
         if self._lease_context.lease_ended.is_set():
             logger.debug("Lease already ended, skipping release request")
+            return
+
+        if self._standalone:
+            self._lease_context.lease_ended.set()
             return
 
         try:
@@ -803,4 +823,56 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         break
 
                 self._previous_leased = current_leased
+        self._tg = None
+
+    async def serve_standalone_tcp(
+        self,
+        host: str,
+        port: int,
+        *,
+        tls_credentials: grpc.ServerCredentials | None = None,
+    ) -> None:
+        """Serve the exporter on a TCP address without a controller (standalone mode).
+
+        One session is created and served on host:port (and a temporary Unix socket
+        for hook j commands). beforeLease hook runs once if configured; then status
+        is set to LEASE_READY. Runs until stop() cancels the task group.
+        """
+        self._standalone = True
+        lease_scope = LeaseContext(lease_name="standalone", before_lease_hook=Event())
+        self._lease_context = lease_scope
+
+        with TemporarySocket() as hook_path:
+            hook_path_str = str(hook_path)
+            with Session(
+                uuid=self.uuid,
+                labels=self.labels,
+                root_device=self.device_factory(),
+            ) as session:
+                session.lease_context = lease_scope
+                lease_scope.session = session
+                lease_scope.socket_path = hook_path_str
+                lease_scope.hook_socket_path = hook_path_str
+
+                async with session.serve_tcp_and_unix_async(
+                    host, port, hook_path_str, tls_credentials=tls_credentials
+                ):
+                    async with create_task_group() as tg:
+                        self._tg = tg
+                        tg.start_soon(self._handle_end_session, lease_scope)
+
+                        if self.hook_executor:
+                            await self.hook_executor.run_before_lease_hook(
+                                lease_scope,
+                                self._report_status,
+                                self.stop,
+                                self._request_lease_release,
+                            )
+                        else:
+                            await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                            lease_scope.before_lease_hook.set()
+
+                        await _standalone_shutdown_waiter()
+
+        self._lease_context = None
         self._tg = None
