@@ -131,6 +131,80 @@ class Session(
             logger.info("Session server stopped")
 
     @asynccontextmanager
+    async def serve_tcp_async(self, host: str, port: int, *, tls_credentials: grpc.ServerCredentials | None = None):
+        """Serve session on a TCP address (and optionally TLS).
+
+        Binds host:port and registers ExporterService and RouterService.
+        Use tls_credentials for TLS (e.g. from grpc.ssl_server_credentials);
+        when None, uses an insecure port (for development only).
+
+        Yields:
+            int - the bound port (useful when port=0 to let the OS choose)
+        """
+        server = grpc.aio.server()
+        address = f"{host}:{port}"
+        if tls_credentials is not None:
+            bound_port = server.add_secure_port(address, tls_credentials)
+            logger.debug("Session server listening on %s (TLS)", address)
+        else:
+            bound_port = server.add_insecure_port(address)
+            logger.debug("Session server listening on %s (insecure)", address)
+
+        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+
+        await server.start()
+        logger.info("Session server started on %s:%d", host, bound_port)
+        try:
+            yield bound_port
+        finally:
+            logger.info("Stopping session server on %s:%d...", host, bound_port)
+            await server.stop(grace=1.0)
+            await sleep(0.1)
+            logger.info("Session server stopped")
+
+    @asynccontextmanager
+    async def serve_tcp_and_unix_async(
+        self,
+        host: str,
+        port: int,
+        unix_path: str,
+        *,
+        tls_credentials: grpc.ServerCredentials | None = None,
+    ):
+        """Serve session on TCP (and optionally TLS) plus a Unix socket (e.g. for hooks).
+
+        One server listens on host:port and unix://unix_path.
+        Use for standalone mode where clients use TCP and hook j commands use Unix.
+
+        Yields:
+            None - server runs until context exit
+        """
+        server = grpc.aio.server()
+        address = f"{host}:{port}"
+        server.add_insecure_port(f"unix://{unix_path}")
+        logger.debug("Session server listening on unix://%s (hooks)", unix_path)
+        if tls_credentials is not None:
+            server.add_secure_port(address, tls_credentials)
+            logger.debug("Session server listening on %s (TLS)", address)
+        else:
+            server.add_insecure_port(address)
+            logger.debug("Session server listening on %s (insecure)", address)
+
+        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+
+        await server.start()
+        logger.info("Session server started on %s and unix://%s", address, unix_path)
+        try:
+            yield
+        finally:
+            logger.info("Stopping session server...")
+            await server.stop(grace=1.0)
+            await sleep(0.1)
+            logger.info("Session server stopped")
+
+    @asynccontextmanager
     async def serve_unix_async(self):
         with TemporarySocket() as path:
             async with self.serve_port_async(f"unix://{path}"):

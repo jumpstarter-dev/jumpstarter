@@ -6,7 +6,7 @@ from anyio.from_thread import start_blocking_portal
 from jumpstarter.client import client_from_path
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
-from jumpstarter.config.env import JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_HOST
 
 
 @asynccontextmanager
@@ -24,12 +24,15 @@ async def env_async(portal, stack):
 
     drivers = ClientConfigV1Alpha1Drivers()
 
+    insecure = os.environ.get(JMP_GRPC_INSECURE, "") == "1"
+
     async with client_from_path(
         host,
         portal,
         stack,
         allow=drivers.allow,
         unsafe=drivers.unsafe,
+        insecure=insecure,
     ) as client:
         try:
             yield client
