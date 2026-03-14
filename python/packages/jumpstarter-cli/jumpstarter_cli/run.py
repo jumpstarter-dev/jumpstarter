@@ -5,11 +5,35 @@ import sys
 
 import anyio
 import click
+import grpc
 from anyio import create_task_group, open_signal_receiver
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_listener_bind(value: str) -> tuple[str, int]:
+    """Parse '[host:]port' into (host, port). Default host is 0.0.0.0."""
+    if ":" in value:
+        host, port_str = value.rsplit(":", 1)
+        host = host.strip() or "0.0.0.0"
+        port = int(port_str, 10)
+    else:
+        host = "0.0.0.0"
+        port = int(value, 10)
+    if not (1 <= port <= 65535):
+        raise click.BadParameter(f"port must be between 1 and 65535, got {port}", param_hint="'--tls-grpc-listener'")
+    return host, port
+
+
+def _tls_server_credentials(cert_path: str, key_path: str) -> grpc.ServerCredentials:
+    """Build gRPC server credentials from PEM cert and key files."""
+    with open(cert_path, "rb") as f:
+        cert_chain = f.read()
+    with open(key_path, "rb") as f:
+        private_key = f.read()
+    return grpc.ssl_server_credentials(((private_key, cert_chain),))
 
 
 def _handle_exporter_exceptions(excgroup):
@@ -40,9 +64,9 @@ def _reap_zombie_processes(capture_child=None):
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
-def _handle_child(config):
+def _handle_child(config, listener_bind=None, tls_insecure=False, tls_cert=None, tls_key=None):  # noqa: C901
     """Handle child process with graceful shutdown."""
-    async def serve_with_graceful_shutdown():
+    async def serve_with_graceful_shutdown():  # noqa: C901
         received_signal = 0
         signal_handled = False
         exporter = None
@@ -69,15 +93,35 @@ def _handle_child(config):
             # Start signal handler immediately
             signal_tg.start_soon(signal_handler)
 
-            # Create exporter and run it
-            async with config.create_exporter() as exporter:
-                try:
-                    await exporter.serve()
-                except* Exception as excgroup:
-                    _handle_exporter_exceptions(excgroup)
+            if listener_bind is not None:
+                host, port = _parse_listener_bind(listener_bind)
+                tls_credentials = None
+                if not tls_insecure and tls_cert and tls_key:
+                    tls_credentials = _tls_server_credentials(tls_cert, tls_key)
+                elif not tls_insecure and (tls_cert or tls_key):
+                    click.echo("Both --tls-cert and --tls-key are required for TLS", err=True)
+                    sys.exit(1)
 
-                # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')
-                exporter_exit_code = exporter.exit_code
+                exporter_exit_code = None
+                async with config.create_exporter(standalone=True) as exporter:
+                    try:
+                        await exporter.serve_standalone_tcp(
+                            host, port, tls_credentials=tls_credentials
+                        )
+                    except* Exception as excgroup:
+                        _handle_exporter_exceptions(excgroup)
+                    exporter_exit_code = exporter.exit_code
+            else:
+                # Create exporter and run it (controller mode)
+                exporter_exit_code = None
+                async with config.create_exporter() as exporter:
+                    try:
+                        await exporter.serve()
+                    except* Exception as excgroup:
+                        _handle_exporter_exceptions(excgroup)
+
+                    # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')
+                    exporter_exit_code = exporter.exit_code
 
             # Cancel the signal handler after exporter completes
             signal_tg.cancel_scope.cancel()
@@ -142,7 +186,7 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
-def _serve_with_exc_handling(config):
+def _serve_with_exc_handling(config, listener_bind=None, tls_insecure=False, tls_cert=None, tls_key=None):
     while True:
         pid = os.fork()
 
@@ -151,13 +195,37 @@ def _serve_with_exc_handling(config):
                 return exit_code
         else:
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
-            _handle_child(config)
+            _handle_child(config, listener_bind, tls_insecure, tls_cert, tls_key)
             sys.exit(1) # should never happen
 
 
 @click.command("run")
 @opt_config(client=False)
+@click.option(
+    "--tls-grpc-listener",
+    "listener_bind",
+    metavar="[HOST:]PORT",
+    help="Listen on TCP (and optional TLS) instead of registering with a controller. E.g. 1234 or 0.0.0.0:1234.",
+)
+@click.option(
+    "--tls-grpc-insecure",
+    "tls_insecure",
+    is_flag=True,
+    help="With --tls-grpc-listener, listen without TLS (insecure, for development only).",
+)
+@click.option(
+    "--tls-cert",
+    type=click.Path(exists=True),
+    help="Server certificate (PEM) for --tls-grpc-listener.",
+)
+@click.option(
+    "--tls-key",
+    type=click.Path(exists=True),
+    help="Server private key (PEM) for --tls-grpc-listener.",
+)
 @handle_exceptions
-def run(config):
+def run(config, listener_bind, tls_insecure, tls_cert, tls_key):
     """Run an exporter locally."""
-    return _serve_with_exc_handling(config)
+    if listener_bind is not None and config is None:
+        raise click.UsageError("--exporter-config (or --exporter) is required when using --tls-grpc-listener")
+    return _serve_with_exc_handling(config, listener_bind, tls_insecure, tls_cert, tls_key)

@@ -6,7 +6,30 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from jumpstarter.client.client import _is_tcp_address
+
 pytestmark = pytest.mark.anyio
+
+
+class TestIsTcpAddress:
+    """Tests for _is_tcp_address."""
+
+    def test_host_port_is_tcp_address(self) -> None:
+        assert _is_tcp_address("exporter.host.name:1234") is True
+        assert _is_tcp_address("127.0.0.1:1234") is True
+        assert _is_tcp_address("localhost:1") is True
+        assert _is_tcp_address("host:65535") is True
+
+    def test_unix_path_is_not_tcp_address(self) -> None:
+        assert _is_tcp_address("/run/user/1000/jumpstarter-xxx/socket") is False
+        assert _is_tcp_address("/tmp/foo") is False
+
+    def test_invalid_port_not_tcp_address(self) -> None:
+        assert _is_tcp_address("host:0") is False
+        assert _is_tcp_address("host:65536") is False
+        assert _is_tcp_address("host:abc") is False
+        assert _is_tcp_address("host:") is False
+        assert _is_tcp_address(":1234") is True  # empty host still valid for parsing
 
 
 def create_mock_report(uuid: str, parent_uuid: str = "", name: str = "driver"):

@@ -42,6 +42,38 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
+class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
+    """Lease-like object for direct connection to an exporter (no controller).
+
+    Used when connecting via jmp shell --tls-grpc host:port. Yields the address
+    from serve_unix_async() so the client can connect directly; no Dial, no listener.
+    """
+
+    address: str  # host:port
+    portal: BlockingPortal
+    allow: list[str]
+    unsafe: bool
+    tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
+    grpc_options: dict[str, Any] = field(default_factory=dict)
+    insecure: bool = False
+
+    name: str = field(default="direct", init=False)
+    exporter_name: str = field(default="direct", init=False)
+    release: bool = field(default=False, init=False)
+    lease_ended: bool = field(default=False, init=False)
+
+    @asynccontextmanager
+    async def serve_unix_async(self):
+        """Yield the TCP address (no listener); client connects directly."""
+        yield self.address
+
+    @asynccontextmanager
+    async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):
+        """No-op monitor for direct connection (no lease to monitor)."""
+        yield
+
+
+@dataclass(kw_only=True)
 class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     channel: Channel
     duration: timedelta

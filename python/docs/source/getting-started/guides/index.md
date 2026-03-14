@@ -5,6 +5,8 @@ development workflow. The guides cover:
 
 - [Setup Local Mode](setup-local-mode.md): Running Jumpstarter in local mode for
   individual development
+- [Setup Direct Mode](setup-direct-mode.md): Connecting a client directly to an
+  exporter over TCP, without a controller
 - [Setup Distributed Mode](setup-distributed-mode.md): Configuring Jumpstarter
   for team environments with shared resources
 - [Examples](examples.md): Practical examples of Jumpstarter usage in common
@@ -17,6 +19,7 @@ development workflow. The guides cover:
 :maxdepth: 1
 :hidden:
 setup-local-mode.md
+setup-direct-mode.md
 setup-distributed-mode.md
 examples.md
 integration-patterns.md

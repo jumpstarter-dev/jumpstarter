@@ -2,6 +2,7 @@ import logging
 import sys
 from contextlib import ExitStack
 from datetime import timedelta
+from types import SimpleNamespace
 
 import anyio
 import click
@@ -17,26 +18,33 @@ from jumpstarter_cli_common.signal import signal_handler
 
 from .common import opt_acquisition_timeout, opt_duration_partial, opt_selector
 from .login import relogin_client
+from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import ConnectionError, ExporterOfflineError
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
 
 
 def _run_shell_only(lease, config, command, path: str) -> int:
     """Run just the shell command without log streaming."""
+    allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
+    unsafe = config.drivers.unsafe if config is not None else getattr(lease, "unsafe", False)
+    use_profiles = config.shell.use_profiles if config is not None else False
+    insecure = getattr(lease, "insecure", False)
     return launch_shell(
         path,
         lease.exporter_name,
-        config.drivers.allow,
-        config.drivers.unsafe,
-        config.shell.use_profiles,
+        allow,
+        unsafe,
+        use_profiles,
         command=command,
         lease=lease,
+        insecure=insecure,
     )
 
 
@@ -100,7 +108,14 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
             # Use ExitStack for the client (required by client_from_path)
             with ExitStack() as stack:
                 async with client_from_path(
-                    path, lease.portal, stack, allow=lease.allow, unsafe=lease.unsafe
+                    path,
+                    lease.portal,
+                    stack,
+                    allow=lease.allow,
+                    unsafe=lease.unsafe,
+                    tls_config=getattr(lease, "tls_config", None),
+                    grpc_options=getattr(lease, "grpc_options", None),
+                    insecure=getattr(lease, "insecure", False),
                 ) as client:
                     # Probe GetStatus before log stream so the server-side error
                     # from unsupported exporters is not streamed to the terminal.
@@ -290,8 +305,44 @@ async def _shell_with_signal_handling(  # noqa: C901
     return exit_code
 
 
+async def _shell_direct_async(tls_grpc_address: str, tls_grpc_insecure: bool, exporter_logs: bool, command: tuple):
+    """Run shell with direct connection to exporter (no controller)."""
+    exit_code = 0
+    cancelled_exc_class = get_cancelled_exc_class()
+
+    async with anyio.from_thread.BlockingPortal() as portal:
+        lease = DirectLease(
+            address=tls_grpc_address,
+            portal=portal,
+            allow=[],
+            unsafe=True,
+            tls_config=TLSConfigV1Alpha1(),
+            grpc_options={},
+            insecure=tls_grpc_insecure,
+        )
+        # Minimal config for _run_shell_with_lease_async (allow/unsafe/use_profiles)
+        config = SimpleNamespace(
+            drivers=SimpleNamespace(allow=lease.allow, unsafe=lease.unsafe),
+            shell=SimpleNamespace(use_profiles=False),
+        )
+
+        async with create_task_group() as tg:
+            tg.start_soon(signal_handler, tg.cancel_scope)
+            try:
+                exit_code = await _run_shell_with_lease_async(
+                    lease, exporter_logs, config, command, tg.cancel_scope
+                )
+            except cancelled_exc_class:
+                exit_code = 2
+            finally:
+                if not tg.cancel_scope.cancel_called:
+                    tg.cancel_scope.cancel()
+
+    return exit_code
+
+
 @click.command("shell")
-@opt_config()
+@opt_config(allow_missing=True)
 @click.argument("command", nargs=-1)
 # client specific
 # TODO: warn if these are specified with exporter config
@@ -300,9 +351,32 @@ async def _shell_with_signal_handling(  # noqa: C901
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
 @click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
 @opt_acquisition_timeout()
+# direct connection (no controller)
+@click.option(
+    "--tls-grpc",
+    "tls_grpc_address",
+    metavar="HOST:PORT",
+    help="Connect directly to an exporter at this address (no controller). E.g. exporter.host.name:1234.",
+)
+@click.option(
+    "--tls-grpc-insecure",
+    "tls_grpc_insecure",
+    is_flag=True,
+    help="With --tls-grpc, connect without TLS (insecure, for development only).",
+)
 # end client specific
 @handle_exceptions_with_reauthentication(relogin_client)
-def shell(config, command: tuple[str, ...], lease_name, selector, duration, exporter_logs, acquisition_timeout):
+def shell(
+    config,
+    command: tuple[str, ...],
+    lease_name,
+    selector,
+    duration,
+    exporter_logs,
+    acquisition_timeout,
+    tls_grpc_address,
+    tls_grpc_insecure,
+):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
 
@@ -313,7 +387,23 @@ def shell(config, command: tuple[str, ...], lease_name, selector, duration, expo
     .. code-block:: bash
 
         $ jmp shell --exporter foo -- python bar.py
+        $ jmp shell --tls-grpc exporter.host.name:1234
     """
+
+    if tls_grpc_address is not None:
+        exit_code = anyio.run(
+            _shell_direct_async,
+            tls_grpc_address,
+            tls_grpc_insecure,
+            exporter_logs,
+            command,
+        )
+        sys.exit(exit_code)
+
+    if config is None or isinstance(config, tuple):
+        raise click.UsageError(
+            "Specify one of: --client / --client-config, --exporter / --exporter-config, or --tls-grpc HOST:PORT"
+        )
 
     match config:
         case ClientConfigV1Alpha1():
