@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import field
 
 from doipclient import DoIPClient
@@ -15,6 +16,8 @@ from .common import (
     VehicleIdentificationResponse,
 )
 from jumpstarter.driver import Driver, export
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -54,6 +57,14 @@ class DoIP(Driver):
             auto_reconnect_tcp=self.auto_reconnect_tcp,
             activation_type=self.activation_type,
         )
+
+    def close(self):
+        """Close the DoIP connection."""
+        try:
+            self._doip_client.close()
+        except Exception:
+            logger.warning("failed to close DoIP client", exc_info=True)
+        super().close()
 
     @export
     @validate_call(validate_return=True)

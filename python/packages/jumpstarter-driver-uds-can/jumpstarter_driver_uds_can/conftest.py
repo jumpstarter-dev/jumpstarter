@@ -122,9 +122,18 @@ class MockUdsEcu:
     def stop(self):
         self._running = False
         self._thread.join(timeout=2)
-        self._stack.stop()
-        self._notifier.stop()
-        self._bus.shutdown()
+        try:
+            self._stack.stop()
+        except Exception:
+            pass
+        try:
+            self._notifier.stop()
+        except Exception:
+            pass
+        try:
+            self._bus.shutdown()
+        except Exception:
+            pass
 
 
 @pytest.fixture
