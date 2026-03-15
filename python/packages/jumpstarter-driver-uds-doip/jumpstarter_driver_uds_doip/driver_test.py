@@ -322,7 +322,10 @@ def test_uds_doip_custom_config_forwarded(mock_doip_cls, mock_conn_cls, mock_uds
         client_logical_address=0x0F00,
         auto_reconnect_tcp=True,
     )
-    mock_uds_cls.assert_called_once_with(conn_mock, request_timeout=10.0)
+    mock_uds_cls.assert_called_once()
+    call_args = mock_uds_cls.call_args
+    assert call_args[0][0] is conn_mock
+    assert call_args[1]["config"]["request_timeout"] == 10.0
 
 
 # --- Integration tests with simulated DoIP + UDS server ---
