@@ -408,24 +408,6 @@ def test_custom_config_forwarded(mock_create):
         client.connect()
 
     mock_create.assert_called_once()
-    call_kwargs = mock_create.call_args
-    args = call_kwargs.kwargs if call_kwargs.kwargs else {}
-    if not args:
-        args = {
-            "transport": call_kwargs[1].get("transport", call_kwargs[0][0] if call_kwargs[0] else None),
-        }
-        # Extract from positional/keyword args
-        keys = [
-            "transport", "config_file", "host", "port", "protocol",
-            "can_interface", "channel", "bitrate", "can_id_master", "can_id_slave",
-        ]
-        for i, key in enumerate(keys):
-            if i < len(call_kwargs[0]):
-                args[key] = call_kwargs[0][i]
-            elif key in (call_kwargs[1] if len(call_kwargs) > 1 and call_kwargs[1] else {}):
-                args[key] = call_kwargs[1][key]
-
-    # The call should use the CAN transport with our specific params
     actual_kwargs = mock_create.call_args.kwargs
     assert actual_kwargs["can_interface"] == "vector"
     assert actual_kwargs["channel"] == 0

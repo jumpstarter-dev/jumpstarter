@@ -417,7 +417,8 @@ class StatefulXcpMaster:
     def getDaqInfo(self):
         self._require_connected()
         return {
-            "processor": {"minDaq": 0, "maxDaq": max(self._daq_lists, 4)},
+            # Hardware minimum of 4 DAQ lists, or actual allocation if larger
+            "processor": {"minDaq": 0, "maxDaq": max(4, self._daq_lists)},
             "resolution": {"timestampTicks": 1},
             "channels": [],
         }

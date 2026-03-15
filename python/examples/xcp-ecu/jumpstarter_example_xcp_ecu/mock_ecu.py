@@ -31,6 +31,7 @@ MEASUREMENT_MAP: dict[int, bytes] = {
 }
 
 # Flash region: uses 0x00 as erased state (UTF-8 safe, unlike 0xFF)
+FLASH_ERASED_BYTE = b"\x00"
 FLASH_BASE = 0x0800_0000
 FLASH_SIZE = 0x0001_0000  # 64 KB
 
@@ -111,8 +112,7 @@ class MockXcpEcu:
             self._memory[addr] = data
         for addr, data in MEASUREMENT_MAP.items():
             self._memory[addr] = data
-        # Flash region: pre-filled with 0x00 (erased state, UTF-8 safe)
-        self._memory[FLASH_BASE] = b"\x00" * FLASH_SIZE
+        self._memory[FLASH_BASE] = FLASH_ERASED_BYTE * FLASH_SIZE
 
         self.slaveProperties = _AttrDict(
             maxCto=self.MAX_CTO,
@@ -189,6 +189,8 @@ class MockXcpEcu:
 
     def download(self, data: bytes):
         self._require_connected()
+        if self._protection.get("calpag", False):
+            raise RuntimeError("CAL/PAG resource is protected – unlock first")
         self._memory[self._mta_address] = data
 
     # -- Checksum ------------------------------------------------------------
@@ -206,7 +208,7 @@ class MockXcpEcu:
         return {
             "processor": {
                 "minDaq": 0,
-                "maxDaq": max(len(self._daq_lists), 4),
+                "maxDaq": max(4, len(self._daq_lists)),
                 "properties": {"configType": "DYNAMIC"},
             },
             "resolution": {
@@ -286,7 +288,7 @@ class MockXcpEcu:
         if FLASH_BASE in self._memory:
             flash = bytearray(self._memory[FLASH_BASE])
             erase_len = min(clear_range, len(flash))
-            flash[:erase_len] = b"\x00" * erase_len
+            flash[:erase_len] = FLASH_ERASED_BYTE * erase_len
             self._memory[FLASH_BASE] = bytes(flash)
 
     def program(self, data: bytes, block_length: int, last: bool = False):
@@ -297,7 +299,7 @@ class MockXcpEcu:
             raise RuntimeError("programClear must be called before program")
         # Write to flash at MTA address
         if FLASH_BASE <= self._mta_address < FLASH_BASE + FLASH_SIZE:
-            flash = bytearray(self._memory.get(FLASH_BASE, b"\xFF" * FLASH_SIZE))
+            flash = bytearray(self._memory.get(FLASH_BASE, FLASH_ERASED_BYTE * FLASH_SIZE))
             offset = self._mta_address - FLASH_BASE
             flash[offset:offset + len(data)] = data
             self._memory[FLASH_BASE] = bytes(flash)

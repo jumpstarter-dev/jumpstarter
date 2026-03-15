@@ -71,6 +71,12 @@ def _create_xcp_master(
 
     Uses pyxcp's ArgumentParser with a generated or user-provided config file.
     sys.argv is temporarily overridden to pass transport arguments.
+
+    WARNING: This function is NOT thread-safe. pyxcp's ArgumentParser mutates
+    process-global state (sys.argv, internal singletons via .run()). Callers
+    must serialize access or ensure only one driver is created at a time.
+    For programmatic, thread-safe creation consider using
+    ``pyxcp.config.create_application_from_config()`` instead.
     """
     from pyxcp.cmdline import ArgumentParser as XcpArgumentParser
 

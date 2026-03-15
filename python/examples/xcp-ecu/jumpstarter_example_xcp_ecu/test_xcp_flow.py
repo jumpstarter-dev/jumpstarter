@@ -13,6 +13,7 @@ from .mock_ecu import (
     CALIBRATION_MAP,
     ECU_ID,
     FLASH_BASE,
+    FLASH_ERASED_BYTE,
     FLASH_SIZE,
     MEASUREMENT_MAP,
 )
@@ -89,45 +90,47 @@ def test_full_flash_programming_workflow(ecu_client, mock_ecu):
     firmware, verify, reset."""
 
     ecu_client.connect()
-
-    # 1. Read flash region before programming (should be 0x00 = erased)
-    flash_data = _to_bytes(ecu_client.upload(4, FLASH_BASE, 0))
-    assert flash_data == b"\x00\x00\x00\x00"
-
-    # 2. Unlock PGM resource
     ecu_client.unlock()
 
-    # 3. Start programming session
+    # 1. Seed flash with non-erased data so program_clear has something to erase
+    non_erased = b"\x7F\x45\x4C\x46"
+    mock_ecu._memory[FLASH_BASE] = non_erased + (FLASH_ERASED_BYTE * (FLASH_SIZE - len(non_erased)))
+    flash_data = _to_bytes(ecu_client.upload(4, FLASH_BASE, 0))
+    assert flash_data == non_erased
+
+    # 2. Start programming session
     pgm_info = ecu_client.program_start()
     assert pgm_info.max_cto_pgm == 8
     assert mock_ecu._programming is True
 
-    # 4. Erase flash (64 KB)
+    # 3. Erase flash (64 KB) and verify it returns to erased state
     ecu_client.program_clear(FLASH_SIZE)
     assert mock_ecu._program_cleared is True
+    erased_data = _to_bytes(ecu_client.upload(4, FLASH_BASE, 0))
+    assert erased_data == FLASH_ERASED_BYTE * 4
 
-    # 5. Write firmware data at flash base
+    # 4. Write firmware data at flash base
     firmware_header = b"\x7F\x45\x4C\x46"  # ELF magic (all < 0x80)
     ecu_client.set_mta(FLASH_BASE, 0)
     ecu_client.program(firmware_header, block_length=len(firmware_header))
 
-    # 6. Write more firmware data at next offset
+    # 5. Write more firmware data at next offset
     firmware_body = b"\x01\x02\x03\x04\x05\x06\x07\x08"  # all < 0x80
     ecu_client.set_mta(FLASH_BASE + 4, 0)
     ecu_client.program(firmware_body, block_length=len(firmware_body))
 
-    # 7. Verify programmed data
+    # 6. Verify programmed data
     header_readback = _to_bytes(ecu_client.upload(4, FLASH_BASE, 0))
     assert header_readback == firmware_header
 
     body_readback = _to_bytes(ecu_client.upload(8, FLASH_BASE + 4, 0))
     assert body_readback == firmware_body
 
-    # 8. Verify untouched flash area is still erased
+    # 7. Verify untouched flash area is still erased
     beyond = _to_bytes(ecu_client.upload(4, FLASH_BASE + 12, 0))
     assert beyond == b"\x00\x00\x00\x00"
 
-    # 9. Reset ECU
+    # 8. Reset ECU
     ecu_client.program_reset()
     assert mock_ecu._programming is False
 
@@ -220,14 +223,19 @@ def test_read_all_measurement_signals(ecu_client):
         assert data == expected, f"Mismatch at 0x{addr:08X}"
 
 
-def test_calibration_write_without_unlock_succeeds(ecu_client, mock_ecu):
-    """The XCP driver doesn't enforce protection at the memory write level
-    (unlike UDS where the ECU rejects writes). The mock ECU allows writes
-    but protection state is tracked for the test to verify."""
+def test_calibration_write_requires_unlock(ecu_client, mock_ecu):
+    """Calibration writes to a protected resource must be preceded by unlock."""
     ecu_client.connect()
     assert mock_ecu._protection["calpag"] is True
 
-    # XCP memory write goes through even without unlock (ECU-specific behavior)
+    # Write without unlock should be rejected
+    with pytest.raises(DriverError, match="CAL/PAG resource is protected"):
+        ecu_client.download(0x0010_0000, b"\x00\x00\x00\x00", 0)
+
+    # After unlock, the write should succeed
+    prot = ecu_client.unlock()
+    assert prot["calpag"] is False
+
     ecu_client.download(0x0010_0000, b"\x00\x00\x00\x00", 0)
     data = _to_bytes(ecu_client.upload(4, 0x0010_0000, 0))
     assert data == b"\x00\x00\x00\x00"
@@ -281,6 +289,7 @@ def test_reconnect_preserves_memory(ecu_client, mock_ecu):
     """After disconnect + reconnect, calibration writes should persist
     (simulating non-volatile storage)."""
     ecu_client.connect()
+    ecu_client.unlock()
     new_val = struct.pack("<I", 42)
     ecu_client.download(0x0010_0000, new_val, 0)
     ecu_client.disconnect()
