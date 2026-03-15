@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -40,7 +41,8 @@ import (
 // LeaseReconciler reconciles a Lease object
 type LeaseReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // ApprovedExporter represents an exporter that has been approved for leasing,
@@ -57,6 +59,7 @@ type ApprovedExporter struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -139,6 +142,9 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 			lease.Status.EndTime = &metav1.Time{Time: now}
 			return nil
 		} else if lease.Spec.Release {
+			r.emitEventf(lease, corev1.EventTypeNormal, "LeaseReleased",
+				"Lease released by client: client=%s exporter=%s",
+				lease.Spec.ClientRef.Name, lease.GetExporterName())
 			lease.Release(ctx)
 			return nil
 		} else if lease.Status.BeginTime != nil {
@@ -155,6 +161,9 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 			}
 
 			if expiration.Before(now) {
+				r.emitEventf(lease, corev1.EventTypeNormal, "LeaseExpired",
+					"Lease expired: client=%s exporter=%s expiration=%s",
+					lease.Spec.ClientRef.Name, lease.GetExporterName(), expiration.String())
 				lease.Expire(ctx)
 				return nil
 			}
@@ -177,6 +186,9 @@ func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 		now := time.Now()
 		lease.Status.BeginTime = &metav1.Time{Time: now}
 		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
+		r.emitEventf(lease, corev1.EventTypeNormal, "LeaseReady",
+			"Lease is ready: client=%s exporter=%s beginTime=%s",
+			lease.Spec.ClientRef.Name, lease.GetExporterName(), now.String())
 	}
 
 	return nil
@@ -206,6 +218,9 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 					"lease", lease.Name,
 					"requestedBeginTime", lease.Spec.BeginTime,
 					"waitDuration", waitDuration)
+				r.emitEventf(lease, corev1.EventTypeNormal, "LeasePending",
+					"Lease waiting for scheduled start: client=%s beginTime=%s waitDuration=%s",
+					lease.Spec.ClientRef.Name, lease.Spec.BeginTime.String(), waitDuration.String())
 				result.RequeueAfter = waitDuration
 				return nil
 			}
@@ -216,7 +231,12 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to get exporter selector: %w", err)
 		} else if selector.Empty() && lease.Spec.ExporterRef == nil {
+			prevInvalidReason := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypeInvalid)
 			lease.SetStatusInvalid("InvalidSelector", "The selector for the lease is empty, a selector is required")
+			if leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypeInvalid) != prevInvalidReason {
+				r.emitEventf(lease, corev1.EventTypeWarning, "LeaseInvalid",
+					"Lease has an invalid selector: client=%s", lease.Spec.ClientRef.Name)
+			}
 			return nil
 		}
 
@@ -262,22 +282,34 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		}
 
 		if len(approvedExporters) == 0 {
+			prevUnsatisfiableReason := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)
 			lease.SetStatusUnsatisfiable(
 				"NoAccess",
 				"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
 				len(matchingExporters),
 			)
+			if leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable) != prevUnsatisfiableReason {
+				r.emitEventf(lease, corev1.EventTypeWarning, "LeaseUnsatisfiable",
+					"No exporters approved by policy: matching=%d client=%s",
+					len(matchingExporters.Items), lease.Spec.ClientRef.Name)
+			}
 			return nil
 		}
 
 		onlineApprovedExporters := filterOutOfflineExporters(approvedExporters)
 		if len(onlineApprovedExporters) == 0 {
+			prevPendingReason := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending)
 			lease.SetStatusPending(
 				"Offline",
 				"While there are %d available exporters (i.e. %s), none of them are online",
 				len(approvedExporters),
 				approvedExporters[0].Exporter.Name,
 			)
+			if leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending) != prevPendingReason {
+				r.emitEventf(lease, corev1.EventTypeWarning, "NoOnlineExporters",
+					"No approved exporters are online: approved=%d sample=%s client=%s",
+					len(approvedExporters), approvedExporters[0].Exporter.Name, lease.Spec.ClientRef.Name)
+			}
 			result.RequeueAfter = time.Second
 			return nil
 		}
@@ -292,19 +324,31 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
 
 		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
+			prevUnsatisfiableReason := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)
 			lease.SetStatusUnsatisfiable("SpotAccess",
 				"The only possible exporters are under spot access (i.e. %s), but spot access is still not implemented",
 				orderedExporters[0].Exporter.Name)
+			if leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable) != prevUnsatisfiableReason {
+				r.emitEventf(lease, corev1.EventTypeWarning, "LeaseUnsatisfiable",
+					"Only spot-access exporters available (not yet implemented): exporter=%s client=%s",
+					orderedExporters[0].Exporter.Name, lease.Spec.ClientRef.Name)
+			}
 			return nil
 		}
 
 		availableExporters := filterOutLeasedExporters(onlineApprovedExporters)
 		if len(availableExporters) == 0 {
+			prevPendingReason := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending)
 			lease.SetStatusPending("NotAvailable",
 				"There are %d approved exporters, (i.e. %s) but all of them are already leased",
 				len(onlineApprovedExporters),
 				onlineApprovedExporters[0].Exporter.Name,
 			)
+			if leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending) != prevPendingReason {
+				r.emitEventf(lease, corev1.EventTypeWarning, "AllExportersLeased",
+					"All approved exporters are already leased: online=%d sample=%s client=%s",
+					len(onlineApprovedExporters), onlineApprovedExporters[0].Exporter.Name, lease.Spec.ClientRef.Name)
+			}
 			result.RequeueAfter = time.Second
 			return nil
 		}
@@ -322,9 +366,15 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 
 		if selected.ExistingLease != nil {
 			// TODO: Implement eviction of spot access leases
+			prevPendingReason := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending)
 			lease.SetStatusPending("NotAvailable",
 				"Exporter %s is already leased by another client under spot access, but spot access eviction still not implemented",
 				selected.Exporter.Name)
+			if leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending) != prevPendingReason {
+				r.emitEventf(lease, corev1.EventTypeWarning, "AllExportersLeased",
+					"Exporter leased under spot access, eviction not implemented: exporter=%s client=%s",
+					selected.Exporter.Name, lease.Spec.ClientRef.Name)
+			}
 			result.RequeueAfter = time.Second
 			return nil
 		}
@@ -334,6 +384,9 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		lease.Status.ExporterRef = &corev1.LocalObjectReference{
 			Name: selected.Exporter.Name,
 		}
+		r.emitEventf(lease, corev1.EventTypeNormal, "ExporterAssigned",
+			"Exporter assigned to lease: exporter=%s client=%s priority=%d",
+			selected.Exporter.Name, lease.Spec.ClientRef.Name, selected.Policy.Priority)
 		return nil
 	}
 
@@ -538,6 +591,22 @@ func filterOutOfflineExporters(approvedExporters []ApprovedExporter) []ApprovedE
 		},
 	)
 	return onlineExporters
+}
+
+// emitEventf emits a Kubernetes event on the given lease object.
+func (r *LeaseReconciler) emitEventf(lease *jumpstarterdevv1alpha1.Lease, eventType, reason, msgFmt string, args ...interface{}) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(lease, eventType, reason, msgFmt, args...)
+}
+
+func leaseConditionReason(lease *jumpstarterdevv1alpha1.Lease, condition jumpstarterdevv1alpha1.LeaseConditionType) string {
+	statusCondition := meta.FindStatusCondition(lease.Status.Conditions, string(condition))
+	if statusCondition == nil || statusCondition.Status != metav1.ConditionTrue {
+		return ""
+	}
+	return statusCondition.Reason
 }
 
 // SetupWithManager sets up the controller with the Manager.
