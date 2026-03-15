@@ -36,6 +36,8 @@ import (
 func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
+	prevReady := meta.IsStatusConditionTrue(js.Status.Conditions, operatorv1alpha1.ConditionTypeReady)
+
 	// Track overall readiness
 	allReady := true
 	var messages []string
@@ -119,10 +121,23 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		conditionReason(allReady, "AllComponentsReady", "ComponentsNotReady"),
 		readyMessage)
 
+	emitReady := !prevReady && allReady
+	emitDegraded := prevReady && !allReady
+
 	// Update the status
 	if err := r.Status().Update(ctx, js); err != nil {
 		log.Error(err, "Failed to update Jumpstarter status")
 		return err
+	}
+
+	// Emit only after status update succeeds.
+	if emitReady {
+		r.emitEventf(js, corev1.EventTypeNormal, "DeploymentReady",
+			"All Jumpstarter components are ready: name=%s namespace=%s", js.Name, js.Namespace)
+	} else if emitDegraded {
+		r.emitEventf(js, corev1.EventTypeWarning, "DeploymentDegraded",
+			"Jumpstarter is not ready: name=%s namespace=%s",
+			js.Name, js.Namespace)
 	}
 
 	log.V(1).Info("Status updated", "ready", allReady)
