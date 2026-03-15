@@ -239,24 +239,27 @@ func main() {
 	}
 
 	if err = (&controller.ExporterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Signer: oidcSigner,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Signer:   oidcSigner,
+		Recorder: mgr.GetEventRecorderFor("exporter-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Exporter")
 		os.Exit(1)
 	}
 	if err = (&controller.ClientReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Signer: oidcSigner,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Signer:   oidcSigner,
+		Recorder: mgr.GetEventRecorderFor("client-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Identity")
 		os.Exit(1)
 	}
 	if err = (&controller.LeaseReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("lease-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Lease")
 		os.Exit(1)

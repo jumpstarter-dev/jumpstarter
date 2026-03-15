@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -33,13 +34,15 @@ import (
 // ClientReconciler reconciles a Client object
 type ClientReconciler struct {
 	kclient.Client
-	Scheme *runtime.Scheme
-	Signer *oidc.Signer
+	Scheme   *runtime.Scheme
+	Signer   *oidc.Signer
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=clients/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.2/pkg/reconcile
@@ -54,6 +57,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	original := kclient.MergeFrom(client.DeepCopy())
+	prevCredential := client.Status.Credential
 
 	if err := r.reconcileStatusCredential(ctx, &client); err != nil {
 		return ctrl.Result{}, err
@@ -65,6 +69,12 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	if err := r.Status().Patch(ctx, &client, original); err != nil {
 		return RequeueConflict(logger, ctrl.Result{}, err)
+	}
+
+	// Emit only after status patch succeeds.
+	if prevCredential == nil && client.Status.Credential != nil {
+		r.emitEventf(&client, corev1.EventTypeNormal, "CredentialCreated",
+			"Credential secret created for client: secret=%s", client.Status.Credential.Name)
 	}
 
 	return ctrl.Result{}, nil
@@ -101,6 +111,13 @@ func (r *ClientReconciler) reconcileStatusEndpoint(
 	}
 
 	return nil
+}
+
+func (r *ClientReconciler) emitEventf(client *jumpstarterdevv1alpha1.Client, eventType, reason, msgFmt string, args ...interface{}) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(client, eventType, reason, msgFmt, args...)
 }
 
 // SetupWithManager sets up the controller with the Manager.
