@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -42,6 +43,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
 )
 
@@ -501,6 +503,246 @@ provisioning:
 				g.Expect(actualRouterObj).To(Equal(expectedRouterObj), "config map 'router' entry did not match expected")
 			}
 			Eventually(verifyConfigMap, 1*time.Minute).Should(Succeed())
+		})
+
+		It("should emit controller update events when controller spec changes", func() {
+			By("updating Jumpstarter controller replicas to trigger a deployment update")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter",
+				Namespace: dynamicTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			originalReplicas := jumpstarter.Spec.Controller.Replicas
+			jumpstarter.Spec.Controller.Replicas = originalReplicas + 1
+			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+			DeferCleanup(func() {
+				restore := &operatorv1alpha1.Jumpstarter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter",
+					Namespace: dynamicTestNamespace,
+				}, restore)
+				if getErr != nil {
+					return
+				}
+				restore.Spec.Controller.Replicas = originalReplicas
+				_ = k8sClient.Update(ctx, restore)
+			})
+
+			By("verifying the controller deployment reflects the updated replica count")
+			Eventually(func(g Gomega) {
+				deployment := &appsv1.Deployment{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: dynamicTestNamespace,
+				}, deployment)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(deployment.Spec.Replicas).NotTo(BeNil())
+				g.Expect(*deployment.Spec.Replicas).To(Equal(originalReplicas + 1))
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying ControllerDeploymentUpdated event was emitted on Jumpstarter resource")
+			Eventually(func(g Gomega) {
+				eventList := &corev1.EventList{}
+				listErr := k8sClient.List(ctx, eventList, client.InNamespace(dynamicTestNamespace))
+				g.Expect(listErr).NotTo(HaveOccurred())
+
+				found := false
+				for _, event := range eventList.Items {
+					if event.InvolvedObject.Kind == "Jumpstarter" &&
+						event.InvolvedObject.Name == "jumpstarter" &&
+						event.Reason == "ControllerDeploymentUpdated" {
+						found = true
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), "expected ControllerDeploymentUpdated event for jumpstarter")
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		It("should emit exporter offline and online events on status transitions", func() {
+			exporterName := "event-exporter"
+
+			By("creating an exporter resource")
+			exporter := &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      exporterName,
+					Namespace: dynamicTestNamespace,
+					Labels: map[string]string{
+						"e2e-event-test": "true",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, exporter)).To(Succeed())
+			DeferCleanup(func() {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &jumpstarterdevv1alpha1.Exporter{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      exporterName,
+						Namespace: dynamicTestNamespace,
+					},
+				}))
+			})
+
+			By("setting exporter status to an online/registered state")
+			Eventually(func(g Gomega) {
+				current := &jumpstarterdevv1alpha1.Exporter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
+				g.Expect(getErr).NotTo(HaveOccurred())
+
+				current.Status.LastSeen = metav1.Now()
+				current.Status.Devices = []jumpstarterdevv1alpha1.Device{{Uuid: "event-device"}}
+				current.Status.ExporterStatusValue = jumpstarterdevv1alpha1.ExporterStatusAvailable
+				current.Status.StatusMessage = "ready"
+				g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+			}, 30*time.Second).Should(Succeed())
+
+			By("waiting until exporter conditions are online and registered")
+			Eventually(func(g Gomega) {
+				current := &jumpstarterdevv1alpha1.Exporter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))).To(BeTrue())
+				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))).To(BeTrue())
+			}, 2*time.Minute).Should(Succeed())
+
+			By("forcing exporter into offline state by setting an old lastSeen timestamp")
+			Eventually(func(g Gomega) {
+				current := &jumpstarterdevv1alpha1.Exporter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
+				g.Expect(getErr).NotTo(HaveOccurred())
+
+				current.Status.LastSeen = metav1.NewTime(time.Now().Add(-2 * time.Minute))
+				current.Status.ExporterStatusValue = jumpstarterdevv1alpha1.ExporterStatusAvailable
+				g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+			}, 30*time.Second).Should(Succeed())
+
+			By("verifying ExporterOffline event was emitted")
+			Eventually(func(g Gomega) {
+				g.Expect(hasEventReasonForObject(dynamicTestNamespace, "Exporter", exporterName, "ExporterOffline")).To(BeTrue())
+			}, 2*time.Minute).Should(Succeed())
+
+			By("capturing baseline ExporterOnline event count before reconnect")
+			onlineEventCountBeforeReconnect := countEventReasonForObject(dynamicTestNamespace, "Exporter", exporterName, "ExporterOnline")
+
+			By("setting exporter back to online state")
+			Eventually(func(g Gomega) {
+				current := &jumpstarterdevv1alpha1.Exporter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
+				g.Expect(getErr).NotTo(HaveOccurred())
+
+				current.Status.LastSeen = metav1.Now()
+				current.Status.ExporterStatusValue = jumpstarterdevv1alpha1.ExporterStatusAvailable
+				current.Status.StatusMessage = "reconnected"
+				g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+			}, 30*time.Second).Should(Succeed())
+
+			By("verifying a new ExporterOnline event was emitted")
+			Eventually(func(g Gomega) {
+				g.Expect(countEventReasonForObject(dynamicTestNamespace, "Exporter", exporterName, "ExporterOnline")).
+					To(BeNumerically(">", onlineEventCountBeforeReconnect))
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		It("should emit lease assignment and ready events", func() {
+			clientName := "event-client"
+			exporterName := "lease-event-exporter"
+			leaseName := "event-lease"
+			selectorLabelKey := "dut"
+			selectorLabelValue := "event-target"
+
+			By("creating a client resource")
+			clientObj := &jumpstarterdevv1alpha1.Client{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clientName,
+					Namespace: dynamicTestNamespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, clientObj)).To(Succeed())
+			DeferCleanup(func() {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &jumpstarterdevv1alpha1.Client{
+					ObjectMeta: metav1.ObjectMeta{Name: clientName, Namespace: dynamicTestNamespace},
+				}))
+			})
+
+			By("creating an online exporter with a matching selector label")
+			exporterObj := &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      exporterName,
+					Namespace: dynamicTestNamespace,
+					Labels: map[string]string{
+						selectorLabelKey: selectorLabelValue,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, exporterObj)).To(Succeed())
+			DeferCleanup(func() {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &jumpstarterdevv1alpha1.Exporter{
+					ObjectMeta: metav1.ObjectMeta{Name: exporterName, Namespace: dynamicTestNamespace},
+				}))
+			})
+
+			Eventually(func(g Gomega) {
+				current := &jumpstarterdevv1alpha1.Exporter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
+				g.Expect(getErr).NotTo(HaveOccurred())
+
+				current.Status.LastSeen = metav1.Now()
+				current.Status.Devices = []jumpstarterdevv1alpha1.Device{{Uuid: "lease-event-device"}}
+				current.Status.ExporterStatusValue = jumpstarterdevv1alpha1.ExporterStatusAvailable
+				current.Status.StatusMessage = "ready"
+				g.Expect(k8sClient.Status().Update(ctx, current)).To(Succeed())
+			}, 30*time.Second).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				current := &jumpstarterdevv1alpha1.Exporter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))).To(BeTrue())
+				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))).To(BeTrue())
+			}, 2*time.Minute).Should(Succeed())
+
+			By("creating a lease that should match the exporter")
+			leaseObj := &jumpstarterdevv1alpha1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      leaseName,
+					Namespace: dynamicTestNamespace,
+				},
+				Spec: jumpstarterdevv1alpha1.LeaseSpec{
+					ClientRef: corev1.LocalObjectReference{Name: clientName},
+					Selector: metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							selectorLabelKey: selectorLabelValue,
+						},
+					},
+					Duration: &metav1.Duration{Duration: time.Minute},
+				},
+			}
+			Expect(k8sClient.Create(ctx, leaseObj)).To(Succeed())
+			DeferCleanup(func() {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &jumpstarterdevv1alpha1.Lease{
+					ObjectMeta: metav1.ObjectMeta{Name: leaseName, Namespace: dynamicTestNamespace},
+				}))
+			})
+
+			By("verifying lease gets assigned and ready")
+			Eventually(func(g Gomega) {
+				currentLease := &jumpstarterdevv1alpha1.Lease{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: leaseName, Namespace: dynamicTestNamespace}, currentLease)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(currentLease.Status.ExporterRef).NotTo(BeNil())
+				g.Expect(currentLease.Status.BeginTime).NotTo(BeNil())
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying ExporterAssigned event was emitted on lease")
+			Eventually(func(g Gomega) {
+				g.Expect(hasEventReasonForObject(dynamicTestNamespace, "Lease", leaseName, "ExporterAssigned")).To(BeTrue())
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying LeaseReady event was emitted on lease")
+			Eventually(func(g Gomega) {
+				g.Expect(hasEventReasonForObject(dynamicTestNamespace, "Lease", leaseName, "LeaseReady")).To(BeTrue())
+			}, 2*time.Minute).Should(Succeed())
 		})
 
 		It("should allow access to grpc endpoints", func() {
@@ -2092,6 +2334,28 @@ func verifyDeploymentHasNoTLSMount(g Gomega, namespace, name string) {
 		g.Expect(env.Name).NotTo(Equal("EXTERNAL_KEY_PEM"),
 			fmt.Sprintf("deployment %s should not have EXTERNAL_KEY_PEM env var", name))
 	}
+}
+
+func hasEventReasonForObject(namespace, kind, objectName, reason string) bool {
+	return countEventReasonForObject(namespace, kind, objectName, reason) > 0
+}
+
+func countEventReasonForObject(namespace, kind, objectName, reason string) int {
+	eventList := &corev1.EventList{}
+	if err := k8sClient.List(ctx, eventList, client.InNamespace(namespace)); err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, event := range eventList.Items {
+		if strings.EqualFold(event.InvolvedObject.Kind, kind) &&
+			event.InvolvedObject.Name == objectName &&
+			event.Reason == reason {
+			count++
+		}
+	}
+
+	return count
 }
 
 // dumpCertManagerResourcesOnFailure dumps cert-manager and Jumpstarter resources for debugging test failures.

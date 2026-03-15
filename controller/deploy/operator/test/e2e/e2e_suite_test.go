@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
@@ -66,6 +67,10 @@ var _ = BeforeSuite(func() {
 
 	// Add the operator scheme to the default scheme
 	err = operatorv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Add Jumpstarter core API scheme for Client/Exporter/Lease resources used in e2e tests.
+	err = jumpstarterdevv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Add cert-manager scheme for certificate testing
