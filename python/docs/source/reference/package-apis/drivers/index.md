@@ -61,6 +61,19 @@ Drivers that handle media streams:
 * **[UStreamer](ustreamer.md)** (`jumpstarter-driver-ustreamer`) - Video
   streaming functionality
 
+### Automotive Diagnostics Drivers
+
+Drivers for automotive diagnostic protocols:
+
+* **[DoIP](doip.md)** (`jumpstarter-driver-doip`) - Raw Diagnostics over Internet
+  Protocol (ISO-13400)
+* **[UDS](uds.md)** (`jumpstarter-driver-uds`) - Shared UDS interface and models
+  (ISO-14229)
+* **[UDS over DoIP](uds-doip.md)** (`jumpstarter-driver-uds-doip`) - UDS
+  diagnostics over DoIP transport
+* **[UDS over CAN](uds-can.md)** (`jumpstarter-driver-uds-can`) - UDS
+  diagnostics over CAN/ISO-TP transport
+
 ### Debug and Programming Drivers
 
 Drivers for debugging and programming devices:
@@ -91,6 +104,7 @@ General-purpose utility drivers:
 ble.md
 can.md
 corellium.md
+doip.md
 dutlink.md
 energenie.md
 esp32.md
@@ -114,6 +128,9 @@ tasmota.md
 tmt.md
 tftp.md
 uboot.md
+uds.md
+uds-can.md
+uds-doip.md
 ustreamer.md
 vnc.md
 yepkit.md
