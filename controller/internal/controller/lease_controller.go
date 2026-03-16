@@ -228,12 +228,11 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				Name:      lease.Spec.ExporterRef.Name,
 			}, &exporter); err != nil {
 				if k8serrors.IsNotFound(err) {
-					lease.SetStatusPending(
+					lease.SetStatusUnsatisfiable(
 						"ExporterNotFound",
 						"Requested exporter %s was not found",
 						lease.Spec.ExporterRef.Name,
 					)
-					result.RequeueAfter = time.Second
 					return nil
 				}
 				return fmt.Errorf("reconcileStatusExporterRef: failed to get requested exporter: %w", err)

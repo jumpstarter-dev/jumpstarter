@@ -105,7 +105,7 @@ var _ = Describe("Lease Controller", func() {
 	})
 
 	When("trying to lease with a missing requested exporter", func() {
-		It("should stay pending with ExporterNotFound reason", func() {
+		It("should be unsatisfiable with ExporterNotFound reason", func() {
 			lease := leaseDutA2Sec.DeepCopy()
 			lease.Spec.Selector.MatchLabels = nil
 			lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: "does-not-exist"}
@@ -116,9 +116,16 @@ var _ = Describe("Lease Controller", func() {
 
 			updatedLease := getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
-			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
+			condition := meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)
 			Expect(condition).NotTo(BeNil())
 			Expect(condition.Reason).To(Equal("ExporterNotFound"))
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+			)).To(BeFalse())
 		})
 	})
 
