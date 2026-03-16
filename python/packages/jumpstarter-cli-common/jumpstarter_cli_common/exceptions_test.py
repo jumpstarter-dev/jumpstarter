@@ -1,4 +1,5 @@
 import ssl
+from json import JSONDecodeError
 
 import click
 import pytest
@@ -70,3 +71,62 @@ def test_handle_exceptions_maps_connection_refused() -> None:
 
     with pytest.raises(click.ClickException, match="Connection was refused"):
         connection_refused_fn()
+
+
+def test_handle_exceptions_maps_json_decode_error() -> None:
+    @handle_exceptions
+    def bad_json_fn():
+        raise JSONDecodeError("Expecting value", "x", 0)
+
+    with pytest.raises(click.ClickException, match="Received invalid JSON data"):
+        bad_json_fn()
+
+
+def test_handle_exceptions_maps_keyboard_interrupt() -> None:
+    @handle_exceptions
+    def interrupt_fn():
+        raise KeyboardInterrupt()
+
+    with pytest.raises(click.ClickException, match="Cancelled by user"):
+        interrupt_fn()
+
+
+def test_handle_exceptions_maps_click_abort() -> None:
+    @handle_exceptions
+    def abort_fn():
+        raise click.Abort()
+
+    with pytest.raises(click.ClickException, match="Aborted by user"):
+        abort_fn()
+
+
+def test_handle_exceptions_maps_grpc_unauthenticated() -> None:
+    class MockGrpcError(Exception):
+        def code(self):
+            return type("Code", (), {"name": "UNAUTHENTICATED"})()
+
+        def details(self):
+            return "token expired"
+
+    @handle_exceptions
+    def grpc_auth_fn():
+        raise MockGrpcError()
+
+    with pytest.raises(click.ClickException, match="Authentication or authorization failed"):
+        grpc_auth_fn()
+
+
+def test_handle_exceptions_maps_grpc_invalid_argument() -> None:
+    class MockGrpcError(Exception):
+        def code(self):
+            return type("Code", (), {"name": "INVALID_ARGUMENT"})()
+
+        def details(self):
+            return "invalid selector"
+
+    @handle_exceptions
+    def grpc_invalid_arg_fn():
+        raise MockGrpcError()
+
+    with pytest.raises(click.ClickException, match="Invalid request arguments"):
+        grpc_invalid_arg_fn()

@@ -1,6 +1,7 @@
 import ssl
 from typing import Any
 from urllib.parse import urlparse
+import json
 
 import aiohttp
 import click
@@ -97,6 +98,10 @@ async def fetch_auth_config(
     except aiohttp.ClientConnectorSSLError as e:
         raise click.ClickException(
             f"TLS handshake failed while connecting to {login_endpoint}: {e}"
+        ) from e
+    except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+        raise click.ClickException(
+            f"Invalid JSON response received from {url}. Verify the login endpoint or proxy configuration."
         ) from e
     except TimeoutError as e:
         raise click.ClickException(

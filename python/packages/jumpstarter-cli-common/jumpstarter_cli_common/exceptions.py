@@ -1,4 +1,5 @@
 import asyncio
+import json
 import socket
 import ssl
 import types
@@ -61,6 +62,17 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
     if isinstance(exc, PermissionError):
         return ClickExceptionRed(f"Permission denied while accessing a required resource. Details: {message}")
 
+    if isinstance(exc, json.JSONDecodeError):
+        return ClickExceptionRed(
+            f"Received invalid JSON data from a remote endpoint. Verify the service/proxy response. Details: {message}"
+        )
+
+    if isinstance(exc, click.Abort):
+        return ClickExceptionRed("Aborted by user.")
+
+    if isinstance(exc, OSError):
+        return ClickExceptionRed(f"Local system error while performing the operation. Details: {message}")
+
     # gRPC status handling for common user-facing errors before they become opaque traces.
     code = None
     details = ""
@@ -99,6 +111,18 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
             "Service is temporarily unavailable or unreachable. Verify endpoint/network and retry."
             f"{detail_suffix}"
         )
+    if code in ("UNAUTHENTICATED", "PERMISSION_DENIED"):
+        detail_suffix = f" Details: {details}" if details else ""
+        return ClickExceptionRed(
+            "Authentication or authorization failed. Run 'jmp login' and verify access permissions."
+            f"{detail_suffix}"
+        )
+    if code == "INVALID_ARGUMENT":
+        detail_suffix = f" Details: {details}" if details else ""
+        return ClickExceptionRed(
+            "Invalid request arguments were sent to the service. Verify command options and configuration."
+            f"{detail_suffix}"
+        )
 
     return None
 
@@ -123,6 +147,8 @@ def async_handle_exceptions(func):
             raise eg
         except JumpstarterException as e:
             raise ClickExceptionRed(str(e)) from None
+        except KeyboardInterrupt:
+            raise ClickExceptionRed("Cancelled by user.") from None
         except click.ClickException:
             raise  # if it was already a click exception from the cli commands, just re-raise it
         except Exception as e:
@@ -142,6 +168,8 @@ def handle_exceptions(func):
             return func(*args, **kwargs)
         except JumpstarterException as e:
             raise ClickExceptionRed(str(e)) from None
+        except KeyboardInterrupt:
+            raise ClickExceptionRed("Cancelled by user.") from None
         except click.ClickException:
             raise  # if it was already a click exception from the cli commands, just re-raise it
         except Exception as e:
