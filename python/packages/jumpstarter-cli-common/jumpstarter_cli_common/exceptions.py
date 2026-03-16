@@ -1,4 +1,8 @@
+import asyncio
+import socket
+import ssl
 import types
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import wraps
 from types import TracebackType
 from typing import NoReturn
@@ -13,6 +17,92 @@ class ClickExceptionRed(click.ClickException):
         return click.style(self.message, fg="red")
 
 
+def _map_common_exception(exc: BaseException) -> click.ClickException | None:
+    """Map common transport/runtime exceptions to user-friendly Click errors."""
+    message = str(exc)
+    message_lower = message.lower()
+
+    timeout_types = (TimeoutError, asyncio.TimeoutError, socket.timeout, FutureTimeoutError)
+    if isinstance(exc, timeout_types):
+        timeout_hint = (
+            "Operation timed out. Check connectivity and retry. "
+            "If this happened while flashing, verify the board is reachable/in flashing mode "
+            "and increase retries or timeout."
+        )
+        if message:
+            timeout_hint = f"{timeout_hint} Details: {message}"
+        return ClickExceptionRed(timeout_hint)
+
+    is_cert_verification_error = isinstance(exc, ssl.SSLCertVerificationError) or (
+        isinstance(exc, ssl.SSLError) and "certificate verify failed" in message_lower
+    )
+    if is_cert_verification_error:
+        cert_hint = (
+            "TLS certificate validation failed. Verify the endpoint certificate chain or configure "
+            "the correct CA certificate. Use insecure TLS only for testing."
+        )
+        if message:
+            cert_hint = f"{cert_hint} Details: {message}"
+        return ClickExceptionRed(cert_hint)
+
+    if isinstance(exc, socket.gaierror):
+        return ClickExceptionRed(
+            f"Could not resolve host name. Check the endpoint DNS name and network settings. Details: {message}"
+        )
+
+    if isinstance(exc, ConnectionRefusedError):
+        return ClickExceptionRed(
+            f"Connection was refused by the remote endpoint. Verify endpoint/port and that the service is running. Details: {message}"
+        )
+
+    if isinstance(exc, FileNotFoundError):
+        return ClickExceptionRed(f"File not found. Verify the path and retry. Details: {message}")
+
+    if isinstance(exc, PermissionError):
+        return ClickExceptionRed(f"Permission denied while accessing a required resource. Details: {message}")
+
+    # gRPC status handling for common user-facing errors before they become opaque traces.
+    code = None
+    details = ""
+    if hasattr(exc, "code") and callable(getattr(exc, "code")):
+        try:
+            grpc_code = exc.code()
+            code = getattr(grpc_code, "name", str(grpc_code))
+        except Exception:
+            code = None
+    if hasattr(exc, "details") and callable(getattr(exc, "details")):
+        try:
+            details = str(exc.details() or "")
+        except Exception:
+            details = ""
+    details_lower = details.lower()
+
+    if code == "DEADLINE_EXCEEDED":
+        detail_suffix = f" Details: {details}" if details else ""
+        return ClickExceptionRed(
+            "Operation timed out while waiting for a response from the service."
+            f"{detail_suffix}"
+        )
+    if code == "UNAVAILABLE" and (
+        "certificate verify failed" in details_lower
+        or "certificate" in details_lower
+        or "tls" in details_lower
+    ):
+        detail_suffix = f" Details: {details}" if details else ""
+        return ClickExceptionRed(
+            "TLS connection failed while connecting to the service. Verify certificates/CA settings."
+            f"{detail_suffix}"
+        )
+    if code == "UNAVAILABLE":
+        detail_suffix = f" Details: {details}" if details else ""
+        return ClickExceptionRed(
+            "Service is temporarily unavailable or unreachable. Verify endpoint/network and retry."
+            f"{detail_suffix}"
+        )
+
+    return None
+
+
 def async_handle_exceptions(func):
     """Decorator to handle exceptions in async functions, including those wrapped in BaseExceptionGroup."""
 
@@ -23,7 +113,9 @@ def async_handle_exceptions(func):
         except BaseExceptionGroup as eg:
             # Handle exceptions wrapped in ExceptionGroup (e.g., from task groups)
             for exc in leaf_exceptions(eg, fix_tracebacks=False):
-                if isinstance(exc, JumpstarterException):
+                if common_exc := _map_common_exception(exc):
+                    raise common_exc from None
+                elif isinstance(exc, JumpstarterException):
                     raise ClickExceptionRed(str(exc)) from None
                 elif isinstance(exc, click.ClickException):
                     raise exc from None
@@ -33,7 +125,9 @@ def async_handle_exceptions(func):
             raise ClickExceptionRed(str(e)) from None
         except click.ClickException:
             raise  # if it was already a click exception from the cli commands, just re-raise it
-        except Exception:
+        except Exception as e:
+            if common_exc := _map_common_exception(e):
+                raise common_exc from None
             raise
 
     return wrapped
@@ -50,7 +144,9 @@ def handle_exceptions(func):
             raise ClickExceptionRed(str(e)) from None
         except click.ClickException:
             raise  # if it was already a click exception from the cli commands, just re-raise it
-        except Exception:
+        except Exception as e:
+            if common_exc := _map_common_exception(e):
+                raise common_exc from None
             raise
 
     return wrapped
@@ -71,6 +167,8 @@ def _handle_single_exception_with_reauth(exc, login_func):
     """Handle a single exception (may raise)."""
     if isinstance(exc, ConnectionError):
         _handle_connection_error_with_reauth(exc, login_func)
+    elif common_exc := _map_common_exception(exc):
+        raise common_exc from None
     elif isinstance(exc, JumpstarterException):
         raise ClickExceptionRed(str(exc)) from None
     elif isinstance(exc, click.ClickException):

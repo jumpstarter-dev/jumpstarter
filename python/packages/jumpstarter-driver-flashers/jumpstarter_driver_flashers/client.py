@@ -132,6 +132,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         power_off: bool = True,
     ):
         """Flash image to DUT"""
+        self._validate_flash_preflight(path, retries, cacert_file, insecure_tls, fls_binary_url, os_image_checksum)
+
         if bearer_token:
             bearer_token = self._validate_bearer_token(bearer_token)
 
@@ -258,6 +260,36 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # total time in minutes:seconds
         minutes, seconds = divmod(total_time, 60)
         self.logger.info(f"Flashing completed in {int(minutes)}m {int(seconds):02d}s")
+
+    def _validate_flash_preflight(
+        self,
+        path: PathBuf,
+        retries: int,
+        cacert_file: str | None,
+        insecure_tls: bool,
+        fls_binary_url: str | None,
+        os_image_checksum: str | None,
+    ) -> None:
+        image_path = str(path).strip()
+        if image_path == "":
+            raise click.ClickException("Image path cannot be empty.")
+
+        if retries < 0:
+            raise click.ClickException("Retries must be a non-negative integer.")
+
+        if insecure_tls and cacert_file:
+            raise click.ClickException("Use either --insecure-tls or --cacert, not both.")
+
+        if os_image_checksum and not re.fullmatch(r"[A-Fa-f0-9]{64}", os_image_checksum.strip()):
+            raise click.ClickException("OS image checksum must be a valid SHA256 hex value (64 characters).")
+
+        if image_path.startswith(("http://", "https://")):
+            self._validate_http_url(image_path, "image URL")
+        elif image_path.startswith("oci://"):
+            self._validate_oci_reference(image_path)
+
+        if fls_binary_url:
+            self._validate_http_url(fls_binary_url, "FLS binary URL")
 
     def _categorize_exception(self, exception: Exception) -> FlashRetryableError | FlashNonRetryableError:
         """Categorize an exception as retryable or non-retryable.
@@ -1244,6 +1276,18 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 raise ArgumentError(f"Duplicate header '{key}'")
             seen.add(kl)
         return header_map
+
+    def _validate_http_url(self, url: str, name: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise click.ClickException(f"Invalid {name}: '{url}'. Expected an absolute http(s) URL.")
+
+    def _validate_oci_reference(self, ref: str) -> None:
+        parsed = urlparse(ref)
+        if not parsed.netloc or parsed.path in ("", "/"):
+            raise click.ClickException(
+                f"Invalid OCI image reference: '{ref}'. Expected format like oci://registry/repository:tag."
+            )
 
     def _parse_headers(self, headers: list[str]) -> dict[str, str]:
         header_map: dict[str, str] = {}
