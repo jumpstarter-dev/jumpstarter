@@ -81,11 +81,26 @@ spec:
                   Can be updated to extend or shorten active leases.
                 format: date-time
                 type: string
+              exporterRef:
+                description: Optionally pin this lease to a specific exporter name.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               release:
                 description: The release flag requests the controller to end the lease
                   now
                 type: boolean
               selector:
+                default: {}
                 description: The selector for the exporter to be used
                 properties:
                   matchExpressions:
@@ -135,6 +150,12 @@ spec:
             - clientRef
             - selector
             type: object
+            x-kubernetes-validations:
+            - message: one of selector or exporterRef.name is required
+              rule: ((has(self.selector.matchLabels) && size(self.selector.matchLabels)
+                > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions)
+                > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name)
+                > 0)
           status:
             description: LeaseStatus defines the observed state of Lease
             properties:

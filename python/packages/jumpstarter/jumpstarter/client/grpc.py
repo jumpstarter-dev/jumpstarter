@@ -133,6 +133,7 @@ class Lease(BaseModel):
     namespace: str
     name: str
     selector: str
+    exporter_name: str | None = None
     duration: timedelta
     effective_duration: timedelta | None = None
     begin_time: datetime | None = None
@@ -187,6 +188,7 @@ class Lease(BaseModel):
             namespace=namespace,
             name=name,
             selector=data.selector,
+            exporter_name=data.exporter_name if data.exporter_name else None,
             duration=data.duration.ToTimedelta(),
             effective_duration=effective_duration,
             begin_time=begin_time,
@@ -411,8 +413,9 @@ class ClientService:
     async def CreateLease(
         self,
         *,
-        selector: str,
+        selector: str | None,
         duration: timedelta,
+        exporter_name: str | None = None,
         begin_time: datetime | None = None,
         lease_id: str | None = None,
     ):
@@ -421,7 +424,8 @@ class ClientService:
 
         lease_pb = client_pb2.Lease(
             duration=duration_pb,
-            selector=selector,
+            selector=selector or "",
+            exporter_name=exporter_name or "",
         )
 
         if begin_time:

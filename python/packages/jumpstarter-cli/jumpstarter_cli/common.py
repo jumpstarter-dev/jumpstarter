@@ -19,6 +19,15 @@ opt_selector = click.option(
     " Matching objects must satisfy all of the specified label constraints. Can be specified multiple times.",
 )
 
+opt_exporter_name = click.option(
+    "-n",
+    "--name",
+    "exporter_name",
+    type=str,
+    default=None,
+    help="Target a specific exporter/device name directly.",
+)
+
 
 class DurationParamType(click.ParamType):
     name = "duration"

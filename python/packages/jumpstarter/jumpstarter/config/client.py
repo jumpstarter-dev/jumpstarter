@@ -154,11 +154,14 @@ class ClientConfigV1Alpha1(BaseSettings):
     def lease(
         self,
         selector: str | None = None,
+        exporter_name: str | None = None,
         lease_name: str | None = None,
         duration: timedelta = timedelta(minutes=30),
     ):
         with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.lease_async(selector, lease_name, duration, portal)) as lease:
+            with portal.wrap_async_context_manager(
+                self.lease_async(selector, exporter_name, lease_name, duration, portal)
+            ) as lease:
                 yield lease
 
     @_blocking_compat
@@ -219,14 +222,16 @@ class ClientConfigV1Alpha1(BaseSettings):
     @_handle_connection_error
     async def create_lease(
         self,
-        selector: str,
         duration: timedelta,
+        selector: str | None = None,
+        exporter_name: str | None = None,
         begin_time: datetime | None = None,
         lease_id: str | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
             selector=selector,
+            exporter_name=exporter_name,
             duration=duration,
             begin_time=begin_time,
             lease_id=lease_id,
@@ -274,7 +279,8 @@ class ClientConfigV1Alpha1(BaseSettings):
     @asynccontextmanager
     async def lease_async(
         self,
-        selector: str,
+        selector: str | None,
+        exporter_name: str | None,
         lease_name: str | None,
         duration: timedelta,
         portal: BlockingPortal,
@@ -298,6 +304,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 namespace=self.metadata.namespace,
                 name=lease_name,
                 selector=selector,
+                requested_exporter_name=exporter_name,
                 duration=duration,
                 portal=portal,
                 allow=self.drivers.allow,

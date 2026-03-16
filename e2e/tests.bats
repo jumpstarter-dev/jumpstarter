@@ -353,6 +353,31 @@ EOF
   jmp shell --client test-client-oidc-provisioning --selector example.com/board=oidc j power on
 }
 
+@test "can lease and connect to exporters by name" {
+  wait_for_exporter
+
+  jmp shell --client test-client-oidc   --name test-exporter-oidc   j power on
+  jmp shell --client test-client-sa     --name test-exporter-sa     j power on
+  jmp shell --client test-client-legacy --name test-exporter-legacy j power on
+
+  # Reusing the same exporter immediately can be flaky while it reconnects.
+  wait_for_exporter
+
+  # --name and --selector together should work when they match.
+  jmp shell --client test-client-oidc --name test-exporter-oidc --selector example.com/board=oidc j power on
+}
+
+@test "fails fast when requesting non-existent exporter by name" {
+  wait_for_exporter
+
+  # Strict behavior: missing named exporter should become Unsatisfiable and fail quickly.
+  # If controller returns Pending here, this command will likely hit timeout (exit 124).
+  run timeout 20s jmp shell --client test-client-oidc --name test-exporter-does-not-exist j power on
+  assert_failure
+  [ "$status" -ne 124 ]
+  assert_output --partial "cannot be satisfied"
+}
+
 @test "can get crds with admin cli" {
   jmp admin get client --namespace "${JS_NAMESPACE}"
   jmp admin get exporter --namespace "${JS_NAMESPACE}"

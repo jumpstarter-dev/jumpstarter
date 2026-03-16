@@ -125,6 +125,7 @@ type Lease struct {
 	Client             *string                `protobuf:"bytes,9,opt,name=client,proto3,oneof" json:"client,omitempty"`
 	Exporter           *string                `protobuf:"bytes,10,opt,name=exporter,proto3,oneof" json:"exporter,omitempty"`
 	Conditions         []*v1.Condition        `protobuf:"bytes,11,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	ExporterName       *string                `protobuf:"bytes,12,opt,name=exporter_name,json=exporterName,proto3,oneof" json:"exporter_name,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -234,6 +235,13 @@ func (x *Lease) GetConditions() []*v1.Condition {
 		return x.Conditions
 	}
 	return nil
+}
+
+func (x *Lease) GetExporterName() string {
+	if x != nil && x.ExporterName != nil {
+		return *x.ExporterName
+	}
+	return ""
 }
 
 type GetExporterRequest struct {
@@ -742,7 +750,7 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:_\xeaA\\\n" +
-	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporter\"\xfa\x06\n" +
+	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporter\"\xbb\a\n" +
 	"\x05Lease\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12\"\n" +
 	"\bselector\x18\x02 \x01(\tB\x06\xe0A\x02\xe0A\x05R\bselector\x12:\n" +
@@ -760,7 +768,8 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x18jumpstarter.dev/ExporterH\x06R\bexporter\x88\x01\x01\x12>\n" +
 	"\n" +
 	"conditions\x18\v \x03(\v2\x19.jumpstarter.v1.ConditionB\x03\xe0A\x03R\n" +
-	"conditions:P\xeaAM\n" +
+	"conditions\x12-\n" +
+	"\rexporter_name\x18\f \x01(\tB\x03\xe0A\x05H\aR\fexporterName\x88\x01\x01:P\xeaAM\n" +
 	"\x15jumpstarter.dev/Lease\x12%namespaces/{namespace}/leases/{lease}*\x06leases2\x05leaseB\v\n" +
 	"\t_durationB\r\n" +
 	"\v_begin_timeB\x17\n" +
@@ -768,7 +777,8 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\t_end_timeB\x15\n" +
 	"\x13_effective_end_timeB\t\n" +
 	"\a_clientB\v\n" +
-	"\t_exporter\"J\n" +
+	"\t_exporterB\x10\n" +
+	"\x0e_exporter_name\"J\n" +
 	"\x12GetExporterRequest\x124\n" +
 	"\x04name\x18\x01 \x01(\tB \xe0A\x02\xfaA\x1a\n" +
 	"\x18jumpstarter.dev/ExporterR\x04name\"\xb3\x01\n" +

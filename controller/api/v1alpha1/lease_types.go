@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// +kubebuilder:validation:XValidation:rule="((has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name) > 0)",message="one of selector or exporterRef.name is required"
 // LeaseSpec defines the desired state of Lease
 type LeaseSpec struct {
 	// The client that is requesting the lease
@@ -30,7 +31,10 @@ type LeaseSpec struct {
 	// in which case it's calculated as EndTime - BeginTime.
 	Duration *metav1.Duration `json:"duration,omitempty"`
 	// The selector for the exporter to be used
+	// +kubebuilder:default:={}
 	Selector metav1.LabelSelector `json:"selector"`
+	// Optionally pin this lease to a specific exporter name.
+	ExporterRef *corev1.LocalObjectReference `json:"exporterRef,omitempty"`
 	// The release flag requests the controller to end the lease now
 	Release bool `json:"release,omitempty"`
 	// Requested start time. If omitted, lease starts when exporter is acquired.
