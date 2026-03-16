@@ -6,7 +6,6 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 )
 
@@ -28,15 +27,6 @@ func TestExporterEmitEventfNilRecorderDoesNotPanic(t *testing.T) {
 	})
 }
 
-func TestLeaseEmitEventfNilRecorderDoesNotPanic(t *testing.T) {
-	reconciler := &LeaseReconciler{}
-	lease := &jumpstarterdevv1alpha1.Lease{}
-
-	assertNotPanics(t, func() {
-		reconciler.emitEventf(lease, corev1.EventTypeNormal, "LeaseReady", "lease=%s", "test-lease")
-	})
-}
-
 func TestExporterEmitEventfWritesEvent(t *testing.T) {
 	recorder := record.NewFakeRecorder(1)
 	reconciler := &ExporterReconciler{Recorder: recorder}
@@ -51,31 +41,6 @@ func TestExporterEmitEventfWritesEvent(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected event to be emitted")
-	}
-}
-
-func TestLeaseConditionReason(t *testing.T) {
-	lease := &jumpstarterdevv1alpha1.Lease{
-		Status: jumpstarterdevv1alpha1.LeaseStatus{
-			Conditions: []metav1.Condition{
-				{
-					Type:   string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
-					Status: metav1.ConditionTrue,
-					Reason: "Offline",
-				},
-			},
-		},
-	}
-
-	got := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending)
-	if got != "Offline" {
-		t.Fatalf("expected reason %q, got %q", "Offline", got)
-	}
-
-	// False-status condition should not be treated as active.
-	lease.Status.Conditions[0].Status = metav1.ConditionFalse
-	if got := leaseConditionReason(lease, jumpstarterdevv1alpha1.LeaseConditionTypePending); got != "" {
-		t.Fatalf("expected empty reason for false condition, got %q", got)
 	}
 }
 

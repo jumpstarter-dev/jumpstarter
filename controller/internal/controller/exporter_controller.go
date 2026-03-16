@@ -70,7 +70,6 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	original := client.MergeFrom(exporter.DeepCopy())
 
-	prevLeaseRef := exporter.Status.LeaseRef
 	prevOnline := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
 	prevRegistered := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))
 
@@ -99,14 +98,6 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Emit only after status patch succeeds.
-	if prevLeaseRef == nil && exporter.Status.LeaseRef != nil {
-		r.emitEventf(&exporter, corev1.EventTypeNormal, "LeaseAcquired",
-			"Exporter acquired by lease: lease=%s", exporter.Status.LeaseRef.Name)
-	} else if prevLeaseRef != nil && exporter.Status.LeaseRef == nil {
-		r.emitEventf(&exporter, corev1.EventTypeNormal, "LeaseEnded",
-			"Exporter lease ended: previousLease=%s", prevLeaseRef.Name)
-	}
-
 	if !prevRegistered && newRegistered {
 		r.emitEventf(&exporter, corev1.EventTypeNormal, "ExporterRegistered",
 			"Exporter registered its capabilities: deviceCount=%d", len(exporter.Status.Devices))
