@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_GRPC_INSECURE, JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_GRPC_INSECURE, JMP_GRPC_PASSPHRASE, JUMPSTARTER_HOST
 from jumpstarter.exporter import Session
 from jumpstarter.utils.env import env
 
@@ -94,6 +94,7 @@ def launch_shell(
     command: tuple[str, ...] | None = None,
     lease=None,
     insecure: bool = False,
+    passphrase: str | None = None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -120,6 +121,8 @@ def launch_shell(
     }
     if insecure:
         common_env = common_env | {JMP_GRPC_INSECURE: "1"}
+    if passphrase:
+        common_env = common_env | {JMP_GRPC_PASSPHRASE: passphrase}
 
     if command:
         return _run_process(list(command), common_env, lease)

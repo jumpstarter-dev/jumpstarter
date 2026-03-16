@@ -56,6 +56,7 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
     insecure: bool = False
+    passphrase: str | None = None
 
     name: str = field(default="direct", init=False)
     exporter_name: str = field(default="direct", init=False)

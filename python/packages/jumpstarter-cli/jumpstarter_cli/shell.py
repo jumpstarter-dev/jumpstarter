@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import anyio
 import click
+import grpc
 from anyio import create_task_group, get_cancelled_exc_class
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import find_exception_in_group, handle_exceptions_with_reauthentication
@@ -38,6 +39,7 @@ def _run_shell_only(lease, config, command, path: str) -> int:
     unsafe = config.drivers.unsafe if config is not None else getattr(lease, "unsafe", False)
     use_profiles = config.shell.use_profiles if config is not None else False
     insecure = getattr(lease, "insecure", False)
+    passphrase = getattr(lease, "passphrase", None)
     return launch_shell(
         path,
         lease.exporter_name,
@@ -47,6 +49,7 @@ def _run_shell_only(lease, config, command, path: str) -> int:
         command=command,
         lease=lease,
         insecure=insecure,
+        passphrase=passphrase,
     )
 
 
@@ -118,6 +121,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                     tls_config=getattr(lease, "tls_config", None),
                     grpc_options=getattr(lease, "grpc_options", None),
                     insecure=getattr(lease, "insecure", False),
+                    passphrase=getattr(lease, "passphrase", None),
                 ) as client:
                     # Probe GetStatus before log stream so the server-side error
                     # from unsupported exporters is not streamed to the terminal.
@@ -365,7 +369,13 @@ async def _resolve_lease_from_active_async(config) -> str:
     )
 
 
-async def _shell_direct_async(tls_grpc_address: str, tls_grpc_insecure: bool, exporter_logs: bool, command: tuple):
+async def _shell_direct_async(
+    tls_grpc_address: str,
+    tls_grpc_insecure: bool,
+    exporter_logs: bool,
+    command: tuple,
+    passphrase: str | None = None,
+):
     """Run shell with direct connection to exporter (no controller)."""
     exit_code = 0
     cancelled_exc_class = get_cancelled_exc_class()
@@ -379,6 +389,7 @@ async def _shell_direct_async(tls_grpc_address: str, tls_grpc_insecure: bool, ex
             tls_config=TLSConfigV1Alpha1(),
             grpc_options={},
             insecure=tls_grpc_insecure,
+            passphrase=passphrase,
         )
         # Minimal config for _run_shell_with_lease_async (allow/unsafe/use_profiles)
         config = SimpleNamespace(
@@ -392,6 +403,10 @@ async def _shell_direct_async(tls_grpc_address: str, tls_grpc_insecure: bool, ex
                 exit_code = await _run_shell_with_lease_async(
                     lease, exporter_logs, config, command, tg.cancel_scope
                 )
+            except grpc.aio.AioRpcError as e:
+                if e.code() == grpc.StatusCode.UNAUTHENTICATED:
+                    raise click.ClickException("Authentication failed: invalid or missing passphrase") from None
+                raise
             except cancelled_exc_class:
                 exit_code = 2
             finally:
@@ -425,6 +440,12 @@ async def _shell_direct_async(tls_grpc_address: str, tls_grpc_insecure: bool, ex
     is_flag=True,
     help="With --tls-grpc, connect without TLS (insecure, for development only).",
 )
+@click.option(
+    "--passphrase",
+    "passphrase",
+    default=None,
+    help="Passphrase for authenticating with a standalone exporter (--tls-grpc).",
+)
 # end client specific
 @handle_exceptions_with_reauthentication(relogin_client)
 def shell(
@@ -438,6 +459,7 @@ def shell(
     acquisition_timeout,
     tls_grpc_address,
     tls_grpc_insecure,
+    passphrase,
 ):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
@@ -459,6 +481,7 @@ def shell(
             tls_grpc_insecure,
             exporter_logs,
             command,
+            passphrase,
         )
         sys.exit(exit_code)
 

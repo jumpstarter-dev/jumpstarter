@@ -69,7 +69,7 @@ def _reap_zombie_processes(capture_child=None):
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
-def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None):  # noqa: C901
+def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None):  # noqa: C901
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
         received_signal = 0
@@ -101,27 +101,28 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
             if parsed_bind is not None:
                 host, port = parsed_bind
                 tls_credentials = None
-                if tls_insecure and (tls_cert or tls_key):
-                    raise click.UsageError(
-                        "--tls-grpc-insecure cannot be combined with --tls-cert / --tls-key"
-                    )
-                elif tls_insecure:
-                    pass  # no TLS
+                if tls_insecure:
+                    if passphrase:
+                        click.echo(
+                            "WARNING: --passphrase has no effect without TLS; "
+                            "the passphrase will be transmitted in plaintext",
+                            err=True,
+                        )
                 elif tls_cert and tls_key:
                     tls_credentials = _tls_server_credentials(tls_cert, tls_key)
-                elif tls_cert or tls_key:
-                    click.echo("Both --tls-cert and --tls-key are required for TLS", err=True)
-                    sys.exit(1)
-                else:
-                    raise click.UsageError(
-                        "--tls-grpc-listener requires either --tls-grpc-insecure or --tls-cert and --tls-key"
-                    )
+
+                interceptors = None
+                if passphrase:
+                    from jumpstarter.exporter.auth import PassphraseInterceptor
+                    interceptors = [PassphraseInterceptor(passphrase)]
 
                 exporter_exit_code = None
                 async with config.create_exporter(standalone=True) as exporter:
                     try:
                         await exporter.serve_standalone_tcp(
-                            host, port, tls_credentials=tls_credentials
+                            host, port,
+                            tls_credentials=tls_credentials,
+                            interceptors=interceptors,
                         )
                     except* Exception as excgroup:
                         _handle_exporter_exceptions(excgroup)
@@ -201,7 +202,9 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
-def _serve_with_exc_handling(config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None):
+def _serve_with_exc_handling(
+    config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None
+):
     while True:
         pid = os.fork()
 
@@ -210,7 +213,7 @@ def _serve_with_exc_handling(config, parsed_bind=None, tls_insecure=False, tls_c
                 return exit_code
         else:
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
-            _handle_child(config, parsed_bind, tls_insecure, tls_cert, tls_key)
+            _handle_child(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
             sys.exit(1) # should never happen
 
 
@@ -238,10 +241,27 @@ def _serve_with_exc_handling(config, parsed_bind=None, tls_insecure=False, tls_c
     type=click.Path(exists=True),
     help="Server private key (PEM) for --tls-grpc-listener.",
 )
+@click.option(
+    "--passphrase",
+    "passphrase",
+    default=None,
+    help="Require this passphrase from clients connecting via --tls-grpc-listener.",
+)
 @handle_exceptions
-def run(config, listener_bind, tls_insecure, tls_cert, tls_key):
+def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
     """Run an exporter locally."""
     if listener_bind is not None and config is None:
         raise click.UsageError("--exporter-config (or --exporter) is required when using --tls-grpc-listener")
+    if listener_bind is None and (tls_insecure or tls_cert or tls_key or passphrase):
+        raise click.UsageError(
+            "--tls-grpc-insecure, --tls-cert, --tls-key, and --passphrase require --tls-grpc-listener"
+        )
+    if listener_bind is not None:
+        if tls_insecure and (tls_cert or tls_key):
+            raise click.UsageError("--tls-grpc-insecure cannot be combined with --tls-cert / --tls-key")
+        if not tls_insecure and not (tls_cert and tls_key):
+            raise click.UsageError(
+                "--tls-grpc-listener requires either --tls-grpc-insecure or --tls-cert and --tls-key"
+            )
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
-    return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key)
+    return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)

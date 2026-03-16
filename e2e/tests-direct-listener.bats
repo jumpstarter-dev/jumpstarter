@@ -18,19 +18,26 @@ setup() {
 #   $2 - readiness: "grpc" waits via jmp shell (drains LogStream),
 #                   "port" waits via nc -z (preserves LogStream queue)
 #   $3 - if set, redirect stderr to ${BATS_TEST_TMPDIR}/exporter.log
+#   $4 - passphrase (optional)
 _start_exporter() {
   local config="${1:-$EXPORTER_CONFIG}"
   local readiness="${2:-grpc}"
   local capture_logs="${3:-}"
+  local passphrase="${4:-}"
+
+  local extra_args=()
+  if [ -n "$passphrase" ]; then
+    extra_args+=(--passphrase "$passphrase")
+  fi
 
   if [ -n "$capture_logs" ]; then
     jmp run --exporter-config "$config" \
       --tls-grpc-listener "$LISTENER_PORT" \
-      --tls-grpc-insecure 2>"${BATS_TEST_TMPDIR}/exporter.log" &
+      --tls-grpc-insecure "${extra_args[@]}" 2>"${BATS_TEST_TMPDIR}/exporter.log" &
   else
     jmp run --exporter-config "$config" \
       --tls-grpc-listener "$LISTENER_PORT" \
-      --tls-grpc-insecure &
+      --tls-grpc-insecure "${extra_args[@]}" &
   fi
   LISTENER_PID=$!
   echo "$LISTENER_PID" > "${BATS_TEST_TMPDIR}/exporter.pid"
@@ -50,7 +57,11 @@ _start_exporter() {
   else
     # Full gRPC check: ensures exporter is ready for commands.
     # Drains LogStream queue (unsuitable for hook output tests).
-    while ! jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure -- j --help >/dev/null 2>&1; do
+    local grpc_args=(--tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure)
+    if [ -n "$passphrase" ]; then
+      grpc_args+=(--passphrase "$passphrase")
+    fi
+    while ! jmp shell "${grpc_args[@]}" -- j --help >/dev/null 2>&1; do
       retries=$((retries - 1))
       if [ "$retries" -le 0 ]; then
         echo "Exporter did not become ready in time" >&2
@@ -65,6 +76,8 @@ start_exporter()              { _start_exporter "$1" grpc; }
 start_exporter_with_logs()    { _start_exporter "$1" grpc logs; }
 start_exporter_bg()           { _start_exporter "$1" port; }
 start_exporter_bg_with_logs() { _start_exporter "$1" port logs; }
+
+start_exporter_with_passphrase() { _start_exporter "${2:-$EXPORTER_CONFIG}" grpc "" "$1"; }
 
 stop_exporter() {
   if [ -f "${BATS_TEST_TMPDIR}/exporter.pid" ]; then
@@ -133,4 +146,28 @@ teardown() {
   # afterLease hook output should appear in the exporter's stderr log
   run cat "${BATS_TEST_TMPDIR}/exporter.log"
   assert_output --partial "AFTER_HOOK_DIRECT: executed"
+}
+
+@test "direct listener passphrase: correct passphrase connects" {
+  start_exporter_with_passphrase "my-secret"
+
+  run jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure \
+    --passphrase "my-secret" -- j power on
+  assert_success
+}
+
+@test "direct listener passphrase: wrong passphrase is rejected" {
+  start_exporter_with_passphrase "my-secret"
+
+  run jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure \
+    --passphrase "wrong" -- j power on
+  assert_failure
+}
+
+@test "direct listener passphrase: missing passphrase is rejected" {
+  start_exporter_with_passphrase "my-secret"
+
+  run jmp shell --tls-grpc "127.0.0.1:${LISTENER_PORT}" --tls-grpc-insecure \
+    -- j power on
+  assert_failure
 }

@@ -138,11 +138,18 @@ async def ssl_channel_credentials(target: str, tls_config, timeout=5):
         return grpc.ssl_channel_credentials()
 
 
-def aio_secure_channel(target: str, credentials: grpc.ChannelCredentials, grpc_options: dict[str, Any] | None):
+def aio_secure_channel(
+    target: str,
+    credentials: grpc.ChannelCredentials,
+    grpc_options: dict[str, Any] | None,
+    *,
+    interceptors: list | None = None,
+):
     return grpc.aio.secure_channel(
         target,
         credentials,
         options=_override_default_grpc_options(grpc_options),
+        interceptors=interceptors,
     )
 
 

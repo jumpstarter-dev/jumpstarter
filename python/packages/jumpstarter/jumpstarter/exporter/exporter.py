@@ -831,6 +831,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         port: int,
         *,
         tls_credentials: grpc.ServerCredentials | None = None,
+        interceptors: list | None = None,
     ) -> None:
         """Serve the exporter on a TCP address without a controller (standalone mode).
 
@@ -855,7 +856,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 lease_scope.hook_socket_path = hook_path_str
 
                 async with session.serve_tcp_and_unix_async(
-                    host, port, hook_path_str, tls_credentials=tls_credentials
+                    host, port, hook_path_str,
+                    tls_credentials=tls_credentials,
+                    interceptors=interceptors,
                 ):
                     try:
                         async with create_task_group() as tg:

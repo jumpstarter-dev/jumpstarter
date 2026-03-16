@@ -45,23 +45,35 @@ async def client_from_path(
     tls_config: TLSConfigV1Alpha1 | None = None,
     grpc_options: dict | None = None,
     insecure: bool = False,
+    passphrase: str | None = None,
 ):
     """Create a DriverClient from a Unix socket path or a TCP address (host:port).
 
     When path is a TCP address (e.g. exporter.host.name:1234), use tls_config and
     insecure to build the channel. When path is a Unix path, those are ignored.
+    passphrase, if set, is injected as metadata on every RPC via client interceptors.
     """
+    interceptors = None
+    if passphrase:
+        from jumpstarter.exporter.auth import passphrase_client_interceptors
+
+        interceptors = passphrase_client_interceptors(passphrase)
+
     path = str(path)
     if _is_tcp_address(path):
         if insecure:
             async with grpc.aio.insecure_channel(
-                path, options=_override_default_grpc_options(grpc_options)
+                path,
+                options=_override_default_grpc_options(grpc_options),
+                interceptors=interceptors,
             ) as channel:
                 yield await client_from_channel(channel, portal, stack, allow, unsafe)
         else:
             tls = tls_config or TLSConfigV1Alpha1()
             credentials = await ssl_channel_credentials(path, tls)
-            async with aio_secure_channel(path, credentials, grpc_options) as channel:
+            async with aio_secure_channel(
+                path, credentials, grpc_options, interceptors=interceptors
+            ) as channel:
                 yield await client_from_channel(channel, portal, stack, allow, unsafe)
     else:
         async with grpc.aio.secure_channel(
