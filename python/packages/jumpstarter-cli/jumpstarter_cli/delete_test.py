@@ -167,7 +167,10 @@ def test_delete_multiple_names():
 def test_delete_no_args_raises_error():
     config = _make_config([])
 
-    with pytest.raises(click.ClickException, match="One of NAMES, --selector, --all or --all-clients must be specified"):
+    with pytest.raises(
+        click.ClickException,
+        match="One of NAMES, --selector, --all or --all-clients must be specified",
+    ):
         _delete_leases(
             config=config, names=(), selector=None,
             delete_all=False, all_clients=False, output=None,

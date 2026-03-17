@@ -23,7 +23,10 @@ def delete():
 @click.option("-A", "--all-clients", "all_clients", is_flag=True, help="Delete active leases from all clients")
 @opt_output_name_only
 @handle_exceptions_with_reauthentication(relogin_client)
-def delete_leases(config, names: tuple[str, ...], selector: str | None, delete_all: bool, all_clients: bool, output: OutputType):
+def delete_leases(
+    config, names: tuple[str, ...], selector: str | None,
+    delete_all: bool, all_clients: bool, output: OutputType,
+):
     """
     Delete leases
     """

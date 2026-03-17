@@ -26,7 +26,7 @@ class TestDeleteLeasesShortFlags:
         from .delete import delete_leases
 
         all_option = next(
-            param for param in delete_leases.params if param.name == "all"
+            param for param in delete_leases.params if param.name == "delete_all"
         )
         assert "-a" in all_option.opts
 
