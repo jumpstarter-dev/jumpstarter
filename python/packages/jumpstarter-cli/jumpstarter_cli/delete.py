@@ -49,6 +49,9 @@ def delete_leases(
     else:
         raise click.ClickException("One of NAMES, --selector, --all or --all-clients must be specified")
 
+    if not to_delete:
+        raise click.ClickException("no leases found matching the criteria")
+
     for name in to_delete:
         config.delete_lease(name=name)
         match output:

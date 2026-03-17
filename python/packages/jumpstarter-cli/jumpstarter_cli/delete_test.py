@@ -175,3 +175,42 @@ def test_delete_no_args_raises_error():
             config=config, names=(), selector=None,
             delete_all=False, all_clients=False, output=None,
         )
+
+
+def test_delete_all_raises_error_when_no_leases_match():
+    config = _make_config([])
+
+    with pytest.raises(
+        click.ClickException,
+        match="no leases found matching the criteria",
+    ):
+        _delete_leases(
+            config=config, names=(), selector=None,
+            delete_all=True, all_clients=False, output=None,
+        )
+
+
+def test_delete_all_clients_raises_error_when_no_leases_match():
+    config = _make_config([])
+
+    with pytest.raises(
+        click.ClickException,
+        match="no leases found matching the criteria",
+    ):
+        _delete_leases(
+            config=config, names=(), selector=None,
+            delete_all=False, all_clients=True, output=None,
+        )
+
+
+def test_delete_by_selector_raises_error_when_no_leases_match():
+    config = _make_config([])
+
+    with pytest.raises(
+        click.ClickException,
+        match="no leases found matching the criteria",
+    ):
+        _delete_leases(
+            config=config, names=(), selector="env=missing",
+            delete_all=False, all_clients=False, output=None,
+        )
