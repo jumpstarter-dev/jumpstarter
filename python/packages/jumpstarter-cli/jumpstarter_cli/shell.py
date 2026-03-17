@@ -292,9 +292,24 @@ async def _shell_with_signal_handling(  # noqa: C901
     return exit_code
 
 
+def _format_lease_display(lease) -> str:
+    parts = []
+    if lease.exporter:
+        parts.append(f"exporter={lease.exporter}")
+    if lease.selector:
+        parts.append(f"selector={lease.selector}")
+    if lease.effective_end_time:
+        parts.append(f"expires {lease.effective_end_time.strftime('%Y-%m-%d %H:%M')}")
+    elif lease.effective_begin_time and lease.duration:
+        end = lease.effective_begin_time + lease.duration
+        parts.append(f"expires {end.strftime('%Y-%m-%d %H:%M')}")
+    return ", ".join(parts) if parts else ""
+
+
 def _resolve_lease_from_active(config) -> str:
     lease_list = config.list_leases(only_active=True)
-    leases = lease_list.leases
+    client_name = config.metadata.name
+    leases = [lease for lease in lease_list.leases if lease.client == client_name]
 
     if not leases:
         raise click.UsageError(
@@ -305,16 +320,27 @@ def _resolve_lease_from_active(config) -> str:
     if len(leases) == 1:
         return leases[0].name
 
-    lease_names = [lease.name for lease in leases]
     if sys.stdin.isatty():
-        return click.prompt(
-            "Multiple active leases found. Select one",
-            type=click.Choice(lease_names),
+        click.echo("Multiple active leases found:\n")
+        for i, lease in enumerate(leases, 1):
+            info = _format_lease_display(lease)
+            click.echo(f"  {i}) {lease.name}")
+            if info:
+                click.echo(f"     {info}")
+        click.echo()
+        chosen = click.prompt(
+            "Select a lease [1-{}]".format(len(leases)),
+            type=click.IntRange(1, len(leases)),
         )
+        return leases[chosen - 1].name
 
-    names_display = ", ".join(lease_names)
+    lease_summaries = [
+        f"{lease.name} ({_format_lease_display(lease)})" for lease in leases
+    ]
     raise click.UsageError(
-        f"multiple active leases found: {names_display}. Use --lease to specify one, or run interactively to select."
+        "multiple active leases found:\n  "
+        + "\n  ".join(lease_summaries)
+        + "\nUse --lease to specify one, or run interactively to select."
     )
 
 
