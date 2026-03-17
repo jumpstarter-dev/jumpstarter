@@ -386,7 +386,7 @@ class TestGetLeasesClientFiltering:
         config.list_leases = Mock(return_value=LeaseList(leases=leases, next_page_token=None))
         return config
 
-    def test_default_shows_only_own_leases(self):
+    def test_default_shows_only_own_active_leases(self):
         from unittest.mock import patch
 
         my_lease = self._make_lease("my-lease", client="my-client")
@@ -395,14 +395,15 @@ class TestGetLeasesClientFiltering:
 
         with patch("jumpstarter_cli.get.model_print") as mock_print:
             _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=False,
+                config=config, selector=None, output=None, show_all=False, all_clients=False,
             )
 
         printed_leases = mock_print.call_args[0][0]
         assert len(printed_leases.leases) == 1
         assert printed_leases.leases[0].name == "my-lease"
+        config.list_leases.assert_called_once_with(filter=None, only_active=True)
 
-    def test_all_flag_shows_all_clients(self):
+    def test_all_flag_includes_expired_own_only(self):
         from unittest.mock import patch
 
         my_lease = self._make_lease("my-lease", client="my-client")
@@ -411,30 +412,42 @@ class TestGetLeasesClientFiltering:
 
         with patch("jumpstarter_cli.get.model_print") as mock_print:
             _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=True,
+                config=config, selector=None, output=None, show_all=True, all_clients=False,
+            )
+
+        printed_leases = mock_print.call_args[0][0]
+        assert len(printed_leases.leases) == 1
+        assert printed_leases.leases[0].name == "my-lease"
+        config.list_leases.assert_called_once_with(filter=None, only_active=False)
+
+    def test_all_clients_shows_everyone_active(self):
+        from unittest.mock import patch
+
+        my_lease = self._make_lease("my-lease", client="my-client")
+        other_lease = self._make_lease("other-lease", client="other-client")
+        config = self._make_config([my_lease, other_lease])
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False, all_clients=True,
             )
 
         printed_leases = mock_print.call_args[0][0]
         assert len(printed_leases.leases) == 2
-
-    def test_all_flag_includes_expired(self):
-        config = self._make_config([])
-
-        from unittest.mock import patch
-        with patch("jumpstarter_cli.get.model_print"):
-            _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=True,
-            )
-
-        config.list_leases.assert_called_once_with(filter=None, only_active=False)
-
-    def test_default_only_active(self):
-        config = self._make_config([])
-
-        from unittest.mock import patch
-        with patch("jumpstarter_cli.get.model_print"):
-            _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=False,
-            )
-
         config.list_leases.assert_called_once_with(filter=None, only_active=True)
+
+    def test_all_and_all_clients_shows_everything(self):
+        from unittest.mock import patch
+
+        my_lease = self._make_lease("my-lease", client="my-client")
+        other_lease = self._make_lease("other-lease", client="other-client")
+        config = self._make_config([my_lease, other_lease])
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=True, all_clients=True,
+            )
+
+        printed_leases = mock_print.call_args[0][0]
+        assert len(printed_leases.leases) == 2
+        config.list_leases.assert_called_once_with(filter=None, only_active=False)
