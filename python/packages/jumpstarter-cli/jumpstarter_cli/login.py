@@ -58,6 +58,9 @@ async def fetch_auth_config(
     login_endpoint: str,
     insecure: bool = False,
 ) -> dict[str, Any]:
+    if login_endpoint.startswith("http://") and not insecure:
+        raise click.UsageError("HTTP login endpoints require --insecure.")
+
     if not login_endpoint.startswith(("http://", "https://")):
         scheme = "http" if insecure else "https"
         login_endpoint = f"{scheme}://{login_endpoint}"

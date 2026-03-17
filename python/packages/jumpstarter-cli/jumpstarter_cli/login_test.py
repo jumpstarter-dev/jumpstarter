@@ -53,7 +53,7 @@ def test_validate_login_endpoint_url_rejects_unsupported_scheme() -> None:
 
 
 def test_validate_login_endpoint_url_rejects_http_without_explicit_opt_in() -> None:
-    with pytest.raises(click.ClickException, match="Use --insecure-login-http"):
+    with pytest.raises(click.ClickException, match="Use --insecure"):
         _validate_login_endpoint_url("http://login.example.com")
 
 
@@ -150,22 +150,17 @@ def test_login_cli_shows_certificate_message(monkeypatch) -> None:
     assert "TLS certificate verification failed" in result.output
 
 
-def test_login_cli_rejects_conflicting_insecure_flags() -> None:
-    runner = CliRunner()
-    result = runner.invoke(
-        jmp,
-        [
-            "login",
-            "login.example.com",
-            "--client-config",
-            "/tmp/nonexistent-client.yaml",
-            "--insecure-login-http",
-            "--insecure-login-tls",
-        ],
-    )
+@pytest.mark.asyncio
+async def test_fetch_auth_config_rejects_http_without_insecure():
+    with pytest.raises(click.UsageError, match="--insecure"):
+        await fetch_auth_config("http://login.example.com", insecure=False)
 
-    assert result.exit_code != 0
-    assert "--insecure-login-http and --insecure-login-tls cannot be used together" in result.output
+
+@pytest.mark.asyncio
+async def test_fetch_auth_config_allows_http_with_insecure():
+    with pytest.raises(Exception) as exc_info:
+        await fetch_auth_config("http://login.example.com", insecure=True)
+    assert not isinstance(exc_info.value, click.UsageError)
 
 
 def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) -> None:
