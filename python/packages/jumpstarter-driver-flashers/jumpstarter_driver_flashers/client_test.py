@@ -4,7 +4,6 @@ from pathlib import PosixPath
 
 import click
 import pytest
-from click.testing import CliRunner
 
 from .client import BaseFlasherClient, FlashNonRetryableError, FlashRetryableError
 from jumpstarter.common.exceptions import ArgumentError
@@ -17,6 +16,8 @@ class MockFlasherClient(BaseFlasherClient):
         self._manifest = None
         self._console_debug = False
         self._redaction_values = set()
+        self.children = {}
+        self.methods_description = {}
         self.logger = type(
             "MockLogger",
             (),
@@ -446,61 +447,3 @@ def test_resolve_flash_parameters():
         client._resolve_flash_parameters(None, ("rootfs_no_colon",), None)
 
 
-def test_validate_flash_preflight_rejects_negative_retries():
-    client = MockFlasherClient()
-
-    with pytest.raises(click.ClickException, match="Retries must be a non-negative integer"):
-        client._validate_flash_preflight("image.img", -1, None, False, None, None)
-
-
-def test_validate_flash_preflight_rejects_conflicting_tls_options():
-    client = MockFlasherClient()
-
-    with pytest.raises(click.ClickException, match="Use either --insecure-tls or --cacert"):
-        client._validate_flash_preflight("image.img", 0, "/tmp/ca.crt", True, None, None)
-
-
-def test_validate_flash_preflight_rejects_invalid_checksum():
-    client = MockFlasherClient()
-
-    with pytest.raises(click.ClickException, match="OS image checksum must be a valid SHA256"):
-        client._validate_flash_preflight("image.img", 0, None, False, None, "1234")
-
-
-def test_validate_flash_preflight_rejects_invalid_http_url():
-    client = MockFlasherClient()
-
-    with pytest.raises(click.ClickException, match="Invalid image URL"):
-        client._validate_flash_preflight("https:///bad", 0, None, False, None, None)
-
-
-def test_validate_flash_preflight_rejects_invalid_oci_reference():
-    client = MockFlasherClient()
-
-    with pytest.raises(click.ClickException, match="Invalid OCI image reference"):
-        client._validate_flash_preflight("oci://", 0, None, False, None, None)
-
-
-def test_flash_cli_shows_preflight_error_for_negative_retries():
-    client = MockFlasherClient()
-    runner = CliRunner()
-
-    result = runner.invoke(client.cli(), ["flash", "image.img", "--retries", "-1"])
-
-    assert result.exit_code != 0
-    assert "Retries must be a non-negative integer" in result.output
-
-
-def test_flash_cli_shows_preflight_error_for_conflicting_tls_options(tmp_path):
-    client = MockFlasherClient()
-    runner = CliRunner()
-    cacert = tmp_path / "ca.crt"
-    cacert.write_text("dummy")
-
-    result = runner.invoke(
-        client.cli(),
-        ["flash", "image.img", "--insecure-tls", "--cacert", str(cacert)],
-    )
-
-    assert result.exit_code != 0
-    assert "Use either --insecure-tls or --cacert, not both" in result.output

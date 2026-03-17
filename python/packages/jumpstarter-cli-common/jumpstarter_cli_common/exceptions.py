@@ -224,7 +224,9 @@ def handle_exceptions_with_reauthentication(login_func):
                 _handle_exception_group_with_reauth(eg, login_func)
             except (ConnectionError, JumpstarterException, click.ClickException) as e:
                 _handle_single_exception_with_reauth(e, login_func)
-            except Exception:
+            except Exception as e:
+                if common_exc := _map_common_exception(e):
+                    raise common_exc from None
                 raise
 
         return wrapped

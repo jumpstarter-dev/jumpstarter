@@ -11,6 +11,11 @@ from jumpstarter_cli_common.exceptions import (
 )
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 def test_handle_exceptions_maps_timeout_error() -> None:
     @handle_exceptions
     def timeout_fn():
