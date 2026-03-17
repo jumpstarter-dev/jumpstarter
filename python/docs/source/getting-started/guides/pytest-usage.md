@@ -34,15 +34,20 @@ class TestPowerCycle(JumpstarterTest):
     selector = "board=rpi4"
 
     def test_power_on(self, client):
-        client.power.on()
+        client.dutlink.power.on()
 
     def test_power_off(self, client):
-        client.power.off()
+        client.dutlink.power.off()
 ```
 
 The `selector` class variable is a comma-separated list of label selectors that
 identify which exporter to lease. It is only used when running outside a shell
 session.
+
+The `client` object exposes driver interfaces as nested attributes. In the
+example above, `dutlink` is a composite driver that provides child drivers like
+`power` and `storage`. The exact attribute names depend on your exporter
+configuration.
 
 ## Running tests
 
@@ -79,6 +84,7 @@ interfaces.
 
 ```python
 import pytest
+from jumpstarter_driver_network.adapters import PexpectAdapter
 from jumpstarter_testing.pytest import JumpstarterTest
 
 
@@ -86,20 +92,29 @@ class TestBoot(JumpstarterTest):
     selector = "board=rpi4"
 
     @pytest.fixture()
-    def powered_device(self, client):
-        client.power.off()
-        client.storage.write_local_file("firmware.img")
-        client.storage.dut()
-        client.power.on()
-        yield client
-        client.power.off()
+    def console(self, client):
+        with PexpectAdapter(client=client.dutlink.console) as console:
+            yield console
+
+    @pytest.fixture()
+    def powered_device(self, client, console):
+        client.dutlink.power.off()
+        client.dutlink.storage.write_local_file("firmware.img")
+        client.dutlink.storage.dut()
+        client.dutlink.power.on()
+        yield console
+        client.dutlink.power.off()
 
     def test_device_boots(self, powered_device):
-        powered_device.serial.read_until("login:")
+        powered_device.expect("login:", timeout=240)
 ```
 
 The `client` fixture has class scope, so it is shared across all test methods in
 a class. Custom fixtures can have any scope up to `class`.
+
+Serial console interaction uses `PexpectAdapter` from `jumpstarter-driver-network`,
+which wraps a driver client into a [pexpect](https://pexpect.readthedocs.io/)
+`fdspawn` object. Use `expect()` and `sendline()` instead of `read_until()`.
 
 ## Combining with pytest features
 
@@ -111,6 +126,8 @@ log output by default and displays it for failing tests.
 ```python
 import logging
 
+import pytest
+from jumpstarter_driver_network.adapters import PexpectAdapter
 from jumpstarter_testing.pytest import JumpstarterTest
 
 log = logging.getLogger(__name__)
@@ -119,11 +136,16 @@ log = logging.getLogger(__name__)
 class TestDiagnostics(JumpstarterTest):
     selector = "board=rpi4"
 
-    def test_firmware_version(self, client):
-        client.power.on()
-        version = client.serial.read_until("version:")
-        log.info("Firmware reported: %s", version)
-        client.power.off()
+    @pytest.fixture()
+    def console(self, client):
+        with PexpectAdapter(client=client.dutlink.console) as console:
+            yield console
+
+    def test_firmware_version(self, client, console):
+        client.dutlink.power.on()
+        console.expect("version:", timeout=60)
+        log.info("Firmware reported: %s", console.after)
+        client.dutlink.power.off()
 ```
 
 ### Skipping and marking tests
@@ -139,14 +161,15 @@ class TestOptionalFeatures(JumpstarterTest):
     selector = "board=rpi4"
 
     @pytest.mark.slow
-    def test_long_running_operation(self, client):
-        client.power.on()
-        client.serial.read_until("ready", timeout=300)
-        client.power.off()
+    def test_power_cycle(self, client):
+        client.dutlink.power.on()
+        client.dutlink.power.cycle(wait=5)
+        client.dutlink.power.off()
 
     @pytest.mark.skip(reason="hardware not available")
     def test_camera_capture(self, client):
-        client.camera.snapshot()
+        image = client.camera.snapshot()
+        image.save("capture.jpeg")
 ```
 
 Run only tests without the `slow` marker:
@@ -157,25 +180,27 @@ $ pytest -m "not slow"
 
 ### Fixtures for setup and teardown
 
-A fixture that manages TFTP server lifecycle:
+A fixture that manages storage flashing before tests:
 
 ```python
 import pytest
 from jumpstarter_testing.pytest import JumpstarterTest
 
 
-class TestTftp(JumpstarterTest):
+class TestWithFirmware(JumpstarterTest):
     selector = "board=rpi4"
 
     @pytest.fixture()
-    def tftp_server(self, client):
-        client.tftp.start()
+    def flashed_device(self, client):
+        client.dutlink.power.off()
+        client.dutlink.storage.write_local_file("firmware.img")
+        client.dutlink.storage.dut()
+        client.dutlink.power.on()
         yield client
-        client.tftp.stop()
+        client.dutlink.power.off()
 
-    def test_upload_file(self, tftp_server):
-        tftp_server.tftp.put_local_file("test.bin")
-        assert "test.bin" in tftp_server.tftp.list_files()
+    def test_device_responds(self, flashed_device):
+        flashed_device.dutlink.power.read()
 ```
 
 ## CI integration
