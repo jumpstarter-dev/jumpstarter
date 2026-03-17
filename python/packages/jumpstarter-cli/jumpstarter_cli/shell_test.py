@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
@@ -8,8 +8,33 @@ import pytest
 
 from jumpstarter_cli.shell import _shell_with_signal_handling, shell
 
+from jumpstarter.client.grpc import Lease, LeaseList
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
+
+
+def _make_lease(name: str) -> Lease:
+    return Lease(
+        namespace="default",
+        name=name,
+        selector="",
+        exporter_name=None,
+        duration=timedelta(minutes=30),
+        effective_duration=None,
+        begin_time=datetime.now(),
+        client="test-client",
+        exporter="test-exporter",
+        conditions=[],
+        effective_begin_time=None,
+        effective_end_time=None,
+    )
+
+
+def _make_lease_list(names: list[str]) -> LeaseList:
+    return LeaseList(
+        leases=[_make_lease(n) for n in names],
+        next_page_token=None,
+    )
 
 
 class _DummyConfig:
@@ -47,10 +72,12 @@ def test_shell_passes_exporter_name_to_lease_async():
     assert config.captured[1] == "laptop-test-exporter"
 
 
-def test_shell_requires_selector_or_name():
-    with pytest.raises(click.UsageError, match="one of --selector/-l or --name/-n is required"):
+def test_shell_requires_selector_or_name_when_no_leases():
+    config = Mock(spec=ClientConfigV1Alpha1)
+    config.list_leases = Mock(return_value=_make_lease_list([]))
+    with pytest.raises(click.UsageError, match="no active leases found"):
         shell.callback.__wrapped__.__wrapped__(
-            config=Mock(spec=ClientConfigV1Alpha1),
+            config=config,
             command=(),
             lease_name=None,
             selector=None,
@@ -78,6 +105,94 @@ def test_shell_allows_existing_lease_name_without_selector_or_name():
         )
 
     mock_exit.assert_called_once_with(0)
+
+
+def test_shell_auto_connects_single_lease():
+    config = Mock(spec=ClientConfigV1Alpha1)
+    config.list_leases = Mock(return_value=_make_lease_list(["my-only-lease"]))
+    with (
+        patch("jumpstarter_cli.shell.anyio.run", return_value=0) as mock_run,
+        patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
+    ):
+        shell.callback.__wrapped__.__wrapped__(
+            config=config,
+            command=(),
+            lease_name=None,
+            selector=None,
+            exporter_name=None,
+            duration=timedelta(minutes=1),
+            exporter_logs=False,
+            acquisition_timeout=None,
+        )
+
+    config.list_leases.assert_called_once_with(only_active=True)
+    call_args = mock_run.call_args
+    assert call_args[0][4] == "my-only-lease"
+    mock_exit.assert_called_once_with(0)
+
+
+def test_shell_no_leases_shows_guidance():
+    config = Mock(spec=ClientConfigV1Alpha1)
+    config.list_leases = Mock(return_value=_make_lease_list([]))
+    with pytest.raises(click.UsageError, match="no active leases found"):
+        shell.callback.__wrapped__.__wrapped__(
+            config=config,
+            command=(),
+            lease_name=None,
+            selector=None,
+            exporter_name=None,
+            duration=timedelta(minutes=1),
+            exporter_logs=False,
+            acquisition_timeout=None,
+        )
+    config.list_leases.assert_called_once_with(only_active=True)
+
+
+def test_shell_multi_lease_tty_picker():
+    config = Mock(spec=ClientConfigV1Alpha1)
+    config.list_leases = Mock(return_value=_make_lease_list(["lease-a", "lease-b", "lease-c"]))
+    with (
+        patch("jumpstarter_cli.shell.sys.stdin") as mock_stdin,
+        patch("jumpstarter_cli.shell.click.prompt", return_value="lease-b") as mock_prompt,
+        patch("jumpstarter_cli.shell.anyio.run", return_value=0) as mock_run,
+        patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
+    ):
+        mock_stdin.isatty.return_value = True
+        shell.callback.__wrapped__.__wrapped__(
+            config=config,
+            command=(),
+            lease_name=None,
+            selector=None,
+            exporter_name=None,
+            duration=timedelta(minutes=1),
+            exporter_logs=False,
+            acquisition_timeout=None,
+        )
+
+    mock_prompt.assert_called_once()
+    call_args = mock_run.call_args
+    assert call_args[0][4] == "lease-b"
+    mock_exit.assert_called_once_with(0)
+
+
+def test_shell_multi_lease_no_tty_error():
+    config = Mock(spec=ClientConfigV1Alpha1)
+    config.list_leases = Mock(return_value=_make_lease_list(["lease-a", "lease-b"]))
+    with (
+        patch("jumpstarter_cli.shell.sys.stdin") as mock_stdin,
+        pytest.raises(click.UsageError, match="lease-a"),
+    ):
+        mock_stdin.isatty.return_value = False
+        shell.callback.__wrapped__.__wrapped__(
+            config=config,
+            command=(),
+            lease_name=None,
+            selector=None,
+            exporter_name=None,
+            duration=timedelta(minutes=1),
+            exporter_logs=False,
+            acquisition_timeout=None,
+        )
 
 
 def test_shell_allows_env_lease_without_selector_or_name():
