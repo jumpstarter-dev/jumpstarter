@@ -118,7 +118,7 @@ def test_create_client(
     mock_get_client_config.return_value = INSECURE_TLS_CLIENT_CONFIG
 
     # Save with prompts accept insecure = Y, save = Y, unsafe = Y
-    result = runner.invoke(create, ["client", "--insecure-tls-config", CLIENT_NAME], input="Y\nY\nY\n")
+    result = runner.invoke(create, ["client", "--insecure-tls", CLIENT_NAME], input="Y\nY\nY\n")
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
     mock_save_client.assert_called_once_with(INSECURE_TLS_CLIENT_CONFIG, None)
@@ -126,7 +126,7 @@ def test_create_client(
 
     # Save no interactive and insecure tls
     result = runner.invoke(
-        create, ["client", "--insecure-tls-config", "--unsafe", "--save", "--nointeractive", CLIENT_NAME]
+        create, ["client", "--insecure-tls", "--unsafe", "--save", "--nointeractive", CLIENT_NAME]
     )
     assert result.exit_code == 0
     assert "Client configuration successfully saved" in result.output
@@ -137,7 +137,7 @@ def test_create_client(
     mock_get_client_config.return_value = INSECURE_TLS_CLIENT_CONFIG
 
     # Save with prompts accept insecure = N
-    result = runner.invoke(create, ["client", "--insecure-tls-config", CLIENT_NAME], input="n\n")
+    result = runner.invoke(create, ["client", "--insecure-tls", CLIENT_NAME], input="n\n")
     assert result.exit_code == 1
     assert "Aborted" in result.output
 
@@ -295,7 +295,7 @@ def test_create_exporter(
     _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
     # Save with prompts accept insecure = Y, save = Y
     result = runner.invoke(
-        create, ["exporter", "--insecure-tls-config", EXPORTER_NAME, "--label", "foo=bar"], input="Y\nY\n"
+        create, ["exporter", "--insecure-tls", EXPORTER_NAME, "--label", "foo=bar"], input="Y\nY\n"
     )
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
@@ -305,7 +305,7 @@ def test_create_exporter(
     _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
     # Save with prompts accept no interactive
     result = runner.invoke(
-        create, ["exporter", "--insecure-tls-config", "--nointeractive", "--save", EXPORTER_NAME, "--label", "foo=bar"]
+        create, ["exporter", "--insecure-tls", "--nointeractive", "--save", EXPORTER_NAME, "--label", "foo=bar"]
     )
     assert result.exit_code == 0
     assert "Exporter configuration successfully saved" in result.output
@@ -316,7 +316,7 @@ def test_create_exporter(
     _get_exporter_config_mock.return_value = INSECURE_TLS_EXPORTER_CONFIG
     # Save with prompts accept insecure = N
     result = runner.invoke(
-        create, ["exporter", "--insecure-tls-config", EXPORTER_NAME, "--label", "foo=bar"], input="n\n"
+        create, ["exporter", "--insecure-tls", EXPORTER_NAME, "--label", "foo=bar"], input="n\n"
     )
     assert result.exit_code == 1
     assert "Aborted" in result.output

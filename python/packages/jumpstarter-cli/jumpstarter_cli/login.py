@@ -11,7 +11,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions
 from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
 from jumpstarter_cli_common.opt import (
     confirm_insecure_tls,
-    opt_insecure_tls_config,
+    opt_insecure_tls,
     opt_nointeractive,
 )
 
@@ -159,7 +159,7 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
     "--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).", default=None
 )
 # end client specific
-@opt_insecure_tls_config
+@opt_insecure_tls
 @click.option(
     "--insecure-login-tls",
     is_flag=True,
@@ -191,7 +191,7 @@ async def login(  # noqa: C901
     callback_port: int | None,
     offline_access: bool,
     unsafe,
-    insecure_tls_config: bool,
+    insecure_tls: bool,
     insecure_login_tls: bool,
     insecure_login_http: bool,
     nointeractive: bool,
@@ -212,7 +212,7 @@ async def login(  # noqa: C901
     - Default namespace
     """
 
-    confirm_insecure_tls(insecure_tls_config, nointeractive)
+    confirm_insecure_tls(insecure_tls, nointeractive)
     if insecure_login_http and insecure_login_tls:
         raise click.UsageError("--insecure-login-http and --insecure-login-tls cannot be used together.")
 
@@ -231,7 +231,7 @@ async def login(  # noqa: C901
             click.echo(f"Fetching configuration from {login_endpoint}...")
             auth_config = await fetch_auth_config(
                 login_endpoint,
-                insecure_tls=insecure_login_tls or insecure_tls_config,
+                insecure_tls=insecure_login_tls or insecure_tls,
                 use_http=insecure_login_http,
             )
 
@@ -305,7 +305,7 @@ async def login(  # noqa: C901
                     )
 
             # Build TLS config with CA bundle if available
-            tls_config = TLSConfigV1Alpha1(insecure=insecure_tls_config, ca=ca_bundle or "")
+            tls_config = TLSConfigV1Alpha1(insecure=insecure_tls, ca=ca_bundle or "")
 
             if kind.startswith("client"):
                 config = ClientConfigV1Alpha1(
