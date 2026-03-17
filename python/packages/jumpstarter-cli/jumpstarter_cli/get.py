@@ -54,6 +54,7 @@ def get_exporters(config, selector: str | None, output: OutputType, with_options
     help="Include expired leases"
 )
 @click.option(
+    "-A",
     "--all-clients",
     "all_clients",
     is_flag=True,
