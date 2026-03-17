@@ -77,20 +77,28 @@ def _deep_merge_patch(target, patch):
     - Keys with ``[N]`` suffix target array elements: ``"modules[0]"``
       navigates to ``target["modules"][0]``.
     - Scalar/list patch values replace the target value.
+    - Errors on individual keys are logged and skipped so that one
+      failing key does not prevent remaining keys from being applied.
     """
     for key, value in patch.items():
-        m = _ARRAY_KEY_RE.match(key)
-        if m:
-            base_key, index = m.group(1), int(m.group(2))
-            array = target[base_key]
-            if isinstance(value, dict):
-                _deep_merge_patch(array[index], value)
+        try:
+            m = _ARRAY_KEY_RE.match(key)
+            if m:
+                base_key, index = m.group(1), int(m.group(2))
+                array = target[base_key]
+                if isinstance(value, dict):
+                    _deep_merge_patch(array[index], value)
+                else:
+                    array[index] = value
+            elif isinstance(value, dict) and isinstance(target.get(key), dict):
+                _deep_merge_patch(target[key], value)
             else:
-                array[index] = value
-        elif isinstance(value, dict) and isinstance(target.get(key), dict):
-            _deep_merge_patch(target[key], value)
-        else:
-            target[key] = value
+                target[key] = value
+        except (KeyError, IndexError, TypeError) as e:
+            try:
+                ctx.log.warn(f"Patch merge error on key {key!r}: {e}")
+            except AttributeError:
+                pass  # ctx.log not available outside mitmproxy
 
 
 def _apply_patches(body_bytes, patches, flow, state):
