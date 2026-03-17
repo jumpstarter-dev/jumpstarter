@@ -26,3 +26,6 @@ build/
 *.swo
 *~
 .DS_Store
+
+# Speckit tooling
+.specify/
