@@ -34,9 +34,8 @@ Write documentation for Jumpstarter's pytest integration, including installation
 
 ```text
 python/docs/source/getting-started/guides/
-└── testing.md              # New guide for pytest usage
-python/docs/source/
-└── index.rst               # Add testing guide to toctree
+├── testing.md              # New guide for pytest usage
+└── index.md                # Add testing guide to toctree
 ```
 
 **Structure Decision**: Add a new guide page in the existing guides directory.
