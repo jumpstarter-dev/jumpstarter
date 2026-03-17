@@ -75,7 +75,8 @@ def _deep_merge_patch(target, patch):
 
     - Dict patch values recurse into the matching target key.
     - Keys with ``[N]`` suffix target array elements: ``"modules[0]"``
-      navigates to ``target["modules"][0]``.
+      navigates to ``target["modules"][0]``.  Missing arrays and
+      out-of-range indices are auto-created (filled with empty dicts).
     - Scalar/list patch values replace the target value.
     - Errors on individual keys are logged and skipped so that one
       failing key does not prevent remaining keys from being applied.
@@ -85,7 +86,13 @@ def _deep_merge_patch(target, patch):
             m = _ARRAY_KEY_RE.match(key)
             if m:
                 base_key, index = m.group(1), int(m.group(2))
+                # Create array if missing
+                if base_key not in target:
+                    target[base_key] = []
                 array = target[base_key]
+                # Extend array if index is out of range
+                while len(array) <= index:
+                    array.append({})
                 if isinstance(value, dict):
                     _deep_merge_patch(array[index], value)
                 else:
