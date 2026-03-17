@@ -30,3 +30,4 @@ build/
 # Local tooling
 .specify/
 .envrc
+specs/
