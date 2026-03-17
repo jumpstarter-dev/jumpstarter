@@ -43,7 +43,7 @@ def delete_leases(config, names: tuple[str, ...], selector: str | None, all: boo
             if lease.client == config.metadata.name:
                 resolved_names.append(lease.name)
     else:
-        raise click.ClickException("One of NAME, --selector or --all must be specified")
+        raise click.ClickException("One of NAME(S), --selector or --all must be specified")
 
     for name in resolved_names:
         config.delete_lease(name=name)

@@ -1,3 +1,4 @@
+import inspect
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
@@ -49,7 +50,7 @@ def test_shell_passes_exporter_name_to_lease_async():
 
 def test_shell_requires_selector_or_name():
     with pytest.raises(click.UsageError, match="one of --selector/-l or --name/-n is required"):
-        shell.callback.__wrapped__.__wrapped__(
+        inspect.unwrap(shell.callback)(
             config=Mock(spec=ClientConfigV1Alpha1),
             command=(),
             lease_name=None,
@@ -66,7 +67,7 @@ def test_shell_allows_existing_lease_name_without_selector_or_name():
         patch("jumpstarter_cli.shell.anyio.run", return_value=0),
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
     ):
-        shell.callback.__wrapped__.__wrapped__(
+        inspect.unwrap(shell.callback)(
             config=Mock(spec=ClientConfigV1Alpha1),
             command=(),
             lease_name="existing-lease",
@@ -86,7 +87,7 @@ def test_shell_allows_env_lease_without_selector_or_name():
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
         patch.dict("os.environ", {JMP_LEASE: "existing-lease"}, clear=False),
     ):
-        shell.callback.__wrapped__.__wrapped__(
+        inspect.unwrap(shell.callback)(
             config=Mock(spec=ClientConfigV1Alpha1),
             command=(),
             lease_name=None,
