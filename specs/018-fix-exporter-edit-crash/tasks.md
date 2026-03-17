@@ -6,36 +6,36 @@
 
 ### User Story 1 - Edit exporter config without crash (Priority: P1)
 
-- [ ] [T001] [P] [S1] Write failing test for edit command path conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
+- [ ] [T001] [P1] [S1] Write failing test for edit command path conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
   - Create test file with test function that mocks `click.edit` to verify it receives a string path
   - Use `unittest.mock.patch` to mock `click.edit` and capture the filename argument
   - Assert that the filename argument is a string (not PosixPath)
   - Test should fail initially because current implementation passes PosixPath object
 
-- [ ] [T002] [S1] Fix path type conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter.py`
+- [ ] [T002] [P1] [S1] Fix path type conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter.py`
   - Change line 73 from `click.edit(filename=config.path)` to `click.edit(filename=str(config.path))`
   - This ensures the Path object is converted to a string before passing to click.edit
 
-- [ ] [T003] [S1] Verify test passes after fix
+- [ ] [T003] [P1] [S1] Verify test passes after fix
   - Run `make pkg-test-jumpstarter-cli` to confirm the new test passes
   - Verify no regressions in existing tests
 
-- [ ] [T004] [P] [S1] Write test for error handling with nonexistent exporter in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
+- [ ] [T004] [P1] [S1] Write test for error handling with nonexistent exporter in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
   - Test that editing a nonexistent exporter raises ClickException with appropriate message
   - Use CliRunner to invoke the edit command with a nonexistent alias
   - Assert that exit code is non-zero and error message contains "does not exist"
 
 ## Phase 2: Quality Assurance
 
-- [ ] [T005] Run linting on modified files
+- [ ] [T005] [P1] Run linting on modified files
   - Execute `make lint-fix` to ensure code style compliance
   - Fix any linting issues that arise
 
-- [ ] [T006] Run type checking
+- [ ] [T006] [P1] Run type checking
   - Execute `make pkg-ty-jumpstarter-cli` to verify type correctness
   - Address any type checking errors
 
-- [ ] [T007] Manual verification
+- [ ] [T007] [P1] Manual verification
   - Create a test exporter config using `jmp config exporter create`
   - Run `jmp config exporter edit <alias>` to verify editor opens without crash
   - Confirm the fix resolves issue #251
