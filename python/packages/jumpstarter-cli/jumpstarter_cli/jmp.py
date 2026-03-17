@@ -6,6 +6,7 @@ from jumpstarter_cli_common.version import version
 from jumpstarter_cli_driver import driver
 
 from .auth import auth
+from .completion import completion
 from .config import config
 from .create import create
 from .delete import delete
@@ -23,6 +24,7 @@ def jmp():
 
 
 jmp.add_command(auth)
+jmp.add_command(completion)
 jmp.add_command(create)
 jmp.add_command(delete)
 jmp.add_command(update)
