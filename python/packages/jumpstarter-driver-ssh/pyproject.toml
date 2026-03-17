@@ -16,6 +16,9 @@ dependencies = [
     "jumpstarter-driver-network",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+SSHWrapper = "jumpstarter_driver_ssh.driver:SSHWrapper"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../'}

@@ -14,6 +14,9 @@ dependencies = [
     "yarl>=1.18.3",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+HttpServer = "jumpstarter_driver_http.driver:HttpServer"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../' }

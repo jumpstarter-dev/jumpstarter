@@ -15,6 +15,9 @@ dependencies = [
     "requests>=2.32.5"
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+ISCSI = "jumpstarter_driver_iscsi.driver:ISCSI"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../' }

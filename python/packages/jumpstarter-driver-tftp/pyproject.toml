@@ -22,6 +22,8 @@ dev = [
     "jumpstarter-testing",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+Tftp = "jumpstarter_driver_tftp.driver:Tftp"
 
 [tool.hatch.version]
 source = "vcs"

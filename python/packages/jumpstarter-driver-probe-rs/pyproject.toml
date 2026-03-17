@@ -13,6 +13,9 @@ dependencies = [
     "jumpstarter-driver-opendal",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+ProbeRs = "jumpstarter_driver_probe_rs.driver:ProbeRs"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../' }

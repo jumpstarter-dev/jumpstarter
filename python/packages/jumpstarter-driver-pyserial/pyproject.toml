@@ -17,6 +17,9 @@ dependencies = [
   "pyserial-asyncio>=0.6",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+PySerial = "jumpstarter_driver_pyserial.driver:PySerial"
+
 [dependency-groups]
 dev = [
   "pytest>=8.3.2",
