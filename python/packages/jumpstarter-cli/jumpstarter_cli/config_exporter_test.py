@@ -1,4 +1,4 @@
-from pathlib import PosixPath
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -8,7 +8,7 @@ from .config_exporter import config_exporter
 
 def test_edit_passes_string_filename_to_click_edit():
     mock_config = MagicMock()
-    mock_config.path = PosixPath("/etc/jumpstarter/exporters/default.yaml")
+    mock_config.path = Path("/etc/jumpstarter/exporters/default.yaml")
 
     with patch(
         "jumpstarter_cli.config_exporter.ExporterConfigV1Alpha1"
@@ -18,8 +18,9 @@ def test_edit_passes_string_filename_to_click_edit():
         mock_exporter_cls.load.return_value = mock_config
 
         runner = CliRunner()
-        runner.invoke(config_exporter, ["edit", "default"])
+        result = runner.invoke(config_exporter, ["edit", "default"])
 
+        assert result.exit_code == 0
         mock_edit.assert_called_once()
         filename_arg = mock_edit.call_args[1]["filename"]
         assert isinstance(filename_arg, str), (
