@@ -13,7 +13,9 @@ Install the following packages in your Python environment:
 - `pytest` - the test framework
 
 Install any driver packages your tests require (for example,
-`jumpstarter-driver-power` or `jumpstarter-driver-opendal`).
+`jumpstarter-driver-power` or `jumpstarter-driver-opendal`). The examples in this
+guide that use console interaction with `PexpectAdapter` require
+`jumpstarter-driver-network`.
 
 ## The JumpstarterTest base class
 
@@ -278,6 +280,7 @@ hardware-test:
   registered with the controller. Check available exporters with
   `jmp get exporters`.
 
-**`client` fixture yields `None`**
-: Confirm that the `jumpstarter-testing` package is installed and that
-  `JUMPSTARTER_HOST` is set correctly if running in shell mode.
+**`client` fixture setup fails**
+: Confirm that `jumpstarter-testing` is installed, and either: `JUMPSTARTER_HOST`
+  is set correctly in shell mode, or a valid default client is configured for
+  lease mode.
