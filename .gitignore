@@ -26,3 +26,7 @@ build/
 *.swo
 *~
 .DS_Store
+
+# Local tooling
+.specify/
+.envrc
