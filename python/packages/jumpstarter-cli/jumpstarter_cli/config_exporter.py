@@ -70,7 +70,7 @@ def edit_exporter_config(alias):
         config = ExporterConfigV1Alpha1.load(alias)
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
-    click.edit(filename=config.path)
+    click.edit(filename=str(config.path))
 
 
 @config_exporter.command("list")
