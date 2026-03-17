@@ -6,21 +6,25 @@
 
 ### User Story 1 - Edit exporter config without crash (Priority: P1)
 
-- [ ] [T001] [P1] [S1] Write failing test for edit command path conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
+- [ ] [T001] [P1] [US1] Write failing test for edit command path conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
+  - Implements SC-002: Test that verifies string path is passed to editor function
   - Create test file with test function that mocks `click.edit` to verify it receives a string path
   - Use `unittest.mock.patch` to mock `click.edit` and capture the filename argument
   - Assert that the filename argument is a string (not PosixPath)
   - Test should fail initially because current implementation passes PosixPath object
 
-- [ ] [T002] [P1] [S1] Fix path type conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter.py`
+- [ ] [T002] [P1] [US1] Fix path type conversion in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter.py`
+  - Implements FR-001: Convert config path to string before passing to editor
   - Change line 73 from `click.edit(filename=config.path)` to `click.edit(filename=str(config.path))`
   - This ensures the Path object is converted to a string before passing to click.edit
 
-- [ ] [T003] [P1] [S1] Verify test passes after fix
+- [ ] [T003] [P1] [US1] Verify test passes after fix
+  - Verifies FR-002: Command does not crash with TypeError
   - Run `make pkg-test-jumpstarter-cli` to confirm the new test passes
   - Verify no regressions in existing tests
 
-- [ ] [T004] [P1] [S1] Write test for error handling with nonexistent exporter in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
+- [ ] [T004] [P1] [US1] Write test for error handling with nonexistent exporter in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-cli/jumpstarter_cli/config_exporter_test.py`
+  - Verifies acceptance scenario 2 from spec.md
   - Test that editing a nonexistent exporter raises ClickException with appropriate message
   - Use CliRunner to invoke the edit command with a nonexistent alias
   - Assert that exit code is non-zero and error message contains "does not exist"
@@ -36,6 +40,8 @@
   - Address any type checking errors
 
 - [ ] [T007] [P1] Manual verification
+  - Verifies SC-001: `jmp config exporter edit <name>` opens editor without crashing
+  - Verifies FR-002: Command does not crash with TypeError
   - Create a test exporter config using `jmp config exporter create`
   - Run `jmp config exporter edit <alias>` to verify editor opens without crash
   - Confirm the fix resolves issue #251
