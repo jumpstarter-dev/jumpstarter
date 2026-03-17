@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -306,8 +307,8 @@ def _format_lease_display(lease) -> str:
     return ", ".join(parts) if parts else ""
 
 
-def _resolve_lease_from_active(config) -> str:
-    lease_list = config.list_leases(only_active=True)
+async def _resolve_lease_from_active_async(config) -> str:
+    lease_list = await config.list_leases(only_active=True)
     client_name = config.metadata.name
     leases = [lease for lease in lease_list.leases if lease.client == client_name]
 
@@ -381,7 +382,7 @@ def shell(
         case ClientConfigV1Alpha1():
             has_existing_lease = bool(lease_name or os.environ.get(JMP_LEASE))
             if not selector and not exporter_name and not has_existing_lease:
-                lease_name = _resolve_lease_from_active(config)
+                lease_name = asyncio.run(_resolve_lease_from_active_async(config))
             exit_code = anyio.run(
                 _shell_with_signal_handling,
                 config,
