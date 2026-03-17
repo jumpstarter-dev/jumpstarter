@@ -46,6 +46,7 @@ def get_exporters(config, selector: str | None, output: OutputType, with_options
 @opt_selector
 @opt_output_all
 @click.option(
+    "-a",
     "--all",
     "show_all",
     is_flag=True,

@@ -346,3 +346,13 @@ class TestGetLeasesLogic:
         leases_from_server = LeaseList(leases=[], next_page_token=None)
 
         assert len(leases_from_server.leases) == 0
+
+
+class TestGetLeasesShortFlags:
+    def test_get_leases_accepts_short_a_flag(self):
+        from .get import get_leases
+
+        all_option = next(
+            param for param in get_leases.params if param.name == "show_all"
+        )
+        assert "-a" in all_option.opts

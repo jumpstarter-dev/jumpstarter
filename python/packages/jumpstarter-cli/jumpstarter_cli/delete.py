@@ -19,7 +19,7 @@ def delete():
 @opt_config(exporter=False)
 @click.argument("names", nargs=-1)
 @opt_selector
-@click.option("--all", "all", is_flag=True)
+@click.option("-a", "--all", "all", is_flag=True)
 @opt_output_name_only
 @handle_exceptions_with_reauthentication(relogin_client)
 def delete_leases(config, names: tuple[str, ...], selector: str | None, all: bool, output: OutputType):

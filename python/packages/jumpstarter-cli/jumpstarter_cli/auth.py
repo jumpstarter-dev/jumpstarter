@@ -67,7 +67,7 @@ def _print_verbose_details(payload: dict, config) -> None:
 
 
 @auth.command(name="status")
-@click.option("--verbose", is_flag=True, help="Show additional token details")
+@click.option("-v", "--verbose", is_flag=True, help="Show additional token details")
 @opt_config(exporter=False)
 def token_status(config, verbose: bool):
     """Display token status and expiry information."""
