@@ -7,7 +7,7 @@
 ### Documentation Structure Setup
 
 - [ ] [T001] [P] Create testing.md guide in /var/home/raballew/code/jumpstarter/python/docs/source/getting-started/guides/testing.md with basic structure (sections: Introduction, Installation, Basic Example, Configuration, Local vs Distributed, Advanced Examples)
-- [ ] [T002] Update guides index at /var/home/raballew/code/jumpstarter/python/docs/source/getting-started/guides/index.md to include testing.md in description and toctree
+- [ ] [T002] [P] Update guides index at /var/home/raballew/code/jumpstarter/python/docs/source/getting-started/guides/index.md to include testing.md in description and toctree
 
 ## Phase 2: User Story 1 - Learn how to write tests using Jumpstarter's pytest integration (P1)
 
@@ -45,12 +45,12 @@
 
 - [ ] [T014] [P] Add Advanced Examples section to /var/home/raballew/code/jumpstarter/python/docs/source/getting-started/guides/testing.md with fixture composition example (console, storage fixtures)
 - [ ] [T015] [P] Add troubleshooting subsection to /var/home/raballew/code/jumpstarter/python/docs/source/getting-started/guides/testing.md covering common issues (no exporter found, connection timeout, lease failures)
-- [ ] [T016] Document parallel test execution considerations in /var/home/raballew/code/jumpstarter/python/docs/source/getting-started/guides/testing.md (using pytest-xdist with class-scoped fixtures)
+- [ ] [T016] [P] Document parallel test execution considerations in /var/home/raballew/code/jumpstarter/python/docs/source/getting-started/guides/testing.md (using pytest-xdist with class-scoped fixtures)
 
 ### Final Verification
 
-- [ ] [T017] Build documentation locally with make command from /var/home/raballew/code/jumpstarter/python/docs and verify all examples render correctly
-- [ ] [T018] Review testing.md against spec.md acceptance criteria: new developer can write test within 15 minutes, both local and distributed modes covered, all examples tested
+- [ ] [T017] [P] Build documentation locally with make command from /var/home/raballew/code/jumpstarter/python/docs and verify all examples render correctly
+- [ ] [T018] [P] Review testing.md against spec.md acceptance criteria: new developer can write test within 15 minutes, both local and distributed modes covered, all examples tested
 
 ---
 
@@ -90,4 +90,18 @@ This is a documentation-only feature with no code changes to the jumpstarter-tes
 
 The documentation will reference the existing JumpstarterTest class in `/var/home/raballew/code/jumpstarter/python/packages/jumpstarter-testing/jumpstarter_testing/pytest.py` and use examples from `/var/home/raballew/code/jumpstarter/python/examples/soc-pytest/jumpstarter_example_soc_pytest/test_on_rpi4.py` as reference patterns.
 
-All test examples should be functional and tested before being added to documentation to ensure accuracy (per FR-003 from spec.md).
+All test examples should be functional and tested before being added to documentation to ensure accuracy (per SC-003 from spec.md).
+
+## Requirements Traceability
+
+Mapping of spec.md functional requirements to tasks:
+
+- **FR-001** (install/import): Covered by T004 (Installation section)
+- **FR-002** (minimal example): Covered by T003, T005 (write test, document example)
+- **FR-003** (configuration): Covered by T009, T010, T011 (selector, env vars, fixture scope)
+- **FR-004** (local/distributed): Covered by T012 (Local vs Distributed Mode section)
+
+Success Criteria coverage:
+- **SC-001** (15 min to write test): Verified by T018 (review against acceptance criteria)
+- **SC-002** (local and distributed): Covered by T012, verified by T018
+- **SC-003** (tested examples): Enforced by T003, T013 (write/test examples before documenting)
