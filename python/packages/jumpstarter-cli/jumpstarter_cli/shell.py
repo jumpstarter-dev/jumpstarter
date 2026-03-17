@@ -348,9 +348,7 @@ def shell(
 
     Example:
 
-    .. code-block:: bash
-
-        $ jmp shell --exporter foo -- python bar.py
+        jmp shell --exporter foo -- python bar.py
     """
 
     match config:
