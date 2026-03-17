@@ -1,7 +1,7 @@
+import json
 import ssl
 from typing import Any
 from urllib.parse import urlparse
-import json
 
 import aiohttp
 import click
@@ -25,11 +25,16 @@ from jumpstarter.config.user import UserConfigV1Alpha1
 _HTTP_TIMEOUT_SECONDS = 30
 
 
-def _validate_login_endpoint_url(url: str) -> None:
+def _validate_login_endpoint_url(url: str, *, allow_http: bool = False) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise click.ClickException(
             f"Invalid login endpoint '{url}': unsupported URL scheme '{parsed.scheme}'. Use http or https."
+        )
+    if parsed.scheme == "http" and not allow_http:
+        raise click.ClickException(
+            f"Refusing insecure login endpoint '{url}'. "
+            "Use --insecure-login-http to explicitly allow plain HTTP."
         )
     if not parsed.netloc:
         raise click.ClickException(f"Invalid login endpoint '{url}': missing host.")
@@ -73,7 +78,7 @@ async def fetch_auth_config(
         scheme = "http" if use_http else "https"
         login_endpoint = f"{scheme}://{login_endpoint}"
 
-    _validate_login_endpoint_url(login_endpoint)
+    _validate_login_endpoint_url(login_endpoint, allow_http=use_http)
 
     url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
 
@@ -125,11 +130,13 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
     if "@" in login_arg:
         # Split on the last @ to handle email-like usernames
         parts = login_arg.rsplit("@", 1)
-        if parts[0] == "":
+        client_name = parts[0].strip()
+        endpoint = parts[1].strip()
+        if client_name == "":
             raise click.ClickException("Client name before '@' cannot be empty.")
-        if parts[1] == "":
+        if endpoint == "":
             raise click.ClickException("Login endpoint after '@' cannot be empty.")
-        return parts[0], parts[1]
+        return client_name, endpoint
     return None, login_arg
 
 

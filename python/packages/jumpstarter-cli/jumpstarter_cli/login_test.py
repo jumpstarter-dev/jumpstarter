@@ -26,6 +26,17 @@ def test_parse_login_argument_rejects_empty_client_name() -> None:
         parse_login_argument("@login.example.com")
 
 
+def test_parse_login_argument_rejects_whitespace_only_endpoint() -> None:
+    with pytest.raises(click.ClickException, match="Login endpoint after '@' cannot be empty"):
+        parse_login_argument("my-client@   ")
+
+
+def test_parse_login_argument_trims_client_and_endpoint() -> None:
+    username, endpoint = parse_login_argument("  my-client  @  login.example.com  ")
+    assert username == "my-client"
+    assert endpoint == "login.example.com"
+
+
 def test_validate_login_endpoint_url_rejects_missing_host() -> None:
     with pytest.raises(click.ClickException, match="missing host"):
         _validate_login_endpoint_url("https:///v1/auth/config")
@@ -34,6 +45,15 @@ def test_validate_login_endpoint_url_rejects_missing_host() -> None:
 def test_validate_login_endpoint_url_rejects_unsupported_scheme() -> None:
     with pytest.raises(click.ClickException, match="unsupported URL scheme"):
         _validate_login_endpoint_url("ftp://login.example.com")
+
+
+def test_validate_login_endpoint_url_rejects_http_without_explicit_opt_in() -> None:
+    with pytest.raises(click.ClickException, match="Use --insecure-login-http"):
+        _validate_login_endpoint_url("http://login.example.com")
+
+
+def test_validate_login_endpoint_url_allows_http_with_explicit_opt_in() -> None:
+    _validate_login_endpoint_url("http://login.example.com", allow_http=True)
 
 
 def test_validate_auth_config_payload_requires_grpc_endpoint() -> None:

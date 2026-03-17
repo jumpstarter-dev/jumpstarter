@@ -18,11 +18,11 @@ class ClickExceptionRed(click.ClickException):
         return click.style(self.message, fg="red")
 
 
-def _map_common_exception(exc: BaseException) -> click.ClickException | None:
-    """Map common transport/runtime exceptions to user-friendly Click errors."""
-    message = str(exc)
-    message_lower = message.lower()
+def _append_details(base_message: str, details: str) -> str:
+    return f"{base_message} Details: {details}" if details else base_message
 
+
+def _map_runtime_exception(exc: BaseException, message: str, message_lower: str) -> click.ClickException | None:
     timeout_types = (TimeoutError, asyncio.TimeoutError, socket.timeout, FutureTimeoutError)
     if isinstance(exc, timeout_types):
         timeout_hint = (
@@ -30,9 +30,7 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
             "If this happened while flashing, verify the board is reachable/in flashing mode "
             "and increase retries or timeout."
         )
-        if message:
-            timeout_hint = f"{timeout_hint} Details: {message}"
-        return ClickExceptionRed(timeout_hint)
+        return ClickExceptionRed(_append_details(timeout_hint, message))
 
     is_cert_verification_error = isinstance(exc, ssl.SSLCertVerificationError) or (
         isinstance(exc, ssl.SSLError) and "certificate verify failed" in message_lower
@@ -42,18 +40,18 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
             "TLS certificate validation failed. Verify the endpoint certificate chain or configure "
             "the correct CA certificate. Use insecure TLS only for testing."
         )
-        if message:
-            cert_hint = f"{cert_hint} Details: {message}"
-        return ClickExceptionRed(cert_hint)
+        return ClickExceptionRed(_append_details(cert_hint, message))
 
     if isinstance(exc, socket.gaierror):
         return ClickExceptionRed(
-            f"Could not resolve host name. Check the endpoint DNS name and network settings. Details: {message}"
+            "Could not resolve host name. Check the endpoint DNS name and network settings. "
+            f"Details: {message}"
         )
 
     if isinstance(exc, ConnectionRefusedError):
         return ClickExceptionRed(
-            f"Connection was refused by the remote endpoint. Verify endpoint/port and that the service is running. Details: {message}"
+            "Connection was refused by the remote endpoint. Verify endpoint/port and that the service "
+            f"is running. Details: {message}"
         )
 
     if isinstance(exc, FileNotFoundError):
@@ -64,7 +62,8 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
 
     if isinstance(exc, json.JSONDecodeError):
         return ClickExceptionRed(
-            f"Received invalid JSON data from a remote endpoint. Verify the service/proxy response. Details: {message}"
+            "Received invalid JSON data from a remote endpoint. Verify the service/proxy response. "
+            f"Details: {message}"
         )
 
     if isinstance(exc, click.Abort):
@@ -72,58 +71,94 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
 
     if isinstance(exc, OSError):
         return ClickExceptionRed(f"Local system error while performing the operation. Details: {message}")
+    return None
 
-    # gRPC status handling for common user-facing errors before they become opaque traces.
+
+def _extract_grpc_code_and_details(exc: BaseException) -> tuple[str | None, str]:
     code = None
     details = ""
-    if hasattr(exc, "code") and callable(getattr(exc, "code")):
-        try:
-            grpc_code = exc.code()
-            code = getattr(grpc_code, "name", str(grpc_code))
-        except Exception:
-            code = None
-    if hasattr(exc, "details") and callable(getattr(exc, "details")):
-        try:
-            details = str(exc.details() or "")
-        except Exception:
-            details = ""
+    try:
+        code_member = exc.code
+        if callable(code_member):
+            grpc_code = code_member()
+            code = grpc_code.name if hasattr(grpc_code, "name") else str(grpc_code)
+    except Exception:
+        code = None
+
+    try:
+        details_member = exc.details
+        if callable(details_member):
+            details = str(details_member() or "")
+    except Exception:
+        details = ""
+    return code, details
+
+
+def _map_grpc_exception(exc: BaseException) -> click.ClickException | None:
+    # gRPC status handling for common user-facing errors before they become opaque traces.
+    code, details = _extract_grpc_code_and_details(exc)
     details_lower = details.lower()
 
     if code == "DEADLINE_EXCEEDED":
-        detail_suffix = f" Details: {details}" if details else ""
         return ClickExceptionRed(
-            "Operation timed out while waiting for a response from the service."
-            f"{detail_suffix}"
+            _append_details(
+                "Operation timed out while waiting for a response from the service.",
+                details,
+            )
         )
     if code == "UNAVAILABLE" and (
         "certificate verify failed" in details_lower
         or "certificate" in details_lower
         or "tls" in details_lower
     ):
-        detail_suffix = f" Details: {details}" if details else ""
         return ClickExceptionRed(
-            "TLS connection failed while connecting to the service. Verify certificates/CA settings."
-            f"{detail_suffix}"
+            _append_details(
+                "TLS connection failed while connecting to the service. Verify certificates/CA settings.",
+                details,
+            )
         )
     if code == "UNAVAILABLE":
-        detail_suffix = f" Details: {details}" if details else ""
         return ClickExceptionRed(
-            "Service is temporarily unavailable or unreachable. Verify endpoint/network and retry."
-            f"{detail_suffix}"
+            _append_details(
+                "Service is temporarily unavailable or unreachable. Verify endpoint/network and retry.",
+                details,
+            )
         )
     if code in ("UNAUTHENTICATED", "PERMISSION_DENIED"):
-        detail_suffix = f" Details: {details}" if details else ""
         return ClickExceptionRed(
-            "Authentication or authorization failed. Run 'jmp login' and verify access permissions."
-            f"{detail_suffix}"
+            _append_details(
+                "Authentication or authorization failed. Run 'jmp login' and verify access permissions.",
+                details,
+            )
         )
     if code == "INVALID_ARGUMENT":
-        detail_suffix = f" Details: {details}" if details else ""
         return ClickExceptionRed(
-            "Invalid request arguments were sent to the service. Verify command options and configuration."
-            f"{detail_suffix}"
+            _append_details(
+                "Invalid request arguments were sent to the service. Verify command options and configuration.",
+                details,
+            )
         )
+    return None
 
+
+def _map_common_exception(exc: BaseException) -> click.ClickException | None:
+    """Map common transport/runtime exceptions to user-friendly Click errors."""
+    message = str(exc)
+    message_lower = message.lower()
+    if mapped := _map_runtime_exception(exc, message, message_lower):
+        return mapped
+    return _map_grpc_exception(exc)
+
+
+def _map_cli_exception(exc: BaseException) -> click.ClickException | None:
+    if common_exc := _map_common_exception(exc):
+        return common_exc
+    if isinstance(exc, JumpstarterException):
+        return ClickExceptionRed(str(exc))
+    if isinstance(exc, KeyboardInterrupt):
+        return ClickExceptionRed("Cancelled by user.")
+    if isinstance(exc, click.ClickException):
+        return exc
     return None
 
 
@@ -137,23 +172,17 @@ def async_handle_exceptions(func):
         except BaseExceptionGroup as eg:
             # Handle exceptions wrapped in ExceptionGroup (e.g., from task groups)
             for exc in leaf_exceptions(eg, fix_tracebacks=False):
-                if common_exc := _map_common_exception(exc):
-                    raise common_exc from None
-                elif isinstance(exc, JumpstarterException):
-                    raise ClickExceptionRed(str(exc)) from None
-                elif isinstance(exc, click.ClickException):
-                    raise exc from None
+                if cli_exc := _map_cli_exception(exc):
+                    raise cli_exc from None
             # If no handled exceptions, re-raise the original group
             raise eg
-        except JumpstarterException as e:
-            raise ClickExceptionRed(str(e)) from None
-        except KeyboardInterrupt:
-            raise ClickExceptionRed("Cancelled by user.") from None
-        except click.ClickException:
-            raise  # if it was already a click exception from the cli commands, just re-raise it
         except Exception as e:
-            if common_exc := _map_common_exception(e):
-                raise common_exc from None
+            if cli_exc := _map_cli_exception(e):
+                raise cli_exc from None
+            raise
+        except KeyboardInterrupt as e:
+            if cli_exc := _map_cli_exception(e):
+                raise cli_exc from None
             raise
 
     return wrapped
@@ -166,15 +195,13 @@ def handle_exceptions(func):
     def wrapped(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except JumpstarterException as e:
-            raise ClickExceptionRed(str(e)) from None
-        except KeyboardInterrupt:
-            raise ClickExceptionRed("Cancelled by user.") from None
-        except click.ClickException:
-            raise  # if it was already a click exception from the cli commands, just re-raise it
         except Exception as e:
-            if common_exc := _map_common_exception(e):
-                raise common_exc from None
+            if cli_exc := _map_cli_exception(e):
+                raise cli_exc from None
+            raise
+        except KeyboardInterrupt as e:
+            if cli_exc := _map_cli_exception(e):
+                raise cli_exc from None
             raise
 
     return wrapped
@@ -195,12 +222,8 @@ def _handle_single_exception_with_reauth(exc, login_func):
     """Handle a single exception (may raise)."""
     if isinstance(exc, ConnectionError):
         _handle_connection_error_with_reauth(exc, login_func)
-    elif common_exc := _map_common_exception(exc):
-        raise common_exc from None
-    elif isinstance(exc, JumpstarterException):
-        raise ClickExceptionRed(str(exc)) from None
-    elif isinstance(exc, click.ClickException):
-        raise exc from None
+    elif cli_exc := _map_cli_exception(exc):
+        raise cli_exc from None
     # Not handled: fall through
 
 
@@ -225,8 +248,8 @@ def handle_exceptions_with_reauthentication(login_func):
             except (ConnectionError, JumpstarterException, click.ClickException) as e:
                 _handle_single_exception_with_reauth(e, login_func)
             except Exception as e:
-                if common_exc := _map_common_exception(e):
-                    raise common_exc from None
+                if cli_exc := _map_cli_exception(e):
+                    raise cli_exc from None
                 raise
 
         return wrapped
