@@ -88,57 +88,25 @@ opt_labels = partial(
     callback=_opt_labels_callback,
 )
 
-_DEPRECATED_TLS_FLAG_WARNING = (
-    "WARNING: --insecure-tls-config is deprecated and will be removed in a future release. "
-    "Use --insecure-tls instead."
+opt_insecure = click.option(
+    "--insecure",
+    is_flag=True,
+    default=False,
+    help="Disable TLS verification and allow insecure connections",
 )
 
-
-def _insecure_tls_deprecated_callback(ctx, param, value):
-    if value:
-        click.echo(_DEPRECATED_TLS_FLAG_WARNING, err=True)
-        ctx.params["insecure_tls"] = True
-    return value
+opt_insecure_tls = opt_insecure
+opt_insecure_tls_config = opt_insecure
 
 
-def opt_insecure_tls(func):
-    func = click.option(
-        "--insecure-tls-config",
-        "insecure_tls_config_deprecated",
-        is_flag=True,
-        default=False,
-        hidden=True,
-        expose_value=False,
-        callback=_insecure_tls_deprecated_callback,
-        is_eager=True,
-    )(func)
-    func = click.option(
-        "--insecure-tls",
-        "insecure_tls",
-        is_flag=True,
-        default=False,
-        help="Disable endpoint TLS verification. This is insecure and should only be used for testing purposes",
-    )(func)
-    return func
-
-
-opt_insecure_tls_config = opt_insecure_tls
-
-
-def confirm_insecure_tls(insecure_tls: bool, nointeractive: bool):
-    """Confirm if insecure TLS is enabled and user wants to continue.
-
-    Args:
-        insecure_tls (bool): Insecure TLS flag requested by the user.
-        nointeractive (bool): This flag is set to True if the command is run in non-interactive mode.
-
-    Raises:
-        click.Abort: Abort the command if user does not want to continue.
-    """
-    if nointeractive is False and insecure_tls:
-        if not click.confirm("Insecure TLS config is enabled. Are you sure you want to continue?"):
+def confirm_insecure(insecure: bool, nointeractive: bool):
+    if nointeractive is False and insecure:
+        if not click.confirm("Insecure mode is enabled. TLS verification will be disabled. Continue?"):
             click.echo("Aborting.")
             raise click.Abort()
+
+
+confirm_insecure_tls = confirm_insecure
 
 
 class OutputMode(str):

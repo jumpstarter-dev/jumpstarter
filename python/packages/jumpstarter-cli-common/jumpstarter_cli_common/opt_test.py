@@ -5,7 +5,7 @@ import logging
 import click
 from click.testing import CliRunner
 
-from jumpstarter_cli_common.opt import SourcePrefixFormatter, opt_insecure_tls
+from jumpstarter_cli_common.opt import SourcePrefixFormatter, opt_insecure
 
 
 class TestSourcePrefixFormatter:
@@ -81,41 +81,26 @@ class TestSourcePrefixFormatter:
         assert "[different.source]" in formatted3
 
 
-def _make_insecure_tls_command():
+def _make_insecure_command():
     @click.command()
-    @opt_insecure_tls
-    def cmd(insecure_tls: bool):
-        click.echo(f"insecure_tls={insecure_tls}")
+    @opt_insecure
+    def cmd(insecure: bool):
+        click.echo(f"insecure={insecure}")
 
     return cmd
 
 
-class TestInsecureTlsOption:
-    def test_insecure_tls_flag_is_accepted(self) -> None:
+class TestInsecureOption:
+    def test_insecure_flag_is_accepted(self) -> None:
         runner = CliRunner()
-        cmd = _make_insecure_tls_command()
-        result = runner.invoke(cmd, ["--insecure-tls"])
+        cmd = _make_insecure_command()
+        result = runner.invoke(cmd, ["--insecure"])
         assert result.exit_code == 0
-        assert "insecure_tls=True" in result.output
+        assert "insecure=True" in result.output
 
-    def test_insecure_tls_flag_defaults_to_false(self) -> None:
+    def test_insecure_flag_defaults_to_false(self) -> None:
         runner = CliRunner()
-        cmd = _make_insecure_tls_command()
+        cmd = _make_insecure_command()
         result = runner.invoke(cmd, [])
         assert result.exit_code == 0
-        assert "insecure_tls=False" in result.output
-
-    def test_deprecated_insecure_tls_config_still_works(self) -> None:
-        runner = CliRunner()
-        cmd = _make_insecure_tls_command()
-        result = runner.invoke(cmd, ["--insecure-tls-config"])
-        assert result.exit_code == 0
-        assert "insecure_tls=True" in result.output
-
-    def test_deprecated_insecure_tls_config_emits_warning(self) -> None:
-        runner = CliRunner()
-        cmd = _make_insecure_tls_command()
-        result = runner.invoke(cmd, ["--insecure-tls-config"])
-        assert result.exit_code == 0
-        assert "deprecated" in result.output.lower()
-        assert "--insecure-tls" in result.output
+        assert "insecure=False" in result.output
