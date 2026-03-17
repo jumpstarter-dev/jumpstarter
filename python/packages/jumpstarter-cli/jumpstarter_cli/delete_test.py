@@ -44,7 +44,7 @@ def test_delete_all_only_deletes_own_leases():
 
     _delete_leases(
         config=config,
-        name=None,
+        names=(),
         selector=None,
         all=True,
         output=None,
@@ -63,7 +63,7 @@ def test_delete_all_deletes_multiple_own_leases():
 
     _delete_leases(
         config=config,
-        name=None,
+        names=(),
         selector=None,
         all=True,
         output=None,
@@ -87,7 +87,7 @@ def test_delete_by_selector_only_deletes_own_leases():
 
     _delete_leases(
         config=config,
-        name=None,
+        names=(),
         selector="env=test",
         all=False,
         output=None,
@@ -101,7 +101,7 @@ def test_delete_by_name_deletes_specified_lease():
 
     _delete_leases(
         config=config,
-        name="specific-lease",
+        names=("specific-lease",),
         selector=None,
         all=False,
         output=None,
@@ -110,13 +110,31 @@ def test_delete_by_name_deletes_specified_lease():
     config.delete_lease.assert_called_once_with(name="specific-lease")
 
 
+def test_delete_multiple_names():
+    config = _make_config([])
+
+    _delete_leases(
+        config=config,
+        names=("lease-1", "lease-2", "lease-3"),
+        selector=None,
+        all=False,
+        output=None,
+    )
+
+    assert config.delete_lease.call_count == 3
+    config.delete_lease.assert_has_calls(
+        [call(name="lease-1"), call(name="lease-2"), call(name="lease-3")],
+        any_order=False,
+    )
+
+
 def test_delete_no_args_raises_error():
     config = _make_config([])
 
-    with pytest.raises(click.ClickException, match="One of NAME, --selector or --all must be specified"):
+    with pytest.raises(click.ClickException, match="One of NAMES, --selector or --all must be specified"):
         _delete_leases(
             config=config,
-            name=None,
+            names=(),
             selector=None,
             all=False,
             output=None,

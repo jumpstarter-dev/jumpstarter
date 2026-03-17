@@ -27,25 +27,23 @@ def delete_leases(config, names: tuple[str, ...], selector: str | None, all: boo
     Delete leases
     """
 
-    resolved_names = list(names)
+    to_delete = []
 
-    if resolved_names:
-        pass
+    if names:
+        to_delete.extend(names)
     elif selector:
         leases = config.list_leases(filter=selector)
         leases = leases.filter_by_selector(selector)
-        for lease in leases.leases:
-            if lease.client == config.metadata.name:
-                resolved_names.append(lease.name)
+        leases = leases.filter_by_client(config.metadata.name)
+        to_delete.extend(lease.name for lease in leases.leases)
     elif all:
         leases = config.list_leases(filter=None)
-        for lease in leases.leases:
-            if lease.client == config.metadata.name:
-                resolved_names.append(lease.name)
+        leases = leases.filter_by_client(config.metadata.name)
+        to_delete.extend(lease.name for lease in leases.leases)
     else:
-        raise click.ClickException("One of NAME(S), --selector or --all must be specified")
+        raise click.ClickException("One of NAMES, --selector or --all must be specified")
 
-    for name in resolved_names:
+    for name in to_delete:
         config.delete_lease(name=name)
         match output:
             case OutputMode.NAME:
