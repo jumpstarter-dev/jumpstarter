@@ -9,7 +9,7 @@ from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
-from jumpstarter_cli_common.opt import opt_insecure, opt_nointeractive
+from jumpstarter_cli_common.opt import confirm_insecure, opt_insecure, opt_nointeractive
 
 from jumpstarter.common.exceptions import ReauthenticationFailed
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
@@ -176,13 +176,7 @@ async def login(  # noqa: C901
     - Default namespace
     """
 
-    if nointeractive is False and insecure:
-        if not click.confirm(
-            "Insecure mode is enabled. TLS verification will be disabled "
-            "and plain HTTP may be used for login. Continue?"
-        ):
-            click.echo("Aborting.")
-            raise click.Abort()
+    confirm_insecure(insecure, nointeractive)
 
     # Handle simplified login format: [client-name@]login.endpoint.com
     ca_bundle = None

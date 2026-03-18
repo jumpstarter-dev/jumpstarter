@@ -101,7 +101,10 @@ opt_insecure_tls_config = opt_insecure
 
 def confirm_insecure(insecure: bool, nointeractive: bool):
     if nointeractive is False and insecure:
-        if not click.confirm("Insecure mode is enabled. TLS verification will be disabled. Continue?"):
+        if not click.confirm(
+            "Insecure mode is enabled. TLS verification will be disabled"
+            " and plain HTTP may be used. Continue?"
+        ):
             click.echo("Aborting.")
             raise click.Abort()
 
