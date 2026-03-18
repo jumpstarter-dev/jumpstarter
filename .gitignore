@@ -30,6 +30,4 @@ build/
 # Local tooling
 .specify/
 .envrc
-
-# Specifications
 specs/
