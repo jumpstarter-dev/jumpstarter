@@ -1,5 +1,5 @@
-import pytest
 import click
+import pytest
 
 from jumpstarter_cli.login import fetch_auth_config
 
