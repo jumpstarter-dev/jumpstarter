@@ -1,9 +1,7 @@
-import asyncio
 import json
 import socket
 import ssl
 import types
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from functools import wraps
 from types import TracebackType
 from typing import NoReturn
@@ -23,8 +21,7 @@ def _append_details(base_message: str, details: str) -> str:
 
 
 def _map_runtime_exception(exc: BaseException, message: str, message_lower: str) -> click.ClickException | None:
-    timeout_types = (TimeoutError, asyncio.TimeoutError, socket.timeout, FutureTimeoutError)
-    if isinstance(exc, timeout_types):
+    if isinstance(exc, TimeoutError):
         timeout_hint = (
             "Operation timed out. Check connectivity and retry. "
             "If this happened while flashing, verify the board is reachable/in flashing mode "
@@ -248,6 +245,10 @@ def handle_exceptions_with_reauthentication(login_func):
             except (ConnectionError, JumpstarterException, click.ClickException) as e:
                 _handle_single_exception_with_reauth(e, login_func)
             except Exception as e:
+                if cli_exc := _map_cli_exception(e):
+                    raise cli_exc from None
+                raise
+            except KeyboardInterrupt as e:
                 if cli_exc := _map_cli_exception(e):
                     raise cli_exc from None
                 raise
