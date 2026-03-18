@@ -342,6 +342,29 @@ EOF
   jmp delete leases    --all
 }
 
+@test "can transfer lease to another client" {
+  wait_for_exporter
+
+  jmp config client use test-client-oidc
+
+  # Create a lease owned by test-client-oidc
+  run jmp create lease --selector example.com/board=oidc --duration 1d -o yaml
+  assert_success
+  LEASE_NAME=$(echo "$output" | go run github.com/mikefarah/yq/v4@latest '.name')
+
+  # Wait for the lease to become active
+  kubectl -n "${JS_NAMESPACE}" wait --timeout 60s --for=condition=Ready \
+    leases.jumpstarter.dev/"$LEASE_NAME"
+
+  # Transfer the lease to test-client-legacy
+  run jmp update lease "$LEASE_NAME" --to-client test-client-legacy -o yaml
+  assert_success
+  assert_output --partial "test-client-legacy"
+
+  # Delete as the new owner
+  jmp delete leases --client test-client-legacy --all
+}
+
 @test "can lease and connect to exporters" {
   wait_for_exporter
 
