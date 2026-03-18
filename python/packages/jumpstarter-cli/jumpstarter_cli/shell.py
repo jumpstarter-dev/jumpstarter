@@ -137,7 +137,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             logger.debug("Exporter ready (status: %s), launching shell...", result)
 
                             if monitor.status_message and monitor.status_message.startswith(HOOK_WARNING_PREFIX):
-                                warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX):]
+                                warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
                                 click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
 
                             # Run the shell command
@@ -194,11 +194,9 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                                 if monitor.status_message and monitor.status_message.startswith(
                                                     HOOK_WARNING_PREFIX
                                                 ):
-                                                    warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX):]
+                                                    warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
                                                     click.echo(
-                                                        click.style(
-                                                            f"Warning: {warning_text}", fg="yellow", bold=True
-                                                        )
+                                                        click.style(f"Warning: {warning_text}", fg="yellow", bold=True)
                                                     )
                                                 logger.info("afterLease hook completed")
                                             elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
@@ -294,6 +292,60 @@ async def _shell_with_signal_handling(  # noqa: C901
     return exit_code
 
 
+def _format_lease_display(lease) -> str:
+    parts = []
+    if lease.exporter:
+        parts.append(f"exporter={lease.exporter}")
+    if lease.selector:
+        parts.append(f"selector={lease.selector}")
+    if lease.effective_end_time:
+        parts.append(f"expires {lease.effective_end_time.strftime('%Y-%m-%d %H:%M')}")
+    elif lease.effective_begin_time and lease.duration:
+        end = lease.effective_begin_time + lease.duration
+        parts.append(f"expires {end.strftime('%Y-%m-%d %H:%M')}")
+    return ", ".join(parts) if parts else ""
+
+
+async def _resolve_lease_from_active_async(config) -> str:
+    lease_list = await config.list_leases(only_active=True)
+    client_name = config.metadata.name
+    leases = [lease for lease in lease_list.leases if lease.client == client_name]
+
+    if not leases:
+        raise click.UsageError(
+            "no active leases found. Use --selector/-l or --name/-n to create one, "
+            "or create a lease with 'jmp create lease'."
+        )
+
+    if len(leases) == 1:
+        return leases[0].name
+
+    if sys.stdin.isatty():
+        click.echo("Multiple active leases found:\n")
+        for i, lease in enumerate(leases, 1):
+            info = _format_lease_display(lease)
+            click.echo(f"  {i}) {lease.name}")
+            if info:
+                click.echo(f"     {info}")
+        click.echo()
+        chosen = click.prompt(
+            "Select a lease [1-{}]".format(len(leases)),
+            type=click.IntRange(1, len(leases)),
+        )
+        return leases[chosen - 1].name
+
+    lease_summaries = []
+    for lease in leases:
+        info = _format_lease_display(lease)
+        summary = f"{lease.name} ({info})" if info else lease.name
+        lease_summaries.append(summary)
+    raise click.UsageError(
+        "multiple active leases found:\n  "
+        + "\n  ".join(lease_summaries)
+        + "\nUse --lease to specify one, or run interactively to select."
+    )
+
+
 @click.command("shell")
 @opt_config()
 @click.argument("command", nargs=-1)
@@ -324,16 +376,14 @@ def shell(
 
     Example:
 
-    .. code-block:: bash
-
-        $ jmp shell --exporter foo -- python bar.py
+        jmp shell --exporter foo -- python bar.py
     """
 
     match config:
         case ClientConfigV1Alpha1():
             has_existing_lease = bool(lease_name or os.environ.get(JMP_LEASE))
             if not selector and not exporter_name and not has_existing_lease:
-                raise click.UsageError("one of --selector/-l or --name/-n is required")
+                lease_name = anyio.run(_resolve_lease_from_active_async, config)
             exit_code = anyio.run(
                 _shell_with_signal_handling,
                 config,
