@@ -43,9 +43,6 @@ async def fetch_auth_config(
             - caBundle: base64-encoded PEM CA certificate (optional)
             - oidc: List of OIDC provider configurations (optional)
     """
-    if login_endpoint.startswith("http://") and not use_http:
-        raise click.UsageError("HTTP login endpoints require --insecure-login-http.")
-
     # Ensure the URL has a scheme
     if not login_endpoint.startswith(("http://", "https://")):
         scheme = "http" if use_http else "https"
