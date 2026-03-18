@@ -14,6 +14,10 @@ dependencies = [
     "jumpstarter-driver-pyserial",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+RideSXDriver = "jumpstarter_driver_ridesx.driver:RideSXDriver"
+RideSXPowerDriver = "jumpstarter_driver_ridesx.driver:RideSXPowerDriver"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../' }

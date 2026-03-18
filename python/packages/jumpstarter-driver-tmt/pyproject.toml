@@ -15,6 +15,9 @@ dependencies = [
     "jumpstarter-driver-composite",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+TMT = "jumpstarter_driver_tmt.driver:TMT"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../'}

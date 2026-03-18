@@ -21,6 +21,11 @@ dependencies = [
   "qemu-qmp>=0.0.3",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+QemuFlasher = "jumpstarter_driver_qemu.driver:QemuFlasher"
+QemuPower = "jumpstarter_driver_qemu.driver:QemuPower"
+Qemu = "jumpstarter_driver_qemu.driver:Qemu"
+
 [dependency-groups]
 dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0", "requests>=2.32.3"]
 

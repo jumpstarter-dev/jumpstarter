@@ -12,6 +12,9 @@ dependencies = [
     "bleak>=1.1.1",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+BleWriteNotifyStream = "jumpstarter_driver_ble.driver:BleWriteNotifyStream"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../' }
