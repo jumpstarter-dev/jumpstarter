@@ -16,6 +16,8 @@ class MockFlasherClient(BaseFlasherClient):
         self._manifest = None
         self._console_debug = False
         self._redaction_values = set()
+        self.children = {}
+        self.methods_description = {}
         self.logger = type(
             "MockLogger",
             (),
@@ -443,3 +445,5 @@ def test_resolve_flash_parameters():
         client._resolve_flash_parameters(None, None, None)
     with pytest.raises(click.UsageError):
         client._resolve_flash_parameters(None, ("rootfs_no_colon",), None)
+
+

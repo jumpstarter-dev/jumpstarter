@@ -1,5 +1,7 @@
+import json
 import ssl
 from typing import Any
+from urllib.parse import urlparse
 
 import aiohttp
 import click
@@ -21,6 +23,34 @@ from jumpstarter.config.user import UserConfigV1Alpha1
 
 # Default timeout for HTTP requests to prevent CLI from hanging indefinitely
 _HTTP_TIMEOUT_SECONDS = 30
+
+
+def _validate_login_endpoint_url(url: str, *, allow_http: bool = False) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise click.ClickException(
+            f"Invalid login endpoint '{url}': unsupported URL scheme '{parsed.scheme}'. Use http or https."
+        )
+    if parsed.scheme == "http" and not allow_http:
+        raise click.ClickException(
+            f"Refusing insecure login endpoint '{url}'. "
+            "Use --insecure-login-http to explicitly allow plain HTTP."
+        )
+    if not parsed.netloc:
+        raise click.ClickException(f"Invalid login endpoint '{url}': missing host.")
+
+
+def _validate_auth_config_payload(payload: Any, source_url: str) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise click.ClickException(
+            f"Invalid auth config response from {source_url}: expected a JSON object."
+        )
+    grpc_endpoint = payload.get("grpcEndpoint")
+    if not isinstance(grpc_endpoint, str) or not grpc_endpoint.strip():
+        raise click.ClickException(
+            f"Invalid auth config response from {source_url}: missing required field 'grpcEndpoint'."
+        )
+    return payload
 
 
 async def fetch_auth_config(
@@ -48,6 +78,8 @@ async def fetch_auth_config(
         scheme = "http" if use_http else "https"
         login_endpoint = f"{scheme}://{login_endpoint}"
 
+    _validate_login_endpoint_url(login_endpoint, allow_http=use_http)
+
     url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
 
     # Configure SSL context: False disables verification, True enables it
@@ -56,11 +88,30 @@ async def fetch_auth_config(
     # Use a timeout to prevent the CLI from hanging indefinitely
     timeout = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, ssl=ssl_context) as response:
-            if response.status != 200:
-                raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
-            return await response.json()
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, ssl=ssl_context) as response:
+                if response.status != 200:
+                    raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
+                payload = await response.json()
+                return _validate_auth_config_payload(payload, url)
+    except aiohttp.ClientConnectorCertificateError as e:
+        raise click.ClickException(
+            f"TLS certificate verification failed while connecting to {login_endpoint}. "
+            "Verify the endpoint certificate, or use --insecure-login-tls only for testing."
+        ) from e
+    except aiohttp.ClientConnectorSSLError as e:
+        raise click.ClickException(
+            f"TLS handshake failed while connecting to {login_endpoint}: {e}"
+        ) from e
+    except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+        raise click.ClickException(
+            f"Invalid JSON response received from {url}. Verify the login endpoint or proxy configuration."
+        ) from e
+    except TimeoutError as e:
+        raise click.ClickException(
+            f"Timed out while connecting to {login_endpoint}. Check network connectivity and retry."
+        ) from e
 
 
 def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
@@ -72,10 +123,20 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
     Returns:
         Tuple of (username, endpoint) where username may be None
     """
+    login_arg = login_arg.strip()
+    if login_arg == "":
+        raise click.ClickException("Login target cannot be empty.")
+
     if "@" in login_arg:
         # Split on the last @ to handle email-like usernames
         parts = login_arg.rsplit("@", 1)
-        return parts[0], parts[1]
+        client_name = parts[0].strip()
+        endpoint = parts[1].strip()
+        if client_name == "":
+            raise click.ClickException("Client name before '@' cannot be empty.")
+        if endpoint == "":
+            raise click.ClickException("Login endpoint after '@' cannot be empty.")
+        return client_name, endpoint
     return None, login_arg
 
 
@@ -150,6 +211,8 @@ async def login(  # noqa: C901
     """
 
     confirm_insecure_tls(insecure_tls_config, nointeractive)
+    if insecure_login_http and insecure_login_tls:
+        raise click.UsageError("--insecure-login-http and --insecure-login-tls cannot be used together.")
 
     # Handle simplified login format: [client-name@]login.endpoint.com
     ca_bundle = None
