@@ -107,41 +107,7 @@ Using a Python with Jumpstarter allows you to:
 
 ### Running `pytest` in the Shell
 
-For multiple test cases, run a `pytest` suite using Jumpstarter's built-in
-testing library as defined in `example_test.py`:
-
-```python
-from jumpstarter_testing.pytest import JumpstarterTest
-
-class MyTest(JumpstarterTest):
-   def test_power_on(self, client):
-      client.power.on()
-
-   def test_power_off(self, client):
-      client.power.off()
-```
-
-```console
-$ jmp shell # Use appropriate --exporter or --client parameters
-$ pytest ./example_test.py
-$ exit
-```
-
-This example demonstrates using `pytest` for structured testing with
-Jumpstarter:
-
-1. The `JumpstarterTest` is a `pytest` fixture that:
-
-   - Automatically establishes a connection to your exporter
-   - Provides a pre-configured `client` object to each test method
-   - Handles setup and teardown between tests
-
-2. Each test method receives the `client` parameter, giving access to all driver
-   interfaces just like in the previous examples.
-
-Benefits of using `pytest` with Jumpstarter are:
-
-   - Organize tests into logical classes and methods
-   - Generate test reports with success/failure statuses
-   - Use `pytest`'s extensive features (parameterization, fixtures, etc.)
-   - Run selective tests based on names or tags
+For structured test suites, Jumpstarter provides a `JumpstarterTest` base class
+that handles connection management automatically. See the
+[Testing with pytest](pytest-usage.md) guide for full details on writing tests,
+custom fixtures, markers, and CI integration.
