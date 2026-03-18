@@ -27,6 +27,7 @@ build/
 *~
 .DS_Store
 
-# Speckit tooling
+# Local tooling
 .specify/
+.envrc
 specs/
