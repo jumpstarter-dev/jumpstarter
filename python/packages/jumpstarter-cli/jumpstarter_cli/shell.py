@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import sys
@@ -382,7 +381,7 @@ def shell(
         case ClientConfigV1Alpha1():
             has_existing_lease = bool(lease_name or os.environ.get(JMP_LEASE))
             if not selector and not exporter_name and not has_existing_lease:
-                lease_name = asyncio.run(_resolve_lease_from_active_async(config))
+                lease_name = anyio.run(_resolve_lease_from_active_async, config)
             exit_code = anyio.run(
                 _shell_with_signal_handling,
                 config,
