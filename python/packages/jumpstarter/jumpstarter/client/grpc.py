@@ -449,6 +449,7 @@ class ClientService:
         name: str,
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
+        client: str | None = None,
     ):
         lease_pb = client_pb2.Lease(
             name="namespaces/{}/leases/{}".format(self.namespace, name),
@@ -468,8 +469,12 @@ class ClientService:
             lease_pb.begin_time.CopyFrom(timestamp_pb)
             update_fields.append("begin_time")
 
+        if client is not None:
+            lease_pb.client = client
+            update_fields.append("client")
+
         if not update_fields:
-            raise ValueError("At least one of duration or begin_time must be provided")
+            raise ValueError("At least one of duration, begin_time, or client must be provided")
 
         update_mask = field_mask_pb2.FieldMask()
         update_mask.FromJsonString(",".join(update_fields))
