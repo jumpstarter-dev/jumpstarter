@@ -1,3 +1,4 @@
+import inspect
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
@@ -14,7 +15,7 @@ def test_create_lease_passes_exporter_name_to_config():
 
     with patch("jumpstarter_cli.create.model_print") as model_print:
         # Skip Click config loading wrapper and call the command body directly.
-        create_lease.callback.__wrapped__.__wrapped__(
+        inspect.unwrap(create_lease.callback)(
             config=config,
             selector=None,
             exporter_name="laptop-test-exporter",
@@ -36,7 +37,7 @@ def test_create_lease_passes_exporter_name_to_config():
 
 def test_create_lease_requires_selector_or_name():
     with pytest.raises(click.UsageError, match="one of --selector/-l or --name/-n is required"):
-        create_lease.callback.__wrapped__.__wrapped__(
+        inspect.unwrap(create_lease.callback)(
             config=Mock(),
             selector=None,
             exporter_name=None,

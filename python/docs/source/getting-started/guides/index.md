@@ -11,6 +11,8 @@ development workflow. The guides cover:
   scenarios
 - [Integration Patterns](integration-patterns.md): Integrate Jumpstarter into
   your existing workflows and systems
+- [Testing with pytest](pytest-usage.md): Write and run hardware tests using
+  pytest with Jumpstarter
 
 
 ```{toctree}
@@ -20,4 +22,5 @@ setup-local-mode.md
 setup-distributed-mode.md
 examples.md
 integration-patterns.md
+pytest-usage.md
 ```

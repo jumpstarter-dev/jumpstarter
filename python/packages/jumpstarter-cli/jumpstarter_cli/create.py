@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 import click
+from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 from jumpstarter_cli_common.opt import OutputType, opt_output_all
@@ -10,7 +11,7 @@ from .common import opt_begin_time, opt_duration_partial, opt_exporter_name, opt
 from .login import relogin_client
 
 
-@click.group()
+@click.group(cls=AliasedGroup)
 def create():
     """
     Create a resource

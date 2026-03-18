@@ -12,6 +12,9 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = ["jumpstarter", "jumpstarter-driver-composite", "pexpect>=4.9.0"]
 
+[project.entry-points."jumpstarter.drivers"]
+UbootConsole = "jumpstarter_driver_uboot.driver:UbootConsole"
+
 [dependency-groups]
 dev = [
   "jumpstarter-driver-qemu",

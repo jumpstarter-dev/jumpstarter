@@ -21,6 +21,10 @@ dependencies = [
     "jumpstarter-driver-uboot",
 ]
 
+[project.entry-points."jumpstarter.drivers"]
+TIJ784S4Flasher = "jumpstarter_driver_flashers.driver:TIJ784S4Flasher"
+RCarS4Flasher = "jumpstarter_driver_flashers.driver:RCarS4Flasher"
+
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../' }

@@ -3,8 +3,8 @@
 # This file should be sourced after utils
 
 # Calculate external IP and networking configuration
-IP=$(get_external_ip)
-BASEDOMAIN="jumpstarter.${IP}.nip.io"
+IP=${IP:-$(get_external_ip)}
+BASEDOMAIN=${BASEDOMAIN:-"jumpstarter.${IP}.nip.io"}
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 OPERATOR_IMG=${OPERATOR_IMG:-quay.io/jumpstarter-dev/jumpstarter-operator:latest}
 
