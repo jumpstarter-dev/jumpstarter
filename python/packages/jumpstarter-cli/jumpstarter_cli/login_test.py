@@ -1,6 +1,7 @@
 import asyncio
 import json
 import ssl
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
 import pytest
@@ -158,9 +159,28 @@ async def test_fetch_auth_config_rejects_http_without_insecure():
 
 @pytest.mark.asyncio
 async def test_fetch_auth_config_allows_http_with_insecure():
-    with pytest.raises(Exception) as exc_info:
-        await fetch_auth_config("http://login.example.com", insecure=True)
-    assert not isinstance(exc_info.value, click.UsageError)
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"grpcEndpoint": "grpc.example.com"})
+
+    mock_get_cm = MagicMock()
+    mock_get_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_get_cm.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=mock_get_cm)
+
+    mock_client_cm = MagicMock()
+    mock_client_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_client_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession", return_value=mock_client_cm):
+        result = await fetch_auth_config("http://login.example.com", insecure=True)
+
+    mock_session.get.assert_called_once()
+    call_url = mock_session.get.call_args[0][0]
+    assert "http://login.example.com" in call_url
+    assert result["grpcEndpoint"] == "grpc.example.com"
 
 
 def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) -> None:
