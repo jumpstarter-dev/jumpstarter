@@ -1,3 +1,6 @@
+import asyncio
+import json
+
 import click
 import pytest
 from click.testing import CliRunner
@@ -6,6 +9,7 @@ from jumpstarter_cli.jmp import jmp
 from jumpstarter_cli.login import (
     _validate_auth_config_payload,
     _validate_login_endpoint_url,
+    fetch_auth_config,
     parse_login_argument,
 )
 
@@ -59,6 +63,58 @@ def test_validate_login_endpoint_url_allows_http_with_explicit_opt_in() -> None:
 def test_validate_auth_config_payload_requires_grpc_endpoint() -> None:
     with pytest.raises(click.ClickException, match="missing required field 'grpcEndpoint'"):
         _validate_auth_config_payload({"namespace": "default"}, "https://login.example.com/v1/auth/config")
+
+
+def test_fetch_auth_config_maps_timeout_to_click_exception(monkeypatch) -> None:
+    class FakeClientSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, *args, **kwargs):
+            raise TimeoutError("network timeout")
+
+    monkeypatch.setattr("jumpstarter_cli.login.aiohttp.ClientSession", FakeClientSession)
+
+    with pytest.raises(click.ClickException, match="Timed out while connecting"):
+        asyncio.run(fetch_auth_config("login.example.com"))
+
+
+def test_fetch_auth_config_maps_json_decode_error(monkeypatch) -> None:
+    class FakeResponse:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def json(self):
+            raise json.JSONDecodeError("Expecting value", "x", 0)
+
+    class FakeClientSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("jumpstarter_cli.login.aiohttp.ClientSession", FakeClientSession)
+
+    with pytest.raises(click.ClickException, match="Invalid JSON response received"):
+        asyncio.run(fetch_auth_config("login.example.com"))
 
 
 def test_login_cli_shows_timeout_message(monkeypatch) -> None:

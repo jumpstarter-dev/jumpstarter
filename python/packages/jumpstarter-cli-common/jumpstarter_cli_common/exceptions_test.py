@@ -60,6 +60,22 @@ def test_handle_exceptions_with_reauth_still_maps_common_exceptions() -> None:
     assert calls == []
 
 
+def test_handle_exceptions_with_reauth_maps_keyboard_interrupt() -> None:
+    calls = []
+
+    def login_func(_config):
+        calls.append(True)
+
+    @handle_exceptions_with_reauthentication(login_func)
+    def interrupt_fn():
+        raise KeyboardInterrupt()
+
+    with pytest.raises(click.ClickException, match="Cancelled by user"):
+        interrupt_fn()
+
+    assert calls == []
+
+
 def test_handle_exceptions_maps_file_not_found() -> None:
     @handle_exceptions
     def missing_file_fn():
