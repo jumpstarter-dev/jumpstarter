@@ -61,7 +61,7 @@ async def fetch_auth_config(
         scheme = "http" if insecure else "https"
         login_endpoint = f"{scheme}://{login_endpoint}"
 
-    _validate_login_endpoint_url(login_endpoint, allow_http=use_http)
+    _validate_login_endpoint_url(login_endpoint, allow_http=insecure)
 
     url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
     ssl_context: ssl.SSLContext | bool = False if insecure else True
