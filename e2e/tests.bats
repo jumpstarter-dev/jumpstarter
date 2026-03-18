@@ -342,6 +342,26 @@ EOF
   jmp delete leases    --all
 }
 
+@test "can transfer lease to another client" {
+  wait_for_exporter
+
+  jmp config client use test-client-oidc
+
+  # Create a lease owned by test-client-oidc
+  run jmp create lease --selector example.com/board=oidc --duration 1d -o yaml
+  assert_success
+
+  # Get the lease name from the output
+  LEASE_NAME=$(echo "$output" | go run github.com/mikefarah/yq/v4@latest '.name')
+
+  # Transfer the lease to test-client-legacy
+  run jmp update lease "$LEASE_NAME" --to-client test-client-legacy -o yaml
+  assert_success
+  assert_output --partial "test-client-legacy"
+
+  jmp delete leases --all
+}
+
 @test "can lease and connect to exporters" {
   wait_for_exporter
 
