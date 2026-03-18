@@ -334,9 +334,11 @@ async def _resolve_lease_from_active_async(config) -> str:
         )
         return leases[chosen - 1].name
 
-    lease_summaries = [
-        f"{lease.name} ({_format_lease_display(lease)})" for lease in leases
-    ]
+    lease_summaries = []
+    for lease in leases:
+        info = _format_lease_display(lease)
+        summary = f"{lease.name} ({info})" if info else lease.name
+        lease_summaries.append(summary)
     raise click.UsageError(
         "multiple active leases found:\n  "
         + "\n  ".join(lease_summaries)

@@ -156,26 +156,16 @@ def test_shell_no_leases_shows_guidance():
 def test_shell_multi_lease_tty_picker():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
+    config.list_leases = AsyncMock(return_value=_make_lease_list(["lease-a", "lease-b", "lease-c"]))
     with (
-        patch("jumpstarter_cli.shell.anyio.run", side_effect=["lease-b", 0]) as mock_run,
-        patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
+        patch("jumpstarter_cli.shell.sys.stdin") as mock_stdin,
+        patch("jumpstarter_cli.shell.click.prompt", return_value=2),
     ):
-        shell.callback.__wrapped__.__wrapped__(
-            config=config,
-            command=(),
-            lease_name=None,
-            selector=None,
-            exporter_name=None,
-            duration=timedelta(minutes=1),
-            exporter_logs=False,
-            acquisition_timeout=None,
-        )
+        mock_stdin.isatty.return_value = True
+        selected = anyio.run(_resolve_lease_from_active_async, config)
 
-    resolve_call_args = mock_run.call_args_list[0]
-    assert resolve_call_args[0][0] is _resolve_lease_from_active_async
-    shell_call_args = mock_run.call_args_list[1]
-    assert shell_call_args[0][4] == "lease-b"
-    mock_exit.assert_called_once_with(0)
+    assert selected == "lease-b"
+    config.list_leases.assert_called_once_with(only_active=True)
 
 
 def test_shell_multi_lease_no_tty_error():
@@ -206,24 +196,10 @@ def test_shell_filters_leases_by_current_client():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=lease_list)
-    with (
-        patch("jumpstarter_cli.shell.anyio.run", side_effect=["my-lease", 0]) as mock_run,
-        patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
-    ):
-        shell.callback.__wrapped__.__wrapped__(
-            config=config,
-            command=(),
-            lease_name=None,
-            selector=None,
-            exporter_name=None,
-            duration=timedelta(minutes=1),
-            exporter_logs=False,
-            acquisition_timeout=None,
-        )
 
-    shell_call_args = mock_run.call_args_list[1]
-    assert shell_call_args[0][4] == "my-lease"
-    mock_exit.assert_called_once_with(0)
+    selected = anyio.run(_resolve_lease_from_active_async, config)
+    assert selected == "my-lease"
+    config.list_leases.assert_called_once_with(only_active=True)
 
 
 def test_shell_no_own_leases_among_others():
@@ -268,21 +244,7 @@ def test_resolve_lease_handles_async_list_leases():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=_make_lease_list(["async-lease"]))
-    with (
-        patch("jumpstarter_cli.shell.anyio.run", side_effect=["async-lease", 0]) as mock_run,
-        patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
-    ):
-        shell.callback.__wrapped__.__wrapped__(
-            config=config,
-            command=(),
-            lease_name=None,
-            selector=None,
-            exporter_name=None,
-            duration=timedelta(minutes=1),
-            exporter_logs=False,
-            acquisition_timeout=None,
-        )
 
-    shell_call_args = mock_run.call_args_list[1]
-    assert shell_call_args[0][4] == "async-lease"
-    mock_exit.assert_called_once_with(0)
+    selected = anyio.run(_resolve_lease_from_active_async, config)
+    assert selected == "async-lease"
+    config.list_leases.assert_called_once_with(only_active=True)
