@@ -92,7 +92,7 @@ opt_insecure = click.option(
     "--insecure",
     is_flag=True,
     default=False,
-    help="Disable TLS verification and allow insecure connections",
+    help="Disable TLS verification and allow insecure connections, including plain HTTP",
 )
 
 opt_insecure_tls = opt_insecure
