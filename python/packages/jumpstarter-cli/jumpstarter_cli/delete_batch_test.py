@@ -13,7 +13,8 @@ class TestBatchDeleteLeases:
             config=config,
             names=("lease1", "lease2", "lease3"),
             selector=None,
-            all=False,
+            delete_all=False,
+            all_clients=False,
             output=None,
         )
         assert config.delete_lease.call_count == 3
@@ -28,7 +29,8 @@ class TestBatchDeleteLeases:
                 config=config,
                 names=(),
                 selector=None,
-                all=False,
+                delete_all=False,
+            all_clients=False,
                 output=None,
             )
 
@@ -40,7 +42,8 @@ class TestBatchDeleteLeases:
             config=config,
             names=("lease1", "lease2"),
             selector=None,
-            all=False,
+            delete_all=False,
+            all_clients=False,
             output=OutputMode.NAME,
         )
         assert config.delete_lease.call_count == 2
