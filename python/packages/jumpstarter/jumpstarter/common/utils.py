@@ -10,14 +10,14 @@ from typing import TYPE_CHECKING
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_EXPORTER, JMP_EXPORTER_LABELS, JMP_LEASE, JUMPSTARTER_HOST
 from jumpstarter.exporter import Session
-from jumpstarter.utils.env import env
+from jumpstarter.utils.env import ExporterMetadata, env, env_with_metadata
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
-__all__ = ["env"]
+__all__ = ["ExporterMetadata", "env", "env_with_metadata"]
 
 
 @asynccontextmanager
@@ -84,6 +84,19 @@ def _run_process(
     return process.wait()
 
 
+def _lease_env_vars(lease) -> dict[str, str]:
+    """Extract environment variables from a lease object."""
+    env_vars: dict[str, str] = {}
+    env_vars[JMP_EXPORTER] = lease.exporter_name
+    if lease.name:
+        env_vars[JMP_LEASE] = lease.name
+    if lease.exporter_labels:
+        env_vars[JMP_EXPORTER_LABELS] = ",".join(
+            f"{k}={v}" for k, v in sorted(lease.exporter_labels.items())
+        )
+    return env_vars
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -117,6 +130,9 @@ def launch_shell(
         JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
         "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
     }
+
+    if lease is not None:
+        common_env.update(_lease_env_vars(lease))
 
     if command:
         return _run_process(list(command), common_env, lease)
