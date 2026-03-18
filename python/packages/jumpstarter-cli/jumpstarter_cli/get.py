@@ -1,4 +1,5 @@
 import click
+from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 from jumpstarter_cli_common.opt import OutputType, opt_comma_separated, opt_output_all
@@ -8,7 +9,7 @@ from .common import opt_selector
 from .login import relogin_client
 
 
-@click.group()
+@click.group(cls=AliasedGroup)
 def get():
     """
     Display one or many resources

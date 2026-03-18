@@ -21,8 +21,13 @@ class AliasedGroup(click.Group):
         "delete": ["del", "d"],
         "shell": ["sh", "s"],
         "exporter": ["exporters", "e"],
+        "exporters": ["exporter"],
         "client": ["clients", "c"],
+        "clients": ["client"],
         "lease": ["leases", "l"],
+        "leases": ["lease"],
+        "cluster": ["clusters"],
+        "clusters": ["cluster"],
         "version": ["ver", "v"],
     }
 
