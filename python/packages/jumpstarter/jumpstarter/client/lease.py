@@ -63,6 +63,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         default=None, init=False
     )  # Called when lease is ending
     lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
+    lease_transferred: bool = field(default=False, init=False)  # Set when lease is transferred to another client
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -293,7 +294,15 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     attempt += 1
                     continue
                 # Exporter went offline or lease ended - log and exit gracefully
-                logger.warning("Connection to exporter lost: %s", e.details())
+                if "permission denied" in str(e.details()).lower():
+                    self.lease_transferred = True
+                    logger.warning(
+                        "Lease %s has been transferred to another client. "
+                        "Your session is no longer valid.",
+                        self.name,
+                    )
+                else:
+                    logger.warning("Connection to exporter lost: %s", e.details())
                 return
         async with connect_router_stream(
             response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options

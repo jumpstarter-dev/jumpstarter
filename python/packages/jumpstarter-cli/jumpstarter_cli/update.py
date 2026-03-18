@@ -43,15 +43,15 @@ def update_lease(
     Update a lease
 
     Update the duration, begin time, and/or owner of an existing lease.
-    At least one of --duration, --begin-time, or --to_client must be specified.
+    At least one of --duration, --begin-time, or --to-client must be specified.
 
-    To transfer a lease to another client in the same namespace, use the --to_client option.
+    To transfer a lease to another client in the same namespace, use the --to-client option.
 
     Updating the begin time of an already active lease is not allowed.
     """
 
     if duration is None and begin_time is None and to_client is None:
-        raise click.UsageError("At least one of --duration, --begin-time, or --client must be specified")
+        raise click.UsageError("At least one of --duration, --begin-time, or --to-client must be specified")
 
     client_path = f"namespaces/{config.metadata.namespace}/clients/{to_client}" if to_client else None
 

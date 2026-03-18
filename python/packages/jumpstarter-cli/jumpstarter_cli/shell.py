@@ -275,6 +275,10 @@ async def _shell_with_signal_handling(  # noqa: C901
                         # Lease expired naturally (e.g. during beforeLease hook)
                         # — exit gracefully instead of showing a scary error
                         pass
+                    elif lease_used.lease_transferred:
+                        raise ExporterOfflineError(
+                            "Lease has been transferred to another client. Session is no longer valid."
+                        ) from None
                     else:
                         raise ExporterOfflineError("Connection to exporter lost") from None
                 else:
