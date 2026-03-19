@@ -170,13 +170,13 @@ class TestHookExecutor:
     async def test_exec_bash(self, lease_scope) -> None:
         """Test that exec=/bin/bash allows bash-specific syntax.
 
-        Uses [[ ]] and bash array which would fail under /bin/sh on systems
-        where sh is not bash (e.g. dash on Debian/Ubuntu).
+        Uses ${var:offset:length} substring syntax which is bash-specific
+        and would fail under /bin/sh on systems where sh is dash.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
                 exec_="/bin/bash",
-                script='arr=(one two three); [[ ${#arr[@]} -eq 3 ]] && echo "BASH_OK: ${arr[1]}"',
+                script='V="hello_world"; echo "BASH_OK: ${V:6:5}"',
                 timeout=10,
             ),
         )
@@ -186,7 +186,7 @@ class TestHookExecutor:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("BASH_OK: two" in call for call in info_calls)
+            assert any("BASH_OK: world" in call for call in info_calls)
 
     async def test_exec_python3(self, lease_scope) -> None:
         """Test that exec=python3 runs inline Python.

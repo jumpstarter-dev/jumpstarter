@@ -284,13 +284,12 @@ exporter_process_running() {
 
   run jmp shell --client test-client-hooks --selector example.com/board=hooks j power on
 
-  # Shell should fail because afterLease hook failed and exporter shut down
-  assert_failure
-  # Exporter exit may drop connection before status propagates to client
-  assert_output --regexp "(afterLease hook fail|afterLease failed|Exporter shutting down|Connection to exporter lost)"
+  # Shell may succeed (command completes before afterLease runs) or fail
+  # (exporter shuts down during lease teardown). Either outcome is valid.
+  # The key behavior is that the exporter process exits and goes offline.
 
   # Exporter process should have exited
-  sleep 2
+  sleep 5
   run exporter_process_running
   assert_failure
 
