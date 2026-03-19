@@ -50,7 +50,7 @@ drivers:
 
 **Environment Variables**:
 
-- `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
+- `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
 - `JMP_CLIENT_CONFIG` - Path to a client configuration file
 - `JMP_CLIENT` - Name of a registered client config
 - `JMP_NAMESPACE` - Namespace in the controller
@@ -118,7 +118,7 @@ boundaries. See [Hooks](../../introduction/hooks.md) for full details on
 hook configuration, environment variables, and failure handling.
 
 **Environment Variables**:
-- `JUMPSTARTER_GRPC_INSECURE` - Set to `1` to disable TLS verification
+- `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
 - `JMP_ENDPOINT` - gRPC endpoint (overrides config file)
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_NAMESPACE` - Namespace in the controller

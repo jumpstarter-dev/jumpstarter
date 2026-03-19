@@ -1,9 +1,12 @@
 """Tests for session GetReport with descriptions and methods_description"""
 
+import grpc
+import pytest
 from google.protobuf import empty_pb2
 
 from jumpstarter.common.utils import serve
 from jumpstarter.driver import Driver
+from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
 from jumpstarter.exporter.session import Session
 
 
@@ -329,3 +332,86 @@ def test_logging_queue_maxlen_256():
 
         assert session._logging_queue.maxlen == 256
 
+
+@pytest.mark.anyio
+async def test_serve_tcp_async_insecure():
+    """Test that Session.serve_tcp_async binds TCP and serves GetReport (insecure)."""
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    driver = SimpleDriver(description="TCP test driver")
+    session = Session(
+        uuid=driver.uuid,
+        labels=driver.labels,
+        root_device=driver,
+    )
+    with session:
+        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+                response = await stub.GetReport(empty_pb2.Empty())
+            assert len(response.reports) >= 1
+            assert response.uuid == str(driver.uuid)
+
+
+# ============================================================================
+# Passphrase authentication
+# ============================================================================
+
+
+@pytest.mark.anyio
+async def test_serve_tcp_passphrase_correct():
+    """Client with the correct passphrase can call GetReport."""
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    passphrase = "test-secret-123"
+    driver = SimpleDriver(description="auth test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    with session:
+        async with session.serve_tcp_async(
+            "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
+        ) as bound_port:
+            # Attach passphrase as metadata
+            metadata = ((PASSPHRASE_METADATA_KEY, passphrase),)
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+                response = await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
+            assert response.uuid == str(driver.uuid)
+
+
+@pytest.mark.anyio
+async def test_serve_tcp_passphrase_rejected():
+    """Client with wrong passphrase is rejected with UNAUTHENTICATED."""
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    passphrase = "test-secret-123"
+    driver = SimpleDriver(description="auth test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    with session:
+        async with session.serve_tcp_async(
+            "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
+        ) as bound_port:
+            metadata = ((PASSPHRASE_METADATA_KEY, "wrong-passphrase"),)
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+                    await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
+                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+@pytest.mark.anyio
+async def test_serve_tcp_passphrase_missing():
+    """Client with no passphrase is rejected with UNAUTHENTICATED."""
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    passphrase = "test-secret-123"
+    driver = SimpleDriver(description="auth test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    with session:
+        async with session.serve_tcp_async(
+            "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
+        ) as bound_port:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+                    await stub.GetReport(empty_pb2.Empty())
+                assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED

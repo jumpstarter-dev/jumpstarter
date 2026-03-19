@@ -87,6 +87,9 @@ def test_shell_requires_selector_or_name_when_no_leases():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            tls_grpc_address=None,
+            tls_grpc_insecure=False,
+            passphrase=None,
         )
 
 
@@ -104,6 +107,9 @@ def test_shell_allows_existing_lease_name_without_selector_or_name():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            tls_grpc_address=None,
+            tls_grpc_insecure=False,
+            passphrase=None,
         )
 
     mock_exit.assert_called_once_with(0)
@@ -125,6 +131,9 @@ def test_shell_auto_connects_single_lease():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            tls_grpc_address=None,
+            tls_grpc_insecure=False,
+            passphrase=None,
         )
 
     resolve_call_args = mock_run.call_args_list[0]
@@ -149,6 +158,9 @@ def test_shell_no_leases_shows_guidance():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            tls_grpc_address=None,
+            tls_grpc_insecure=False,
+            passphrase=None,
         )
     config.list_leases.assert_called_once_with(only_active=True)
 
@@ -186,6 +198,9 @@ def test_shell_multi_lease_no_tty_error():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            tls_grpc_address=None,
+            tls_grpc_insecure=False,
+            passphrase=None,
         )
 
 
@@ -218,6 +233,9 @@ def test_shell_no_own_leases_among_others():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            tls_grpc_address=None,
+            tls_grpc_insecure=False,
+            passphrase=None,
         )
 
 
@@ -236,6 +254,9 @@ def test_shell_allows_env_lease_without_selector_or_name():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            tls_grpc_address=None,
+            tls_grpc_insecure=False,
+            passphrase=None,
         )
 
     mock_exit.assert_called_once_with(0)

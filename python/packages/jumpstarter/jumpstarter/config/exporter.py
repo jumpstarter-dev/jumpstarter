@@ -219,8 +219,12 @@ class ExporterConfigV1Alpha1(BaseModel):
                 yield path
 
     @asynccontextmanager
-    async def create_exporter(self):
-        """Create and manage an exporter instance with proper lifecycle."""
+    async def create_exporter(self, *, standalone: bool = False):
+        """Create and manage an exporter instance with proper lifecycle.
+
+        When standalone is True, channel_factory is a no-op (never used);
+        use exporter.serve_standalone_tcp() instead of exporter.serve().
+        """
         # dynamic import to avoid circular imports
         from anyio import CancelScope
 
@@ -235,6 +239,9 @@ class ExporterConfigV1Alpha1(BaseModel):
             )
             return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
+        async def dummy_channel_factory() -> grpc.aio.Channel:
+            raise RuntimeError("channel_factory must not be called in standalone mode")
+
         # Create hook executor if hooks are configured
         hook_executor = None
         if self.hooks.before_lease or self.hooks.after_lease:
@@ -248,7 +255,7 @@ class ExporterConfigV1Alpha1(BaseModel):
         entered = False
         try:
             exporter = Exporter(
-                channel_factory=channel_factory,
+                channel_factory=dummy_channel_factory if standalone else channel_factory,
                 device_factory=ExporterConfigV1Alpha1DriverInstance(
                     type="jumpstarter_driver_composite.driver.Composite",
                     description=self.description,
