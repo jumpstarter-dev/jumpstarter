@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -56,6 +57,7 @@ type JumpstarterReconciler struct {
 	client.Client
 	Scheme             *runtime.Scheme
 	EndpointReconciler *endpoints.Reconciler
+	Recorder           record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=operator.jumpstarter.dev,resources=jumpstarters,verbs=get;list;watch;create;update;patch;delete
@@ -197,6 +199,14 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: 30 * time.Minute}, nil
 }
 
+// emitEventf emits a Kubernetes event on the Jumpstarter object.
+func (r *JumpstarterReconciler) emitEventf(js *operatorv1alpha1.Jumpstarter, eventType, reason, msgFmt string, args ...interface{}) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(js, eventType, reason, msgFmt, args...)
+}
+
 // reconcileControllerDeployment reconciles the controller deployment
 func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
@@ -259,6 +269,17 @@ func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Contex
 		"name", existingDeployment.Name,
 		"namespace", existingDeployment.Namespace,
 		"operation", op)
+
+	switch op {
+	case controllerutil.OperationResultCreated:
+		r.emitEventf(jumpstarter, corev1.EventTypeNormal, "ControllerDeploymentCreated",
+			"Controller deployment created: name=%s namespace=%s",
+			existingDeployment.Name, existingDeployment.Namespace)
+	case controllerutil.OperationResultUpdated:
+		r.emitEventf(jumpstarter, corev1.EventTypeNormal, "ControllerDeploymentUpdated",
+			"Controller deployment updated: name=%s namespace=%s",
+			existingDeployment.Name, existingDeployment.Namespace)
+	}
 
 	return nil
 }
@@ -329,6 +350,17 @@ func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, j
 			"namespace", existingDeployment.Namespace,
 			"replica", i,
 			"operation", op)
+
+		switch op {
+		case controllerutil.OperationResultCreated:
+			r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentCreated",
+				"Router deployment created: name=%s namespace=%s replica=%d",
+				existingDeployment.Name, existingDeployment.Namespace, i)
+		case controllerutil.OperationResultUpdated:
+			r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentUpdated",
+				"Router deployment updated: name=%s namespace=%s replica=%d",
+				existingDeployment.Name, existingDeployment.Namespace, i)
+		}
 	}
 
 	// Clean up deployments for scaled-down replicas
@@ -574,6 +606,8 @@ func (r *JumpstarterReconciler) ensureSecretExists(ctx context.Context, jumpstar
 	}
 
 	log.Info("Created new secret with random key", "secret", name)
+	r.emitEventf(jumpstarter, corev1.EventTypeNormal, "SecretCreated",
+		"Secret created: name=%s namespace=%s", name, jumpstarter.Namespace)
 	return nil
 }
 
@@ -1232,6 +1266,9 @@ func (r *JumpstarterReconciler) cleanupExcessRouterDeployments(ctx context.Conte
 					if !errors.IsNotFound(err) {
 						return fmt.Errorf("failed to delete excess deployment %s: %w", deployment.Name, err)
 					}
+				} else {
+					r.emitEventf(jumpstarter, corev1.EventTypeNormal, "RouterDeploymentDeleted",
+						"Excess router deployment deleted: name=%s replicaIndex=%d", deployment.Name, idx)
 				}
 				break
 			}

@@ -227,6 +227,7 @@ func main() {
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
 		EndpointReconciler: endpoints.NewReconciler(mgr.GetClient(), mgr.GetScheme(), mgr.GetConfig()),
+		Recorder:           mgr.GetEventRecorderFor("jumpstarter-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Jumpstarter")
 		os.Exit(1)

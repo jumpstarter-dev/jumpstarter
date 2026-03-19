@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,8 +37,9 @@ import (
 // ExporterReconciler reconciles a Exporter object
 type ExporterReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Signer *oidc.Signer
+	Scheme   *runtime.Scheme
+	Signer   *oidc.Signer
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters,verbs=get;list;watch;create;update;patch;delete
@@ -45,6 +47,7 @@ type ExporterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -67,6 +70,9 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	original := client.MergeFrom(exporter.DeepCopy())
 
+	prevOnline := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
+	prevRegistered := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))
+
 	if err := r.reconcileStatusCredential(ctx, &exporter); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -84,8 +90,37 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	newOnline := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
+	newRegistered := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))
+
 	if err := r.Status().Patch(ctx, &exporter, original); err != nil {
 		return RequeueConflict(logger, ctrl.Result{}, err)
+	}
+
+	// Emit only after status patch succeeds.
+	if !prevRegistered && newRegistered {
+		r.emitEventf(&exporter, corev1.EventTypeNormal, "ExporterRegistered",
+			"Exporter registered its capabilities: deviceCount=%d", len(exporter.Status.Devices))
+	} else if prevRegistered && !newRegistered {
+		r.emitEventf(&exporter, corev1.EventTypeWarning, "ExporterUnregistered",
+			"Exporter lost its device registration: exporter=%s", exporter.Name)
+	}
+
+	if !prevOnline && newOnline {
+		r.emitEventf(&exporter, corev1.EventTypeNormal, "ExporterOnline",
+			"Exporter is online: exporter=%s lastSeen=%s",
+			exporter.Name, exporter.Status.LastSeen.String())
+	} else if prevOnline && !newOnline {
+		if exporter.Status.ExporterStatusValue == jumpstarterdevv1alpha1.ExporterStatusOffline &&
+			time.Since(exporter.Status.LastSeen.Time) <= time.Minute {
+			r.emitEventf(&exporter, corev1.EventTypeWarning, "ExporterOffline",
+				"Exporter reported offline (graceful shutdown): exporter=%s message=%s",
+				exporter.Name, exporter.Status.StatusMessage)
+		} else {
+			r.emitEventf(&exporter, corev1.EventTypeWarning, "ExporterOffline",
+				"Exporter went offline (connection lost): exporter=%s lastSeen=%s",
+				exporter.Name, exporter.Status.LastSeen.String())
+		}
 	}
 
 	return result, nil
@@ -233,6 +268,13 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 	return ctrl.Result{
 		RequeueAfter: requeueAfter,
 	}, nil
+}
+
+func (r *ExporterReconciler) emitEventf(exporter *jumpstarterdevv1alpha1.Exporter, eventType, reason, msgFmt string, args ...interface{}) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(exporter, eventType, reason, msgFmt, args...)
 }
 
 // SetupWithManager sets up the controller with the Manager.
