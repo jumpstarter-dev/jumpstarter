@@ -649,9 +649,7 @@ class TestHookExecutorPRRegressions:
         )
 
     async def test_before_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
-        """US4: onFailure:exit must report OFFLINE before calling shutdown.
-
-        When beforeLease hook fails with on_failure=exit, the exporter must
+        """When beforeLease hook fails with on_failure=exit, the exporter must
         report OFFLINE status to the controller before initiating shutdown.
         This prevents the controller from assigning new leases to a dying
         exporter during the shutdown window.
@@ -690,7 +688,8 @@ class TestHookExecutorPRRegressions:
         )
 
     async def test_after_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
-        """US4: afterLease onFailure:exit must also report OFFLINE before shutdown."""
+        """When afterLease hook fails with on_failure=exit, OFFLINE must be
+        reported before shutdown to prevent new lease assignment."""
         hook_config = HookConfigV1Alpha1(
             after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
