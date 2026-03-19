@@ -34,6 +34,7 @@ Drivers that provide various communication interfaces:
 * **[CAN](can.md)** (`jumpstarter-driver-can`) - Controller Area Network
   communication
 * **[HTTP](http.md)** (`jumpstarter-driver-http`) - HTTP communication
+* **[Mitmproxy](mitmproxy.md)** (`jumpstarter-driver-mitmproxy`) - HTTP(S) interception, mocking, and traffic recording
 * **[Network](network.md)** (`jumpstarter-driver-network`) - Network interfaces
   and configuration
 * **[PySerial](pyserial.md)** (`jumpstarter-driver-pyserial`) - Serial port
@@ -114,6 +115,7 @@ flashers.md
 http.md
 http-power.md
 iscsi.md
+mitmproxy.md
 network.md
 opendal.md
 power.md
