@@ -594,6 +594,10 @@ class HookExecutor:
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
                 )
+                await report_status(
+                    ExporterStatus.OFFLINE,
+                    "Exporter shutting down due to beforeLease hook failure",
+                )
                 # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:
@@ -679,6 +683,10 @@ class HookExecutor:
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
                     f"afterLease hook failed (on_failure=exit, shutting down): {e}",
+                )
+                await report_status(
+                    ExporterStatus.OFFLINE,
+                    "Exporter shutting down due to afterLease hook failure",
                 )
                 # No delay needed - client is already polling and will see the failure
                 logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")

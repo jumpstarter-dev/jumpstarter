@@ -589,6 +589,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         running the afterLease hook if appropriate, and transitioning to AVAILABLE.
         """
         with CancelScope(shield=True):
+            # Wait for beforeLease hook to complete before running afterLease.
+            # When a lease ends during hook execution, the hook must finish
+            # (subject to its configured timeout) before cleanup proceeds.
+            await lease_scope.before_lease_hook.wait()
+
             if not lease_scope.after_lease_hook_started.is_set():
                 lease_scope.after_lease_hook_started.set()
                 if (self.hook_executor
