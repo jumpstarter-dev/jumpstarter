@@ -1454,6 +1454,20 @@ def _human_size(nbytes: int) -> str:
     return f"{nbytes:.1f} TB"
 
 
+def _collect_entries_from_item(item: dict) -> list[dict]:
+    """Return the item and any nested dicts that might contain a ``file`` key."""
+    entries = [item]
+    if isinstance(item.get("response"), dict):
+        entries.append(item["response"])
+    for rule in item.get("rules", []):
+        if isinstance(rule, dict):
+            entries.append(rule)
+    for step in item.get("sequence", []):
+        if isinstance(step, dict):
+            entries.append(step)
+    return entries
+
+
 def _collect_file_entries(endpoints: dict) -> list[dict]:
     """Collect all dicts that might contain a ``file`` key from a scenario.
 
@@ -1464,25 +1478,14 @@ def _collect_file_entries(endpoints: dict) -> list[dict]:
     entries: list[dict] = []
     for ep in endpoints.values():
         if isinstance(ep, list):
-            # URL-keyed list format: each item is an endpoint dict
             items = ep
         elif isinstance(ep, dict):
             items = [ep]
         else:
             continue
         for item in items:
-            if not isinstance(item, dict):
-                continue
-            entries.append(item)
-            # Check nested response dict
-            if isinstance(item.get("response"), dict):
-                entries.append(item["response"])
-            for rule in item.get("rules", []):
-                if isinstance(rule, dict):
-                    entries.append(rule)
-            for step in item.get("sequence", []):
-                if isinstance(step, dict):
-                    entries.append(step)
+            if isinstance(item, dict):
+                entries.extend(_collect_entries_from_item(item))
     return entries
 
 
