@@ -40,6 +40,9 @@ class HookExecutionError(Exception):
         """Returns True if the exporter should be shut down entirely."""
         return self.on_failure == "exit"
 
+    def should_end_lease(self) -> bool:
+        """Returns True if the lease should be ended."""
+        return self.on_failure in ("endLease", "exit")
 
 
 @dataclass
