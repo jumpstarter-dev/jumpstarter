@@ -231,7 +231,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
 
     async def _resolve_and_validate_path(self, filename: str, addr: Tuple[str, int]) -> Optional[str]:
         normalized = pathlib.PurePosixPath(filename)
-        if ".." in normalized.parts:
+        if ".." in normalized.parts or normalized.is_absolute():
             self.logger.error(f"Path traversal attempt from {addr}: {filename}")
             self._send_error(addr, TftpErrorCode.ACCESS_VIOLATION, "Access violation")
             return None

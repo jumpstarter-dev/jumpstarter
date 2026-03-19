@@ -62,6 +62,11 @@ class TestResolveAndValidatePath:
         assert result == "file..name.txt"
 
     @pytest.mark.asyncio
+    async def test_rejects_absolute_path(self, protocol):
+        result = await protocol._resolve_and_validate_path("/etc/passwd", ("127.0.0.1", 12345))
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_sends_access_violation_on_traversal(self, protocol):
         await protocol._resolve_and_validate_path("../secret", ("127.0.0.1", 12345))
         protocol.transport.sendto.assert_called_once()
