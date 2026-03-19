@@ -29,6 +29,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE: list[tuple[str, int]] = [
+    ("grpc.http2.min_ping_interval_without_data_ms", 10000),
+    ("grpc.keepalive_permit_without_calls", 1),
+]
+
 
 @dataclass(kw_only=True)
 class Session(
@@ -177,10 +182,15 @@ class Session(
         Use tls_credentials for TLS (e.g. from grpc.ssl_server_credentials);
         when None, uses an insecure port (for development only).
 
+        Channel options enable client keepalive PINGs on idle TCP connections.
+
         Yields:
             int - the bound port (useful when port=0 to let the OS choose)
         """
-        server = grpc.aio.server(interceptors=interceptors)
+        server = grpc.aio.server(
+            interceptors=interceptors,
+            options=list(_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE),
+        )
         bound_port = self._add_tcp_port(server, host, port, tls_credentials)
 
         async with self._serve_grpc_server_async(server):
@@ -206,10 +216,15 @@ class Session(
         the Unix socket. Hook j commands inherit the passphrase via env var
         so they authenticate automatically.
 
+        TCP uses keepalive-friendly channel options (see serve_tcp_async).
+
         Yields:
             None - server runs until context exit
         """
-        server = grpc.aio.server(interceptors=interceptors)
+        server = grpc.aio.server(
+            interceptors=interceptors,
+            options=list(_GRPC_SERVER_OPTIONS_TCP_KEEPALIVE),
+        )
         server.add_insecure_port(f"unix://{unix_path}")
         logger.debug("Session server listening on unix://%s (hooks)", unix_path)
         self._add_tcp_port(server, host, port, tls_credentials)
