@@ -15,9 +15,6 @@ class HttpServerError(Exception):
     """Base exception for HTTP server errors"""
 
 
-class FileWriteError(HttpServerError):
-    """Exception raised when file writing fails"""
-
 
 @dataclass(kw_only=True)
 class HttpServer(Driver):

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, NoReturn, Optional, Self
+from typing import Annotated, ClassVar, Literal, Optional, Self
 
 import grpc
 import yaml
@@ -55,12 +55,6 @@ def _attach_config_if_expired_token(exc: ConnectionError, config: ClientConfigV1
     if "token is expired" in str(exc):
         exc.set_config(config)
 
-
-def raise_expired_token_error(config: ClientConfigV1Alpha1) -> NoReturn:
-    """Raise ConnectionError for expired token with config attached so re-auth can run."""
-    err = ConnectionError("token is expired")
-    err.set_config(config)
-    raise err
 
 
 def _handle_connection_error(f):

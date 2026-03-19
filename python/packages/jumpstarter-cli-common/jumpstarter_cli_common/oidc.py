@@ -213,22 +213,6 @@ def get_token_remaining_seconds(token: str) -> float | None:
 TOKEN_EXPIRY_WARNING_SECONDS = 300
 
 
-def is_token_expired(token: str, buffer_seconds: int = 0) -> bool:
-    """Check if token is expired or will expire within buffer_seconds.
-
-    Args:
-        token: JWT token string
-        buffer_seconds: Consider expired if less than this many seconds remain
-
-    Returns:
-        True if token is expired or will expire within buffer
-        False if token is still valid (or has no exp claim)
-    """
-    remaining = get_token_remaining_seconds(token)
-    if remaining is None:
-        return False
-    return remaining < buffer_seconds
-
 
 def format_duration(seconds: float) -> str:
     """Format a duration in seconds as a human-readable string.

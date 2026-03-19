@@ -63,11 +63,6 @@ class ArgumentError(JumpstarterException):
     pass
 
 
-class FileAccessError(JumpstarterException):
-    """Raised when a file access error occurs."""
-
-    pass
-
 
 class FileNotFoundError(JumpstarterException, FileNotFoundError):
     """Raised when a file is not found."""
