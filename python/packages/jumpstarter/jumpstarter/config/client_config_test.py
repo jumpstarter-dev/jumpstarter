@@ -568,3 +568,42 @@ async def test_list_exporters_paginates():
     assert calls[0].kwargs["page_size"] == 100
     assert calls[0].kwargs["page_token"] is None
     assert calls[1].kwargs["page_token"] == "tok1"
+
+
+@pytest.mark.asyncio
+async def test_list_exporters_with_leases_propagates_page_size():
+    from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
+
+    exp = Exporter(
+        namespace="default", name="exporter-a", labels={"env": "test"},
+        online=True, lease=None,
+    )
+    lease = Lease(
+        namespace="default", name="lease-a", selector="env=test",
+        duration=timedelta(hours=1), client="c", exporter="exporter-a",
+        conditions=[],
+    )
+
+    exporter_page = ExporterList(exporters=[exp], next_page_token="")
+    lease_page = LeaseList(leases=[lease], next_page_token="")
+
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+
+    mock_service = Mock()
+    mock_service.ListExporters = AsyncMock(return_value=exporter_page)
+    mock_service.ListLeases = AsyncMock(return_value=lease_page)
+
+    with (
+        patch("jumpstarter.config.client.ClientConfigV1Alpha1.channel", AsyncMock(return_value=Mock())),
+        patch("jumpstarter.config.client.ClientService", return_value=mock_service),
+    ):
+        await config.list_exporters(filter=None, include_leases=True, page_size=50)
+
+    lease_calls = mock_service.ListLeases.call_args_list
+    assert lease_calls[0].kwargs["page_size"] == 50

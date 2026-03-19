@@ -223,7 +223,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         if not include_leases:
             return result
 
-        leases_response = await self._collect_all_leases(svc)
+        leases_response = await self._collect_all_leases(svc, page_size=page_size)
         lease_map = {}
         for lease in leases_response.leases:
             if lease.exporter and lease.effective_begin_time:
