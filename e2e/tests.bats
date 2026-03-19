@@ -369,7 +369,7 @@ EOF
 
   for i in $(seq 1 101); do
     jmp admin create exporter -n "${JS_NAMESPACE}" "pagination-exp-${i}" --nointeractive \
-      --oidc-username "dex:pagination-exp-${i}" &
+      -l pagination=true --oidc-username "dex:pagination-exp-${i}" &
     if (( i % 10 == 0 )); then wait; fi
   done
   wait
