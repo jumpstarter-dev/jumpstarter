@@ -403,7 +403,7 @@ class TestGetLeasesClientFiltering:
         assert printed_leases.leases[0].name == "my-lease"
         config.list_leases.assert_called_once_with(filter=None, only_active=True)
 
-    def test_all_flag_includes_expired_own_only(self):
+    def test_all_flag_requests_inactive_leases_own_only(self):
         from unittest.mock import patch
 
         my_lease = self._make_lease("my-lease", client="my-client")
