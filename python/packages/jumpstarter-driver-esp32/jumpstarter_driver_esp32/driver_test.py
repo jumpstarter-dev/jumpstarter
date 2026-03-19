@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, PropertyMock
 
 import pytest
 from jumpstarter_driver_pyserial.driver import PySerial
@@ -102,24 +102,46 @@ def test_erase(mock_esptool):
     mock_esptool["erase_flash"].assert_called_once()
 
 
+def _make_mock_serial():
+    """Create a mock serial with tracked .dtr and .rts property assignments."""
+    mock_serial = MagicMock()
+    dtr_prop = PropertyMock()
+    rts_prop = PropertyMock()
+    type(mock_serial).dtr = dtr_prop
+    type(mock_serial).rts = rts_prop
+    return mock_serial, dtr_prop, rts_prop
+
+
 def test_hard_reset(mock_esptool, monkeypatch):
+    mock_serial, dtr_prop, rts_prop = _make_mock_serial()
     monkeypatch.setattr(
         "jumpstarter_driver_pyserial.driver.serial_for_url",
-        MagicMock(return_value=MagicMock()),
+        MagicMock(return_value=mock_serial),
     )
 
     with serve(_make_driver()) as client:
         client.hard_reset()
 
+    dtr_calls = [c.args[0] for c in dtr_prop.call_args_list]
+    rts_calls = [c.args[0] for c in rts_prop.call_args_list]
+    assert dtr_calls == [False]
+    assert rts_calls == [True, False]
+
 
 def test_enter_bootloader(mock_esptool, monkeypatch):
+    mock_serial, dtr_prop, rts_prop = _make_mock_serial()
     monkeypatch.setattr(
         "jumpstarter_driver_pyserial.driver.serial_for_url",
-        MagicMock(return_value=MagicMock()),
+        MagicMock(return_value=mock_serial),
     )
 
     with serve(_make_driver()) as client:
         client.enter_bootloader()
+
+    dtr_calls = [c.args[0] for c in dtr_prop.call_args_list]
+    rts_calls = [c.args[0] for c in rts_prop.call_args_list]
+    assert dtr_calls == [False, True, False]
+    assert rts_calls == [True, False]
 
 
 def test_parse_region_default():
