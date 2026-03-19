@@ -173,28 +173,57 @@ class ClientConfigV1Alpha1(BaseSettings):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.GetExporter(name=name)
 
+    async def _collect_all_leases(self, svc, page_size=100, only_active=True, filter=None):
+        from jumpstarter.client.grpc import LeaseList
+
+        all_leases = []
+        page_token = None
+        while True:
+            page = await svc.ListLeases(
+                page_size=page_size,
+                page_token=page_token,
+                filter=filter,
+                only_active=only_active,
+            )
+            all_leases.extend(page.leases)
+            if not page.next_page_token:
+                break
+            page_token = page.next_page_token
+        return LeaseList(leases=all_leases, next_page_token=None)
+
     @_blocking_compat
     @_handle_connection_error
     async def list_exporters(
         self,
-        page_size: int | None = None,
-        page_token: str | None = None,
         filter: str | None = None,
         include_leases: bool = False,
         include_online: bool = False,
         include_status: bool = False,
+        page_size: int = 100,
     ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        exporters_response = await svc.ListExporters(page_size=page_size, page_token=page_token, filter=filter)
+        from jumpstarter.client.grpc import ExporterList
 
-        # Set the include flags for display purposes
-        exporters_response.include_online = include_online
-        exporters_response.include_status = include_status
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        all_exporters = []
+        page_token = None
+        while True:
+            page = await svc.ListExporters(
+                page_size=page_size,
+                page_token=page_token,
+                filter=filter,
+            )
+            all_exporters.extend(page.exporters)
+            if not page.next_page_token:
+                break
+            page_token = page.next_page_token
+        result = ExporterList(exporters=all_exporters, next_page_token=None)
+        result.include_online = include_online
+        result.include_status = include_status
 
         if not include_leases:
-            return exporters_response
+            return result
 
-        leases_response = await svc.ListLeases()
+        leases_response = await self._collect_all_leases(svc)
         lease_map = {}
         for lease in leases_response.leases:
             if lease.exporter and lease.effective_begin_time:
@@ -204,7 +233,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                         lease_map[lease.exporter] = lease
 
         exporters_with_leases = []
-        for exporter in exporters_response.exporters:
+        for exporter in result.exporters:
             lease = lease_map.get(exporter.name)
             exporter_with_lease = Exporter(
                 namespace=exporter.namespace,
@@ -214,9 +243,9 @@ class ClientConfigV1Alpha1(BaseSettings):
                 lease=lease,
             )
             exporters_with_leases.append(exporter_with_lease)
-        exporters_response.include_leases = True
-        exporters_response.exporters = exporters_with_leases
-        return exporters_response
+        result.include_leases = True
+        result.exporters = exporters_with_leases
+        return result
 
     @_blocking_compat
     @_handle_connection_error
@@ -252,18 +281,12 @@ class ClientConfigV1Alpha1(BaseSettings):
     @_handle_connection_error
     async def list_leases(
         self,
-        page_size: int | None = None,
-        page_token: str | None = None,
         filter: str | None = None,
         only_active: bool = True,
+        page_size: int = 100,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.ListLeases(
-            page_size=page_size,
-            page_token=page_token,
-            filter=filter,
-            only_active=only_active,
-        )
+        return await self._collect_all_leases(svc, page_size=page_size, only_active=only_active, filter=filter)
 
     @_blocking_compat
     @_handle_connection_error

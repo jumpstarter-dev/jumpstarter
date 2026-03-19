@@ -342,6 +342,52 @@ EOF
   jmp delete leases    --all
 }
 
+@test "paginated lease listing returns all leases" {
+  wait_for_exporter
+
+  jmp config client use test-client-oidc
+
+  for i in $(seq 1 101); do
+    jmp create lease --selector example.com/board=oidc --duration 1d &
+  done
+  wait
+
+  run jmp get leases -o yaml
+  assert_success
+
+  local count
+  count=$(echo "$output" | grep -c '^ *name:')
+  [ "$count" -eq 101 ]
+
+  jmp delete leases --all
+}
+
+@test "paginated exporter listing returns all exporters" {
+  wait_for_exporter
+
+  jmp config client use test-client-oidc
+
+  for i in $(seq 1 101); do
+    jmp admin create exporter -n "${JS_NAMESPACE}" "pagination-exp-${i}" --nointeractive \
+      --oidc-username "dex:pagination-exp-${i}" &
+    if (( i % 10 == 0 )); then wait; fi
+  done
+  wait
+
+  run jmp get exporters -o yaml
+  assert_success
+
+  local count
+  count=$(echo "$output" | grep -c '^ *name:')
+  [ "$count" -ge 101 ]
+
+  for i in $(seq 1 101); do
+    jmp admin delete exporter --namespace "${JS_NAMESPACE}" "pagination-exp-${i}" --delete &
+    if (( i % 10 == 0 )); then wait; fi
+  done
+  wait
+}
+
 @test "can transfer lease to another client" {
   wait_for_exporter
 

@@ -207,6 +207,44 @@ class TestGetExportersLogic:
         assert exporters.include_leases is True
 
 
+class TestGetExportersCallsPaginatedMethod:
+    def test_get_exporters_calls_list_exporters(self):
+        from unittest.mock import patch
+
+        config = Mock()
+        config.list_exporters.return_value = ExporterList(
+            exporters=[], next_page_token=None
+        )
+
+        from jumpstarter_cli.get import get_exporters
+
+        with patch("jumpstarter_cli.get.model_print"):
+            get_exporters.callback.__wrapped__.__wrapped__(
+                config=config, selector=None, output="text", with_options=[]
+            )
+
+        config.list_exporters.assert_called_once_with(
+            filter=None, include_leases=False, include_online=False, include_status=False
+        )
+
+    def test_get_leases_calls_list_leases(self):
+        from unittest.mock import patch
+
+        lease_list = LeaseList(leases=[], next_page_token=None)
+
+        config = Mock()
+        config.list_leases.return_value = lease_list
+
+        from jumpstarter_cli.get import get_leases
+
+        with patch("jumpstarter_cli.get.model_print"):
+            get_leases.callback.__wrapped__.__wrapped__(
+                config=config, selector=None, output="text", show_all=False
+            )
+
+        config.list_leases.assert_called_once_with(filter=None, only_active=True)
+
+
 class TestGetExportersIntegration:
     """Integration tests for data flow"""
 
