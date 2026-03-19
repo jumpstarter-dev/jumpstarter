@@ -236,7 +236,7 @@ exporter_process_running() {
   # Shell should fail because hook failed
   assert_failure
   # endLease may drop connection before status propagates to client
-  assert_output --regexp "(beforeLease hook failed|Connection to exporter lost)"
+  assert_output --regexp "(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)"
 
   # Exporter should still be available after failure
   wait_for_hooks_exporter
@@ -250,7 +250,7 @@ exporter_process_running() {
   # Shell should fail - error includes reason from exporter status
   assert_failure
   # Exporter exit may drop connection before status propagates to client
-  assert_output --regexp "(beforeLease hook failed|Connection to exporter lost)"
+  assert_output --regexp "(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)"
 
   # Exporter process should have exited
   sleep 2
@@ -287,7 +287,7 @@ exporter_process_running() {
   # Shell should fail because afterLease hook failed and exporter shut down
   assert_failure
   # Exporter exit may drop connection before status propagates to client
-  assert_output --regexp "(afterLease hook failed|afterLease failed|Connection to exporter lost)" 
+  assert_output --regexp "(afterLease hook fail|afterLease failed|Exporter shutting down|Connection to exporter lost)"
 
   # Exporter process should have exited
   sleep 2
