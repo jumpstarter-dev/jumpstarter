@@ -120,21 +120,32 @@ class Esp32Flasher(FlasherInterface, Driver):
 
     @export
     def hard_reset(self):
-        """Hard reset the ESP32 via RTS toggle."""
+        """Hard reset the ESP32 via DTR/RTS toggle.
+
+        On boards with the classic auto-program circuit (two cross-coupled NPN
+        transistors), EN is only pulled low when DTR and RTS are in opposite
+        states.  We must explicitly de-assert DTR (pin high) before asserting
+        RTS (pin low) so that the pair (DTR=1, RTS=0) drives EN low.
+        """
+        self._serial.set_dtr(False)
         self._serial.set_rts(True)
         time.sleep(0.1)
         self._serial.set_rts(False)
 
     @export
     def enter_bootloader(self):
-        """Toggle DTR/RTS to enter ESP32 download mode."""
+        """Enter ESP32 download mode via the classic auto-program circuit.
+
+        Matches esptool's ClassicReset sequence: opposite DTR/RTS states drive
+        EN and IO0 through cross-coupled NPN transistors.
+        """
         self._serial.set_dtr(False)
-        self._serial.set_rts(True)  # EN low (reset)
+        self._serial.set_rts(True)   # DTR=1, RTS=0 → EN low, IO0 high (reset)
         time.sleep(0.1)
-        self._serial.set_dtr(True)  # GPIO0 low (boot select)
-        self._serial.set_rts(False)  # EN high (release reset)
+        self._serial.set_dtr(True)
+        self._serial.set_rts(False)  # DTR=0, RTS=1 → EN high, IO0 low (boot select)
         time.sleep(0.05)
-        self._serial.set_dtr(False)  # GPIO0 high (release)
+        self._serial.set_dtr(False)  # DTR=1, RTS=1 → EN high, IO0 high (release)
 
 
 def _parse_region(partition: str | None) -> tuple[int, int]:
