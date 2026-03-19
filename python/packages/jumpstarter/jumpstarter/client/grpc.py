@@ -203,27 +203,51 @@ class Lease(BaseModel):
     def rich_add_columns(cls, table):
         table.add_column("NAME", no_wrap=True)
         table.add_column("SELECTOR")
-        table.add_column("BEGIN TIME")
-        table.add_column("DURATION")
+        table.add_column("EXPIRES AT")
+        table.add_column("REMAINING")
         table.add_column("CLIENT")
         table.add_column("EXPORTER")
 
-    def rich_add_rows(self, table):
-        # Show effective_begin_time if active, otherwise show scheduled begin_time
-        begin_time = ""
-        if self.effective_begin_time:
-            begin_time = self.effective_begin_time.strftime("%Y-%m-%d %H:%M:%S")
-        elif self.begin_time:
-            begin_time = self.begin_time.strftime("%Y-%m-%d %H:%M:%S")
+    def _compute_expires_at(self):
+        if self.effective_end_time:
+            return self.effective_end_time
+        if self.effective_begin_time and self.duration:
+            return self.effective_begin_time + self.duration
+        if self.begin_time and self.duration:
+            return self.begin_time + self.duration
+        return None
 
-        # Show actual duration for ended leases, requested duration otherwise
-        duration = str(self.effective_duration if self.effective_end_time else self.duration or "")
+    @staticmethod
+    def _format_remaining(expires_at):
+        if expires_at is None:
+            return ""
+        now = datetime.now(tz=expires_at.tzinfo)
+        remaining = expires_at - now
+        if remaining.total_seconds() <= 0:
+            return "expired"
+        total_seconds = int(remaining.total_seconds())
+        days, remainder = divmod(total_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, _ = divmod(remainder, 60)
+        parts = []
+        if days:
+            parts.append(f"{days}d")
+        if hours:
+            parts.append(f"{hours}h")
+        if minutes or not parts:
+            parts.append(f"{minutes}m")
+        return " ".join(parts)
+
+    def rich_add_rows(self, table):
+        expires_at = self._compute_expires_at()
+        expires_at_str = expires_at.strftime("%Y-%m-%d %H:%M:%S") if expires_at else ""
+        remaining_str = self._format_remaining(expires_at)
 
         table.add_row(
             self.name,
             self.selector,
-            begin_time,
-            duration,
+            expires_at_str,
+            remaining_str,
             self.client,
             self.exporter,
         )

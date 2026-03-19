@@ -444,6 +444,20 @@ EOF
   done
 }
 
+@test "lease listing shows expires at and remaining columns" {
+  wait_for_exporter
+
+  jmp config client use test-client-oidc
+
+  jmp create lease --selector example.com/board=oidc --duration 1d
+
+  run jmp get leases
+  assert_success
+  assert_output --partial "EXPIRES AT"
+  assert_output --partial "REMAINING"
+  jmp delete leases --all
+}
+
 @test "can transfer lease to another client" {
   wait_for_exporter
 
