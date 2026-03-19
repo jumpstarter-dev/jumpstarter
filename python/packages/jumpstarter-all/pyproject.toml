@@ -18,6 +18,7 @@ dependencies = [
   "jumpstarter-driver-doip",
   "jumpstarter-driver-corellium",
   "jumpstarter-driver-dutlink",
+  "jumpstarter-driver-esp32",
   "jumpstarter-driver-flashers",
   "jumpstarter-driver-http",
   "jumpstarter-driver-network",
