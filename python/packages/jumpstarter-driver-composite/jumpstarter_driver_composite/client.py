@@ -27,7 +27,10 @@ def _opt_log_level_callback(ctx, param, value):
 @dataclass(kw_only=True)
 class CompositeClient(DriverClient):
     def __getattr__(self, name):
-        return self.children[name]
+        try:
+            return self.children[name]
+        except KeyError:
+            raise AttributeError(name) from None
 
     def close(self):
         for _, v in self.children.items():
