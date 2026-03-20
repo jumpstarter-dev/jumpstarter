@@ -17,15 +17,11 @@ flowchart TB
     end
 
     subgraph "Jumpstarter Infrastructure"
-        Controller["Controller"]
-        Exporters["Exporter"]
         DUTs["Device Under Test"]
     end
 
     IDE -- "MCP Protocol" --> JmpMCP
-    JmpMCP -- "Lease & connect" --> Controller
-    Controller -- "Route traffic" --> Exporters
-    Exporters -- "Control" --> DUTs
+    JmpMCP -- "Lease & connect" --> DUTs
 ```
 
 ## Prerequisites
