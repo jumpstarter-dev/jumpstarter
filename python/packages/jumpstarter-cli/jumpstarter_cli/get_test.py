@@ -5,6 +5,8 @@ import click
 import pytest
 from jumpstarter_cli_common.opt import parse_comma_separated
 
+from jumpstarter_cli.get import get_leases
+
 from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
 from jumpstarter.config.client import ClientConfigV1Alpha1
 
@@ -346,3 +348,106 @@ class TestGetLeasesLogic:
         leases_from_server = LeaseList(leases=[], next_page_token=None)
 
         assert len(leases_from_server.leases) == 0
+
+
+class TestGetLeasesShortFlags:
+    def test_get_leases_accepts_short_a_flag(self):
+        from .get import get_leases
+
+        all_option = next(
+            param for param in get_leases.params if param.name == "show_all"
+        )
+        assert "-a" in all_option.opts
+
+
+_unwrapped_get_leases = get_leases.callback.__wrapped__.__wrapped__
+
+
+class TestGetLeasesClientFiltering:
+    def _make_lease(self, name, client="my-client"):
+        return Lease(
+            namespace="default",
+            name=name,
+            selector="",
+            exporter_name=None,
+            duration=timedelta(minutes=30),
+            effective_duration=None,
+            begin_time=None,
+            client=client,
+            exporter="test-exporter",
+            conditions=[],
+            effective_begin_time=None,
+            effective_end_time=None,
+        )
+
+    def _make_config(self, leases):
+        config = Mock()
+        config.metadata = type("Metadata", (), {"name": "my-client"})()
+        config.list_leases = Mock(return_value=LeaseList(leases=leases, next_page_token=None))
+        return config
+
+    def test_default_shows_only_own_active_leases(self):
+        from unittest.mock import patch
+
+        my_lease = self._make_lease("my-lease", client="my-client")
+        other_lease = self._make_lease("other-lease", client="other-client")
+        config = self._make_config([my_lease, other_lease])
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False, all_clients=False,
+            )
+
+        printed_leases = mock_print.call_args[0][0]
+        assert len(printed_leases.leases) == 1
+        assert printed_leases.leases[0].name == "my-lease"
+        config.list_leases.assert_called_once_with(filter=None, only_active=True)
+
+    def test_all_flag_requests_inactive_leases_own_only(self):
+        from unittest.mock import patch
+
+        my_lease = self._make_lease("my-lease", client="my-client")
+        other_lease = self._make_lease("other-lease", client="other-client")
+        config = self._make_config([my_lease, other_lease])
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=True, all_clients=False,
+            )
+
+        printed_leases = mock_print.call_args[0][0]
+        assert len(printed_leases.leases) == 1
+        assert printed_leases.leases[0].name == "my-lease"
+        config.list_leases.assert_called_once_with(filter=None, only_active=False)
+
+    def test_all_clients_shows_everyone_active(self):
+        from unittest.mock import patch
+
+        my_lease = self._make_lease("my-lease", client="my-client")
+        other_lease = self._make_lease("other-lease", client="other-client")
+        config = self._make_config([my_lease, other_lease])
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False, all_clients=True,
+            )
+
+        printed_leases = mock_print.call_args[0][0]
+        assert len(printed_leases.leases) == 2
+        config.list_leases.assert_called_once_with(filter=None, only_active=True)
+
+    def test_all_and_all_clients_shows_everything(self):
+        from unittest.mock import patch
+
+        my_lease = self._make_lease("my-lease", client="my-client")
+        other_lease = self._make_lease("other-lease", client="other-client")
+        config = self._make_config([my_lease, other_lease])
+
+        with patch("jumpstarter_cli.get.model_print") as mock_print:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=True, all_clients=True,
+            )
+
+        printed_leases = mock_print.call_args[0][0]
+        assert len(printed_leases.leases) == 2
+        config.list_leases.assert_called_once_with(filter=None, only_active=False)

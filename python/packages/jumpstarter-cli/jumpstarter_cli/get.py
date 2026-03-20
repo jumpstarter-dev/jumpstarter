@@ -46,18 +46,30 @@ def get_exporters(config, selector: str | None, output: OutputType, with_options
 @opt_selector
 @opt_output_all
 @click.option(
+    "-a",
     "--all",
     "show_all",
     is_flag=True,
     default=False,
-    help="Show all leases including expired ones"
+    help="Include expired leases"
+)
+@click.option(
+    "-A",
+    "--all-clients",
+    "all_clients",
+    is_flag=True,
+    default=False,
+    help="Include leases from all clients"
 )
 @handle_exceptions_with_reauthentication(relogin_client)
-def get_leases(config, selector: str | None, output: OutputType, show_all: bool):
+def get_leases(config, selector: str | None, output: OutputType, show_all: bool, all_clients: bool):
     """
     Display one or many leases
     """
 
     leases = config.list_leases(filter=selector, only_active=not show_all).filter_by_selector(selector)
+
+    if not all_clients:
+        leases = leases.filter_by_client(config.metadata.name)
 
     model_print(leases, output)

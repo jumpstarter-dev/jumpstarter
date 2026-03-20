@@ -19,33 +19,40 @@ def delete():
 @opt_config(exporter=False)
 @click.argument("names", nargs=-1)
 @opt_selector
-@click.option("--all", "all", is_flag=True)
+@click.option("-a", "--all", "delete_all", is_flag=True, help="Delete all your active leases")
+@click.option("-A", "--all-clients", "all_clients", is_flag=True, help="Delete active leases from all clients")
 @opt_output_name_only
 @handle_exceptions_with_reauthentication(relogin_client)
-def delete_leases(config, names: tuple[str, ...], selector: str | None, all: bool, output: OutputType):
+def delete_leases(
+    config, names: tuple[str, ...], selector: str | None,
+    delete_all: bool, all_clients: bool, output: OutputType,
+):
     """
     Delete leases
     """
 
-    resolved_names = list(names)
+    to_delete = []
 
-    if resolved_names:
-        pass
+    if names:
+        to_delete.extend(names)
     elif selector:
         leases = config.list_leases(filter=selector)
         leases = leases.filter_by_selector(selector)
-        for lease in leases.leases:
-            if lease.client == config.metadata.name:
-                resolved_names.append(lease.name)
-    elif all:
+        if not all_clients:
+            leases = leases.filter_by_client(config.metadata.name)
+        to_delete.extend(lease.name for lease in leases.leases)
+    elif delete_all or all_clients:
         leases = config.list_leases(filter=None)
-        for lease in leases.leases:
-            if lease.client == config.metadata.name:
-                resolved_names.append(lease.name)
+        if not all_clients:
+            leases = leases.filter_by_client(config.metadata.name)
+        to_delete.extend(lease.name for lease in leases.leases)
     else:
-        raise click.ClickException("One of NAME(S), --selector or --all must be specified")
+        raise click.ClickException("One of NAMES, --selector, --all or --all-clients must be specified")
 
-    for name in resolved_names:
+    if not to_delete:
+        raise click.ClickException("no leases found matching the criteria")
+
+    for name in to_delete:
         config.delete_lease(name=name)
         match output:
             case OutputMode.NAME:

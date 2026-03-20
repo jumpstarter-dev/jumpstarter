@@ -344,6 +344,10 @@ class LeaseList(BaseModel):
         filtered = [lease for lease in self.leases if selector_contains(lease.selector, filter_selector)]
         return LeaseList(leases=filtered, next_page_token=None)
 
+    def filter_by_client(self, client_name: str) -> LeaseList:
+        filtered = [lease for lease in self.leases if lease.client == client_name]
+        return LeaseList(leases=filtered, next_page_token=None)
+
 
 @dataclass(kw_only=True, slots=True)
 class ClientService:
