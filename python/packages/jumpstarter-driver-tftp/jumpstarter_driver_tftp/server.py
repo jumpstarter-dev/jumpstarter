@@ -319,13 +319,6 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
         asyncio.create_task(transfer.start())
 
 
-def is_subpath(path: pathlib.Path, root: pathlib.Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
 
 class TftpTransfer:
     """

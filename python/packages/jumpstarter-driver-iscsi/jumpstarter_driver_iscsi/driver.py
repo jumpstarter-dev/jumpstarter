@@ -26,11 +26,6 @@ class ConfigurationError(ISCSIError):
     pass
 
 
-class StorageObjectError(ISCSIError):
-    """Error related to storage objects"""
-
-    pass
-
 
 @dataclass(kw_only=True)
 class ISCSI(Driver):

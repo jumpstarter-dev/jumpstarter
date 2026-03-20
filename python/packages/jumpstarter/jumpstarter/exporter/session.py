@@ -363,10 +363,6 @@ class Session(
         """Add a log source mapping for a specific logger."""
         self._logging_handler.add_child_handler(logger_name, source)
 
-    def remove_logger_source(self, logger_name: str):
-        """Remove a log source mapping for a specific logger."""
-        self._logging_handler.remove_child_handler(logger_name)
-
     def context_log_source(self, logger_name: str, source: LogSource):
         """Context manager to temporarily set a log source for a specific logger."""
         return self._logging_handler.context_log_source(logger_name, source)
