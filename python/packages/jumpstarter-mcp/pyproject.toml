@@ -1,20 +1,19 @@
 [project]
-name = "jumpstarter-cli"
+name = "jumpstarter-mcp"
 dynamic = ["version", "urls"]
-description = ""
+description = "MCP server for AI agent interaction with Jumpstarter hardware"
 authors = [
-  { name = "Nick Cao", email = "ncao@redhat.com" },
   { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
-  { name = "Kirk Brauer", email = "kbrauer@hatci.com" },
 ]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-  "jumpstarter-cli-admin",
-  "jumpstarter-cli-driver",
-  "jumpstarter-mcp",
-  "pytimeparse2>=1.7.1",
+  "jumpstarter",
+  "jumpstarter-cli-common",
+  "mcp>=1.0.0",
+  "anyio>=4.0.0",
+  "click>=8.1.7.2",
 ]
 
 [dependency-groups]
@@ -25,12 +24,8 @@ dev = [
   "pytest-cov>=5.0.0",
 ]
 
-[project.scripts]
-jmp = "jumpstarter_cli.jmp:jmp"
-j = "jumpstarter_cli.j:j"
-
 [tool.hatch.build.targets.wheel]
-packages = ["jumpstarter_cli"]
+packages = ["jumpstarter_mcp"]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
