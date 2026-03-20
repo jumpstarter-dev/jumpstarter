@@ -230,6 +230,12 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
         return True
 
     async def _resolve_and_validate_path(self, filename: str, addr: Tuple[str, int]) -> Optional[str]:
+        normalized = pathlib.PurePosixPath(filename)
+        if ".." in normalized.parts or normalized.is_absolute():
+            self.logger.error(f"Path traversal attempt from {addr}: {filename}")
+            self._send_error(addr, TftpErrorCode.ACCESS_VIOLATION, "Access violation")
+            return None
+
         try:
             stat = await self.server.operator.stat(filename)
         except FileNotFoundError:
