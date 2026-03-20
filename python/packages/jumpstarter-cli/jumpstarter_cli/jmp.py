@@ -38,5 +38,12 @@ jmp.add_command(driver)
 jmp.add_command(admin)
 jmp.add_command(version)
 
+try:
+    from jumpstarter_mcp.cli import mcp
+
+    jmp.add_command(mcp)
+except ImportError:
+    pass
+
 if __name__ == "__main__":
     jmp()

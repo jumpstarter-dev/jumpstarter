@@ -13,6 +13,8 @@ development workflow. The guides cover:
   scenarios
 - [Integration Patterns](integration-patterns.md): Integrate Jumpstarter into
   your existing workflows and systems
+- [AI Agent Integration](ai-agent-integration.md): Use AI coding agents
+  (Cursor, Claude Code, Claude Desktop) to interact with hardware via MCP
 - [Testing with pytest](pytest-usage.md): Write and run hardware tests using
   pytest with Jumpstarter
 
@@ -25,5 +27,6 @@ setup-direct-mode.md
 setup-distributed-mode.md
 examples.md
 integration-patterns.md
+ai-agent-integration.md
 pytest-usage.md
 ```
