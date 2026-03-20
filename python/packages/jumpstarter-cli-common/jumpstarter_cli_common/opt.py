@@ -88,29 +88,28 @@ opt_labels = partial(
     callback=_opt_labels_callback,
 )
 
-opt_insecure_tls_config = click.option(
-    "--insecure-tls-config",
-    "insecure_tls_config",
+opt_insecure = click.option(
+    "--insecure",
     is_flag=True,
     default=False,
-    help="Disable endpoint TLS verification. This is insecure and should only be used for testing purposes",
+    help="Disable TLS verification and allow insecure connections, including plain HTTP",
 )
 
+opt_insecure_tls = opt_insecure
+opt_insecure_tls_config = opt_insecure
 
-def confirm_insecure_tls(insecure_tls_config: bool, nointeractive: bool):
-    """Confirm if insecure TLS config is enabled and user wants to continue.
 
-    Args:
-        insecure_tls_config (bool): Insecure TLS config flag requested by the user.
-        nointeractive (bool): This flag is set to True if the command is run in non-interactive mode.
-
-    Raises:
-        click.Abort: Abort the command if user does not want to continue.
-    """
-    if nointeractive is False and insecure_tls_config:
-        if not click.confirm("Insecure TLS config is enabled. Are you sure you want to continue?"):
+def confirm_insecure(insecure: bool, nointeractive: bool):
+    if nointeractive is False and insecure:
+        if not click.confirm(
+            "Insecure mode is enabled. TLS verification will be disabled"
+            " and plain HTTP may be used. Continue?"
+        ):
             click.echo("Aborting.")
             raise click.Abort()
+
+
+confirm_insecure_tls = confirm_insecure
 
 
 class OutputMode(str):

@@ -207,7 +207,7 @@ wait_for_exporter() {
 
   jmp config client   delete test-client-oidc
 
-  run jmp login test-client-oidc@${LOGIN_ENDPOINT} --insecure-login-http \
+  run jmp login test-client-oidc@${LOGIN_ENDPOINT} --insecure --nointeractive \
     --username test-client-oidc@example.com --password password --unsafe
   assert_success
 

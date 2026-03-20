@@ -1,8 +1,11 @@
-"""Tests for SourcePrefixFormatter in opt.py."""
+"""Tests for SourcePrefixFormatter and insecure TLS option in opt.py."""
 
 import logging
 
-from jumpstarter_cli_common.opt import SourcePrefixFormatter
+import click
+from click.testing import CliRunner
+
+from jumpstarter_cli_common.opt import SourcePrefixFormatter, opt_insecure
 
 
 class TestSourcePrefixFormatter:
@@ -76,3 +79,28 @@ class TestSourcePrefixFormatter:
         )
         formatted3 = formatter.format(record3)
         assert "[different.source]" in formatted3
+
+
+def _make_insecure_command():
+    @click.command()
+    @opt_insecure
+    def cmd(insecure: bool):
+        click.echo(f"insecure={insecure}")
+
+    return cmd
+
+
+class TestInsecureOption:
+    def test_insecure_flag_is_accepted(self) -> None:
+        runner = CliRunner()
+        cmd = _make_insecure_command()
+        result = runner.invoke(cmd, ["--insecure"])
+        assert result.exit_code == 0
+        assert "insecure=True" in result.output
+
+    def test_insecure_flag_defaults_to_false(self) -> None:
+        runner = CliRunner()
+        cmd = _make_insecure_command()
+        result = runner.invoke(cmd, [])
+        assert result.exit_code == 0
+        assert "insecure=False" in result.output

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import ssl
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
 import pytest
@@ -53,7 +54,7 @@ def test_validate_login_endpoint_url_rejects_unsupported_scheme() -> None:
 
 
 def test_validate_login_endpoint_url_rejects_http_without_explicit_opt_in() -> None:
-    with pytest.raises(click.ClickException, match="Use --insecure-login-http"):
+    with pytest.raises(click.ClickException, match="Use --insecure"):
         _validate_login_endpoint_url("http://login.example.com")
 
 
@@ -150,22 +151,36 @@ def test_login_cli_shows_certificate_message(monkeypatch) -> None:
     assert "TLS certificate verification failed" in result.output
 
 
-def test_login_cli_rejects_conflicting_insecure_flags() -> None:
-    runner = CliRunner()
-    result = runner.invoke(
-        jmp,
-        [
-            "login",
-            "login.example.com",
-            "--client-config",
-            "/tmp/nonexistent-client.yaml",
-            "--insecure-login-http",
-            "--insecure-login-tls",
-        ],
-    )
+@pytest.mark.asyncio
+async def test_fetch_auth_config_rejects_http_without_insecure():
+    with pytest.raises(click.UsageError, match="--insecure"):
+        await fetch_auth_config("http://login.example.com", insecure=False)
 
-    assert result.exit_code != 0
-    assert "--insecure-login-http and --insecure-login-tls cannot be used together" in result.output
+
+@pytest.mark.asyncio
+async def test_fetch_auth_config_allows_http_with_insecure():
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"grpcEndpoint": "grpc.example.com"})
+
+    mock_get_cm = MagicMock()
+    mock_get_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_get_cm.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=mock_get_cm)
+
+    mock_client_cm = MagicMock()
+    mock_client_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_client_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession", return_value=mock_client_cm):
+        result = await fetch_auth_config("http://login.example.com", insecure=True)
+
+    mock_session.get.assert_called_once()
+    call_url = mock_session.get.call_args[0][0]
+    assert "http://login.example.com" in call_url
+    assert result["grpcEndpoint"] == "grpc.example.com"
 
 
 def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) -> None:
