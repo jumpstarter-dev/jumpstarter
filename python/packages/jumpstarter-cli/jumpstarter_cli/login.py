@@ -7,6 +7,7 @@ import aiohttp
 import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
+from jumpstarter_cli_common.exceptions import handle_exceptions
 from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
 from jumpstarter_cli_common.opt import (
     confirm_insecure_tls,
@@ -173,6 +174,7 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
 )
 @opt_nointeractive
 @opt_config(allow_missing=True)
+@handle_exceptions
 @blocking
 async def login(  # noqa: C901
     config,

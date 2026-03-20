@@ -1,5 +1,6 @@
 import asyncio
 import json
+import ssl
 
 import click
 import pytest
@@ -165,3 +166,41 @@ def test_login_cli_rejects_conflicting_insecure_flags() -> None:
 
     assert result.exit_code != 0
     assert "--insecure-login-http and --insecure-login-tls cannot be used together" in result.output
+
+
+def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) -> None:
+    auth_config = {
+        "grpcEndpoint": "grpc.example.com:443",
+        "namespace": "default",
+        "oidc": [{"issuer": "https://auth.example.com", "clientId": "test-client"}],
+    }
+
+    async def fake_fetch_auth_config(*args, **kwargs):
+        return auth_config
+
+    class FakeOidcConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def authorization_code_grant(self, **kwargs):
+            raise ssl.SSLCertVerificationError("certificate verify failed")
+
+    monkeypatch.setattr("jumpstarter_cli.login.fetch_auth_config", fake_fetch_auth_config)
+    monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        jmp,
+        [
+            "login",
+            "test-client@login.example.com",
+            "--client-config",
+            "/tmp/nonexistent-client.yaml",
+            "--nointeractive",
+            "--unsafe",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "TLS certificate validation failed" in result.output
+    assert "Traceback" not in result.output
