@@ -241,7 +241,7 @@ class TestGetExportersCallsPaginatedMethod:
 
         with patch("jumpstarter_cli.get.model_print"):
             get_leases.callback.__wrapped__.__wrapped__(
-                config=config, selector=None, output="text", show_all=False
+                config=config, selector=None, output="text", show_all=False, all_clients=False
             )
 
         config.list_leases.assert_called_once_with(filter=None, only_active=True)
