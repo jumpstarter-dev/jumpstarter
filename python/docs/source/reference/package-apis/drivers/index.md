@@ -84,6 +84,8 @@ Drivers for debugging and programming devices:
   management via esptool
 * **[Flashers](flashers.md)** (`jumpstarter-driver-flashers`) - Flash memory
   programming tools
+* **[Pi Pico](pi-pico.md)** (`jumpstarter-driver-pi-pico`) - Raspberry Pi Pico
+  UF2 flashing via BOOTSEL mass storage
 * **[Probe-RS](probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe
   support
 * **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
@@ -116,6 +118,7 @@ http-power.md
 iscsi.md
 network.md
 opendal.md
+pi-pico.md
 power.md
 probe-rs.md
 pyserial.md
