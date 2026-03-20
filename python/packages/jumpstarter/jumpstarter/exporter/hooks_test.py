@@ -170,13 +170,13 @@ class TestHookExecutor:
     async def test_exec_bash(self, lease_scope) -> None:
         """Test that exec=/bin/bash allows bash-specific syntax.
 
-        Uses [[ ]] and bash array which would fail under /bin/sh on systems
-        where sh is not bash (e.g. dash on Debian/Ubuntu).
+        Uses ${var:offset:length} substring syntax which is bash-specific
+        and would fail under /bin/sh on systems where sh is dash.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
                 exec_="/bin/bash",
-                script='arr=(one two three); [[ ${#arr[@]} -eq 3 ]] && echo "BASH_OK: ${arr[1]}"',
+                script='V="hello_world"; echo "BASH_OK: ${V:6:5}"',
                 timeout=10,
             ),
         )
@@ -186,7 +186,7 @@ class TestHookExecutor:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("BASH_OK: two" in call for call in info_calls)
+            assert any("BASH_OK: world" in call for call in info_calls)
 
     async def test_exec_python3(self, lease_scope) -> None:
         """Test that exec=python3 runs inline Python.
@@ -551,10 +551,16 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Last status should be BEFORE_LEASE_HOOK_FAILED
+        # Last status should be OFFLINE (reported before shutdown to prevent new leases)
         last_status, _ = status_calls[-1]
-        assert last_status == ExporterStatus.BEFORE_LEASE_HOOK_FAILED, (
-            f"Expected last status to be BEFORE_LEASE_HOOK_FAILED, got {last_status}"
+        assert last_status == ExporterStatus.OFFLINE, (
+            f"Expected last status to be OFFLINE, got {last_status}"
+        )
+
+        # BEFORE_LEASE_HOOK_FAILED should also be present (reported before OFFLINE)
+        failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed_statuses) > 0, (
+            f"Expected BEFORE_LEASE_HOOK_FAILED status, got: {status_calls}"
         )
 
         # AVAILABLE should never have been reported
@@ -640,6 +646,129 @@ class TestHookExecutorPRRegressions:
         _, msg = ready_calls[0]
         assert msg.startswith(HOOK_WARNING_PREFIX), (
             f"Expected LEASE_READY message to start with '{HOOK_WARNING_PREFIX}', got: '{msg}'"
+        )
+
+    async def test_before_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
+        """When beforeLease hook fails with on_failure=exit, the exporter must
+        report OFFLINE status to the controller before initiating shutdown.
+        This prevents the controller from assigning new leases to a dying
+        exporter during the shutdown window.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+        shutdown_called_at_index = None
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        def mock_shutdown(**kwargs):
+            nonlocal shutdown_called_at_index
+            shutdown_called_at_index = len(status_calls)
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        offline_indices = [
+            i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.OFFLINE
+        ]
+        assert len(offline_indices) > 0, (
+            f"Expected OFFLINE status before shutdown, got: {status_calls}"
+        )
+        assert shutdown_called_at_index is not None, "shutdown was never called"
+        assert offline_indices[0] < shutdown_called_at_index, (
+            f"OFFLINE (index {offline_indices[0]}) must be reported before "
+            f"shutdown (index {shutdown_called_at_index}). Statuses: {status_calls}"
+        )
+
+    async def test_after_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
+        """When afterLease hook fails with on_failure=exit, OFFLINE must be
+        reported before shutdown to prevent new lease assignment."""
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+        shutdown_called_at_index = None
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        def mock_shutdown(**kwargs):
+            nonlocal shutdown_called_at_index
+            shutdown_called_at_index = len(status_calls)
+
+        mock_request_release = AsyncMock()
+
+        await executor.run_after_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+            mock_request_release,
+        )
+
+        offline_indices = [
+            i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.OFFLINE
+        ]
+        assert len(offline_indices) > 0, (
+            f"Expected OFFLINE status before shutdown, got: {status_calls}"
+        )
+        assert shutdown_called_at_index is not None, "shutdown was never called"
+        assert offline_indices[0] < shutdown_called_at_index, (
+            f"OFFLINE (index {offline_indices[0]}) must be reported before "
+            f"shutdown (index {shutdown_called_at_index}). Statuses: {status_calls}"
+        )
+
+    async def test_warn_failure_during_premature_lease_end_still_transitions_available(self, lease_scope) -> None:
+        """Edge case: onFailure:warn during premature lease-end.
+
+        When a beforeLease hook fails with on_failure=warn during a premature
+        lease-end, the warning is logged but afterLease cleanup still proceeds
+        and the exporter transitions to AVAILABLE.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+        mock_request_release = AsyncMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        # beforeLease with warn should still transition to LEASE_READY
+        ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
+        assert len(ready_calls) == 1
+
+        # Now run afterLease (simulating premature lease-end cleanup)
+        await executor.run_after_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+            mock_request_release,
+        )
+
+        # afterLease hook should run and transition to AVAILABLE
+        available_calls = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
+        assert len(available_calls) > 0, (
+            f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
         )
 
     async def test_after_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
