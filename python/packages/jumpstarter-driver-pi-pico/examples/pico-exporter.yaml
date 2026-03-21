@@ -1,0 +1,23 @@
+# Pico-only exporter (UF2 over BOOTSEL mass storage). Use this file when the host
+# should export only the Pi Pico flasher—no other drivers on the same exporter.
+#
+# Register with a Jumpstarter controller (set endpoint and token from your environment):
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: pico-exporter
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  storage:
+    type: jumpstarter_driver_pi_pico.driver.PiPico
+    config: {}
+    children:
+      serial:
+        ref: serial
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyACM0"
+      baudrate: 115200
