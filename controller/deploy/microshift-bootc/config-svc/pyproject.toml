@@ -1,0 +1,75 @@
+[project]
+name = "jumpstarter-config-svc"
+version = "1.0.0"
+description = "Jumpstarter Configuration Web UI for MicroShift"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Jumpstarter Contributors"}
+]
+keywords = ["jumpstarter", "microshift", "kubernetes", "configuration", "web-ui"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+]
+
+dependencies = [
+    "flask>=2.3.0,<4.0.0",
+]
+
+[project.optional-dependencies]
+auth = [
+    "python-pam>=2.0.0",  # Optional, falls back to subprocess if not available
+]
+
+[project.scripts]
+jumpstarter-config-svc = "app_new:main"
+
+[project.urls]
+Homepage = "https://jumpstarter.dev"
+Documentation = "https://docs.jumpstarter.dev"
+Repository = "https://github.com/jumpstarter-dev/jumpstarter-controller"
+Issues = "https://github.com/jumpstarter-dev/jumpstarter-controller/issues"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["config-svc"]
+
+[tool.setuptools.package-data]
+config-svc = [
+    "templates/*.html",
+    "templates/*.css",
+]
+
+[tool.black]
+line-length = 120
+target-version = ['py39', 'py310', 'py311', 'py312']
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.pylint]
+max-line-length = 120
+disable = [
+    "C0111",  # missing-docstring
+    "C0103",  # invalid-name
+]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+

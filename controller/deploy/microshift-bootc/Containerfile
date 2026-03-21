@@ -1,0 +1,46 @@
+FROM ghcr.io/microshift-io/microshift:4.21.0_gbc8e20c07_4.21.0_okd_scos.ec.14
+# Install dependencies for config-svc
+RUN dnf install -y epel-release && \
+    dnf install -y python3 iproute python3-flask python3-pip && \
+    pip3 install python-pam && \
+    dnf clean all
+
+# Install MicroShift manifests
+RUN mkdir -p /etc/microshift/manifests.d/002-jumpstarter
+COPY deploy/microshift-bootc/kustomization.yaml       /etc/microshift/manifests.d/002-jumpstarter/kustomization.yaml
+COPY deploy/operator/dist/install.yaml                /etc/microshift/manifests.d/002-jumpstarter/install-operator.yaml
+
+# Configure firewalld to open required ports
+# Use firewall-offline-cmd since firewalld is not running during build
+RUN firewall-offline-cmd --add-service=http && \
+    firewall-offline-cmd --add-service=https && \
+    firewall-offline-cmd --add-port=8880/tcp
+
+# Set root password
+RUN echo "root:jumpstarter" | chpasswd
+
+# Set hostname, we need something stable for microshift
+RUN echo "js-community" > /etc/hostname
+
+# Install config-svc application
+RUN mkdir -p /usr/local/lib/config-svc
+
+# Copy Python modules and templates
+COPY deploy/microshift-bootc/config-svc/*.py /usr/local/lib/config-svc/
+COPY deploy/microshift-bootc/config-svc/templates/ /usr/local/lib/config-svc/templates/
+
+# Create wrapper script to run the application
+RUN echo '#!/bin/bash' > /usr/local/bin/config-svc && \
+    echo 'cd /usr/local/lib/config-svc' >> /usr/local/bin/config-svc && \
+    echo 'exec /usr/bin/python3 app.py "$@"' >> /usr/local/bin/config-svc && \
+    chmod +x /usr/local/bin/config-svc
+
+# Install banner update script
+COPY deploy/microshift-bootc/config-svc/update-banner.sh /usr/local/bin/update-banner.sh
+RUN chmod +x /usr/local/bin/update-banner.sh
+
+# Install systemd services
+COPY deploy/microshift-bootc/config-svc/config-svc.service /etc/systemd/system/config-svc.service
+COPY deploy/microshift-bootc/config-svc/update-banner.service /etc/systemd/system/update-banner.service
+RUN systemctl enable config-svc.service update-banner.service
+

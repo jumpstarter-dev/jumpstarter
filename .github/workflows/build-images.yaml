@@ -43,6 +43,10 @@ jobs:
             dockerfile: controller/deploy/operator/bundle.Dockerfile
             context: controller/deploy/operator
             generate_bundle: true
+          - image_name: jumpstarter-dev/microshift/bootc
+            dockerfile: controller/deploy/microshift-bootc/Containerfile
+            context: controller
+            generate_installer: true
           # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
             label: jumpstarter
@@ -116,6 +120,18 @@ jobs:
         if: ${{ matrix.generate_bundle && steps.check.outputs.skip != 'true' }}
         run: make bundle VERSION=${{ env.VERSION }}
         working-directory: controller/deploy/operator
+
+      - name: Set up Go
+        if: ${{ matrix.generate_installer && steps.check.outputs.skip != 'true' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: controller/deploy/operator/go.mod
+
+      - name: Build operator installer manifest
+        if: ${{ matrix.generate_installer && steps.check.outputs.skip != 'true' }}
+        run: |
+          IMG="${{ env.QUAY_ORG }}/jumpstarter-operator:${{ env.VERSION }}"
+          make -C controller/deploy/operator build-installer IMG="${IMG}"
 
       - name: Set image tags
         if: ${{ env.PUSH == 'true' && steps.check.outputs.skip != 'true' }}
