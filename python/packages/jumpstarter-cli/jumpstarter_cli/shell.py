@@ -194,7 +194,7 @@ def _warn_refresh_failed(remaining: float) -> None:
         )
 
 
-async def _handle_token_refresh(config, lease, remaining, warn_state) -> None:
+async def _handle_token_refresh(config, lease, remaining, warn_state, token_state=None) -> None:
     """Try to recover the token and update warning state accordingly."""
     recovery_msg = await _attempt_token_recovery(config, lease)
     if recovery_msg:
@@ -202,15 +202,19 @@ async def _handle_token_refresh(config, lease, remaining, warn_state) -> None:
         warn_state["expiry"] = False
         warn_state["refresh_failed"] = False
         warn_state["token_expired"] = False
+        if token_state is not None:
+            token_state["expired_unrecovered"] = False
     elif remaining <= 0 and not warn_state["token_expired"]:
         _warn_refresh_failed(remaining)
         warn_state["token_expired"] = True
+        if token_state is not None:
+            token_state["expired_unrecovered"] = True
     elif remaining > 0 and not warn_state["refresh_failed"]:
         _warn_refresh_failed(remaining)
         warn_state["refresh_failed"] = True
 
 
-async def _monitor_token_expiry(config, lease, cancel_scope) -> None:
+async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -> None:
     """Monitor token expiry, auto-refresh when possible, warn user otherwise.
 
     this monitor:
@@ -233,7 +237,7 @@ async def _monitor_token_expiry(config, lease, cancel_scope) -> None:
                 return
 
             if remaining <= _TOKEN_REFRESH_THRESHOLD_SECONDS:
-                await _handle_token_refresh(config, lease, remaining, warn_state)
+                await _handle_token_refresh(config, lease, remaining, warn_state, token_state)
             elif remaining <= TOKEN_EXPIRY_WARNING_SECONDS and not warn_state["expiry"]:
                 duration = format_duration(remaining)
                 click.echo(
@@ -415,6 +419,7 @@ async def _shell_with_signal_handling(  # noqa: C901
     exit_code = 0
     cancelled_exc_class = get_cancelled_exc_class()
     lease_used = None
+    token_state = {"expired_unrecovered": False}
 
     # Check token before starting
     token = getattr(config, "token", None)
@@ -437,11 +442,13 @@ async def _shell_with_signal_handling(  # noqa: C901
                         lease_used = lease
 
                         # Start token monitoring only once we're in the shell
-                        tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope)
+                        tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope, token_state)
 
                         exit_code = await _run_shell_with_lease_async(
                             lease, exporter_logs, config, command, tg.cancel_scope
                         )
+                        if lease.release and lease.name and token_state["expired_unrecovered"]:
+                            _warn_about_expired_token(lease.name, selector)
             except BaseExceptionGroup as eg:
                 for exc in eg.exceptions:
                     if isinstance(exc, TimeoutError):

@@ -90,6 +90,49 @@ def test_shell_passes_exporter_name_to_lease_async():
     assert config.captured[1] == "laptop-test-exporter"
 
 
+async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
+    lease = Mock()
+    lease.release = True
+    lease.name = "expired-lease"
+    lease.lease_ended = False
+    lease.lease_transferred = False
+
+    config = _DummyConfig()
+
+    @asynccontextmanager
+    async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+        yield lease
+
+    config.lease_async = lease_async
+
+    async def fake_monitor(_config, _lease, _cancel_scope, token_state=None):
+        if token_state is not None:
+            token_state["expired_unrecovered"] = True
+
+    async def fake_run_shell(*_args):
+        await anyio.sleep(0)
+        return 0
+
+    with (
+        patch("jumpstarter_cli.shell._monitor_token_expiry", side_effect=fake_monitor),
+        patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+        patch("jumpstarter_cli.shell._warn_about_expired_token") as mock_warn,
+    ):
+        exit_code = await _shell_with_signal_handling(
+            config,
+            None,
+            None,
+            None,
+            timedelta(minutes=1),
+            False,
+            (),
+            None,
+        )
+
+    assert exit_code == 0
+    mock_warn.assert_called_once_with("expired-lease", None)
+
+
 def test_shell_requires_selector_or_name_when_no_leases():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
@@ -702,8 +745,9 @@ class TestMonitorTokenExpiry:
         mock_recovery.return_value = None  # all recovery fails
         config = _make_config()
         cancel_scope = Mock(cancel_called=False)
+        token_state = {"expired_unrecovered": False}
 
-        await _monitor_token_expiry(config, _make_lease(), cancel_scope)
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope, token_state)
 
         warn_calls = mock_click.style.call_args_list
         # Find the yellow warning (remaining > 0)
@@ -713,3 +757,4 @@ class TestMonitorTokenExpiry:
         red_calls = [c for c in warn_calls if c[1].get("fg") == "red"]
         assert len(yellow_calls) >= 1, "Expected yellow warning for near-expiry"
         assert len(red_calls) >= 1, "Expected red warning for actual expiry"
+        assert token_state["expired_unrecovered"] is True
