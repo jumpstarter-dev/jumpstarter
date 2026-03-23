@@ -17,6 +17,8 @@ from jumpstarter.config.client import ClientConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
 
+TOKEN_REFRESH_THRESHOLD_SECONDS = 30
+
 SERVER_INSTRUCTIONS = """\
 Jumpstarter provides remote access to physical hardware devices through a
 controller that manages leases and exporters.
@@ -103,6 +105,64 @@ def _load_config() -> ClientConfigV1Alpha1:
     return config
 
 
+async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alpha1:
+    """Refresh the access token if it is expired or about to expire.
+
+    Uses the stored refresh_token to obtain a new access token via OIDC.
+    If no refresh_token is available or the refresh fails, returns the
+    config unchanged and lets the downstream gRPC call surface the error.
+    """
+    from jumpstarter_cli_common.oidc import (
+        Config,
+        decode_jwt_issuer,
+        get_token_remaining_seconds,
+    )
+
+    token = config.token
+    if not token:
+        return config
+
+    remaining = get_token_remaining_seconds(token)
+    if remaining is not None and remaining > TOKEN_REFRESH_THRESHOLD_SECONDS:
+        return config
+
+    refresh_token = config.refresh_token
+    if not refresh_token:
+        logger.warning("Token is expired but no refresh_token stored — run 'jmp login --offline-access'")
+        return config
+
+    try:
+        issuer = decode_jwt_issuer(token)
+    except Exception:
+        logger.warning("Failed to decode JWT issuer, skipping token refresh")
+        return config
+
+    if issuer is None:
+        logger.warning("No issuer in JWT, skipping token refresh")
+        return config
+
+    logger.info("Access token expired or near expiry, attempting refresh via OIDC")
+    try:
+        oidc = Config(issuer=issuer, client_id="jumpstarter-cli")
+        tokens = await oidc.refresh_token_grant(refresh_token)
+        config.token = tokens["access_token"]
+        new_refresh = tokens.get("refresh_token")
+        if new_refresh is not None:
+            config.refresh_token = new_refresh
+        ClientConfigV1Alpha1.save(config)
+        logger.info("Access token refreshed successfully")
+    except Exception:
+        logger.warning("Token refresh failed — downstream call will likely fail", exc_info=True)
+
+    return config
+
+
+async def _get_config() -> ClientConfigV1Alpha1:
+    """Load client config and ensure the access token is fresh."""
+    config = _load_config()
+    return await _ensure_fresh_token(config)
+
+
 def _register_lease_tools(mcp: FastMCP) -> None:
     """Register lease and exporter management tools."""
 
@@ -122,7 +182,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
             include_leases: Include current lease info for each exporter (default: True)
             include_online: Include online/offline status (default: True)
         """
-        config = _load_config()
+        config = await _get_config()
         result = await lease_tools.list_exporters(
             config,
             selector=selector,
@@ -140,7 +200,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
         Args:
             selector: Optional label selector to filter leases
         """
-        config = _load_config()
+        config = await _get_config()
         result = await lease_tools.list_leases(config, selector=selector)
         return json.dumps(result, indent=2)
 
@@ -159,7 +219,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
         """
         if not selector and not exporter_name:
             return json.dumps({"error": "One of selector or exporter_name is required"})
-        config = _load_config()
+        config = await _get_config()
         result = await lease_tools.create_lease(
             config, duration_seconds=duration_seconds, selector=selector, exporter_name=exporter_name
         )
@@ -172,7 +232,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
         Args:
             lease_id: Name of the lease to delete
         """
-        config = _load_config()
+        config = await _get_config()
         result = await lease_tools.delete_lease(config, lease_id=lease_id)
         return json.dumps(result, indent=2)
 
@@ -221,7 +281,7 @@ def _register_connection_tools(mcp: FastMCP, manager: ConnectionManager) -> None
         _capture_session_for_notifications(mcp, manager)
         if not lease_id and not selector and not exporter_name:
             return json.dumps({"error": "One of lease_id, selector, or exporter_name is required"})
-        config = _load_config()
+        config = await _get_config()
         result = await conn_tools.connect(
             config,
             manager,

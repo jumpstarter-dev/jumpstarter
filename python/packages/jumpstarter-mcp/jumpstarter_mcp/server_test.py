@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
 import pytest
@@ -17,7 +18,7 @@ from jumpstarter_mcp.introspect import (
     list_drivers,
     walk_click_tree,
 )
-from jumpstarter_mcp.server import create_server
+from jumpstarter_mcp.server import TOKEN_REFRESH_THRESHOLD_SECONDS, _ensure_fresh_token, create_server
 from jumpstarter_mcp.tools.leases import _lease_status
 
 # ---------------------------------------------------------------------------
@@ -389,3 +390,149 @@ class TestCreateServer:
         mcp, manager = create_server()
         assert mcp is not None
         assert isinstance(manager, ConnectionManager)
+
+
+# ---------------------------------------------------------------------------
+# _ensure_fresh_token
+# ---------------------------------------------------------------------------
+
+
+def _make_jwt_payload(exp: int | None = None, iss: str = "https://sso.example.com") -> str:
+    """Build a fake JWT (header.payload.signature) with the given claims."""
+    import base64
+    import json as _json
+
+    header = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
+    claims: dict = {"iss": iss}
+    if exp is not None:
+        claims["exp"] = exp
+    payload = base64.urlsafe_b64encode(_json.dumps(claims).encode()).rstrip(b"=").decode()
+    return f"{header}.{payload}."
+
+
+class TestEnsureFreshToken:
+    @pytest.mark.asyncio
+    async def test_no_token_returns_config_unchanged(self):
+        config = MagicMock()
+        config.token = None
+        result = await _ensure_fresh_token(config)
+        assert result is config
+
+    @pytest.mark.asyncio
+    async def test_valid_token_skips_refresh(self):
+        future_exp = int(time.time()) + 3600
+        config = MagicMock()
+        config.token = _make_jwt_payload(exp=future_exp)
+        config.refresh_token = "some-refresh-token"
+
+        with patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls:
+            result = await _ensure_fresh_token(config)
+
+        assert result is config
+        mock_cls.save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_expired_token_no_refresh_token_skips(self):
+        past_exp = int(time.time()) - 60
+        config = MagicMock()
+        config.token = _make_jwt_payload(exp=past_exp)
+        config.refresh_token = None
+
+        result = await _ensure_fresh_token(config)
+        assert result is config
+
+    @pytest.mark.asyncio
+    async def test_expired_token_refreshes_successfully(self):
+        past_exp = int(time.time()) - 60
+        config = MagicMock()
+        config.token = _make_jwt_payload(exp=past_exp)
+        config.refresh_token = "old-refresh"
+
+        new_access = "new-access-token"
+        new_refresh = "new-refresh-token"
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.return_value = {
+            "access_token": new_access,
+            "refresh_token": new_refresh,
+        }
+
+        with (
+            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls,
+            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
+        ):
+            result = await _ensure_fresh_token(config)
+
+        assert result.token == new_access
+        assert result.refresh_token == new_refresh
+        mock_cls.save.assert_called_once_with(config)
+
+    @pytest.mark.asyncio
+    async def test_expired_token_refresh_updates_only_access_when_no_new_refresh(self):
+        past_exp = int(time.time()) - 60
+        config = MagicMock()
+        config.token = _make_jwt_payload(exp=past_exp)
+        config.refresh_token = "old-refresh"
+
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.return_value = {
+            "access_token": "new-access",
+        }
+
+        with (
+            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1"),
+            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
+        ):
+            result = await _ensure_fresh_token(config)
+
+        assert result.token == "new-access"
+        assert result.refresh_token == "old-refresh"
+
+    @pytest.mark.asyncio
+    async def test_expired_token_refresh_failure_returns_config_unchanged(self):
+        past_exp = int(time.time()) - 60
+        original_token = _make_jwt_payload(exp=past_exp)
+        config = MagicMock()
+        config.token = original_token
+        config.refresh_token = "old-refresh"
+
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.side_effect = RuntimeError("OIDC server down")
+
+        with (
+            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls,
+            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
+        ):
+            result = await _ensure_fresh_token(config)
+
+        assert result is config
+        mock_cls.save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_near_expiry_triggers_refresh(self):
+        near_exp = int(time.time()) + TOKEN_REFRESH_THRESHOLD_SECONDS - 1
+        config = MagicMock()
+        config.token = _make_jwt_payload(exp=near_exp)
+        config.refresh_token = "refresh"
+
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.return_value = {"access_token": "refreshed"}
+
+        with (
+            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1"),
+            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
+        ):
+            result = await _ensure_fresh_token(config)
+
+        assert result.token == "refreshed"
+
+    @pytest.mark.asyncio
+    async def test_token_without_exp_claim_skips_refresh(self):
+        config = MagicMock()
+        config.token = _make_jwt_payload(exp=None)
+        config.refresh_token = "some-refresh"
+
+        with patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls:
+            result = await _ensure_fresh_token(config)
+
+        assert result is config
+        mock_cls.save.assert_not_called()
