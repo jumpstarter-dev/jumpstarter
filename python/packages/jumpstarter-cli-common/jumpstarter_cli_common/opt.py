@@ -57,7 +57,7 @@ opt_log_level = click.option(
 
 
 opt_kubeconfig = click.option(
-    "--kubeconfig", "kubeconfig", type=click.File(), default=None, help="path to the kubeconfig file"
+    "--kubeconfig", "kubeconfig", type=click.Path(exists=True), default=None, help="path to the kubeconfig file"
 )
 
 opt_context = click.option("--context", "context", type=str, default=None, help="Kubernetes context to use")
