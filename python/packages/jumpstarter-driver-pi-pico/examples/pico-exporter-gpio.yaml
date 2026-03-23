@@ -1,0 +1,50 @@
+# Pico exporter with GPIO-based BOOTSEL entry.
+#
+# Instead of the 1200-baud serial touch (which requires cooperating firmware),
+# this config wires the Pico's BOOTSEL pad and RUN pin to host GPIO lines.
+# The driver asserts BOOTSEL low, pulses RUN low to reset, then waits for the
+# BOOTSEL USB mass-storage volume to appear.
+#
+# Both GPIO outputs should be open-drain + active_low so that on() pulls the
+# line LOW (asserting the signal) and off() releases to high-impedance.
+#
+# Adjust `device`, `line` numbers, and serial `url` to match your wiring.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: pico-exporter-gpio
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  storage:
+    type: jumpstarter_driver_pi_pico.driver.PiPicoFlasher
+    config: {}
+    children:
+      serial:
+        ref: serial
+      bootsel:
+        ref: bootsel
+      run:
+        ref: run
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyACM0"
+      baudrate: 115200
+  bootsel:
+    type: jumpstarter_driver_gpiod.driver.DigitalOutput
+    config:
+      device: "/dev/gpiochip4"
+      line: 17
+      drive: open_drain
+      active_low: true
+      initial_value: inactive
+  run:
+    type: jumpstarter_driver_gpiod.driver.DigitalOutput
+    config:
+      device: "/dev/gpiochip4"
+      line: 27
+      drive: open_drain
+      active_low: true
+      initial_value: inactive

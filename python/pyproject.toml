@@ -23,6 +23,7 @@ jumpstarter-driver-ridesx = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
+jumpstarter-driver-pi-pico = { workspace = true }
 jumpstarter-driver-probe-rs = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }
 jumpstarter-driver-qemu = { workspace = true }

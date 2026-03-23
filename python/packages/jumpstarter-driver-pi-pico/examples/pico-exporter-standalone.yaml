@@ -1,0 +1,22 @@
+# Standalone Pico exporter: no controller registration. Use with e.g.:
+#   jmp run --exporter-config pico-exporter-standalone.yaml --tls-grpc-listener 0.0.0.0:19090 --tls-grpc-insecure
+#
+# Omit endpoint and token; clients connect with:
+#   jmp shell --tls-grpc HOST:PORT --tls-grpc-insecure
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: pico-exporter
+export:
+  storage:
+    type: jumpstarter_driver_pi_pico.driver.PiPicoFlasher
+    config: {}
+    children:
+      serial:
+        ref: serial
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyACM0"
+      baudrate: 115200
