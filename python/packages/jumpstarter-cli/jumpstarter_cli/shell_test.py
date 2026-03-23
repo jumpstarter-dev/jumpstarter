@@ -1,4 +1,7 @@
+import base64
 import inspect
+import json
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
@@ -6,6 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import anyio
 import click
 import pytest
+from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 
 from jumpstarter_cli.shell import _resolve_lease_from_active_async, _shell_with_signal_handling, shell
 
@@ -269,3 +273,40 @@ def test_resolve_lease_handles_async_list_leases():
     selected = anyio.run(_resolve_lease_from_active_async, config)
     assert selected == "async-lease"
     config.list_leases.assert_called_once_with(only_active=True)
+
+
+def _make_expired_jwt() -> str:
+    """Create a JWT with an exp claim in the past (no signature verification needed)."""
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload = b64url(json.dumps({"exp": int(time.time()) - 3600, "iss": "https://example.com"}).encode())
+    sig = b64url(b"fakesig")
+    return f"{header}.{payload}.{sig}"
+
+
+def test_expired_token_triggers_reauth():
+    config = _DummyConfig()
+    config.token = _make_expired_jwt()
+
+    login_mock = Mock()
+
+    @handle_exceptions_with_reauthentication(login_mock)
+    def run_shell():
+        anyio.run(
+            _shell_with_signal_handling,
+            config,
+            "board-type=virtual",
+            None,
+            None,
+            timedelta(minutes=1),
+            False,
+            (),
+            None,
+        )
+
+    with pytest.raises(click.ClickException, match="Please try again now"):
+        run_shell()
+
+    login_mock.assert_called_once_with(config)
