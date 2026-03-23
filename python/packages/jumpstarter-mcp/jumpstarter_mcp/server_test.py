@@ -183,6 +183,14 @@ class TestListDrivers:
         assert "client.power" in paths
         assert "client.serial" in paths
 
+    def test_driver_path_field(self):
+        client = FakeCompositeClient()
+        result = list_drivers(client)
+        root = next(d for d in result if d["path"] == "client")
+        assert root["driver_path"] == []
+        power = next(d for d in result if d["path"] == "client.power")
+        assert power["driver_path"] == ["power"]
+
     def test_methods_populated(self):
         client = FakeCompositeClient()
         result = list_drivers(client)

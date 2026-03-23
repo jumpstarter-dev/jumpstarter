@@ -167,6 +167,11 @@ class ConnectionManager:
             except BaseException:
                 _check_lease_error(lease_ref)
                 raise
+            finally:
+                self._connections.pop(connection_id, None)
+                self._portals.pop(connection_id, None)
+                self._stacks.pop(connection_id, None)
+                self._cleanup_events.pop(connection_id, None)
 
         self._cleanup_events[connection_id] = event
 

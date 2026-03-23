@@ -100,15 +100,19 @@ def _get_public_method_names(obj: Any) -> list[str]:
     return names
 
 
-def list_drivers(client: Any, prefix: str = "client") -> list[dict[str, Any]]:
+def list_drivers(client: Any, _keys: list[str] | None = None) -> list[dict[str, Any]]:
     """Flatten the driver client tree into a list with dot-separated paths.
 
-    Returns path, class name, description, and method names for each driver.
+    Returns path (Python access path like ``client.power``), driver_path
+    (children-key list like ``["power"]`` for use with get_driver_methods),
+    class name, description, and method names for each driver.
     """
+    keys = _keys or []
     cls = type(client)
     results = [
         {
-            "path": prefix,
+            "path": f"client.{'.'.join(keys)}" if keys else "client",
+            "driver_path": keys,
             "class": f"{cls.__module__}.{cls.__qualname__}",
             "description": getattr(client, "description", None),
             "methods": _get_public_method_names(client),
@@ -116,7 +120,7 @@ def list_drivers(client: Any, prefix: str = "client") -> list[dict[str, Any]]:
     ]
     children = getattr(client, "children", {})
     for name, child in children.items():
-        results.extend(list_drivers(child, f"{prefix}.{name}"))
+        results.extend(list_drivers(child, keys + [name]))
     return results
 
 

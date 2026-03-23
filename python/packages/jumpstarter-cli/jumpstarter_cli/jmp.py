@@ -40,10 +40,11 @@ jmp.add_command(version)
 
 try:
     from jumpstarter_mcp.cli import mcp
-
+except ModuleNotFoundError as exc:
+    if exc.name != "jumpstarter_mcp":
+        raise
+else:
     jmp.add_command(mcp)
-except ImportError:
-    pass
 
 if __name__ == "__main__":
     jmp()

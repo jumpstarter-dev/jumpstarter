@@ -31,7 +31,7 @@ flowchart TB
   MCP client)
 
 The MCP server package, which is normally provided when you perform a full install
-through the `jumpstarter-mcp`package which provides the `jmp mcp serve` subcommand on the CLI.
+through the `jumpstarter-mcp` package which provides the `jmp mcp serve` subcommand on the CLI.
 
 ## Setup
 
