@@ -261,7 +261,9 @@ async def _shell_with_signal_handling(  # noqa: C901
     if token:
         remaining = get_token_remaining_seconds(token)
         if remaining is not None and remaining <= 0:
-            raise ConnectionError("token is expired")
+            err = ConnectionError("token is expired")
+            err.set_config(config)
+            raise err
 
     async with create_task_group() as tg:
         tg.start_soon(signal_handler, tg.cancel_scope)
