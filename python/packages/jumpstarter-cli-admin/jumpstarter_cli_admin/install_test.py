@@ -35,7 +35,7 @@ class TestValidationFunctions:
         from jumpstarter_kubernetes.exceptions import ClusterTypeValidationError
 
         with pytest.raises(
-            ClusterTypeValidationError, match='You can only select one local cluster type "kind" or "minikube"'
+            ClusterTypeValidationError, match='You can only select one cluster type'
         ):
             validate_cluster_type_selection("kind", "minikube")
 

@@ -11,10 +11,13 @@ from ..exceptions import (
     ToolNotInstalledError,
 )
 from ..install import helm_installed
-from .common import ClusterType, validate_cluster_name
+from .common import ClusterType, InstallMethod, extract_host_from_ssh, validate_cluster_name
 from .detection import auto_detect_cluster_type, detect_existing_cluster_type
 from .endpoints import configure_endpoints
 from .helm import install_jumpstarter_helm_chart
+from .k3s import (
+    create_k3s_cluster_with_options,
+)
 from .kind import (
     create_kind_cluster_with_options,
     delete_kind_cluster_with_feedback,
@@ -27,19 +30,25 @@ from .minikube import (
     minikube_cluster_exists,
     minikube_installed,
 )
+from .operator import install_jumpstarter_operator
 
 
-def validate_cluster_type_selection(kind: Optional[str], minikube: Optional[str]) -> ClusterType:
+def validate_cluster_type_selection(
+    kind: Optional[str], minikube: Optional[str], k3s: Optional[str] = None
+) -> ClusterType:
     """Validate cluster type selection and return the cluster type."""
-    if kind and minikube:
-        raise ClusterTypeValidationError('You can only select one local cluster type "kind" or "minikube"')
+    selected = sum(1 for x in [kind, minikube, k3s] if x is not None)
+    if selected > 1:
+        raise ClusterTypeValidationError('You can only select one cluster type: "kind", "minikube", or "k3s"')
 
     if kind is not None:
         return "kind"
     elif minikube is not None:
         return "minikube"
+    elif k3s is not None:
+        return "k3s"
     else:
-        # Auto-detect cluster type when neither is specified
+        # Auto-detect cluster type when none is specified
         return auto_detect_cluster_type()
 
 
@@ -100,7 +109,7 @@ async def delete_cluster_by_name(  # noqa: C901
     callback.success(f'Successfully deleted {cluster_type} cluster "{cluster_name}"')
 
 
-async def create_cluster_and_install(
+async def create_cluster_and_install(  # noqa: C901
     cluster_type: ClusterType,
     force_recreate_cluster: bool,
     cluster_name: str,
@@ -123,6 +132,9 @@ async def create_cluster_and_install(
     router_endpoint: Optional[str] = None,
     callback: OutputCallback = None,
     values_files: Optional[list[str]] = None,
+    k3s_ssh_host: Optional[str] = None,
+    install_method: Optional[InstallMethod] = None,
+    operator_installer: Optional[str] = None,
 ) -> None:
     """Create a cluster and optionally install Jumpstarter."""
     if callback is None:
@@ -154,13 +166,32 @@ async def create_cluster_and_install(
         await create_minikube_cluster_with_options(
             minikube, cluster_name, minikube_extra_args, force_recreate_cluster, extra_certs, callback
         )
+    elif cluster_type == "k3s":
+        if k3s_ssh_host is None:
+            raise ClusterOperationError(
+                "create", cluster_name, "k3s",
+                Exception("k3s requires --k3s <user@host> to specify the remote SSH host")
+            )
+        k3s_kubeconfig = await create_k3s_cluster_with_options(
+            k3s_ssh_host, cluster_name, force_recreate_cluster, callback
+        )
+        # Use the fetched kubeconfig for subsequent operations
+        if kubeconfig is None:
+            kubeconfig = k3s_kubeconfig
     else:
         raise ClusterTypeValidationError(f"Unsupported cluster_type: {cluster_type}")
 
     # Install Jumpstarter if requested
     if install_jumpstarter:
-        if not helm_installed(helm):
-            raise ToolNotInstalledError("helm", f"helm is not installed (or not in your PATH): {helm}")
+        # k3s always uses the operator; kind/minikube default to helm
+        if cluster_type == "k3s":
+            install_method = "operator"
+        elif install_method is None:
+            install_method = "helm"
+
+        # For k3s, derive IP from SSH host if not specified
+        if cluster_type == "k3s" and ip is None and k3s_ssh_host is not None:
+            ip = extract_host_from_ssh(k3s_ssh_host)
 
         # Configure endpoints
         actual_ip, actual_basedomain, actual_grpc, actual_router = await configure_endpoints(
@@ -176,23 +207,39 @@ async def create_cluster_and_install(
                 Exception("Version must be specified when installing Jumpstarter"),
             )
 
-        # Install Helm chart
-        await install_jumpstarter_helm_chart(
-            chart,
-            chart_name,
-            namespace,
-            actual_basedomain,
-            actual_grpc,
-            actual_router,
-            "nodeport",
-            version,
-            kubeconfig,
-            context,
-            helm,
-            actual_ip,
-            callback,
-            values_files,
-        )
+        if install_method == "operator":
+            await install_jumpstarter_operator(
+                version=version,
+                namespace=namespace,
+                basedomain=actual_basedomain,
+                grpc_endpoint=actual_grpc,
+                router_endpoint=actual_router,
+                mode="nodeport",
+                kubeconfig=kubeconfig,
+                context=context,
+                operator_installer=operator_installer,
+                callback=callback,
+            )
+        else:
+            if not helm_installed(helm):
+                raise ToolNotInstalledError("helm", f"helm is not installed (or not in your PATH): {helm}")
+
+            await install_jumpstarter_helm_chart(
+                chart,
+                chart_name,
+                namespace,
+                actual_basedomain,
+                actual_grpc,
+                actual_router,
+                "nodeport",
+                version,
+                kubeconfig,
+                context,
+                helm,
+                actual_ip,
+                callback,
+                values_files,
+            )
 
 
 async def create_cluster_only(
