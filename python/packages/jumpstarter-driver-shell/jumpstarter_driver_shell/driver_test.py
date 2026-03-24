@@ -255,3 +255,28 @@ def test_mixed_format_methods():
         assert cli.commands['simple'].help == "Execute the simple shell method"
         assert cli.commands['detailed'].help == "A detailed command with description"
         assert cli.commands['default_cmd'].help == "Method using default command"
+
+
+def test_method_named_status():
+    """
+    AsyncDriverClient.status is a @property (data descriptor) that would
+    normally shadow __getattr__. ShellClient.__getattribute__ detects
+    configured shell methods and returns them before the property resolves.
+    """
+    shell = Shell(
+        methods={
+            "status": "echo ok",
+            "stop": "echo stopped",
+        }
+    )
+
+    with serve(shell) as client:
+        returncode = client.status()
+        assert returncode == 0
+
+        cli = client.cli()
+        assert "status" in cli.commands
+        cli(["status"], standalone_mode=False)
+
+        returncode = client.stop()
+        assert returncode == 0
