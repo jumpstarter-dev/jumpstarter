@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -99,7 +100,7 @@ def _load_config() -> ClientConfigV1Alpha1:
     if config is None:
         raise RuntimeError(
             "No jumpstarter client config found. "
-            "Run 'jmp config set-client <name>' or set JUMPSTARTER_* environment variables."
+            "Run 'jmp config client use <name>' or set JUMPSTARTER_* environment variables."
         )
 
     return config
@@ -467,6 +468,9 @@ async def run_server():
     try:
         async with manager.running():
             await mcp.run_stdio_async()
+    except asyncio.CancelledError:
+        # Normal when the MCP host closes stdin or cancels the task; not a bug.
+        logger.info("MCP stdio session ended (cancelled)")
     except BaseException as exc:
         if isinstance(exc, ClosedResourceError):
             logger.info("MCP client disconnected (stdio closed)")
