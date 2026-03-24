@@ -38,5 +38,13 @@ jmp.add_command(driver)
 jmp.add_command(admin)
 jmp.add_command(version)
 
+try:
+    from jumpstarter_mcp.cli import mcp
+except ModuleNotFoundError as exc:
+    if exc.name != "jumpstarter_mcp":
+        raise
+else:
+    jmp.add_command(mcp)
+
 if __name__ == "__main__":
     jmp()
