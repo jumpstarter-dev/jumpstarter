@@ -434,12 +434,10 @@ class RideSXClient(FlasherClient, CompositeClient):
             help="Target spec as partition:path for multi-partition or just partition for single file",
         )
         @click.option(
-            "--no-power-off",
+            "--power-off/--no-power-off",
             "power_off",
-            is_flag=True,
-            flag_value=False,
             default=True,
-            help="Leave device powered on after flashing",
+            help="Power off device after flashing (default)",
         )
         def flash(path, target_specs, power_off):
             """Flash image to device.
