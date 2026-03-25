@@ -517,6 +517,24 @@ class TestTryReloadTokenFromDisk:
         lease.refresh_channel.assert_called_once()
 
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=3600)
+    async def test_clears_refresh_token_when_disk_has_none(self, _mock_remaining, mock_client_cfg):
+        """If disk config has no refresh token, in-memory refresh token must be cleared."""
+        config = _make_config(token="old_tok", refresh_token="stale_rt")
+        lease = _make_mock_lease()
+
+        disk_config = Mock()
+        disk_config.token = "disk_tok"
+        disk_config.refresh_token = None
+        mock_client_cfg.from_file.return_value = disk_config
+
+        result = await _try_reload_token_from_disk(config, lease)
+
+        assert result is True
+        assert config.token == "disk_tok"
+        assert config.refresh_token is None
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     async def test_returns_false_when_disk_token_is_same(self, mock_client_cfg):
         config = _make_config(token="same_tok")
         disk_config = Mock()

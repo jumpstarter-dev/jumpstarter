@@ -141,9 +141,7 @@ async def _try_reload_token_from_disk(config, lease) -> bool:
 
         # Token on disk is valid and different - use it
         config.token = disk_token
-        disk_refresh = getattr(disk_config, "refresh_token", None)
-        if disk_refresh is not None:
-            config.refresh_token = disk_refresh
+        config.refresh_token = getattr(disk_config, "refresh_token", None)
 
         # Update the lease channel (critical for the running session)
         await _update_lease_channel(config, lease)
