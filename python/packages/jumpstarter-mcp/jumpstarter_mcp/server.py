@@ -5,9 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import sys
+from io import TextIOWrapper
 
+import anyio
 from anyio import ClosedResourceError
 from mcp.server.fastmcp import FastMCP
+from mcp.server.stdio import stdio_server
 
 from jumpstarter_mcp.connections import ConnectionManager
 from jumpstarter_mcp.tools import commands as cmd_tools
@@ -462,14 +467,39 @@ def _is_closed_resource_error(exc_group: BaseExceptionGroup) -> bool:
 
 async def run_server():
     """Run the MCP server with stdio transport."""
+    # MCP communicates via JSON-RPC over stdin/stdout. Any stray output to
+    # stdout (from logging, gRPC C extensions, print() in dependencies, etc.)
+    # corrupts the protocol and kills the session. We duplicate the real stdout
+    # fd for exclusive MCP use, then redirect fd 1 (and sys.stdout) to stderr
+    # so all other output is harmless.
+    #
+    # Use literal POSIX fd numbers (1=stdout, 2=stderr) because cli.py may
+    # have already set sys.stdout = sys.stderr before we get here.
+    real_stdout_fd = os.dup(1)
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+
     _setup_logging()
     logger.info("Jumpstarter MCP server starting")
     mcp, manager = create_server()
     try:
         async with manager.running():
-            await mcp.run_stdio_async()
+            mcp_stdin = anyio.wrap_file(
+                TextIOWrapper(sys.stdin.buffer, encoding="utf-8")
+            )
+            mcp_stdout = anyio.wrap_file(
+                TextIOWrapper(os.fdopen(real_stdout_fd, "wb"), encoding="utf-8")
+            )
+            async with stdio_server(stdin=mcp_stdin, stdout=mcp_stdout) as (
+                read_stream,
+                write_stream,
+            ):
+                await mcp._mcp_server.run(
+                    read_stream,
+                    write_stream,
+                    mcp._mcp_server.create_initialization_options(),
+                )
     except asyncio.CancelledError:
-        # Normal when the MCP host closes stdin or cancels the task; not a bug.
         logger.info("MCP stdio session ended (cancelled)")
     except BaseException as exc:
         if isinstance(exc, ClosedResourceError):
