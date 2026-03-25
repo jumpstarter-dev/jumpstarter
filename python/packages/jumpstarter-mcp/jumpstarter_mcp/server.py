@@ -484,13 +484,10 @@ async def run_server():
     mcp, manager = create_server()
     try:
         async with manager.running():
-            mcp_stdin = anyio.wrap_file(
-                TextIOWrapper(sys.stdin.buffer, encoding="utf-8")
-            )
             mcp_stdout = anyio.wrap_file(
                 TextIOWrapper(os.fdopen(real_stdout_fd, "wb"), encoding="utf-8")
             )
-            async with stdio_server(stdin=mcp_stdin, stdout=mcp_stdout) as (
+            async with stdio_server(stdout=mcp_stdout) as (
                 read_stream,
                 write_stream,
             ):
