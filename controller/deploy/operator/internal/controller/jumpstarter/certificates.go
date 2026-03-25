@@ -353,14 +353,16 @@ func (r *JumpstarterReconciler) reconcileServerCertificate(
 // reconcileControllerCertificate creates the TLS certificate for the controller.
 func (r *JumpstarterReconciler) reconcileControllerCertificate(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuerRef cmmeta.ObjectReference) error {
 	certName := js.Name + controllerCertSuffix
-	dnsNames := r.collectControllerDNSNames(js)
+	includeInternalNames := !isExternalIssuer(js)
+	dnsNames := r.collectControllerDNSNames(js, includeInternalNames)
 	return r.reconcileServerCertificate(ctx, js, issuerRef, certName, "controller", dnsNames, nil)
 }
 
 // reconcileRouterCertificate creates the TLS certificate for a specific router replica.
 func (r *JumpstarterReconciler) reconcileRouterCertificate(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuerRef cmmeta.ObjectReference, replicaIndex int32) error {
 	certName := fmt.Sprintf(js.Name+routerCertSuffix, replicaIndex)
-	dnsNames := r.collectRouterDNSNames(js, replicaIndex)
+	includeInternalNames := !isExternalIssuer(js)
+	dnsNames := r.collectRouterDNSNames(js, replicaIndex, includeInternalNames)
 	extraLabels := map[string]string{
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 	}
@@ -368,16 +370,20 @@ func (r *JumpstarterReconciler) reconcileRouterCertificate(ctx context.Context, 
 }
 
 // collectControllerDNSNames collects all DNS names for the controller certificate.
-func (r *JumpstarterReconciler) collectControllerDNSNames(js *operatorv1alpha1.Jumpstarter) []string {
+// When includeInternalNames is false, internal Kubernetes service DNS names are
+// omitted so that external issuers (e.g. ACME/Let's Encrypt) don't attempt to
+// validate cluster-local domains they cannot resolve.
+func (r *JumpstarterReconciler) collectControllerDNSNames(js *operatorv1alpha1.Jumpstarter, includeInternalNames bool) []string {
 	dnsNames := make([]string, 0)
 
-	// Add default controller service name
-	dnsNames = append(dnsNames,
-		fmt.Sprintf("%s-controller", js.Name),
-		fmt.Sprintf("%s-controller.%s", js.Name, js.Namespace),
-		fmt.Sprintf("%s-controller.%s.svc", js.Name, js.Namespace),
-		fmt.Sprintf("%s-controller.%s.svc.cluster.local", js.Name, js.Namespace),
-	)
+	if includeInternalNames {
+		dnsNames = append(dnsNames,
+			fmt.Sprintf("%s-controller", js.Name),
+			fmt.Sprintf("%s-controller.%s", js.Name, js.Namespace),
+			fmt.Sprintf("%s-controller.%s.svc", js.Name, js.Namespace),
+			fmt.Sprintf("%s-controller.%s.svc.cluster.local", js.Name, js.Namespace),
+		)
+	}
 
 	// Add DNS names from configured endpoints
 	for _, endpoint := range js.Spec.Controller.GRPC.Endpoints {
@@ -401,17 +407,21 @@ func (r *JumpstarterReconciler) collectControllerDNSNames(js *operatorv1alpha1.J
 }
 
 // collectRouterDNSNames collects all DNS names for a specific router replica certificate.
-func (r *JumpstarterReconciler) collectRouterDNSNames(js *operatorv1alpha1.Jumpstarter, replicaIndex int32) []string {
+// When includeInternalNames is false, internal Kubernetes service DNS names are
+// omitted so that external issuers (e.g. ACME/Let's Encrypt) don't attempt to
+// validate cluster-local domains they cannot resolve.
+func (r *JumpstarterReconciler) collectRouterDNSNames(js *operatorv1alpha1.Jumpstarter, replicaIndex int32, includeInternalNames bool) []string {
 	dnsNames := make([]string, 0)
 
-	// Add default router service name
-	serviceName := fmt.Sprintf("%s-router-%d", js.Name, replicaIndex)
-	dnsNames = append(dnsNames,
-		serviceName,
-		fmt.Sprintf("%s.%s", serviceName, js.Namespace),
-		fmt.Sprintf("%s.%s.svc", serviceName, js.Namespace),
-		fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, js.Namespace),
-	)
+	if includeInternalNames {
+		serviceName := fmt.Sprintf("%s-router-%d", js.Name, replicaIndex)
+		dnsNames = append(dnsNames,
+			serviceName,
+			fmt.Sprintf("%s.%s", serviceName, js.Namespace),
+			fmt.Sprintf("%s.%s.svc", serviceName, js.Namespace),
+			fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, js.Namespace),
+		)
+	}
 
 	// Add DNS names from configured endpoints (with replica substitution)
 	for _, endpoint := range js.Spec.Routers.GRPC.Endpoints {
@@ -602,6 +612,13 @@ func extractHostname(address string) string {
 	// If SplitHostPort failed, there's no port in the address
 	// Return the full address (handles plain IPv6, IPv4, or hostname)
 	return address
+}
+
+// isExternalIssuer returns true when the Jumpstarter CR is configured to use
+// an external cert-manager Issuer/ClusterIssuer rather than the operator-managed
+// self-signed CA.
+func isExternalIssuer(js *operatorv1alpha1.Jumpstarter) bool {
+	return js.Spec.CertManager.Server != nil && js.Spec.CertManager.Server.IssuerRef != nil
 }
 
 // contains checks if a string slice contains a specific string.
