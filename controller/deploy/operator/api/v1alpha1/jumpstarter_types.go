@@ -186,7 +186,7 @@ type JumpstarterSpec struct {
 type RoutersConfig struct {
 	// Container image for the router pods in 'registry/repository/image:tag' format.
 	// If not specified, defaults to the latest stable version of the Jumpstarter router.
-	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1"
 	Image string `json:"image,omitempty"`
 
 	// Image pull policy for the router container.
@@ -221,7 +221,7 @@ type RoutersConfig struct {
 type ControllerConfig struct {
 	// Container image for the controller pods in 'registry/repository/image:tag' format.
 	// If not specified, defaults to the latest stable version of the Jumpstarter controller.
-	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1"
 	Image string `json:"image,omitempty"`
 
 	// Image pull policy for the controller container.

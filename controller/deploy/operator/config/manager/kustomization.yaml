@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: quay.io/jumpstarter-dev/jumpstarter-operator
   newName: quay.io/jumpstarter-dev/jumpstarter-operator
-  newTag: latest
+  newTag: "0.8.1"
