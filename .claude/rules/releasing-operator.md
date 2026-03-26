@@ -1,0 +1,1 @@
+../../.cursor/rules/releasing-operator.mdc
