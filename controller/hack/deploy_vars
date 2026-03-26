@@ -6,7 +6,7 @@
 IP=$(get_external_ip)
 BASEDOMAIN="jumpstarter.${IP}.nip.io"
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
-OPERATOR_IMG=${OPERATOR_IMG:-quay.io/jumpstarter-dev/jumpstarter-operator:latest}
+OPERATOR_IMG=${OPERATOR_IMG:-$(make -C deploy/operator --no-print-directory -s print-img 2>/dev/null || echo "quay.io/jumpstarter-dev/jumpstarter-operator:latest")}
 
 # Determine endpoints based on NETWORKING_MODE
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
