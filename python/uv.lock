@@ -2111,7 +2111,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "opendal", specifier = ">=0.45.8" },
+    { name = "opendal", specifier = ">=0.45.8,<0.46" },
 ]
 
 [package.metadata.requires-dev]
