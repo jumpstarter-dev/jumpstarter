@@ -11,7 +11,7 @@ VERSION ?= 0.8.1
 # Used to generate the release-config.yaml for FBC auto-release.
 # Set to empty for the first release in a channel.
 # See: https://redhat-openshift-ecosystem.github.io/operator-pipelines/users/fbc_autorelease/
-REPLACES ?= jumpstarter-operator.v0.8.0
+REPLACES ?= jumpstarter-operator.v0.8.1-rc.1
 
 # FBC_CHANNELS defines the FBC catalog channels for this release.
 FBC_CHANNELS ?= alpha
