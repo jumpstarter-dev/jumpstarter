@@ -95,6 +95,10 @@ SHELL = /usr/bin/env bash -o pipefail
 .PHONY: all
 all: build
 
+.PHONY: print-img
+print-img:
+	@echo $(IMG)
+
 ##@ General
 
 # The help target prints out all targets with their descriptions organized
