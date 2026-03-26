@@ -5,7 +5,7 @@ IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.30.0
+ENVTEST_K8S_VERSION = 1.33.0
 
 # Version information
 GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
@@ -236,7 +236,7 @@ GRPCURL = $(LOCALBIN)/grpcurl
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.1
 CONTROLLER_TOOLS_VERSION ?= v0.16.3
-ENVTEST_VERSION ?= release-0.18
+ENVTEST_VERSION ?= release-0.21
 GOLANGCI_LINT_VERSION ?= v2.5.0
 KIND_VERSION ?= v0.27.0
 GRPCURL_VERSION ?= v1.9.2
