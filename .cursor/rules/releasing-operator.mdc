@@ -11,7 +11,7 @@ This guide covers preparing and publishing a new operator release to OLM and com
 The operator bundle version is driven by variables in `controller/deploy/operator/Makefile`:
 
 - **`VERSION`**: The semver for the bundle (e.g. `0.8.1`). This is NOT prefixed with `v`.
-- **`REPLACES`**: The previous OLM bundle this release upgrades from (e.g. `jumpstarter-operator.v0.8.0`). Note the OLM name uses a `v` prefix per OLM convention, but image tags do NOT.
+- **`REPLACES`**: The previous OLM bundle this release upgrades from (e.g. `jumpstarter-operator.v0.8.0`). Note the OLM name uses a `v` prefix per OLM convention, but image tags do NOT. **Important**: This must point to the _most recent_ published version in the channel, including release candidates. For example, if `v0.8.1-rc.1` was published, then `v0.8.1` must replace `v0.8.1-rc.1` (not `v0.8.0`), otherwise OLM will report "multiple channel heads".
 - **`IMG`**: Defaults to `$(IMAGE_TAG_BASE):$(VERSION)`, so all image references are automatically derived from `VERSION`. No need to pass `IMG` explicitly in most cases.
 - **`FBC_CHANNELS`**: Catalog channel (default `alpha`).
 - **`OPENSHIFT_VERSIONS`**: Red Hat OpenShift version range (e.g. `v4.18-v4.21`).
@@ -34,7 +34,7 @@ When preparing a new release version X.Y.Z, update these files together:
 
 ### 1. `controller/deploy/operator/Makefile`
 - `VERSION ?= X.Y.Z`
-- `REPLACES ?= jumpstarter-operator.vPREVIOUS` (previous released version)
+- `REPLACES ?= jumpstarter-operator.vPREVIOUS` (the most recent version published to the OLM channel -- including RCs. E.g. if `v0.8.1-rc.1` was published, REPLACES must be `jumpstarter-operator.v0.8.1-rc.1`, not `v0.8.0`)
 - Optionally update `OPENSHIFT_VERSIONS` if the supported range changes
 
 ### 2. `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go`
@@ -110,6 +110,22 @@ After the script completes, push to your fork and open PRs:
 cd contribute/community-operators && git push -f user jumpstarter-operator-release-X.Y.Z
 cd ../community-operators-prod && git push -f user jumpstarter-operator-release-X.Y.Z
 ```
+
+## OLM Upgrade Graph and `REPLACES`
+
+OLM requires a **single channel head** (latest version) per channel. The `replaces` field creates a directed upgrade edge in the graph. If two bundles both replace the same version, OLM reports:
+
+```
+multiple channel heads found in graph: jumpstarter-operator.vA, jumpstarter-operator.vB
+```
+
+**Rule**: `REPLACES` must always point to the _most recently published_ version in the channel, forming a linear chain. When release candidates are published to the channel before the final release, the chain must include them:
+
+```
+v0.8.0 → v0.8.1-rc.1 → v0.8.1
+```
+
+The `skipRange` (e.g. `>=0.8.0 <0.8.1`) allows users on any intermediate version to upgrade directly, but `replaces` must still form a valid graph with a single head.
 
 ## Cherry-Picking Fixes to Main
 
