@@ -23,28 +23,12 @@ Jumpstarter uses gRPC for communication, which has specific requirements for pro
 
 ### gRPC Requirements
 
-- **HTTP/2 Support**: gRPC requires HTTP/2, ensure your ingress controller or load balancer supports it
-- **gRPC Protocol**: Some ingress controllers require specific annotations for gRPC traffic
-- **Keep-Alive Settings**: Long-lived gRPC connections may need keep-alive configuration
-- **Load Balancing**: Use consistent hashing or session affinity for gRPC connections
+- **HTTP/2 Support**: gRPC requires HTTP/2; ensure the path from clients to the service supports it
+- **Keep-Alive Settings**: The Jumpstarter service and client configure gRPC keep-alive by default; you usually do not need to tune these separately.
 
-### TLS Termination Options
+### TLS for gRPC
 
-Choose one of these TLS termination approaches:
-
-**Option 1: TLS Termination at Ingress/Route (Recommended)**
-- Terminate TLS at the ingress controller or OpenShift route
-- Simpler certificate management
-- Better performance with fewer encryption hops
-
-**Option 2: End-to-End TLS**
-- TLS from client to Jumpstarter service
-- Higher security but more complex certificate management
-- Required for strict compliance environments
-
-```{warning}
-gRPC over HTTP/1.1 is not supported. Ensure your ingress controller supports HTTP/2 and is properly configured for gRPC traffic.
-```
+The [Jumpstarter operator](service-operator.md) installs gRPC with **TLS passthrough** at the ingress or route: encrypted traffic is forwarded to the controller and router pods, which terminate TLS. HTTP login endpoints use edge TLS termination instead.
 
 ## Installation
 
