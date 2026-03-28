@@ -1,0 +1,47 @@
+[project]
+name = "jumpstarter-driver-gptp"
+dynamic = ["version", "urls"]
+description = "gPTP/PTP time synchronization driver for Jumpstarter, wrapping linuxptp (ptp4l/phc2sys)"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Vinicius Zein", email = "vtzein@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.10.0",
+    "jumpstarter",
+    "click",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+Gptp = "jumpstarter_driver_gptp.driver:Gptp"
+MockGptp = "jumpstarter_driver_gptp.driver:MockGptp"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_gptp"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+]
