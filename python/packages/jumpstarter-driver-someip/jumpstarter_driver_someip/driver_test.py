@@ -136,6 +136,60 @@ def test_someip_receive_event(mock_osip_cls):
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_find_service(mock_osip_cls):
+    mock_client = _make_mock_osip_client()
+
+    def fake_find(service, *, callback=None):
+        svc = MagicMock()
+        svc.service_id = service.service_id
+        svc.instance_id = 0x0001
+        svc.major_version = 1
+        svc.minor_version = 0
+        if callback:
+            callback(svc)
+
+    mock_client.find.side_effect = fake_find
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        results = client.find_service(0x1234, timeout=0.1)
+        assert len(results) == 1
+        assert results[0].service_id == 0x1234
+        assert results[0].instance_id == 0x0001
+        assert results[0].major_version == 1
+        mock_client.find.assert_called_once()
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_find_service_no_results(mock_osip_cls):
+    mock_client = _make_mock_osip_client()
+    mock_client.find.side_effect = lambda service, *, callback=None: None
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        results = client.find_service(0x9999, timeout=0.1)
+        assert results == []
+        mock_client.find.assert_called_once()
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_find_service_forwards_instance_id(mock_osip_cls):
+    mock_client = _make_mock_osip_client()
+    mock_client.find.side_effect = lambda service, *, callback=None: None
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.find_service(0x1234, instance_id=0x0042, timeout=0.1)
+        call_args = mock_client.find.call_args
+        service_arg = call_args[0][0]
+        assert service_arg.service_id == 0x1234
+        assert service_arg.instance_id == 0x0042
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
 def test_someip_close_connection(mock_osip_cls):
     mock_client = _make_mock_osip_client()
     mock_osip_cls.return_value = mock_client
@@ -410,6 +464,74 @@ def test_stateful_find_service_version_info(stateful_client):
     assert len(results) == 1
     assert results[0].major_version == 2
     assert results[0].minor_version == 0
+
+
+def test_stateful_find_different_services(stateful_client):
+    """find_service for different service IDs returns independent results."""
+    results_1234 = stateful_client.find_service(0x1234, timeout=0.1)
+    results_5678 = stateful_client.find_service(0x5678, timeout=0.1)
+
+    assert len(results_1234) == 2
+    assert len(results_5678) == 1
+    assert results_5678[0].service_id == 0x5678
+    assert results_5678[0].instance_id == 0x0001
+
+
+def test_stateful_find_service_dynamic_registration(stateful_client, stateful_osip):
+    """Services registered after startup appear in subsequent discoveries."""
+    results_before = stateful_client.find_service(0xAAAA, timeout=0.1)
+    assert results_before == []
+
+    stateful_osip.register_service(0xAAAA, 0x0001, major_version=3, minor_version=1)
+    results_after = stateful_client.find_service(0xAAAA, timeout=0.1)
+    assert len(results_after) == 1
+    assert results_after[0].service_id == 0xAAAA
+    assert results_after[0].major_version == 3
+    assert results_after[0].minor_version == 1
+
+
+def test_stateful_find_service_dynamic_unregistration(stateful_client, stateful_osip):
+    """Services removed from the registry no longer appear in discoveries."""
+    results_before = stateful_client.find_service(0x5678, timeout=0.1)
+    assert len(results_before) == 1
+
+    stateful_osip.unregister_service(0x5678, 0x0001)
+    results_after = stateful_client.find_service(0x5678, timeout=0.1)
+    assert results_after == []
+
+
+def test_stateful_find_service_after_reconnect(stateful_client, stateful_osip):
+    """Service registry persists across reconnect."""
+    results_before = stateful_client.find_service(0x1234, timeout=0.1)
+    assert len(results_before) == 2
+
+    stateful_client.reconnect()
+
+    results_after = stateful_client.find_service(0x1234, timeout=0.1)
+    assert len(results_after) == 2
+
+
+def test_stateful_find_service_default_instance_wildcard(stateful_client):
+    """find_service without explicit instance_id uses 0xFFFF wildcard."""
+    results_explicit = stateful_client.find_service(0x1234, instance_id=0xFFFF, timeout=0.1)
+    results_default = stateful_client.find_service(0x1234, timeout=0.1)
+
+    assert len(results_explicit) == len(results_default)
+    explicit_ids = {r.instance_id for r in results_explicit}
+    default_ids = {r.instance_id for r in results_default}
+    assert explicit_ids == default_ids
+
+
+def test_stateful_discover_then_rpc_to_each_instance(stateful_client, stateful_osip):
+    """Discover all instances, then make RPC calls to each one."""
+    services = stateful_client.find_service(0x1234, timeout=0.1)
+    assert len(services) == 2
+
+    for svc in services:
+        resp = stateful_client.rpc_call(svc.service_id, 0x0001, b"\xAA")
+        assert resp.service_id == svc.service_id
+
+    assert len(stateful_osip._rpc_history) == 2
 
 
 # -- event subscription workflow -------------------------------------------

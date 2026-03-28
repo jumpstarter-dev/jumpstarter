@@ -371,6 +371,22 @@ class StatefulOsipClient:
         """Configure a canned RPC response for a specific service/method pair."""
         self._rpc_responses[(service_id, method_id)] = payload
 
+    def register_service(
+        self, service_id: int, instance_id: int, major_version: int = 1, minor_version: int = 0
+    ):
+        """Add a service to the SD registry."""
+        self._registered_services.append(
+            _FakeServiceInstance(service_id, instance_id, major_version, minor_version)
+        )
+
+    def unregister_service(self, service_id: int, instance_id: int):
+        """Remove a service from the SD registry."""
+        self._registered_services = [
+            s
+            for s in self._registered_services
+            if not (s.service_id == service_id and s.instance_id == instance_id)
+        ]
+
 
 @pytest.fixture
 def stateful_osip():
