@@ -9,6 +9,10 @@ from .driver import SomeIp
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
 
+# =========================================================================
+# Mock helpers (for isolated unit tests)
+# =========================================================================
+
 
 def _make_mock_message():
     mock_response = MagicMock()
@@ -48,6 +52,11 @@ def _make_mock_osip_client():
     mock.event_subscriber.notifications.return_value = mock_event_receiver
 
     return mock
+
+
+# =========================================================================
+# Unit tests — happy paths
+# =========================================================================
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -161,7 +170,9 @@ def test_someip_reconnect_survives_stop_failure(mock_osip_cls):
         assert mock_client.start.call_count >= 2
 
 
-# --- Error path tests ---
+# =========================================================================
+# Error-path tests
+# =========================================================================
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -189,6 +200,20 @@ def test_someip_receive_message_timeout(mock_osip_cls):
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_receive_event_timeout(mock_osip_cls):
+    mock_client = _make_mock_osip_client()
+    empty_receiver = MagicMock()
+    empty_receiver._sync_queue = _queue.Queue()
+    mock_client.event_subscriber.notifications.return_value = empty_receiver
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        with pytest.raises(DriverError, match="No event received"):
+            client.receive_event(timeout=0.1)
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
 def test_someip_connection_error(mock_osip_cls):
     mock_osip_cls.return_value.start.side_effect = ConnectionRefusedError("Connection refused")
 
@@ -196,7 +221,9 @@ def test_someip_connection_error(mock_osip_cls):
         SomeIp(host="192.168.1.100", port=30490)
 
 
-# --- Config validation tests ---
+# =========================================================================
+# Config validation tests
+# =========================================================================
 
 
 def test_someip_missing_required_host():
@@ -249,11 +276,302 @@ def test_someip_tcp_transport_mode(mock_osip_cls):
     assert config.transport_mode == TransportMode.TCP
 
 
-# --- Integration tests with simulated SOME/IP server ---
+# =========================================================================
+# Stateful integration tests
+#
+# These use a StatefulOsipClient (conftest.py) that behaves like a real
+# SOME/IP service: it tracks connection state, service registry, event
+# subscriptions, RPC history, and sent messages.  Each test exercises a
+# realistic multi-step workflow through the full gRPC boundary.
+# =========================================================================
+
+
+def _stateful_client_ctx(stateful_osip):
+    """Context manager: serve() a SomeIp driver backed by the stateful mock."""
+    with patch(
+        "jumpstarter_driver_someip.driver.OsipClient",
+        return_value=stateful_osip,
+    ):
+        instance = SomeIp(host="127.0.0.1", port=30490)
+        with serve(instance) as c:
+            yield c
+
+
+@pytest.fixture
+def stateful_client(stateful_osip):
+    yield from _stateful_client_ctx(stateful_osip)
+
+
+# -- RPC workflows ---------------------------------------------------------
+
+
+def test_stateful_rpc_call_returns_canned_response(stateful_client, stateful_osip):
+    """RPC call to a known service/method returns the pre-configured response."""
+    resp = stateful_client.rpc_call(0x1234, 0x0001, b"\xFF")
+    assert resp.service_id == 0x1234
+    assert resp.method_id == 0x0001
+    assert resp.payload == "0a0b0c"
+    assert resp.return_code == 0x00
+    assert len(stateful_osip._rpc_history) == 1
+    assert stateful_osip._rpc_history[0] == (0x1234, 0x0001, b"\xFF")
+
+
+def test_stateful_rpc_call_unknown_echoes_payload(stateful_client, stateful_osip):
+    """RPC call to an unknown service/method echoes the request payload."""
+    resp = stateful_client.rpc_call(0x9999, 0x0001, b"\xDE\xAD")
+    assert resp.service_id == 0x9999
+    assert resp.payload == "dead"
+
+
+def test_stateful_multiple_rpc_calls(stateful_client, stateful_osip):
+    """Multiple sequential RPC calls are tracked independently."""
+    stateful_client.rpc_call(0x1234, 0x0001, b"\x01")
+    stateful_client.rpc_call(0x1234, 0x0002, b"\x02")
+    stateful_client.rpc_call(0x5678, 0x0001, b"\x03")
+
+    assert len(stateful_osip._rpc_history) == 3
+    assert stateful_osip._rpc_history[0][0] == 0x1234
+    assert stateful_osip._rpc_history[1][2] == b"\x02"
+    assert stateful_osip._rpc_history[2][0] == 0x5678
+
+
+def test_stateful_custom_rpc_response(stateful_client, stateful_osip):
+    """Register a custom RPC response and verify it's returned."""
+    stateful_osip.register_rpc_response(0xAAAA, 0x0001, b"\xCA\xFE")
+    resp = stateful_client.rpc_call(0xAAAA, 0x0001, b"\x00")
+    assert resp.payload == "cafe"
+
+
+# -- send / receive messaging workflow -------------------------------------
+
+
+def test_stateful_send_then_receive(stateful_client, stateful_osip):
+    """send_message echoes into the receive queue; receive_message reads it."""
+    stateful_client.send_message(0x1234, 0x0001, b"\xAA\xBB")
+    resp = stateful_client.receive_message(timeout=1.0)
+    assert resp.service_id == 0x1234
+    assert resp.method_id == 0x0001
+    assert resp.payload == "aabb"
+    assert len(stateful_osip._sent_messages) == 1
+
+
+def test_stateful_inject_message(stateful_client, stateful_osip):
+    """Injected messages appear in the receive queue."""
+    stateful_osip.inject_message(0x5678, 0x0002, b"\x01\x02\x03")
+    resp = stateful_client.receive_message(timeout=1.0)
+    assert resp.service_id == 0x5678
+    assert resp.method_id == 0x0002
+    assert resp.payload == "010203"
+
+
+def test_stateful_multiple_messages_fifo(stateful_client, stateful_osip):
+    """Multiple injected messages are received in FIFO order."""
+    stateful_osip.inject_message(0x1111, 0x0001, b"\x01")
+    stateful_osip.inject_message(0x2222, 0x0002, b"\x02")
+    stateful_osip.inject_message(0x3333, 0x0003, b"\x03")
+
+    r1 = stateful_client.receive_message(timeout=1.0)
+    r2 = stateful_client.receive_message(timeout=1.0)
+    r3 = stateful_client.receive_message(timeout=1.0)
+
+    assert r1.service_id == 0x1111
+    assert r2.service_id == 0x2222
+    assert r3.service_id == 0x3333
+
+
+# -- service discovery workflow --------------------------------------------
+
+
+def test_stateful_find_service_all_instances(stateful_client):
+    """find_service with wildcard instance_id returns all matching services."""
+    results = stateful_client.find_service(0x1234, timeout=0.1)
+    assert len(results) == 2
+    ids = {r.instance_id for r in results}
+    assert ids == {0x0001, 0x0002}
+
+
+def test_stateful_find_service_specific_instance(stateful_client):
+    """find_service with specific instance_id returns only that instance."""
+    results = stateful_client.find_service(0x1234, instance_id=0x0001, timeout=0.1)
+    assert len(results) == 1
+    assert results[0].instance_id == 0x0001
+    assert results[0].major_version == 1
+
+
+def test_stateful_find_service_not_found(stateful_client):
+    """find_service for a non-existent service returns empty list."""
+    results = stateful_client.find_service(0xDEAD, timeout=0.1)
+    assert results == []
+
+
+def test_stateful_find_service_version_info(stateful_client):
+    """find_service returns correct version information."""
+    results = stateful_client.find_service(0x1234, instance_id=0x0002, timeout=0.1)
+    assert len(results) == 1
+    assert results[0].major_version == 2
+    assert results[0].minor_version == 0
+
+
+# -- event subscription workflow -------------------------------------------
+
+
+def test_stateful_subscribe_receive_unsubscribe(stateful_client, stateful_osip):
+    """Full event lifecycle: subscribe, receive events, unsubscribe."""
+    stateful_client.subscribe_eventgroup(1)
+    assert 1 in stateful_osip._subscribed_eventgroups
+
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xCA\xFE")
+    event = stateful_client.receive_event(timeout=1.0)
+    assert event.service_id == 0x1234
+    assert event.event_id == 0x8001
+    assert event.payload == "cafe"
+
+    stateful_client.unsubscribe_eventgroup(1)
+    assert 1 not in stateful_osip._subscribed_eventgroups
+
+
+def test_stateful_multiple_events_fifo(stateful_client, stateful_osip):
+    """Multiple events are received in FIFO order."""
+    stateful_client.subscribe_eventgroup(1)
+
+    stateful_osip.inject_event(0x1234, 0x8001, b"\x01")
+    stateful_osip.inject_event(0x1234, 0x8002, b"\x02")
+    stateful_osip.inject_event(0x1234, 0x8003, b"\x03")
+
+    e1 = stateful_client.receive_event(timeout=1.0)
+    e2 = stateful_client.receive_event(timeout=1.0)
+    e3 = stateful_client.receive_event(timeout=1.0)
+
+    assert e1.event_id == 0x8001
+    assert e2.event_id == 0x8002
+    assert e3.event_id == 0x8003
+
+    stateful_client.unsubscribe_eventgroup(1)
+
+
+def test_stateful_subscribe_multiple_eventgroups(stateful_client, stateful_osip):
+    """Subscribing to multiple event groups tracks all of them."""
+    stateful_client.subscribe_eventgroup(1)
+    stateful_client.subscribe_eventgroup(2)
+    stateful_client.subscribe_eventgroup(3)
+
+    assert stateful_osip._subscribed_eventgroups == {1, 2, 3}
+
+    stateful_client.unsubscribe_eventgroup(2)
+    assert stateful_osip._subscribed_eventgroups == {1, 3}
+
+
+def test_stateful_event_timeout_when_no_events(stateful_client):
+    """receive_event times out when no events are available."""
+    with pytest.raises(DriverError, match="No event received"):
+        stateful_client.receive_event(timeout=0.1)
+
+
+# -- connection management workflows ---------------------------------------
+
+
+def test_stateful_reconnect_resets_subscriptions(stateful_client, stateful_osip):
+    """reconnect() stops and restarts the client, clearing subscriptions."""
+    stateful_client.subscribe_eventgroup(1)
+    assert 1 in stateful_osip._subscribed_eventgroups
+
+    stateful_client.reconnect()
+    assert stateful_osip._started is True
+    assert stateful_osip._subscribed_eventgroups == set()
+
+
+def test_stateful_close_then_reconnect(stateful_client, stateful_osip):
+    """close_connection + reconnect restores the client."""
+    stateful_client.close_connection()
+    assert stateful_osip._started is False
+
+    stateful_client.reconnect()
+    assert stateful_osip._started is True
+
+
+# -- end-to-end composite workflows ----------------------------------------
+
+
+def test_stateful_full_rpc_session(stateful_client, stateful_osip):
+    """Simulate a complete RPC session: discover, call, verify, disconnect."""
+    services = stateful_client.find_service(0x1234, timeout=0.1)
+    assert len(services) >= 1
+
+    resp = stateful_client.rpc_call(0x1234, 0x0001, b"\x01\x02\x03")
+    assert resp.service_id == 0x1234
+    assert resp.return_code == 0x00
+
+    assert len(stateful_osip._rpc_history) == 1
+
+    stateful_client.close_connection()
+    assert stateful_osip._started is False
+
+
+def test_stateful_messaging_with_reconnect(stateful_client, stateful_osip):
+    """Send messages, reconnect, verify the client is operational again."""
+    stateful_client.send_message(0x1234, 0x0001, b"\x01")
+    resp = stateful_client.receive_message(timeout=1.0)
+    assert resp.payload == "01"
+
+    stateful_client.reconnect()
+
+    stateful_client.send_message(0x5678, 0x0002, b"\x02")
+    resp = stateful_client.receive_message(timeout=1.0)
+    assert resp.payload == "02"
+
+    assert len(stateful_osip._sent_messages) == 2
+
+
+def test_stateful_event_session_with_reconnect(stateful_client, stateful_osip):
+    """Subscribe, receive events, reconnect, re-subscribe, receive again."""
+    stateful_client.subscribe_eventgroup(1)
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xAA")
+    e1 = stateful_client.receive_event(timeout=1.0)
+    assert e1.payload == "aa"
+
+    stateful_client.reconnect()
+    assert stateful_osip._subscribed_eventgroups == set()
+
+    stateful_client.subscribe_eventgroup(1)
+    stateful_osip.inject_event(0x1234, 0x8002, b"\xBB")
+    e2 = stateful_client.receive_event(timeout=1.0)
+    assert e2.payload == "bb"
+
+    stateful_client.unsubscribe_eventgroup(1)
+
+
+def test_stateful_discover_rpc_events_workflow(stateful_client, stateful_osip):
+    """Full workflow: discover services, make RPC calls, subscribe to events,
+    receive notifications, and clean up."""
+    services = stateful_client.find_service(0x1234, timeout=0.1)
+    assert len(services) == 2
+
+    resp1 = stateful_client.rpc_call(0x1234, 0x0001, b"\x10")
+    assert resp1.payload == "0a0b0c"
+
+    resp2 = stateful_client.rpc_call(0x1234, 0x0002, b"\x20")
+    assert resp2.payload == "01020304"
+
+    stateful_client.subscribe_eventgroup(1)
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xEE")
+    event = stateful_client.receive_event(timeout=1.0)
+    assert event.payload == "ee"
+
+    stateful_client.unsubscribe_eventgroup(1)
+    stateful_client.close_connection()
+
+    assert len(stateful_osip._rpc_history) == 2
+    assert stateful_osip._started is False
+
+
+# =========================================================================
+# Wire-level integration tests with MockSomeIpServer
+#
 # opensomeip uses Service Discovery to locate services, so connecting to a
 # raw TCP mock server requires a full SD-capable SOME/IP environment.
 # These tests are intended for CI environments with proper SOME/IP networking
 # and are skipped by default.  Set SOMEIP_INTEGRATION_TESTS=1 to enable.
+# =========================================================================
 
 _RUN_INTEGRATION = os.environ.get("SOMEIP_INTEGRATION_TESTS", "0") == "1"
 

@@ -1,25 +1,47 @@
+"""Test fixtures for the SOME/IP driver.
+
+Provides:
+- ``MockSomeIpServer``: a minimal TCP server that speaks the SOME/IP wire
+  protocol (header + payload) for integration testing.
+- ``StatefulOsipClient``: a drop-in replacement for ``opensomeip.SomeIpClient``
+  that enforces SOME/IP state rules (connection lifecycle, service registry,
+  event subscriptions, message ordering).  Used by the stateful scenario tests
+  to exercise realistic multi-step workflows through the full gRPC boundary.
+"""
+
+from __future__ import annotations
+
+import queue
 import socket
 import struct
 import threading
+from unittest.mock import MagicMock
 
 import pytest
+
+# =========================================================================
+# Wire-protocol constants
+# =========================================================================
 
 PROTOCOL_VERSION = 0x01
 INTERFACE_VERSION = 0x01
 
-# SOME/IP message types
 MSG_TYPE_REQUEST = 0x00
 MSG_TYPE_RESPONSE = 0x80
 MSG_TYPE_NOTIFICATION = 0x02
 MSG_TYPE_ERROR = 0x81
 
-# Return codes
 RC_OK = 0x00
 RC_NOT_OK = 0x01
 RC_UNKNOWN_SERVICE = 0x02
 RC_UNKNOWN_METHOD = 0x03
 
 HEADER_SIZE = 16
+
+
+# =========================================================================
+# Wire-protocol helpers
+# =========================================================================
 
 
 def _pack_someip(
@@ -74,6 +96,11 @@ def _read_someip_message(conn: socket.socket) -> tuple[int, int, int, int, int, 
         payload += chunk
 
     return service_id, method_id, client_id, session_id, msg_type, ret_code, payload
+
+
+# =========================================================================
+# MockSomeIpServer — minimal TCP server for wire-level integration tests
+# =========================================================================
 
 
 class MockSomeIpServer:
@@ -165,3 +192,187 @@ def mock_someip_server():
         yield server.port
     finally:
         server.stop()
+
+
+# =========================================================================
+# StatefulOsipClient — drop-in for opensomeip.SomeIpClient
+#
+# Tracks connection state, service registry, event subscriptions,
+# message history, and enforces ordering rules.  Designed to be
+# injected via ``@patch("jumpstarter_driver_someip.driver.OsipClient")``.
+# =========================================================================
+
+
+class _FakeMessageId:
+    def __init__(self, service_id: int, method_id: int):
+        self.service_id = service_id
+        self.method_id = method_id
+
+
+class _FakeRequestId:
+    def __init__(self, client_id: int = 0x0001, session_id: int = 0x0001):
+        self.client_id = client_id
+        self.session_id = session_id
+
+
+class _FakeMessage:
+    """Mimics ``opensomeip.message.Message`` with the attributes the driver reads."""
+
+    def __init__(
+        self,
+        service_id: int,
+        method_id: int,
+        payload: bytes,
+        *,
+        message_type: int = MSG_TYPE_RESPONSE,
+        return_code: int = RC_OK,
+        client_id: int = 0x0001,
+        session_id: int = 0x0001,
+    ):
+        self.message_id = _FakeMessageId(service_id, method_id)
+        self.request_id = _FakeRequestId(client_id, session_id)
+        self.protocol_version = PROTOCOL_VERSION
+        self.interface_version = INTERFACE_VERSION
+        self.message_type = message_type
+        self.return_code = return_code
+        self.payload = payload
+
+
+class _FakeReceiver:
+    """Mimics the opensomeip MessageReceiver with ``_sync_queue``."""
+
+    def __init__(self):
+        self._sync_queue: queue.Queue = queue.Queue()
+
+
+class _FakeTransport:
+    def __init__(self):
+        self.receiver = _FakeReceiver()
+
+
+class _FakeServiceInstance:
+    """Mimics ``opensomeip.sd.ServiceInstance``."""
+
+    def __init__(self, service_id: int, instance_id: int, major_version: int = 1, minor_version: int = 0):
+        self.service_id = service_id
+        self.instance_id = instance_id
+        self.major_version = major_version
+        self.minor_version = minor_version
+
+
+class SomeIpNotStarted(RuntimeError):
+    pass
+
+
+class StatefulOsipClient:
+    """A drop-in replacement for ``opensomeip.SomeIpClient`` that enforces
+    SOME/IP state rules.
+
+    Tracks:
+    - Connection lifecycle (start/stop)
+    - Registered services (for ``find`` / SD)
+    - Event subscriptions
+    - RPC call history and configurable responses
+    - Sent messages (for verification)
+    - Inbound message queue (for ``receive_message``)
+    """
+
+    def __init__(self, config=None) -> None:
+        self._started = False
+        self._config = config
+
+        self._registered_services: list[_FakeServiceInstance] = [
+            _FakeServiceInstance(0x1234, 0x0001),
+            _FakeServiceInstance(0x1234, 0x0002, major_version=2),
+            _FakeServiceInstance(0x5678, 0x0001),
+        ]
+
+        self._subscribed_eventgroups: set[int] = set()
+
+        self._rpc_responses: dict[tuple[int, int], bytes] = {
+            (0x1234, 0x0001): b"\x0A\x0B\x0C",
+            (0x1234, 0x0002): b"\x01\x02\x03\x04",
+        }
+        self._rpc_history: list[tuple[int, int, bytes]] = []
+
+        self._sent_messages: list[_FakeMessage] = []
+
+        self.transport = _FakeTransport()
+
+        self._event_notifications: list[_FakeMessage] = []
+        self._event_receiver = _FakeReceiver()
+
+        self.event_subscriber = MagicMock()
+        self.event_subscriber.notifications.return_value = self._event_receiver
+
+    def _require_started(self):
+        if not self._started:
+            raise SomeIpNotStarted("Client not started — call start() first")
+
+    def start(self):
+        self._started = True
+
+    def stop(self):
+        self._started = False
+        self._subscribed_eventgroups.clear()
+
+    def call(self, message_id, *, payload: bytes = b"", timeout: float = 5.0):
+        """Simulate an RPC call. Returns a canned response or echoes the payload."""
+        self._require_started()
+        sid = message_id.service_id
+        mid = message_id.method_id
+        self._rpc_history.append((sid, mid, payload))
+
+        resp_payload = self._rpc_responses.get((sid, mid), payload)
+        return _FakeMessage(sid, mid, resp_payload)
+
+    def send(self, msg):
+        """Record a sent message and optionally echo it back into the receive queue."""
+        self._require_started()
+        self._sent_messages.append(msg)
+        echo = _FakeMessage(
+            msg.message_id.service_id,
+            msg.message_id.method_id,
+            msg.payload,
+            message_type=MSG_TYPE_RESPONSE,
+        )
+        self.transport.receiver._sync_queue.put(echo)
+
+    def find(self, service, *, callback=None):
+        """Simulate service discovery by calling back with matching registered services."""
+        self._require_started()
+        for svc in self._registered_services:
+            if svc.service_id == service.service_id:
+                if service.instance_id == 0xFFFF or svc.instance_id == service.instance_id:
+                    if callback:
+                        callback(svc)
+
+    def subscribe_events(self, eventgroup_id: int):
+        self._require_started()
+        self._subscribed_eventgroups.add(eventgroup_id)
+
+    def unsubscribe_events(self, eventgroup_id: int):
+        self._require_started()
+        self._subscribed_eventgroups.discard(eventgroup_id)
+
+    # -- test helpers --
+
+    def inject_event(self, service_id: int, event_id: int, payload: bytes):
+        """Push a fake event notification into the event receiver queue."""
+        msg = _FakeMessage(service_id, event_id, payload, message_type=MSG_TYPE_NOTIFICATION)
+        self._event_receiver._sync_queue.put(msg)
+
+    def inject_message(self, service_id: int, method_id: int, payload: bytes):
+        """Push a fake inbound message into the transport receiver queue."""
+        msg = _FakeMessage(service_id, method_id, payload)
+        self.transport.receiver._sync_queue.put(msg)
+
+    def register_rpc_response(self, service_id: int, method_id: int, payload: bytes):
+        """Configure a canned RPC response for a specific service/method pair."""
+        self._rpc_responses[(service_id, method_id)] = payload
+
+
+@pytest.fixture
+def stateful_osip():
+    """Provide a fresh StatefulOsipClient instance."""
+    return StatefulOsipClient()
