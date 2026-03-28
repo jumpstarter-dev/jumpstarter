@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-import time
+import queue
+import threading
 from dataclasses import field
 
 from opensomeip import ClientConfig, TransportMode
@@ -23,6 +24,8 @@ from jumpstarter.driver import Driver, export
 
 logger = logging.getLogger(__name__)
 
+_VALID_TRANSPORT_MODES = {"TCP", "UDP"}
+
 
 def _message_to_response(msg: Message) -> SomeIpMessageResponse:
     return SomeIpMessageResponse(
@@ -36,6 +39,22 @@ def _message_to_response(msg: Message) -> SomeIpMessageResponse:
         return_code=int(msg.return_code),
         payload=msg.payload.hex(),
     )
+
+
+def _receive_from_queue(receiver: object, timeout: float, error_msg: str) -> Message:
+    """Receive a message from a MessageReceiver's internal queue.
+
+    opensomeip's MessageReceiver exposes __iter__/__next__ but no public
+    blocking-with-timeout method. We access the internal _sync_queue as a
+    pragmatic workaround until a public API is provided.
+    """
+    sync_queue = getattr(receiver, "_sync_queue", None)
+    if sync_queue is None:
+        raise RuntimeError("opensomeip MessageReceiver missing _sync_queue; API may have changed")
+    try:
+        return sync_queue.get(timeout=timeout)
+    except queue.Empty:
+        raise TimeoutError(error_msg) from None
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -63,7 +82,13 @@ class SomeIp(Driver):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-        mode = TransportMode.TCP if self.transport_mode.upper() == "TCP" else TransportMode.UDP
+        transport_upper = self.transport_mode.upper()
+        if transport_upper not in _VALID_TRANSPORT_MODES:
+            raise ValueError(
+                f"Invalid transport_mode: {self.transport_mode!r}. Must be 'TCP' or 'UDP'."
+            )
+        mode = TransportMode.TCP if transport_upper == "TCP" else TransportMode.UDP
+
         config = ClientConfig(
             local_endpoint=Endpoint(self.host, self.port),
             sd_config=SdConfig(
@@ -123,13 +148,8 @@ class SomeIp(Driver):
     @validate_call(validate_return=True)
     def receive_message(self, timeout: float = 2.0) -> SomeIpMessageResponse:
         """Receive a raw SOME/IP message."""
-        import queue
-
         receiver = self._osip_client.transport.receiver
-        try:
-            msg = receiver._sync_queue.get(timeout=timeout)
-        except queue.Empty:
-            raise TimeoutError(f"No message received within {timeout}s") from None
+        msg = _receive_from_queue(receiver, timeout, f"No message received within {timeout}s")
         return _message_to_response(msg)
 
     # --- Service Discovery ---
@@ -148,6 +168,7 @@ class SomeIp(Driver):
             instance_id=instance_id,
         )
         found: list[SomeIpServiceEntry] = []
+        event = threading.Event()
 
         def on_found(svc: ServiceInstance) -> None:
             found.append(
@@ -158,20 +179,21 @@ class SomeIp(Driver):
                     minor_version=svc.minor_version,
                 )
             )
+            event.set()
 
         self._osip_client.find(service, callback=on_found)
-        time.sleep(timeout)
+        event.wait(timeout=timeout)
         return found
 
     @export
     @validate_call(validate_return=True)
-    def subscribe_eventgroup(self, service_id: int, eventgroup_id: int) -> None:
+    def subscribe_eventgroup(self, eventgroup_id: int) -> None:
         """Subscribe to a SOME/IP event group."""
         self._osip_client.subscribe_events(eventgroup_id)
 
     @export
     @validate_call(validate_return=True)
-    def unsubscribe_eventgroup(self, service_id: int, eventgroup_id: int) -> None:
+    def unsubscribe_eventgroup(self, eventgroup_id: int) -> None:
         """Unsubscribe from a SOME/IP event group."""
         self._osip_client.unsubscribe_events(eventgroup_id)
 
@@ -179,13 +201,8 @@ class SomeIp(Driver):
     @validate_call(validate_return=True)
     def receive_event(self, timeout: float = 5.0) -> SomeIpEventNotification:
         """Receive the next event notification."""
-        import queue
-
         receiver = self._osip_client.event_subscriber.notifications()
-        try:
-            msg = receiver._sync_queue.get(timeout=timeout)
-        except queue.Empty:
-            raise TimeoutError(f"No event received within {timeout}s") from None
+        msg = _receive_from_queue(receiver, timeout, f"No event received within {timeout}s")
         return SomeIpEventNotification(
             service_id=msg.message_id.service_id,
             event_id=msg.message_id.method_id,
@@ -204,5 +221,8 @@ class SomeIp(Driver):
     @validate_call(validate_return=True)
     def reconnect(self) -> None:
         """Reconnect to the SOME/IP endpoint."""
-        self._osip_client.stop()
+        try:
+            self._osip_client.stop()
+        except Exception:
+            logger.warning("failed to stop opensomeip client during reconnect", exc_info=True)
         self._osip_client.start()

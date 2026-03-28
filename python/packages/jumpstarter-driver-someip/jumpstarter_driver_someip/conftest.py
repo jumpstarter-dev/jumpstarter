@@ -34,7 +34,7 @@ def _pack_someip(
     """Pack a SOME/IP message into wire format (big-endian)."""
     length = 8 + len(payload)
     header = struct.pack(
-        "!HHIHH BBBB",
+        "!HHIHHBBBB",
         service_id,
         method_id,
         length,
@@ -62,7 +62,7 @@ def _read_someip_message(conn: socket.socket) -> tuple[int, int, int, int, int, 
         header += chunk
 
     service_id, method_id, length, client_id, session_id, proto_ver, iface_ver, msg_type, ret_code = struct.unpack(
-        "!HHIHH BBBB", header
+        "!HHIHHBBBB", header
     )
 
     payload_len = length - 8

@@ -1,4 +1,5 @@
 import os
+import queue as _queue
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,8 +25,13 @@ def _make_mock_message():
 
 
 def _make_mock_osip_client():
-    import queue as _queue
+    """Build a mock OsipClient wired to return canned messages.
 
+    The driver reads from opensomeip's internal ``_sync_queue`` on the
+    ``MessageReceiver`` (no public blocking-with-timeout API exists yet).
+    We replicate that structure here so the driver's ``_receive_from_queue``
+    helper works as expected.
+    """
     mock = MagicMock()
 
     mock_response = _make_mock_message()
@@ -92,7 +98,7 @@ def test_someip_subscribe_eventgroup(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
-        client.subscribe_eventgroup(0x1234, 1)
+        client.subscribe_eventgroup(1)
         mock_client.subscribe_events.assert_called_once_with(1)
 
 
@@ -103,7 +109,7 @@ def test_someip_unsubscribe_eventgroup(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
-        client.unsubscribe_eventgroup(0x1234, 1)
+        client.unsubscribe_eventgroup(1)
         mock_client.unsubscribe_events.assert_called_once_with(1)
 
 
@@ -143,6 +149,18 @@ def test_someip_reconnect(mock_osip_cls):
         assert mock_client.start.call_count >= 1
 
 
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_reconnect_survives_stop_failure(mock_osip_cls):
+    mock_client = _make_mock_osip_client()
+    mock_osip_cls.return_value = mock_client
+    mock_client.stop.side_effect = [RuntimeError("stop failed"), None]
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.reconnect()
+        assert mock_client.start.call_count >= 2
+
+
 # --- Error path tests ---
 
 
@@ -160,8 +178,6 @@ def test_someip_rpc_call_timeout(mock_osip_cls):
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
 def test_someip_receive_message_timeout(mock_osip_cls):
-    import queue as _queue
-
     mock_client = _make_mock_osip_client()
     mock_client.transport.receiver._sync_queue = _queue.Queue()
     mock_osip_cls.return_value = mock_client
@@ -193,9 +209,11 @@ def test_someip_invalid_port_type():
         SomeIp(host="127.0.0.1", port="not_a_port")
 
 
-def test_someip_invalid_transport_mode():
-    with pytest.raises(ValidationError):
-        SomeIp(host="127.0.0.1", transport_mode=12345)
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_invalid_transport_mode(mock_osip_cls):
+    mock_osip_cls.return_value = _make_mock_osip_client()
+    with pytest.raises(ValueError, match="Invalid transport_mode"):
+        SomeIp(host="127.0.0.1", transport_mode="INVALID")
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")

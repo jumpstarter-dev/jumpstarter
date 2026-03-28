@@ -40,9 +40,9 @@ export:
 
 ### RPC
 
-| Method                                          | Description                        |
-|-------------------------------------------------|------------------------------------|
-| `rpc_call(service_id, method_id, payload, timeout)` | Make a SOME/IP RPC call        |
+| Method                                               | Description                 |
+|------------------------------------------------------|-----------------------------|
+| `rpc_call(service_id, method_id, payload, timeout)`  | Make a SOME/IP RPC call     |
 
 ### Raw Messaging
 
@@ -53,17 +53,17 @@ export:
 
 ### Service Discovery
 
-| Method                                          | Description                        |
-|-------------------------------------------------|------------------------------------|
-| `find_service(service_id, instance_id, timeout)` | Find services via SOME/IP-SD      |
+| Method                                                       | Description                       |
+|--------------------------------------------------------------|-----------------------------------|
+| `find_service(service_id, instance_id=0xFFFF, timeout=5.0)`  | Find services via SOME/IP-SD      |
 
 ### Events
 
-| Method                                          | Description                        |
-|-------------------------------------------------|------------------------------------|
-| `subscribe_eventgroup(service_id, eventgroup_id)` | Subscribe to an event group      |
-| `unsubscribe_eventgroup(service_id, eventgroup_id)` | Unsubscribe from an event group |
-| `receive_event(timeout)`                        | Receive next event notification    |
+| Method                                  | Description                        |
+|-----------------------------------------|------------------------------------|
+| `subscribe_eventgroup(eventgroup_id)`   | Subscribe to an event group        |
+| `unsubscribe_eventgroup(eventgroup_id)` | Unsubscribe from an event group    |
+| `receive_event(timeout)`               | Receive next event notification    |
 
 ### Connection Management
 
@@ -88,14 +88,14 @@ with env() as client:
     someip.send_message(0x1234, 0x0001, b"\xAA\xBB")
     msg = someip.receive_message(timeout=2.0)
 
-    # Service discovery
+    # Service discovery (instance_id defaults to 0xFFFF = any)
     services = someip.find_service(0x1234, timeout=3.0)
     for svc in services:
         print(f"Found: service={svc.service_id:#06x} instance={svc.instance_id:#06x}")
 
     # Events
-    someip.subscribe_eventgroup(0x1234, 1)
+    someip.subscribe_eventgroup(1)
     event = someip.receive_event(timeout=5.0)
     print(f"Event: {bytes.fromhex(event.payload)}")
-    someip.unsubscribe_eventgroup(0x1234, 1)
+    someip.unsubscribe_eventgroup(1)
 ```

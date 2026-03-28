@@ -66,13 +66,13 @@ class SomeIpDriverClient(DriverClient):
 
     # --- Events ---
 
-    def subscribe_eventgroup(self, service_id: int, eventgroup_id: int) -> None:
+    def subscribe_eventgroup(self, eventgroup_id: int) -> None:
         """Subscribe to a SOME/IP event group."""
-        self.call("subscribe_eventgroup", service_id, eventgroup_id)
+        self.call("subscribe_eventgroup", eventgroup_id)
 
-    def unsubscribe_eventgroup(self, service_id: int, eventgroup_id: int) -> None:
+    def unsubscribe_eventgroup(self, eventgroup_id: int) -> None:
         """Unsubscribe from a SOME/IP event group."""
-        self.call("unsubscribe_eventgroup", service_id, eventgroup_id)
+        self.call("unsubscribe_eventgroup", eventgroup_id)
 
     def receive_event(self, timeout: float = 5.0) -> SomeIpEventNotification:
         """Receive the next event notification."""
