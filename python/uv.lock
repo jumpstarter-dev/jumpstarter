@@ -28,6 +28,7 @@ members = [
     "jumpstarter-driver-esp32",
     "jumpstarter-driver-flashers",
     "jumpstarter-driver-gpiod",
+    "jumpstarter-driver-gptp",
     "jumpstarter-driver-http",
     "jumpstarter-driver-http-power",
     "jumpstarter-driver-iscsi",
@@ -2578,6 +2579,34 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-gptp"
+source = { editable = "packages/jumpstarter-driver-gptp" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
