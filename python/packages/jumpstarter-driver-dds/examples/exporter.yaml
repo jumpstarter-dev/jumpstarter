@@ -1,0 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: dds-exporter
+endpoint: ""
+token: ""
+export:
+  dds:
+    type: jumpstarter_driver_dds.driver.Dds
+    config:
+      domain_id: 0
+      default_reliability: RELIABLE
+      default_durability: VOLATILE
+      default_history_depth: 10
