@@ -52,8 +52,10 @@ def _build_cyclonedds_qos(qos: DdsTopicQos):
 def _make_idl_type(topic_name: str, fields: list[str]):
     """Dynamically create a CycloneDDS IdlStruct type for the given fields.
 
-    Each field name maps to a ``str`` type. The generated class name is
-    derived from the topic name to avoid collisions between topics.
+    Each field name maps to a ``str`` type. For complex or mixed-type
+    schemas, define custom IdlStruct subclasses directly and register
+    them with the backend. The generated class name is derived from the
+    topic name to avoid collisions between topics.
     """
     import dataclasses as dc
 
@@ -79,7 +81,17 @@ class DdsBackend:
         self._sample_counts: dict[str, int] = {}
         self._connected = False
 
+    @property
+    def is_connected(self) -> bool:
+        """Whether the backend is currently connected to a DDS domain."""
+        return self._connected
+
+    def has_topic(self, name: str) -> bool:
+        """Check whether a topic with the given name has been registered."""
+        return name in self._topics
+
     def connect(self) -> DdsParticipantInfo:
+        """Create a CycloneDDS DomainParticipant and mark the backend as connected."""
         if self._connected:
             raise RuntimeError("Already connected to DDS domain")
         from cyclonedds.domain import DomainParticipant
@@ -93,6 +105,7 @@ class DdsBackend:
         )
 
     def disconnect(self) -> None:
+        """Tear down all DDS entities and release the participant."""
         if not self._connected:
             raise RuntimeError("Not connected to DDS domain")
         self._writers.clear()
@@ -105,6 +118,7 @@ class DdsBackend:
         self._connected = False
 
     def _require_connected(self):
+        """Raise ``RuntimeError`` if the backend is not connected."""
         if not self._connected:
             raise RuntimeError("Not connected -- call connect() first")
 
@@ -114,6 +128,7 @@ class DdsBackend:
         fields: list[str],
         qos: DdsTopicQos,
     ) -> DdsTopicInfo:
+        """Register a topic, create its writer/reader, and return topic info."""
         self._require_connected()
         if name in self._topics:
             raise ValueError(f"Topic '{name}' already exists")
@@ -137,6 +152,7 @@ class DdsBackend:
         return DdsTopicInfo(name=name, fields=fields, qos=qos)
 
     def list_topics(self) -> list[DdsTopicInfo]:
+        """Return info for every registered topic."""
         self._require_connected()
         result = []
         for name in self._topics:
@@ -153,6 +169,7 @@ class DdsBackend:
         return result
 
     def publish(self, topic_name: str, data: dict[str, Any]) -> DdsPublishResult:
+        """Write a data sample via the topic's DataWriter."""
         self._require_connected()
         if topic_name not in self._writers:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
@@ -165,6 +182,7 @@ class DdsBackend:
         return DdsPublishResult(topic_name=topic_name, success=True, samples_written=1)
 
     def read(self, topic_name: str, max_samples: int) -> DdsReadResult:
+        """Take up to *max_samples* from the topic's DataReader."""
         self._require_connected()
         if topic_name not in self._readers:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
@@ -182,6 +200,7 @@ class DdsBackend:
         return DdsReadResult(topic_name=topic_name, samples=samples, sample_count=len(samples))
 
     def get_participant_info(self) -> DdsParticipantInfo:
+        """Return metadata about this DDS domain participant."""
         self._require_connected()
         return DdsParticipantInfo(
             domain_id=self._domain_id,
@@ -201,7 +220,17 @@ class MockDdsBackend:
         self._buffers: dict[str, list[DdsSample]] = {}
         self._sample_counts: dict[str, int] = {}
 
+    @property
+    def is_connected(self) -> bool:
+        """Whether the backend is currently connected to a DDS domain."""
+        return self._connected
+
+    def has_topic(self, name: str) -> bool:
+        """Check whether a topic with the given name has been registered."""
+        return name in self._topics
+
     def connect(self) -> DdsParticipantInfo:
+        """Mark the mock backend as connected."""
         if self._connected:
             raise RuntimeError("Already connected to DDS domain")
         self._connected = True
@@ -212,6 +241,7 @@ class MockDdsBackend:
         )
 
     def disconnect(self) -> None:
+        """Disconnect and clear all in-memory state."""
         if not self._connected:
             raise RuntimeError("Not connected to DDS domain")
         self._connected = False
@@ -221,6 +251,7 @@ class MockDdsBackend:
         self._sample_counts.clear()
 
     def _require_connected(self):
+        """Raise ``RuntimeError`` if the backend is not connected."""
         if not self._connected:
             raise RuntimeError("Not connected -- call connect() first")
 
@@ -230,6 +261,7 @@ class MockDdsBackend:
         fields: list[str],
         qos: DdsTopicQos,
     ) -> DdsTopicInfo:
+        """Register a topic in the in-memory store."""
         self._require_connected()
         if name in self._topics:
             raise ValueError(f"Topic '{name}' already exists")
@@ -242,6 +274,7 @@ class MockDdsBackend:
         return info
 
     def list_topics(self) -> list[DdsTopicInfo]:
+        """Return info for every registered topic in the mock store."""
         self._require_connected()
         result = []
         for name, info in self._topics.items():
@@ -256,6 +289,7 @@ class MockDdsBackend:
         return result
 
     def publish(self, topic_name: str, data: dict[str, Any]) -> DdsPublishResult:
+        """Buffer a sample, enforcing history depth and field validation."""
         self._require_connected()
         if topic_name not in self._topics:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
@@ -275,6 +309,7 @@ class MockDdsBackend:
         return DdsPublishResult(topic_name=topic_name, success=True, samples_written=1)
 
     def read(self, topic_name: str, max_samples: int) -> DdsReadResult:
+        """Take up to *max_samples* from the in-memory buffer."""
         self._require_connected()
         if topic_name not in self._topics:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
@@ -285,6 +320,7 @@ class MockDdsBackend:
         return DdsReadResult(topic_name=topic_name, samples=taken, sample_count=len(taken))
 
     def get_participant_info(self) -> DdsParticipantInfo:
+        """Return metadata about this mock participant."""
         self._require_connected()
         return DdsParticipantInfo(
             domain_id=self._domain_id,
@@ -311,6 +347,7 @@ class Dds(Driver):
     _backend: DdsBackend | MockDdsBackend = field(init=False, repr=False)
 
     def __post_init__(self):
+        """Initialise the real or mock backend based on ``use_mock``."""
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
         if self.use_mock:
@@ -320,10 +357,12 @@ class Dds(Driver):
 
     @classmethod
     def client(cls) -> str:
+        """Return the fully-qualified path to the matching client class."""
         return "jumpstarter_driver_dds.client.DdsClient"
 
     def close(self):
-        if self._backend._connected:
+        """Disconnect the backend (if connected) and release resources."""
+        if self._backend.is_connected:
             try:
                 self._backend.disconnect()
             except Exception:
@@ -331,6 +370,7 @@ class Dds(Driver):
         super().close()
 
     def _default_qos(self) -> DdsTopicQos:
+        """Build a ``DdsTopicQos`` from this driver's default settings."""
         return DdsTopicQos(
             reliability=self.default_reliability,
             durability=self.default_durability,
@@ -401,8 +441,9 @@ class Dds(Driver):
         """
         import asyncio
 
-        self._backend._require_connected()
-        if topic_name not in self._backend._topics:
+        if not self._backend.is_connected:
+            raise RuntimeError("Not connected -- call connect() first")
+        if not self._backend.has_topic(topic_name):
             raise ValueError(f"Topic '{topic_name}' not registered")
 
         for _ in range(100):
@@ -429,12 +470,14 @@ class MockDds(Driver):
     _internal_backend: MockDdsBackend = field(init=False, repr=False)
 
     def __post_init__(self):
+        """Initialise the internal mock backend (or use the injected one)."""
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
         self._internal_backend = self.backend or MockDdsBackend(domain_id=self.domain_id)
 
     @classmethod
     def client(cls) -> str:
+        """Return the fully-qualified path to the matching client class."""
         return "jumpstarter_driver_dds.client.DdsClient"
 
     @export
@@ -498,8 +541,9 @@ class MockDds(Driver):
         """Stream data samples from a mock topic."""
         import asyncio
 
-        self._internal_backend._require_connected()
-        if topic_name not in self._internal_backend._topics:
+        if not self._internal_backend.is_connected:
+            raise RuntimeError("Not connected -- call connect() first")
+        if not self._internal_backend.has_topic(topic_name):
             raise ValueError(f"Topic '{topic_name}' not registered")
 
         for _ in range(100):
