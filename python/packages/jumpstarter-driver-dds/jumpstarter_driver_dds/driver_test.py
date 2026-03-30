@@ -375,8 +375,10 @@ class TestClientCli:
         with serve(MockDds()) as client:
             cli = client.cli()
             assert hasattr(cli, "commands")
-            assert "topics" in cli.commands
-            assert "info" in cli.commands
+            expected_commands = {"connect", "disconnect", "topics", "info", "read", "monitor"}
+            assert expected_commands.issubset(set(cli.commands)), (
+                f"Missing CLI commands: {expected_commands - set(cli.commands)}"
+            )
 
 
 # =============================================================================
@@ -474,6 +476,13 @@ class TestStatefulPublishSubscribe:
         client.create_topic("data", ["x", "y"])
         with pytest.raises(DriverError, match="Unknown field"):
             client.publish("data", {"x": "10", "z": "bad"})
+
+    def test_stateful_publish_missing_field_rejected(self, stateful_client):
+        client, _backend = stateful_client
+        client.connect()
+        client.create_topic("data", ["x", "y"])
+        with pytest.raises(DriverError, match="Missing required field"):
+            client.publish("data", {"x": "10"})
 
     def test_stateful_read_consumes_samples(self, stateful_client):
         client, _backend = stateful_client

@@ -50,9 +50,9 @@ class DdsClient(DriverClient):
     def list_topics(self) -> list[DdsTopicInfo]:
         """List all registered topics."""
         raw = self.call("list_topics")
-        if isinstance(raw, list):
-            return [DdsTopicInfo.model_validate(t) for t in raw]
-        return []
+        if not isinstance(raw, list):
+            raise TypeError(f"Expected list from list_topics(), got {type(raw).__name__}")
+        return [DdsTopicInfo.model_validate(t) for t in raw]
 
     def publish(self, topic_name: str, data: dict[str, Any]) -> DdsPublishResult:
         """Publish a data sample to a DDS topic."""
@@ -72,13 +72,14 @@ class DdsClient(DriverClient):
             yield DdsSample.model_validate(v)
 
     def _register_lifecycle_commands(self, base):
-        @base.command()
+        """Register connect, disconnect, topics, and info CLI commands."""
+        @base.command(name="connect")
         def connect_cmd():
             """Connect to DDS domain"""
             info = self.connect()
             click.echo(f"Connected to DDS domain {info.domain_id}")
 
-        @base.command()
+        @base.command(name="disconnect")
         def disconnect_cmd():
             """Disconnect from DDS domain"""
             self.disconnect()
@@ -107,7 +108,8 @@ class DdsClient(DriverClient):
             click.echo(f"Topic count:  {pinfo.topic_count}")
 
     def _register_data_commands(self, base):
-        @base.command()
+        """Register read and monitor CLI commands."""
+        @base.command(name="read")
         @click.argument("topic_name")
         @click.option("--max-samples", "-n", default=10, help="Max samples to read")
         def read_cmd(topic_name, max_samples):
@@ -117,7 +119,7 @@ class DdsClient(DriverClient):
             for s in result.samples:
                 click.echo(f"  {s.data}")
 
-        @base.command()
+        @base.command(name="monitor")
         @click.argument("topic_name")
         @click.option("--count", "-n", default=10, help="Number of events")
         def monitor_cmd(topic_name, count):
@@ -128,6 +130,7 @@ class DdsClient(DriverClient):
                     break
 
     def cli(self):
+        """Build and return the Click command group for this driver."""
         @driver_click_group(self)
         def base():
             """DDS pub/sub communication"""
