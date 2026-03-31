@@ -1,8 +1,11 @@
-"""Tests for SourcePrefixFormatter in opt.py."""
+"""Tests for opt.py utilities."""
 
 import logging
 
-from jumpstarter_cli_common.opt import SourcePrefixFormatter
+import click
+import pytest
+
+from jumpstarter_cli_common.opt import SourcePrefixFormatter, validate_name
 
 
 class TestSourcePrefixFormatter:
@@ -76,3 +79,20 @@ class TestSourcePrefixFormatter:
         )
         formatted3 = formatter.format(record3)
         assert "[different.source]" in formatted3
+
+
+class TestValidateName:
+    def test_raises_on_none(self) -> None:
+        with pytest.raises(click.UsageError, match="Missing required argument 'NAME'."):
+            validate_name(None)
+
+    def test_raises_on_empty_string(self) -> None:
+        with pytest.raises(click.UsageError, match="Missing required argument 'NAME'."):
+            validate_name("")
+
+    def test_raises_on_whitespace_only(self) -> None:
+        with pytest.raises(click.UsageError, match="Missing required argument 'NAME'."):
+            validate_name("   ")
+
+    def test_accepts_valid_name(self) -> None:
+        validate_name("my-resource")
