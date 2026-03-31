@@ -4,12 +4,9 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/sha256"
-	"encoding/binary"
-	"math/rand"
+	"crypto/rand"
 	"time"
 
-	"filippo.io/keygen"
 	"github.com/gin-gonic/gin"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/golang-jwt/jwt/v5"
@@ -31,11 +28,8 @@ func NewSigner(privateKey *ecdsa.PrivateKey, issuer, audience string) *Signer {
 	}
 }
 
-func NewSignerFromSeed(seed []byte, issuer, audience string) (*Signer, error) {
-	hash := sha256.Sum256(seed)
-	source := rand.NewSource(int64(binary.BigEndian.Uint64(hash[:8])))
-	reader := rand.New(source)
-	key, err := keygen.ECDSALegacy(elliptic.P256(), reader)
+func NewSignerWithRandomKey(issuer, audience string) (*Signer, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}

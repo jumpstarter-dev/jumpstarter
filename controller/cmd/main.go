@@ -209,8 +209,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	oidcSigner, err := oidc.NewSignerFromSeed(
-		[]byte(os.Getenv("CONTROLLER_KEY")),
+	oidcSigner, err := oidc.NewSignerWithRandomKey(
 		"https://localhost:8085",
 		"jumpstarter",
 	)
