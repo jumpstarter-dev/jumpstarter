@@ -75,7 +75,7 @@ func main() {
 	}
 
 	svc := service.RouterService{
-		ServerOption: serverOption,
+		ServerOptions: serverOption,
 	}
 
 	err = svc.Start(ctx)

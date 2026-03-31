@@ -77,7 +77,7 @@ type ControllerService struct {
 	Authn        authentication.ContextAuthenticator
 	Authz        authorizer.Authorizer
 	Attr         authorization.ContextAttributesGetter
-	ServerOption grpc.ServerOption
+	ServerOptions []grpc.ServerOption
 	Router       config.Router
 	listenQueues sync.Map
 }
@@ -938,8 +938,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		}
 	}
 
-	server := grpc.NewServer(
-		s.ServerOption,
+	opts := append(s.ServerOptions,
 		grpc.ChainUnaryInterceptor(func(
 			gctx context.Context,
 			req any,
@@ -957,6 +956,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 			return handler(srv, &wrappedStream{ServerStream: ss})
 		}, recovery.StreamServerInterceptor()),
 	)
+	server := grpc.NewServer(opts...)
 
 	pb.RegisterControllerServiceServer(server, s)
 	cpb.RegisterClientServiceServer(

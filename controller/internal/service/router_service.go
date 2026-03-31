@@ -40,7 +40,7 @@ import (
 // RouterService exposes a gRPC service
 type RouterService struct {
 	pb.UnimplementedRouterServiceServer
-	ServerOption grpc.ServerOption
+	ServerOptions []grpc.ServerOption
 	pending      sync.Map
 }
 
@@ -150,12 +150,13 @@ func (s *RouterService) Start(ctx context.Context) error {
 		}
 	}
 
-	server := grpc.NewServer(
+	opts := []grpc.ServerOption{
 		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
 		grpc.ChainUnaryInterceptor(recovery.UnaryServerInterceptor()),
 		grpc.ChainStreamInterceptor(recovery.StreamServerInterceptor()),
-		s.ServerOption,
-	)
+	}
+	opts = append(opts, s.ServerOptions...)
+	server := grpc.NewServer(opts...)
 
 	pb.RegisterRouterServiceServer(server, s)
 
