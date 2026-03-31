@@ -440,6 +440,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	}
 
 	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	defer s.cleanupListenQueue(leaseName)
 	for {
 		select {
 		case <-ctx.Done():
@@ -450,6 +451,10 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 			}
 		}
 	}
+}
+
+func (s *ControllerService) cleanupListenQueue(leaseName string) {
+	s.listenQueues.Delete(leaseName)
 }
 
 // Status is a stream of status updates for the exporter.
