@@ -451,7 +451,7 @@ EOF
 
   jmp create lease --selector example.com/board=oidc --duration 1d
 
-  run jmp get leases
+  run env COLUMNS=200 jmp get leases
   assert_success
   assert_output --partial "EXPIRES AT"
   assert_output --partial "REMAINING"
