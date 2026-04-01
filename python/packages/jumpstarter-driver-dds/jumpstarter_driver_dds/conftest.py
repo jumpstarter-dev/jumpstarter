@@ -97,6 +97,14 @@ class StatefulDdsBackend(MockDdsBackend):
         return result
 
 
+@pytest.fixture(params=["mock", "stateful"])
+def any_backend(request):
+    """Yield every backend implementation so parity tests run against all."""
+    if request.param == "mock":
+        return MockDdsBackend()
+    return StatefulDdsBackend()
+
+
 @pytest.fixture
 def stateful_backend():
     return StatefulDdsBackend(domain_id=0)
