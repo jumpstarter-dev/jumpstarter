@@ -98,9 +98,11 @@ with env() as client:
     for sample in result.samples:
         print(f"Temp: {sample.data['value']} {sample.data['unit']}")
 
-    # Stream samples
-    for sample in dds.monitor("sensor/temperature"):
+    # Stream samples (bounded read -- monitor is infinite by default)
+    for i, sample in enumerate(dds.monitor("sensor/temperature")):
         print(f"Live: {sample.data}")
+        if i + 1 >= 10:
+            break
 
     dds.disconnect()
 ```

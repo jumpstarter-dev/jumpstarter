@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any
@@ -73,6 +74,7 @@ class DdsClient(DriverClient):
 
     def _register_lifecycle_commands(self, base):
         """Register connect, disconnect, topics, and info CLI commands."""
+
         @base.command(name="connect")
         def connect_cmd():
             """Connect to DDS domain"""
@@ -94,9 +96,7 @@ class DdsClient(DriverClient):
                 return
             for t in topic_list:
                 click.echo(
-                    f"  {t.name}: fields={t.fields} "
-                    f"reliability={t.qos.reliability.value} "
-                    f"samples={t.sample_count}"
+                    f"  {t.name}: fields={t.fields} reliability={t.qos.reliability.value} samples={t.sample_count}"
                 )
 
         @base.command()
@@ -108,7 +108,28 @@ class DdsClient(DriverClient):
             click.echo(f"Topic count:  {pinfo.topic_count}")
 
     def _register_data_commands(self, base):
-        """Register read and monitor CLI commands."""
+        """Register create-topic, publish, read, and monitor CLI commands."""
+
+        @base.command(name="create-topic")
+        @click.argument("name")
+        @click.argument("fields", nargs=-1, required=True)
+        @click.option("--reliability", "-r", default=None, help="QoS reliability")
+        @click.option("--durability", "-d", default=None, help="QoS durability")
+        @click.option("--history-depth", "-h", default=None, type=int, help="History depth")
+        def create_topic_cmd(name, fields, reliability, durability, history_depth):
+            """Create a topic: create-topic NAME FIELD1 FIELD2 ..."""
+            topic = self.create_topic(name, list(fields), reliability, durability, history_depth)
+            click.echo(f"Created topic '{topic.name}' with fields {topic.fields}")
+
+        @base.command(name="publish")
+        @click.argument("topic_name")
+        @click.argument("data_json")
+        def publish_cmd(topic_name, data_json):
+            """Publish JSON data to a topic: publish TOPIC '{"key": "val"}'"""
+            data = json.loads(data_json)
+            result = self.publish(topic_name, data)
+            click.echo(f"Published {result.samples_written} sample(s) to {topic_name}")
+
         @base.command(name="read")
         @click.argument("topic_name")
         @click.option("--max-samples", "-n", default=10, help="Max samples to read")
@@ -131,6 +152,7 @@ class DdsClient(DriverClient):
 
     def cli(self):
         """Build and return the Click command group for this driver."""
+
         @driver_click_group(self)
         def base():
             """DDS pub/sub communication"""
