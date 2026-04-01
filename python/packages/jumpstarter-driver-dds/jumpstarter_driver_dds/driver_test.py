@@ -12,7 +12,7 @@ from .common import (
     DdsTopicInfo,
     DdsTopicQos,
 )
-from .driver import MockDds, MockDdsBackend
+from .driver import Dds, MockDds, MockDdsBackend
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
 
@@ -62,13 +62,20 @@ class TestPydanticModels:
         assert sample.data["x"] == "1"
 
     def test_publish_result(self):
-        result = DdsPublishResult(topic_name="test", success=True, samples_written=1)
-        assert result.success is True
+        result = DdsPublishResult(topic_name="test", samples_written=1)
         assert result.samples_written == 1
 
     def test_read_result_empty(self):
         result = DdsReadResult(topic_name="test", samples=[], sample_count=0)
         assert result.sample_count == 0
+
+    def test_read_result_count_mismatch_raises(self):
+        with pytest.raises(ValueError, match="sample_count"):
+            DdsReadResult(
+                topic_name="test",
+                samples=[DdsSample(topic_name="test", data={"k": "v"})],
+                sample_count=0,
+            )
 
     def test_reliability_enum(self):
         assert DdsReliability("RELIABLE") == DdsReliability.RELIABLE
@@ -128,10 +135,26 @@ class TestMockDdsBackendUnit:
         backend.connect()
         backend.create_topic("t", ["val"], DdsTopicQos())
         result = backend.publish("t", {"val": "42"})
-        assert result.success is True
+        assert result.samples_written == 1
         read_result = backend.read("t", 10)
         assert read_result.sample_count == 1
         assert read_result.samples[0].data["val"] == "42"
+
+    def test_publish_partial_fills_defaults(self):
+        """Missing fields are filled with empty string, matching real backend."""
+        backend = MockDdsBackend()
+        backend.connect()
+        backend.create_topic("t", ["x", "y"], DdsTopicQos())
+        backend.publish("t", {"x": "10"})
+        result = backend.read("t", 10)
+        assert result.samples[0].data == {"x": "10", "y": ""}
+
+    def test_publish_unknown_field_raises(self):
+        backend = MockDdsBackend()
+        backend.connect()
+        backend.create_topic("t", ["x"], DdsTopicQos())
+        with pytest.raises(ValueError, match="Unknown field"):
+            backend.publish("t", {"x": "1", "z": "bad"})
 
     def test_read_empty_topic(self):
         backend = MockDdsBackend()
@@ -247,13 +270,22 @@ class TestMockDdsE2E:
             client.connect()
             client.create_topic("data", ["x", "y"])
             pub_result = client.publish("data", {"x": "10", "y": "20"})
-            assert pub_result.success is True
             assert pub_result.samples_written == 1
 
             read_result = client.read("data")
             assert read_result.sample_count == 1
             assert read_result.samples[0].data["x"] == "10"
             assert read_result.samples[0].data["y"] == "20"
+            client.disconnect()
+
+    def test_publish_partial_fills_defaults(self):
+        """Partial publish fills missing fields with empty string."""
+        with serve(MockDds()) as client:
+            client.connect()
+            client.create_topic("data", ["x", "y"])
+            client.publish("data", {"x": "10"})
+            result = client.read("data")
+            assert result.samples[0].data == {"x": "10", "y": ""}
             client.disconnect()
 
     def test_multiple_topics(self):
@@ -367,6 +399,13 @@ class TestMockDdsErrorPaths:
             with pytest.raises(DriverError, match="already exists"):
                 client.create_topic("t", ["f"])
 
+    def test_publish_unknown_field(self):
+        with serve(MockDds()) as client:
+            client.connect()
+            client.create_topic("t", ["x"])
+            with pytest.raises(DriverError, match="Unknown field"):
+                client.publish("t", {"x": "1", "z": "bad"})
+
 
 class TestClientCli:
     """2c. Client CLI interface tests."""
@@ -375,10 +414,47 @@ class TestClientCli:
         with serve(MockDds()) as client:
             cli = client.cli()
             assert hasattr(cli, "commands")
-            expected_commands = {"connect", "disconnect", "topics", "info", "read", "monitor"}
+            expected_commands = {
+                "connect",
+                "disconnect",
+                "topics",
+                "info",
+                "create-topic",
+                "publish",
+                "read",
+                "monitor",
+            }
             assert expected_commands.issubset(set(cli.commands)), (
                 f"Missing CLI commands: {expected_commands - set(cli.commands)}"
             )
+
+
+class TestDdsUseMock:
+    """2d. Test Dds(use_mock=True) path."""
+
+    def test_use_mock_flag(self):
+        driver = Dds(use_mock=True)
+        with serve(driver) as client:
+            info = client.connect()
+            assert info.is_connected is True
+            client.create_topic("t", ["f"])
+            client.publish("t", {"f": "v"})
+            result = client.read("t")
+            assert result.sample_count == 1
+            client.disconnect()
+
+    def test_use_mock_custom_qos(self):
+        driver = Dds(
+            use_mock=True,
+            default_reliability=DdsReliability.BEST_EFFORT,
+            default_history_depth=5,
+        )
+        with serve(driver) as client:
+            client.connect()
+            topic = client.create_topic("t", ["v"])
+            assert topic.qos.reliability == DdsReliability.BEST_EFFORT
+            assert topic.qos.history_depth == 5
+            client.disconnect()
 
 
 # =============================================================================
@@ -437,12 +513,6 @@ class TestStatefulTopicManagement:
         with pytest.raises(DriverError, match="already exists"):
             client.create_topic("sensor", ["humidity"])
 
-    def test_stateful_empty_fields_rejected(self, stateful_client):
-        client, _backend = stateful_client
-        client.connect()
-        with pytest.raises(DriverError, match="at least one field"):
-            client.create_topic("empty", [])
-
     def test_stateful_multiple_topics_independent(self, stateful_client):
         client, backend = stateful_client
         client.connect()
@@ -467,8 +537,17 @@ class TestStatefulPublishSubscribe:
         client.connect()
         client.create_topic("data", ["x", "y"])
         result = client.publish("data", {"x": "10", "y": "20"})
-        assert result.success is True
+        assert result.samples_written == 1
         assert backend._total_published == 1
+
+    def test_stateful_publish_partial_fills_defaults(self, stateful_client):
+        """Partial publish fills missing fields with empty string."""
+        client, _backend = stateful_client
+        client.connect()
+        client.create_topic("data", ["x", "y"])
+        client.publish("data", {"x": "10"})
+        result = client.read("data")
+        assert result.samples[0].data == {"x": "10", "y": ""}
 
     def test_stateful_publish_invalid_field_rejected(self, stateful_client):
         client, _backend = stateful_client
@@ -476,13 +555,6 @@ class TestStatefulPublishSubscribe:
         client.create_topic("data", ["x", "y"])
         with pytest.raises(DriverError, match="Unknown field"):
             client.publish("data", {"x": "10", "z": "bad"})
-
-    def test_stateful_publish_missing_field_rejected(self, stateful_client):
-        client, _backend = stateful_client
-        client.connect()
-        client.create_topic("data", ["x", "y"])
-        with pytest.raises(DriverError, match="Missing required field"):
-            client.publish("data", {"x": "10"})
 
     def test_stateful_read_consumes_samples(self, stateful_client):
         client, _backend = stateful_client

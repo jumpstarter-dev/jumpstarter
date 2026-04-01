@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class DdsReliability(str, Enum):
@@ -56,10 +56,13 @@ class DdsSample(BaseModel):
 
 
 class DdsPublishResult(BaseModel):
-    """Result of a publish operation."""
+    """Result of a publish operation.
+
+    Publish failures always raise exceptions; this model is only
+    returned on success.
+    """
 
     topic_name: str
-    success: bool
     samples_written: int = 0
 
 
@@ -69,3 +72,10 @@ class DdsReadResult(BaseModel):
     topic_name: str
     samples: list[DdsSample] = []
     sample_count: int = 0
+
+    @model_validator(mode="after")
+    def _validate_sample_count(self) -> DdsReadResult:
+        """Ensure sample_count matches the actual number of samples."""
+        if self.sample_count != len(self.samples):
+            raise ValueError(f"sample_count ({self.sample_count}) does not match len(samples) ({len(self.samples)})")
+        return self

@@ -20,12 +20,13 @@ class DdsTopicError(ValueError):
 
 class StatefulDdsBackend(MockDdsBackend):
     """Drop-in replacement for MockDdsBackend that enforces
-    DDS lifecycle rules and tracks operation history.
+    the same rules as the real and mock backends while tracking
+    operation history for test assertions.
 
     Tracks:
     - Connection lifecycle (connected/disconnected)
     - Topic creation and uniqueness
-    - Publish field validation against topic schema (unknown AND missing fields)
+    - Publish field validation (same as MockDdsBackend)
     - Read buffer management with history depth
     - Operation ordering (must connect before other ops)
     - Call log for audit -- intentionally preserved across disconnect
@@ -61,31 +62,24 @@ class StatefulDdsBackend(MockDdsBackend):
             raise DdsNotConnectedError("Not connected -- call connect() first")
 
     def create_topic(self, name, fields, qos):
-        """Create a topic, enforcing non-empty fields and uniqueness."""
+        """Create a topic, enforcing uniqueness."""
         self._require_connected()
         if name in self._topics:
             raise DdsTopicError(f"Topic '{name}' already exists")
-        if not fields:
-            raise DdsTopicError("Topic must have at least one field")
         result = super().create_topic(name, fields, qos)
         self._call_log.append(f"create_topic({name})")
         return result
 
     def publish(self, topic_name, data):
-        """Publish data after validating both unknown and missing fields."""
+        """Publish data after validating unknown fields (matching MockDdsBackend)."""
         self._require_connected()
         if topic_name not in self._topics:
             raise DdsTopicError(f"Topic '{topic_name}' not registered")
 
         fields = self._topic_fields[topic_name]
-        for key in data:
-            if key not in fields:
-                raise DdsTopicError(f"Unknown field '{key}' for topic '{topic_name}', valid: {fields}")
-        missing = [f for f in fields if f not in data]
-        if missing:
-            raise DdsTopicError(
-                f"Missing required field(s) {missing} for topic '{topic_name}'"
-            )
+        unknown = set(data) - set(fields)
+        if unknown:
+            raise DdsTopicError(f"Unknown field(s) {unknown} for topic '{topic_name}', valid: {fields}")
 
         result = super().publish(topic_name, data)
         self._total_published += 1
