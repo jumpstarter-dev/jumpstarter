@@ -41,7 +41,7 @@ import (
 type RouterService struct {
 	pb.UnimplementedRouterServiceServer
 	ServerOptions []grpc.ServerOption
-	pending      sync.Map
+	pending       sync.Map
 }
 
 type streamContext struct {

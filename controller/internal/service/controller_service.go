@@ -72,14 +72,14 @@ import (
 // ControllerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
-	Client       client.WithWatch
-	Scheme       *runtime.Scheme
-	Authn        authentication.ContextAuthenticator
-	Authz        authorizer.Authorizer
-	Attr         authorization.ContextAttributesGetter
+	Client        client.WithWatch
+	Scheme        *runtime.Scheme
+	Authn         authentication.ContextAuthenticator
+	Authz         authorizer.Authorizer
+	Attr          authorization.ContextAttributesGetter
 	ServerOptions []grpc.ServerOption
-	Router       config.Router
-	listenQueues sync.Map
+	Router        config.Router
+	listenQueues  sync.Map
 }
 
 type wrappedStream struct {
