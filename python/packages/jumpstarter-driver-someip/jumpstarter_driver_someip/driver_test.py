@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
+from .common import SomeIpEventNotification, SomeIpMessageResponse, SomeIpPayload, SomeIpServiceEntry
 from .driver import SomeIp
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
@@ -316,6 +317,58 @@ def test_someip_custom_config_forwarded(mock_osip_cls):
     assert config.local_endpoint.port == 9999
     assert config.sd_config.multicast_endpoint.ip == "239.1.1.1"
     assert config.sd_config.multicast_endpoint.port == 31000
+
+
+@pytest.mark.parametrize("odd_hex", ["A", "ABC", "12345", "0"])
+def test_someip_rejects_odd_length_hex_payload(odd_hex):
+    """Odd-length hex strings are not valid byte sequences and must be rejected."""
+    with pytest.raises(ValidationError, match="even length"):
+        SomeIpPayload(data=odd_hex)
+
+
+@pytest.mark.parametrize("even_hex", ["", "AA", "0102", "aabbccdd"])
+def test_someip_accepts_valid_hex_payload(even_hex):
+    """Even-length hex strings (including empty) are accepted."""
+    p = SomeIpPayload(data=even_hex)
+    assert p.data == even_hex
+
+
+@pytest.mark.parametrize(
+    "model_cls, field, value",
+    [
+        (SomeIpMessageResponse, "service_id", 0x1FFFF),
+        (SomeIpMessageResponse, "method_id", -1),
+        (SomeIpServiceEntry, "service_id", 0x10000),
+        (SomeIpServiceEntry, "instance_id", 0x10000),
+        (SomeIpEventNotification, "service_id", 0x10000),
+        (SomeIpEventNotification, "event_id", 0x10000),
+    ],
+)
+def test_someip_rejects_out_of_range_16bit_ids(model_cls, field, value):
+    """16-bit SOME/IP ID fields must reject values outside 0..0xFFFF."""
+    defaults = {
+        SomeIpMessageResponse: dict(
+            service_id=1, method_id=1, client_id=1, session_id=1,
+            message_type=0, return_code=0, payload="AA",
+        ),
+        SomeIpServiceEntry: dict(service_id=1, instance_id=1),
+        SomeIpEventNotification: dict(service_id=1, event_id=1, payload="AA"),
+    }
+    kwargs = {**defaults[model_cls], field: value}
+    with pytest.raises(ValidationError):
+        model_cls(**kwargs)
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_close_connection_survives_stop_failure(mock_osip_cls):
+    """close_connection must not propagate exceptions from stop()."""
+    mock_client = _make_mock_osip_client()
+    mock_client.stop.side_effect = [RuntimeError("stop failed"), None]
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.close_connection()
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
