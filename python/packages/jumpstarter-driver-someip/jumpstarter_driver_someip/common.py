@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
-_HEX_RE = re.compile(r"[0-9a-fA-F]*")
+_HEX_RE = re.compile(r"([0-9a-fA-F]{2})*")
 
 
 def _validate_hex_string(v: str) -> str:
     if not _HEX_RE.fullmatch(v):
-        raise ValueError(f"payload must be a hex string, got {v!r}")
+        raise ValueError(f"payload must be a hex string of even length, got {v!r}")
     return v
 
 
@@ -27,10 +27,10 @@ class SomeIpPayload(BaseModel):
 class SomeIpMessageResponse(BaseModel):
     """A received SOME/IP message."""
 
-    service_id: int
-    method_id: int
-    client_id: int
-    session_id: int
+    service_id: int = Field(ge=0, le=0xFFFF)
+    method_id: int = Field(ge=0, le=0xFFFF)
+    client_id: int = Field(ge=0, le=0xFFFF)
+    session_id: int = Field(ge=0, le=0xFFFF)
     protocol_version: int = 1
     interface_version: int = 1
     message_type: int
@@ -46,8 +46,8 @@ class SomeIpMessageResponse(BaseModel):
 class SomeIpServiceEntry(BaseModel):
     """A SOME/IP service instance (for SD results)."""
 
-    service_id: int
-    instance_id: int
+    service_id: int = Field(ge=0, le=0xFFFF)
+    instance_id: int = Field(ge=0, le=0xFFFF)
     major_version: int = 1
     minor_version: int = 0
 
@@ -55,8 +55,8 @@ class SomeIpServiceEntry(BaseModel):
 class SomeIpEventNotification(BaseModel):
     """A SOME/IP event notification."""
 
-    service_id: int
-    event_id: int
+    service_id: int = Field(ge=0, le=0xFFFF)
+    event_id: int = Field(ge=0, le=0xFFFF)
     payload: str
 
     @field_validator("payload")

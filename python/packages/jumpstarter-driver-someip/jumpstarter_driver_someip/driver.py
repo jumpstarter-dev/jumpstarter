@@ -169,21 +169,24 @@ class SomeIp(Driver):
         )
         found: list[SomeIpServiceEntry] = []
         event = threading.Event()
+        lock = threading.Lock()
 
         def on_found(svc: ServiceInstance) -> None:
-            found.append(
-                SomeIpServiceEntry(
-                    service_id=svc.service_id,
-                    instance_id=svc.instance_id,
-                    major_version=svc.major_version,
-                    minor_version=svc.minor_version,
+            with lock:
+                found.append(
+                    SomeIpServiceEntry(
+                        service_id=svc.service_id,
+                        instance_id=svc.instance_id,
+                        major_version=svc.major_version,
+                        minor_version=svc.minor_version,
+                    )
                 )
-            )
             event.set()
 
         self._osip_client.find(service, callback=on_found)
         event.wait(timeout=timeout)
-        return found
+        with lock:
+            return list(found)
 
     @export
     @validate_call(validate_return=True)
@@ -215,7 +218,10 @@ class SomeIp(Driver):
     @validate_call(validate_return=True)
     def close_connection(self) -> None:
         """Close the SOME/IP connection."""
-        self._osip_client.stop()
+        try:
+            self._osip_client.stop()
+        except Exception:
+            logger.warning("failed to stop opensomeip client during close_connection", exc_info=True)
 
     @export
     @validate_call(validate_return=True)
