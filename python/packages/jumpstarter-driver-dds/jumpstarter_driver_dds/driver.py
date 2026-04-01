@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses as dc
+import hashlib
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -54,14 +56,19 @@ def _make_idl_type(topic_name: str, fields: list[str]):
 
     Each field name maps to a ``str`` type. For complex or mixed-type
     schemas, define custom IdlStruct subclasses directly and register
-    them with the backend. The generated class name is derived from the
-    topic name to avoid collisions between topics.
-    """
-    import dataclasses as dc
+    them with the backend.
 
+    A hash suffix is appended to the generated class name to prevent
+    collisions when distinct topic names sanitise to the same identifier
+    (e.g. ``"sensor/temp"`` and ``"sensor-temp"``).
+    """
     from cyclonedds.idl import IdlStruct
 
-    cls_name = topic_name.replace("/", "_").replace("-", "_").replace(".", "_") + "_Type"
+    sanitised = topic_name.replace("/", "_").replace("-", "_").replace(".", "_")
+    hash_suffix = hashlib.md5(topic_name.encode()).hexdigest()[:8]
+    cls_name = f"{sanitised}_{hash_suffix}_Type"
+    if not cls_name.isidentifier():
+        cls_name = f"Topic_{hash_suffix}_Type"
     dc_fields = [(f, str, dc.field(default="")) for f in fields]
     idl_cls = dc.make_dataclass(cls_name, dc_fields, bases=(IdlStruct,))
     return idl_cls
@@ -108,6 +115,26 @@ class DdsBackend:
         """Tear down all DDS entities and release the participant."""
         if not self._connected:
             raise RuntimeError("Not connected to DDS domain")
+        for writer in self._writers.values():
+            try:
+                writer.close()
+            except Exception:
+                pass
+        for reader in self._readers.values():
+            try:
+                reader.close()
+            except Exception:
+                pass
+        for topic in self._topics.values():
+            try:
+                topic.close()
+            except Exception:
+                pass
+        if self._participant is not None:
+            try:
+                self._participant.close()
+            except Exception:
+                pass
         self._writers.clear()
         self._readers.clear()
         self._topics.clear()
@@ -157,13 +184,13 @@ class DdsBackend:
         result = []
         for name in self._topics:
             idl_type = self._idl_types[name]
-            fields = [f.name for f in idl_type.__dataclass_fields__.values()]
+            fields = [f.name for f in dc.fields(idl_type)]
             result.append(
                 DdsTopicInfo(
                     name=name,
                     fields=fields,
-                    qos=self._qos_map.get(name, DdsTopicQos()),
-                    sample_count=self._sample_counts.get(name, 0),
+                    qos=self._qos_map[name],
+                    sample_count=self._sample_counts[name],
                 )
             )
         return result
@@ -175,14 +202,24 @@ class DdsBackend:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
 
         idl_type = self._idl_types[topic_name]
+        valid_fields = {f.name for f in dc.fields(idl_type)}
+        unknown = set(data) - valid_fields
+        if unknown:
+            raise ValueError(f"Unknown field(s) {unknown} for topic '{topic_name}'")
+
         sample = idl_type(**data)
         self._writers[topic_name].write(sample)
-        self._sample_counts[topic_name] = self._sample_counts.get(topic_name, 0) + 1
+        self._sample_counts[topic_name] += 1
 
-        return DdsPublishResult(topic_name=topic_name, success=True, samples_written=1)
+        return DdsPublishResult(topic_name=topic_name, samples_written=1)
 
     def read(self, topic_name: str, max_samples: int) -> DdsReadResult:
-        """Take up to *max_samples* from the topic's DataReader."""
+        """Take up to *max_samples* from the topic's DataReader.
+
+        Note: ``read`` and ``monitor`` both consume from the same
+        DataReader buffer; using them concurrently on the same topic
+        will cause samples to be split unpredictably between the two.
+        """
         self._require_connected()
         if topic_name not in self._readers:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
@@ -192,9 +229,7 @@ class DdsBackend:
 
         samples = []
         for s in raw_samples:
-            data = {}
-            for f in s.__dataclass_fields__:
-                data[f] = getattr(s, f)
+            data = {f.name: getattr(s, f.name) for f in dc.fields(s)}
             samples.append(DdsSample(topic_name=topic_name, data=data, timestamp=time.time()))
 
         return DdsReadResult(topic_name=topic_name, samples=samples, sample_count=len(samples))
@@ -283,30 +318,36 @@ class MockDdsBackend:
                     name=info.name,
                     fields=info.fields,
                     qos=info.qos,
-                    sample_count=self._sample_counts.get(name, 0),
+                    sample_count=self._sample_counts[name],
                 )
             )
         return result
 
     def publish(self, topic_name: str, data: dict[str, Any]) -> DdsPublishResult:
-        """Buffer a sample, enforcing history depth and field validation."""
+        """Buffer a sample, filling defaults for missing fields.
+
+        Mirrors the real ``DdsBackend`` where the CycloneDDS dataclass
+        constructor fills unset fields with their defaults (empty string).
+        """
         self._require_connected()
         if topic_name not in self._topics:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
 
         fields = self._topic_fields[topic_name]
-        for key in data:
-            if key not in fields:
-                raise ValueError(f"Unknown field '{key}' for topic '{topic_name}'")
+        unknown = set(data) - set(fields)
+        if unknown:
+            raise ValueError(f"Unknown field(s) {unknown} for topic '{topic_name}'")
 
-        sample = DdsSample(topic_name=topic_name, data=data, timestamp=time.time())
+        full_data = {f: data.get(f, "") for f in fields}
+
+        sample = DdsSample(topic_name=topic_name, data=full_data, timestamp=time.time())
         qos = self._topics[topic_name].qos
         buf = self._buffers[topic_name]
         buf.append(sample)
         if len(buf) > qos.history_depth:
-            self._buffers[topic_name] = buf[-qos.history_depth:]
-        self._sample_counts[topic_name] = self._sample_counts.get(topic_name, 0) + 1
-        return DdsPublishResult(topic_name=topic_name, success=True, samples_written=1)
+            self._buffers[topic_name] = buf[-qos.history_depth :]
+        self._sample_counts[topic_name] += 1
+        return DdsPublishResult(topic_name=topic_name, samples_written=1)
 
     def read(self, topic_name: str, max_samples: int) -> DdsReadResult:
         """Take up to *max_samples* from the in-memory buffer."""
@@ -365,7 +406,7 @@ class Dds(Driver):
         if self._backend.is_connected:
             try:
                 self._backend.disconnect()
-            except Exception:
+            except RuntimeError:
                 logger.warning("Failed to disconnect DDS backend", exc_info=True)
         super().close()
 
@@ -434,23 +475,32 @@ class Dds(Driver):
         return self._backend.get_participant_info()
 
     @export
-    async def monitor(self, topic_name: str) -> AsyncGenerator[DdsSample, None]:
+    async def monitor(self, topic_name: str, max_iterations: int = 0) -> AsyncGenerator[DdsSample, None]:
         """Stream data samples from a topic as they arrive.
 
         Polls the topic reader periodically and yields new samples.
+        If *max_iterations* is 0 (default), polls indefinitely until
+        the client cancels the stream. ``read`` and ``monitor`` both
+        consume from the same reader buffer; do not use them
+        concurrently on the same topic.
         """
-        import asyncio
+        import anyio
 
         if not self._backend.is_connected:
             raise RuntimeError("Not connected -- call connect() first")
         if not self._backend.has_topic(topic_name):
             raise ValueError(f"Topic '{topic_name}' not registered")
 
-        for _ in range(100):
-            result = self._backend.read(topic_name, max_samples=10)
+        iterations = 0
+        while max_iterations == 0 or iterations < max_iterations:
+            try:
+                result = self._backend.read(topic_name, max_samples=10)
+            except RuntimeError:
+                return
             for sample in result.samples:
                 yield sample
-            await asyncio.sleep(0.1)
+            await anyio.sleep(0.1)
+            iterations += 1
 
 
 @dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -465,6 +515,9 @@ class MockDds(Driver):
     """
 
     domain_id: int = 0
+    default_reliability: DdsReliability = DdsReliability.RELIABLE
+    default_durability: DdsDurability = DdsDurability.VOLATILE
+    default_history_depth: int = 10
     backend: MockDdsBackend | None = field(default=None, repr=False)
 
     _internal_backend: MockDdsBackend = field(init=False, repr=False)
@@ -479,6 +532,23 @@ class MockDds(Driver):
     def client(cls) -> str:
         """Return the fully-qualified path to the matching client class."""
         return "jumpstarter_driver_dds.client.DdsClient"
+
+    def close(self):
+        """Disconnect the mock backend (if connected) and release resources."""
+        if self._internal_backend.is_connected:
+            try:
+                self._internal_backend.disconnect()
+            except RuntimeError:
+                logger.warning("Failed to disconnect mock DDS backend", exc_info=True)
+        super().close()
+
+    def _default_qos(self) -> DdsTopicQos:
+        """Build a ``DdsTopicQos`` from this driver's default settings."""
+        return DdsTopicQos(
+            reliability=self.default_reliability,
+            durability=self.default_durability,
+            history_depth=self.default_history_depth,
+        )
 
     @export
     @validate_call(validate_return=True)
@@ -503,7 +573,7 @@ class MockDds(Driver):
         history_depth: int | None = None,
     ) -> DdsTopicInfo:
         """Create a topic on the mock backend."""
-        qos = DdsTopicQos()
+        qos = self._default_qos()
         if reliability is not None:
             qos.reliability = DdsReliability(reliability)
         if durability is not None:
@@ -537,17 +607,26 @@ class MockDds(Driver):
         return self._internal_backend.get_participant_info()
 
     @export
-    async def monitor(self, topic_name: str) -> AsyncGenerator[DdsSample, None]:
-        """Stream data samples from a mock topic."""
-        import asyncio
+    async def monitor(self, topic_name: str, max_iterations: int = 0) -> AsyncGenerator[DdsSample, None]:
+        """Stream data samples from a mock topic.
+
+        ``read`` and ``monitor`` both consume from the same buffer;
+        do not use them concurrently on the same topic.
+        """
+        import anyio
 
         if not self._internal_backend.is_connected:
             raise RuntimeError("Not connected -- call connect() first")
         if not self._internal_backend.has_topic(topic_name):
             raise ValueError(f"Topic '{topic_name}' not registered")
 
-        for _ in range(100):
-            result = self._internal_backend.read(topic_name, max_samples=10)
+        iterations = 0
+        while max_iterations == 0 or iterations < max_iterations:
+            try:
+                result = self._internal_backend.read(topic_name, max_samples=10)
+            except RuntimeError:
+                return
             for sample in result.samples:
                 yield sample
-            await asyncio.sleep(0.1)
+            await anyio.sleep(0.1)
+            iterations += 1

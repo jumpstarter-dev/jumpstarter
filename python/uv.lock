@@ -1181,26 +1181,12 @@ wheels = [
 
 [[package]]
 name = "cyclonedds"
-version = "11.0.1"
+version = "0.10.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "rich-click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/83/52/f501db026eff5aed63598c51b58a09ee45cf90306791cbf7c05f1a30ebf9/cyclonedds-11.0.1.tar.gz", hash = "sha256:487cdd9e3dbe3bc6f66c3318c45979f4015bb9d32d5dfcb9bb4a67376176a526", size = 191643, upload-time = "2026-03-20T12:47:30.097Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/1f/f4d2e1ac127f841d24f4b494b15e8133ce2b7b54126519a1ab605b546468/cyclonedds-11.0.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:0f883d834d8cf62416e83d878716d7d80d26b8356cc0678aaf1363f65102a99d", size = 925585, upload-time = "2026-03-20T12:47:40.315Z" },
-    { url = "https://files.pythonhosted.org/packages/69/58/90bed244b4a20619dafeda12091e3020537296a1536776d58d3ba8bd0b9b/cyclonedds-11.0.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:a0a3a3db3245749a1e4934bfca21ebaa3fd79d62dcbd5961a42011ce74affcd1", size = 855722, upload-time = "2026-03-20T12:47:42.041Z" },
-    { url = "https://files.pythonhosted.org/packages/b7/01/0295bc331924c147a5f13deb30dff21b1d006059eac6828cf74377c716bd/cyclonedds-11.0.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:dce635041d42e954a5fec187dabf99d4b36c9daa54cc97d6d2238985e3ef6101", size = 7703243, upload-time = "2026-03-20T12:47:44.138Z" },
-    { url = "https://files.pythonhosted.org/packages/41/0b/e697fa5d3a7c8f43696e76a3f82cefef2fa13452f840bb506128cf5be167/cyclonedds-11.0.1-cp311-cp311-win_amd64.whl", hash = "sha256:6079bf42cfe1f201356b18e093a3c6a57983b96a7c70c359723457df399b7ed5", size = 1348125, upload-time = "2026-03-20T12:47:46.294Z" },
-    { url = "https://files.pythonhosted.org/packages/2d/bf/b779a39d4415e630ca5af5eb2143ff13b396c8d35cfd5ef8b36aa51f9579/cyclonedds-11.0.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:60d86cfbb06dcbac1167ad1dd6eea7fa62e1adcc09132c7e27d1641fe8e2790d", size = 924927, upload-time = "2026-03-20T12:47:47.825Z" },
-    { url = "https://files.pythonhosted.org/packages/9d/19/d6d7a3ff4738ecbd74d6c634776ac665f7a41d68230f01a11d4756490608/cyclonedds-11.0.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:e74b7daf503a63b37765e5d8e2808db641d1fc53637004a04636cf564864ba16", size = 855612, upload-time = "2026-03-20T12:47:49.496Z" },
-    { url = "https://files.pythonhosted.org/packages/5a/27/26dafd6cde19a440497c26d3fd39560db2e5ec2261fa628801000a0cd8b6/cyclonedds-11.0.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3e96507088c57165f7c189c3a85be866f74c7449fb0cbc6316ad306e5f599be1", size = 7704807, upload-time = "2026-03-20T12:47:51.365Z" },
-    { url = "https://files.pythonhosted.org/packages/f2/9e/966e6f25650b65726361eac161e71cca998c653ae39a0118bc5f94356d0e/cyclonedds-11.0.1-cp312-cp312-win_amd64.whl", hash = "sha256:db977a7306f85e5b83cacfa0137a26955c9fe1d6ad03621407e00005adc01ede", size = 1348220, upload-time = "2026-03-20T12:47:53.119Z" },
-    { url = "https://files.pythonhosted.org/packages/8a/40/56f1dd62cf7272e78c3c3f5885e7eec1a99f923dea9522208c0849a816bc/cyclonedds-11.0.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:20b5f2b4c1e42bf3d217f45ba3664dc21a16b74803b8b457e91ea187b11fc7bd", size = 924924, upload-time = "2026-03-20T12:47:54.9Z" },
-    { url = "https://files.pythonhosted.org/packages/f7/28/f6f660f62f459532723c25a69e577694e01a44686aa20a5a2053ec67a402/cyclonedds-11.0.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:c3b899649685fd2606ea65620ea173b28d61e775adf8785861460ff91efbbbb8", size = 855636, upload-time = "2026-03-20T12:47:56.196Z" },
-    { url = "https://files.pythonhosted.org/packages/eb/a5/a6c8052dafd16c8c0e02eb6ef0cb2bb086d726d654c56e94ec4cdb1640ab/cyclonedds-11.0.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fef1f6ce115a579e322f3156842e8b660883e4e8b0aa2f5e2a3df9d7959d1736", size = 7704791, upload-time = "2026-03-20T12:47:58.037Z" },
-    { url = "https://files.pythonhosted.org/packages/d3/fb/df46b2aeff2e07716c0659bae2f5ac67bdd33e7ad4cce1cc35c505a0aa90/cyclonedds-11.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:850d6624dad8c9f3e0e65423225bd8e4c14c85c2d53bd64e16c2569ea3b491db", size = 1348209, upload-time = "2026-03-20T12:48:00.061Z" },
-]
+sdist = { url = "https://files.pythonhosted.org/packages/91/cf/28eb9c823dfc245c540f5286d71b44aeee2a51021fc85b25bb9562be78cc/cyclonedds-0.10.5.tar.gz", hash = "sha256:63fc4d6fdb2fd35181c40f4e90757149f2def5f570ef19fb71edc4f568755f8a", size = 156919, upload-time = "2024-06-05T18:50:42.999Z" }
 
 [[package]]
 name = "dbus-fast"
@@ -2420,7 +2406,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cyclonedds", specifier = ">=0.10.0" },
+    { name = "cyclonedds", specifier = ">=0.10.0,<1.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
 
