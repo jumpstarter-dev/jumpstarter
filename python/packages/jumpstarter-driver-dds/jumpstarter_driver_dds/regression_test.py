@@ -17,8 +17,13 @@ from .common import (
     DdsSample,
     DdsTopicQos,
 )
-from .driver import Dds, MockDds, _make_idl_type
+from .driver import Dds, MockDds, _make_idl_type, _validate_field_names
 from jumpstarter.common.utils import serve
+from jumpstarter.driver.decorators import (
+    MARKER_DRIVERCALL,
+    MARKER_MAGIC,
+    MARKER_STREAMING_DRIVERCALL,
+)
 
 # =============================================================================
 # 1. Backend parity: identical operations must produce identical results
@@ -100,22 +105,23 @@ class TestBackendParity:
 class TestDriverInterfaceParity:
     def test_export_methods_match(self):
         def _exported(cls):
-            return {
-                name
-                for name in dir(cls)
-                if not name.startswith("_")
-                and callable(getattr(cls, name, None))
-                and hasattr(getattr(cls, name), "__wrapped__")
-            }
+            """Detect exported methods using the official jumpstarter markers."""
+            result: set[str] = set()
+            for name in vars(cls):
+                if name.startswith("_"):
+                    continue
+                method = getattr(cls, name, None)
+                if not callable(method):
+                    continue
+                if (
+                    getattr(method, MARKER_DRIVERCALL, None) == MARKER_MAGIC
+                    or getattr(method, MARKER_STREAMING_DRIVERCALL, None) == MARKER_MAGIC
+                ):
+                    result.add(name)
+            return result
 
-        dds_methods = {
-            name for name in vars(Dds) if not name.startswith("_") and hasattr(getattr(Dds, name, None), "__wrapped__")
-        }
-        mock_methods = {
-            name
-            for name in vars(MockDds)
-            if not name.startswith("_") and hasattr(getattr(MockDds, name, None), "__wrapped__")
-        }
+        dds_methods = _exported(Dds)
+        mock_methods = _exported(MockDds)
         assert dds_methods == mock_methods, (
             f"Export mismatch: Dds has {dds_methods - mock_methods}, MockDds has {mock_methods - dds_methods}"
         )
@@ -208,7 +214,58 @@ class TestIdlTypeCollisions:
 
 
 # =============================================================================
-# 6. Project convention: no asyncio in production code
+# 6. Field name validation
+# =============================================================================
+
+
+class TestFieldNameValidation:
+    def test_invalid_identifier_rejected(self):
+        with pytest.raises(ValueError, match="not a valid Python identifier"):
+            _validate_field_names(["123bad"])
+
+    def test_keyword_rejected(self):
+        with pytest.raises(ValueError, match="Python keyword"):
+            _validate_field_names(["class"])
+
+    def test_duplicate_rejected(self):
+        with pytest.raises(ValueError, match="Duplicate"):
+            _validate_field_names(["x", "x"])
+
+    def test_valid_fields_pass(self):
+        _validate_field_names(["speed", "heading", "timestamp"])
+
+    def test_backend_rejects_invalid_fields(self, any_backend):
+        any_backend.connect()
+        with pytest.raises(ValueError):
+            any_backend.create_topic("t", ["123bad"], DdsTopicQos())
+
+    def test_backend_rejects_duplicate_fields(self, any_backend):
+        any_backend.connect()
+        with pytest.raises(ValueError, match="Duplicate"):
+            any_backend.create_topic("t", ["x", "x"], DdsTopicQos())
+
+
+# =============================================================================
+# 7. history_depth validation
+# =============================================================================
+
+
+class TestHistoryDepthValidation:
+    def test_zero_depth_rejected(self):
+        with pytest.raises(ValueError):
+            DdsTopicQos(history_depth=0)
+
+    def test_negative_depth_rejected(self):
+        with pytest.raises(ValueError):
+            DdsTopicQos(history_depth=-1)
+
+    def test_depth_one_accepted(self):
+        qos = DdsTopicQos(history_depth=1)
+        assert qos.history_depth == 1
+
+
+# =============================================================================
+# 8. Project conventions
 # =============================================================================
 
 
