@@ -51,6 +51,25 @@ def _build_cyclonedds_qos(qos: DdsTopicQos):
     return Qos(*policies)
 
 
+def _validate_field_names(fields: list[str]) -> None:
+    """Reject field names that are not valid Python identifiers or are duplicated.
+
+    Both the real CycloneDDS backend (via ``dataclasses.make_dataclass``) and
+    the mock backend must agree on which schemas are valid.
+    """
+    import keyword
+
+    seen: set[str] = set()
+    for name in fields:
+        if not name.isidentifier():
+            raise ValueError(f"Field name {name!r} is not a valid Python identifier")
+        if keyword.iskeyword(name):
+            raise ValueError(f"Field name {name!r} is a Python keyword")
+        if name in seen:
+            raise ValueError(f"Duplicate field name {name!r}")
+        seen.add(name)
+
+
 def _make_idl_type(topic_name: str, fields: list[str]):
     """Dynamically create a CycloneDDS IdlStruct type for the given fields.
 
@@ -115,26 +134,26 @@ class DdsBackend:
         """Tear down all DDS entities and release the participant."""
         if not self._connected:
             raise RuntimeError("Not connected to DDS domain")
-        for writer in self._writers.values():
+        for name, writer in self._writers.items():
             try:
                 writer.close()
-            except Exception:
-                pass
-        for reader in self._readers.values():
+            except RuntimeError:
+                logger.debug("Failed to close writer for topic '%s'", name, exc_info=True)
+        for name, reader in self._readers.items():
             try:
                 reader.close()
-            except Exception:
-                pass
-        for topic in self._topics.values():
+            except RuntimeError:
+                logger.debug("Failed to close reader for topic '%s'", name, exc_info=True)
+        for name, topic in self._topics.items():
             try:
                 topic.close()
-            except Exception:
-                pass
+            except RuntimeError:
+                logger.debug("Failed to close topic '%s'", name, exc_info=True)
         if self._participant is not None:
             try:
                 self._participant.close()
-            except Exception:
-                pass
+            except RuntimeError:
+                logger.debug("Failed to close DDS participant", exc_info=True)
         self._writers.clear()
         self._readers.clear()
         self._topics.clear()
@@ -155,26 +174,39 @@ class DdsBackend:
         fields: list[str],
         qos: DdsTopicQos,
     ) -> DdsTopicInfo:
-        """Register a topic, create its writer/reader, and return topic info."""
+        """Register a topic, create its writer/reader, and return topic info.
+
+        All DDS objects are created before any internal state is updated
+        so that a failure leaves no half-registered topic.
+        """
         self._require_connected()
         if name in self._topics:
             raise ValueError(f"Topic '{name}' already exists")
+        _validate_field_names(fields)
 
         from cyclonedds.pub import DataWriter
         from cyclonedds.sub import DataReader
         from cyclonedds.topic import Topic
 
         idl_type = _make_idl_type(name, fields)
-        self._idl_types[name] = idl_type
-
         cqos = _build_cyclonedds_qos(qos)
         topic = Topic(self._participant, name, idl_type, qos=cqos)
+        writer = None
+        try:
+            writer = DataWriter(self._participant, topic, qos=cqos)
+            reader = DataReader(self._participant, topic, qos=cqos)
+        except Exception:
+            if writer is not None:
+                writer.close()
+            topic.close()
+            raise
+
+        self._idl_types[name] = idl_type
         self._topics[name] = topic
         self._qos_map[name] = qos
         self._sample_counts[name] = 0
-
-        self._writers[name] = DataWriter(self._participant, topic, qos=cqos)
-        self._readers[name] = DataReader(self._participant, topic, qos=cqos)
+        self._writers[name] = writer
+        self._readers[name] = reader
 
         return DdsTopicInfo(name=name, fields=fields, qos=qos)
 
@@ -300,6 +332,7 @@ class MockDdsBackend:
         self._require_connected()
         if name in self._topics:
             raise ValueError(f"Topic '{name}' already exists")
+        _validate_field_names(fields)
 
         info = DdsTopicInfo(name=name, fields=fields, qos=qos)
         self._topics[name] = info

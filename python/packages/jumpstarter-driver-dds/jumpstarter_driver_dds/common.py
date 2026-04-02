@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class DdsReliability(str, Enum):
@@ -27,7 +27,7 @@ class DdsTopicQos(BaseModel):
 
     reliability: DdsReliability = DdsReliability.RELIABLE
     durability: DdsDurability = DdsDurability.VOLATILE
-    history_depth: int = 10
+    history_depth: int = Field(10, ge=1)
 
 
 class DdsParticipantInfo(BaseModel):
