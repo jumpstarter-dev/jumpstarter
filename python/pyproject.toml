@@ -7,6 +7,8 @@ jumpstarter-cli = { workspace = true }
 jumpstarter-cli-admin = { workspace = true }
 jumpstarter-cli-common = { workspace = true }
 jumpstarter-cli-driver = { workspace = true }
+jumpstarter-driver-adb = { workspace = true }
+jumpstarter-driver-androidemulator = { workspace = true }
 jumpstarter-driver-ble = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }

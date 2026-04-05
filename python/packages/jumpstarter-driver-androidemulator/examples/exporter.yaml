@@ -1,0 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: android-emulator
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  android:
+    type: jumpstarter_driver_androidemulator.driver.AndroidEmulator
+    config:
+      avd_name: "Pixel_6"
+      headless: false
+      console_port: 5554
+      adb_server_port: 15037

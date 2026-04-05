@@ -12,6 +12,7 @@ members = [
     "jumpstarter-cli-common",
     "jumpstarter-cli-driver",
     "jumpstarter-driver-adb",
+    "jumpstarter-driver-androidemulator",
     "jumpstarter-driver-ble",
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
@@ -49,6 +50,7 @@ members = [
     "jumpstarter-driver-vnc",
     "jumpstarter-driver-xcp",
     "jumpstarter-driver-yepkit",
+    "jumpstarter-example-android-emulator",
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
     "jumpstarter-example-xcp-ecu",
@@ -1692,6 +1694,43 @@ dev = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-androidemulator"
+source = { editable = "packages/jumpstarter-driver-androidemulator" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-adb" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-power" },
+]
+
+[package.optional-dependencies]
+python-api = [
+    { name = "adbutils" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adbutils", marker = "extra == 'python-api'", specifier = ">=2.8.7" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-adb", editable = "packages/jumpstarter-driver-adb" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+]
+provides-extras = ["python-api"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
 name = "jumpstarter-driver-ble"
 source = { editable = "packages/jumpstarter-driver-ble" }
 dependencies = [
@@ -2882,6 +2921,23 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-example-android-emulator"
+version = "0.1.0"
+source = { virtual = "examples/android-emulator" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator", extra = ["python-api"] },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator", extras = ["python-api"], editable = "packages/jumpstarter-driver-androidemulator" },
+    { name = "pytest", specifier = ">=8.3.2" },
 ]
 
 [[package]]
