@@ -30,6 +30,8 @@ Drivers that control the power state and basic operation of devices:
 
 Drivers that provide various communication interfaces:
 
+* **[ADB](adb.md)** (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
+  for remote Android device access
 * **[BLE](ble.md)** (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 * **[CAN](can.md)** (`jumpstarter-driver-can`) - Controller Area Network
   communication
@@ -105,6 +107,7 @@ General-purpose utility drivers:
 
 ```{toctree}
 :hidden:
+adb.md
 ble.md
 can.md
 corellium.md
