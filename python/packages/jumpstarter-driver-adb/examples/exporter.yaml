@@ -1,0 +1,19 @@
+# ADB exporter config. For local mode testing use:
+#   jmp shell --exporter-config examples/exporter.yaml
+#
+# Ensure an ADB server is running locally (e.g. a USB-attached Android device
+# or an Android emulator). The driver tunnels connections to the ADB server
+# on the configured host:port.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: adb-local
+endpoint: grpc.jumpstarter.example.com:443
+token: "dummytoken"
+export:
+  adb:
+    type: jumpstarter_driver_adb.driver.AdbServer
+    config:
+      host: "127.0.0.1"
+      port: 15037

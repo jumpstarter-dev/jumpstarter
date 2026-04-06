@@ -1,0 +1,16 @@
+[project]
+name = "jumpstarter-example-android-emulator"
+version = "0.1.0"
+description = "Android emulator testing example using Jumpstarter ADB tunneling"
+authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+  "pytest>=8.3.2",
+  "jumpstarter",
+  "jumpstarter-driver-androidemulator[python-api]",
+]
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"
