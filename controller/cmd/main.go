@@ -281,8 +281,8 @@ func main() {
 			ResourceKey:  "jumpstarter-kind",
 			NameKey:      "jumpstarter-name",
 		}),
-		Router:       router,
-		ServerOption: option,
+		Router:        router,
+		ServerOptions: option,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)
