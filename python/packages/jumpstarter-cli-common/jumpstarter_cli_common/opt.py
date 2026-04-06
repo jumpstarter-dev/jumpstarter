@@ -113,6 +113,11 @@ def confirm_insecure_tls(insecure_tls_config: bool, nointeractive: bool):
             raise click.Abort()
 
 
+def validate_name(name: Optional[str]) -> None:
+    if not name or not name.strip():
+        raise click.UsageError("Missing required argument 'NAME'.")
+
+
 class OutputMode(str):
     JSON = "json"
     YAML = "yaml"

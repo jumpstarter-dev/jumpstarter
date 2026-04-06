@@ -14,6 +14,7 @@ from jumpstarter_cli_common.opt import (
     opt_namespace,
     opt_nointeractive,
     opt_output_all,
+    validate_name,
 )
 from jumpstarter_cli_common.print import model_print
 from jumpstarter_kubernetes import (
@@ -90,6 +91,7 @@ async def create_client(
     output: OutputType,
 ):
     """Create a client object in the Kubernetes cluster"""
+    validate_name(name)
     try:
         confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
@@ -165,6 +167,7 @@ async def create_exporter(
     output: OutputType,
 ):
     """Create an exporter object in the Kubernetes cluster"""
+    validate_name(name)
     try:
         confirm_insecure_tls(insecure_tls_config, nointeractive)
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
