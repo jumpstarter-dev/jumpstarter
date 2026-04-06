@@ -11,7 +11,7 @@ def _mock_adb_ok():
 
 
 @patch("jumpstarter_driver_androidemulator.driver.shutil.which", return_value="/usr/bin/emulator")
-@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("jumpstarter_driver_adb.driver.shutil.which", return_value="/usr/bin/adb")
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_init_registers_children(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd")
@@ -30,7 +30,7 @@ def test_init_missing_emulator(_):
 
 
 @patch("jumpstarter_driver_androidemulator.driver.shutil.which", return_value="/usr/bin/emulator")
-@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("jumpstarter_driver_adb.driver.shutil.which", return_value="/usr/bin/adb")
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_init_invalid_port(mock_run, mock_adb_which, mock_emu_which):
     with pytest.raises(ConfigurationError, match="Invalid console_port"):
@@ -38,7 +38,7 @@ def test_init_invalid_port(mock_run, mock_adb_which, mock_emu_which):
 
 
 @patch("jumpstarter_driver_androidemulator.driver.shutil.which", return_value="/usr/bin/emulator")
-@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("jumpstarter_driver_adb.driver.shutil.which", return_value="/usr/bin/adb")
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_power_on_builds_cmdline(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd", console_port=5556)
@@ -69,7 +69,7 @@ def test_power_on_builds_cmdline(mock_run, mock_adb_which, mock_emu_which):
 
 
 @patch("jumpstarter_driver_androidemulator.driver.shutil.which", return_value="/usr/bin/emulator")
-@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("jumpstarter_driver_adb.driver.shutil.which", return_value="/usr/bin/adb")
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_power_on_not_headless(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd", headless=False)
@@ -89,7 +89,7 @@ def test_power_on_not_headless(mock_run, mock_adb_which, mock_emu_which):
 
 
 @patch("jumpstarter_driver_androidemulator.driver.shutil.which", return_value="/usr/bin/emulator")
-@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("jumpstarter_driver_adb.driver.shutil.which", return_value="/usr/bin/adb")
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_power_off_graceful(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd")
@@ -109,7 +109,7 @@ def test_power_off_graceful(mock_run, mock_adb_which, mock_emu_which):
 
 
 @patch("jumpstarter_driver_androidemulator.driver.shutil.which", return_value="/usr/bin/emulator")
-@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("jumpstarter_driver_adb.driver.shutil.which", return_value="/usr/bin/adb")
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_power_off_force_kill(mock_run, mock_adb_which, mock_emu_which):
     from subprocess import TimeoutExpired
@@ -131,7 +131,7 @@ def test_power_off_force_kill(mock_run, mock_adb_which, mock_emu_which):
 
 
 @patch("jumpstarter_driver_androidemulator.driver.shutil.which", return_value="/usr/bin/emulator")
-@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("jumpstarter_driver_adb.driver.shutil.which", return_value="/usr/bin/adb")
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_custom_ports(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd", console_port=5556, adb_server_port=15038)

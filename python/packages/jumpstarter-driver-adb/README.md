@@ -160,7 +160,7 @@ tradefed.sh
 
 ### Python API
 
-You can also preform interactions via ADB using the
+You can also perform interactions via ADB using the
 [`adbutils`](https://github.com/openatx/adbutils) Python package.
 
 ```python

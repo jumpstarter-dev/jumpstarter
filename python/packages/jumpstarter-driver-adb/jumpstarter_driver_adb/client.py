@@ -150,6 +150,15 @@ class AdbClient(DriverClient):
             if args[0] == "tunnel":
                 state = _read_tunnel_state()
                 if state:
+                    # If a specific port was requested, check it matches the running tunnel
+                    if port != 0 and (state["host"] != host or int(state["port"]) != port):
+                        click.echo(
+                            f"Error: tunnel already running (PID {state['pid']}) "
+                            f"on {state['host']}:{state['port']}, "
+                            f"cannot bind to {host}:{port}",
+                            err=True,
+                        )
+                        return 1
                     click.echo(f"Tunnel already running (PID {state['pid']}) on {state['host']}:{state['port']}")
                     return 0
 
