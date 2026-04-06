@@ -142,14 +142,14 @@ wait_for_exporter() {
 }
 
 @test "can login with oidc test-client-oidc-provisioning" {
-  run jmp login --client test-client-oidc-provisioning \
+  run jmp login --client test-client-oidc-provisioning-example-com \
     --endpoint "$ENDPOINT" --namespace "${JS_NAMESPACE}" --name="" \
     --issuer https://dex.dex.svc.cluster.local:5556 \
     --username test-client-oidc-provisioning@example.com --password password --unsafe
   assert_success
   run jmp config client list -o yaml
   assert_success
-  assert_output --partial "test-client-oidc-provisioning"
+  assert_output --partial "test-client-oidc-provisioning-example-com"
 }
 
 @test "can login with oidc test-client-sa" {
@@ -414,7 +414,7 @@ EOF
   jmp shell --client test-client-legacy --selector example.com/board=legacy j power on
 
   wait_for_exporter
-  jmp shell --client test-client-oidc-provisioning --selector example.com/board=oidc j power on
+  jmp shell --client test-client-oidc-provisioning-example-com --selector example.com/board=oidc j power on
 }
 
 @test "can lease and connect to exporters by name" {
