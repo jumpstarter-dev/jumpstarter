@@ -1,0 +1,38 @@
+# Locale and keyboard settings
+[customizations.locale]
+languages = ["en_US.UTF-8"]
+keyboard = "us"
+
+# SSH key for root user
+#[[customizations.sshkey]]
+#user = "root"
+#key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... your-ssh-key-here"
+
+# Note: Network configuration is not supported in bootc-image-builder config
+# Network will be configured automatically (DHCP by default)
+
+#
+# Disk customizations (advanced partitioning)
+# Note: boot/EFI partitions are handled by the image type/boot method automatically.
+# This defines ONE LVM VG and leaves remaining extents unallocated (because we only
+# define the root LV and nothing else).
+[[customizations.disk.partitions]]
+type = "lvm"
+name = "myvg1"
+minsize = "20 GiB"  # VG minimum; image can be bigger, leaving free space in VG
+
+[[customizations.disk.partitions.logical_volumes]]
+name = "root"
+mountpoint = "/"
+label = "root"
+fs_type = "xfs"
+minsize = "10 GiB"
+
+
+# If you need to add the OpenShift pull secret file, uncomment and configure:
+# [[customizations.files]]
+# path = "/etc/crio/openshift-pull-secret"
+# mode = "0600"
+# user = "root"
+# group = "root"
+# data = "YOUR_PULL_SECRET_CONTENT_HERE"
