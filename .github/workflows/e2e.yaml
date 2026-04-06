@@ -2,6 +2,9 @@ name: End-to-end tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
   pull_request:
   merge_group:
 
@@ -21,7 +24,7 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
-          base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
+          base: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
           filters: |
             e2e:
               - 'controller/**'
@@ -32,19 +35,12 @@ jobs:
 
   e2e-tests:
     needs: changes
-    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       matrix:
         os:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-        method:
-          - operator
-          - helm
-        exclude:
-          # Only run operator on ARM, skip helm
-          - os: ubuntu-24.04-arm
-            method: helm
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -63,13 +59,13 @@ jobs:
         run: make e2e-setup
         env:
           CI: true
-          METHOD: ${{ matrix.method }}
+          METHOD: operator
 
       - name: Run e2e tests
         run: make e2e-run
         env:
           CI: true
-          METHOD: ${{ matrix.method }}
+          METHOD: operator
 
   # ============================================================================
   # Compatibility tests: cross-version interop between controller and client/exporter
