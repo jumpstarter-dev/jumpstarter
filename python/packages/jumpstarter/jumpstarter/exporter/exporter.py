@@ -253,13 +253,18 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """
         retries_left = retries
         while True:
+            received_data = False
             try:
                 async with self._controller_stub() as controller:
                     logger.debug("%s stream connected to controller", stream_name)
                     async for item in stream_factory(controller):
+                        received_data = True
                         logger.debug("%s stream received item", stream_name)
                         await send_tx.send(item)
             except Exception as e:
+                if received_data:
+                    logger.debug("%s stream retry counter reset after receiving data", stream_name)
+                    retries_left = retries
                 if retries_left > 0:
                     retries_left -= 1
                     # Check for common transient errors that warrant faster retry
