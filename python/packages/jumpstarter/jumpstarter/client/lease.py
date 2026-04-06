@@ -60,6 +60,7 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
 
     name: str = field(default="direct", init=False)
     exporter_name: str = field(default="direct", init=False)
+    exporter_labels: dict[str, str] = field(default_factory=dict, init=False)
     release: bool = field(default=False, init=False)
     lease_ended: bool = field(default=False, init=False)
 
