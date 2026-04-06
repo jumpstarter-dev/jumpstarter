@@ -811,7 +811,7 @@ spec:
                         type: object
                     type: object
                   image:
-                    default: quay.io/jumpstarter-dev/jumpstarter-controller:latest
+                    default: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1
                     description: |-
                       Container image for the controller pods in 'registry/repository/image:tag' format.
                       If not specified, defaults to the latest stable version of the Jumpstarter controller.
@@ -1560,7 +1560,7 @@ spec:
                         type: object
                     type: object
                   image:
-                    default: quay.io/jumpstarter-dev/jumpstarter-controller:latest
+                    default: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1
                     description: |-
                       Container image for the router pods in 'registry/repository/image:tag' format.
                       If not specified, defaults to the latest stable version of the Jumpstarter router.

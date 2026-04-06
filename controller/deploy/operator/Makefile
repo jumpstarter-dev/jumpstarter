@@ -3,13 +3,15 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.8.1-rc.1
+VERSION ?= 0.8.1
+# When bumping VERSION, update kubebuilder image defaults in api/v1alpha1/jumpstarter_types.go
+# (Controller.Image and Routers.Image) to match the jumpstarter-controller image tag.
 
 # REPLACES defines the previous operator version this release replaces in the OLM upgrade graph.
 # Used to generate the release-config.yaml for FBC auto-release.
 # Set to empty for the first release in a channel.
 # See: https://redhat-openshift-ecosystem.github.io/operator-pipelines/users/fbc_autorelease/
-REPLACES ?= jumpstarter-operator.v0.8.0
+REPLACES ?= jumpstarter-operator.v0.8.1-rc.1
 
 # FBC_CHANNELS defines the FBC catalog channels for this release.
 FBC_CHANNELS ?= alpha
@@ -45,7 +47,7 @@ IMAGE_TAG_BASE ?= quay.io/jumpstarter-dev/jumpstarter-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
-BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
+BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:$(VERSION)
 
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
 BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
@@ -62,7 +64,7 @@ endif
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.41.1
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/jumpstarter-dev/jumpstarter-operator:latest
+IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -94,6 +96,10 @@ SHELL = /usr/bin/env bash -o pipefail
 
 .PHONY: all
 all: build
+
+.PHONY: print-img
+print-img:
+	@echo $(IMG)
 
 ##@ General
 
@@ -201,7 +207,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
@@ -220,7 +226,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
@@ -315,8 +321,10 @@ endif
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
+	@# Align CSV containerImage annotation with the manager image (base CSV still references :latest)
+	@perl -pi -e 's|quay.io/jumpstarter-dev/jumpstarter-operator:latest|$(IMG)|g' bundle/manifests/jumpstarter-operator.clusterserviceversion.yaml
 	@# Inject Red Hat OpenShift version range into bundle metadata (not handled by operator-sdk)
 	@if ! grep -q 'com.redhat.openshift.versions' bundle/metadata/annotations.yaml; then \
 		echo '  com.redhat.openshift.versions: $(OPENSHIFT_VERSIONS)' >> bundle/metadata/annotations.yaml; \
@@ -369,7 +377,7 @@ endif
 BUNDLE_IMGS ?= $(BUNDLE_IMG)
 
 # The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
-CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
+CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:$(VERSION)
 
 # Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
 ifneq ($(origin CATALOG_BASE_IMG), undefined)

@@ -61,7 +61,7 @@ const metricsRoleBindingName = "jumpstarter-operator-metrics-binding"
 const testNamespace = "jumpstarter-lab-e2e"
 
 // defaultControllerImage is the default image for the controller if IMG env is not set
-const defaultControllerImage = "quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+const defaultControllerImage = "quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1"
 
 var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 	var controllerPodName string

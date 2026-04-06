@@ -3,6 +3,6 @@ resources:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: controller
+- name: quay.io/jumpstarter-dev/jumpstarter-operator
   newName: quay.io/jumpstarter-dev/jumpstarter-operator
-  newTag: latest
+  newTag: "0.8.1"
