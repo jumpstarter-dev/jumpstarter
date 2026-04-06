@@ -105,6 +105,30 @@ def _lease_env_vars(lease) -> dict[str, str]:
     return env_vars
 
 
+def _build_common_env(
+    host: str,
+    allow: list[str],
+    unsafe: bool,
+    *,
+    lease=None,
+    insecure: bool = False,
+    passphrase: str | None = None,
+) -> dict[str, str]:
+    """Build the base environment dict for shell/command processes."""
+    env = os.environ | {
+        JUMPSTARTER_HOST: host,
+        JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
+        "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
+    }
+    if insecure:
+        env = env | {JMP_GRPC_INSECURE: "1"}
+    if passphrase:
+        env = env | {JMP_GRPC_PASSPHRASE: passphrase}
+    if lease is not None:
+        env.update(_lease_env_vars(lease))
+    return env
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -135,18 +159,9 @@ def launch_shell(
     shell = os.environ.get("SHELL", "bash")
     shell_name = os.path.basename(shell)
 
-    common_env = os.environ | {
-        JUMPSTARTER_HOST: host,
-        JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
-        "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
-    }
-    if insecure:
-        common_env = common_env | {JMP_GRPC_INSECURE: "1"}
-    if passphrase:
-        common_env = common_env | {JMP_GRPC_PASSPHRASE: passphrase}
-
-    if lease is not None:
-        common_env.update(_lease_env_vars(lease))
+    common_env = _build_common_env(
+        host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase
+    )
 
     if command:
         return _run_process(list(command), common_env, lease)
