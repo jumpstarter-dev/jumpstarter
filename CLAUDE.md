@@ -10,10 +10,13 @@ Important project-specific rules and guidelines are located in the `.claude/rule
 
 - **`.claude/rules/creating-new-drivers.md`**: Guidelines for creating new driver packages, including naming conventions, required information, and the driver creation process. Read this when tasked with creating or modifying drivers.
 
+- **`.claude/rules/releasing-operator.md`**: Step-by-step guide for releasing a new version of the Jumpstarter operator, including which files to update, image tag conventions, bundle generation, and community-operators contribution workflow.
+
 ## When to Read These Rules
 
 - **Always**: Read `project-structure.md` when working with files, packages, or understanding the codebase layout
 - **When creating drivers**: Read `creating-new-drivers.md` before creating, improving, or documenting driver packages
+- **When releasing the operator**: Read `releasing-operator.md` before preparing a new operator version for OLM
 - **When modifying structure**: Consult both files when making changes that affect project organization
 
 ## Key Information

@@ -1,0 +1,149 @@
+---
+description: when the user is releasing a new version of the Kubernetes operator
+alwaysApply: false
+---
+# Releasing the Jumpstarter Operator
+
+This guide covers preparing and publishing a new operator release to OLM and community-operators repos.
+
+## Version Source of Truth
+
+The operator bundle version is driven by variables in `controller/deploy/operator/Makefile`:
+
+- **`VERSION`**: The semver for the bundle (e.g. `0.8.1`). This is NOT prefixed with `v`.
+- **`REPLACES`**: The previous OLM bundle this release upgrades from (e.g. `jumpstarter-operator.v0.8.0`). Note the OLM name uses a `v` prefix per OLM convention, but image tags do NOT. **Important**: This must point to the _most recent_ published version in the channel, including release candidates. For example, if `v0.8.1-rc.1` was published, then `v0.8.1` must replace `v0.8.1-rc.1` (not `v0.8.0`), otherwise OLM will report "multiple channel heads".
+- **`IMG`**: Defaults to `$(IMAGE_TAG_BASE):$(VERSION)`, so all image references are automatically derived from `VERSION`. No need to pass `IMG` explicitly in most cases.
+- **`FBC_CHANNELS`**: Catalog channel (default `alpha`).
+- **`OPENSHIFT_VERSIONS`**: Red Hat OpenShift version range (e.g. `v4.18-v4.21`).
+- **`IMAGE_TAG_BASE`**: Registry prefix (`quay.io/jumpstarter-dev/jumpstarter-operator`).
+- **`BUNDLE_IMG`** / **`CATALOG_IMG`**: Also derived from `IMAGE_TAG_BASE` and `VERSION` automatically.
+
+The `config/manifests/bases/jumpstarter-operator.clusterserviceversion.yaml` uses placeholder version `0.0.0` -- the real version is injected by `make bundle`.
+
+## Image Tag Convention
+
+This project tags container images **without** a `v` prefix: `:0.8.1`, NOT `:v0.8.1`. Since `IMG` defaults to `$(IMAGE_TAG_BASE):$(VERSION)`, running `make bundle` or `make contribute` produces correct image references automatically. You can still override for custom builds:
+
+```
+make bundle IMG=quay.io/jumpstarter-dev/jumpstarter-operator:custom-tag
+```
+
+## Files to Update When Bumping a Version
+
+When preparing a new release version X.Y.Z, update these files together:
+
+### 1. `controller/deploy/operator/Makefile`
+- `VERSION ?= X.Y.Z`
+- `REPLACES ?= jumpstarter-operator.vPREVIOUS` (the most recent version published to the OLM channel -- including RCs. E.g. if `v0.8.1-rc.1` was published, REPLACES must be `jumpstarter-operator.v0.8.1-rc.1`, not `v0.8.0`)
+- Optionally update `OPENSHIFT_VERSIONS` if the supported range changes
+
+### 2. `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go`
+Update the kubebuilder default image tags for both controller and router:
+```go
+// In RoutersConfig:
+// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z"
+Image string `json:"image,omitempty"`
+
+// In ControllerConfig:
+// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z"
+Image string `json:"image,omitempty"`
+```
+These defaults flow into the CRD YAML via `make manifests` and into the OLM bundle via `make bundle`.
+
+### 3. `controller/deploy/operator/test/e2e/e2e_test.go`
+Update the default controller image constant:
+```go
+const defaultControllerImage = "quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z"
+```
+
+### 4. `controller/deploy/operator/config/manager/kustomization.yaml`
+The `newTag` field is updated automatically by `make bundle` (via `kustomize edit set image`), but verify it reflects the correct tag after running the bundle target.
+
+## Release Steps
+
+### Step 1: Update version references
+Edit the files listed above with the new version. Run:
+```bash
+cd controller/deploy/operator
+make manifests generate
+```
+This regenerates `config/crd/bases/operator.jumpstarter.dev_jumpstarters.yaml` with updated defaults.
+
+### Step 2: Regenerate the OLM bundle
+```bash
+cd controller/deploy/operator
+make bundle
+```
+`IMG` automatically resolves to `$(IMAGE_TAG_BASE):$(VERSION)`. This:
+1. Runs `make manifests` and `kustomize edit set image` with the correct image
+2. Generates `bundle/manifests/`, `bundle/metadata/`, `bundle.Dockerfile`
+3. Replaces `:latest` with the actual `IMG` in the CSV `containerImage` annotation
+4. Injects `com.redhat.openshift.versions` into bundle metadata
+5. Validates the bundle with `operator-sdk bundle validate`
+6. Generates `bundle/release-config.yaml` with `replaces`, `skipRange`, and channel info
+
+### Step 3: Verify the bundle
+Check that all image references are correct (no `:latest`, no `:vX.Y.Z`):
+```bash
+grep -E "containerImage|image: quay" bundle/manifests/jumpstarter-operator.clusterserviceversion.yaml
+grep "default: quay" bundle/manifests/operator.jumpstarter.dev_jumpstarters.yaml
+cat bundle/release-config.yaml
+```
+
+### Step 4: Commit
+Create a commit with the Makefile, types, CRD, kustomization, and e2e changes. The `bundle/` directory is NOT committed to the repo (it was removed in commit `12b680e3`).
+
+### Step 5: Contribute to community-operators (when ready)
+```bash
+cd controller/deploy/operator
+# if it's a different github user: export GITHUB_USER=yourusername  # defaults to mangelajo
+make contribute
+```
+This runs `make bundle` then `contribute/update-contributions.sh`, which:
+1. Shows a confirmation prompt with version, channels, replaces, and skipRange
+2. Clones/updates `community-operators` and `community-operators-prod` repos
+3. Creates branch `jumpstarter-operator-release-X.Y.Z`
+4. Copies `bundle/` into `operators/jumpstarter-operator/X.Y.Z/` and commits
+
+After the script completes, push to your fork and open PRs:
+```bash
+cd contribute/community-operators && git push -f user jumpstarter-operator-release-X.Y.Z
+cd ../community-operators-prod && git push -f user jumpstarter-operator-release-X.Y.Z
+```
+
+## OLM Upgrade Graph and `REPLACES`
+
+OLM requires a **single channel head** (latest version) per channel. The `replaces` field creates a directed upgrade edge in the graph. If two bundles both replace the same version, OLM reports:
+
+```
+multiple channel heads found in graph: jumpstarter-operator.vA, jumpstarter-operator.vB
+```
+
+**Rule**: `REPLACES` must always point to the _most recently published_ version in the channel, forming a linear chain. When release candidates are published to the channel before the final release, the chain must include them:
+
+```
+v0.8.0 → v0.8.1-rc.1 → v0.8.1
+```
+
+The `skipRange` (e.g. `>=0.8.0 <0.8.1`) allows users on any intermediate version to upgrade directly, but `replaces` must still form a valid graph with a single head.
+
+## Cherry-Picking Fixes to Main
+
+When a release includes Makefile infrastructure fixes (not version-specific), split them into a separate commit so they can be cherry-picked to `main` independently from version bumps.
+
+## How `make bundle` Works Internally
+
+```
+Makefile (VERSION, REPLACES, IMG=$(IMAGE_TAG_BASE):$(VERSION))
+  -> operator-sdk generate kustomize manifests
+  -> kustomize edit set image IMAGE_TAG_BASE=IMG
+  -> kustomize build config/manifests | operator-sdk generate bundle
+  -> perl replaces :latest with IMG in CSV containerImage annotation
+  -> inject openshift.versions into annotations.yaml
+  -> operator-sdk bundle validate
+  -> generate release-config.yaml (replaces, skipRange, channels)
+```
+
+The `config/manager/kustomization.yaml` image entry must use `name: quay.io/jumpstarter-dev/jumpstarter-operator` (the real image name from `manager.yaml`), NOT `name: controller` (which was the original scaffolding default and does not match).
+
+The CSV base template in `config/manifests/bases/` still contains `containerImage: ...latest`. The `bundle` target's perl post-processing step replaces this with the actual `$(IMG)` value after `operator-sdk generate bundle` runs.
