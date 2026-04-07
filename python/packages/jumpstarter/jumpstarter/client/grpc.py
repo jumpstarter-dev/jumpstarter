@@ -218,10 +218,11 @@ class Lease(BaseModel):
         return None
 
     @staticmethod
-    def _format_remaining(expires_at):
+    def _format_remaining(expires_at, *, now=None):
         if expires_at is None:
             return ""
-        now = datetime.now(tz=expires_at.tzinfo)
+        if now is None:
+            now = datetime.now(tz=expires_at.tzinfo)
         remaining = expires_at - now
         if remaining.total_seconds() <= 0:
             return "expired"
