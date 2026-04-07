@@ -37,6 +37,10 @@ def test_j_completion_source_fish(capsys):
     assert "complete" in captured.out.lower()
 
 
+def test_j_completion_complete_instruction_passes_through():
+    _handle_j_completion("bash_complete")
+
+
 def test_j_entry_point_intercepts_complete_var(monkeypatch, capsys):
     monkeypatch.setenv("_J_COMPLETE", "zsh_source")
     raised = False

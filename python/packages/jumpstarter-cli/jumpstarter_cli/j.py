@@ -21,27 +21,32 @@ from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.utils.env import env_async
 
 
-async def j_async():
-    @async_handle_exceptions
-    async def cli():
-        try:
-            async with BlockingPortal() as portal:
-                with ExitStack() as stack:
-                    async with env_async(portal, stack) as client:
+@async_handle_exceptions
+async def _run_cli():
+    completing = os.environ.get("_J_COMPLETE", "").endswith("_complete")
+    try:
+        async with BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with env_async(portal, stack) as client:
+                    if completing:
+                        await to_thread.run_sync(lambda: client.cli()(standalone_mode=True))
+                    else:
                         result = await to_thread.run_sync(lambda: client.cli()(standalone_mode=False))
                         if isinstance(result, int) and result != 0:
                             raise BaseExceptionGroup("CLI exit", [click.exceptions.Exit(result)])
-        except BaseExceptionGroup as eg:
-            # Handle exceptions wrapped in ExceptionGroup (e.g., from task groups)
-            if exc := find_exception_in_group(eg, EnvironmentVariableNotSetError):
-                raise ClickExceptionRed(f"Error: the j command must be used inside a jmp shell: {exc}") from eg
-            raise eg
+    except BaseExceptionGroup as eg:
+        if exc := find_exception_in_group(eg, EnvironmentVariableNotSetError):
+            raise ClickExceptionRed(f"Error: the j command must be used inside a jmp shell: {exc}") from eg
+        raise eg
+
+
+async def j_async():
     try:
         async with create_task_group() as tg:
             tg.start_soon(signal_handler, tg.cancel_scope)
 
             try:
-                await cli()
+                await _run_cli()
             finally:
                 tg.cancel_scope.cancel()
     except* click.exceptions.Exit as excgroup:
@@ -65,21 +70,20 @@ def _j_placeholder():
 
 
 def _handle_j_completion(instruction: str):
-    """Handle shell completion for the j command without entering the async stack.
+    """Handle shell completion source generation without entering the async stack.
 
-    For source generation (e.g. zsh_source, bash_source, fish_source) the
-    dynamic driver CLI is not needed; a placeholder Click group produces a
-    valid completion script. Raises SystemExit(0) after printing the script.
+    Only intercepts *_source instructions (generating the completion script).
+    The *_complete instructions (actual tab-completion) must go through the
+    async stack where the real driver CLI is built, so they are not handled here.
     """
+    if not instruction.endswith("_source"):
+        return
     shell = instruction.split("_")[0]
     comp_cls = get_completion_class(shell)
     if comp_cls is None:
         raise SystemExit(1)
     comp = comp_cls(_j_placeholder, {}, "j", "_J_COMPLETE")
-    if instruction.endswith("_source"):
-        click.echo(comp.source())
-        raise SystemExit(0)
-    click.echo(comp.complete())
+    click.echo(comp.source())
     raise SystemExit(0)
 
 
