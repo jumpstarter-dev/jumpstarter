@@ -108,7 +108,7 @@ class Sigrok(Driver):
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=None,
         )
 
         try:
@@ -167,18 +167,19 @@ class Sigrok(Driver):
         Returns:
             List of args like ["-C", "D0=vcc,D1=cs,D2=miso"]
         """
+        if selected_names:
+            resolved = [self._resolve_channel(name) for name in selected_names]
+            if self.channels:
+                channel_map = ",".join(f"{dev}={self.channels.get(dev, dev)}" for dev in resolved)
+            else:
+                channel_map = ",".join(resolved)
+            return ["-C", channel_map] if channel_map else []
+
         if not self.channels:
             return []
 
-        # Filter channels if specific names requested
-        if selected_names:
-            selected_lower = {name.lower() for name in selected_names}
-            filtered = {dev: user for dev, user in self.channels.items() if user.lower() in selected_lower}
-        else:
-            filtered = self.channels
-
         # Build channel map: device_name=user_name
-        channel_map = ",".join(f"{dev}={user}" for dev, user in filtered.items())
+        channel_map = ",".join(f"{dev}={user}" for dev, user in self.channels.items())
         return ["-C", channel_map] if channel_map else []
 
     def _config_args(self, cfg: CaptureConfig, *, continuous: bool = False) -> list[str]:
@@ -274,7 +275,10 @@ class Sigrok(Driver):
         """
         candidate = name_or_dn.strip()
 
-        # If already a device channel name, return as-is
+        if not self.channels:
+            return candidate
+
+        # If already a device channel name (key in channel map), return as-is
         if candidate in self.channels:
             return candidate
 
@@ -282,5 +286,9 @@ class Sigrok(Driver):
         for dev_name, user_name in self.channels.items():
             if user_name.lower() == candidate.lower():
                 return dev_name
+
+        # Accept device-style names (e.g., "D0", "A1") even if not in channel map
+        if candidate[:1].isalpha() and candidate[1:].isdigit():
+            return candidate
 
         raise ValueError(f"Channel '{name_or_dn}' not found in channel map {self.channels}")
