@@ -302,7 +302,7 @@ def test_decode_csv_format(demo_client):
         assert isinstance(sample.values, dict)
 
         # Verify timing progresses (1/100kHz = 0.00001s per sample)
-        assert sample.time == sample.sample * 0.00001
+        assert sample.time == pytest.approx(sample.sample * 0.00001, rel=1e-6, abs=1e-12)
 
         # Verify values are present
         assert len(sample.values) > 0

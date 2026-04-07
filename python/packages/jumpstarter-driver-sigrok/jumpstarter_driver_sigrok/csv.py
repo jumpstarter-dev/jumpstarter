@@ -70,6 +70,8 @@ def _extract_csv_data_lines(lines: list[str]) -> list[str]:
 
     for _i, line in enumerate(lines):
         line = line.strip()
+        if not line:
+            continue
         # Skip comment lines
         if line.startswith(";"):
             continue

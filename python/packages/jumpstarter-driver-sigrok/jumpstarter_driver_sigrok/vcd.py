@@ -44,21 +44,52 @@ def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
         if line == "$enddefinitions $end":
             break
 
-    # Parse and yield value changes one by one
+    # Parse value changes across timestamp blocks (supports multi-line changes)
     sample_idx = 0
+    current_time_s: float | None = None
+    current_values: dict[str, int | float] = {}
 
     for line in lines:
         line = line.strip()
-        if not line or line.startswith("$"):
+        if not line:
+            continue
+        if line.startswith("$"):
+            # Handle $dumpvars block: parse value changes until $end
+            if line.startswith("$dumpvars"):
+                if current_time_s is None:
+                    current_time_s = 0.0
+                # If $dumpvars and $end are on the same line, skip
+                if "$end" not in line or line == "$dumpvars":
+                    continue
             continue
 
-        # Timestamp line (e.g., "#100 1! 0" 1#")
         if line.startswith("#"):
-            sample_data = _parse_vcd_timestamp_line(line, timescale_multiplier, channel_map)
-            if sample_data is not None:
-                sample_data["sample"] = sample_idx
-                yield sample_data
+            # Flush previous timestamp block
+            if current_time_s is not None and current_values:
+                yield {"sample": sample_idx, "time": current_time_s, "values": current_values}
                 sample_idx += 1
+                current_values = {}
+
+            parts = line.split(maxsplit=1)
+            time_str = parts[0][1:]
+            if time_str:
+                current_time_s = int(time_str) * timescale_multiplier
+            else:
+                current_time_s = 0.0
+
+            # Inline values on the same line (if present)
+            if len(parts) > 1:
+                _parse_vcd_value_changes(parts[1], channel_map, current_values)
+            continue
+
+        # Value change line (may appear after # or inside $dumpvars)
+        if current_time_s is None:
+            current_time_s = 0.0
+        _parse_vcd_value_changes(line, channel_map, current_values)
+
+    # Flush final block
+    if current_time_s is not None and current_values:
+        yield {"sample": sample_idx, "time": current_time_s, "values": current_values}
 
 
 def _parse_timescale(line: str) -> float:
