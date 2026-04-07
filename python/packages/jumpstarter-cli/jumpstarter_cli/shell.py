@@ -42,7 +42,7 @@ _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
 
 
-def _run_shell_only(lease, config, command, path: str) -> int:
+def _run_shell_only(lease, config, command, path: str, j_commands: list[str] | None = None) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
     unsafe = config.drivers.unsafe if config is not None else getattr(lease, "unsafe", False)
@@ -59,6 +59,7 @@ def _run_shell_only(lease, config, command, path: str) -> int:
         lease=lease,
         insecure=insecure,
         passphrase=passphrase,
+        j_commands=j_commands,
     )
 
 
@@ -324,8 +325,18 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
                                 click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
 
-                            # Run the shell command
-                            exit_code = await anyio.to_thread.run_sync(_run_shell_only, lease, config, command, path)
+                            # Extract j command names for static shell completion
+                            j_commands = None
+                            try:
+                                cli_group = client.cli()
+                                if hasattr(cli_group, "list_commands"):
+                                    j_commands = cli_group.list_commands(None)
+                            except Exception:
+                                pass
+
+                            exit_code = await anyio.to_thread.run_sync(
+                                _run_shell_only, lease, config, command, path, j_commands
+                            )
 
                             # Shell has exited. For auto-created leases (release=True), call
                             # EndSession to trigger afterLease hook while keeping log stream
