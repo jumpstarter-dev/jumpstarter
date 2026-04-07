@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	filippo.io/keygen v0.0.0-20240718133620-7f162efbbd87
 	github.com/gin-gonic/gin v1.10.0
-	github.com/go-jose/go-jose/v4 v4.0.4
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-logr/logr v1.4.2
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
