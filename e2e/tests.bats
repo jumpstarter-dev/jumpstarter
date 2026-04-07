@@ -3,9 +3,14 @@ JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 # File to track bash wrapper process PIDs across tests
 EXPORTER_PIDS_FILE="${BATS_RUN_TMPDIR:-/tmp}/exporter_pids.txt"
 
+# Directory for exporter log files
+EXPORTER_LOGS_DIR="${BATS_RUN_TMPDIR:-/tmp}/exporter_logs"
+
 setup_file() {
   # Initialize the PIDs file at the start of all tests
   echo "" > "$EXPORTER_PIDS_FILE"
+  # Create directory for exporter logs
+  mkdir -p "$EXPORTER_LOGS_DIR"
 }
 
 setup() {
@@ -13,6 +18,62 @@ setup() {
   bats_load_library bats-assert
 
   bats_require_minimum_version 1.5.0
+
+  # Write test markers to exporter log files for easier correlation
+  local marker="=== TEST START: ${BATS_TEST_NAME} @ $(date -Iseconds) ==="
+  for logfile in "$EXPORTER_LOGS_DIR"/test-exporter-*.log; do
+    if [ -f "$logfile" ]; then
+      echo "$marker" >> "$logfile"
+    fi
+  done
+}
+
+# Dump debug logs when a test fails
+teardown() {
+  if [ "$BATS_TEST_COMPLETED" != 1 ]; then
+    echo "" >&2
+    echo "========================================" >&2
+    echo "TEST FAILED: ${BATS_TEST_NAME}" >&2
+    echo "========================================" >&2
+
+    echo "" >&2
+    echo "--- Exporter logs (test-exporter-oidc) ---" >&2
+    if [ -f "$EXPORTER_LOGS_DIR/test-exporter-oidc.log" ]; then
+      tail -250 "$EXPORTER_LOGS_DIR/test-exporter-oidc.log" >&2
+    else
+      echo "(no log file found)" >&2
+    fi
+
+    echo "" >&2
+    echo "--- Exporter logs (test-exporter-sa) ---" >&2
+    if [ -f "$EXPORTER_LOGS_DIR/test-exporter-sa.log" ]; then
+      tail -250 "$EXPORTER_LOGS_DIR/test-exporter-sa.log" >&2
+    else
+      echo "(no log file found)" >&2
+    fi
+
+    echo "" >&2
+    echo "--- Exporter logs (test-exporter-legacy) ---" >&2
+    if [ -f "$EXPORTER_LOGS_DIR/test-exporter-legacy.log" ]; then
+      tail -250 "$EXPORTER_LOGS_DIR/test-exporter-legacy.log" >&2
+    else
+      echo "(no log file found)" >&2
+    fi
+
+    echo "" >&2
+    echo "--- Controller logs (last 250 lines) ---" >&2
+    # operator uses component=controller, helm uses control-plane=controller-manager
+    kubectl -n "${JS_NAMESPACE}" logs -l component=controller --tail=250 2>&1 >&2 \
+      || kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-manager --tail=250 2>&1 >&2 || true
+
+    echo "" >&2
+    echo "--- Router logs (last 250 lines) ---" >&2
+    # operator uses component=router, helm uses control-plane=controller-router
+    kubectl -n "${JS_NAMESPACE}" logs -l component=router --tail=250 2>&1 >&2 \
+      || kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-router --tail=250 2>&1 >&2 || true
+
+    echo "========================================" >&2
+  fi
 }
 
 # teardown_file runs once after all tests complete (requires bats-core 1.5.0+)
@@ -231,21 +292,21 @@ wait_for_exporter() {
 @test "can run exporters" {
   cat <<EOF | bash 3>&- &
 while true; do
-  jmp run --exporter test-exporter-oidc
+  jmp run --exporter test-exporter-oidc >> "$EXPORTER_LOGS_DIR/test-exporter-oidc.log" 2>&1
 done
 EOF
   echo "$!" >> "$EXPORTER_PIDS_FILE"
 
   cat <<EOF | bash 3>&- &
 while true; do
-  jmp run --exporter test-exporter-sa
+  jmp run --exporter test-exporter-sa >> "$EXPORTER_LOGS_DIR/test-exporter-sa.log" 2>&1
 done
 EOF
   echo "$!" >> "$EXPORTER_PIDS_FILE"
 
   cat <<EOF | bash 3>&- &
 while true; do
-  jmp run --exporter test-exporter-legacy
+  jmp run --exporter test-exporter-legacy >> "$EXPORTER_LOGS_DIR/test-exporter-legacy.log" 2>&1
 done
 EOF
   echo "$!" >> "$EXPORTER_PIDS_FILE"
