@@ -22,7 +22,9 @@ setup() {
   # Write test markers to exporter log files for easier correlation
   local marker="=== TEST START: ${BATS_TEST_NAME} @ $(date -Iseconds) ==="
   for logfile in "$EXPORTER_LOGS_DIR"/test-exporter-*.log; do
-    [ -f "$logfile" ] && echo "$marker" >> "$logfile"
+    if [ -f "$logfile" ]; then
+      echo "$marker" >> "$logfile"
+    fi
   done
 }
 
@@ -60,11 +62,15 @@ teardown() {
 
     echo "" >&2
     echo "--- Controller logs (last 250 lines) ---" >&2
-    kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-manager --tail=250 2>&1 >&2 || true
+    # operator uses component=controller, helm uses control-plane=controller-manager
+    kubectl -n "${JS_NAMESPACE}" logs -l component=controller --tail=250 2>&1 >&2 \
+      || kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-manager --tail=250 2>&1 >&2 || true
 
     echo "" >&2
     echo "--- Router logs (last 250 lines) ---" >&2
-    kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-router --tail=250 2>&1 >&2 || true
+    # operator uses component=router, helm uses control-plane=controller-router
+    kubectl -n "${JS_NAMESPACE}" logs -l component=router --tail=250 2>&1 >&2 \
+      || kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-router --tail=250 2>&1 >&2 || true
 
     echo "========================================" >&2
   fi
