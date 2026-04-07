@@ -30,6 +30,10 @@ Jumpstarter uses gRPC for communication, which has specific requirements for pro
 
 The [Jumpstarter operator](service-operator.md) installs gRPC with **TLS passthrough** at the ingress or route: encrypted traffic is forwarded to the controller and router pods, which terminate TLS. HTTP login endpoints use edge TLS termination instead.
 
+```{note}
+When using ingress-nginx, you must enable the [`--enable-ssl-passthrough`](https://kubernetes.github.io/ingress-nginx/user-guide/cli-arguments/) flag on the ingress controller, as SSL passthrough is disabled by default. See the [ingress-nginx TLS documentation](https://kubernetes.github.io/ingress-nginx/user-guide/tls/#ssl-passthrough) for more details.
+```
+
 ## Installation
 
 To install Jumpstarter, see [Install with Operator](service-operator.md). That guide includes:
