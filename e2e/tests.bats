@@ -18,6 +18,12 @@ setup() {
   bats_load_library bats-assert
 
   bats_require_minimum_version 1.5.0
+
+  # Write test markers to exporter log files for easier correlation
+  local marker="=== TEST START: ${BATS_TEST_NAME} @ $(date -Iseconds) ==="
+  for logfile in "$EXPORTER_LOGS_DIR"/test-exporter-*.log; do
+    [ -f "$logfile" ] && echo "$marker" >> "$logfile"
+  done
 }
 
 # Dump debug logs when a test fails
@@ -31,7 +37,7 @@ teardown() {
     echo "" >&2
     echo "--- Exporter logs (test-exporter-oidc) ---" >&2
     if [ -f "$EXPORTER_LOGS_DIR/test-exporter-oidc.log" ]; then
-      tail -100 "$EXPORTER_LOGS_DIR/test-exporter-oidc.log" >&2
+      tail -250 "$EXPORTER_LOGS_DIR/test-exporter-oidc.log" >&2
     else
       echo "(no log file found)" >&2
     fi
@@ -39,7 +45,7 @@ teardown() {
     echo "" >&2
     echo "--- Exporter logs (test-exporter-sa) ---" >&2
     if [ -f "$EXPORTER_LOGS_DIR/test-exporter-sa.log" ]; then
-      tail -100 "$EXPORTER_LOGS_DIR/test-exporter-sa.log" >&2
+      tail -250 "$EXPORTER_LOGS_DIR/test-exporter-sa.log" >&2
     else
       echo "(no log file found)" >&2
     fi
@@ -47,26 +53,18 @@ teardown() {
     echo "" >&2
     echo "--- Exporter logs (test-exporter-legacy) ---" >&2
     if [ -f "$EXPORTER_LOGS_DIR/test-exporter-legacy.log" ]; then
-      tail -100 "$EXPORTER_LOGS_DIR/test-exporter-legacy.log" >&2
+      tail -250 "$EXPORTER_LOGS_DIR/test-exporter-legacy.log" >&2
     else
       echo "(no log file found)" >&2
     fi
 
     echo "" >&2
-    echo "--- Controller logs (last 100 lines) ---" >&2
-    kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-manager --tail=100 2>&1 >&2 || true
+    echo "--- Controller logs (last 250 lines) ---" >&2
+    kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-manager --tail=250 2>&1 >&2 || true
 
     echo "" >&2
-    echo "--- Router logs (last 100 lines) ---" >&2
-    kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-router --tail=100 2>&1 >&2 || true
-
-    echo "" >&2
-    echo "--- Exporter CRD status ---" >&2
-    kubectl -n "${JS_NAMESPACE}" get exporters.jumpstarter.dev -o wide 2>&1 >&2 || true
-
-    echo "" >&2
-    echo "--- Lease CRD status ---" >&2
-    kubectl -n "${JS_NAMESPACE}" get leases.jumpstarter.dev -o wide 2>&1 >&2 || true
+    echo "--- Router logs (last 250 lines) ---" >&2
+    kubectl -n "${JS_NAMESPACE}" logs -l control-plane=controller-router --tail=250 2>&1 >&2 || true
 
     echo "========================================" >&2
   fi
