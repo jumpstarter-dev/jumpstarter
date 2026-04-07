@@ -1,0 +1,17 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: java-test-exporter
+endpoint: ""
+token: ""
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+  shell:
+    type: jumpstarter_driver_shell.driver.Shell
+    config:
+      methods:
+        hello: "echo 'Hello from Jumpstarter'"
+        hostname: "hostname"
+        date: "date +%s"

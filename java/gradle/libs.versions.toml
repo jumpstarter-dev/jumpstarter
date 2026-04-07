@@ -1,0 +1,22 @@
+[versions]
+grpc = "1.68.1"
+protobuf = "4.28.3"
+snakeyaml = "2.3"
+jetbrains-annotations = "26.0.1"
+junit = "5.11.3"
+googleapis-common-protos = "2.48.0"
+
+[libraries]
+grpc-netty-shaded = { module = "io.grpc:grpc-netty-shaded", version.ref = "grpc" }
+grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
+grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+protobuf-java-util = { module = "com.google.protobuf:protobuf-java-util", version.ref = "protobuf" }
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
+jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
+googleapis-common-protos = { module = "com.google.api.grpc:proto-google-common-protos", version.ref = "googleapis-common-protos" }
+grpc-googleapis = { module = "com.google.api.grpc:grpc-google-common-protos", version.ref = "googleapis-common-protos" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+
+[plugins]
+protobuf = { id = "com.google.protobuf", version = "0.9.4" }
