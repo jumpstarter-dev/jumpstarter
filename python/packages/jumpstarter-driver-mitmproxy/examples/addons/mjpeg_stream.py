@@ -160,15 +160,16 @@ class Handler:
 
     def handle(self, flow: http.HTTPFlow, config: dict) -> bool:
         """Route video requests to the appropriate handler."""
-        path = flow.request.path
-        parts = path.rstrip("/").split("/")
+        # path_components returns decoded path segments with no query string
+        # e.g. ("streaming", "video", "camera", "rear", "snapshot.jpg")
+        parts = flow.request.path_components
 
-        # Expected: /streaming/video/camera/{camera_id}/{resource}
-        if len(parts) < 6:
+        # Expected: streaming/video/camera/{camera_id}/{resource}
+        if len(parts) < 5:
             return False
 
-        camera_id = parts[4]
-        resource = parts[5]
+        camera_id = parts[3]
+        resource = parts[4]
 
         cameras = config.get("cameras", {})
         camera_config = cameras.get(camera_id, {})
@@ -299,7 +300,7 @@ class Handler:
         # Try loading from files directory
         frame_dir = files_dir / frames_dir
 
-        if frame_dir.exists():
+        if frame_dir.is_dir():
             frames = sorted(frame_dir.glob("*.jpg"))
             if not frames:
                 frames = sorted(frame_dir.glob("*.jpeg"))

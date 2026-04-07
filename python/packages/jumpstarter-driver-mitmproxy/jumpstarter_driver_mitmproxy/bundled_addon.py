@@ -155,6 +155,9 @@ class TemplateEngine:
         {{state(key, default)}}        → Value with fallback default
     """
 
+    # Class-level counter state, intentionally shared across instances.
+    # Counters persist across config reloads so {{counter(name)}} values
+    # increase monotonically within a proxy session.
     _counters: dict[str, int] = defaultdict(int)
 
     # Only these environment variables may be read via {{env(...)}} templates.
@@ -238,29 +241,60 @@ class TemplateEngine:
         if expr == "uuid":
             import uuid
             return str(uuid.uuid4())
-        if expr.startswith("random_int("):
-            args = cls._parse_args(expr)
-            return random.randint(int(args[0]), int(args[1]))
-        if expr.startswith("random_float("):
-            args = cls._parse_args(expr)
-            return round(random.uniform(float(args[0]), float(args[1])), 2)
-        if expr.startswith("random_choice("):
-            args = cls._parse_args(expr)
-            return random.choice(args)
-        if expr.startswith("counter("):
-            args = cls._parse_args(expr)
-            name = args[0]
-            cls._counters[name] += 1
-            return cls._counters[name]
-        if expr.startswith("env("):
-            args = cls._parse_args(expr)
-            var_name = args[0]
-            if var_name in cls.ALLOWED_ENV_VARS:
-                ctx.log.warn(f"env() template used: allowed variable '{var_name}'")
-                return os.environ.get(var_name, "")
-            ctx.log.warn(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
-            return ""
+        # Dispatch parametric expressions
+        for prefix, handler in cls._BUILTIN_DISPATCH:
+            if expr.startswith(prefix):
+                return handler(cls, expr)
         return None
+
+    def _eval_random_int(cls, expr: str) -> int:
+        args = cls._parse_args(expr)
+        if len(args) < 2:
+            return 0
+        try:
+            return random.randint(int(args[0]), int(args[1]))
+        except (ValueError, TypeError):
+            return 0
+
+    def _eval_random_float(cls, expr: str) -> float:
+        args = cls._parse_args(expr)
+        if len(args) < 2:
+            return 0.0
+        try:
+            return round(random.uniform(float(args[0]), float(args[1])), 2)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def _eval_random_choice(cls, expr: str) -> str:
+        args = cls._parse_args(expr)
+        if not args or args == [""]:
+            return ""
+        return random.choice(args)
+
+    def _eval_counter(cls, expr: str) -> int:
+        args = cls._parse_args(expr)
+        name = args[0] if args else "default"
+        cls._counters[name] += 1
+        return cls._counters[name]
+
+    def _eval_env(cls, expr: str) -> str:
+        args = cls._parse_args(expr)
+        if not args:
+            return ""
+        var_name = args[0]
+        if var_name in cls.ALLOWED_ENV_VARS:
+            ctx.log.warn(f"env() template used: allowed variable '{var_name}'")
+            return os.environ.get(var_name, "")
+        ctx.log.warn(f"env() template blocked: variable '{var_name}' is not in ALLOWED_ENV_VARS")
+        return ""
+
+    _BUILTIN_DISPATCH: list[tuple[str, Any]] = [
+        ("random_int(", _eval_random_int),
+        ("random_float(", _eval_random_float),
+        ("random_choice(", _eval_random_choice),
+        ("counter(", _eval_counter),
+        ("env(", _eval_env),
+    ]
 
     @classmethod
     def _evaluate_flow(
@@ -271,29 +305,47 @@ class TemplateEngine:
             return None
         if expr == "request_path":
             return flow.request.path
-        if expr.startswith("request_header("):
-            args = cls._parse_args(expr)
-            return flow.request.headers.get(args[0], "")
         if expr == "request_body":
             return flow.request.get_text() or ""
-        if expr.startswith("request_body_json("):
-            args = cls._parse_args(expr)
-            try:
-                body_obj = json.loads(flow.request.get_text() or "{}")
-            except json.JSONDecodeError:
-                return None
-            return _resolve_dotted_path(body_obj, args[0])
-        if expr.startswith("request_query("):
-            args = cls._parse_args(expr)
-            return flow.request.query.get(args[0], "")
-        if expr.startswith("request_path_segment("):
-            args = cls._parse_args(expr)
-            segments = [s for s in flow.request.path.split("/") if s]
-            try:
-                return segments[int(args[0])]
-            except (IndexError, ValueError):
-                return ""
+        for prefix, handler in cls._FLOW_DISPATCH:
+            if expr.startswith(prefix):
+                return handler(cls, expr, flow)
         return None
+
+    def _eval_request_header(cls, expr: str, flow: http.HTTPFlow) -> str:
+        args = cls._parse_args(expr)
+        return flow.request.headers.get(args[0], "") if args else ""
+
+    def _eval_request_body_json(cls, expr: str, flow: http.HTTPFlow) -> Any | None:
+        args = cls._parse_args(expr)
+        if not args:
+            return None
+        try:
+            body_obj = json.loads(flow.request.get_text() or "{}")
+        except json.JSONDecodeError:
+            return None
+        return _resolve_dotted_path(body_obj, args[0])
+
+    def _eval_request_query(cls, expr: str, flow: http.HTTPFlow) -> str:
+        args = cls._parse_args(expr)
+        return flow.request.query.get(args[0], "") if args else ""
+
+    def _eval_request_path_segment(cls, expr: str, flow: http.HTTPFlow) -> str:
+        args = cls._parse_args(expr)
+        if not args:
+            return ""
+        segments = [s for s in flow.request.path.split("/") if s]
+        try:
+            return segments[int(args[0])]
+        except (IndexError, ValueError):
+            return ""
+
+    _FLOW_DISPATCH: list[tuple[str, Any]] = [
+        ("request_header(", _eval_request_header),
+        ("request_body_json(", _eval_request_body_json),
+        ("request_query(", _eval_request_query),
+        ("request_path_segment(", _eval_request_path_segment),
+    ]
 
     @classmethod
     def _evaluate_state(
@@ -301,6 +353,8 @@ class TemplateEngine:
     ) -> Any:
         """Evaluate state() expressions."""
         args = cls._parse_args(expr)
+        if not args:
+            return None
         key = args[0]
         default = args[1] if len(args) > 1 else None
         if state is not None:
@@ -409,6 +463,7 @@ class CaptureClient:
     def _connect(self) -> bool:
         try:
             sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            sock.settimeout(2.0)
             sock.connect(self._socket_path)
             self._sock = sock
             return True
@@ -485,13 +540,13 @@ class MitmproxyMockAddon:
         self.endpoints: dict[str, dict] = {}
         self.files_dir: Path = Path(self.MOCK_DIR) / "../mock-files"
         self.addon_registry: AddonRegistry | None = None
-        self._config_mtime: float = 0
+        self._config_mtime: int = 0
         self._config_path = Path(self.MOCK_DIR) / "endpoints.json"
         self._sequence_state: dict[str, int] = defaultdict(int)
         self._sequence_start: dict[str, float] = {}
         self._capture_client = CaptureClient(CAPTURE_SOCKET)
         self._state: dict = {}
-        self._state_mtime: float = 0
+        self._state_mtime: int = 0
         self._state_path = Path(self.MOCK_DIR) / "state.json"
         self._spool_dir = Path(CAPTURE_SPOOL_DIR)
         self._spool_dir.mkdir(parents=True, exist_ok=True)
@@ -506,7 +561,7 @@ class MitmproxyMockAddon:
             return
 
         try:
-            mtime = self._config_path.stat().st_mtime
+            mtime = self._config_path.stat().st_mtime_ns
             if mtime <= self._config_mtime:
                 return  # No changes
 
@@ -551,7 +606,7 @@ class MitmproxyMockAddon:
             return
 
         try:
-            mtime = self._state_path.stat().st_mtime
+            mtime = self._state_path.stat().st_mtime_ns
             if mtime <= self._state_mtime:
                 return  # No changes
 

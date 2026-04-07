@@ -132,12 +132,14 @@ class Handler:
         """Serve the HLS master playlist (points to media playlist)."""
         bitrate = channel.get("bitrate", 128000)
         base = f"/streaming/audio/channel/{channel_id}"
+        # Sanitize channel name for safe M3U8 interpolation
+        name = channel.get("name", channel_id).replace('"', "'").replace("\n", " ").replace(",", "_")
 
         playlist = (
             "#EXTM3U\n"
             "#EXT-X-VERSION:3\n"
             f"#EXT-X-STREAM-INF:BANDWIDTH={bitrate},"
-            f"CODECS=\"mp4a.40.2\",NAME=\"{channel.get('name', channel_id)}\"\n"
+            f"CODECS=\"mp4a.40.2\",NAME=\"{name}\"\n"
             f"{base}/media.m3u8\n"
         )
 

@@ -720,10 +720,12 @@ class TestDeepMergePatch:
         deep_merge_patch(target, {"items[2]": "z"})
         assert target["items"] == ["a", "b", "z"]
 
-    def test_missing_key_raises(self, deep_merge_patch):
+    def test_missing_key_skipped(self, deep_merge_patch):
+        """Missing array keys are auto-created rather than raising."""
         target = {"a": 1}
-        with pytest.raises(KeyError):
-            deep_merge_patch(target, {"nonexistent[0]": "val"})
+        deep_merge_patch(target, {"nonexistent[0]": "val"})
+        assert target["nonexistent"] == ["val"]
+        assert target["a"] == 1
 
 
 class TestApplyPatches:

@@ -34,6 +34,7 @@ import fnmatch
 import json
 import logging
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -211,10 +212,17 @@ def _write_captured_file(
     # Sanitise characters that are unsafe in filenames but keep slashes
     clean = "".join(c if (c.isalnum() or c in "/-_.") else "_" for c in clean)
     clean = clean.strip("_")
+    # Filter out path traversal segments
+    clean = "/".join(p for p in clean.split("/") if p not in ("", ".", ".."))
+    if not clean:
+        clean = "root"
     if clean.endswith(ext):
         clean = clean[:-len(ext)]
     rel = f"responses/{method}/{clean}{ext}"
-    dest = files_dir / rel
+    base = files_dir.resolve()
+    dest = (files_dir / rel).resolve()
+    if not dest.is_relative_to(base):
+        raise ValueError(f"Unsafe export path generated from URL path: {url_path}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
     endpoint["file"] = rel
@@ -398,8 +406,8 @@ class MitmproxyDriver(Driver):
     _capture_server_thread: threading.Thread | None = field(
         default=None, init=False, repr=False
     )
-    _capture_reader_thread: threading.Thread | None = field(
-        default=None, init=False, repr=False
+    _capture_reader_threads: list = field(
+        default_factory=list, init=False, repr=False
     )
     _captured_requests: list = field(default_factory=list, init=False)
     _capture_lock: threading.Lock = field(
@@ -409,6 +417,7 @@ class MitmproxyDriver(Driver):
     _stderr_thread: threading.Thread | None = field(
         default=None, init=False, repr=False
     )
+    _web_password: str = field(default_factory=lambda: secrets.token_urlsafe(16), init=False)
 
     @classmethod
     def client(cls) -> str:
@@ -424,10 +433,12 @@ class MitmproxyDriver(Driver):
         (e.g., when the shell exits). Ensures the mitmproxy subprocess
         and capture server are stopped so ports are released.
         """
-        if self._process is not None and self._process.poll() is None:
-            logger.info("Stopping mitmproxy on session teardown (PID %s)", self._process.pid)
-            self.stop()
-        super().close()
+        try:
+            if self._process is not None and self._process.poll() is None:
+                logger.info("Stopping mitmproxy on session teardown (PID %s)", self._process.pid)
+                self.stop()
+        finally:
+            super().close()
 
     @export
     def start(self, mode: str = "mock", web_ui: bool = False,
@@ -491,31 +502,12 @@ class MitmproxyDriver(Driver):
             stderr=subprocess.PIPE,
         )
 
-        # Wait for startup
-        time.sleep(2)
+        # Wait for startup by polling the listen port
+        self._wait_for_port(self.listen.host, self.listen.port, timeout=10)
 
-        if self._process.poll() is not None:
-            exit_code = self._process.returncode
-            stderr = self._process.stderr.read().decode() if self._process.stderr else ""
-            self._process = None
-            self._stop_capture_server()
-            # Check if the port is in use (common cause of startup failure)
-            port_hint = ""
-            if self._is_port_in_use(self.listen.host, self.listen.port):
-                port_hint = (
-                    f" (port {self.listen.port} is already in use"
-                    " — is another mitmproxy instance running?)"
-                )
-            elif web_ui and self._is_port_in_use(self.web.host, self.web.port):
-                port_hint = (
-                    f" (web UI port {self.web.port} is already in use"
-                    " — is another mitmproxy instance running?)"
-                )
-            logger.error(
-                "mitmproxy exited during startup (exit code %s)%s: %s",
-                exit_code, port_hint, stderr.strip(),
-            )
-            return f"Failed to start{port_hint}: {stderr[:500]}"
+        startup_error = self._check_startup_failure(web_ui)
+        if startup_error:
+            return startup_error
 
         # Drain stderr in a background thread to prevent pipe buffer deadlock
         self._stderr_thread = threading.Thread(
@@ -544,7 +536,7 @@ class MitmproxyDriver(Driver):
                 "--web-host", self.web.host,
                 "--web-port", str(self.web.port),
                 "--set", "web_open_browser=false",
-                "--set", "web_password=jumpstarter",
+                "--set", f"web_password={self._web_password}",
             ])
 
         if self.ssl_insecure:
@@ -557,8 +549,12 @@ class MitmproxyDriver(Driver):
     ) -> str | None:
         """Append mode-specific flags to cmd. Returns error string or None."""
         if mode == "mock":
-            self._load_startup_mocks()
-            self._write_mock_config()
+            try:
+                self._load_startup_mocks()
+                self._write_mock_config()
+            except Exception as e:
+                self._stop_capture_server()
+                return f"Failed to initialize mock mode: {e}"
 
         elif mode == "record":
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -602,13 +598,42 @@ class MitmproxyDriver(Driver):
         if web_ui:
             msg += (
                 f" | Web UI: http://{self.web.host}:{self.web.port}"
-                f"/?token=jumpstarter"
+                f"/?token={self._web_password}"
             )
 
         if mode == "record" and self._current_flow_file:
             msg += f" | Recording to: {self._current_flow_file}"
 
         return msg
+
+    def _check_startup_failure(self, web_ui: bool) -> str | None:
+        """Check if the mitmproxy process exited during startup.
+
+        Returns an error message if the process failed, or None on success.
+        """
+        if self._process.poll() is None:
+            return None
+
+        exit_code = self._process.returncode
+        stderr = self._process.stderr.read().decode() if self._process.stderr else ""
+        self._process = None
+        self._stop_capture_server()
+        port_hint = ""
+        if self._is_port_in_use(self.listen.host, self.listen.port):
+            port_hint = (
+                f" (port {self.listen.port} is already in use"
+                " — is another mitmproxy instance running?)"
+            )
+        elif web_ui and self._is_port_in_use(self.web.host, self.web.port):
+            port_hint = (
+                f" (web UI port {self.web.port} is already in use"
+                " — is another mitmproxy instance running?)"
+            )
+        logger.error(
+            "mitmproxy exited during startup (exit code %s)%s: %s",
+            exit_code, port_hint, stderr.strip(),
+        )
+        return f"Failed to start{port_hint}: {stderr[:500]}"
 
     @staticmethod
     def _is_port_in_use(host: str, port: int) -> bool:
@@ -620,6 +645,20 @@ class MitmproxyDriver(Driver):
             return False
         except OSError:
             return True
+
+    @staticmethod
+    def _wait_for_port(host: str, port: int, timeout: float = 10) -> bool:
+        """Poll until a TCP port is accepting connections or timeout."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1)
+                    s.connect((host, port))
+                return True
+            except OSError:
+                time.sleep(0.2)
+        return False
 
     def _drain_stderr(self):
         """Read and discard stderr from the mitmproxy process.
@@ -665,7 +704,10 @@ class MitmproxyDriver(Driver):
             except subprocess.TimeoutExpired:
                 logger.error("SIGTERM timed out, sending SIGKILL")
                 self._process.kill()
-                self._process.wait()
+                try:
+                    self._process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    logger.warning("Process did not exit after SIGKILL (PID %s)", self._process.pid)
 
         prev_mode = self._current_mode
         flow_file = self._current_flow_file
@@ -739,7 +781,7 @@ class MitmproxyDriver(Driver):
             "web_ui_enabled": self._web_ui_enabled,
             "web_ui_address": (
                 f"http://{self.web.host}:{self.web.port}"
-                f"/?token=jumpstarter"
+                f"/?token={self._web_password}"
                 if running and self._web_ui_enabled else None
             ),
             "mock_count": len(self._mock_endpoints),
@@ -798,11 +840,19 @@ class MitmproxyDriver(Driver):
             Confirmation message.
         """
         key = f"{method.upper()} {path}"
+        try:
+            parsed_body = json.loads(body) if body else {}
+        except json.JSONDecodeError as e:
+            return f"Invalid body JSON: {e}"
+        try:
+            parsed_headers = json.loads(headers) if headers else {}
+        except json.JSONDecodeError as e:
+            return f"Invalid headers JSON: {e}"
         self._mock_endpoints[key] = {
             "status": int(status),
-            "body": json.loads(body) if body else {},
+            "body": parsed_body,
             "content_type": content_type,
-            "headers": json.loads(headers) if headers else {},
+            "headers": parsed_headers,
         }
         self._write_mock_config()
         return f"Mock set: {key} → {int(status)}"
@@ -1139,7 +1189,10 @@ class MitmproxyDriver(Driver):
         Returns:
             Confirmation message.
         """
-        value = json.loads(value_json)
+        try:
+            value = json.loads(value_json)
+        except json.JSONDecodeError as e:
+            return f"Invalid JSON: {e}"
         self._state_store[key] = value
         self._write_state()
         return f"State set: {key}"
@@ -1194,6 +1247,39 @@ class MitmproxyDriver(Driver):
         ]
         return json.dumps(addons)
 
+    def _resolve_scenario_path(self, scenario_file: str) -> Path | str:
+        """Resolve a scenario file path, returning Path or error string."""
+        path = Path(scenario_file)
+        if not path.is_absolute():
+            path = Path(self.directories.mocks) / path
+        if path.is_dir():
+            path = path / "scenario.yaml"
+        mocks_base = Path(self.directories.mocks).resolve()
+        resolved = path.resolve()
+        if not resolved.is_relative_to(mocks_base):
+            return f"Invalid scenario path: must be within {self.directories.mocks}"
+        if not resolved.exists():
+            return f"Scenario file not found: {path}"
+        return resolved
+
+    @staticmethod
+    def _extract_endpoints(raw: dict) -> dict | str:
+        """Extract endpoints from a parsed scenario dict.
+
+        Returns endpoints dict or error string.
+        """
+        if not isinstance(raw, dict):
+            return "Invalid scenario: expected a JSON/YAML object"
+        if "endpoints" in raw:
+            endpoints = raw["endpoints"]
+        elif "mocks" in raw:
+            endpoints = raw["mocks"]
+        else:
+            endpoints = raw
+        if not isinstance(endpoints, dict):
+            return "Invalid scenario: expected an object of endpoints"
+        return endpoints
+
     @export
     def load_mock_scenario(self, scenario_file: str) -> str:
         """Load a complete mock scenario from a JSON or YAML file.
@@ -1209,32 +1295,23 @@ class MitmproxyDriver(Driver):
         Returns:
             Status message with count of loaded endpoints.
         """
-        path = Path(scenario_file)
-        if not path.is_absolute():
-            path = Path(self.directories.mocks) / path
-        if path.is_dir():
-            path = path / "scenario.yaml"
-
-        if not path.exists():
-            return f"Scenario file not found: {path}"
+        result = self._resolve_scenario_path(scenario_file)
+        if isinstance(result, str):
+            return result
+        resolved = result
 
         try:
-            with open(path) as f:
-                if path.suffix in (".yaml", ".yml"):
+            with open(resolved) as f:
+                if resolved.suffix in (".yaml", ".yml"):
                     raw = yaml.safe_load(f)
                 else:
                     raw = json.load(f)
         except (json.JSONDecodeError, yaml.YAMLError, OSError) as e:
             return f"Failed to load scenario: {e}"
 
-        # Handle v2 format (with "endpoints" wrapper), "mocks" key,
-        # or v1 flat format
-        if "endpoints" in raw:
-            endpoints = raw["endpoints"]
-        elif "mocks" in raw:
-            endpoints = raw["mocks"]
-        else:
-            endpoints = raw
+        endpoints = self._extract_endpoints(raw)
+        if isinstance(endpoints, str):
+            return endpoints
 
         # Convert URL-keyed endpoints to METHOD /path format
         self._mock_endpoints = _convert_url_endpoints(endpoints)
@@ -1242,7 +1319,7 @@ class MitmproxyDriver(Driver):
         self._write_mock_config()
         return (
             f"Loaded {len(self._mock_endpoints)} endpoint(s) "
-            f"from {path.name}"
+            f"from {resolved.name}"
         )
 
     @export
@@ -1269,17 +1346,9 @@ class MitmproxyDriver(Driver):
         except (json.JSONDecodeError, yaml.YAMLError) as e:
             return f"Failed to parse scenario: {e}"
 
-        if not isinstance(raw, dict):
-            return "Invalid scenario: expected a JSON/YAML object"
-
-        # Handle v2 format (with "endpoints" wrapper), "mocks" key,
-        # or v1 flat format
-        if "endpoints" in raw:
-            endpoints = raw["endpoints"]
-        elif "mocks" in raw:
-            endpoints = raw["mocks"]
-        else:
-            endpoints = raw
+        endpoints = self._extract_endpoints(raw)
+        if isinstance(endpoints, str):
+            return endpoints
 
         # Convert URL-keyed endpoints to METHOD /path format
         self._mock_endpoints = _convert_url_endpoints(endpoints)
@@ -1300,6 +1369,8 @@ class MitmproxyDriver(Driver):
             JSON array of flow file info (name, size, modified time).
         """
         flow_path = Path(self.directories.flows)
+        if not flow_path.is_dir():
+            return json.dumps([])
         files = []
         for f in sorted(flow_path.glob("*.bin")):
             stat = f.stat()
@@ -1335,7 +1406,7 @@ class MitmproxyDriver(Driver):
         flow_path = Path(self.directories.flows)
         src = (flow_path / name).resolve()
         # Guard against path traversal
-        if not str(src).startswith(str(flow_path.resolve())):
+        if not src.is_relative_to(flow_path.resolve()):
             raise ValueError(f"Invalid flow file name: {name!r}")
         if not src.exists():
             raise FileNotFoundError(f"Flow file not found: {name}")
@@ -1684,7 +1755,11 @@ class MitmproxyDriver(Driver):
         Yields:
             Base64-encoded chunks of file content.
         """
-        src = Path(self.directories.files) / relative_path
+        base = Path(self.directories.files).resolve()
+        src = (base / relative_path).resolve()
+        if not src.is_relative_to(base):
+            logger.error("Blocked path traversal in get_captured_file: %s", relative_path)
+            return
         if not src.exists():
             return
         # 2 MB raw → ~2.7 MB base64, well under the 4 MB gRPC limit
@@ -1711,7 +1786,10 @@ class MitmproxyDriver(Driver):
         Returns:
             Confirmation message.
         """
-        dest = Path(self.directories.files) / relative_path
+        base = Path(self.directories.files).resolve()
+        dest = (base / relative_path).resolve()
+        if not dest.is_relative_to(base):
+            return f"Invalid file path: {relative_path}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(base64.b64decode(content_base64))
         return f"Uploaded: {relative_path} ({dest.stat().st_size} bytes)"
@@ -1793,12 +1871,13 @@ class MitmproxyDriver(Driver):
         while self._capture_running:
             try:
                 conn, _ = self._capture_server_sock.accept()
-                self._capture_reader_thread = threading.Thread(
+                t = threading.Thread(
                     target=self._capture_read_loop,
                     args=(conn,),
                     daemon=True,
                 )
-                self._capture_reader_thread.start()
+                t.start()
+                self._capture_reader_threads.append(t)
             except socket.timeout:
                 continue
             except OSError:
@@ -1845,9 +1924,9 @@ class MitmproxyDriver(Driver):
             self._capture_server_thread.join(timeout=5)
             self._capture_server_thread = None
 
-        if self._capture_reader_thread is not None:
-            self._capture_reader_thread.join(timeout=5)
-            self._capture_reader_thread = None
+        for t in self._capture_reader_threads:
+            t.join(timeout=5)
+        self._capture_reader_threads.clear()
 
         if self._capture_socket_path is not None:
             try:
@@ -1937,8 +2016,15 @@ class MitmproxyDriver(Driver):
             "endpoints": self._mock_endpoints,
         }
 
-        with open(config_file, "w") as f:
-            json.dump(v2_config, f, indent=2)
+        # Atomic write: write to temp file then rename to avoid partial reads
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(mock_path), suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                json.dump(v2_config, f, indent=2)
+            os.replace(tmp_path, config_file)
+        except BaseException:
+            os.unlink(tmp_path)
+            raise
         logger.debug(
             "Wrote %d mock(s) to %s",
             len(self._mock_endpoints),
@@ -1951,8 +2037,15 @@ class MitmproxyDriver(Driver):
         mock_path.mkdir(parents=True, exist_ok=True)
         state_file = mock_path / "state.json"
 
-        with open(state_file, "w") as f:
-            json.dump(self._state_store, f, indent=2)
+        # Atomic write: write to temp file then rename to avoid partial reads
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(mock_path), suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                json.dump(self._state_store, f, indent=2)
+            os.replace(tmp_path, state_file)
+        except BaseException:
+            os.unlink(tmp_path)
+            raise
         logger.debug(
             "Wrote %d state key(s) to %s",
             len(self._state_store),

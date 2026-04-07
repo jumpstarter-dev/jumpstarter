@@ -1489,6 +1489,28 @@ def _collect_file_entries(endpoints: dict) -> list[dict]:
     return entries
 
 
+def _parse_scenario_endpoints(
+    scenario_path: Path, content: str,
+) -> dict | None:
+    """Parse a scenario file and return the endpoints dict, or None."""
+    try:
+        if scenario_path.suffix in (".yaml", ".yml"):
+            raw = yaml.safe_load(content)
+        else:
+            raw = json.loads(content)
+    except (yaml.YAMLError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    if "endpoints" in raw:
+        endpoints = raw["endpoints"]
+    elif "mocks" in raw:
+        endpoints = raw["mocks"]
+    else:
+        endpoints = raw
+    return endpoints if isinstance(endpoints, dict) else None
+
+
 def _upload_scenario_files(
     client: MitmproxyClient, scenario_path: Path, content: str,
 ) -> None:
@@ -1498,33 +1520,23 @@ def _upload_scenario_files(
     directory and uploads it to the exporter's mock files directory.
     Handles files at the endpoint level and inside ``rules`` entries.
     """
-    try:
-        if scenario_path.suffix in (".yaml", ".yml"):
-            raw = yaml.safe_load(content)
-        else:
-            raw = json.loads(content)
-    except (yaml.YAMLError, json.JSONDecodeError):
-        return
-
-    if not isinstance(raw, dict):
-        return
-
-    if "endpoints" in raw:
-        endpoints = raw["endpoints"]
-    elif "mocks" in raw:
-        endpoints = raw["mocks"]
-    else:
-        endpoints = raw
-    if not isinstance(endpoints, dict):
+    endpoints = _parse_scenario_endpoints(scenario_path, content)
+    if endpoints is None:
         return
 
     base_dir = scenario_path.parent
+    base_resolved = base_dir.resolve()
 
     for entry in _collect_file_entries(endpoints):
         if "file" not in entry:
             continue
         file_ref = entry["file"]
-        file_path = base_dir / file_ref
+        if not isinstance(file_ref, str):
+            continue
+        file_path = (base_dir / file_ref).resolve()
+        if not file_path.is_relative_to(base_resolved):
+            click.echo(f"  skipped unsafe file path: {file_ref}")
+            continue
         if file_path.exists():
             click.echo(f"  uploading {file_ref}")
             client.upload_mock_file(file_ref, file_path.read_bytes())
