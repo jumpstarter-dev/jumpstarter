@@ -1,4 +1,5 @@
 import concurrent.futures._base
+import os
 import sys
 from contextlib import ExitStack
 from typing import cast
@@ -6,6 +7,7 @@ from typing import cast
 import click
 from anyio import create_task_group, get_cancelled_exc_class, run, to_thread
 from anyio.from_thread import BlockingPortal
+from click.shell_completion import get_completion_class
 from jumpstarter_cli_common.exceptions import (
     ClickExceptionRed,
     async_handle_exceptions,
@@ -57,7 +59,34 @@ async def j_async():
         sys.exit(2)
 
 
+@click.group()
+def _j_placeholder():
+    """Jumpstarter driver client (requires jmp shell)"""
+
+
+def _handle_j_completion(instruction: str):
+    """Handle shell completion for the j command without entering the async stack.
+
+    For source generation (e.g. zsh_source, bash_source, fish_source) the
+    dynamic driver CLI is not needed; a placeholder Click group produces a
+    valid completion script. Raises SystemExit(0) after printing the script.
+    """
+    shell = instruction.split("_")[0]
+    comp_cls = get_completion_class(shell)
+    if comp_cls is None:
+        raise SystemExit(1)
+    comp = comp_cls(_j_placeholder, {}, "j", "_J_COMPLETE")
+    if instruction.endswith("_source"):
+        click.echo(comp.source())
+        raise SystemExit(0)
+    click.echo(comp.complete())
+    raise SystemExit(0)
+
+
 def j():
+    complete_var = os.environ.get("_J_COMPLETE")
+    if complete_var:
+        _handle_j_completion(complete_var)
     traceback.install()
     run(j_async)
 
