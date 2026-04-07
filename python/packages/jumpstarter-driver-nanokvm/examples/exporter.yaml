@@ -12,8 +12,3 @@ export:
       host: "192.168.1.110"  # or IP address like "192.168.1.100"
       username: "admin"
       password: "admin"
-      # Optional: Enable serial console access via SSH
-      # enable_serial: true
-      # ssh_username: "root"
-      # ssh_password: "root"
-      # ssh_port: 22

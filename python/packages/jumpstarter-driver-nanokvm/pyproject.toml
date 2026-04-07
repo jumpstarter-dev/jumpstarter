@@ -1,7 +1,7 @@
 [project]
 name = "jumpstarter-driver-nanokvm"
 dynamic = ["version", "urls"]
-description = "Jumpstarter driver for NanoKVM devices providing video streaming, keyboard/mouse control, and serial console access"
+description = "Jumpstarter driver for NanoKVM devices providing video streaming and keyboard/mouse control"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
@@ -12,8 +12,7 @@ dependencies = [
     "anyio>=4.10.0",
     "jumpstarter",
     "jumpstarter-driver-composite",
-    "jumpstarter-driver-pyserial",
-    "nanokvm @ git+https://github.com/mangelajo/python-nanokvm.git@dev",
+    "nanokvm>=1.0.0",
     "aiohttp",
     "pillow",
     "pydantic",
@@ -51,6 +50,7 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
+    "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
 ]

@@ -269,7 +269,6 @@ class NanoKVMClient(CompositeClient):
     This composite client provides access to all NanoKVM functionality:
     - video: Video streaming and snapshots
     - hid: Keyboard and mouse control
-    - serial: Serial console access (if enabled)
 
     Example::
 

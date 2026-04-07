@@ -41,23 +41,6 @@ export:
       password: "admin"      # Default NanoKVM web interface password
 ```
 
-### Advanced Configuration
-
-```yaml
-export:
-  nanokvm:
-    type: jumpstarter_driver_nanokvm.driver.NanoKVM
-    config:
-      host: "192.168.1.100"
-      username: "admin"
-      password: "your-password"
-      # Optional: SSH access for serial console (future feature)
-      enable_serial: false
-      ssh_username: "root"
-      ssh_password: "root"
-      ssh_port: 22
-```
-
 ### Config Parameters
 
 | Parameter      | Description                                | Type  | Required | Default |
@@ -65,18 +48,13 @@ export:
 | host           | NanoKVM hostname or IP address             | str   | yes      |         |
 | username       | Web interface username                     | str   | no       | "admin" |
 | password       | Web interface password                     | str   | no       | "admin" |
-| enable_serial  | Enable serial console access via SSH       | bool  | no       | false   |
-| ssh_username   | SSH username for serial console            | str   | no       | "root"  |
-| ssh_password   | SSH password for serial console            | str   | no       | "root"  |
-| ssh_port       | SSH port for serial console                | int   | no       | 22      |
 
 ## Architecture
 
-The NanoKVM driver is a composite driver that provides three main interfaces:
+The NanoKVM driver is a composite driver that provides two main interfaces:
 
 1. **video**: Video streaming and snapshot capture
 2. **hid**: Keyboard and mouse HID control
-3. **serial**: Serial console access (optional, future feature)
 
 ## API Reference
 
@@ -84,7 +62,7 @@ The NanoKVM driver is a composite driver that provides three main interfaces:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_nanokvm.client.NanoKVMClient()
-    :members: get_info, reboot, mount_image, download_image, get_mounted_image, get_cdrom_status, is_image_download_enabled, get_image_download_status
+    :members: get_info, reboot, mount_image, download_image, get_mounted_image, get_cdrom_status, is_image_download_enabled, get_image_download_status, get_images
 ```
 
 ### NanoKVMVideoClient
