@@ -1,4 +1,5 @@
 import os
+import re
 import signal
 import sys
 import tempfile
@@ -85,7 +86,17 @@ def _run_process(
     return process.wait()
 
 
+_SAFE_COMMAND_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _validate_j_commands(j_commands: list[str] | None) -> list[str] | None:
+    if j_commands is None:
+        return None
+    return [cmd for cmd in j_commands if _SAFE_COMMAND_NAME.match(cmd)]
+
+
 def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[str] | None = None) -> str:
+    j_commands = _validate_j_commands(j_commands)
     if shell_name.endswith("bash"):
         lines = []
         if use_profiles:
@@ -129,7 +140,67 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
     return ""
 
 
-def launch_shell(  # noqa: C901
+def _launch_bash(shell, init_file, use_profiles, common_env, context, lease):
+    env = common_env | {
+        "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
+    }
+    cmd = [shell]
+    if init_file:
+        cmd.extend(["--rcfile", init_file.name])
+    elif not use_profiles:
+        cmd.extend(["--norc", "--noprofile"])
+    return _run_process(cmd, env, lease)
+
+
+def _launch_fish(shell, init_file, common_env, context, lease):
+    fish_fn = (
+        "function fish_prompt; "
+        "set_color grey; "
+        'printf "%s" (basename $PWD); '
+        "set_color yellow; "
+        'printf "⚡"; '
+        "set_color white; "
+        f'printf "{context}"; '
+        "set_color yellow; "
+        'printf "➤ "; '
+        "set_color normal; "
+        "end"
+    )
+    init_cmd = fish_fn
+    if init_file:
+        init_cmd += f"; source {init_file.name}"
+    return _run_process([shell, "--init-command", init_cmd], common_env, lease)
+
+
+def _launch_zsh(shell, init_file, init_content, common_env, context, lease, use_profiles):
+    env = common_env | {
+        "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
+    }
+    if "HISTFILE" not in env:
+        env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
+    cmd = [shell]
+    zshrc_path = None
+    if init_file:
+        cmd.extend(["--rcs", "-o", "inc_append_history", "-o", "share_history"])
+        env["ZDOTDIR"] = os.path.dirname(init_file.name)
+        zshrc_path = os.path.join(os.path.dirname(init_file.name), ".zshrc")
+        with open(zshrc_path, "w") as f:
+            f.write(init_content)
+    else:
+        if not use_profiles:
+            cmd.append("--no-rcs")
+        cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
+    try:
+        return _run_process(cmd, env, lease)
+    finally:
+        if zshrc_path:
+            try:
+                os.unlink(zshrc_path)
+            except OSError:
+                pass
+
+
+def launch_shell(
     host: str,
     context: str,
     allow: list[str],
@@ -142,8 +213,6 @@ def launch_shell(  # noqa: C901
     passphrase: str | None = None,
     j_commands: list[str] | None = None,
 ) -> int:
-    """Launch a shell with a custom prompt indicating the exporter type."""
-
     shell = os.environ.get("SHELL", "bash")
     shell_name = os.path.basename(shell)
     common_env = os.environ | {
@@ -168,54 +237,11 @@ def launch_shell(  # noqa: C901
 
     try:
         if shell_name.endswith("bash"):
-            env = common_env | {
-                "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
-            }
-            cmd = [shell]
-            if init_file:
-                cmd.extend(["--rcfile", init_file.name])
-            elif not use_profiles:
-                cmd.extend(["--norc", "--noprofile"])
-            return _run_process(cmd, env, lease)
-
+            return _launch_bash(shell, init_file, use_profiles, common_env, context, lease)
         elif shell_name == "fish":
-            fish_fn = (
-                "function fish_prompt; "
-                "set_color grey; "
-                'printf "%s" (basename $PWD); '
-                "set_color yellow; "
-                'printf "⚡"; '
-                "set_color white; "
-                f'printf "{context}"; '
-                "set_color yellow; "
-                'printf "➤ "; '
-                "set_color normal; "
-                "end"
-            )
-            init_cmd = fish_fn
-            if init_file:
-                init_cmd += f"; source {init_file.name}"
-            return _run_process([shell, "--init-command", init_cmd], common_env, lease)
-
+            return _launch_fish(shell, init_file, common_env, context, lease)
         elif shell_name == "zsh":
-            env = common_env | {
-                "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
-            }
-            if "HISTFILE" not in env:
-                env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
-            cmd = [shell]
-            if init_file:
-                cmd.extend(["--rcs", "-o", "inc_append_history", "-o", "share_history"])
-                env["ZDOTDIR"] = os.path.dirname(init_file.name)
-                zshrc_path = os.path.join(os.path.dirname(init_file.name), ".zshrc")
-                with open(zshrc_path, "w") as f:
-                    f.write(init_content)
-            else:
-                if not use_profiles:
-                    cmd.append("--no-rcs")
-                cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
-            return _run_process(cmd, env, lease)
-
+            return _launch_zsh(shell, init_file, init_content, common_env, context, lease, use_profiles)
         else:
             return _run_process([shell], common_env, lease)
     finally:
