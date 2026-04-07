@@ -48,6 +48,9 @@ def _cache_cli_tree(client):
     except Exception:
         logger.debug("Failed to cache CLI tree for completion", exc_info=True)
 
+_COMPLETION_COMMANDS = [("j", "_J_COMPLETE"), ("jmp", "_JMP_COMPLETE")]
+
+
 def _run_shell_only(lease, config, command, path: str) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
@@ -65,6 +68,7 @@ def _run_shell_only(lease, config, command, path: str) -> int:
         lease=lease,
         insecure=insecure,
         passphrase=passphrase,
+        completion_commands=_COMPLETION_COMMANDS,
     )
 
 
@@ -698,4 +702,5 @@ def shell(
                     unsafe=True,
                     use_profiles=False,
                     command=command,
+                    completion_commands=_COMPLETION_COMMANDS,
                 )

@@ -1,6 +1,7 @@
 import os
 import signal
 import sys
+import tempfile
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from functools import partial
@@ -129,6 +130,87 @@ def _build_common_env(
     return env
 
 
+def _completion_init_lines(shell_name: str, completion_commands: list[tuple[str, str]] | None) -> str:
+    if not completion_commands:
+        return ""
+
+    lines = []
+    for prog_name, complete_var in completion_commands:
+        if shell_name == "fish":
+            lines.append(f"{complete_var}=fish_source {prog_name} | source")
+        else:
+            source_type = "zsh_source" if shell_name == "zsh" else "bash_source"
+            lines.append(f'eval "$({complete_var}={source_type} {prog_name})"')
+    return "\n".join(lines)
+
+
+def _launch_bash(shell, context, env, init_script, use_profiles, lease):
+    env = env | {
+        "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
+    }
+    cmd = [shell, "--noprofile"]
+    if init_script:
+        init_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".sh", prefix="jmp-init-", delete=False
+        )
+        init_file.write(init_script + "\n")
+        init_file.close()
+        cmd.extend(["--rcfile", init_file.name])
+    elif not use_profiles:
+        cmd.append("--norc")
+    try:
+        return _run_process(cmd, env, lease)
+    finally:
+        if init_script:
+            os.unlink(init_file.name)
+
+
+def _launch_fish(shell, context, env, init_script, lease):
+    fish_fn = (
+        "function fish_prompt; "
+        "set_color grey; "
+        'printf "%s" (basename $PWD); '
+        "set_color yellow; "
+        'printf "⚡"; '
+        "set_color white; "
+        f'printf "{context}"; '
+        "set_color yellow; "
+        'printf "➤ "; '
+        "set_color normal; "
+        "end"
+    )
+    if init_script:
+        fish_fn = init_script + "; " + fish_fn
+    cmd = [shell, "--init-command", fish_fn]
+    return _run_process(cmd, env, lease)
+
+
+def _launch_zsh(shell, context, env, init_script, use_profiles, lease):
+    env = env | {
+        "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
+    }
+    if "HISTFILE" not in env:
+        env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
+
+    cmd = [shell]
+    zdotdir = None
+    if init_script:
+        zdotdir = tempfile.mkdtemp(prefix="jmp-zsh-")
+        with open(os.path.join(zdotdir, ".zshrc"), "w") as f:
+            f.write(init_script + "\n")
+        env["ZDOTDIR"] = zdotdir
+    elif not use_profiles:
+        cmd.append("--no-rcs")
+    cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
+    try:
+        return _run_process(cmd, env, lease)
+    finally:
+        if zdotdir:
+            import shutil
+
+            shutil.rmtree(zdotdir, ignore_errors=True)
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -140,6 +222,7 @@ def launch_shell(
     lease=None,
     insecure: bool = False,
     passphrase: str | None = None,
+    completion_commands: list[tuple[str, str]] | None = None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -151,6 +234,7 @@ def launch_shell(
         use_profiles: Whether to load shell profile files
         command: Optional command to run instead of launching an interactive shell
         lease: Optional Lease object to set up lease ending callback
+        completion_commands: List of (prog_name, complete_var) tuples for shell completion setup
 
     Returns:
         The exit code of the shell or command process
@@ -166,44 +250,13 @@ def launch_shell(
     if command:
         return _run_process(list(command), common_env, lease)
 
+    init_script = _completion_init_lines(shell_name, completion_commands)
+
     if shell_name.endswith("bash"):
-        env = common_env | {
-            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
-        }
-        cmd = [shell]
-        if not use_profiles:
-            cmd.extend(["--norc", "--noprofile"])
-        return _run_process(cmd, env, lease)
-
+        return _launch_bash(shell, context, common_env, init_script, use_profiles, lease)
     elif shell_name == "fish":
-        fish_fn = (
-            "function fish_prompt; "
-            "set_color grey; "
-            'printf "%s" (basename $PWD); '
-            "set_color yellow; "
-            'printf "⚡"; '
-            "set_color white; "
-            f'printf "{context}"; '
-            "set_color yellow; "
-            'printf "➤ "; '
-            "set_color normal; "
-            "end"
-        )
-        cmd = [shell, "--init-command", fish_fn]
-        return _run_process(cmd, common_env, lease)
-
+        return _launch_fish(shell, context, common_env, init_script, lease)
     elif shell_name == "zsh":
-        env = common_env | {
-            "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
-        }
-        if "HISTFILE" not in env:
-            env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
-
-        cmd = [shell]
-        if not use_profiles:
-            cmd.append("--no-rcs")
-        cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
-        return _run_process(cmd, env, lease)
-
+        return _launch_zsh(shell, context, common_env, init_script, use_profiles, lease)
     else:
         return _run_process([shell], common_env, lease)
