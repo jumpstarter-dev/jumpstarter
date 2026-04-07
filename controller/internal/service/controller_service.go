@@ -69,6 +69,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// listenQueueCleanupDelay is how long to keep a listen queue alive after the
+// exporter's stream disconnects with a transient error.  It must be long enough
+// for the exporter to reconnect and consume any Dial token already buffered in
+// the queue, yet short enough to bound the memory overhead of orphaned queues.
+// The exporter's default retry window (5 retries × ~1 s backoff) is well under
+// 30 s, so 2 minutes is a conservative upper bound.
+// Exposed as a var so tests can shorten it without rebuilding.
+var listenQueueCleanupDelay = 2 * time.Minute
+
 // ControllerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
@@ -79,7 +88,8 @@ type ControllerService struct {
 	Attr          authorization.ContextAttributesGetter
 	ServerOptions []grpc.ServerOption
 	Router        config.Router
-	listenQueues  sync.Map
+	listenQueues  sync.Map // key: leaseName, value: chan *pb.ListenResponse
+	listenTimers  sync.Map // key: leaseName, value: *time.Timer — deferred cleanup after transient disconnect
 }
 
 type wrappedStream struct {
@@ -439,13 +449,34 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
+	// Cancel any pending cleanup timer — the exporter is reconnecting and
+	// should inherit the existing queue (which may hold a buffered Dial token).
+	if t, ok := s.listenTimers.LoadAndDelete(leaseName); ok {
+		t.(*time.Timer).Stop()
+	}
+
 	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
 	for {
 		select {
 		case <-ctx.Done():
+			// Clean shutdown (lease ended / server stopping): cancel any timer
+			// and remove the queue immediately.
+			if t, ok := s.listenTimers.LoadAndDelete(leaseName); ok {
+				t.(*time.Timer).Stop()
+			}
+			s.listenQueues.Delete(leaseName)
 			return nil
 		case msg := <-queue.(chan *pb.ListenResponse):
 			if err := stream.Send(msg); err != nil {
+				// Transient stream error: schedule deferred cleanup so a
+				// reconnecting exporter can still inherit the queue and consume
+				// any Dial token that was buffered between the error and now.
+				// listenQueueCleanupDelay gives the exporter time to reconnect.
+				t := time.AfterFunc(listenQueueCleanupDelay, func() {
+					s.listenQueues.Delete(leaseName)
+					s.listenTimers.Delete(leaseName)
+				})
+				s.listenTimers.Store(leaseName, t)
 				return err
 			}
 		}

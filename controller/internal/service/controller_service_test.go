@@ -18,6 +18,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
@@ -296,6 +297,106 @@ func TestSyncOnlineConditionWithStatus(t *testing.T) {
 				t.Errorf("ObservedGeneration = %d, want %d", condition.ObservedGeneration, exporter.Generation)
 			}
 		})
+	}
+}
+
+// TestListenQueueTimerCleanup verifies that the listen queue is NOT removed
+// immediately when a transient stream error occurs, giving a reconnecting
+// exporter time to inherit the queue (and any buffered Dial token), and that
+// the queue IS removed once the cleanup timer fires.
+func TestListenQueueTimerCleanup(t *testing.T) {
+	// Shorten the delay so the test completes quickly.
+	original := listenQueueCleanupDelay
+	listenQueueCleanupDelay = 50 * time.Millisecond
+	t.Cleanup(func() { listenQueueCleanupDelay = original })
+
+	svc := &ControllerService{}
+	leaseName := "test-lease"
+
+	// Seed the queue as Listen() would via LoadOrStore.
+	ch := make(chan *pb.ListenResponse, 8)
+	svc.listenQueues.Store(leaseName, ch)
+
+	// Simulate the stream-error path: schedule deferred cleanup.
+	t.Run("queue survives transient error", func(t *testing.T) {
+		timer := time.AfterFunc(listenQueueCleanupDelay, func() {
+			svc.listenQueues.Delete(leaseName)
+			svc.listenTimers.Delete(leaseName)
+		})
+		svc.listenTimers.Store(leaseName, timer)
+
+		// Queue must still be present immediately after the error.
+		if _, ok := svc.listenQueues.Load(leaseName); !ok {
+			t.Fatal("listen queue was removed immediately after stream error — Dial token would be lost")
+		}
+	})
+
+	t.Run("reconnecting exporter cancels cleanup timer", func(t *testing.T) {
+		// Simulate Listen() reconnect: cancel the timer and call LoadOrStore.
+		if raw, ok := svc.listenTimers.LoadAndDelete(leaseName); ok {
+			raw.(*time.Timer).Stop()
+		}
+		got, _ := svc.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+		if got != ch {
+			t.Fatal("reconnecting Listen() did not inherit the existing queue")
+		}
+
+		// Wait well past the original delay — the queue must still be present
+		// because the timer was stopped.
+		time.Sleep(listenQueueCleanupDelay * 4)
+		if _, ok := svc.listenQueues.Load(leaseName); !ok {
+			t.Fatal("listen queue was removed even though cleanup timer was cancelled")
+		}
+	})
+
+	t.Run("timer fires and removes queue when exporter does not reconnect", func(t *testing.T) {
+		// Re-arm the timer without cancelling it this time.
+		timer := time.AfterFunc(listenQueueCleanupDelay, func() {
+			svc.listenQueues.Delete(leaseName)
+			svc.listenTimers.Delete(leaseName)
+		})
+		svc.listenTimers.Store(leaseName, timer)
+
+		// Wait for the timer to fire.
+		time.Sleep(listenQueueCleanupDelay * 4)
+		if _, ok := svc.listenQueues.Load(leaseName); ok {
+			t.Fatal("listen queue was not removed after cleanup timer fired")
+		}
+	})
+}
+
+// TestListenQueueCleanShutdown verifies that a clean context cancellation
+// (lease end / server stop) removes the queue immediately without waiting for
+// the cleanup timer.
+func TestListenQueueCleanShutdown(t *testing.T) {
+	original := listenQueueCleanupDelay
+	listenQueueCleanupDelay = 2 * time.Minute // keep long — must NOT fire during test
+	t.Cleanup(func() { listenQueueCleanupDelay = original })
+
+	svc := &ControllerService{}
+	leaseName := "test-lease-shutdown"
+
+	ch := make(chan *pb.ListenResponse, 8)
+	svc.listenQueues.Store(leaseName, ch)
+
+	// Arm a timer that should be cancelled before it fires.
+	timer := time.AfterFunc(listenQueueCleanupDelay, func() {
+		svc.listenQueues.Delete(leaseName)
+		svc.listenTimers.Delete(leaseName)
+	})
+	svc.listenTimers.Store(leaseName, timer)
+
+	// Simulate the ctx.Done() path in Listen().
+	if raw, ok := svc.listenTimers.LoadAndDelete(leaseName); ok {
+		raw.(*time.Timer).Stop()
+	}
+	svc.listenQueues.Delete(leaseName)
+
+	if _, ok := svc.listenQueues.Load(leaseName); ok {
+		t.Fatal("listen queue was not removed on clean shutdown")
+	}
+	if _, ok := svc.listenTimers.Load(leaseName); ok {
+		t.Fatal("cleanup timer was not cancelled on clean shutdown")
 	}
 }
 
