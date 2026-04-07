@@ -132,7 +132,7 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
         lines.append("jmp-admin completion fish 2>/dev/null | source")
         if j_commands:
             for cmd in j_commands:
-                lines.append(f"complete -c j -f -n '__fish_use_subcommand' -a {cmd}")
+                lines.append(f"complete -c j -f -n '__fish_use_subcommand' -a '{cmd}'")
         else:
             lines.append("j completion fish 2>/dev/null | source")
         return "\n".join(lines) + "\n"
@@ -172,20 +172,21 @@ def _launch_fish(shell, init_file, common_env, context, lease):
     return _run_process([shell, "--init-command", init_cmd], common_env, lease)
 
 
-def _launch_zsh(shell, init_file, init_content, common_env, context, lease, use_profiles):
+def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
     env = common_env | {
         "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
     }
     if "HISTFILE" not in env:
         env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
     cmd = [shell]
-    zshrc_path = None
-    if init_file:
-        cmd.extend(["--rcs", "-o", "inc_append_history", "-o", "share_history"])
-        env["ZDOTDIR"] = os.path.dirname(init_file.name)
-        zshrc_path = os.path.join(os.path.dirname(init_file.name), ".zshrc")
+    tmpdir = None
+    if init_content:
+        tmpdir = tempfile.mkdtemp()
+        zshrc_path = os.path.join(tmpdir, ".zshrc")
         with open(zshrc_path, "w") as f:
             f.write(init_content)
+        cmd.extend(["--rcs", "-o", "inc_append_history", "-o", "share_history"])
+        env["ZDOTDIR"] = tmpdir
     else:
         if not use_profiles:
             cmd.append("--no-rcs")
@@ -193,11 +194,10 @@ def _launch_zsh(shell, init_file, init_content, common_env, context, lease, use_
     try:
         return _run_process(cmd, env, lease)
     finally:
-        if zshrc_path:
-            try:
-                os.unlink(zshrc_path)
-            except OSError:
-                pass
+        if tmpdir:
+            import shutil
+
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def launch_shell(
@@ -229,6 +229,10 @@ def launch_shell(
         return _run_process(list(command), common_env, lease)
 
     init_content = _generate_shell_init(shell_name, use_profiles, j_commands)
+
+    if shell_name == "zsh":
+        return _launch_zsh(shell, init_content, common_env, context, lease, use_profiles)
+
     init_file = None
     if init_content:
         init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
@@ -240,8 +244,6 @@ def launch_shell(
             return _launch_bash(shell, init_file, use_profiles, common_env, context, lease)
         elif shell_name == "fish":
             return _launch_fish(shell, init_file, common_env, context, lease)
-        elif shell_name == "zsh":
-            return _launch_zsh(shell, init_file, init_content, common_env, context, lease, use_profiles)
         else:
             return _run_process([shell], common_env, lease)
     finally:

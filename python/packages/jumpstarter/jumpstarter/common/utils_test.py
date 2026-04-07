@@ -73,8 +73,8 @@ def test_generate_zsh_init_with_profiles_sources_zshrc():
 
 def test_generate_fish_init_with_j_commands():
     content = _generate_shell_init("fish", use_profiles=False, j_commands=["power", "qemu"])
-    assert "power" in content
-    assert "qemu" in content
+    assert "'power'" in content
+    assert "'qemu'" in content
     assert "jmp completion fish" in content
 
 
@@ -143,3 +143,29 @@ def test_launch_shell_zsh_cleans_up_all_temp_files(tmp_path, monkeypatch):
 
     assert len(zshrc_paths) == 1
     assert not os.path.exists(zshrc_paths[0])
+
+
+def test_launch_shell_zsh_uses_tmpdir_without_intermediate_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    temp_dirs = []
+
+    def mock_run_process(cmd, env, lease=None):
+        zdotdir = env.get("ZDOTDIR")
+        if zdotdir:
+            temp_dirs.append(zdotdir)
+            entries = os.listdir(zdotdir)
+            assert entries == [".zshrc"], f"Expected only .zshrc in ZDOTDIR, found: {entries}"
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            j_commands=["power"],
+        )
+
+    assert len(temp_dirs) == 1
+    assert not os.path.exists(temp_dirs[0])
