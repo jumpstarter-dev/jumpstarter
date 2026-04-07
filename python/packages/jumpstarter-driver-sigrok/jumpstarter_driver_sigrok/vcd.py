@@ -22,29 +22,40 @@ def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
     text = data.decode("utf-8")
     lines = text.strip().split("\n")
 
-    # Parse VCD header to extract timescale and channel mapping
+    timescale_multiplier, channel_map = _parse_vcd_header(lines)
+    yield from _parse_vcd_body(lines, timescale_multiplier, channel_map)
+
+
+def _parse_vcd_header(lines: list[str]) -> tuple[float, dict[str, str]]:
+    """Parse VCD header to extract timescale and channel mapping."""
     timescale_multiplier = 1e-9  # Default: 1 unit = 1 ns = 1e-9 seconds
-    channel_map: dict[str, str] = {}  # symbol → channel name
+    channel_map: dict[str, str] = {}  # symbol -> channel name
 
     for line in lines:
         line = line.strip()
 
-        # Parse timescale (e.g., "$timescale 1 us $end" means 1 unit = 1000 ns)
         if line.startswith("$timescale"):
             timescale_multiplier = _parse_timescale(line)
 
-        # Parse variable definitions (e.g., "$var wire 1 ! D0 $end")
         if line.startswith("$var"):
             parts = line.split()
             if len(parts) >= 5:
-                symbol = parts[3]  # e.g., "!"
-                channel = parts[4]  # e.g., "D0"
+                symbol = parts[3]
+                channel = parts[4]
                 channel_map[symbol] = channel
 
         if line == "$enddefinitions $end":
             break
 
-    # Parse value changes across timestamp blocks (supports multi-line changes)
+    return timescale_multiplier, channel_map
+
+
+def _parse_vcd_body(
+    lines: list[str],
+    timescale_multiplier: float,
+    channel_map: dict[str, str],
+) -> Iterator[dict]:
+    """Parse VCD body, yielding samples for each timestamp block."""
     sample_idx = 0
     current_time_s: float | None = None
     current_values: dict[str, int | float] = {}
@@ -54,13 +65,8 @@ def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
         if not line:
             continue
         if line.startswith("$"):
-            # Handle $dumpvars block: parse value changes until $end
-            if line.startswith("$dumpvars"):
-                if current_time_s is None:
-                    current_time_s = 0.0
-                # If $dumpvars and $end are on the same line, skip
-                if "$end" not in line or line == "$dumpvars":
-                    continue
+            if line.startswith("$dumpvars") and current_time_s is None:
+                current_time_s = 0.0
             continue
 
         if line.startswith("#"):
@@ -70,14 +76,10 @@ def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
                 sample_idx += 1
                 current_values = {}
 
-            parts = line.split(maxsplit=1)
-            time_str = parts[0][1:]
-            if time_str:
-                current_time_s = int(time_str) * timescale_multiplier
-            else:
-                current_time_s = 0.0
+            current_time_s = _parse_timestamp(line, timescale_multiplier)
 
             # Inline values on the same line (if present)
+            parts = line.split(maxsplit=1)
             if len(parts) > 1:
                 _parse_vcd_value_changes(parts[1], channel_map, current_values)
             continue
@@ -90,6 +92,14 @@ def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
     # Flush final block
     if current_time_s is not None and current_values:
         yield {"sample": sample_idx, "time": current_time_s, "values": current_values}
+
+
+def _parse_timestamp(line: str, timescale_multiplier: float) -> float:
+    """Parse a VCD timestamp line (e.g., '#100') and return time in seconds."""
+    time_str = line.split(maxsplit=1)[0][1:]  # Remove '#' prefix
+    if time_str:
+        return int(time_str) * timescale_multiplier
+    return 0.0
 
 
 def _parse_timescale(line: str) -> float:
