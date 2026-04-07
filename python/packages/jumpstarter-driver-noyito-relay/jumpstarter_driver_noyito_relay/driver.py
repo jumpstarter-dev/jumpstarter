@@ -170,7 +170,7 @@ class NoyitoPowerHID(PowerInterface, Driver):
         cmd = _build_command(0x0F, 0x02)  # 0x0F = all-channels status query pseudo-channel
         with hid.Device(self.vendor_id, self.product_id) as device:
             device.write(b"\x00" + cmd)
-            raw = device.read(32, timeout_ms=2000)
+            raw = device.read(self.num_channels * 9, timeout_ms=500)
 
         text = bytes(raw).decode("ascii", errors="replace")
         result: dict[str, str] = {}
@@ -185,7 +185,8 @@ class NoyitoPowerHID(PowerInterface, Driver):
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
-        yield PowerReading(voltage=0.0, current=0.0)
+        raise NotImplementedError
+        yield  # makes this a generator function
 
     @export
     def status(self) -> str:

@@ -98,12 +98,12 @@ def test_off_ch2(mock_serial_cls):
 
 
 @patch("jumpstarter_driver_noyito_relay.driver.serial.Serial")
-def test_read(mock_serial_cls):
+def test_read_not_supported(mock_serial_cls):
     mock_ser = _make_serial_mock()
     mock_serial_cls.return_value = mock_ser
 
     with serve(NoyitoPowerSerial(port="/dev/ttyUSB0", channel=1)) as client:
-        with pytest.raises(Exception):
+        with pytest.raises(NotImplementedError):
             list(client.read())
 
 
@@ -284,16 +284,13 @@ def test_hid_all_channels_on_4ch(mock_hid_cls):
 
 
 @patch("hid.Device")
-def test_hid_read(mock_hid_cls):
+def test_hid_read_not_supported(mock_hid_cls):
     mock_dev = _make_hid_mock()
     mock_hid_cls.return_value = mock_dev
 
     with serve(NoyitoPowerHID(num_channels=4, channel=1)) as client:
-        readings = list(client.read())
-
-    assert len(readings) == 1
-    assert readings[0].voltage == 0.0
-    assert readings[0].current == 0.0
+        with pytest.raises(NotImplementedError):
+            list(client.read())
 
 
 @patch("hid.Device")
@@ -310,9 +307,8 @@ def test_hid_cycle(mock_hid_cls):
 
 
 def _encode_status(text: str) -> list[int]:
-    """Encode an ASCII status string into a 32-byte HID read buffer."""
-    raw = list(text.encode("ascii"))
-    return raw + [0] * (32 - len(raw))
+    """Encode an ASCII status string into an HID read buffer."""
+    return list(text.encode("ascii"))
 
 
 @patch("hid.Device")
