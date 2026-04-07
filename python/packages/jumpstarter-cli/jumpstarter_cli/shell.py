@@ -37,7 +37,16 @@ logger = logging.getLogger(__name__)
 # Refresh token when less than this many seconds remain
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
+_J_CLI_CACHE = "_J_CLI_CACHE"
 
+
+def _cache_cli_tree(client):
+    try:
+        from jumpstarter_cli.cli_cache import serialize_click_group
+
+        os.environ[_J_CLI_CACHE] = serialize_click_group(client.cli())
+    except Exception:
+        logger.debug("Failed to cache CLI tree for completion", exc_info=True)
 
 def _run_shell_only(lease, config, command, path: str) -> int:
     """Run just the shell command without log streaming."""
@@ -321,8 +330,12 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
                                 click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
 
+                            _cache_cli_tree(client)
+
                             # Run the shell command
                             exit_code = await anyio.to_thread.run_sync(_run_shell_only, lease, config, command, path)
+
+                            os.environ.pop("_J_CLI_CACHE", None)
 
                             # Shell has exited. For auto-created leases (release=True), call
                             # EndSession to trigger afterLease hook while keeping log stream

@@ -73,21 +73,38 @@ def _j_placeholder():
 
 
 def _handle_j_completion(instruction: str):
-    """Handle shell completion source generation without entering the async stack.
+    """Handle shell completion without entering the async stack.
 
-    Only intercepts *_source instructions (generating the completion script).
-    The *_complete instructions (actual tab-completion) must go through the
-    async stack where the real driver CLI is built, so they are not handled here.
+    For *_source instructions: generates the completion script using a placeholder group.
+    For *_complete instructions: uses a cached CLI tree (set by jmp shell via _J_CLI_CACHE)
+    to produce completions without the gRPC round-trip. Falls through to the async stack
+    only when no cache is available.
     """
-    if not instruction.endswith("_source"):
-        return
     shell = instruction.split("_")[0]
-    comp_cls = get_completion_class(shell)
-    if comp_cls is None:
-        raise SystemExit(1)
-    comp = comp_cls(_j_placeholder, {}, "j", "_J_COMPLETE")
-    click.echo(comp.source())
-    raise SystemExit(0)
+
+    if instruction.endswith("_source"):
+        comp_cls = get_completion_class(shell)
+        if comp_cls is None:
+            raise SystemExit(1)
+        comp = comp_cls(_j_placeholder, {}, "j", "_J_COMPLETE")
+        click.echo(comp.source())
+        raise SystemExit(0)
+
+    if instruction.endswith("_complete"):
+        cache = os.environ.get("_J_CLI_CACHE")
+        if cache:
+            from jumpstarter_cli.cli_cache import deserialize_click_group
+
+            cli = deserialize_click_group(cache)
+            try:
+                cli.main(
+                    standalone_mode=True,
+                    prog_name="j",
+                    complete_var="_J_COMPLETE",
+                )
+            except SystemExit:
+                pass
+            raise SystemExit(0)
 
 
 def j():
