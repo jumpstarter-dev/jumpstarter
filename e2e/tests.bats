@@ -409,15 +409,13 @@ EOF
   jmp config client use test-client-oidc
 
   for i in $(seq 1 101); do
-    jmp create lease --selector example.com/board=oidc --duration 1d
+    run jmp create lease --selector example.com/board=oidc --duration 1d
+    assert_success
   done
 
-  run jmp get leases -o yaml
+  run jmp get leases -o name
   assert_success
-
-  local count
-  count=$(echo "$output" | grep -c '^ *name:')
-  [ "$count" -eq 101 ]
+  [ "$(echo "$output" | wc -l)" -eq 101 ]
 
   jmp delete leases --all
 }
@@ -428,16 +426,14 @@ EOF
   jmp config client use test-client-oidc
 
   for i in $(seq 1 101); do
-    jmp admin create exporter -n "${JS_NAMESPACE}" "pagination-exp-${i}" --nointeractive \
+    run jmp admin create exporter -n "${JS_NAMESPACE}" "pagination-exp-${i}" --nointeractive \
       -l pagination=true --oidc-username "dex:pagination-exp-${i}"
+    assert_success
   done
 
-  run jmp get exporters --selector pagination=true -o yaml
+  run jmp get exporters --selector pagination=true -o name
   assert_success
-
-  local count
-  count=$(echo "$output" | grep -c '^ *name:')
-  [ "$count" -eq 101 ]
+  [ "$(echo "$output" | wc -l)" -eq 101 ]
 
   for i in $(seq 1 101); do
     jmp admin delete exporter --namespace "${JS_NAMESPACE}" "pagination-exp-${i}" --delete
