@@ -4,6 +4,7 @@ import sys
 from contextlib import ExitStack
 from typing import cast
 
+import anyio
 import click
 from anyio import create_task_group, get_cancelled_exc_class, run, to_thread
 from anyio.from_thread import BlockingPortal
@@ -24,18 +25,25 @@ from jumpstarter.utils.env import env_async
 j_completion = make_completion_command(lambda: click.Group("j"), "j", "_J_COMPLETE")
 
 
+_COMPLETION_TIMEOUT_SECONDS = 5
+
+
 async def _j_shell_complete():
-    async with BlockingPortal() as portal:
-        with ExitStack() as stack:
-            async with env_async(portal, stack) as client:
+    try:
+        with anyio.fail_after(_COMPLETION_TIMEOUT_SECONDS):
+            async with BlockingPortal() as portal:
+                with ExitStack() as stack:
+                    async with env_async(portal, stack) as client:
 
-                def _run_completion():
-                    try:
-                        client.cli()(standalone_mode=False)
-                    except SystemExit:
-                        pass
+                        def _run_completion():
+                            try:
+                                client.cli()(standalone_mode=False)
+                            except SystemExit:
+                                pass
 
-                await to_thread.run_sync(_run_completion)
+                        await to_thread.run_sync(_run_completion)
+    except TimeoutError:
+        pass
 
 
 async def j_async():

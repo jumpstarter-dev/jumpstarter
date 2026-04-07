@@ -331,8 +331,8 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 cli_group = client.cli()
                                 if hasattr(cli_group, "list_commands"):
                                     j_commands = cli_group.list_commands(None)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Failed to extract j commands for completion: %s", e)
 
                             exit_code = await anyio.to_thread.run_sync(
                                 _run_shell_only, lease, config, command, path, j_commands
