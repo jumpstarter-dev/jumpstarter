@@ -18,13 +18,14 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 export:
   sigrok:
     type: jumpstarter_driver_sigrok.driver.Sigrok
-    driver: fx2lafw                     # sigrok driver (demo, fx2lafw, rigol-ds, etc.)
-    conn: auto                          # optional: USB VID.PID, serial path, or "auto" for auto-detect
-    channels:                           # optional: map device channels to friendly names
-      D0: clk
-      D1: mosi
-      D2: miso
-      D3: cs
+    config:
+      driver: fx2lafw                     # sigrok driver (demo, fx2lafw, rigol-ds, etc.)
+      conn: auto                          # optional: USB VID.PID, serial path, or "auto" for auto-detect
+      channels:                           # optional: map device channels to friendly names
+        D0: clk
+        D1: mosi
+        D2: miso
+        D3: cs
 ```
 
 ### Configuration Parameters
