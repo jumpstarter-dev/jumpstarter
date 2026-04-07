@@ -14,6 +14,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
+    _cache_cli_tree,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
     _shell_with_signal_handling,
@@ -64,6 +65,43 @@ class _DummyConfig:
     async def lease_async(self, selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
         self.captured = (selector, exporter_name, lease_name, duration, acquisition_timeout)
         yield Mock()
+
+
+def test_cache_cli_tree_sets_env_var(monkeypatch):
+    monkeypatch.delenv("_J_CLI_CACHE", raising=False)
+
+    @click.group()
+    def fake_cli():
+        """fake"""
+
+    @fake_cli.command()
+    def power():
+        """Power"""
+
+    client = Mock()
+    client.cli.return_value = fake_cli
+
+    _cache_cli_tree(client)
+
+    import os
+    cache = os.environ.get("_J_CLI_CACHE")
+    assert cache is not None
+    assert "power" in cache
+    client.cli.assert_called_once()
+
+    monkeypatch.delenv("_J_CLI_CACHE", raising=False)
+
+
+def test_cache_cli_tree_handles_exception_gracefully(monkeypatch):
+    monkeypatch.delenv("_J_CLI_CACHE", raising=False)
+
+    client = Mock()
+    client.cli.side_effect = RuntimeError("boom")
+
+    _cache_cli_tree(client)
+
+    import os
+    assert os.environ.get("_J_CLI_CACHE") is None
 
 
 def test_shell_passes_exporter_name_to_lease_async():

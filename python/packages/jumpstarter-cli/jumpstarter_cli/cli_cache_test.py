@@ -92,3 +92,29 @@ def test_round_trip_preserves_arguments():
     args = [p for p in ssh.params if isinstance(p, click.Argument)]
     assert len(args) == 1
     assert args[0].nargs == -1
+
+
+def test_round_trip_preserves_flag_option():
+    @click.command()
+    @click.option("--verbose", "-v", is_flag=True)
+    def cmd(verbose):
+        """A command"""
+
+    data = serialize_click_group(cmd)
+    restored = deserialize_click_group(data)
+
+    opt = next(p for p in restored.params if isinstance(p, click.Option) and p.name == "verbose")
+    assert opt.is_flag is True
+
+
+def test_round_trip_preserves_multiple_option():
+    @click.command()
+    @click.option("--tag", "-t", multiple=True)
+    def cmd(tag):
+        """A command"""
+
+    data = serialize_click_group(cmd)
+    restored = deserialize_click_group(data)
+
+    opt = next(p for p in restored.params if isinstance(p, click.Option) and p.name == "tag")
+    assert opt.multiple is True

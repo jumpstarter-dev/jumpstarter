@@ -75,6 +75,32 @@ def test_j_completion_uses_cache_for_complete_instruction(monkeypatch, capsys):
     assert "storage" in captured.out
 
 
+def test_j_completion_uses_cache_for_zsh_complete(monkeypatch, capsys):
+    @click.group()
+    def fake_cli():
+        """fake"""
+
+    @fake_cli.command()
+    def power():
+        """Power control"""
+
+    cache = serialize_click_group(fake_cli)
+    monkeypatch.setenv("_J_CLI_CACHE", cache)
+    monkeypatch.setenv("_J_COMPLETE", "zsh_complete")
+    monkeypatch.setenv("COMP_WORDS", "j ")
+    monkeypatch.setenv("COMP_CWORD", "1")
+
+    raised = False
+    try:
+        _handle_j_completion("zsh_complete")
+    except SystemExit as e:
+        raised = True
+        assert e.code == 0
+    assert raised
+    captured = capsys.readouterr()
+    assert "power" in captured.out
+
+
 def test_j_completion_falls_through_without_cache():
     _handle_j_completion("bash_complete")
 

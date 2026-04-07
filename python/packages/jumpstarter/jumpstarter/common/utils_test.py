@@ -93,6 +93,53 @@ def test_launch_shell_with_completion_commands(tmp_path, monkeypatch):
     assert '_J_COMPLETE=bash_source j' in captured["rcfile_content"]
 
 
+def test_launch_shell_fish_with_completion_commands(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", shutil.which("fish") or "/usr/bin/fish")
+    captured = {}
+
+    def mock_run_process(cmd, env, lease=None):
+        captured["cmd"] = cmd
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            completion_commands=[("j", "_J_COMPLETE")],
+        )
+
+    assert "--init-command" in captured["cmd"]
+    init_idx = captured["cmd"].index("--init-command")
+    init_content = captured["cmd"][init_idx + 1]
+    assert "_J_COMPLETE=fish_source j | source" in init_content
+
+
+def test_launch_shell_zsh_with_completion_commands(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", shutil.which("zsh") or "/usr/bin/zsh")
+    captured = {}
+
+    def mock_run_process(cmd, env, lease=None):
+        captured["cmd"] = cmd
+        captured["env"] = env
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            completion_commands=[("j", "_J_COMPLETE")],
+        )
+
+    assert "ZDOTDIR" in captured["env"]
+    assert "--no-rcs" not in captured["cmd"]
+
+
 def test_exporter_metadata_from_env(monkeypatch):
     monkeypatch.setenv("JMP_EXPORTER", "my-board")
     monkeypatch.setenv("JMP_LEASE", "lease-abc")
