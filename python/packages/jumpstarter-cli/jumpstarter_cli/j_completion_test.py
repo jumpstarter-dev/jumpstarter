@@ -1,9 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 from anyio import run
 from click.testing import CliRunner
 
-from .j import _j_shell_complete, j_completion
+from .j import _COMPLETION_TIMEOUT_SECONDS, _j_shell_complete, j_completion
 
 
 def test_j_completion_bash_produces_script():
@@ -52,3 +53,19 @@ def test_j_shell_complete_handles_system_exit_cleanly():
         mock_env.return_value.__aexit__ = AsyncMock(return_value=False)
         run(_j_shell_complete)
         mock_client.cli.assert_called_once()
+
+
+def test_j_shell_complete_returns_empty_on_timeout():
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def slow_env(*args, **kwargs):
+        await anyio.sleep(_COMPLETION_TIMEOUT_SECONDS + 1)
+        yield MagicMock()
+
+    with patch("jumpstarter_cli.j.env_async", slow_env):
+        run(_j_shell_complete)
+
+
+def test_completion_timeout_is_positive():
+    assert _COMPLETION_TIMEOUT_SECONDS > 0

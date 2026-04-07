@@ -1,6 +1,8 @@
+import os
 import shutil
+from unittest.mock import patch
 
-from .utils import _generate_shell_init, launch_shell
+from .utils import _generate_shell_init, _validate_j_commands, launch_shell
 
 
 def test_launch_shell(tmp_path, monkeypatch):
@@ -97,3 +99,47 @@ def test_launch_shell_with_j_commands(tmp_path, monkeypatch):
         j_commands=["power", "serial"],
     )
     assert exit_code == 0
+
+
+def test_validate_j_commands_filters_unsafe_names():
+    assert _validate_j_commands(None) is None
+    assert _validate_j_commands(["power", "serial"]) == ["power", "serial"]
+    assert _validate_j_commands(["good-cmd", "good_cmd"]) == ["good-cmd", "good_cmd"]
+    assert _validate_j_commands(["$(evil)", "power"]) == ["power"]
+    assert _validate_j_commands(["bad;cmd", "ok"]) == ["ok"]
+    assert _validate_j_commands(["bad cmd", "ok"]) == ["ok"]
+    assert _validate_j_commands(['"injection', "ok"]) == ["ok"]
+
+
+def test_generate_shell_init_excludes_unsafe_j_commands():
+    content = _generate_shell_init("bash", use_profiles=False, j_commands=["power", "$(evil)", "serial"])
+    assert "power" in content
+    assert "serial" in content
+    assert "$(evil)" not in content
+
+
+def test_launch_shell_zsh_cleans_up_all_temp_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    zshrc_paths = []
+
+    def mock_run_process(cmd, env, lease=None):
+        zdotdir = env.get("ZDOTDIR")
+        if zdotdir:
+            zshrc = os.path.join(zdotdir, ".zshrc")
+            zshrc_paths.append(zshrc)
+            assert os.path.exists(zshrc)
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            j_commands=["power", "serial"],
+        )
+        assert exit_code == 0
+
+    assert len(zshrc_paths) == 1
+    assert not os.path.exists(zshrc_paths[0])
