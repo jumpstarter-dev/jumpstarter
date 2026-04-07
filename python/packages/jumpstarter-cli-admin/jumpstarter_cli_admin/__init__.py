@@ -1,5 +1,6 @@
 import click
 from jumpstarter_cli_common.alias import AliasedGroup
+from jumpstarter_cli_common.completion import create_completion_command
 from jumpstarter_cli_common.opt import opt_log_level
 from jumpstarter_cli_common.version import version
 
@@ -10,12 +11,24 @@ from .import_res import import_res
 from .install import install, ip, uninstall
 
 
+def _get_admin():
+    return admin
+
+
+completion = create_completion_command(
+    cli_group_getter=_get_admin,
+    prog_name="jmp-admin",
+    complete_var="_JMP_ADMIN_COMPLETE",
+)
+
+
 @click.group(cls=AliasedGroup)
 @opt_log_level
 def admin():
     """Jumpstarter Kubernetes cluster admin CLI tool"""
 
 
+admin.add_command(completion)
 admin.add_command(get)
 admin.add_command(create)
 admin.add_command(delete)
