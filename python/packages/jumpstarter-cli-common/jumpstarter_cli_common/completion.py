@@ -11,6 +11,8 @@ def make_completion_command(cli_group_factory: Callable[[], click.Command], prog
         """Generate shell completion script."""
         cli_group = cli_group_factory()
         comp_cls = get_completion_class(shell)
+        if comp_cls is None:
+            raise click.ClickException(f"Unsupported shell: {shell}")
         comp = comp_cls(cli_group, {}, prog_name, complete_var)
         click.echo(comp.source())
 
