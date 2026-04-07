@@ -1,13 +1,14 @@
-import click
-from click.shell_completion import get_completion_class
+from jumpstarter_cli_common.completion import create_completion_command
 
 
-@click.command("completion")
-@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
-def completion(shell: str):
-    """Generate shell completion script."""
+def _get_jmp():
     from jumpstarter_cli.jmp import jmp
 
-    comp_cls = get_completion_class(shell)
-    comp = comp_cls(jmp, {}, "jmp", "_JMP_COMPLETE")
-    click.echo(comp.source())
+    return jmp
+
+
+completion = create_completion_command(
+    cli_group_getter=_get_jmp,
+    prog_name="jmp",
+    complete_var="_JMP_COMPLETE",
+)
