@@ -29,7 +29,10 @@ async def _run_cli():
             with ExitStack() as stack:
                 async with env_async(portal, stack) as client:
                     if completing:
-                        await to_thread.run_sync(lambda: client.cli()(standalone_mode=True))
+                        try:
+                            await to_thread.run_sync(lambda: client.cli()(standalone_mode=True))
+                        except SystemExit:
+                            pass
                     else:
                         result = await to_thread.run_sync(lambda: client.cli()(standalone_mode=False))
                         if isinstance(result, int) and result != 0:
