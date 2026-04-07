@@ -449,16 +449,13 @@ EOF
 
   jmp config client use test-client-oidc
 
-  run jmp create lease --selector example.com/board=oidc --duration 1d -o yaml
-  assert_success
-  LEASE_NAME=$(echo "$output" | go run github.com/mikefarah/yq/v4@latest '.name')
+  jmp create lease --selector example.com/board=oidc --duration 1d
 
   run env COLUMNS=200 jmp get leases
   assert_success
   assert_output --partial "EXPIRES AT"
   assert_output --partial "REMAINING"
-
-  jmp delete leases "$LEASE_NAME"
+  jmp delete leases --all
 }
 
 @test "can transfer lease to another client" {
