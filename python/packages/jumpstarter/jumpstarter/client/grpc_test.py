@@ -447,6 +447,21 @@ class TestLeaseRichDisplay:
     def test_format_remaining_none(self):
         assert Lease._format_remaining(None) == ""
 
+    def test_format_remaining_future(self):
+        now = datetime(2020, 1, 1, 0, 0, 0)
+        future = now + timedelta(days=1, hours=2, minutes=3)
+        assert Lease._format_remaining(future, now=now) == "1d 2h 3m"
+
+    def test_format_remaining_future_hours_only(self):
+        now = datetime(2020, 1, 1, 0, 0, 0)
+        future = now + timedelta(hours=5)
+        assert Lease._format_remaining(future, now=now) == "5h 0m"
+
+    def test_format_remaining_future_minutes_only(self):
+        now = datetime(2020, 1, 1, 0, 0, 0)
+        future = now + timedelta(minutes=45)
+        assert Lease._format_remaining(future, now=now) == "45m"
+
     def test_rich_add_rows_shows_expires_at(self):
         lease = self.create_lease(
             effective_begin_time=datetime(2023, 1, 1, 10, 0, 0),
