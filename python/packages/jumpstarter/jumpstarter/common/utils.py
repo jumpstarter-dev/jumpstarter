@@ -1,5 +1,6 @@
 import os
 import re
+import shlex
 import signal
 import sys
 import tempfile
@@ -105,9 +106,11 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
         lines.append('eval "$(jmp-admin completion bash 2>/dev/null)"')
         if j_commands:
             cmds = " ".join(j_commands)
-            lines.append(
-                f'_j_completion() {{ COMPREPLY=($(compgen -W "{cmds}" -- "${{COMP_WORDS[COMP_CWORD]}}")); }}'
+            completion_fn = (
+                f'_j_completion() {{ [[ ${{COMP_CWORD}} -eq 1 ]]'
+                f' && COMPREPLY=($(compgen -W "{cmds}" -- "${{COMP_WORDS[COMP_CWORD]}}")); }}'
             )
+            lines.append(completion_fn)
             lines.append("complete -o default -F _j_completion j")
         else:
             lines.append('eval "$(j completion bash 2>/dev/null)"')
@@ -153,6 +156,7 @@ def _launch_bash(shell, init_file, use_profiles, common_env, context, lease):
 
 
 def _launch_fish(shell, init_file, common_env, context, lease):
+    fish_env = common_env | {"_JMP_SHELL_CONTEXT": context}
     fish_fn = (
         "function fish_prompt; "
         "set_color grey; "
@@ -160,7 +164,7 @@ def _launch_fish(shell, init_file, common_env, context, lease):
         "set_color yellow; "
         'printf "⚡"; '
         "set_color white; "
-        f'printf "{context}"; '
+        'printf "%s" "$_JMP_SHELL_CONTEXT"; '
         "set_color yellow; "
         'printf "➤ "; '
         "set_color normal; "
@@ -169,7 +173,7 @@ def _launch_fish(shell, init_file, common_env, context, lease):
     init_cmd = fish_fn
     if init_file:
         init_cmd += f"; source {init_file.name}"
-    return _run_process([shell, "--init-command", init_cmd], common_env, lease)
+    return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
 
 
 def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
@@ -183,7 +187,9 @@ def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
     if init_content:
         tmpdir = tempfile.mkdtemp()
         zshrc_path = os.path.join(tmpdir, ".zshrc")
+        original_zdotdir = env.get("ZDOTDIR", os.path.expanduser("~"))
         with open(zshrc_path, "w") as f:
+            f.write(f"ZDOTDIR={shlex.quote(original_zdotdir)}\n")
             f.write(init_content)
         cmd.extend(["--rcs", "-o", "inc_append_history", "-o", "share_history"])
         env["ZDOTDIR"] = tmpdir
