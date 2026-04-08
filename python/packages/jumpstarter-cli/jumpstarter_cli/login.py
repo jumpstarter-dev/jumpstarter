@@ -9,7 +9,7 @@ from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
-from jumpstarter_cli_common.opt import confirm_insecure, opt_insecure, opt_nointeractive
+from jumpstarter_cli_common.opt import confirm_insecure_tls, opt_insecure_tls, opt_nointeractive
 
 from jumpstarter.common.exceptions import ReauthenticationFailed
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
@@ -31,7 +31,7 @@ def _validate_login_endpoint_url(url: str, *, allow_http: bool = False) -> None:
     if parsed.scheme == "http" and not allow_http:
         raise click.ClickException(
             f"Refusing insecure login endpoint '{url}'. "
-            "Use --insecure-login-http to explicitly allow plain HTTP."
+            "Use --insecure-tls / -k to allow plain HTTP login endpoints."
         )
     if not parsed.netloc:
         raise click.ClickException(f"Invalid login endpoint '{url}': missing host.")
@@ -52,19 +52,18 @@ def _validate_auth_config_payload(payload: Any, source_url: str) -> dict[str, An
 
 async def fetch_auth_config(
     login_endpoint: str,
-    insecure: bool = False,
+    insecure_tls: bool = False,
 ) -> dict[str, Any]:
-    if login_endpoint.startswith("http://") and not insecure:
-        raise click.UsageError("HTTP login endpoints require --insecure.")
+    if login_endpoint.startswith("http://") and not insecure_tls:
+        raise click.UsageError("HTTP login endpoints require --insecure-tls / -k.")
 
     if not login_endpoint.startswith(("http://", "https://")):
-        scheme = "http" if insecure else "https"
-        login_endpoint = f"{scheme}://{login_endpoint}"
+        login_endpoint = f"https://{login_endpoint}"
 
-    _validate_login_endpoint_url(login_endpoint, allow_http=insecure)
+    _validate_login_endpoint_url(login_endpoint, allow_http=insecure_tls)
 
     url = f"{login_endpoint.rstrip('/')}/v1/auth/config"
-    ssl_context: ssl.SSLContext | bool = False if insecure else True
+    ssl_context: ssl.SSLContext | bool = False if insecure_tls else True
     timeout = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
 
     try:
@@ -77,7 +76,7 @@ async def fetch_auth_config(
     except aiohttp.ClientConnectorCertificateError as e:
         raise click.ClickException(
             f"TLS certificate verification failed while connecting to {login_endpoint}. "
-            "Verify the endpoint certificate, or use --insecure-login-tls only for testing."
+            "Verify the endpoint certificate, or use --insecure-tls / -k only for testing."
         ) from e
     except aiohttp.ClientConnectorSSLError as e:
         raise click.ClickException(
@@ -137,7 +136,7 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
     "--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).", default=None
 )
 # end client specific
-@opt_insecure
+@opt_insecure_tls
 @opt_nointeractive
 @opt_config(allow_missing=True)
 @handle_exceptions
@@ -157,7 +156,7 @@ async def login(  # noqa: C901
     callback_port: int | None,
     offline_access: bool,
     unsafe,
-    insecure: bool,
+    insecure_tls: bool,
     nointeractive: bool,
     allow,
 ):
@@ -176,7 +175,7 @@ async def login(  # noqa: C901
     - Default namespace
     """
 
-    confirm_insecure(insecure, nointeractive)
+    confirm_insecure_tls(insecure_tls, nointeractive)
 
     # Handle simplified login format: [client-name@]login.endpoint.com
     ca_bundle = None
@@ -193,7 +192,7 @@ async def login(  # noqa: C901
             click.echo(f"Fetching configuration from {login_endpoint}...")
             auth_config = await fetch_auth_config(
                 login_endpoint,
-                insecure=insecure,
+                insecure_tls=insecure_tls,
             )
 
             # Use fetched values if not explicitly provided
@@ -266,7 +265,7 @@ async def login(  # noqa: C901
                     )
 
             # Build TLS config with CA bundle if available
-            tls_config = TLSConfigV1Alpha1(insecure=insecure, ca=ca_bundle or "")
+            tls_config = TLSConfigV1Alpha1(insecure=insecure_tls, ca=ca_bundle or "")
 
             if kind.startswith("client"):
                 config = ClientConfigV1Alpha1(

@@ -54,7 +54,7 @@ def test_validate_login_endpoint_url_rejects_unsupported_scheme() -> None:
 
 
 def test_validate_login_endpoint_url_rejects_http_without_explicit_opt_in() -> None:
-    with pytest.raises(click.ClickException, match="Use --insecure"):
+    with pytest.raises(click.ClickException, match="Use --insecure-tls"):
         _validate_login_endpoint_url("http://login.example.com")
 
 
@@ -152,13 +152,13 @@ def test_login_cli_shows_certificate_message(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_auth_config_rejects_http_without_insecure():
-    with pytest.raises(click.UsageError, match="--insecure"):
-        await fetch_auth_config("http://login.example.com", insecure=False)
+async def test_fetch_auth_config_rejects_http_without_insecure_tls():
+    with pytest.raises(click.UsageError, match="--insecure-tls"):
+        await fetch_auth_config("http://login.example.com", insecure_tls=False)
 
 
 @pytest.mark.asyncio
-async def test_fetch_auth_config_allows_http_with_insecure():
+async def test_fetch_auth_config_allows_explicit_http_with_insecure_tls():
     mock_response = MagicMock()
     mock_response.status = 200
     mock_response.json = AsyncMock(return_value={"grpcEndpoint": "grpc.example.com"})
@@ -175,11 +175,37 @@ async def test_fetch_auth_config_allows_http_with_insecure():
     mock_client_cm.__aexit__ = AsyncMock(return_value=False)
 
     with patch("aiohttp.ClientSession", return_value=mock_client_cm):
-        result = await fetch_auth_config("http://login.example.com", insecure=True)
+        result = await fetch_auth_config("http://login.example.com", insecure_tls=True)
 
     mock_session.get.assert_called_once()
     call_url = mock_session.get.call_args[0][0]
     assert "http://login.example.com" in call_url
+    assert result["grpcEndpoint"] == "grpc.example.com"
+
+
+@pytest.mark.asyncio
+async def test_fetch_auth_config_defaults_to_https_with_insecure_tls():
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"grpcEndpoint": "grpc.example.com"})
+
+    mock_get_cm = MagicMock()
+    mock_get_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_get_cm.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=mock_get_cm)
+
+    mock_client_cm = MagicMock()
+    mock_client_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_client_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession", return_value=mock_client_cm):
+        result = await fetch_auth_config("login.example.com", insecure_tls=True)
+
+    mock_session.get.assert_called_once()
+    call_url = mock_session.get.call_args[0][0]
+    assert call_url.startswith("https://")
     assert result["grpcEndpoint"] == "grpc.example.com"
 
 

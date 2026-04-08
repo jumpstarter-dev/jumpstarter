@@ -88,28 +88,29 @@ opt_labels = partial(
     callback=_opt_labels_callback,
 )
 
-opt_insecure = click.option(
-    "--insecure",
+opt_insecure_tls = click.option(
+    "-k",
+    "--insecure-tls",
     is_flag=True,
     default=False,
-    help="Disable TLS verification and allow insecure connections, including plain HTTP",
+    help="Disable TLS certificate verification for connections",
 )
 
-opt_insecure_tls = opt_insecure
-opt_insecure_tls_config = opt_insecure
+opt_insecure = opt_insecure_tls
+opt_insecure_tls_config = opt_insecure_tls
 
 
-def confirm_insecure(insecure: bool, nointeractive: bool):
-    if nointeractive is False and insecure:
+def confirm_insecure_tls(insecure_tls: bool, nointeractive: bool):
+    if nointeractive is False and insecure_tls:
         if not click.confirm(
-            "Insecure mode is enabled. TLS verification will be disabled"
-            " and plain HTTP may be used. Continue?"
+            "Insecure TLS mode is enabled. Certificate verification will be"
+            " disabled for HTTPS connections. Continue?"
         ):
             click.echo("Aborting.")
             raise click.Abort()
 
 
-confirm_insecure_tls = confirm_insecure
+confirm_insecure = confirm_insecure_tls
 
 
 def validate_name(name: Optional[str]) -> None:
