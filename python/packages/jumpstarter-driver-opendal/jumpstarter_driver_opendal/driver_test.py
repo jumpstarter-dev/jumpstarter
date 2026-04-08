@@ -343,7 +343,10 @@ def test_operator_for_path_preserves_query_params():
     assert "Signature=abc" in path
     assert "Key-Pair-Id=xyz" in path
 
-    # Filesystem path
+    # Filesystem path (use resolve() for the expected value since macOS
+    # resolves /tmp to /private/tmp)
+    from pathlib import Path
+
     path, operator, scheme = operator_for_path("/tmp/image.raw.xz")
     assert scheme == "fs"
-    assert str(path) == "/tmp/image.raw.xz"
+    assert path == Path("/tmp/image.raw.xz").resolve()
