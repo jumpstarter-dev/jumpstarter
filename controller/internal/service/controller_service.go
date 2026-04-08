@@ -646,14 +646,47 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	// Check if exporter status allows driver calls
-	// This validates before the client connects, so we can reject immediately
-	// even if the exporter is offline or in an invalid state
-	if err := checkExporterStatusForDriverCalls(exporter.Status.ExporterStatusValue); err != nil {
-		logger.Info("Dial rejected due to exporter status",
-			"status", exporter.Status.ExporterStatusValue,
-			"error", err.Error())
-		return nil, err
+	// Check if exporter status allows driver calls.
+	// If the exporter is in "Available" status, this is a transient state during
+	// lease setup (the exporter hasn't yet transitioned to LeaseReady). We retry
+	// briefly server-side to handle the race condition, which also protects old
+	// clients that don't have client-side Dial retry logic (issue #309).
+	{
+		maxRetries := 10
+		retryDelay := 300 * time.Millisecond
+		var statusErr error
+		for i := 0; i < maxRetries; i++ {
+			statusErr = checkExporterStatusForDriverCalls(exporter.Status.ExporterStatusValue)
+			if statusErr == nil {
+				break
+			}
+			// Only retry for Available status (transient during lease setup).
+			// Other error statuses (Offline, HookFailed, etc.) are not transient.
+			if exporter.Status.ExporterStatusValue != jumpstarterdevv1alpha1.ExporterStatusAvailable {
+				break
+			}
+			if i < maxRetries-1 {
+				logger.Info("Exporter in Available status, waiting for lease setup",
+					"attempt", i+1, "maxRetries", maxRetries)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(retryDelay):
+				}
+				// Re-fetch exporter status
+				if err := s.Client.Get(ctx,
+					types.NamespacedName{Namespace: client.Namespace, Name: lease.Status.ExporterRef.Name}, &exporter); err != nil {
+					logger.Error(err, "unable to re-fetch exporter during Dial retry")
+					return nil, err
+				}
+			}
+		}
+		if statusErr != nil {
+			logger.Info("Dial rejected due to exporter status",
+				"status", exporter.Status.ExporterStatusValue,
+				"error", statusErr.Error())
+			return nil, statusErr
+		}
 	}
 
 	candidates := maps.Values(s.Router)
