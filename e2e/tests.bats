@@ -118,18 +118,20 @@ teardown_file() {
 }
 
 wait_for_exporter() {
-  # After a lease operation the exporter is disconnecting from controller and reconnecting.
-  # The disconnect can take a short while so let's avoid catching the pre-disconnect state and early return
+  # After a lease operation the exporter disconnects from the controller and reconnects.
+  # The disconnect can take a short while so let's avoid catching the pre-disconnect state.
   sleep 2
-  # Run waits in parallel
-  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-oidc &
+
+  # Wait for Online + Registered conditions AND exporterStatus=Available.
+  # Online+Registered alone are never cleared between leases, so they can't detect
+  # whether the exporter has finished cleaning up a previous lease. Checking
+  # exporterStatus=Available ensures the exporter's serve() loop has fully processed
+  # the lease-end and is ready to accept new leases. (See #425)
+  _wait_for_single_exporter test-exporter-oidc &
   local pid1=$!
-  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-sa &
+  _wait_for_single_exporter test-exporter-sa &
   local pid2=$!
-  kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
-    exporters.jumpstarter.dev/test-exporter-legacy &
+  _wait_for_single_exporter test-exporter-legacy &
   local pid3=$!
 
   # Wait for all to complete and capture failures
@@ -138,6 +140,31 @@ wait_for_exporter() {
   wait "$pid2" || rc=$?
   wait "$pid3" || rc=$?
   return $rc
+}
+
+_wait_for_single_exporter() {
+  local name="$1"
+  local timeout=300  # 5 minutes
+  local elapsed=0
+
+  # First wait for the basic conditions (fast path for initial registration)
+  kubectl -n "${JS_NAMESPACE}" wait --timeout "${timeout}s" --for=condition=Online --for=condition=Registered \
+    "exporters.jumpstarter.dev/${name}"
+
+  # Then poll until exporterStatus is Available (not leased or cleaning up)
+  while [ $elapsed -lt $timeout ]; do
+    local status
+    status=$(kubectl -n "${JS_NAMESPACE}" get "exporters.jumpstarter.dev/${name}" \
+      -o jsonpath='{.status.exporterStatus}' 2>/dev/null || echo "")
+    if [ "$status" = "Available" ]; then
+      return 0
+    fi
+    sleep 0.5
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Timed out waiting for ${name} to reach Available status" >&2
+  return 1
 }
 
 @test "login endpoint serves landing page" {

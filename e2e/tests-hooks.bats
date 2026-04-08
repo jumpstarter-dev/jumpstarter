@@ -136,6 +136,24 @@ wait_for_hooks_exporter() {
   sleep 2
   kubectl -n "${JS_NAMESPACE}" wait --timeout 5m --for=condition=Online --for=condition=Registered \
     exporters.jumpstarter.dev/test-exporter-hooks
+
+  # Also wait for exporterStatus=Available to ensure the exporter has finished
+  # cleaning up any previous lease and is ready for new ones. (See #425)
+  local timeout=300
+  local elapsed=0
+  while [ $elapsed -lt $timeout ]; do
+    local status
+    status=$(kubectl -n "${JS_NAMESPACE}" get exporters.jumpstarter.dev/test-exporter-hooks \
+      -o jsonpath='{.status.exporterStatus}' 2>/dev/null || echo "")
+    if [ "$status" = "Available" ]; then
+      return 0
+    fi
+    sleep 0.5
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Timed out waiting for test-exporter-hooks to reach Available status" >&2
+  return 1
 }
 
 # Helper: Wait for hooks exporter to go offline
