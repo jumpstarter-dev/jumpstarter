@@ -1,0 +1,56 @@
+# Backend-degraded scenario: simulates flaky and failing backend services.
+# Tests the DUT's error handling, retry logic, and graceful degradation.
+
+config:
+  files_dir: /opt/jumpstarter/mitmproxy/mock-files
+  addons_dir: /opt/jumpstarter/mitmproxy/addons
+  default_latency_ms: 0
+
+endpoints:
+  # Auth works 3 times, then starts failing (expired cert simulation)
+  GET /api/v1/auth/token:
+    sequence:
+      - status: 200
+        body: {token: mock-token-001, expires_in: 3600}
+        repeat: 3
+      - status: 401
+        body: {error: Certificate expired, code: CERT_EXPIRED}
+        repeat: 2
+      - status: 200
+        body: {token: mock-token-002, expires_in: 3600}
+
+  # Intermittent 503s with increasing latency
+  GET /api/v1/status:
+    sequence:
+      - status: 200
+        body: {id: device-001, status: active}
+        latency_ms: 100
+        repeat: 2
+      - status: 503
+        body: {error: Service temporarily unavailable}
+        latency_ms: 3000
+        repeat: 1
+      - status: 504
+        body: {error: Gateway timeout}
+        latency_ms: 5000
+        repeat: 1
+      - status: 200
+        body: {id: device-001, status: active}
+        latency_ms: 200
+
+  # All telemetry uploads time out -- tests retry logic
+  POST /api/v1/telemetry/upload:
+    status: 503
+    body: {error: Backend overloaded}
+    latency_ms: 8000
+
+  # Update service is completely down
+  GET /api/v1/updates/check:
+    status: 500
+    body: {error: Internal server error}
+
+  # Search works but is very slow
+  GET /api/v1/search*:
+    status: 200
+    body: {results: []}
+    latency_ms: 4000
