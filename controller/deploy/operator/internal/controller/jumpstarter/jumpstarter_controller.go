@@ -19,9 +19,12 @@ package jumpstarter
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"time"
 
@@ -159,8 +162,25 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile ConfigMaps before deployments so we can compute the config hash
+	// and use it as a pod template annotation to trigger rolling restarts when config changes
+	if err := r.reconcileConfigMaps(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile ConfigMaps")
+		return ctrl.Result{}, err
+	}
+
+	// Compute the configmap content hash for use as a pod template annotation.
+	// When the configmap content changes (e.g. OIDC auth config), the hash changes,
+	// which updates the pod template annotation and triggers a rolling restart of the
+	// controller deployment so it picks up the new configuration.
+	configMapHash, err := r.computeConfigMapHash(&jumpstarter)
+	if err != nil {
+		log.Error(err, "Failed to compute configmap hash")
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile Controller Deployment
-	if err := r.reconcileControllerDeployment(ctx, &jumpstarter); err != nil {
+	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash); err != nil {
 		log.Error(err, "Failed to reconcile Controller Deployment")
 		return ctrl.Result{}, err
 	}
@@ -174,12 +194,6 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Reconcile Services
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile ConfigMaps
-	if err := r.reconcileConfigMaps(ctx, &jumpstarter); err != nil {
-		log.Error(err, "Failed to reconcile ConfigMaps")
 		return ctrl.Result{}, err
 	}
 
@@ -208,9 +222,9 @@ func (r *JumpstarterReconciler) emitEventf(js *operatorv1alpha1.Jumpstarter, eve
 }
 
 // reconcileControllerDeployment reconciles the controller deployment
-func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) error {
 	log := logf.FromContext(ctx)
-	desiredDeployment := r.createControllerDeployment(jumpstarter)
+	desiredDeployment := r.createControllerDeployment(jumpstarter, configMapHash)
 
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
@@ -622,8 +636,31 @@ func generateRandomKey(length int) (string, error) {
 
 // updateStatus is implemented in status.go
 
+// computeConfigMapHash computes a SHA-256 hash of the configmap data for use as a pod
+// template annotation. This ensures that when config changes (e.g. OIDC auth), the
+// controller pods are restarted to pick up the new configuration.
+func (r *JumpstarterReconciler) computeConfigMapHash(jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
+	cm, err := r.createConfigMap(jumpstarter)
+	if err != nil {
+		return "", err
+	}
+
+	h := sha256.New()
+	// Sort keys for deterministic hashing
+	keys := make([]string, 0, len(cm.Data))
+	for k := range cm.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte(cm.Data[k]))
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 // createControllerDeployment creates a deployment for the controller
-func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv1.Deployment {
+func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) *appsv1.Deployment {
 	labels := map[string]string{
 		"component":  "controller",
 		"app":        "jumpstarter-controller",
@@ -772,6 +809,9 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
+					Annotations: map[string]string{
+						"jumpstarter.dev/configmap-sha256": configMapHash,
+					},
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
