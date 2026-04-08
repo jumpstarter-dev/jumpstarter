@@ -221,6 +221,30 @@ def test_methods_description_populated():
         assert "method2" not in client.methods_description
 
 
+def test_blocked_env_vars(client):
+    """Test that known-dangerous environment variables are rejected"""
+    blocked_exact = ["LD_PRELOAD", "LD_LIBRARY_PATH", "PATH", "PYTHONPATH",
+                     "BASH_ENV", "KUBECONFIG", "HOME"]
+    for var in blocked_exact:
+        with pytest.raises(Exception, match="blocked for security reasons"):
+            _collect_streaming_output(client, "env", {var: "malicious"})
+
+
+def test_blocked_env_var_prefixes(client):
+    """Test that env vars with dangerous prefixes are rejected"""
+    blocked_prefixed = ["LD_AUDIT", "LD_DEBUG", "BASH_FUNC_myfunc"]
+    for var in blocked_prefixed:
+        with pytest.raises(Exception, match="blocked for security reasons"):
+            _collect_streaming_output(client, "env", {var: "malicious"})
+
+
+def test_safe_env_vars_allowed(client):
+    """Test that legitimate environment variables still work"""
+    stdout, stderr, returncode = _collect_streaming_output(client, "env", {"ENV1": "safe_value"})
+    assert stdout == "safe_value\n"
+    assert returncode == 0
+
+
 def test_mixed_format_methods():
     """Test that both string and dict formats work together"""
     shell = Shell(
