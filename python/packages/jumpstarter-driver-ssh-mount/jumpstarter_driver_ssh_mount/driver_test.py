@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from jumpstarter_driver_network.driver import TcpNetwork
+from jumpstarter_driver_ssh.driver import SSHWrapper
 
 from jumpstarter_driver_ssh_mount.driver import SSHMount
 
@@ -18,27 +19,30 @@ TEST_SSH_KEY = (
 )
 
 
-def test_ssh_mount_requires_tcp_child():
-    """Test that SSHMount driver requires a tcp child"""
-    with pytest.raises(ConfigurationError, match="'tcp' child is required"):
+def _make_ssh_child(default_username="testuser", ssh_identity=None, ssh_identity_file=None,
+                    host="127.0.0.1", port=22):
+    """Helper to create an SSHWrapper driver instance for use as a child of SSHMount."""
+    kwargs = {
+        "default_username": default_username,
+        "children": {"tcp": TcpNetwork(host=host, port=port)},
+    }
+    if ssh_identity is not None:
+        kwargs["ssh_identity"] = ssh_identity
+    if ssh_identity_file is not None:
+        kwargs["ssh_identity_file"] = ssh_identity_file
+    return SSHWrapper(**kwargs)
+
+
+def test_ssh_mount_requires_ssh_child():
+    """Test that SSHMount driver requires an ssh child"""
+    with pytest.raises(ConfigurationError, match="'ssh' child is required"):
         SSHMount()
-
-
-def test_ssh_mount_cannot_specify_both_identity_and_file():
-    """Test that SSHMount driver rejects both ssh_identity and ssh_identity_file"""
-    with pytest.raises(ConfigurationError, match="Cannot specify both"):
-        SSHMount(
-            children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-            ssh_identity="key",
-            ssh_identity_file="/path/to/key",
-        )
 
 
 def test_mount_sshfs_not_installed():
     """Test mount fails gracefully when sshfs is not installed"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
+        children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
@@ -50,8 +54,7 @@ def test_mount_sshfs_not_installed():
 def test_mount_sshfs_success():
     """Test successful sshfs mount"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
+        children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
@@ -77,9 +80,7 @@ def test_mount_sshfs_success():
 def test_mount_sshfs_with_identity():
     """Test sshfs mount with SSH identity"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
-        ssh_identity=TEST_SSH_KEY,
+        children={"ssh": _make_ssh_child(ssh_identity=TEST_SSH_KEY)},
     )
 
     with serve(instance) as client:
@@ -106,8 +107,7 @@ def test_mount_sshfs_with_identity():
 def test_mount_sshfs_allow_other_fallback():
     """Test sshfs mount falls back when allow_other fails"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
+        children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
@@ -134,8 +134,7 @@ def test_mount_sshfs_allow_other_fallback():
 def test_umount_with_fusermount():
     """Test unmount using fusermount"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
+        children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
@@ -157,8 +156,7 @@ def test_umount_with_fusermount():
 def test_umount_lazy():
     """Test lazy unmount"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
+        children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
@@ -179,8 +177,7 @@ def test_umount_lazy():
 def test_umount_failure():
     """Test unmount failure"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
+        children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
@@ -198,8 +195,7 @@ def test_umount_failure():
 def test_cli_has_mount_umount_commands():
     """Test that the CLI exposes mount and umount subcommands"""
     instance = SSHMount(
-        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
-        default_username="testuser",
+        children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:

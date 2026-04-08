@@ -48,17 +48,17 @@ class SSHMountClient(CompositeClient):
     @property
     def identity(self) -> str | None:
         """
-        Get the SSH identity (private key) as a string.
+        Get the SSH identity (private key) as a string from the SSH driver.
 
         Returns:
             The SSH identity key content, or None if not configured.
         """
-        return self.call("get_ssh_identity")
+        return self.ssh.identity
 
     @property
     def username(self) -> str:
-        """Get the default SSH username"""
-        return self.call("get_default_username")
+        """Get the default SSH username from the SSH driver"""
+        return self.ssh.username
 
     def mount(self, mountpoint, *, remote_path="/", direct=False, extra_args=None):
         """Mount remote filesystem locally via sshfs
@@ -84,7 +84,7 @@ class SSHMountClient(CompositeClient):
 
         if direct:
             try:
-                address = self.tcp.address()
+                address = self.ssh.tcp.address()
                 parsed = urlparse(address)
                 host = parsed.hostname
                 port = parsed.port
@@ -99,7 +99,7 @@ class SSHMountClient(CompositeClient):
                 self.mount(mountpoint, remote_path=remote_path, direct=False, extra_args=extra_args)
         else:
             self.logger.debug("Using SSH port forwarding for sshfs connection")
-            with TcpPortforwardAdapter(client=self.tcp) as addr:
+            with TcpPortforwardAdapter(client=self.ssh.tcp) as addr:
                 host, port = addr
                 self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
                 self._run_sshfs(host, port, mountpoint, remote_path, extra_args)
