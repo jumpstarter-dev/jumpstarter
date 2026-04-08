@@ -4,8 +4,9 @@ import logging
 
 import click
 import pytest
+from click.testing import CliRunner
 
-from jumpstarter_cli_common.opt import SourcePrefixFormatter, validate_name
+from jumpstarter_cli_common.opt import SourcePrefixFormatter, opt_insecure_tls, validate_name
 
 
 class TestSourcePrefixFormatter:
@@ -79,6 +80,38 @@ class TestSourcePrefixFormatter:
         )
         formatted3 = formatter.format(record3)
         assert "[different.source]" in formatted3
+
+
+def _make_insecure_tls_command():
+    @click.command()
+    @opt_insecure_tls
+    def cmd(insecure_tls: bool):
+        click.echo(f"insecure_tls={insecure_tls}")
+
+    return cmd
+
+
+class TestInsecureTlsOption:
+    def test_insecure_tls_flag_is_accepted(self) -> None:
+        runner = CliRunner()
+        cmd = _make_insecure_tls_command()
+        result = runner.invoke(cmd, ["--insecure-tls"])
+        assert result.exit_code == 0
+        assert "insecure_tls=True" in result.output
+
+    def test_insecure_tls_flag_defaults_to_false(self) -> None:
+        runner = CliRunner()
+        cmd = _make_insecure_tls_command()
+        result = runner.invoke(cmd, [])
+        assert result.exit_code == 0
+        assert "insecure_tls=False" in result.output
+
+    def test_short_flag_k_is_accepted(self) -> None:
+        runner = CliRunner()
+        cmd = _make_insecure_tls_command()
+        result = runner.invoke(cmd, ["-k"])
+        assert result.exit_code == 0
+        assert "insecure_tls=True" in result.output
 
 
 class TestValidateName:

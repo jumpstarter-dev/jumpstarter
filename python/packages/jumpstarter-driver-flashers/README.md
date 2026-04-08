@@ -147,7 +147,7 @@ Options:
   --force-exporter-http          Force use of exporter HTTP
   --force-flash-bundle TEXT      Force use of a specific flasher OCI bundle
   --cacert FILE                  CA certificate to use for HTTPS
-  --insecure-tls                 Skip TLS certificate verification
+  --insecure-tls / -k            Skip TLS certificate verification
   --header TEXT                  Custom HTTP header in 'Key: Value' format
   --bearer TEXT                  Bearer token for HTTP authentication
   --retries INTEGER              Number of retry attempts for flash operation

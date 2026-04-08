@@ -74,14 +74,14 @@ prefixed with "keycloak:" (e.g., keycloak:example-user).
    prefix usernames with `keycloak:` as configured in the claim mappings:
 
 ```console
-$ jmp admin create client test-client --insecure-tls-config --oidc-username keycloak:developer-1
+$ jmp admin create client test-client --insecure-tls --oidc-username keycloak:developer-1
 ```
 
 4. Instruct users to log in with:
 
 ```console
 $ jmp login --client <client alias> \
-    --insecure-tls-config \
+    --insecure-tls \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <client name> \
     --issuer https://<keycloak domain>/realms/<realm name>
@@ -91,7 +91,7 @@ For non-interactive login, add username and password:
 
 ```console
 $ jmp login --client <client alias> [other parameters] \
-    --insecure-tls-config \
+    --insecure-tls \
     --username <username> \
     --password <password>
 ```
@@ -106,7 +106,7 @@ For exporters, use similar login command but with the `--exporter` flag:
 
 ```console
 $ jmp login --exporter <exporter alias> \
-    --insecure-tls-config \
+    --insecure-tls \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <exporter name> \
     --issuer https://<keycloak domain>/realms/<realm name>
@@ -219,7 +219,7 @@ spec:
 
 ```console
 $ jmp admin create exporter test-exporter --label foo=bar \
-    --insecure-tls-config \
+    --insecure-tls \
     --oidc-username dex:system:serviceaccount:default:test-service-account
 ```
 
@@ -229,7 +229,7 @@ For clients:
 
 ```console
 $ jmp login --client <client alias> \
-    --insecure-tls-config \
+    --insecure-tls \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <client name> \
     --issuer https://dex.dex.svc.cluster.local:5556 \
@@ -241,7 +241,7 @@ For exporters:
 
 ```console
 $ jmp login --exporter <exporter alias> \
-    --insecure-tls-config \
+    --insecure-tls \
     --endpoint <jumpstarter controller endpoint> \
     --namespace <namespace> --name <exporter name> \
     --issuer https://dex.dex.svc.cluster.local:5556 \
