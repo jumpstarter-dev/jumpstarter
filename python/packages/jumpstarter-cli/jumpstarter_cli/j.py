@@ -41,7 +41,7 @@ async def _j_shell_complete():
                             except SystemExit:
                                 pass
 
-                        await to_thread.run_sync(_run_completion)
+                        await to_thread.run_sync(_run_completion, abandon_on_cancel=True)
     except TimeoutError:
         pass
 

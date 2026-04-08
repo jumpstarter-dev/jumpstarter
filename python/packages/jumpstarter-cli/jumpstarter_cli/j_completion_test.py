@@ -53,6 +53,7 @@ def test_j_shell_complete_handles_system_exit_cleanly():
         mock_env.return_value.__aexit__ = AsyncMock(return_value=False)
         run(_j_shell_complete)
         mock_client.cli.assert_called_once()
+        mock_cli_group.assert_called_once()
 
 
 def test_j_shell_complete_returns_empty_on_timeout():
@@ -64,7 +65,8 @@ def test_j_shell_complete_returns_empty_on_timeout():
         yield MagicMock()
 
     with patch("jumpstarter_cli.j.env_async", slow_env):
-        run(_j_shell_complete)
+        result = run(_j_shell_complete)
+        assert result is None
 
 
 def test_completion_timeout_is_positive():
