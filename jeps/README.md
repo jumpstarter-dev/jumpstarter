@@ -17,11 +17,13 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 1. Read [JEP-0000](JEP-0000-jep-process.md) to understand when a JEP is needed.
 2. Socialize your idea in [Matrix](https://matrix.to/#/#jumpstarter:matrix.org)
    or at the [weekly meeting](https://meet.google.com/gzd-hhbd-hpu).
-3. Open a new issue using the **JEP: Enhancement Proposal** template.
-4. The issue number becomes your JEP number.
+3. Create a branch and add your JEP markdown file to the `jeps/` directory
+   using the [JEP-NNNN-template.md](JEP-NNNN-template.md) as a starting point.
+4. Open a pull request. The PR serves as the primary venue for discussion,
+   allowing inline review comments on the JEP text.
 
-Alternatively, the [JEP-NNNN-template.md](JEP-NNNN-template.md) provides a
-markdown reference version of the template for longer-form proposals.
+You may also open a GitHub issue using the **JEP: Enhancement Proposal**
+template for initial discussion or lightweight proposals.
 
 ## JEP Index
 

@@ -128,16 +128,20 @@ Before writing a JEP, discuss the idea informally:
 This step helps determine whether a JEP is warranted, identifies potential
 reviewers, and surfaces obvious concerns early.
 
-### 2. Open a JEP Issue
+### 2. Submit a JEP Pull Request
 
-Open a new issue in the
-[jumpstarter-dev/jumpstarter](https://github.com/jumpstarter-dev/jumpstarter)
-repository using the **JEP Proposal** issue template. The template mirrors
+Create a new branch and add your JEP as a markdown file in the `jeps/`
+directory, following the [JEP template](JEP-NNNN-template.md). Open a pull
+request against the main branch. The PR-based workflow makes discussion
+easier through inline review comments and suggested changes.
+
+You may also open a GitHub issue using the **JEP Proposal** issue template
+for initial discussion or lightweight proposals. The issue template mirrors
 the structure of the JEP and will prompt you to fill in each section.
 
-The issue title should follow the format:
+The JEP title should follow the format:
 
-```
+```text
 JEP: Short descriptive title
 ```
 
@@ -150,17 +154,14 @@ the JEP status to **Proposed** when the issue is ready for review.
 
 ### 3. Discussion and Revision
 
-The community reviews the JEP directly on the GitHub issue. The author is
-expected to:
+The community reviews the JEP on the pull request. PRs are the preferred
+venue for discussion, as they allow inline review comments on the JEP text
+itself. The author is expected to:
 
-- Respond to feedback and revise the JEP body accordingly.
+- Respond to feedback and revise the JEP accordingly.
 - Build consensus, especially among contributors who would be affected by the
   change.
 - Document dissenting opinions in the **Rejected Alternatives** section.
-
-GitHub issues provide better threading for discussion than PRs, and allow
-anyone — including non-developers — to participate without needing to fork
-the repository.
 
 ### 4. Decision
 
