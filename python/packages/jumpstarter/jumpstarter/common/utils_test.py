@@ -145,6 +145,62 @@ def test_launch_shell_zsh_cleans_up_all_temp_files(tmp_path, monkeypatch):
     assert not os.path.exists(zshrc_paths[0])
 
 
+def test_launch_fish_passes_context_via_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/fish")
+    captured_env = {}
+    captured_cmd = []
+
+    def mock_run_process(cmd, env, lease=None):
+        captured_env.update(env)
+        captured_cmd.extend(cmd)
+        return 0
+
+    context = "test-context"
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context=context,
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+
+    assert captured_env.get("_JMP_SHELL_CONTEXT") == context
+    init_cmd_arg = captured_cmd[captured_cmd.index("--init-command") + 1]
+    assert context not in init_cmd_arg
+
+
+def test_generate_bash_init_limits_completion_to_first_arg():
+    content = _generate_shell_init("bash", use_profiles=False, j_commands=["power", "serial"])
+    assert "COMP_CWORD" in content
+    assert "-eq 1" in content
+
+
+def test_launch_shell_zsh_restores_zdotdir(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    home_dir = os.path.expanduser("~")
+
+    def mock_run_process(cmd, env, lease=None):
+        zdotdir = env.get("ZDOTDIR")
+        if zdotdir:
+            zshrc = os.path.join(zdotdir, ".zshrc")
+            with open(zshrc) as f:
+                first_line = f.readline().strip()
+            assert "ZDOTDIR=" in first_line
+            assert home_dir in first_line
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            j_commands=["power"],
+        )
+
+
 def test_launch_shell_zsh_uses_tmpdir_without_intermediate_file(tmp_path, monkeypatch):
     monkeypatch.setenv("SHELL", "/usr/bin/zsh")
     temp_dirs = []
