@@ -12,7 +12,7 @@ You also need `sshfs` installed on the client machine:
 
 - **Fedora/RHEL**: `sudo dnf install fuse-sshfs`
 - **Debian/Ubuntu**: `sudo apt-get install sshfs`
-- **macOS**: `brew install macfuse && brew install sshfs`
+- **macOS**: install https://macfuse.github.io/ as brew has removed sshfs support.
 
 ## Configuration
 
@@ -34,7 +34,7 @@ export:
         config:
           host: "192.168.1.100"
           port: 22
-  ssh-mount:
+  mount:
     type: jumpstarter_driver_ssh_mount.driver.SSHMount
     children:
       ssh:
@@ -47,13 +47,13 @@ Inside a `jmp shell` session:
 
 ```shell
 # Mount remote filesystem
-j ssh-mount mount /local/mountpoint
-j ssh-mount mount /local/mountpoint -r /remote/path
-j ssh-mount mount /local/mountpoint --direct
+j mount /local/mountpoint
+j mount /local/mountpoint -r /remote/path
+j mount /local/mountpoint --direct
 
 # Unmount
-j ssh-mount umount /local/mountpoint
-j ssh-mount umount /local/mountpoint --lazy
+j mount --umount /local/mountpoint
+j mount --umount /local/mountpoint --lazy
 ```
 
 ## API Reference
@@ -62,3 +62,7 @@ j ssh-mount umount /local/mountpoint --lazy
 
 - `mount(mountpoint, *, remote_path="/", direct=False, extra_args=None)` - Mount remote filesystem locally via sshfs
 - `umount(mountpoint, *, lazy=False)` - Unmount a previously mounted sshfs filesystem
+
+### CLI
+
+The driver registers as `mount` in the exporter config. When used in a `jmp shell` session, the CLI is a single command with a `--umount` flag for unmounting.

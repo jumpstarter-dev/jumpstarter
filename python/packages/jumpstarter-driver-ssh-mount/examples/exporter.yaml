@@ -17,7 +17,7 @@ export:
         config:
           host: "192.168.1.100"
           port: 22
-  ssh-mount:
+  mount:
     type: jumpstarter_driver_ssh_mount.driver.SSHMount
     children:
       ssh:
