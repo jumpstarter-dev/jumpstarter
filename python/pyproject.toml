@@ -74,6 +74,7 @@ dev = [
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
     "ty>=0.0.1a8",
+    "diff-cover>=9.2.0",
 ]
 
 [tool.ruff]
@@ -98,6 +99,7 @@ Pn = "Pn"
 mosquitto = "mosquitto"
 
 [tool.coverage.run]
+branch = true
 omit = ["conftest.py", "test_*.py", "*_test.py", "*_pb2.py", "*_pb2_grpc.py"]
 skip_empty = true
 

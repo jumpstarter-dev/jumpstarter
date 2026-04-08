@@ -42,6 +42,8 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
@@ -98,6 +100,11 @@ jobs:
         run: |
             make test
 
+      - name: Check coverage on changed lines
+        if: github.event_name == 'pull_request'
+        working-directory: python
+        run: |
+            uv run diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=80
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
