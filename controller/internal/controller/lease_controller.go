@@ -281,25 +281,14 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
-		readyApprovedExporters := filterOutNotReadyExporters(onlineApprovedExporters)
-		if len(readyApprovedExporters) == 0 {
-			lease.SetStatusPending(
-				"NotReady",
-				"There are %d online exporters, but none are ready (still cleaning up previous lease)",
-				len(onlineApprovedExporters),
-			)
-			result.RequeueAfter = time.Second
-			return nil
-		}
-
 		// Filter out exporters that are already leased
 		activeLeases, err := r.ListActiveLeases(ctx, lease.Namespace)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to list active leases: %w", err)
 		}
 
-		readyApprovedExporters = attachExistingLeases(readyApprovedExporters, activeLeases.Items)
-		orderedExporters := orderApprovedExporters(readyApprovedExporters)
+		onlineApprovedExporters = attachExistingLeases(onlineApprovedExporters, activeLeases.Items)
+		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
 
 		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
 			lease.SetStatusUnsatisfiable("SpotAccess",
@@ -308,12 +297,23 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
-		availableExporters := filterOutLeasedExporters(readyApprovedExporters)
+		availableExporters := filterOutLeasedExporters(onlineApprovedExporters)
 		if len(availableExporters) == 0 {
 			lease.SetStatusPending("NotAvailable",
 				"There are %d approved exporters, (i.e. %s) but all of them are already leased",
-				len(readyApprovedExporters),
-				readyApprovedExporters[0].Exporter.Name,
+				len(onlineApprovedExporters),
+				onlineApprovedExporters[0].Exporter.Name,
+			)
+			result.RequeueAfter = time.Second
+			return nil
+		}
+
+		readyAvailableExporters := filterOutNotReadyExporters(availableExporters)
+		if len(readyAvailableExporters) == 0 {
+			lease.SetStatusPending(
+				"NotReady",
+				"There are %d online exporters, but none are ready (still cleaning up previous lease)",
+				len(availableExporters),
 			)
 			result.RequeueAfter = time.Second
 			return nil
@@ -328,7 +328,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		// For now, we just select the best available exporter without considering other
 		// ongoing lease requests
 
-		selected := availableExporters[0]
+		selected := readyAvailableExporters[0]
 
 		if selected.ExistingLease != nil {
 			// TODO: Implement eviction of spot access leases
