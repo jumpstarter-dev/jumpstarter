@@ -1,12 +1,9 @@
 # JEP-NNNN: Your Short, Descriptive Title
 
 <!--
-  This is the reference version of the JEP template. The primary way to
-  submit a JEP is by opening a GitHub issue using the "JEP: Enhancement
-  Proposal" issue template, which mirrors this structure.
-
-  This markdown file exists for reference and for cases where a longer-form
-  document is preferred (e.g., attaching to an issue or linking from one).
+  Use this template to create your JEP. Copy it to a new file named
+  JEP-NNNN-short-title.md (where NNNN will be the PR number) and open a
+  pull request against the main branch.
 
   Guidance:
   - Keep the JEP focused on a single proposal. Split multi-part ideas.
@@ -17,7 +14,7 @@
 
 | Field              | Value                                      |
 |--------------------|--------------------------------------------|
-| **JEP**            | NNNN *(replaced with issue number)*        |
+| **JEP**            | NNNN *(replaced with PR number)*           |
 | **Title**          | *Your short, descriptive title*            |
 | **Author(s)**      | *@github-handle (Full Name \<email\>)*     |
 | **Status**         | Draft                                      |

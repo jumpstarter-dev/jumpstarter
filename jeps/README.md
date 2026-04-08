@@ -22,9 +22,6 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 4. Open a pull request. The PR serves as the primary venue for discussion,
    allowing inline review comments on the JEP text.
 
-You may also open a GitHub issue using the **JEP: Enhancement Proposal**
-template for initial discussion or lightweight proposals.
-
 ## JEP Index
 
 ### Process JEPs

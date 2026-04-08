@@ -135,22 +135,18 @@ directory, following the [JEP template](JEP-NNNN-template.md). Open a pull
 request against the main branch. The PR-based workflow makes discussion
 easier through inline review comments and suggested changes.
 
-You may also open a GitHub issue using the **JEP Proposal** issue template
-for initial discussion or lightweight proposals. The issue template mirrors
-the structure of the JEP and will prompt you to fill in each section.
-
 The JEP title should follow the format:
 
 ```text
 JEP: Short descriptive title
 ```
 
-The issue number automatically becomes the JEP number (e.g., issue #400
-becomes JEP-0400). Apply the `jep` label to the issue.
+The PR number becomes the JEP number (e.g., PR #400 becomes JEP-0400).
+Apply the `jep` label to the pull request.
 
 Fill in every section of the template. Sections marked `(Optional)` may be
 omitted if not applicable, but all required sections must be present. Set
-the JEP status to **Proposed** when the issue is ready for review.
+the JEP status to **Proposed** when the PR is ready for review.
 
 ### 3. Discussion and Revision
 
@@ -166,43 +162,38 @@ itself. The author is expected to:
 ### 4. Decision
 
 Jumpstarter maintainers make the final decision to accept or reject a JEP.
-Decisions are recorded as a comment on the issue with a rationale. The author
-updates the JEP status in the issue body. Rejected JEPs are closed but not
-deleted — they remain as the historical record of why an approach was not
-taken.
+Decisions are recorded as a comment on the pull request with a rationale. The
+author updates the JEP status in the markdown file. Rejected JEPs are closed
+but not deleted — they remain as the historical record of why an approach was
+not taken.
 
 ### 5. Implementation
 
 Once accepted, the author (or any willing contributor) implements the feature.
-Implementation PRs should reference the JEP issue (e.g., `Implements JEP-0400`).
-The JEP issue's **Implementation History** section should be updated with links
+Implementation PRs should reference the JEP (e.g., `Implements JEP-0400`).
+The JEP's **Implementation History** section should be updated with links
 to relevant PRs as they are merged. The JEP moves through Implementing →
-Implemented → Final as work progresses. The issue is closed when the JEP
-reaches **Final** status.
+Implemented → Final as work progresses.
 
 ## Roles
 
 | Role            | Responsibility                                                                               |
 |-----------------|----------------------------------------------------------------------------------------------|
 | **Author**       | Writes the JEP, responds to feedback, shepherds the proposal through the process.            |
-| **Reviewer**     | Provides technical feedback on the issue. Any community member can review.                    |
+| **Reviewer**     | Provides technical feedback on the pull request. Any community member can review.             |
 | **Maintainer**   | Makes the final accept/reject decision. Must provide written rationale.                      |
 | **Implementer**  | Writes the code. Often the author, but doesn't have to be.                                   |
 
 ## JEP Numbering
 
-JEP numbers are assigned from the GitHub issue number used to submit the JEP.
+JEP numbers are assigned from the pull request number used to submit the JEP.
 Once assigned, a JEP number is never reused. JEP-0000 through JEP-0009 are
 reserved for process and meta-JEPs.
-
-Existing enhancement issues that predate the JEP process may be retroactively
-adopted as JEPs by updating the issue body to follow the JEP template and
-applying the `jep` label.
 
 ## JEP Index
 
 The file `jeps/README.md` serves as the index of all JEPs. Alternatively,
-all JEPs can be found by filtering GitHub issues with the `jep` label.
+all JEPs can be found by filtering GitHub pull requests with the `jep` label.
 
 ## Amendments to This Process
 
