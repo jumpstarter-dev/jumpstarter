@@ -82,7 +82,7 @@ def test_csv_format_timing(demo_client: SigrokClient):
     for sample in samples:
         assert isinstance(sample.time, float)
         # Verify timing progresses (1/100kHz = 0.00001s per sample)
-        assert sample.time == sample.sample * 0.00001
+        assert sample.time == pytest.approx(sample.sample * 0.00001, rel=1e-6, abs=1e-12)
 
 
 @pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Iterator
+import re
+from enum import Enum
+from pydantic import BaseModel, Field, field_validator
 
-from pydantic import BaseModel, Field
 
-
-class OutputFormat:
+class OutputFormat(str, Enum):
     """Constants for sigrok output formats."""
     CSV = "csv"
     BITS = "bits"
@@ -16,7 +16,7 @@ class OutputFormat:
 
     @classmethod
     def all(cls) -> list[str]:
-        return [cls.CSV, cls.BITS, cls.ASCII, cls.BINARY, cls.SRZIP, cls.VCD]
+        return [member.value for member in cls]
 
 
 class Sample(BaseModel):
@@ -26,7 +26,7 @@ class Sample(BaseModel):
     values: dict[str, int | float]  # Channel values (digital: 0/1, analog: voltage)
 
     def __str__(self) -> str:
-        """Format sample with clean time display using appropriate unit (fs/ps/ns/μs/ms/s)."""
+        """Format sample with clean time display using appropriate unit (fs/ps/ns/us/ms/s)."""
         time_str = self._format_time(self.time)
         return f"Sample(sample={self.sample}, time={time_str}, values={self.values})"
 
@@ -38,7 +38,7 @@ class Sample(BaseModel):
             time_s: Time in seconds
 
         Returns:
-            Formatted string like "1.5ns", "2.3μs", "1.5ms", "2s"
+            Formatted string like "1.5ns", "2.3us", "1.5ms", "2s"
         """
         # Special case for zero
         if time_s == 0:
@@ -50,7 +50,7 @@ class Sample(BaseModel):
         units = [
             (1.0, "s"),
             (1e-3, "ms"),
-            (1e-6, "μs"),
+            (1e-6, "us"),
             (1e-9, "ns"),
             (1e-12, "ps"),
             (1e-15, "fs"),
@@ -73,9 +73,24 @@ class DecoderConfig(BaseModel):
 
     name: str
     channels: dict[str, str] | None = None
-    options: dict[str, Any] | None = None
+    options: dict[str, str | int | float | bool] | None = None
     annotations: list[str] | None = None
     stack: list["DecoderConfig"] | None = None
+
+    @field_validator("options")
+    @classmethod
+    def validate_options(cls, v: dict[str, str | int | float | bool] | None) -> dict[str, str | int | float | bool] | None:
+        if v is None:
+            return v
+        for key, value in v.items():
+            str_key = str(key)
+            str_value = str(value)
+            if ":" in str_key or ":" in str_value:
+                raise ValueError(
+                    f"Decoder option key/value must not contain ':' (got key={str_key!r}, value={str_value!r}). "
+                    "Colons are used as sigrok-cli delimiters and could cause option injection."
+                )
+        return v
 
 
 class CaptureConfig(BaseModel):
@@ -84,12 +99,22 @@ class CaptureConfig(BaseModel):
     pretrigger: int | None = Field(default=None, description="samples before trigger")
     triggers: dict[str, str] | None = Field(default=None, description="e.g., {'D0': 'rising'}")
     channels: list[str] | None = Field(default=None, description="override default channels by name")
-    output_format: str = Field(
+    output_format: OutputFormat = Field(
         default=OutputFormat.VCD,
         description="Output format (default: vcd - efficient change-based format with timing). "
         "Options: vcd, csv, srzip, binary, bits, ascii",
     )
     decoders: list[DecoderConfig] | None = Field(default=None, description="real-time protocol decoding")
+
+    @field_validator("sample_rate")
+    @classmethod
+    def validate_sample_rate(cls, v: str) -> str:
+        if not re.match(r"^\d+(\.\d+)?\s*(k|M|G)?(Hz)?$", v):
+            raise ValueError(
+                f"Invalid sample_rate format: {v!r}. "
+                "Expected format like '1M', '8MHz', '100kHz', '24000000', '1.5GHz'."
+            )
+        return v
 
 
 class CaptureResult(BaseModel):
@@ -111,7 +136,7 @@ class CaptureResult(BaseModel):
         if data_len <= 50:
             data_preview = self.data_b64
         else:
-            # Show first 50 and last 50 chars with ellipsis
+            # Show first 25 and last 25 chars with ellipsis
             data_preview = f"{self.data_b64[:25]}...{self.data_b64[-25:]} ({data_len} chars)"
 
         return (
@@ -128,13 +153,13 @@ class CaptureResult(BaseModel):
         from base64 import b64decode
         return b64decode(self.data_b64)
 
-    def decode(self) -> Iterator[Sample] | dict[str, list[int]] | str:
+    def decode(self) -> list[Sample] | dict[str, list[int]] | str:
         """Parse captured data based on output format.
 
         Returns:
-            - CSV format: Iterator[Sample] yielding samples with timing and all values per sample
-            - VCD format: Iterator[Sample] yielding samples with timing and only changed values
-            - Bits format: dict[str, list[int]] with channel→bit sequences
+            - CSV format: list[Sample] with timing and all values per sample
+            - VCD format: list[Sample] with timing and only changed values
+            - Bits format: dict[str, list[int]] with channel->bit sequences
             - ASCII format: str with ASCII art visualization
             - Other formats: raises NotImplementedError (use .data for raw bytes)
 
@@ -149,11 +174,11 @@ class CaptureResult(BaseModel):
         if self.output_format == OutputFormat.CSV:
             from .csv import parse_csv
             samples_data = parse_csv(self.data, self.sample_rate)
-            return (Sample.model_validate(s) for s in samples_data)
+            return [Sample.model_validate(s) for s in samples_data]
         elif self.output_format == OutputFormat.VCD:
             from .vcd import parse_vcd
             samples_data = parse_vcd(self.data, self.sample_rate)
-            return (Sample.model_validate(s) for s in samples_data)
+            return [Sample.model_validate(s) for s in samples_data]
         elif self.output_format == OutputFormat.BITS:
             return self._parse_bits()
         elif self.output_format == OutputFormat.ASCII:
@@ -165,7 +190,7 @@ class CaptureResult(BaseModel):
             )
 
     def _parse_bits(self) -> dict[str, list[int]]:
-        """Parse bits format to dict of channel→bit sequences.
+        """Parse bits format to dict of channel->bit sequences.
 
         Sigrok-cli bits format: "D0:10001\\nD1:01110\\n..."
         Each line has format "channel_name:bits"

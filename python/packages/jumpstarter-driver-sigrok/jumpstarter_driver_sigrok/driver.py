@@ -29,6 +29,7 @@ class Sigrok(Driver):
     conn: str | None = "auto"
     executable: str | None = field(default_factory=find_sigrok_cli)
     channels: dict[str, str] = field(default_factory=dict)
+    timeout: int = 300  # subprocess timeout in seconds
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -54,7 +55,7 @@ class Sigrok(Driver):
         self._ensure_executable()
         assert self.executable is not None
         cmd = [self.executable, "--driver", self.driver, "--scan"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=self.timeout)
         return result.stdout
 
     @export
@@ -78,24 +79,23 @@ class Sigrok(Driver):
         """One-shot capture; returns dict with base64-encoded binary data."""
         self._ensure_executable()
         cfg = CaptureConfig.model_validate(config)
-        cmd, outfile, tmpdir = self._build_capture_command(cfg)
 
-        try:
+        with TemporaryDirectory() as tmpdir_path:
+            cmd, outfile = self._build_capture_command(cfg, tmpdir_path)
+
             self.logger.debug("Running sigrok-cli: %s", " ".join(cmd))
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, timeout=self.timeout)
 
             data = outfile.read_bytes()
             # Return as dict with base64-encoded data (reliable for JSON transport)
             return {
                 "data_b64": b64encode(data).decode("ascii"),
-                "output_format": cfg.output_format,
+                "output_format": cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format,
                 "sample_rate": cfg.sample_rate,
                 "channel_map": self.channels,
                 "triggers": cfg.triggers,
                 "decoders": [d.model_dump() for d in cfg.decoders] if cfg.decoders else None,
             }
-        finally:
-            tmpdir.cleanup()
 
     @export
     async def capture_stream(self, config: CaptureConfig | dict):
@@ -130,18 +130,18 @@ class Sigrok(Driver):
 
     # --- Command builders -----------------------------------------------
 
-    def _build_capture_command(self, cfg: CaptureConfig) -> tuple[list[str], Path, TemporaryDirectory]:
-        tmpdir = TemporaryDirectory()
-        outfile = Path(tmpdir.name) / f"capture.{cfg.output_format}"
+    def _build_capture_command(self, cfg: CaptureConfig, tmpdir_path: str) -> tuple[list[str], Path]:
+        outfile = Path(tmpdir_path) / f"capture.{cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format}"
 
         cmd: list[str] = self._base_driver_args()
         cmd += self._channel_args(cfg.channels)
         cmd += self._config_args(cfg)
         cmd += self._trigger_args(cfg)
         cmd += self._decoder_args(cfg)
-        cmd += ["-O", cfg.output_format, "-o", str(outfile)]
+        fmt = cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format
+        cmd += ["-O", fmt, "-o", str(outfile)]
 
-        return cmd, outfile, tmpdir
+        return cmd, outfile
 
     def _build_stream_command(self, cfg: CaptureConfig) -> list[str]:
         cmd: list[str] = self._base_driver_args()
@@ -149,7 +149,8 @@ class Sigrok(Driver):
         cmd += self._config_args(cfg, continuous=True)
         cmd += self._trigger_args(cfg)
         cmd += self._decoder_args(cfg)
-        cmd += ["-O", cfg.output_format, "-o", "-"]
+        fmt = cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format
+        cmd += ["-O", fmt, "-o", "-"]
         return cmd
 
     def _base_driver_args(self) -> list[str]:

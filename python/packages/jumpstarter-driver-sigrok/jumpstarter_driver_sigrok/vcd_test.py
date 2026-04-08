@@ -2,6 +2,8 @@
 
 from base64 import b64encode
 
+import pytest
+
 from .common import CaptureResult, OutputFormat, Sample
 
 
@@ -105,21 +107,21 @@ $enddefinitions $end
 
 def test_vcd_parser_timescale_variations():
     """Test VCD parser with different timescale values."""
-    # Test different timescales
+    # Test different timescales: (timescale_str, vcd_timestamp, expected_time_seconds)
     test_cases = [
-        ("1 ns", 1, 0),      # 1ns timescale, time 0 = 0ns
-        ("1 us", 1000, 0),   # 1us timescale, time 0 = 0ns
-        ("1 ms", 1000000, 0),  # 1ms timescale, time 0 = 0ns
-        ("10 ns", 10, 100 * 10),  # 10ns timescale, time 100 = 1000ns
-        ("100 ns", 100, 50 * 100),  # 100ns timescale, time 50 = 5000ns
+        ("1 ns", 100, 100e-9),       # 1ns timescale, time 100 = 100ns
+        ("1 us", 100, 100e-6),       # 1us timescale, time 100 = 100us
+        ("1 ms", 100, 100e-3),       # 1ms timescale, time 100 = 100ms
+        ("10 ns", 100, 1000e-9),     # 10ns timescale, time 100 = 1000ns
+        ("100 ns", 50, 5000e-9),     # 100ns timescale, time 50 = 5000ns
     ]
 
-    for timescale_str, _multiplier, expected_time_ns in test_cases:
+    for timescale_str, timestamp, expected_time_s in test_cases:
         vcd_content = f"""$timescale {timescale_str} $end
 $var wire 1 ! D0 $end
 $enddefinitions $end
 #0 1!
-#{100 if expected_time_ns else 0} 0!
+#{timestamp} 0!
 """
         result = CaptureResult(
             data_b64=b64encode(vcd_content.encode("utf-8")).decode("ascii"),
@@ -129,9 +131,12 @@ $enddefinitions $end
         )
 
         samples = list(result.decode())
-        assert len(samples) >= 1
+        assert len(samples) == 2, f"Expected 2 samples for timescale {timescale_str}"
         # First sample at time 0
         assert samples[0].time == 0.0
+        # Second sample at expected time
+        assert samples[1].time == pytest.approx(expected_time_s, rel=1e-9), \
+            f"Timescale {timescale_str}: expected {expected_time_s}s, got {samples[1].time}s"
 
 
 def test_vcd_parser_empty_timestamps():
