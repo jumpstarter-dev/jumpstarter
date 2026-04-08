@@ -192,18 +192,16 @@ def test_umount_failure():
                     client.umount("/tmp/test-mount")
 
 
-def test_cli_has_mount_umount_commands():
-    """Test that the CLI exposes mount and umount subcommands"""
+def test_cli_has_mount_and_umount_flag():
+    """Test that the CLI exposes mount command with --umount flag"""
     instance = SSHMount(
         children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
         cli = client.cli()
-        # The CLI should be a click Group with mount and umount commands
-        assert hasattr(cli, 'commands') or hasattr(cli, 'list_commands')
         from click.testing import CliRunner
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
-        assert "mount" in result.output
-        assert "umount" in result.output
+        assert "mountpoint" in result.output.lower() or "MOUNTPOINT" in result.output
+        assert "--umount" in result.output

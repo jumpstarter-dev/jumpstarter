@@ -9,7 +9,7 @@ from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client.core import DriverMethodNotImplemented
-from jumpstarter.client.decorators import driver_click_group
+from jumpstarter.client.decorators import driver_click_command
 
 
 @dataclass(kw_only=True)
@@ -22,28 +22,21 @@ class SSHMountClient(CompositeClient):
     """
 
     def cli(self):
-        @driver_click_group(self)
-        def ssh_mount():
-            """SSHFS mount/umount commands for remote filesystems"""
-            pass
-
-        @ssh_mount.command("mount")
+        @driver_click_command(self)
         @click.argument("mountpoint", type=click.Path())
+        @click.option("--umount", "-u", is_flag=True, help="Unmount instead of mount")
         @click.option("--remote-path", "-r", default="/", help="Remote path to mount (default: /)")
         @click.option("--direct", is_flag=True, help="Use direct TCP address")
-        @click.option("--extra-args", "-o", multiple=True, help="Extra arguments to pass to sshfs")
-        def mount_cmd(mountpoint, remote_path, direct, extra_args):
-            """Mount remote filesystem locally via sshfs"""
-            self.mount(mountpoint, remote_path=remote_path, direct=direct, extra_args=list(extra_args))
-
-        @ssh_mount.command("umount")
-        @click.argument("mountpoint", type=click.Path(exists=True))
         @click.option("--lazy", "-l", is_flag=True, help="Lazy unmount (detach filesystem now, clean up later)")
-        def umount_cmd(mountpoint, lazy):
-            """Unmount a previously mounted sshfs filesystem"""
-            self.umount(mountpoint, lazy=lazy)
+        @click.option("--extra-args", "-o", multiple=True, help="Extra arguments to pass to sshfs")
+        def mount(mountpoint, umount, remote_path, direct, lazy, extra_args):
+            """Mount or unmount remote filesystem via sshfs"""
+            if umount:
+                self.umount(mountpoint, lazy=lazy)
+            else:
+                self.mount(mountpoint, remote_path=remote_path, direct=direct, extra_args=list(extra_args))
 
-        return ssh_mount
+        return mount
 
     @property
     def identity(self) -> str | None:
@@ -76,7 +69,7 @@ class SSHMountClient(CompositeClient):
                 "sshfs is not installed. Please install it:\n"
                 "  Fedora/RHEL: sudo dnf install fuse-sshfs\n"
                 "  Debian/Ubuntu: sudo apt-get install sshfs\n"
-                "  macOS: brew install macfuse && brew install sshfs"
+                "  macOS: install macfuse from https://macfuse.github.io/"
             )
 
         # Create mountpoint directory if it doesn't exist
@@ -125,7 +118,7 @@ class SSHMountClient(CompositeClient):
             user_prefix = f"{default_username}@" if default_username else ""
             remote_spec = f"{user_prefix}{host}:{remote_path}"
             click.echo(f"Mounted {remote_spec} on {mountpoint}")
-            click.echo(f"To unmount: j ssh-mount umount {mountpoint}")
+            click.echo(f"To unmount: j mount --umount {mountpoint}")
         except click.ClickException:
             raise
         except Exception as e:
