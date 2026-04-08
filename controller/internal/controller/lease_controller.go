@@ -281,14 +281,25 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
+		readyExporters := filterOutNotReadyExporters(onlineApprovedExporters)
+		if len(readyExporters) == 0 {
+			lease.SetStatusPending(
+				"NotReady",
+				"There are %d online exporters, but none are ready (still cleaning up previous lease)",
+				len(onlineApprovedExporters),
+			)
+			result.RequeueAfter = time.Second
+			return nil
+		}
+
 		// Filter out exporters that are already leased
 		activeLeases, err := r.ListActiveLeases(ctx, lease.Namespace)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to list active leases: %w", err)
 		}
 
-		onlineApprovedExporters = attachExistingLeases(onlineApprovedExporters, activeLeases.Items)
-		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
+		readyExporters = attachExistingLeases(readyExporters, activeLeases.Items)
+		orderedExporters := orderApprovedExporters(readyExporters)
 
 		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
 			lease.SetStatusUnsatisfiable("SpotAccess",
@@ -297,12 +308,12 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
-		availableExporters := filterOutLeasedExporters(onlineApprovedExporters)
+		availableExporters := filterOutLeasedExporters(readyExporters)
 		if len(availableExporters) == 0 {
 			lease.SetStatusPending("NotAvailable",
 				"There are %d approved exporters, (i.e. %s) but all of them are already leased",
-				len(onlineApprovedExporters),
-				onlineApprovedExporters[0].Exporter.Name,
+				len(readyExporters),
+				readyExporters[0].Exporter.Name,
 			)
 			result.RequeueAfter = time.Second
 			return nil
@@ -520,6 +531,22 @@ func filterOutLeasedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 		return true
 	})
 
+}
+
+// filterOutNotReadyExporters filters out exporters that are not in a ready state
+// to accept new leases. Only exporters with Available status (or unset status for
+// backwards compatibility with old exporters) are considered ready.
+func filterOutNotReadyExporters(approvedExporters []ApprovedExporter) []ApprovedExporter {
+	return slices.DeleteFunc(
+		slices.Clone(approvedExporters),
+		func(approvedExporter ApprovedExporter) bool {
+			status := approvedExporter.Exporter.Status.ExporterStatusValue
+			// Allow Available or unset (backwards compat with old exporters that don't report status)
+			return status != jumpstarterdevv1alpha1.ExporterStatusAvailable &&
+				status != jumpstarterdevv1alpha1.ExporterStatusUnspecified &&
+				status != ""
+		},
+	)
 }
 
 // filterOutOfflineExporters filters out the exporters that are not online

@@ -386,6 +386,56 @@ var _ = Describe("Lease Controller", func() {
 		})
 	})
 
+	When("trying to lease exporters that are online but not ready (e.g., running afterLease hook)", func() {
+		It("should set status to pending with NotReady reason", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			// Set both matching exporters to online but in AfterLeaseHook status
+			// (simulates exporter cleaning up from a previous lease)
+			setExporterNotReady(ctx, testExporter1DutA.Name, jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook)
+			setExporterNotReady(ctx, testExporter2DutA.Name, jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			result := reconcileLease(ctx, lease)
+
+			// Should requeue to retry later
+			Expect(result.RequeueAfter).To(Equal(time.Second))
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+			)).To(BeTrue())
+
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypePending))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("NotReady"))
+			Expect(condition.Message).To(ContainSubstring("none are ready"))
+		})
+	})
+
+	When("trying to lease exporters where some are online+ready and others are online+not-ready", func() {
+		It("should only lease from the ready exporter", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			// exporter1 is still cleaning up, exporter2 is available
+			setExporterNotReady(ctx, testExporter1DutA.Name, jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook)
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter2DutA.Name))
+		})
+	})
+
 	When("trying to lease a busy exporter", func() {
 		It("should not be acquired", func() {
 			lease := leaseDutA2Sec.DeepCopy()
@@ -551,6 +601,27 @@ func setExporterOnlineConditions(ctx context.Context, name string, status metav1
 		exporter.Status.ExporterStatusValue = jumpstarterdevv1alpha1.ExporterStatusOffline
 		exporter.Status.StatusMessage = "Offline"
 	}
+	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
+}
+
+// setExporterNotReady sets an exporter as online and registered but NOT ready
+// for leasing (e.g., still running a hook from a previous lease).
+func setExporterNotReady(ctx context.Context, name string, status string) {
+	exporter := getExporter(ctx, name)
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+		Status: metav1.ConditionTrue,
+		Reason: "dummy",
+	})
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:   string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+		Status: metav1.ConditionTrue,
+		Reason: "dummy",
+	})
+	exporter.Status.Devices = []jumpstarterdevv1alpha1.Device{{}}
+	exporter.Status.LastSeen = metav1.Now()
+	exporter.Status.ExporterStatusValue = status
+	exporter.Status.StatusMessage = "Running hook"
 	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
 }
 
