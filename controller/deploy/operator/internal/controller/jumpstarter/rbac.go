@@ -61,6 +61,46 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		"namespace", existingSA.Namespace,
 		"operation", op)
 
+	// Router ServiceAccount (zero RBAC, no token automount)
+	desiredRouterSA := r.createRouterServiceAccount(jumpstarter)
+
+	existingRouterSA := &corev1.ServiceAccount{}
+	existingRouterSA.Name = desiredRouterSA.Name
+	existingRouterSA.Namespace = desiredRouterSA.Namespace
+
+	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRouterSA, func() error {
+		if existingRouterSA.CreationTimestamp.IsZero() {
+			existingRouterSA.Labels = desiredRouterSA.Labels
+			existingRouterSA.Annotations = desiredRouterSA.Annotations
+			existingRouterSA.AutomountServiceAccountToken = desiredRouterSA.AutomountServiceAccountToken
+			return nil
+		}
+
+		if !serviceAccountNeedsUpdate(existingRouterSA, desiredRouterSA) {
+			log.V(1).Info("Router ServiceAccount is up to date, skipping update",
+				"name", existingRouterSA.Name,
+				"namespace", existingRouterSA.Namespace)
+			return nil
+		}
+
+		existingRouterSA.Labels = desiredRouterSA.Labels
+		existingRouterSA.Annotations = desiredRouterSA.Annotations
+		existingRouterSA.AutomountServiceAccountToken = desiredRouterSA.AutomountServiceAccountToken
+		return nil
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile Router ServiceAccount",
+			"name", desiredRouterSA.Name,
+			"namespace", desiredRouterSA.Namespace)
+		return err
+	}
+
+	log.Info("Router ServiceAccount reconciled",
+		"name", existingRouterSA.Name,
+		"namespace", existingRouterSA.Namespace,
+		"operation", op)
+
 	// Role
 	desiredRole := r.createRole(jumpstarter)
 
@@ -166,6 +206,23 @@ func (r *JumpstarterReconciler) createServiceAccount(jumpstarter *operatorv1alph
 				"app.kubernetes.io/managed-by": "jumpstarter-operator",
 			},
 		},
+	}
+}
+
+// createRouterServiceAccount creates a service account for the router with no RBAC permissions
+func (r *JumpstarterReconciler) createRouterServiceAccount(jumpstarter *operatorv1alpha1.Jumpstarter) *corev1.ServiceAccount {
+	automount := false
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-router-sa", jumpstarter.Name),
+			Namespace: jumpstarter.Namespace,
+			Labels: map[string]string{
+				"app":                          "jumpstarter-router",
+				"app.kubernetes.io/name":       "jumpstarter-router",
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+			},
+		},
+		AutomountServiceAccountToken: &automount,
 	}
 }
 
