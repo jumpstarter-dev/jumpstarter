@@ -7,9 +7,7 @@ controller service, configuring drivers, and running the exporter.
 The jumpstarter-controller endpoints are secured by TLS. However, in release 0.7.x,
 the certificates are self-signed and rotated on every restart. This means the client
 will not be able to verify the server certificate. To bypass this, you should use the
-`--insecure-tls` flag when creating clients and exporters. This issue will be
-resolved in the next release. See [issue #72](https://github.com/jumpstarter-dev/jumpstarter/issues/72)
-for more details.
+`--insecure-tls` flag when creating clients and exporters.
 Alternatively, you can configure the ingress/route in reencrypt mode with your own key and certificate.
 ```
 

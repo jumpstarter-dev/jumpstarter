@@ -1483,7 +1483,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option("--force-exporter-http", is_flag=True, help="Force use of exporter HTTP")
         @click.option("--force-flash-bundle", type=str, help="Force use of a specific flasher OCI bundle")
         @click.option("--cacert", type=click.Path(exists=True, dir_okay=False), help="CA certificate to use for HTTPS")
-        @click.option("--insecure-tls", is_flag=True, help="Skip TLS certificate verification")
+        @click.option("--insecure-tls", "-k", is_flag=True, help="Skip TLS certificate verification")
         @click.option(
             "--header",
             "header",
