@@ -9,6 +9,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional
 
 from jumpstarter_driver_opendal.driver import Opendal
+from pydantic import validate_call
 from rtslib_fb import LUN, TPG, BlockStorageObject, FileIOStorageObject, NetworkPortal, RTSRoot, Target
 
 from jumpstarter.driver import Driver, export
@@ -47,6 +48,7 @@ class ISCSI(Driver):
     host: str = field(default="")
     port: int = 3260
     remove_created_on_close: bool = False  # Keep disk images persistent by default
+    block_device_allowlist: List[str] = field(default_factory=list)
 
     _rtsroot: Optional[RTSRoot] = field(init=False, default=None)
     _target: Optional[Target] = field(init=False, default=None)
@@ -186,6 +188,7 @@ class ISCSI(Driver):
             self.logger.debug(f"No orphan storage object cleanup performed: {e}")
 
     @export
+    @validate_call
     def clear_all_luns(self):
         """Remove all existing LUNs and their backstores, including any orphans under root_dir"""
         if self._tpg is None:
@@ -197,6 +200,7 @@ class ISCSI(Driver):
         self._cleanup_orphan_storage_objects()
 
     @export
+    @validate_call
     def start(self):
         """Start the iSCSI target server
 
@@ -212,6 +216,7 @@ class ISCSI(Driver):
             raise ISCSIError(f"Failed to start iSCSI target server: {e}") from e
 
     @export
+    @validate_call
     def stop(self):
         """Stop the iSCSI target server
 
@@ -232,6 +237,7 @@ class ISCSI(Driver):
             raise ISCSIError(f"Failed to stop iSCSI target: {e}") from e
 
     @export
+    @validate_call
     def get_host(self) -> str:
         """Get the host address the server is bound to
 
@@ -241,6 +247,7 @@ class ISCSI(Driver):
         return self.host
 
     @export
+    @validate_call
     def get_port(self) -> int:
         """Get the port number the server is listening on
 
@@ -250,6 +257,7 @@ class ISCSI(Driver):
         return self.port
 
     @export
+    @validate_call
     def get_target_iqn(self) -> str:
         """Get the IQN of the target
 
@@ -272,7 +280,17 @@ class ISCSI(Driver):
         if is_block:
             if not os.path.isabs(file_path):
                 raise ISCSIError("For block devices, file_path must be an absolute path")
-            return file_path
+            resolved_path = os.path.realpath(file_path)
+            if not self.block_device_allowlist:
+                raise ISCSIError(
+                    "block_device_allowlist is empty; configure allowed block device paths "
+                    "to use is_block=True"
+                )
+            if resolved_path not in self.block_device_allowlist:
+                raise ISCSIError(
+                    f"Block device path '{resolved_path}' is not in the configured allowlist"
+                )
+            return resolved_path
         else:
             normalized_path = os.path.normpath(file_path)
 
@@ -310,6 +328,7 @@ class ISCSI(Driver):
             path_to_check = os.path.dirname(path_to_check)
 
     @export
+    @validate_call
     def decompress(self, src_path: str, dst_path: str, algo: str) -> None:
         """Decompress a file under storage root into another path under storage root.
 
@@ -383,6 +402,7 @@ class ISCSI(Driver):
         return FileIOStorageObject(name, full_path, size=size_bytes), size_mb
 
     @export
+    @validate_call
     def add_lun(self, name: str, file_path: str, size_mb: int = 0, is_block: bool = False) -> str:
         """
         Add a new LUN to the iSCSI target.
@@ -427,6 +447,7 @@ class ISCSI(Driver):
             raise ISCSIError(f"Failed to add LUN: {e}") from e
 
     @export
+    @validate_call
     def remove_lun(self, name: str):
         """Remove a LUN from the iSCSI target
 
@@ -455,6 +476,7 @@ class ISCSI(Driver):
             raise ISCSIError(f"Failed to remove LUN: {e}") from e
 
     @export
+    @validate_call
     def list_luns(self) -> List[Dict[str, Any]]:
         """List all configured LUNs
 
