@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from io import StringIO
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from rich.console import Console
 from rich.table import Table
@@ -446,6 +446,41 @@ class TestLeaseRichDisplay:
 
     def test_format_remaining_none(self):
         assert Lease._format_remaining(None) == ""
+
+    def test_format_remaining_days_hours_minutes(self):
+        now = datetime(2023, 1, 1, 0, 0, 0)
+        expires_at = datetime(2023, 1, 3, 3, 45, 0)
+        with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
+            mock_dt.now.return_value = now
+            assert Lease._format_remaining(expires_at) == "2d 3h 45m"
+
+    def test_format_remaining_hours_and_minutes(self):
+        now = datetime(2023, 1, 1, 0, 0, 0)
+        expires_at = datetime(2023, 1, 1, 5, 30, 0)
+        with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
+            mock_dt.now.return_value = now
+            assert Lease._format_remaining(expires_at) == "5h 30m"
+
+    def test_format_remaining_minutes_only(self):
+        now = datetime(2023, 1, 1, 0, 0, 0)
+        expires_at = datetime(2023, 1, 1, 0, 15, 0)
+        with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
+            mock_dt.now.return_value = now
+            assert Lease._format_remaining(expires_at) == "15m"
+
+    def test_format_remaining_zero_minutes_shows_0m(self):
+        now = datetime(2023, 1, 1, 0, 0, 0)
+        expires_at = datetime(2023, 1, 1, 0, 0, 30)
+        with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
+            mock_dt.now.return_value = now
+            assert Lease._format_remaining(expires_at) == "0m"
+
+    def test_format_remaining_days_only(self):
+        now = datetime(2023, 1, 1, 0, 0, 0)
+        expires_at = datetime(2023, 1, 4, 0, 0, 0)
+        with patch("jumpstarter.client.grpc.datetime", wraps=datetime) as mock_dt:
+            mock_dt.now.return_value = now
+            assert Lease._format_remaining(expires_at) == "3d"
 
     def test_rich_add_rows_shows_expires_at(self):
         lease = self.create_lease(

@@ -225,10 +225,9 @@ class Lease(BaseModel):
         remaining = expires_at - now
         if remaining.total_seconds() <= 0:
             return "expired"
-        total_seconds = int(remaining.total_seconds())
-        days, remainder = divmod(total_seconds, 86400)
-        hours, remainder = divmod(remainder, 3600)
-        minutes, _ = divmod(remainder, 60)
+        days = remaining.days
+        hours = remaining.seconds // 3600
+        minutes = (remaining.seconds % 3600) // 60
         parts = []
         if days:
             parts.append(f"{days}d")
