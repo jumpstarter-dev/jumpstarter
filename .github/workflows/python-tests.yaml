@@ -104,7 +104,24 @@ jobs:
         if: github.event_name == 'pull_request'
         working-directory: python
         run: |
-            uv run diff-cover packages/*/coverage.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=80
+            coverage_files=$(find packages -name coverage.xml 2>/dev/null | sort)
+            if [ -z "$coverage_files" ]; then
+              echo "::warning::No coverage.xml files found, skipping diff-cover"
+              exit 0
+            fi
+
+            changed_packages=$(
+              git diff --name-only "origin/${{ github.base_ref }}"...HEAD \
+              | sed -nE 's#^python/packages/([^/]+)/.*#\1#p' \
+              | sort -u
+            )
+            for pkg in $changed_packages; do
+              if [ ! -f "packages/${pkg}/coverage.xml" ]; then
+                echo "::warning::No coverage.xml for changed package: ${pkg}"
+              fi
+            done
+
+            uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
