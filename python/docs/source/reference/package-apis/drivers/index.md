@@ -114,6 +114,7 @@ General-purpose utility drivers:
 * **[Shell](shell.md)** (`jumpstarter-driver-shell`) - Shell command execution
 * **[TMT](tmt.md)** (`jumpstarter-driver-tmt`) - TMT (Test Management Tool) wrapper driver
 * **[SSH](ssh.md)** (`jumpstarter-driver-ssh`) - SSH wrapper driver
+* **[SSH Mount](ssh-mount.md)** (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
 
 ```{toctree}
 :hidden:
@@ -145,6 +146,7 @@ ridesx.md
 sdwire.md
 shell.md
 ssh.md
+ssh-mount.md
 snmp.md
 someip.md
 stlink-msd.md
