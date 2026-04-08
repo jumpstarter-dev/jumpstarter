@@ -308,6 +308,17 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
+		readyAvailableExporters := filterOutNotReadyExporters(availableExporters)
+		if len(readyAvailableExporters) == 0 {
+			lease.SetStatusPending(
+				"NotReady",
+				"There are %d online exporters, but none are ready (still cleaning up previous lease)",
+				len(availableExporters),
+			)
+			result.RequeueAfter = time.Second
+			return nil
+		}
+
 		// TODO: here there's room for improvement, i.e. we could have multiple
 		// clients trying to lease the same exporters, we should look at priorities
 		// and spot access to decide which client gets the exporter, this probably means
@@ -317,7 +328,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		// For now, we just select the best available exporter without considering other
 		// ongoing lease requests
 
-		selected := availableExporters[0]
+		selected := readyAvailableExporters[0]
 
 		if selected.ExistingLease != nil {
 			// TODO: Implement eviction of spot access leases
@@ -520,6 +531,22 @@ func filterOutLeasedExporters(exporters []ApprovedExporter) []ApprovedExporter {
 		return true
 	})
 
+}
+
+// filterOutNotReadyExporters filters out exporters that are not in a ready state
+// to accept new leases. Only exporters with Available status (or unset status for
+// backwards compatibility with old exporters) are considered ready.
+func filterOutNotReadyExporters(approvedExporters []ApprovedExporter) []ApprovedExporter {
+	return slices.DeleteFunc(
+		slices.Clone(approvedExporters),
+		func(approvedExporter ApprovedExporter) bool {
+			status := approvedExporter.Exporter.Status.ExporterStatusValue
+			// Allow Available or unset (backwards compat with old exporters that don't report status)
+			return status != jumpstarterdevv1alpha1.ExporterStatusAvailable &&
+				status != jumpstarterdevv1alpha1.ExporterStatusUnspecified &&
+				status != ""
+		},
+	)
 }
 
 // filterOutOfflineExporters filters out the exporters that are not online
