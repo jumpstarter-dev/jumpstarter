@@ -97,6 +97,8 @@ jobs:
 
       - name: Run pytest
         working-directory: python
+        env:
+          PYTEST_ADDOPTS: "--cov --cov-report=xml"
         run: |
             make test
 
@@ -106,21 +108,9 @@ jobs:
         run: |
             coverage_files=$(find packages -name coverage.xml 2>/dev/null | sort)
             if [ -z "$coverage_files" ]; then
-              echo "::warning::No coverage.xml files found, skipping diff-cover"
-              exit 0
+              echo "::error::No coverage.xml files found"
+              exit 1
             fi
-
-            changed_packages=$(
-              git diff --name-only "origin/${{ github.base_ref }}"...HEAD \
-              | sed -nE 's#^python/packages/([^/]+)/.*#\1#p' \
-              | sort -u
-            )
-            for pkg in $changed_packages; do
-              if [ ! -f "packages/${pkg}/coverage.xml" ]; then
-                echo "::warning::No coverage.xml for changed package: ${pkg}"
-              fi
-            done
-
             uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80
 
   # https://github.com/orgs/community/discussions/26822
