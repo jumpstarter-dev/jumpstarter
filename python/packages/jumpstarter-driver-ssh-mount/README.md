@@ -16,12 +16,15 @@ You also need `sshfs` installed on the client machine:
 
 ## Configuration
 
+The SSHMount driver references an existing SSH driver to inherit credentials
+(username, identity key) and TCP connectivity. No duplicate configuration is needed.
+
 Example exporter configuration:
 
 ```yaml
 export:
-  ssh-mount:
-    type: jumpstarter_driver_ssh_mount.driver.SSHMount
+  ssh:
+    type: jumpstarter_driver_ssh.driver.SSHWrapper
     config:
       default_username: "root"
       # ssh_identity_file: "/path/to/ssh/key"
@@ -31,6 +34,11 @@ export:
         config:
           host: "192.168.1.100"
           port: 22
+  ssh-mount:
+    type: jumpstarter_driver_ssh_mount.driver.SSHMount
+    children:
+      ssh:
+        ref: "ssh"
 ```
 
 ## CLI Usage
