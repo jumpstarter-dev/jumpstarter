@@ -1,8 +1,12 @@
 """Tests for iSCSI driver block device allowlist and path confinement."""
 
 import os
+import sys
 
 import pytest
+
+if sys.platform != "linux":
+    pytest.skip("iSCSI driver requires Linux (libudev)", allow_module_level=True)
 
 from jumpstarter_driver_iscsi.driver import ISCSI, ISCSIError
 
