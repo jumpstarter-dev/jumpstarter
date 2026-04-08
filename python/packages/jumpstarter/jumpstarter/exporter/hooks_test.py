@@ -157,6 +157,65 @@ class TestHookExecutor:
         assert result is not None
         assert "exit code 1" in result.lower()
 
+    async def test_failed_hook_with_warn_logs_warning_inside_log_source_context(self) -> None:
+        """Test that the WARNING log for on_failure='warn' is emitted inside context_log_source.
+
+        Issue #246: The WARNING log from _handle_hook_failure must be emitted while
+        the context_log_source context manager is active. This ensures the warning
+        is tagged with the hook source (BEFORE_LEASE_HOOK / AFTER_LEASE_HOOK) and
+        is visible to the client even without --exporter-logs.
+        """
+        from contextlib import contextmanager
+
+        from anyio import Event
+
+        from jumpstarter.exporter.lease_context import LeaseContext
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        # Track whether context_log_source is active when warning is logged
+        context_active = False
+        warning_logged_in_context = False
+
+        @contextmanager
+        def tracking_context_log_source(logger_name, source):
+            nonlocal context_active
+            context_active = True
+            try:
+                yield
+            finally:
+                context_active = False
+
+        lease_scope = LeaseContext(
+            lease_name="test-lease-ctx",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        mock_session = MagicMock()
+        mock_session.context_log_source.side_effect = tracking_context_log_source
+        lease_scope.session = mock_session
+        lease_scope.socket_path = "/tmp/test_socket"
+
+        original_handle = executor._handle_hook_failure
+
+        def tracking_handle(error_msg, on_failure, hook_type, cause=None):
+            nonlocal warning_logged_in_context
+            warning_logged_in_context = context_active
+            return original_handle(error_msg, on_failure, hook_type, cause)
+
+        executor._handle_hook_failure = tracking_handle
+
+        result = await executor.execute_before_lease_hook(lease_scope)
+        assert result is not None
+        assert "exit code 1" in result.lower()
+        assert warning_logged_in_context, (
+            "WARNING log from _handle_hook_failure must be emitted inside context_log_source "
+            "so it is visible to the client as a hook log (issue #246)"
+        )
+
     async def test_successful_hook_returns_none(self, lease_scope) -> None:
         """Test that a successful hook returns None (no warning)."""
         hook_config = HookConfigV1Alpha1(

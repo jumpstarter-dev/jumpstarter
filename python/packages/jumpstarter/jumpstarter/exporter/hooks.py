@@ -470,12 +470,13 @@ class HookExecutor:
                     except OSError:
                         pass
 
-        # Handle failure if one occurred
-        if error_msg is not None:
-            # For timeout, create a TimeoutError as the cause
-            if timed_out and cause is None:
-                cause = TimeoutError(error_msg)
-            return self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
+            # Handle failure inside context_log_source so the WARNING log is
+            # routed to the client as a hook log (visible without --exporter-logs).
+            if error_msg is not None:
+                # For timeout, create a TimeoutError as the cause
+                if timed_out and cause is None:
+                    cause = TimeoutError(error_msg)
+                return self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
         return None
 
     async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
