@@ -392,12 +392,30 @@ func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 }
 
 // StartDirectExporter starts an exporter with --tls-grpc-listener (direct mode).
+// When no passphrase is provided, --unsafe-no-auth is passed automatically
+// since authentication is required by default.
 func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passphrase string, captureStderr bool) (*exec.Cmd, *logBuffer) {
+	return pt.startDirectExporter(configFile, port, passphrase, captureStderr, passphrase == "")
+}
+
+// StartDirectExporterAutoAuth starts an exporter in direct mode without
+// --passphrase and without --unsafe-no-auth, so a random passphrase is
+// auto-generated. Stderr is always captured so the caller can extract the
+// generated passphrase from the log output.
+func (pt *ProcessTracker) StartDirectExporterAutoAuth(configFile string, port int) (*exec.Cmd, *logBuffer) {
+	return pt.startDirectExporter(configFile, port, "", true, false)
+}
+
+// startDirectExporter is the internal implementation for starting a direct exporter.
+func (pt *ProcessTracker) startDirectExporter(configFile string, port int, passphrase string, captureStderr bool, unsafeNoAuth bool) (*exec.Cmd, *logBuffer) {
 	args := []string{"run", "--exporter-config", configFile,
 		"--tls-grpc-listener", strconv.Itoa(port),
 		"--tls-grpc-insecure"}
 	if passphrase != "" {
 		args = append(args, "--passphrase", passphrase)
+	}
+	if unsafeNoAuth {
+		args = append(args, "--unsafe-no-auth")
 	}
 
 	cmd := exec.Command(JmpPath(), args...)
