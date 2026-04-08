@@ -54,6 +54,29 @@ def test_generate_zsh_init_with_j_commands():
     assert "compdef" in content
 
 
+def test_generate_zsh_init_loads_compinit_before_completions():
+    content = _generate_shell_init("zsh", use_profiles=False, j_commands=["power"])
+    assert "autoload -Uz compinit && compinit" in content
+    compinit_pos = content.index("autoload -Uz compinit && compinit")
+    eval_jmp_pos = content.index('eval "$(jmp completion zsh')
+    assert compinit_pos < eval_jmp_pos
+
+
+def test_generate_zsh_init_loads_compinit_before_compdef():
+    content = _generate_shell_init("zsh", use_profiles=False, j_commands=["power", "qemu"])
+    compinit_pos = content.index("autoload -Uz compinit && compinit")
+    compdef_pos = content.index("compdef")
+    assert compinit_pos < compdef_pos
+
+
+def test_generate_zsh_init_without_j_commands_loads_compinit():
+    content = _generate_shell_init("zsh", use_profiles=False, j_commands=None)
+    assert "autoload -Uz compinit && compinit" in content
+    compinit_pos = content.index("autoload -Uz compinit && compinit")
+    eval_jmp_pos = content.index('eval "$(jmp completion zsh')
+    assert compinit_pos < eval_jmp_pos
+
+
 def test_generate_bash_init_with_profiles_sources_bashrc():
     content = _generate_shell_init("bash", use_profiles=True, j_commands=None)
     assert ".bashrc" in content
@@ -66,9 +89,12 @@ def test_generate_zsh_init_without_j_commands():
     assert "compdef" not in content
 
 
-def test_generate_zsh_init_with_profiles_sources_zshrc():
+def test_generate_zsh_init_with_profiles_loads_compinit_after_zshrc():
     content = _generate_shell_init("zsh", use_profiles=True, j_commands=["power"])
     assert ".zshrc" in content
+    zshrc_pos = content.index(".zshrc")
+    compinit_pos = content.index("autoload -Uz compinit && compinit")
+    assert zshrc_pos < compinit_pos
 
 
 def test_generate_fish_init_with_j_commands():
