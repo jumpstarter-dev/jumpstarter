@@ -310,7 +310,7 @@ class ISCSI(Driver):
             path_to_check = os.path.dirname(path_to_check)
 
     @export
-    def decompress(self, src_path: str, dst_path: str, algo: str) -> None:
+    def decompress(self, src_path: str, dst_path: str, algo: str):
         """Decompress a file under storage root into another path under storage root.
 
         src_path and dst_path are relative to root_dir.

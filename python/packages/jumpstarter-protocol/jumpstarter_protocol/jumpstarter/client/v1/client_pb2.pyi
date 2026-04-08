@@ -88,10 +88,12 @@ class Lease(google.protobuf.message.Message):
     CLIENT_FIELD_NUMBER: builtins.int
     EXPORTER_FIELD_NUMBER: builtins.int
     CONDITIONS_FIELD_NUMBER: builtins.int
+    EXPORTER_NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
     selector: builtins.str
     client: builtins.str
     exporter: builtins.str
+    exporter_name: builtins.str
     @property
     def duration(self) -> google.protobuf.duration_pb2.Duration: ...
     @property
@@ -120,9 +122,10 @@ class Lease(google.protobuf.message.Message):
         client: builtins.str | None = ...,
         exporter: builtins.str | None = ...,
         conditions: collections.abc.Iterable[jumpstarter.v1.kubernetes_pb2.Condition] | None = ...,
+        exporter_name: builtins.str | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "name", b"name", "selector", b"selector"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload
@@ -137,6 +140,8 @@ class Lease(google.protobuf.message.Message):
     def WhichOneof(self, oneof_group: typing.Literal["_end_time", b"_end_time"]) -> typing.Literal["end_time"] | None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_exporter", b"_exporter"]) -> typing.Literal["exporter"] | None: ...
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal["_exporter_name", b"_exporter_name"]) -> typing.Literal["exporter_name"] | None: ...
 
 Global___Lease: typing_extensions.TypeAlias = Lease
 

@@ -41,7 +41,7 @@ class ProbeRs(Driver):
         return self._run_cmd(["erase"])
 
     @export
-    async def download(self, src: str):
+    async def download(self, src: str) -> str:
         with TemporaryFilename() as filename:
             async with await FileWriteStream.from_path(filename) as stream:
                 async with self.resource(src) as res:

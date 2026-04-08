@@ -162,9 +162,10 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	devices := []jumpstarterdevv1alpha1.Device{}
 	for _, device := range req.Reports {
 		devices = append(devices, jumpstarterdevv1alpha1.Device{
-			Uuid:       device.Uuid,
-			ParentUuid: device.ParentUuid,
-			Labels:     device.Labels,
+			Uuid:                device.Uuid,
+			ParentUuid:          device.ParentUuid,
+			Labels:              device.Labels,
+			FileDescriptorProto: device.FileDescriptorProto,
 		})
 	}
 	exporter.Status.Devices = devices

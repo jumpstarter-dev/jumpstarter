@@ -46,7 +46,7 @@ class _GPIOBase(Driver):
         super().close()
 
     @export
-    def read_pin(self):
+    def read_pin(self) -> str:
         """Read current pin state"""
         value = self._line.get_value(self.line)
         if value == gpiod.line.Value.ACTIVE:
@@ -137,13 +137,13 @@ class DigitalOutput(_GPIOBase):
         return settings
 
     @export
-    def off(self) -> None:
+    def off(self):
         """Set the pin to inactive state"""
         self._line.set_value(self.line, gpiod.line.Value.INACTIVE)
         self.logger.info(f"line {self.line} ({self._line_name}) off() -> pin reads: {self.read_pin()}")
 
     @export
-    def on(self) -> None:
+    def on(self):
         """Set the pin to active state"""
         self._line.set_value(self.line, gpiod.line.Value.ACTIVE)
         self.logger.info(f"line {self.line} ({self._line_name}) on() -> pin reads: {self.read_pin()}")
@@ -228,11 +228,11 @@ class PowerSwitch(PowerInterface, DigitalOutput):
     mode: str = "push_pull"
 
     @export
-    def on(self) -> None:
+    def on(self):
         """Switch on the power"""
         DigitalOutput.on(self)
 
     @export
-    def off(self) -> None:
+    def off(self):
         """Switch off the power"""
         DigitalOutput.off(self)

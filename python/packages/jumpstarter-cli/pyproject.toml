@@ -11,9 +11,11 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
+  "jumpstarter",
   "jumpstarter-cli-admin",
   "jumpstarter-cli-driver",
   "jumpstarter-mcp",
+  "grpcio-tools>=1.62.0",
   "pytimeparse2>=1.7.1",
 ]
 

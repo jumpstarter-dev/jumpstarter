@@ -1,6 +1,6 @@
 import ctypes
 import socket
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 from asyncio import get_running_loop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -18,7 +18,7 @@ from anyio._backends._asyncio import SocketStream, StreamProtocol
 from anyio.streams.stapled import StapledObjectStream
 
 from .streams.websocket import WebsocketClientStream
-from jumpstarter.driver import Driver, export, exportstream
+from jumpstarter.driver import Driver, DriverInterface, export, exportstream, driverinterface, streammethod
 
 
 def _is_ipv6_address(host: str) -> bool:
@@ -74,14 +74,19 @@ def _format_address(host: str, port: int) -> str:
         return f"{resolved_host}:{port}"
 
 
-class NetworkInterface(metaclass=ABCMeta):
+@driverinterface("Network")
+class NetworkInterface(DriverInterface):
+    """Bidirectional byte stream connection to a network endpoint."""
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_network.client.NetworkClient"
 
     @abstractmethod
-    @asynccontextmanager
-    async def connect(self): ...
+    @streammethod
+    async def connect(self):
+        """Open a bidirectional byte stream to the network endpoint."""
+        ...
 
 
 @dataclass(kw_only=True)
@@ -114,7 +119,7 @@ class TcpNetwork(NetworkInterface, Driver):
             yield stream
 
     @export
-    async def address(self):
+    async def address(self) -> str:
         if self.enable_address:
             return "tcp://" + _format_address(self.host, self.port)
         else:
@@ -147,7 +152,7 @@ class UdpNetwork(NetworkInterface, Driver):
             yield stream
 
     @export
-    async def address(self):
+    async def address(self) -> str:
         if self.enable_address:
             return "udp://" + _format_address(self.host, self.port)
         else:
@@ -215,8 +220,11 @@ class VsockNetwork(NetworkInterface, Driver):
             yield SocketStream(transport, protocol)
 
 
+@driverinterface("DbusNetwork")
 @dataclass(kw_only=True)
 class DbusNetwork(NetworkInterface, Driver):
+    """D-Bus based network connection."""
+
     kind: Literal["system", "session"]
 
     scheme: str | None = field(init=False, default=None)
@@ -274,6 +282,7 @@ class DbusNetwork(NetworkInterface, Driver):
     @exportstream
     @asynccontextmanager
     async def connect(self):
+        """Open a bidirectional byte stream via D-Bus."""
         match self.scheme:
             case "unix":
                 self.logger.debug("Connecting UDS path=%s", self.args["path"])
@@ -330,7 +339,7 @@ class WebsocketNetwork(NetworkInterface, Driver):
         self.logger.info("Disconnected from %s", self.url)
 
     @export
-    async def address(self):
+    async def address(self) -> str:
         if self.enable_address:
             return self.url
         else:

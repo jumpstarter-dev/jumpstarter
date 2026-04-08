@@ -81,11 +81,11 @@ class EnerGenie(PowerInterface, Driver):
         return True
 
     @export
-    def on(self) -> None:
+    def on(self):
         self.set_switch(self.slot, 1)
 
     @export
-    def off(self) -> None:
+    def off(self):
         self.set_switch(self.slot, 0)
 
     @export

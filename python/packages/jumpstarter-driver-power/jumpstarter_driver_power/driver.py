@@ -1,38 +1,54 @@
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 from collections.abc import AsyncGenerator, Generator
 
 from .common import PowerReading
-from jumpstarter.driver import Driver, export
+from jumpstarter.driver import Driver, DriverInterface, export
 
 
-class PowerInterface(metaclass=ABCMeta):
+class PowerInterface(DriverInterface):
+    """Control power delivery to a device under test."""
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_power.client.PowerClient"
 
     @abstractmethod
-    async def on(self) -> None: ...
+    async def on(self):
+        """Energize the power relay, delivering power to the DUT."""
+        ...
 
     @abstractmethod
-    async def off(self) -> None: ...
+    async def off(self):
+        """De-energize the power relay, cutting power to the DUT."""
+        ...
 
     @abstractmethod
-    async def read(self) -> AsyncGenerator[PowerReading, None]: ...
+    async def read(self) -> AsyncGenerator[PowerReading, None]:
+        """Stream real-time power measurements from the DUT power rail."""
+        ...
 
 
-class VirtualPowerInterface(metaclass=ABCMeta):
+class VirtualPowerInterface(DriverInterface):
+    """Control a virtual power source with optional resource cleanup."""
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_power.client.VirtualPowerClient"
 
     @abstractmethod
-    async def on(self) -> None: ...
+    async def on(self):
+        """Activate the virtual power source."""
+        ...
 
     @abstractmethod
-    async def off(self, destroy: bool = False) -> None: ...
+    async def off(self, destroy: bool = False):
+        """Deactivate the virtual power source, optionally destroying associated resources."""
+        ...
 
     @abstractmethod
-    async def read(self) -> AsyncGenerator[PowerReading, None]: ...
+    async def read(self) -> AsyncGenerator[PowerReading, None]:
+        """Stream real-time power measurements from the virtual power source."""
+        ...
 
 
 

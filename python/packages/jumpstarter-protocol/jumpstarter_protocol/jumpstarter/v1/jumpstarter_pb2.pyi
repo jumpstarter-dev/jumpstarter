@@ -109,12 +109,15 @@ class DriverInstanceReport(google.protobuf.message.Message):
     LABELS_FIELD_NUMBER: builtins.int
     DESCRIPTION_FIELD_NUMBER: builtins.int
     METHODS_DESCRIPTION_FIELD_NUMBER: builtins.int
+    FILE_DESCRIPTOR_PROTO_FIELD_NUMBER: builtins.int
     uuid: builtins.str
     """a unique id within the exporter"""
     parent_uuid: builtins.str
     """optional, if device has a parent device"""
     description: builtins.str
     """optional custom driver description for CLI"""
+    file_descriptor_proto: builtins.bytes
+    """serialized google.protobuf.FileDescriptorProto"""
     @property
     def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
     @property
@@ -129,11 +132,14 @@ class DriverInstanceReport(google.protobuf.message.Message):
         labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         description: builtins.str | None = ...,
         methods_description: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        file_descriptor_proto: builtins.bytes | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "parent_uuid", b"parent_uuid"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "labels", b"labels", "methods_description", b"methods_description", "parent_uuid", b"parent_uuid", "uuid", b"uuid"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_description", b"_description", "_file_descriptor_proto", b"_file_descriptor_proto", "_parent_uuid", b"_parent_uuid", "description", b"description", "file_descriptor_proto", b"file_descriptor_proto", "parent_uuid", b"parent_uuid"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_description", b"_description", "_file_descriptor_proto", b"_file_descriptor_proto", "_parent_uuid", b"_parent_uuid", "description", b"description", "file_descriptor_proto", b"file_descriptor_proto", "labels", b"labels", "methods_description", b"methods_description", "parent_uuid", b"parent_uuid", "uuid", b"uuid"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_description", b"_description"]) -> typing.Literal["description"] | None: ...
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal["_file_descriptor_proto", b"_file_descriptor_proto"]) -> typing.Literal["file_descriptor_proto"] | None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_parent_uuid", b"_parent_uuid"]) -> typing.Literal["parent_uuid"] | None: ...
 

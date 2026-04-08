@@ -128,7 +128,7 @@ class RideSXDriver(Driver):
             raise RuntimeError(f"decompression timeout for {compressed_file.name}") from None
 
     @export
-    def detect_fastboot_device(self, max_attempts: int = 5, delay: float = 2.0):
+    def detect_fastboot_device(self, max_attempts: int = 5, delay: float = 2.0) -> dict[str, str | None]:
         max_attempts = int(max_attempts)
         delay = float(delay)
 
@@ -273,7 +273,7 @@ class RideSXDriver(Driver):
         partitions: Dict[str, str] | None = None,
         oci_username: str | None = None,
         oci_password: str | None = None,
-    ):
+    ) -> dict[str, str]:
         """Flash OCI image using FLS fastboot CLI
 
         Args:

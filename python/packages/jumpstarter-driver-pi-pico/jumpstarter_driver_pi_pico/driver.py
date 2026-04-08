@@ -163,7 +163,7 @@ class PiPicoFlasher(FlasherInterface, Driver):
         return out
 
     @export
-    async def flash(self, source, target: str | None = None):
+    async def flash(self, source: str, target: str | None = None):
         """Copy a UF2 image onto the BOOTSEL drive.
 
         :param source: Image resource (URL or storage path).
@@ -198,7 +198,7 @@ class PiPicoFlasher(FlasherInterface, Driver):
         self.logger.info("Flash complete, Pico will reboot")
 
     @export
-    async def dump(self, target, partition: str | None = None):
+    async def dump(self, target: str, partition: str | None = None):
         """Not supported: UF2 mass storage cannot read flash back without picotool/SWD."""
         raise NotImplementedError(
             "Dumping flash is not supported by the Pi Pico UF2 driver. "

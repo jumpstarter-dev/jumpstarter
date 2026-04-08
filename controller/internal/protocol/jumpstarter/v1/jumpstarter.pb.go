@@ -85,14 +85,15 @@ func (x *RegisterRequest) GetReports() []*DriverInstanceReport {
 }
 
 type DriverInstanceReport struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Uuid               string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                     // a unique id within the exporter
-	ParentUuid         *string                `protobuf:"bytes,2,opt,name=parent_uuid,json=parentUuid,proto3,oneof" json:"parent_uuid,omitempty"` // optional, if device has a parent device
-	Labels             map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Description        *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`                                                                                                             // optional custom driver description for CLI
-	MethodsDescription map[string]string      `protobuf:"bytes,5,rep,name=methods_description,json=methodsDescription,proto3" json:"methods_description,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // method name -> help text for CLI
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Uuid                string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                     // a unique id within the exporter
+	ParentUuid          *string                `protobuf:"bytes,2,opt,name=parent_uuid,json=parentUuid,proto3,oneof" json:"parent_uuid,omitempty"` // optional, if device has a parent device
+	Labels              map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Description         *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`                                                                                                             // optional custom driver description for CLI
+	MethodsDescription  map[string]string      `protobuf:"bytes,5,rep,name=methods_description,json=methodsDescription,proto3" json:"methods_description,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // method name -> help text for CLI
+	FileDescriptorProto []byte                 `protobuf:"bytes,6,opt,name=file_descriptor_proto,json=fileDescriptorProto,proto3,oneof" json:"file_descriptor_proto,omitempty"`                                                                // serialized google.protobuf.FileDescriptorProto
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *DriverInstanceReport) Reset() {
@@ -156,6 +157,13 @@ func (x *DriverInstanceReport) GetDescription() string {
 func (x *DriverInstanceReport) GetMethodsDescription() map[string]string {
 	if x != nil {
 		return x.MethodsDescription
+	}
+	return nil
+}
+
+func (x *DriverInstanceReport) GetFileDescriptorProto() []byte {
+	if x != nil {
+		return x.FileDescriptorProto
 	}
 	return nil
 }
@@ -1827,14 +1835,15 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\areports\x18\x02 \x03(\v2$.jumpstarter.v1.DriverInstanceReportR\areports\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd2\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa5\x04\n" +
 	"\x14DriverInstanceReport\x12\x12\n" +
 	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12$\n" +
 	"\vparent_uuid\x18\x02 \x01(\tH\x00R\n" +
 	"parentUuid\x88\x01\x01\x12H\n" +
 	"\x06labels\x18\x03 \x03(\v20.jumpstarter.v1.DriverInstanceReport.LabelsEntryR\x06labels\x12%\n" +
 	"\vdescription\x18\x04 \x01(\tH\x01R\vdescription\x88\x01\x01\x12m\n" +
-	"\x13methods_description\x18\x05 \x03(\v2<.jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntryR\x12methodsDescription\x1a9\n" +
+	"\x13methods_description\x18\x05 \x03(\v2<.jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntryR\x12methodsDescription\x127\n" +
+	"\x15file_descriptor_proto\x18\x06 \x01(\fH\x02R\x13fileDescriptorProto\x88\x01\x01\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aE\n" +
@@ -1842,7 +1851,8 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +
 	"\f_parent_uuidB\x0e\n" +
-	"\f_description\"&\n" +
+	"\f_descriptionB\x18\n" +
+	"\x16_file_descriptor_proto\"&\n" +
 	"\x10RegisterResponse\x12\x12\n" +
 	"\x04uuid\x18\x01 \x01(\tR\x04uuid\"+\n" +
 	"\x11UnregisterRequest\x12\x16\n" +

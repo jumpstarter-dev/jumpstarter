@@ -87,6 +87,10 @@ protobuf-gen:
 	find packages/jumpstarter-protocol/jumpstarter_protocol/jumpstarter/v1 -name "*_pb2*.py" -type f -exec sed -i.bak \
 		-e 's|^from jumpstarter\.v1 import|from . import|g' \
 		{} \; -exec rm {}.bak \;
+	# In jumpstarter/annotations: from jumpstarter.annotations import -> from . import
+	find packages/jumpstarter-protocol/jumpstarter_protocol/jumpstarter/annotations -name "*_pb2*.py" -type f -exec sed -i.bak \
+		-e 's|^from jumpstarter\.annotations import|from . import|g' \
+		{} \; -exec rm {}.bak \; 2>/dev/null || true
 
 sync:
 	uv sync --all-packages --all-extras

@@ -11,6 +11,4 @@ plugins:
   - remote: buf.build/community/nipunn1313-mypy-grpc:v3.7.0
     out: ./packages/jumpstarter-protocol/jumpstarter_protocol
 inputs:
-  - git_repo: https://github.com/jumpstarter-dev/jumpstarter-protocol.git
-    branch: main
-    subdir: proto
+  - directory: ../protocol/proto

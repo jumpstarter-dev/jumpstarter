@@ -72,7 +72,7 @@ class Shell(Driver):
         return methods
 
     @export
-    async def call_method(self, method: str, env, *args) -> AsyncGenerator[tuple[str, str, int | None], None]:
+    async def call_method(self, method: str, env: dict[str, str], *args: str) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """
         Execute a shell method with live streaming output.
         Yields (stdout_chunk, stderr_chunk, returncode) tuples.

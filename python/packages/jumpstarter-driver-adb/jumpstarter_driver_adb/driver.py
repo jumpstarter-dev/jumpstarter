@@ -7,8 +7,10 @@ from jumpstarter_driver_network.driver import TcpNetwork
 
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver.decorators import export
+from jumpstarter.driver import driverinterface
 
 
+@driverinterface("Adb")
 @dataclass(kw_only=True)
 class AdbServer(TcpNetwork):
     """ADB server driver that tunnels ADB connections over Jumpstarter.

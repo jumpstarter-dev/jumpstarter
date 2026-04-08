@@ -29,17 +29,17 @@ class SSHWrapper(Driver):
         return "jumpstarter_driver_ssh.client.SSHWrapperClient"
 
     @export
-    def get_default_username(self):
+    def get_default_username(self) -> str:
         """Get default SSH username"""
         return self.default_username
 
     @export
-    def get_ssh_command(self):
+    def get_ssh_command(self) -> str:
         """Get the SSH command to use"""
         return self.ssh_command
 
     @export
-    def get_ssh_identity(self):
+    def get_ssh_identity(self) -> str | None:
         """Get the SSH identity key content"""
         # If ssh_identity_file is provided, read it lazily and cache in ssh_identity
         if self.ssh_identity is None and self.ssh_identity_file:

@@ -49,7 +49,7 @@ class QemuFlasher(FlasherInterface, Driver):
     parent: Qemu
 
     @export
-    async def flash(self, source, partition: str | None = None):
+    async def flash(self, source: str, partition: str | None = None) -> None:
         """Flash an image to the specified partition.
 
         Supports transparent decompression of gzip, xz, bz2, and zstd compressed images.
@@ -62,7 +62,7 @@ class QemuFlasher(FlasherInterface, Driver):
                     await stream.send(chunk)
 
     @export
-    async def dump(self, target, partition: str | None = None):
+    async def dump(self, target: str, partition: str | None = None) -> None:
         async with await FileReadStream.from_path(
             self.parent.validate_partition(partition, use_default_partitions=True)
         ) as stream:

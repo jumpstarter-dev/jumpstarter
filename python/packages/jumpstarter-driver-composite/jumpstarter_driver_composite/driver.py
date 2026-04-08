@@ -4,10 +4,12 @@ from functools import reduce
 from pydantic.dataclasses import dataclass
 
 from jumpstarter.common.exceptions import ConfigurationError
-from jumpstarter.driver import Driver
+from jumpstarter.driver import Driver, DriverInterface
 
 
-class CompositeInterface:
+class CompositeInterface(DriverInterface):
+    """Container for a tree of child drivers with no methods of its own."""
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_composite.client.CompositeClient"

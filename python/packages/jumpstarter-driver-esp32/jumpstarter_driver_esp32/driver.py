@@ -51,7 +51,8 @@ class Esp32Flasher(FlasherInterface, Driver):
             pass
 
     @export
-    async def flash(self, source, target: str | None = None):
+    async def flash(self, source: str, target: str | None = None):
+        """Flash a firmware image to the ESP32."""
         address = int(target or "0", 0)
         with _temporary_filename() as filename:
             async with await FileWriteStream.from_path(filename) as stream:
@@ -73,7 +74,8 @@ class Esp32Flasher(FlasherInterface, Driver):
             await to_thread.run_sync(_do_flash)
 
     @export
-    async def dump(self, target, partition: str | None = None):
+    async def dump(self, target: str, partition: str | None = None):
+        """Dump firmware from the ESP32 to a resource handle."""
         address, size = _parse_region(partition)
         with _temporary_filename() as filename:
 
@@ -96,6 +98,7 @@ class Esp32Flasher(FlasherInterface, Driver):
 
     @export
     def get_chip_info(self) -> dict[str, str]:
+        """Get information about the connected ESP32 chip."""
         esp = self._connect_esp()
         try:
             mac = esp.read_mac()
@@ -109,6 +112,7 @@ class Esp32Flasher(FlasherInterface, Driver):
 
     @export
     def erase(self):
+        """Erase the ESP32 flash memory."""
         esp = self._connect_esp()
         try:
             if not esp.IS_STUB:

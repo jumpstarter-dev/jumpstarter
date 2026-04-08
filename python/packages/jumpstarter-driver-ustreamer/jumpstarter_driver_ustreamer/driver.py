@@ -56,7 +56,7 @@ class UStreamer(Driver):
             self.process.kill()
 
     @export
-    async def state(self):
+    async def state(self) -> UStreamerState:
         async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
             async with session.get("http://localhost/state") as r:
                 json = await r.json()
@@ -64,7 +64,7 @@ class UStreamer(Driver):
                 return UStreamerState.model_validate(json)
 
     @export
-    async def snapshot(self):
+    async def snapshot(self) -> str:
         async with ClientSession(connector=UnixConnector(path=self.socketp)) as session:
             async with session.get("http://localhost/snapshot") as r:
                 data = await r.read()

@@ -68,24 +68,28 @@ class NoyitoPowerSerial(PowerInterface, Driver):
         return [1, 2] if self.all_channels else [self.channel]
 
     @export
-    def on(self) -> None:
+    def on(self):
+        """Energize the relay."""
         for ch in self._channels():
             self.logger.info("Relay channel %d ON", ch)
             self._send_command(_build_command(ch, 1))
 
     @export
-    def off(self) -> None:
+    def off(self):
+        """De-energize the relay."""
         for ch in self._channels():
             self.logger.info("Relay channel %d OFF", ch)
             self._send_command(_build_command(ch, 0))
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
+        """Read power status."""
         raise NotImplementedError
         yield  # makes this a generator function
 
     @export
     def status(self) -> str:
+        """Get relay status string."""
         all_channels = self._query_status()
         states = set()
         for ch in self._channels():
@@ -147,13 +151,15 @@ class NoyitoPowerHID(PowerInterface, Driver):
             device.write(b"\x00" + cmd)  # 0x00 = HID report ID
 
     @export
-    def on(self) -> None:
+    def on(self):
+        """Energize the relay."""
         for ch in self._channels():
             self.logger.info("HID Relay channel %d ON", ch)
             self._send_command(_build_command(ch, 1))
 
     @export
-    def off(self) -> None:
+    def off(self):
+        """De-energize the relay."""
         for ch in self._channels():
             self.logger.info("HID Relay channel %d OFF", ch)
             self._send_command(_build_command(ch, 0))
@@ -185,11 +191,13 @@ class NoyitoPowerHID(PowerInterface, Driver):
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
+        """Read power status."""
         raise NotImplementedError
         yield  # makes this a generator function
 
     @export
     def status(self) -> str:
+        """Get relay status string."""
         states = self._query_status()
         channel_states = []
         for ch in self._channels():

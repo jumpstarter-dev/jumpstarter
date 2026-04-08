@@ -19,9 +19,17 @@ from jumpstarter_protocol import (
 from .logging import LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
+from jumpstarter.driver.interface import DriverInterface
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.metadata import MetadataStreamAttributes
 from jumpstarter.streams.router import RouterStream
+
+try:
+    from grpc_reflection.v1alpha import reflection
+
+    _HAS_GRPC_REFLECTION = True
+except ImportError:
+    _HAS_GRPC_REFLECTION = False
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
@@ -94,6 +102,7 @@ class Session(
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+        self._register_reflection(server)
 
         await server.start()
         try:
@@ -121,6 +130,7 @@ class Session(
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+        self._register_reflection(server)
 
         await server.start()
         logger.info("Session server started on %d ports", len(ports))
@@ -135,11 +145,62 @@ class Session(
             await sleep(0.1)
             logger.info("Session server stopped")
 
+    def _register_reflection(self, server):
+        """Register gRPC Server Reflection with driver interface descriptors.
+
+        Discovers DriverInterface subclasses in the driver tree and registers
+        their FileDescriptorProto objects with grpc-reflection, enabling
+        standard tools (grpcurl, Postman, Buf Studio) to discover driver APIs.
+
+        Requires grpcio-reflection to be installed; logs a warning if missing.
+        """
+        if not _HAS_GRPC_REFLECTION:
+            logger.warning(
+                "grpcio-reflection is not installed; gRPC Server Reflection "
+                "will not be available. Install it with: pip install grpcio-reflection"
+            )
+            return
+
+        from jumpstarter.driver.descriptor_builder import build_file_descriptor
+
+        service_names = [reflection.SERVICE_NAME]
+
+        for _uuid, _parent, _name, instance in self.root_device.enumerate():
+            # Find DriverInterface subclasses in the instance's class hierarchy
+            for cls in type(instance).__mro__:
+                if (
+                    cls is not DriverInterface
+                    and isinstance(cls, type)
+                    and issubclass(cls, DriverInterface)
+                    and hasattr(cls, "client")
+                    and not getattr(cls.client, "__isabstractmethod__", False)
+                ):
+                    try:
+                        fd = build_file_descriptor(cls)
+                        if fd.service:
+                            service_names.append(
+                                f"{fd.package}.{fd.service[0].name}"
+                            )
+                    except Exception:
+                        logger.debug(
+                            "Could not build descriptor for %s, skipping reflection",
+                            cls.__name__,
+                            exc_info=True,
+                        )
+                    break
+
+        reflection.enable_server_reflection(service_names, server)
+        logger.info(
+            "gRPC Server Reflection enabled with %d service(s)",
+            len(service_names),
+        )
+
     @asynccontextmanager
     async def _serve_grpc_server_async(self, server):
         """Register servicers, start server, yield, then shut down gracefully."""
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+        self._register_reflection(server)
 
         await server.start()
         try:

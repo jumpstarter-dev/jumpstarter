@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import logging
 import os
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
+
+from .interface import DriverInterfaceMeta
 from contextlib import asynccontextmanager
 from dataclasses import field
 from inspect import isasyncgenfunction, iscoroutinefunction
@@ -59,7 +61,7 @@ class Driver(
     Metadata,
     jumpstarter_pb2_grpc.ExporterServiceServicer,
     router_pb2_grpc.RouterServiceServicer,
-    metaclass=ABCMeta,
+    metaclass=DriverInterfaceMeta,
 ):
     """Base class for drivers
 
@@ -197,12 +199,46 @@ class Driver(
                 ) as stream:
                     yield stream
 
+    def _get_interface_class(self):
+        """Find the DriverInterface subclass in this driver's MRO.
+
+        Returns the first concrete DriverInterface (one that defines client())
+        in the class hierarchy, or None if the driver hasn't been migrated yet.
+        """
+        from .interface import DriverInterface, DriverInterfaceMeta
+
+        for cls in type(self).__mro__:
+            if (
+                cls is not DriverInterface
+                and isinstance(cls, DriverInterfaceMeta)
+                and hasattr(cls, "client")
+                and not getattr(cls.client, "__isabstractmethod__", False)
+            ):
+                return cls
+        return None
+
     def report(self, *, parent=None, name=None):
         """
         Create DriverInstanceReport
 
         :meta private:
         """
+        # Build file_descriptor_proto if driver implements a DriverInterface
+        fd_bytes = None
+        interface_class = self._get_interface_class()
+        if interface_class is not None:
+            try:
+                from .descriptor_builder import build_file_descriptor
+
+                fd = build_file_descriptor(interface_class)
+                fd_bytes = fd.SerializeToString()
+            except Exception:
+                self.logger.debug(
+                    "Could not build file descriptor for %s",
+                    type(self).__name__,
+                    exc_info=True,
+                )
+
         return jumpstarter_pb2.DriverInstanceReport(
             uuid=str(self.uuid),
             parent_uuid=str(parent.uuid) if parent else None,
@@ -212,6 +248,7 @@ class Driver(
             | ({"jumpstarter.dev/name": name} if name else {}),
             description=self.description or None,
             methods_description=self.methods_description or {},
+            file_descriptor_proto=fd_bytes,
         )
 
     def enumerate(self, *, root=None, parent=None, name=None):

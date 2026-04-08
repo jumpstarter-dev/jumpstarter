@@ -14,7 +14,7 @@ from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 from .corellium.api import ApiClient
 from .corellium.types import Instance
 from jumpstarter.common import exceptions as jmp_exceptions
-from jumpstarter.driver import Driver, export
+from jumpstarter.driver import Driver, export, driverinterface
 
 
 @dataclass(kw_only=True)
@@ -192,6 +192,7 @@ class CorelliumPower(VirtualPowerInterface, Driver):
         raise NotImplementedError
 
 
+@driverinterface("CorelliumConsole")
 @dataclass(kw_only=True)
 class CorelliumConsole(WebsocketNetwork):
     """

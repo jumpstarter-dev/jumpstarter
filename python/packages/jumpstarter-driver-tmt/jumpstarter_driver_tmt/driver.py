@@ -25,10 +25,10 @@ class TMT(Driver):
         return "jumpstarter_driver_tmt.client.TMTClient"
 
     @export
-    def get_reboot_cmd(self):
+    def get_reboot_cmd(self) -> str:
         return self.reboot_cmd
 
     @export
-    def get_default_user_pass(self):
+    def get_default_user_pass(self) -> tuple[str, str]:
         return self.default_username, self.default_password
 

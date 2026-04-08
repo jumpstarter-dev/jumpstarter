@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,7 +16,7 @@ from pydantic import validate_call
 
 from .adapter import AsyncFileStream
 from .common import Capability, HashAlgo, Metadata, Mode, PresignedRequest
-from jumpstarter.driver import Driver, export
+from jumpstarter.driver import Driver, DriverInterface, export
 
 
 @dataclass(kw_only=True)
@@ -75,7 +75,7 @@ class Opendal(Driver):
 
     @export
     @validate_call(validate_return=True)
-    async def file_read(self, /, fd: UUID, dst: Any) -> None:
+    async def file_read(self, /, fd: UUID, dst: Any):
         async with self.resource(dst) as res:
             stream = AsyncFileStream(file=self._fds[fd], metadata=self._metadata[fd])
             async for chunk in stream:
@@ -83,7 +83,7 @@ class Opendal(Driver):
 
     @export
     @validate_call(validate_return=True)
-    async def file_write(self, /, fd: UUID, src: Any) -> None:
+    async def file_write(self, /, fd: UUID, src: Any):
         async with self.resource(src) as res:
             stream = AsyncFileStream(file=self._fds[fd], metadata=self._metadata[fd])
             async for chunk in res:
@@ -101,7 +101,7 @@ class Opendal(Driver):
 
     @export
     @validate_call(validate_return=True)
-    async def file_close(self, /, fd: UUID) -> None:
+    async def file_close(self, /, fd: UUID):
         await self._fds[fd].close()
 
     @export
@@ -240,7 +240,7 @@ class Opendal(Driver):
 
     @export
     @validate_call(validate_return=True)
-    def register_path(self, path: str) -> None:
+    def register_path(self, path: str):
         """Register a path for cleanup on close.
 
         This allows external callers to register files they've created outside
@@ -303,16 +303,22 @@ class Opendal(Driver):
                 self.logger.error(f"Failed to remove path {path}: {e}")
 
 
-class FlasherInterface(metaclass=ABCMeta):
+class FlasherInterface(DriverInterface):
+    """Flash and dump firmware images to and from a device."""
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_opendal.client.FlasherClient"
 
     @abstractmethod
-    def flash(self, source, target: str | None = None): ...
+    def flash(self, source: str, target: str | None = None):
+        """Write a firmware image to the device from a resource handle."""
+        ...
 
     @abstractmethod
-    def dump(self, target, partition: str | None = None): ...
+    def dump(self, target: str, partition: str | None = None):
+        """Read a firmware image from the device to a resource handle."""
+        ...
 
 
 @dataclass
@@ -325,42 +331,56 @@ class MockFlasher(FlasherInterface, Driver):
         return str(Path(self._tempdir.name) / partition)
 
     @export
-    async def flash(self, source, partition: str | None = None):
+    async def flash(self, source: str, partition: str | None = None):
         async with await FileWriteStream.from_path(self.__path(partition)) as stream:
             async with self.resource(source) as res:
                 async for chunk in res:
                     await stream.send(chunk)
 
     @export
-    async def dump(self, target, partition: str | None = None):
+    async def dump(self, target: str, partition: str | None = None):
         async with await FileReadStream.from_path(self.__path(partition)) as stream:
             async with self.resource(target) as res:
                 async for chunk in stream:
                     await res.send(chunk)
 
 
-class StorageMuxInterface(metaclass=ABCMeta):
+class StorageMuxInterface(DriverInterface):
+    """Switch storage media between host and device under test."""
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_opendal.client.StorageMuxClient"
 
     @abstractmethod
-    async def host(self): ...
+    async def host(self):
+        """Connect the storage device to the host."""
+        ...
 
     @abstractmethod
-    async def dut(self): ...
+    async def dut(self):
+        """Connect the storage device to the device under test."""
+        ...
 
     @abstractmethod
-    async def off(self): ...
+    async def off(self):
+        """Disconnect the storage device from both host and DUT."""
+        ...
 
     @abstractmethod
-    async def write(self, src: str): ...
+    async def write(self, src: str):
+        """Write an image from a resource handle to the storage device."""
+        ...
 
     @abstractmethod
-    async def read(self, dst: str): ...
+    async def read(self, dst: str):
+        """Read the storage device contents to a resource handle."""
+        ...
 
 
 class StorageMuxFlasherInterface(StorageMuxInterface):
+    """Storage mux with integrated flashing capabilities."""
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_opendal.client.StorageMuxFlasherClient"

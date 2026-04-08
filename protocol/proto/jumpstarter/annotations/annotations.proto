@@ -1,0 +1,14 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.annotations;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FieldOptions {
+  // Marks this field as a resource handle — a UUID string referencing
+  // a client-negotiated stream via the Jumpstarter resource system.
+  // See "Resource Handle Pattern" in JEP-0001.
+  optional bool resource_handle = 50000;
+}

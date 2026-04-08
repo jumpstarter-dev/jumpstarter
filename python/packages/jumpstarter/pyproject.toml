@@ -23,6 +23,11 @@ dependencies = [
     "backports-zstd>=1.1.0 ; python_full_version < '3.14'",
 ]
 
+[project.optional-dependencies]
+reflection = [
+    "grpcio-reflection>=1.62.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",

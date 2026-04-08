@@ -65,7 +65,7 @@ class BaseFlasher(Driver):
         return "jumpstarter_driver_flashers.client.BaseFlasherClient"
 
     @export
-    async def get_default_target(self):
+    async def get_default_target(self) -> str:
         """Return the default target"""
         return self.default_target
 
@@ -99,12 +99,12 @@ class BaseFlasher(Driver):
             await self.tftp.storage.copy_exporter_file(dtb_path, dtb_path.name)
 
     @export
-    def set_dtb(self, handle):
+    def set_dtb(self, handle: str):
         """Provide a different dtb from client"""
         raise NotImplementedError
 
     @export
-    async def use_dtb_variant(self, variant):
+    async def use_dtb_variant(self, variant: str):
         """Provide a different dtb reference from the flasher bundle"""
         manifest = await self.get_flasher_manifest()
         # Check if the variant exists in the manifest

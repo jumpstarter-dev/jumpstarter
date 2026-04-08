@@ -108,13 +108,13 @@ class Ykush(PowerInterface, Driver):
             self.off()
 
     @export
-    def on(self) -> None:
+    def on(self):
         self.logger.info(f"Power ON for Ykush {self.serial} on port {self.port}")
         cmd = PORT_UP_COMMANDS.get(self.port)
         _ = self._send_cmd(cmd)
 
     @export
-    def off(self) -> None:
+    def off(self):
         self.logger.info(f"Power OFF for Ykush {self.serial} on port {self.port}")
         cmd = PORT_DOWN_COMMANDS.get(self.port)
         _ = self._send_cmd(cmd)

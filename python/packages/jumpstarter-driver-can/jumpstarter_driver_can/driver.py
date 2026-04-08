@@ -60,7 +60,7 @@ class Can(Driver):
 
     @export
     @validate_call(validate_return=True)
-    def send(self, msg: CanMessage, timeout: float | None = None):
+    def send(self, msg: CanMessage, timeout: float | None = None) -> None:
         """
         Send an individual CAN message.
         """
