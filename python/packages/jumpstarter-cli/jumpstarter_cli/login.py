@@ -296,6 +296,7 @@ async def login(  # noqa: C901
         issuer=issuer,
         client_id=client_id,
         offline_access=offline_access or stored_refresh_token is not None,
+        insecure_tls=insecure_login_tls or insecure_tls_config,
     )
 
     def save_config() -> None:
@@ -357,7 +358,12 @@ async def relogin_client(config: ClientConfigV1Alpha1):
         raise ReauthenticationFailed(f"Failed to decode JWT issuer: {e}") from e
 
     try:
-        oidc = Config(issuer=issuer, client_id=client_id, offline_access=config.refresh_token is not None)
+        oidc = Config(
+            issuer=issuer,
+            client_id=client_id,
+            offline_access=config.refresh_token is not None,
+            insecure_tls=config.tls.insecure,
+        )
         if config.refresh_token:
             try:
                 tokens = await oidc.refresh_token_grant(config.refresh_token)

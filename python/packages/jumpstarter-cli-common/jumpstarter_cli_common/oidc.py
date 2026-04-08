@@ -58,10 +58,12 @@ class Config:
     issuer: str
     client_id: str
     offline_access: bool = False
+    insecure_tls: bool = False
     scope: ClassVar[list[str]] = ["openid", "profile"]
 
     async def configuration(self):
-        connector = aiohttp.TCPConnector(ssl=_get_ssl_context())
+        ssl_context: ssl.SSLContext | bool = False if self.insecure_tls else _get_ssl_context()
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
         async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(
                 URL(self.issuer).joinpath(".well-known", "openid-configuration"),
@@ -76,7 +78,7 @@ class Config:
 
     def client(self, **kwargs):
         session = OAuth2Session(client_id=self.client_id, scope=self._scopes(), **kwargs)
-        session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()
+        session.verify = False if self.insecure_tls else (os.environ.get("SSL_CERT_FILE") or certifi.where())
         return session
 
     async def token_exchange_grant(self, token: str, **kwargs):
