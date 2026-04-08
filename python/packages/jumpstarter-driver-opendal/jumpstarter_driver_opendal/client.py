@@ -54,7 +54,13 @@ def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
     if type(path) is str and path.startswith(("http://", "https://")):
         parsed_url = urlparse(path)
         operator = Operator("http", root="/", endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}")
-        return Path(parsed_url.path), operator, "http"
+        # Preserve query parameters in the path so that signed URLs
+        # (e.g. CloudFront URLs with ?Expires=...&Signature=...&Key-Pair-Id=...)
+        # are fetched correctly by the OpenDAL HTTP operator.
+        op_path = parsed_url.path
+        if parsed_url.query:
+            op_path = f"{op_path}?{parsed_url.query}"
+        return op_path, operator, "http"
     else:
         return Path(path).resolve(), Operator("fs", root="/"), "fs"
 

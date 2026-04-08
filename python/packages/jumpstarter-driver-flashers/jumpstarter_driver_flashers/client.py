@@ -167,10 +167,14 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                         "http", root="/", endpoint=f"{parsed.scheme}://{parsed.netloc}", token=bearer_token
                     )
                     operator_scheme = "http"
-                    path = Path(parsed.path)
+                    # Preserve query parameters so that signed URLs
+                    # (e.g. CloudFront with ?Expires=...&Signature=...) work correctly.
+                    path = parsed.path
+                    if parsed.query:
+                        path = f"{path}?{parsed.query}"
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
-            image_url = self.http.get_url() + "/" + path.name
+            image_url = self.http.get_url() + "/" + self._filename(path)
 
         # start counting time for the flash operation
         start_time = time.time()
@@ -968,7 +972,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
         self.logger.info(f"Writing image to storage in the background: {src_path}")
         try:
-            filename = Path(src_path).name if isinstance(src_path, (str, os.PathLike)) else src_path.name
+            filename = self._filename(src_path)
 
             if src_operator_scheme == "fs":
                 file_hash = self._sha256_file(src_operator, src_path)
@@ -1088,8 +1092,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         raise NotImplementedError("Dump is not implemented for this driver yet")
 
     def _filename(self, path: PathBuf) -> str:
-        """Extract filename from url or path"""
-        if path.startswith("oci://"):
+        """Extract filename from url or path, stripping any query parameters"""
+        if isinstance(path, str) and path.startswith("oci://"):
             oci_path = path[6:]  # Remove "oci://" prefix
             if ":" in oci_path:
                 repository, tag = oci_path.rsplit(":", 1)
@@ -1098,10 +1102,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             else:
                 repo_name = oci_path.split("/")[-1] if "/" in oci_path else oci_path
                 return repo_name
-        elif path.startswith(("http://", "https://")):
+        elif isinstance(path, str) and path.startswith(("http://", "https://")):
             return urlparse(path).path.split("/")[-1]
         else:
-            return Path(path).name
+            # Strip query parameters from the path (e.g. from signed URLs
+            # like /path/to/image.raw.xz?Expires=...&Signature=...)
+            name = Path(path).name
+            if isinstance(name, str) and "?" in name:
+                name = name.split("?", 1)[0]
+            return name
 
     def _upload_artifact(self, storage, path: PathBuf, operator: Operator):
         """Upload artifact to storage"""
@@ -1636,15 +1645,21 @@ def _get_decompression_command(filename_or_url) -> str:
     Determine the appropriate decompression command based on file extension
 
     Args:
-        filename (str): Name of the file to check
+        filename_or_url (str): Name of the file or URL to check
 
     Returns:
         str: Decompression command ('zcat', 'xzcat', or 'cat' for uncompressed)
     """
     if type(filename_or_url) is PosixPath:
         filename = filename_or_url.name
-    elif filename_or_url.startswith(("http://", "https://")):
+    elif isinstance(filename_or_url, str) and filename_or_url.startswith(("http://", "https://")):
         filename = urlparse(filename_or_url).path.split("/")[-1]
+    else:
+        # Handle plain string paths, possibly with query parameters
+        # (e.g. /path/to/image.raw.xz?Expires=...&Signature=...)
+        filename = str(filename_or_url).split("/")[-1]
+        if "?" in filename:
+            filename = filename.split("?", 1)[0]
 
     filename = filename.lower()
     if filename.endswith((".gz", ".gzip")):

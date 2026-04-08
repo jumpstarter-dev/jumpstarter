@@ -428,6 +428,86 @@ def test_categorize_exception_preserves_cause_for_wrapped_exceptions():
     assert "File not found" in str(result)
 
 
+def test_filename_strips_query_params_from_url_path():
+    """Test _filename strips query parameters from paths with signed URL params"""
+    client = MockFlasherClient()
+
+    # Full HTTP URL
+    assert client._filename("https://cdn.example.com/images/image.raw.xz") == "image.raw.xz"
+
+    # Full HTTP URL with query parameters (e.g. CloudFront signed URL)
+    assert (
+        client._filename("https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz")
+        == "image.raw.xz"
+    )
+
+    # Path string with query parameters (as returned by operator_for_path after fix)
+    assert client._filename("/images/image.raw.xz?Expires=123&Signature=abc") == "image.raw.xz"
+
+    # Plain path without query parameters
+    assert client._filename("/images/image.raw.xz") == "image.raw.xz"
+
+    # OCI path
+    assert client._filename("oci://quay.io/org/myimage:latest") == "myimage-latest"
+
+
+def test_decompression_command_with_query_params():
+    """Test _get_decompression_command handles paths with query parameters"""
+    from pathlib import PosixPath
+
+    from .client import _get_decompression_command
+
+    # Standard PosixPath
+    assert _get_decompression_command(PosixPath("/images/image.raw.xz")) == "xzcat |"
+    assert _get_decompression_command(PosixPath("/images/image.raw.gz")) == "zcat |"
+    assert _get_decompression_command(PosixPath("/images/image.raw")) == ""
+
+    # Full HTTP URL
+    assert _get_decompression_command("https://cdn.example.com/images/image.raw.xz") == "xzcat |"
+
+    # String path with query parameters (as returned by operator_for_path for signed URLs)
+    assert _get_decompression_command("/images/image.raw.xz?Expires=123&Signature=abc") == "xzcat |"
+    assert _get_decompression_command("/images/image.raw.gz?Expires=123") == "zcat |"
+    assert _get_decompression_command("/images/image.raw?Expires=123") == ""
+
+
+def test_flash_signed_url_preserves_query_params():
+    """Test that flash with a signed HTTP URL preserves query parameters for image_url"""
+    client = MockFlasherClient()
+
+    class DummyService:
+        def __init__(self):
+            self.storage = object()
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def get_url(self):
+            return "http://exporter"
+
+    client.http = DummyService()
+    client.tftp = DummyService()
+    client.call = lambda *args, **kwargs: None
+
+    captured = {}
+
+    def capture_perform(*args):
+        captured["image_url"] = args[3]
+        captured["should_download_to_httpd"] = args[4]
+
+    client._perform_flash_operation = capture_perform
+
+    # Direct HTTP URL with query params (no force_exporter_http) should preserve full URL
+    signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    client.flash(signed_url, method="fls", fls_version="")
+
+    assert captured["image_url"] == signed_url
+    assert captured["should_download_to_httpd"] is False
+
+
 def test_resolve_flash_parameters():
     """Test flash parameter resolution for single file, partitions, and error cases"""
     client = MockFlasherClient()
