@@ -7,6 +7,25 @@ from typing import AsyncGenerator
 
 from jumpstarter.driver import Driver, export
 
+# Environment variables that are blocked because they allow privilege escalation.
+# A client that can set these can hijack the subprocess (e.g. LD_PRELOAD to load
+# arbitrary shared libraries, PATH to redirect commands to attacker binaries).
+BLOCKED_ENV_VARS: set[str] = {
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "PATH",
+    "PYTHONPATH",
+    "BASH_ENV",
+    "KUBECONFIG",
+    "HOME",
+}
+
+# Prefixes that are also blocked (matched with str.startswith).
+BLOCKED_ENV_PREFIXES: tuple[str, ...] = (
+    "LD_",
+    "BASH_FUNC_",
+)
+
 
 @dataclass(kw_only=True)
 class Shell(Driver):
@@ -92,6 +111,10 @@ class Shell(Driver):
             for key in env_vars:
                 if not isinstance(key, str) or not key.isidentifier():
                     raise ValueError(f"Invalid environment variable name: {key}")
+                if key in BLOCKED_ENV_VARS or key.startswith(BLOCKED_ENV_PREFIXES):
+                    raise ValueError(
+                        f"Environment variable '{key}' is blocked for security reasons"
+                    )
             combined_env.update(env_vars)
 
         if not isinstance(script, str) or not script.strip():
