@@ -19,8 +19,6 @@ export:
           port: 22
   ssh-mount:
     type: jumpstarter_driver_ssh_mount.driver.SSHMount
-    config:
-      default_username: "root"
     children:
-      tcp:
-        ref: "ssh.tcp"
+      ssh:
+        ref: "ssh"
