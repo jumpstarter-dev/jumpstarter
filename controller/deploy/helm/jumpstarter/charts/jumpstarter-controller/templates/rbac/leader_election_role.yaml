@@ -3,7 +3,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   labels:
-    app.kubernetes.io/name: jumpstarter-router
+    app.kubernetes.io/name: jumpstarter-controller
   name: leader-election-role
   namespace: {{ default .Release.Namespace .Values.namespace }}
 rules:
