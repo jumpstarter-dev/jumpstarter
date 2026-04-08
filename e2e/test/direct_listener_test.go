@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive
@@ -117,16 +118,21 @@ var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered,
 		Expect(err).NotTo(HaveOccurred(), out)
 		Expect(out).To(ContainSubstring("BEFORE_HOOK_DIRECT: executed"))
 
-		// Stop the exporter (SIGTERM triggers _cleanup_after_lease)
+		// Stop the exporter (SIGTERM triggers _cleanup_after_lease).
+		// Note: Kill() sends SIGKILL which does not allow cleanup hooks to run.
 		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+			_ = cmd.Process.Signal(syscall.SIGTERM)
 			_, _ = cmd.Process.Wait()
 		}
 
 		// afterLease hook output should appear in the exporter's stderr log
-		stderrData, err := os.ReadFile(stderrFile)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(string(stderrData)).To(ContainSubstring("AFTER_HOOK_DIRECT: executed"))
+		Eventually(func() string {
+			data, err := os.ReadFile(stderrFile)
+			if err != nil {
+				return ""
+			}
+			return string(data)
+		}, 10*time.Second, 500*time.Millisecond).Should(ContainSubstring("AFTER_HOOK_DIRECT: executed"))
 	})
 
 	// --- Passphrase authentication ---

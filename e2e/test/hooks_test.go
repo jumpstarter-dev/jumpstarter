@@ -174,10 +174,10 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			Expect(err).To(HaveOccurred())
 			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
 
-			// Exporter process should have exited
+			// Exporter process should have exited (allow extra time on slower runners like ARM)
 			Eventually(func() bool {
 				return tracker.IsProcessRunning()
-			}, 10*time.Second, 500*time.Millisecond).Should(BeFalse(),
+			}, 30*time.Second, 1*time.Second).Should(BeFalse(),
 				"exporter process should have exited")
 
 			WaitForExporterOffline("test-exporter-hooks")
@@ -208,7 +208,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 
 			Eventually(func() bool {
 				return tracker.IsProcessRunning()
-			}, 10*time.Second, 500*time.Millisecond).Should(BeFalse(),
+			}, 30*time.Second, 1*time.Second).Should(BeFalse(),
 				"exporter process should have exited")
 
 			WaitForExporterOffline("test-exporter-hooks")
