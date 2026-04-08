@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Iterator
+
+logger = logging.getLogger(__name__)
 
 
 def parse_vcd(data: bytes, sample_rate: str) -> Iterator[dict]:
@@ -109,44 +112,11 @@ def _parse_timescale(line: str) -> float:
         value = parts[1]
         unit = parts[2]
         # Convert to seconds multiplier
-        unit_multipliers = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12}
-        return float(value) * unit_multipliers.get(unit, 1.0)
-    return 1.0
-
-
-def _parse_vcd_timestamp_line(line: str, timescale_multiplier: float, channel_map: dict[str, str]) -> dict | None:
-    """Parse a VCD timestamp line with value changes.
-
-    Args:
-        line: Line starting with # (e.g., "#100 1! 0" 1#")
-        timescale_multiplier: Multiplier to convert time units to seconds
-        channel_map: Mapping from VCD symbols to channel names
-
-    Returns:
-        Dict with time (seconds) and values, or None if line is empty
-    """
-    # Split timestamp from values
-    parts = line.split(maxsplit=1)
-    time_str = parts[0][1:]  # Remove '#' prefix
-
-    # Skip empty time lines
-    if not time_str:
-        return None
-
-    time_units = int(time_str)
-    current_time_s = time_units * timescale_multiplier
-    current_values: dict[str, int | float] = {}
-
-    # Parse value changes if present on the same line
-    if len(parts) > 1:
-        values_str = parts[1]
-        _parse_vcd_value_changes(values_str, channel_map, current_values)
-
-    # Return sample data if we have values
-    if current_values:
-        return {"time": current_time_s, "values": current_values}
-
-    return None
+        unit_multipliers = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
+        if unit not in unit_multipliers:
+            raise ValueError(f"Unknown VCD timescale unit: {unit!r} in line: {line!r}")
+        return float(value) * unit_multipliers[unit]
+    raise ValueError(f"Cannot parse VCD timescale line: {line!r}. Expected format: '$timescale <value> <unit> $end'")
 
 
 def _parse_vcd_value_changes(values_str: str, channel_map: dict[str, str], current_values: dict[str, int | float]):
@@ -168,6 +138,8 @@ def _parse_vcd_value_changes(values_str: str, channel_map: dict[str, str], curre
             symbol, new_i = _extract_symbol(values_str, i + 1)
             if symbol in channel_map:
                 channel = channel_map[symbol]
+                if char in "xzXZ":
+                    logger.warning("VCD channel %s has %s state, mapping to 0", channel, char)
                 current_values[channel] = 1 if char == "1" else 0
             i = new_i
 
