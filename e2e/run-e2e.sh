@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Jumpstarter End-to-End Test Runner
 # This script runs the e2e test suite (assumes setup-e2e.sh was run first)
+#
+# The tests are implemented using Go + Ginkgo. Label filters can be used to
+# run specific subsets:
+#   --label-filter "core"            - run core tests only
+#   --label-filter "hooks"           - run hooks tests only
+#   --label-filter "direct-listener" - run direct-listener tests only
+#   --label-filter "!operator-only"  - skip operator-specific tests
 
 set -euo pipefail
 
@@ -42,45 +49,31 @@ check_setup() {
         log_error "Or in CI mode, run the full setup automatically"
         return 1
     fi
-    
+
     # Load setup configuration
     source "$REPO_ROOT/.e2e-setup-complete"
-    
+
     # Export SSL certificate paths for Python
     export SSL_CERT_FILE
     export REQUESTS_CA_BUNDLE
     export LOGIN_ENDPOINT
-    
+
     # Verify critical components are still running
     if ! kubectl get namespace "$JS_NAMESPACE" &> /dev/null; then
         log_error "Namespace $JS_NAMESPACE not found. Please run setup-e2e.sh again."
         return 1
     fi
-    
-    log_info "✓ Setup verified"
-    return 0
-}
 
-# Setup environment for bats
-setup_bats_env() {
-    # Always set BATS_LIB_PATH to include local libraries
-    local LOCAL_BATS_LIB="$REPO_ROOT/.bats/lib"
-    
-    if [ -d "$LOCAL_BATS_LIB" ]; then
-        export BATS_LIB_PATH="$LOCAL_BATS_LIB:${BATS_LIB_PATH:-}"
-        log_info "Set BATS_LIB_PATH to local libraries: $BATS_LIB_PATH"
-    else
-        log_warn "Local bats libraries not found at $LOCAL_BATS_LIB"
-        log_warn "You may need to run setup-e2e.sh first"
-    fi
+    log_info "Setup verified"
+    return 0
 }
 
 # Run the tests
 run_tests() {
     log_info "Running jumpstarter e2e tests..."
-    
+
     cd "$REPO_ROOT"
-    
+
     # Activate virtual environment
     if [ -f python/.venv/bin/activate ]; then
         source python/.venv/bin/activate
@@ -88,33 +81,41 @@ run_tests() {
         log_error "Virtual environment not found. Please run setup-e2e.sh first."
         exit 1
     fi
-    
+
     # Use insecure GRPC for testing
     export JUMPSTARTER_GRPC_INSECURE=1
-    
-    # Export variables for bats
+
+    # Export variables for the Go test suite
     export JS_NAMESPACE="${JS_NAMESPACE}"
     export ENDPOINT="${ENDPOINT}"
-    
-    # Setup bats environment
-    setup_bats_env
-    
-    # Run bats tests (all .bats files in e2e directory)
-    log_info "Running bats tests..."
-    bats -x --show-output-of-passing-tests --verbose-run "$SCRIPT_DIR"/*.bats
+    export REPO_ROOT="${REPO_ROOT}"
+    export METHOD="${METHOD:-}"
+
+    # Extra ginkgo flags (e.g., --label-filter)
+    local extra_flags=()
+    if [ -n "${GINKGO_LABEL_FILTER:-}" ]; then
+        extra_flags+=(--label-filter "${GINKGO_LABEL_FILTER}")
+    fi
+
+    log_info "Running ginkgo e2e tests..."
+    cd "$SCRIPT_DIR/test"
+    go run github.com/onsi/ginkgo/v2/ginkgo \
+        -v --show-node-events --trace --timeout 30m \
+        "${extra_flags[@]}" \
+        ./...
 }
 
 # Full setup and run (for CI or first-time use)
 full_run() {
     log_info "Running full setup + test cycle..."
-    
+
     if [ -f "$SCRIPT_DIR/setup-e2e.sh" ]; then
         bash "$SCRIPT_DIR/setup-e2e.sh"
     else
         log_error "setup-e2e.sh not found!"
         exit 1
     fi
-    
+
     # After setup, load the configuration
     if [ -f "$REPO_ROOT/.e2e-setup-complete" ]; then
         source "$REPO_ROOT/.e2e-setup-complete"
@@ -122,7 +123,7 @@ full_run() {
         export SSL_CERT_FILE
         export REQUESTS_CA_BUNDLE
     fi
-    
+
     run_tests
 }
 
@@ -130,12 +131,12 @@ full_run() {
 main() {
     # Default namespace
     export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
-    
+
     log_info "=== Jumpstarter E2E Test Runner ==="
     log_info "Namespace: $JS_NAMESPACE"
     log_info "Repository Root: $REPO_ROOT"
     echo ""
-    
+
     # If --full flag is passed, always run full setup
     if [[ "${1:-}" == "--full" ]]; then
         full_run
@@ -162,9 +163,9 @@ main() {
             exit 1
         fi
     fi
-    
+
     echo ""
-    log_info "✓✓✓ All e2e tests completed successfully! ✓✓✓"
+    log_info "All e2e tests completed successfully!"
 }
 
 # Run main function

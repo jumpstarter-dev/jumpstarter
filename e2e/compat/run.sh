@@ -54,18 +54,6 @@ check_setup() {
     return 0
 }
 
-# Setup environment for bats
-setup_bats_env() {
-    local LOCAL_BATS_LIB="$REPO_ROOT/.bats/lib"
-
-    if [ -d "$LOCAL_BATS_LIB" ]; then
-        export BATS_LIB_PATH="$LOCAL_BATS_LIB:${BATS_LIB_PATH:-}"
-        log_info "Set BATS_LIB_PATH to local libraries: $BATS_LIB_PATH"
-    else
-        log_warn "Local bats libraries not found at $LOCAL_BATS_LIB"
-    fi
-}
-
 # Run the tests
 run_tests() {
     log_info "Running jumpstarter compatibility e2e tests..."
@@ -83,31 +71,34 @@ run_tests() {
     # Use insecure GRPC for testing
     export JUMPSTARTER_GRPC_INSECURE=1
 
-    # Export variables for bats
+    # Export variables for the Go test suite
     export JS_NAMESPACE="${JS_NAMESPACE}"
     export ENDPOINT="${ENDPOINT}"
-
-    # Setup bats environment
-    setup_bats_env
+    export REPO_ROOT="${REPO_ROOT}"
+    export OLD_JMP="${OLD_JMP:-}"
 
     COMPAT_TEST="${COMPAT_TEST:-old-controller}"
     log_info "Running compat test: $COMPAT_TEST"
 
+    local label_filter=""
     case "$COMPAT_TEST" in
         old-controller)
-            bats -x --show-output-of-passing-tests --verbose-run \
-                "$SCRIPT_DIR/tests-old-controller.bats"
+            label_filter="old-controller"
             ;;
         old-client)
-            export OLD_JMP
-            bats -x --show-output-of-passing-tests --verbose-run \
-                "$SCRIPT_DIR/tests-old-client.bats"
+            label_filter="old-client"
             ;;
         *)
             log_error "Unknown COMPAT_TEST: $COMPAT_TEST (expected 'old-controller' or 'old-client')"
             exit 1
             ;;
     esac
+
+    cd "$SCRIPT_DIR/../test"
+    go run github.com/onsi/ginkgo/v2/ginkgo \
+        -v --show-node-events --trace --timeout 30m \
+        --label-filter "${label_filter}" \
+        ./...
 }
 
 # Main execution
