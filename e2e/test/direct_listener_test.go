@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive
 	. "github.com/onsi/gomega"    //nolint:revive
@@ -39,6 +40,13 @@ var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered,
 
 	AfterEach(func() {
 		tracker.StopAll()
+
+		// Wait for the listener port to be fully released before the next test.
+		Eventually(func() error {
+			_, err := RunCmd("nc", "-z", "127.0.0.1", fmt.Sprintf("%d", listenerPort))
+			return err
+		}, 10*time.Second, 500*time.Millisecond).Should(HaveOccurred(),
+			"port %d should be closed after stopping exporter", listenerPort)
 	})
 
 	AfterAll(func() {

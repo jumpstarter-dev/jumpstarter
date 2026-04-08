@@ -382,8 +382,17 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 
 			out := MustJmp("create", "lease", "--selector", "example.com/board=oidc",
 				"--duration", "1d", "-o", "yaml")
-			leaseName := MustRunCmd("bash", "-c",
-				fmt.Sprintf("echo '%s' | go run github.com/mikefarah/yq/v4@latest '.name'", out))
+
+			// Write YAML to a temp file and extract the lease name with yq.
+			// Using MustYq (which separates stdout/stderr) avoids Go toolchain
+			// messages contaminating the extracted value.
+			tmpFile, tmpErr := os.CreateTemp("", "lease-*.yaml")
+			Expect(tmpErr).NotTo(HaveOccurred())
+			defer os.Remove(tmpFile.Name())
+			_, tmpErr = tmpFile.WriteString(out)
+			Expect(tmpErr).NotTo(HaveOccurred())
+			tmpFile.Close()
+			leaseName := MustYq(".name", tmpFile.Name())
 
 			ns := Namespace()
 			MustKubectl("-n", ns, "wait", "--timeout", "60s", "--for=condition=Ready",

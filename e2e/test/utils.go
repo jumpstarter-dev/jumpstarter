@@ -191,10 +191,15 @@ func MustKubectl(args ...string) string {
 	return out
 }
 
-// Yq runs the yq tool (via go run) and returns the output.
+// Yq runs the yq tool (via go run) and returns stdout only.
+// Stderr is discarded to avoid Go toolchain messages contaminating output.
 func Yq(args ...string) (string, error) {
 	goArgs := append([]string{"run", "github.com/mikefarah/yq/v4@latest"}, args...)
-	return RunCmd("go", goArgs...)
+	stdout, stderr, err := RunCmdSplit("go", goArgs...)
+	if err != nil {
+		return stdout + "\n" + stderr, err
+	}
+	return stdout, nil
 }
 
 // MustYq runs the yq tool and fails the test on error.
