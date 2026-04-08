@@ -356,7 +356,7 @@ func (r *JumpstarterReconciler) createRole(jumpstarter *operatorv1alpha1.Jumpsta
 	}
 }
 
-// createRouterRole creates a role with minimal permissions for the router (read configmaps and secrets)
+// createRouterRole creates a role with minimal permissions for the router (read configmaps)
 func (r *JumpstarterReconciler) createRouterRole(jumpstarter *operatorv1alpha1.Jumpstarter) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
@@ -372,11 +372,6 @@ func (r *JumpstarterReconciler) createRouterRole(jumpstarter *operatorv1alpha1.J
 			{
 				APIGroups: []string{""},
 				Resources: []string{"configmaps"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 		},
