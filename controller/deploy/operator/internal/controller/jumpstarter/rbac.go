@@ -72,7 +72,6 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		if existingRouterSA.CreationTimestamp.IsZero() {
 			existingRouterSA.Labels = desiredRouterSA.Labels
 			existingRouterSA.Annotations = desiredRouterSA.Annotations
-			existingRouterSA.AutomountServiceAccountToken = desiredRouterSA.AutomountServiceAccountToken
 			return nil
 		}
 
@@ -85,7 +84,6 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 
 		existingRouterSA.Labels = desiredRouterSA.Labels
 		existingRouterSA.Annotations = desiredRouterSA.Annotations
-		existingRouterSA.AutomountServiceAccountToken = desiredRouterSA.AutomountServiceAccountToken
 		return nil
 	})
 
@@ -191,6 +189,88 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		"namespace", existingRoleBinding.Namespace,
 		"operation", op)
 
+	// Router Role (minimal permissions: read configmaps)
+	desiredRouterRole := r.createRouterRole(jumpstarter)
+
+	existingRouterRole := &rbacv1.Role{}
+	existingRouterRole.Name = desiredRouterRole.Name
+	existingRouterRole.Namespace = desiredRouterRole.Namespace
+
+	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRouterRole, func() error {
+		if existingRouterRole.CreationTimestamp.IsZero() {
+			existingRouterRole.Labels = desiredRouterRole.Labels
+			existingRouterRole.Annotations = desiredRouterRole.Annotations
+			existingRouterRole.Rules = desiredRouterRole.Rules
+			return controllerutil.SetControllerReference(jumpstarter, existingRouterRole, r.Scheme)
+		}
+
+		if !roleNeedsUpdate(existingRouterRole, desiredRouterRole) {
+			log.V(1).Info("Router Role is up to date, skipping update",
+				"name", existingRouterRole.Name,
+				"namespace", existingRouterRole.Namespace)
+			return nil
+		}
+
+		existingRouterRole.Labels = desiredRouterRole.Labels
+		existingRouterRole.Annotations = desiredRouterRole.Annotations
+		existingRouterRole.Rules = desiredRouterRole.Rules
+		return controllerutil.SetControllerReference(jumpstarter, existingRouterRole, r.Scheme)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile Router Role",
+			"name", desiredRouterRole.Name,
+			"namespace", desiredRouterRole.Namespace)
+		return err
+	}
+
+	log.Info("Router Role reconciled",
+		"name", existingRouterRole.Name,
+		"namespace", existingRouterRole.Namespace,
+		"operation", op)
+
+	// Router RoleBinding
+	desiredRouterRoleBinding := r.createRouterRoleBinding(jumpstarter)
+
+	existingRouterRoleBinding := &rbacv1.RoleBinding{}
+	existingRouterRoleBinding.Name = desiredRouterRoleBinding.Name
+	existingRouterRoleBinding.Namespace = desiredRouterRoleBinding.Namespace
+
+	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRouterRoleBinding, func() error {
+		if existingRouterRoleBinding.CreationTimestamp.IsZero() {
+			existingRouterRoleBinding.Labels = desiredRouterRoleBinding.Labels
+			existingRouterRoleBinding.Annotations = desiredRouterRoleBinding.Annotations
+			existingRouterRoleBinding.Subjects = desiredRouterRoleBinding.Subjects
+			existingRouterRoleBinding.RoleRef = desiredRouterRoleBinding.RoleRef
+			return controllerutil.SetControllerReference(jumpstarter, existingRouterRoleBinding, r.Scheme)
+		}
+
+		if !roleBindingNeedsUpdate(existingRouterRoleBinding, desiredRouterRoleBinding) {
+			log.V(1).Info("Router RoleBinding is up to date, skipping update",
+				"name", existingRouterRoleBinding.Name,
+				"namespace", existingRouterRoleBinding.Namespace)
+			return nil
+		}
+
+		existingRouterRoleBinding.Labels = desiredRouterRoleBinding.Labels
+		existingRouterRoleBinding.Annotations = desiredRouterRoleBinding.Annotations
+		existingRouterRoleBinding.Subjects = desiredRouterRoleBinding.Subjects
+		existingRouterRoleBinding.RoleRef = desiredRouterRoleBinding.RoleRef
+		return controllerutil.SetControllerReference(jumpstarter, existingRouterRoleBinding, r.Scheme)
+	})
+
+	if err != nil {
+		log.Error(err, "Failed to reconcile Router RoleBinding",
+			"name", desiredRouterRoleBinding.Name,
+			"namespace", desiredRouterRoleBinding.Namespace)
+		return err
+	}
+
+	log.Info("Router RoleBinding reconciled",
+		"name", existingRouterRoleBinding.Name,
+		"namespace", existingRouterRoleBinding.Namespace,
+		"operation", op)
+
 	return nil
 }
 
@@ -209,9 +289,8 @@ func (r *JumpstarterReconciler) createServiceAccount(jumpstarter *operatorv1alph
 	}
 }
 
-// createRouterServiceAccount creates a service account for the router with no RBAC permissions
+// createRouterServiceAccount creates a service account for the router with minimal RBAC permissions
 func (r *JumpstarterReconciler) createRouterServiceAccount(jumpstarter *operatorv1alpha1.Jumpstarter) *corev1.ServiceAccount {
-	automount := false
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-router-sa", jumpstarter.Name),
@@ -222,7 +301,6 @@ func (r *JumpstarterReconciler) createRouterServiceAccount(jumpstarter *operator
 				"app.kubernetes.io/managed-by": "jumpstarter-operator",
 			},
 		},
-		AutomountServiceAccountToken: &automount,
 	}
 }
 
@@ -273,6 +351,60 @@ func (r *JumpstarterReconciler) createRole(jumpstarter *operatorv1alpha1.Jumpsta
 				APIGroups: []string{"coordination.k8s.io"},
 				Resources: []string{"leases"},
 				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+			},
+		},
+	}
+}
+
+// createRouterRole creates a role with minimal permissions for the router (read configmaps and secrets)
+func (r *JumpstarterReconciler) createRouterRole(jumpstarter *operatorv1alpha1.Jumpstarter) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-router-role", jumpstarter.Name),
+			Namespace: jumpstarter.Namespace,
+			Labels: map[string]string{
+				"app":                          "jumpstarter-router",
+				"app.kubernetes.io/name":       "jumpstarter-router",
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"configmaps"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"secrets"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+		},
+	}
+}
+
+// createRouterRoleBinding creates a role binding for the router service account
+func (r *JumpstarterReconciler) createRouterRoleBinding(jumpstarter *operatorv1alpha1.Jumpstarter) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-router-rolebinding", jumpstarter.Name),
+			Namespace: jumpstarter.Namespace,
+			Labels: map[string]string{
+				"app":                          "jumpstarter-router",
+				"app.kubernetes.io/name":       "jumpstarter-router",
+				"app.kubernetes.io/managed-by": "jumpstarter-operator",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     fmt.Sprintf("%s-router-role", jumpstarter.Name),
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      fmt.Sprintf("%s-router-sa", jumpstarter.Name),
+				Namespace: jumpstarter.Namespace,
 			},
 		},
 	}
