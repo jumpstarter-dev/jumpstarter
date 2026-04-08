@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   labels:
-    app.kubernetes.io/name: jumpstarter-controller
+    app.kubernetes.io/name: jumpstarter-router
   namespace: {{ default .Release.Namespace .Values.namespace }}
   name: leader-election-rolebinding
 roleRef:

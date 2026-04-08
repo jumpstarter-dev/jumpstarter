@@ -106,7 +106,6 @@ spec:
           requests:
             cpu: 1000m
             memory: 256Mi
-      serviceAccountName: router-sa
-      automountServiceAccountToken: false
+      serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
 {{ end }}

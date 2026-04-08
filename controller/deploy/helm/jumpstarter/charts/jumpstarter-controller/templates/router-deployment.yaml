@@ -105,6 +105,5 @@ spec:
         secret:
           secretName: {{ .Values.grpc.tls.routerCertSecret }}
       {{- end }}
-      serviceAccountName: router-sa
-      automountServiceAccountToken: false
+      serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

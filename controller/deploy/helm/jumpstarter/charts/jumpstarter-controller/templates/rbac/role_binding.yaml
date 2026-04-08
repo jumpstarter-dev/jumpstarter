@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
-    app.kubernetes.io/name: jumpstarter-controller
+    app.kubernetes.io/name: jumpstarter-router
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
   name: jumpstarter-manager-rolebinding
