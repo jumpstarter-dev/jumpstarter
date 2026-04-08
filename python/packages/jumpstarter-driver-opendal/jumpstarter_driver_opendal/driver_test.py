@@ -678,3 +678,28 @@ def test_flash_http_redirect_missing_location_raises():
             server.shutdown()
             server.server_close()
             server_thread.join(timeout=2)
+
+
+def test_operator_for_path_preserves_query_params():
+    """Test that operator_for_path preserves query parameters for HTTP URLs"""
+    from .client import operator_for_path
+
+    # HTTP URL without query parameters
+    path, operator, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz")
+    assert scheme == "http"
+    assert path == "/images/image.raw.xz"
+
+    # HTTP URL with query parameters (e.g. CloudFront signed URL)
+    path, operator, scheme = operator_for_path(
+        "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    )
+    assert scheme == "http"
+    assert path == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    assert "Expires=123" in path
+    assert "Signature=abc" in path
+    assert "Key-Pair-Id=xyz" in path
+
+    # Filesystem path
+    path, operator, scheme = operator_for_path("/tmp/image.raw.xz")
+    assert scheme == "fs"
+    assert str(path) == "/tmp/image.raw.xz"
