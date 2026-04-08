@@ -253,13 +253,18 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         """
         retries_left = retries
         while True:
+            received_data = False
             try:
                 async with self._controller_stub() as controller:
                     logger.debug("%s stream connected to controller", stream_name)
                     async for item in stream_factory(controller):
+                        received_data = True
                         logger.debug("%s stream received item", stream_name)
                         await send_tx.send(item)
             except Exception as e:
+                if received_data:
+                    logger.debug("%s stream retry counter reset after receiving data", stream_name)
+                    retries_left = retries
                 if retries_left > 0:
                     retries_left -= 1
                     # Check for common transient errors that warrant faster retry
@@ -589,6 +594,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         running the afterLease hook if appropriate, and transitioning to AVAILABLE.
         """
         with CancelScope(shield=True):
+            # Wait for beforeLease hook to complete before running afterLease.
+            # When a lease ends during hook execution, the hook must finish
+            # (subject to its configured timeout) before cleanup proceeds.
+            await lease_scope.before_lease_hook.wait()
+
             if not lease_scope.after_lease_hook_started.is_set():
                 lease_scope.after_lease_hook_started.set()
                 if (self.hook_executor

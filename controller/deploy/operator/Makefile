@@ -62,7 +62,7 @@ endif
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.41.1
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/jumpstarter-dev/jumpstarter-operator:latest
+IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -94,6 +94,10 @@ SHELL = /usr/bin/env bash -o pipefail
 
 .PHONY: all
 all: build
+
+.PHONY: print-img
+print-img:
+	@echo $(IMG)
 
 ##@ General
 
@@ -201,7 +205,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
@@ -220,7 +224,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
@@ -315,8 +319,10 @@ endif
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
+	@# Align CSV containerImage annotation with the manager image (base CSV still references :latest)
+	@perl -pi -e 's|quay.io/jumpstarter-dev/jumpstarter-operator:latest|$(IMG)|g' bundle/manifests/jumpstarter-operator.clusterserviceversion.yaml
 	@# Inject Red Hat OpenShift version range into bundle metadata (not handled by operator-sdk)
 	@if ! grep -q 'com.redhat.openshift.versions' bundle/metadata/annotations.yaml; then \
 		echo '  com.redhat.openshift.versions: $(OPENSHIFT_VERSIONS)' >> bundle/metadata/annotations.yaml; \

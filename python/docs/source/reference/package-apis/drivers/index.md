@@ -25,11 +25,15 @@ Drivers that control the power state and basic operation of devices:
 * **[Tasmota](tasmota.md)** (`jumpstarter-driver-tasmota`) - Tasmota hardware control
 * **[HTTP Power](http-power.md)** (`jumpstarter-driver-http-power`) - HTTP-based power
   control, useful for smart sockets, like the Shelly Smart Plug or similar
+* **[Noyito Relay](noyito-relay.md)** (`jumpstarter-driver-noyito-relay`) - NOYITO USB relay
+  board control (1/2-channel serial and 4/8-channel HID variants)
 
 ### Communication Drivers
 
 Drivers that provide various communication interfaces:
 
+* **[ADB](adb.md)** (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
+  for remote Android device access
 * **[BLE](ble.md)** (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 * **[CAN](can.md)** (`jumpstarter-driver-can`) - Controller Area Network
   communication
@@ -84,8 +88,12 @@ Drivers for debugging and programming devices:
   management via esptool
 * **[Flashers](flashers.md)** (`jumpstarter-driver-flashers`) - Flash memory
   programming tools
+* **[Pi Pico](pi-pico.md)** (`jumpstarter-driver-pi-pico`) - Raspberry Pi Pico
+  UF2 flashing via BOOTSEL mass storage
 * **[Probe-RS](probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe
   support
+* **[Android Emulator](androidemulator.md)** (`jumpstarter-driver-androidemulator`) -
+  Android emulator lifecycle management with ADB tunneling
 * **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
 * **[Corellium](corellium.md)** (`jumpstarter-driver-corellium`) - Corellium
   virtualization platform
@@ -103,6 +111,8 @@ General-purpose utility drivers:
 
 ```{toctree}
 :hidden:
+adb.md
+androidemulator.md
 ble.md
 can.md
 corellium.md
@@ -115,7 +125,9 @@ http.md
 http-power.md
 iscsi.md
 network.md
+noyito-relay.md
 opendal.md
+pi-pico.md
 power.md
 probe-rs.md
 pyserial.md

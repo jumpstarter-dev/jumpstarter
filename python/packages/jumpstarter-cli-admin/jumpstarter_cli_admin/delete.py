@@ -11,6 +11,7 @@ from jumpstarter_cli_common.opt import (
     opt_namespace,
     opt_nointeractive,
     opt_output_name_only,
+    validate_name,
 )
 from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, delete_cluster_by_name
 from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
@@ -56,6 +57,7 @@ async def delete_client(
     nointeractive: bool,
 ):
     """Delete a client object in the Kubernetes cluster"""
+    validate_name(name)
     try:
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_client(name)
@@ -107,6 +109,7 @@ async def delete_exporter(
     nointeractive: bool,
 ):
     """Delete an exporter object in the Kubernetes cluster"""
+    validate_name(name)
     try:
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             await api.delete_exporter(name)

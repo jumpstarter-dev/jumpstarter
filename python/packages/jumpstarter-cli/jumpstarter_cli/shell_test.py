@@ -1,4 +1,8 @@
+import base64
 import inspect
+import json
+import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
@@ -6,12 +10,25 @@ from unittest.mock import AsyncMock, Mock, patch
 import anyio
 import click
 import pytest
+from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
 
-from jumpstarter_cli.shell import _resolve_lease_from_active_async, _shell_with_signal_handling, shell
+from jumpstarter_cli.shell import (
+    _attempt_token_recovery,
+    _monitor_token_expiry,
+    _resolve_lease_from_active_async,
+    _shell_with_signal_handling,
+    _try_refresh_token,
+    _try_reload_token_from_disk,
+    _update_lease_channel,
+    _warn_refresh_failed,
+    shell,
+)
 
 from jumpstarter.client.grpc import Lease, LeaseList
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
+
+pytestmark = pytest.mark.anyio
 
 
 def _make_lease(name: str, client: str = "test-client") -> Lease:
@@ -71,6 +88,49 @@ def test_shell_passes_exporter_name_to_lease_async():
     assert exit_code == 0
     assert config.captured is not None
     assert config.captured[1] == "laptop-test-exporter"
+
+
+async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
+    lease = Mock()
+    lease.release = True
+    lease.name = "expired-lease"
+    lease.lease_ended = False
+    lease.lease_transferred = False
+
+    config = _DummyConfig()
+
+    @asynccontextmanager
+    async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+        yield lease
+
+    config.lease_async = lease_async
+
+    async def fake_monitor(_config, _lease, _cancel_scope, token_state=None):
+        if token_state is not None:
+            token_state["expired_unrecovered"] = True
+
+    async def fake_run_shell(*_args):
+        await anyio.sleep(0)
+        return 0
+
+    with (
+        patch("jumpstarter_cli.shell._monitor_token_expiry", side_effect=fake_monitor),
+        patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+        patch("jumpstarter_cli.shell._warn_about_expired_token") as mock_warn,
+    ):
+        exit_code = await _shell_with_signal_handling(
+            config,
+            None,
+            None,
+            None,
+            timedelta(minutes=1),
+            False,
+            (),
+            None,
+        )
+
+    assert exit_code == 0
+    mock_warn.assert_called_once_with("expired-lease", None)
 
 
 def test_shell_requires_selector_or_name_when_no_leases():
@@ -269,3 +329,450 @@ def test_resolve_lease_handles_async_list_leases():
     selected = anyio.run(_resolve_lease_from_active_async, config)
     assert selected == "async-lease"
     config.list_leases.assert_called_once_with(only_active=True)
+
+
+def _make_expired_jwt() -> str:
+    """Create a JWT with an exp claim in the past (no signature verification needed)."""
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload = b64url(json.dumps({"exp": int(time.time()) - 3600, "iss": "https://example.com"}).encode())
+    sig = b64url(b"fakesig")
+    return f"{header}.{payload}.{sig}"
+
+
+def test_expired_token_triggers_reauth():
+    config = _DummyConfig()
+    config.token = _make_expired_jwt()
+
+    login_mock = Mock()
+
+    @handle_exceptions_with_reauthentication(login_mock)
+    def run_shell():
+        anyio.run(
+            _shell_with_signal_handling,
+            config,
+            "board-type=virtual",
+            None,
+            None,
+            timedelta(minutes=1),
+            False,
+            (),
+            None,
+        )
+
+    with pytest.raises(click.ClickException, match="Please try again now"):
+        run_shell()
+
+    login_mock.assert_called_once_with(config)
+
+
+def _make_config(token="tok", refresh_token="rt", path="/tmp/config.yaml"):
+    """Create a mock config with sensible defaults."""
+    config = Mock()
+    config.token = token
+    config.refresh_token = refresh_token
+    config.path = path
+    config.channel = AsyncMock(return_value=Mock(name="new_channel"))
+    return config
+
+
+def _make_mock_lease():
+    """Create a mock lease with a refresh_channel method."""
+    lease = Mock()
+    lease.refresh_channel = Mock()
+    return lease
+
+
+class TestUpdateLeaseChannel:
+    async def test_updates_channel_on_lease(self):
+        config = _make_config()
+        lease = _make_mock_lease()
+
+        await _update_lease_channel(config, lease)
+
+        config.channel.assert_awaited_once()
+        lease.refresh_channel.assert_called_once_with(config.channel.return_value)
+
+    async def test_noop_when_lease_is_none(self):
+        config = _make_config()
+
+        await _update_lease_channel(config, None)
+
+        config.channel.assert_not_awaited()
+
+
+class TestTryRefreshToken:
+    async def test_returns_false_when_no_refresh_token(self):
+        config = _make_config(refresh_token=None)
+        assert await _try_refresh_token(config, _make_mock_lease()) is False
+
+    async def test_returns_false_when_refresh_token_is_empty(self):
+        config = _make_config(refresh_token="")
+        assert await _try_refresh_token(config, _make_mock_lease()) is False
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.Config")
+    @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
+    async def test_successful_refresh(self, _mock_issuer, mock_oidc_cls, mock_save):
+        config = _make_config()
+        lease = _make_mock_lease()
+
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.return_value = {
+            "access_token": "new_tok",
+            "refresh_token": "new_rt",
+        }
+        mock_oidc_cls.return_value = mock_oidc
+
+        result = await _try_refresh_token(config, lease)
+
+        assert result is True
+        assert config.token == "new_tok"
+        assert config.refresh_token == "new_rt"
+        lease.refresh_channel.assert_called_once()
+        mock_save.save.assert_called_once()
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.Config")
+    @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
+    async def test_successful_refresh_without_new_refresh_token(
+        self, _mock_issuer, mock_oidc_cls, _mock_save
+    ):
+        config = _make_config()
+        lease = _make_mock_lease()
+
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.return_value = {
+            "access_token": "new_tok",
+            # No refresh_token in response
+        }
+        mock_oidc_cls.return_value = mock_oidc
+
+        result = await _try_refresh_token(config, lease)
+
+        assert result is True
+        assert config.token == "new_tok"
+        assert config.refresh_token == "rt"  # unchanged
+
+    @patch("jumpstarter_cli.shell.decode_jwt_issuer", side_effect=ValueError("bad jwt"))
+    async def test_rollback_on_failure(self, _mock_issuer):
+        config = _make_config(token="original_tok", refresh_token="original_rt")
+        lease = _make_mock_lease()
+
+        result = await _try_refresh_token(config, lease)
+
+        assert result is False
+        assert config.token == "original_tok"
+        assert config.refresh_token == "original_rt"
+        lease.refresh_channel.assert_not_called()
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.Config")
+    @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
+    async def test_save_failure_does_not_fail_refresh(
+        self, _mock_issuer, mock_oidc_cls, mock_save, caplog
+    ):
+        """Disk save is best-effort; refresh should still succeed."""
+        config = _make_config()
+        lease = _make_mock_lease()
+
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.return_value = {
+            "access_token": "new_tok",
+        }
+        mock_oidc_cls.return_value = mock_oidc
+        mock_save.save.side_effect = OSError("disk full")
+
+        with caplog.at_level(logging.WARNING):
+            result = await _try_refresh_token(config, lease)
+
+        assert result is True
+        assert config.token == "new_tok"
+        assert "Failed to save refreshed token to disk" in caplog.text
+
+
+class TestTryReloadTokenFromDisk:
+    async def test_returns_false_when_no_path(self):
+        config = _make_config(path=None)
+        assert await _try_reload_token_from_disk(config, _make_mock_lease()) is False
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=3600)
+    async def test_successful_reload(self, _mock_remaining, mock_client_cfg):
+        config = _make_config(token="old_tok", refresh_token="old_rt")
+        lease = _make_mock_lease()
+
+        disk_config = Mock()
+        disk_config.token = "disk_tok"
+        disk_config.refresh_token = "disk_rt"
+        mock_client_cfg.from_file.return_value = disk_config
+
+        result = await _try_reload_token_from_disk(config, lease)
+
+        assert result is True
+        assert config.token == "disk_tok"
+        assert config.refresh_token == "disk_rt"
+        lease.refresh_channel.assert_called_once()
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=3600)
+    async def test_clears_refresh_token_when_disk_has_none(self, _mock_remaining, mock_client_cfg):
+        """If disk config has no refresh token, in-memory refresh token must be cleared."""
+        config = _make_config(token="old_tok", refresh_token="stale_rt")
+        lease = _make_mock_lease()
+
+        disk_config = Mock()
+        disk_config.token = "disk_tok"
+        disk_config.refresh_token = None
+        mock_client_cfg.from_file.return_value = disk_config
+
+        result = await _try_reload_token_from_disk(config, lease)
+
+        assert result is True
+        assert config.token == "disk_tok"
+        assert config.refresh_token is None
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    async def test_returns_false_when_disk_token_is_same(self, mock_client_cfg):
+        config = _make_config(token="same_tok")
+        disk_config = Mock()
+        disk_config.token = "same_tok"
+        mock_client_cfg.from_file.return_value = disk_config
+
+        result = await _try_reload_token_from_disk(config, _make_mock_lease())
+
+        assert result is False
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=-10)
+    async def test_returns_false_when_disk_token_is_expired(
+        self, _mock_remaining, mock_client_cfg
+    ):
+        config = _make_config(token="old_tok")
+        disk_config = Mock()
+        disk_config.token = "disk_tok"
+        mock_client_cfg.from_file.return_value = disk_config
+
+        result = await _try_reload_token_from_disk(config, _make_mock_lease())
+
+        assert result is False
+        assert config.token == "old_tok"  # unchanged
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    async def test_rollback_on_file_error(self, mock_client_cfg):
+        config = _make_config(token="orig_tok", refresh_token="orig_rt")
+        mock_client_cfg.from_file.side_effect = FileNotFoundError("gone")
+
+        result = await _try_reload_token_from_disk(config, _make_mock_lease())
+
+        assert result is False
+        assert config.token == "orig_tok"
+        assert config.refresh_token == "orig_rt"
+
+
+class TestAttemptTokenRecovery:
+    @patch("jumpstarter_cli.shell._try_reload_token_from_disk", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._try_refresh_token", new_callable=AsyncMock)
+    async def test_returns_message_on_oidc_success(self, mock_refresh, mock_disk):
+        mock_refresh.return_value = True
+
+        result = await _attempt_token_recovery(Mock(), Mock())
+
+        assert result == "Token refreshed automatically."
+        mock_disk.assert_not_awaited()  # should not fall through
+
+    @patch("jumpstarter_cli.shell._try_reload_token_from_disk", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._try_refresh_token", new_callable=AsyncMock)
+    async def test_falls_back_to_disk_reload(self, mock_refresh, mock_disk):
+        mock_refresh.return_value = False
+        mock_disk.return_value = True
+
+        result = await _attempt_token_recovery(Mock(), Mock())
+
+        assert result == "Token reloaded from login."
+
+    @patch("jumpstarter_cli.shell._try_reload_token_from_disk", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._try_refresh_token", new_callable=AsyncMock)
+    async def test_returns_none_when_all_fail(self, mock_refresh, mock_disk):
+        mock_refresh.return_value = False
+        mock_disk.return_value = False
+
+        result = await _attempt_token_recovery(Mock(), Mock())
+
+        assert result is None
+
+
+class TestWarnRefreshFailed:
+    @patch("jumpstarter_cli.shell.click")
+    def test_warns_yellow_when_time_remaining(self, mock_click):
+        _warn_refresh_failed(300)
+        mock_click.style.assert_called_once()
+        _, kwargs = mock_click.style.call_args
+        assert kwargs["fg"] == "yellow"
+
+    @patch("jumpstarter_cli.shell.click")
+    def test_warns_red_when_expired(self, mock_click):
+        _warn_refresh_failed(-10)
+        mock_click.style.assert_called_once()
+        _, kwargs = mock_click.style.call_args
+        assert kwargs["fg"] == "red"
+
+
+class TestMonitorTokenExpiry:
+    async def test_returns_immediately_when_no_token(self):
+        config = Mock(spec=[])  # no token attribute
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, None, cancel_scope)
+        # Should return without error
+
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=None)
+    async def test_returns_when_remaining_is_none(self, _mock_remaining, _mock_sleep):
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, None, cancel_scope)
+
+    @patch("jumpstarter_cli.shell.click")
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
+    async def test_refreshes_when_below_threshold(
+        self, mock_remaining, mock_recovery, mock_sleep, mock_click
+    ):
+        # First call: below threshold; second call: raise to exit
+        mock_remaining.side_effect = [60, Exception("done")]
+        mock_recovery.return_value = "Token refreshed automatically."
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
+
+        mock_recovery.assert_awaited_once()
+        # Should print the green success message
+        mock_click.echo.assert_called()
+
+    @patch("jumpstarter_cli.shell.click")
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
+    async def test_warns_when_refresh_fails(
+        self, mock_remaining, mock_recovery, mock_sleep, mock_click
+    ):
+        mock_remaining.side_effect = [60, Exception("done")]
+        mock_recovery.return_value = None  # all recovery failed
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
+
+        mock_recovery.assert_awaited_once()
+
+    @patch("jumpstarter_cli.shell.click")
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
+    async def test_warns_within_expiry_window(
+        self, mock_remaining, mock_sleep, mock_click
+    ):
+        from jumpstarter_cli_common.oidc import TOKEN_EXPIRY_WARNING_SECONDS
+
+        # First iteration: within warning window but above refresh threshold
+        # Second iteration: exit via exception
+        mock_remaining.side_effect = [
+            TOKEN_EXPIRY_WARNING_SECONDS - 10,
+            Exception("done"),
+        ]
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
+
+        # Verify warning was echoed
+        mock_click.echo.assert_called()
+        args = mock_click.style.call_args
+        assert "auto-refresh" in args[0][0]
+
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=500)
+    async def test_sleeps_30s_when_above_threshold(self, _mock_remaining, mock_sleep):
+        # Exit after one loop via cancel_called
+        call_count = 0
+
+        def check_cancelled():
+            nonlocal call_count
+            call_count += 1
+            return call_count > 1
+
+        config = _make_config()
+
+        class _CancelScope(Mock):
+            cancel_called = property(lambda self: check_cancelled())
+
+        cancel_scope = _CancelScope()
+
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
+
+        mock_sleep.assert_awaited_with(30)
+
+    @patch("jumpstarter_cli.shell.click")
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
+    async def test_sleeps_5s_when_below_threshold(
+        self, mock_remaining, mock_recovery, mock_sleep, _mock_click
+    ):
+        mock_remaining.side_effect = [60, Exception("done")]
+        mock_recovery.return_value = None
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
+
+        mock_sleep.assert_awaited_with(5)
+
+    @patch("jumpstarter_cli.shell.click")
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
+    async def test_does_not_cancel_scope_on_expiry(
+        self, mock_remaining, mock_recovery, mock_sleep, _mock_click
+    ):
+        """The monitor must never cancel the scope — the shell stays alive."""
+        mock_remaining.side_effect = [60, Exception("done")]
+        mock_recovery.return_value = None
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
+
+        cancel_scope.cancel.assert_not_called()
+
+    @patch("jumpstarter_cli.shell.click")
+    @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
+    @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
+    async def test_warns_red_when_token_transitions_to_expired(
+        self, mock_remaining, mock_recovery, mock_sleep, mock_click
+    ):
+        """After a yellow 'approaching expiry' warning, a red 'expired' warning
+        must still appear when the token actually crosses zero."""
+        mock_remaining.side_effect = [60, -5, Exception("done")]
+        mock_recovery.return_value = None  # all recovery fails
+        config = _make_config()
+        cancel_scope = Mock(cancel_called=False)
+        token_state = {"expired_unrecovered": False}
+
+        await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope, token_state)
+
+        warn_calls = mock_click.style.call_args_list
+        # Find the yellow warning (remaining > 0)
+        yellow_calls = [c for c in warn_calls if c[1].get("fg") == "yellow"]
+        # Find the red warning (remaining <= 0)
+
+        red_calls = [c for c in warn_calls if c[1].get("fg") == "red"]
+        assert len(yellow_calls) >= 1, "Expected yellow warning for near-expiry"
+        assert len(red_calls) >= 1, "Expected red warning for actual expiry"
+        assert token_state["expired_unrecovered"] is True

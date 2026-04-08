@@ -95,17 +95,21 @@ async def detect_existing_cluster_type(cluster_name: str) -> Optional[Literal["k
 
 
 def auto_detect_cluster_type() -> Literal["kind"] | Literal["minikube"]:
-    """Auto-detect available cluster type, preferring Kind over Minikube."""
+    """Auto-detect available cluster type, preferring Kind over Minikube.
+
+    Note: k3s is not auto-detected because it requires an explicit --k3s <ssh_host> argument.
+    """
     if kind_installed("kind"):
         return "kind"
     elif minikube_installed("minikube"):
         return "minikube"
     else:
         raise ToolNotInstalledError(
-            "kind or minikube",
+            "kind, minikube, or k3s",
             "Neither Kind nor Minikube is installed. Please install one of them:\n"
             "  • Kind: https://kind.sigs.k8s.io/docs/user/quick-start/\n"
-            "  • Minikube: https://minikube.sigs.k8s.io/docs/start/"
+            "  • Minikube: https://minikube.sigs.k8s.io/docs/start/\n"
+            "  • k3s (remote): use --k3s <user@host> to install on a remote Linux host"
         )
 
 

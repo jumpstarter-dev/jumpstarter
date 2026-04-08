@@ -1817,6 +1817,12 @@ spec:
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(cert.Spec.IssuerRef.Name).To(Equal(clusterIssuerName))
 				g.Expect(cert.Spec.IssuerRef.Kind).To(Equal("ClusterIssuer"))
+
+				// External issuer certificates must NOT contain internal K8s service DNS
+				// names, otherwise ACME issuers (e.g. Let's Encrypt) will reject them.
+				g.Expect(cert.Spec.DNSNames).NotTo(ContainElement(jumpstarterName + "-controller"))
+				g.Expect(cert.Spec.DNSNames).NotTo(ContainElement(ContainSubstring(".svc.cluster.local")))
+				g.Expect(cert.Spec.DNSNames).To(ContainElement("grpc." + baseDomain))
 			}, 1*time.Minute).Should(Succeed())
 
 			waitForCertificateReady(externalIssuerTestNamespace, controllerCertName, 2*time.Minute)
@@ -1837,6 +1843,12 @@ spec:
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(cert.Spec.IssuerRef.Name).To(Equal(clusterIssuerName))
 				g.Expect(cert.Spec.IssuerRef.Kind).To(Equal("ClusterIssuer"))
+
+				// External issuer certificates must NOT contain internal K8s service DNS
+				// names, otherwise ACME issuers (e.g. Let's Encrypt) will reject them.
+				g.Expect(cert.Spec.DNSNames).NotTo(ContainElement(fmt.Sprintf("%s-router-0", jumpstarterName)))
+				g.Expect(cert.Spec.DNSNames).NotTo(ContainElement(ContainSubstring(".svc.cluster.local")))
+				g.Expect(cert.Spec.DNSNames).To(ContainElement("router-0." + baseDomain))
 			}, 1*time.Minute).Should(Succeed())
 
 			waitForCertificateReady(externalIssuerTestNamespace, routerCertName, 2*time.Minute)

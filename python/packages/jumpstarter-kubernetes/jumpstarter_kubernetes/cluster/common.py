@@ -6,7 +6,17 @@ from typing import Literal, Optional
 
 from ..exceptions import ClusterTypeValidationError
 
-ClusterType = Literal["kind"] | Literal["minikube"]
+ClusterType = Literal["kind"] | Literal["minikube"] | Literal["k3s"]
+InstallMethod = Literal["operator", "helm"]
+
+# NodePort assignments (must match kind_cluster.yaml extraPortMappings and operator CR)
+GRPC_NODEPORT = 30010
+ROUTER_NODEPORT = 30011
+LOGIN_NODEPORT = 30014
+
+# Kind host port mappings (kind extraPortMappings map these to the NodePorts above)
+KIND_GRPC_HOST_PORT = 8082
+KIND_ROUTER_HOST_PORT = 8083
 
 
 def validate_cluster_type(
@@ -34,6 +44,11 @@ def get_extra_certs_path(extra_certs: Optional[str]) -> Optional[str]:
     # Expand ~ and environment variables (like $HOME, $VAR) before making absolute
     expanded_path = os.path.expanduser(os.path.expandvars(extra_certs))
     return os.path.abspath(expanded_path)
+
+
+def extract_host_from_ssh(ssh_host: str) -> str:
+    """Extract hostname/IP from an SSH connection string (user@host -> host)."""
+    return ssh_host.split("@")[-1] if "@" in ssh_host else ssh_host
 
 
 def format_cluster_name(cluster_name: str) -> str:

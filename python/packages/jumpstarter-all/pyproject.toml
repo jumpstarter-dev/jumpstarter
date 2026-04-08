@@ -24,6 +24,7 @@ dependencies = [
   "jumpstarter-driver-network",
   "jumpstarter-driver-opendal",
   "jumpstarter-driver-power",
+  "jumpstarter-driver-pi-pico",
   "jumpstarter-driver-probe-rs",
   "jumpstarter-driver-pyserial",
   "jumpstarter-driver-qemu",

@@ -345,6 +345,10 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 		return nil, fmt.Errorf("DeleteLease permission denied")
 	}
 
+	if jlease.Spec.Release {
+		return nil, status.Errorf(codes.FailedPrecondition, "lease %q has already been released", req.Name)
+	}
+
 	original := kclient.MergeFrom(jlease.DeepCopy())
 
 	jlease.Spec.Release = true

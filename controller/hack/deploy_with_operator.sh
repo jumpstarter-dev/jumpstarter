@@ -11,7 +11,7 @@ source "${SCRIPT_DIR}/utils"
 # Source common deployment variables
 source "${SCRIPT_DIR}/deploy_vars"
 
-kubectl config use-context kind-jumpstarter
+set_kubectl_context
 
 # Install nginx ingress if in ingress mode
 if [ "${NETWORKING_MODE}" = "ingress" ]; then
@@ -29,9 +29,9 @@ if [ "${USE_CERTMANAGER}" = "true" ]; then
     fi
 fi
 
-# load the container images into the kind cluster
-kind_load_image "${IMG}"
-kind_load_image "${OPERATOR_IMG}"
+# load the container images into the cluster
+load_image "${IMG}"
+load_image "${OPERATOR_IMG}"
 
 # Deploy the operator
 echo -e "${GREEN}Deploying Jumpstarter operator ...${NC}"
@@ -92,27 +92,26 @@ END
 END
 )
 else
+  # For kind, NodePorts are mapped to host ports via extraPortMappings (30010->8082, etc.)
+  # For k3s, NodePorts are directly accessible on the host
   CONTROLLER_ENDPOINT_CONFIG=$(cat <<-END
-        # this is exposed by a nodeport in 30010 but mapped to 8082 on the host
-        - address: grpc.${BASEDOMAIN}:8082
+        - address: grpc.${BASEDOMAIN}:${GRPC_ENDPOINT##*:}
           nodeport:
             enabled: true
             port: 30010
 END
 )
   ROUTER_ENDPOINT_CONFIG=$(cat <<-END
-        # this is exposed by a nodeport in 30011 but mapped to 8083 on the host
-        - address: router.${BASEDOMAIN}:8083
+        - address: router.${BASEDOMAIN}:${GRPC_ROUTER_ENDPOINT##*:}
           nodeport:
             enabled: true
             port: 30011
 END
 )
   LOGIN_ENDPOINT_CONFIG=$(cat <<-END
-    # Login endpoint exposed by nodeport 30014 mapped to 8086 on host
     login:
       endpoints:
-        - address: login.${BASEDOMAIN}:8086
+        - address: login.${BASEDOMAIN}:${LOGIN_ENDPOINT##*:}
           nodeport:
             enabled: true
             port: 30014

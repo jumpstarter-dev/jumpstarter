@@ -395,7 +395,7 @@ class TestClusterCreation:
 
         assert result.exit_code == 0
         assert "Creating kind cluster" in result.output
-        mock_validate.assert_called_once_with("kind", None)
+        mock_validate.assert_called_once_with("kind", None, None)
         mock_create.assert_called_once()
 
         # Verify the arguments passed to create_cluster_and_install
@@ -419,7 +419,7 @@ class TestClusterCreation:
 
         assert result.exit_code == 0
         assert "Creating minikube cluster" in result.output
-        mock_validate.assert_called_once_with(None, "minikube")
+        mock_validate.assert_called_once_with(None, "minikube", None)
         mock_create.assert_called_once()
 
         # Verify the arguments passed to create_cluster_and_install
@@ -439,7 +439,7 @@ class TestClusterCreation:
 
         assert result.exit_code == 0
         assert "Auto-detected kind as the cluster type" in result.output
-        mock_validate.assert_called_once_with(None, None)
+        mock_validate.assert_called_once_with(None, None, None)
         mock_create.assert_called_once()
 
     @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
@@ -451,7 +451,7 @@ class TestClusterCreation:
 
         assert result.exit_code != 0
         assert "You can only select one local cluster type" in result.output
-        mock_validate.assert_called_once_with("kind", "minikube")
+        mock_validate.assert_called_once_with("kind", "minikube", None)
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
     @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")

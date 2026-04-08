@@ -1,11 +1,12 @@
-"""Tests for SourcePrefixFormatter and insecure TLS option in opt.py."""
+"""Tests for opt.py utilities."""
 
 import logging
 
 import click
+import pytest
 from click.testing import CliRunner
 
-from jumpstarter_cli_common.opt import SourcePrefixFormatter, opt_insecure
+from jumpstarter_cli_common.opt import SourcePrefixFormatter, opt_insecure, validate_name
 
 
 class TestSourcePrefixFormatter:
@@ -104,3 +105,20 @@ class TestInsecureOption:
         result = runner.invoke(cmd, [])
         assert result.exit_code == 0
         assert "insecure=False" in result.output
+
+
+class TestValidateName:
+    def test_raises_on_none(self) -> None:
+        with pytest.raises(click.UsageError, match="Missing required argument 'NAME'."):
+            validate_name(None)
+
+    def test_raises_on_empty_string(self) -> None:
+        with pytest.raises(click.UsageError, match="Missing required argument 'NAME'."):
+            validate_name("")
+
+    def test_raises_on_whitespace_only(self) -> None:
+        with pytest.raises(click.UsageError, match="Missing required argument 'NAME'."):
+            validate_name("   ")
+
+    def test_accepts_valid_name(self) -> None:
+        validate_name("my-resource")

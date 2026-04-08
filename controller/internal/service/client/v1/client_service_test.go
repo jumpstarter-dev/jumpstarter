@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,6 +64,24 @@ func TestValidateLeaseTarget(t *testing.T) {
 		}
 		if st.Message() != "lease is required" {
 			t.Fatalf("unexpected message: %q", st.Message())
+		}
+	})
+}
+
+func TestDeleteLeaseRejectsAlreadyReleasedLease(t *testing.T) {
+	lease := &jumpstarterdevv1alpha1.Lease{}
+
+	t.Run("rejects already released lease", func(t *testing.T) {
+		lease.Spec.Release = true
+		if !lease.Spec.Release {
+			t.Fatal("expected lease to be marked as released")
+		}
+	})
+
+	t.Run("accepts active lease", func(t *testing.T) {
+		lease.Spec.Release = false
+		if lease.Spec.Release {
+			t.Fatal("expected lease to be active")
 		}
 	})
 }

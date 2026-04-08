@@ -14,6 +14,8 @@ export KIND=${KIND:-bin/kind}
 export GRPCURL=${GRPCURL:-bin/grpcurl}
 export NETWORKING_MODE=${NETWORKING_MODE:-nodeport}
 export CERTMANAGER_VERSION=${CERTMANAGER_VERSION:-v1.19.2}
+export CLUSTER_TYPE=${CLUSTER_TYPE:-kind}
+export K3S_KUBECONFIG=${K3S_KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}
 
 # Color codes for terminal output
 export GREEN='\033[0;32m'
@@ -29,6 +31,89 @@ get_external_ip() {
     INTERFACE=$(route get 1.1.1.1 | grep interface | awk '{print $2}')
     ifconfig | grep "$INTERFACE" -A 10 | grep "inet " | grep -Fv 127.0.0.1 | awk '{print $2}' | head -n 1
   fi
+}
+
+# Validate CLUSTER_TYPE and exit if unknown
+_require_valid_cluster_type() {
+  case "${CLUSTER_TYPE}" in
+    kind|k3s) ;;
+    *)
+      echo "Unknown CLUSTER_TYPE=${CLUSTER_TYPE}. Use 'kind' or 'k3s'"
+      exit 1
+      ;;
+  esac
+}
+
+set_kubectl_context() {
+  _require_valid_cluster_type
+  case "${CLUSTER_TYPE}" in
+    kind)
+      kubectl config use-context kind-jumpstarter
+      ;;
+    k3s)
+      # Copy root-owned kubeconfig to a user-writable location so that
+      # kubectl config set-context and similar write operations succeed
+      local user_kubeconfig="${HOME}/.kube/k3s-jumpstarter.yaml"
+      mkdir -p "$(dirname "${user_kubeconfig}")"
+      cp "${K3S_KUBECONFIG}" "${user_kubeconfig}"
+      chmod 600 "${user_kubeconfig}"
+      export KUBECONFIG="${user_kubeconfig}"
+      echo -e "${GREEN}Using k3s kubeconfig (copied to ${user_kubeconfig})${NC}"
+      ;;
+  esac
+}
+
+load_image() {
+  _require_valid_cluster_type
+  local image=$1
+  case "${CLUSTER_TYPE}" in
+    kind)
+      kind_load_image "${image}"
+      ;;
+    k3s)
+      echo -e "${GREEN}k3s pulls images directly from registries, skipping load for ${image}${NC}"
+      ;;
+  esac
+}
+
+create_cluster() {
+  _require_valid_cluster_type
+  case "${CLUSTER_TYPE}" in
+    kind)
+      local script_dir
+      script_dir="$(get_script_dir)"
+      ${KIND} get clusters | grep jumpstarter || ${KIND} create cluster --name jumpstarter --config "${script_dir}/kind_cluster.yaml"
+      ;;
+    k3s)
+      if command -v k3s &>/dev/null; then
+        echo -e "${GREEN}k3s is already installed${NC}"
+      else
+        echo -e "${GREEN}Installing k3s...${NC}"
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -
+      fi
+      # Use set_kubectl_context to get a user-writable copy
+      set_kubectl_context
+      echo -e "${GREEN}Waiting for k3s node to be ready...${NC}"
+      kubectl wait --for=condition=ready node --all --timeout=120s
+      ;;
+  esac
+}
+
+delete_cluster() {
+  _require_valid_cluster_type
+  case "${CLUSTER_TYPE}" in
+    kind)
+      ${KIND} delete cluster --name jumpstarter
+      ;;
+    k3s)
+      if command -v /usr/local/bin/k3s-uninstall.sh &>/dev/null; then
+        echo -e "${GREEN}Uninstalling k3s...${NC}"
+        /usr/local/bin/k3s-uninstall.sh
+      else
+        echo -e "${GREEN}k3s uninstall script not found, skipping${NC}"
+      fi
+      ;;
+  esac
 }
 
 # Load Docker/Podman image into kind cluster

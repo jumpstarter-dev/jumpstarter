@@ -6,14 +6,20 @@
 IP=${IP:-$(get_external_ip)}
 BASEDOMAIN=${BASEDOMAIN:-"jumpstarter.${IP}.nip.io"}
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
-OPERATOR_IMG=${OPERATOR_IMG:-quay.io/jumpstarter-dev/jumpstarter-operator:latest}
+OPERATOR_IMG=${OPERATOR_IMG:-$(make -C deploy/operator --no-print-directory -s print-img 2>/dev/null || echo "quay.io/jumpstarter-dev/jumpstarter-operator:latest")}
 
-# Determine endpoints based on NETWORKING_MODE
+# Determine endpoints based on NETWORKING_MODE and CLUSTER_TYPE
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5443"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5443"
     LOGIN_ENDPOINT="login.${BASEDOMAIN}"
+elif [ "${CLUSTER_TYPE}" == "k3s" ]; then
+    # k3s exposes NodePorts directly on the host, no port mapping needed
+    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:30010"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:30011"
+    LOGIN_ENDPOINT="login.${BASEDOMAIN}:30014"
 else
+    # kind maps NodePorts through extraPortMappings to host ports
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
     LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"

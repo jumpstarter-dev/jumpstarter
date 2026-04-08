@@ -3,6 +3,7 @@
 from typing import Optional
 
 from ..exceptions import EndpointConfigurationError, ToolNotInstalledError
+from .common import GRPC_NODEPORT, KIND_GRPC_HOST_PORT, KIND_ROUTER_HOST_PORT, ROUTER_NODEPORT
 from .minikube import minikube_installed
 from jumpstarter.common.ipaddr import get_ip_address, get_minikube_ip
 
@@ -39,8 +40,11 @@ async def configure_endpoints(
     if basedomain is None:
         basedomain = f"jumpstarter.{ip}.nip.io"
     if grpc_endpoint is None:
-        grpc_endpoint = f"grpc.{basedomain}:8082"
+        # k3s exposes NodePorts directly on the host; kind maps them through extraPortMappings
+        grpc_port = GRPC_NODEPORT if cluster_type == "k3s" else KIND_GRPC_HOST_PORT
+        grpc_endpoint = f"grpc.{basedomain}:{grpc_port}"
     if router_endpoint is None:
-        router_endpoint = f"router.{basedomain}:8083"
+        router_port = ROUTER_NODEPORT if cluster_type == "k3s" else KIND_ROUTER_HOST_PORT
+        router_endpoint = f"router.{basedomain}:{router_port}"
 
     return ip, basedomain, grpc_endpoint, router_endpoint

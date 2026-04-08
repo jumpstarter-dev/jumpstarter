@@ -15,6 +15,8 @@ For backward compatibility, all functions from the original cluster.py are re-ex
 # Common utilities and types
 from .common import (
     ClusterType,
+    InstallMethod,
+    extract_host_from_ssh,
     format_cluster_name,
     get_extra_certs_path,
     run_command,
@@ -29,6 +31,15 @@ from .endpoints import configure_endpoints, get_ip_generic
 
 # Helm operations
 from .helm import install_jumpstarter_helm_chart
+
+# k3s cluster operations
+from .k3s import (
+    create_k3s_cluster,
+    delete_k3s_cluster,
+    fetch_k3s_kubeconfig,
+    k3s_cluster_exists,
+    k3s_reachable,
+)
 
 # Kind cluster operations
 from .kind import (
@@ -67,17 +78,28 @@ from .operations import (
     validate_cluster_type_selection,
 )
 
+# Operator operations
+from .operator import install_jumpstarter_operator
+
 # All module functions are imported above and available through clean re-exports
 
 # Re-export all functions that were available in the original cluster.py
 __all__ = [
     # Types
     "ClusterType",
+    "InstallMethod",
     # Common utilities
+    "extract_host_from_ssh",
     "validate_cluster_name",
     "validate_cluster_type",
     "format_cluster_name",
     "get_extra_certs_path",
+    # k3s operations
+    "k3s_reachable",
+    "k3s_cluster_exists",
+    "create_k3s_cluster",
+    "delete_k3s_cluster",
+    "fetch_k3s_kubeconfig",
     # Kind operations
     "kind_installed",
     "kind_cluster_exists",
@@ -93,6 +115,8 @@ __all__ = [
     "get_minikube_cluster_ip",
     # Helm operations
     "install_jumpstarter_helm_chart",
+    # Operator operations
+    "install_jumpstarter_operator",
     # Kubectl operations
     "check_kubernetes_access",
     "get_kubectl_contexts",

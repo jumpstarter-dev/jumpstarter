@@ -19,7 +19,7 @@ func LoadRouterConfiguration(
 	ctx context.Context,
 	client client.Reader,
 	key client.ObjectKey,
-) (grpc.ServerOption, error) {
+) ([]grpc.ServerOption, error) {
 	var configmap corev1.ConfigMap
 	if err := client.Get(ctx, key, &configmap); err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func LoadConfiguration(
 	key client.ObjectKey,
 	signer *oidc.Signer,
 	certificateAuthority string,
-) (authenticator.Token, string, Router, grpc.ServerOption, *Provisioning, error) {
+) (authenticator.Token, string, Router, []grpc.ServerOption, *Provisioning, error) {
 	var configmap corev1.ConfigMap
 	if err := client.Get(ctx, key, &configmap); err != nil {
 		return nil, "", nil, nil, nil, err
@@ -82,10 +82,12 @@ func LoadConfiguration(
 			return nil, "", nil, nil, nil, err
 		}
 
-		return authenticator, prefix, router, grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             1 * time.Second,
-			PermitWithoutStream: true,
-		}), &Provisioning{Enabled: false}, nil
+		return authenticator, prefix, router, []grpc.ServerOption{
+			grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+				MinTime:             1 * time.Second,
+				PermitWithoutStream: true,
+			}),
+		}, &Provisioning{Enabled: false}, nil
 	}
 
 	rawConfig, ok := configmap.Data["config"]

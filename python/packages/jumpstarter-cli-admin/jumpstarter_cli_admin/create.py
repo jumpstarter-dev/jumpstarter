@@ -14,6 +14,7 @@ from jumpstarter_cli_common.opt import (
     opt_namespace,
     opt_nointeractive,
     opt_output_all,
+    validate_name,
 )
 from jumpstarter_cli_common.print import model_print
 from jumpstarter_kubernetes import (
@@ -90,6 +91,7 @@ async def create_client(
     output: OutputType,
 ):
     """Create a client object in the Kubernetes cluster"""
+    validate_name(name)
     try:
         confirm_insecure(insecure, nointeractive)
         async with ClientsV1Alpha1Api(namespace, kubeconfig, context) as api:
@@ -165,6 +167,7 @@ async def create_exporter(
     output: OutputType,
 ):
     """Create an exporter object in the Kubernetes cluster"""
+    validate_name(name)
     try:
         confirm_insecure(insecure, nointeractive)
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
@@ -198,6 +201,12 @@ async def create_exporter(
     help="Create a local Minikube cluster",
 )
 @click.option(
+    "--k3s",
+    type=str,
+    default=None,
+    help="Create a k3s cluster on a remote host via SSH (e.g., --k3s user@host)",
+)
+@click.option(
     "--force-recreate",
     is_flag=True,
     help="Force recreate the cluster if it already exists (WARNING: This will destroy all data in the cluster)",
@@ -214,7 +223,24 @@ async def create_exporter(
     is_flag=True,
     help="Skip installing Jumpstarter after creating the cluster",
 )
-@click.option("--helm", type=str, help="Path or name of a helm executable", default="helm")
+@click.option(
+    "--install-method",
+    type=click.Choice(["operator", "helm"]),
+    default=None,
+    help="Method to install Jumpstarter (default: helm for kind/minikube, operator for k3s)",
+)
+@click.option(
+    "--operator-installer",
+    type=str,
+    default=None,
+    help="Path or URL to the operator installer YAML (auto-detected from version if not specified)",
+)
+@click.option(
+    "--helm",
+    type=str,
+    help="Path or name of a helm executable (only used with --install-method helm)",
+    default="helm",
+)
 @click.option(
     "--chart",
     type=str,
@@ -247,11 +273,14 @@ async def create_cluster(
     name: str,
     kind: Optional[str],
     minikube: Optional[str],
+    k3s: Optional[str],
     force_recreate: bool,
     kind_extra_args: str,
     minikube_extra_args: str,
     extra_certs: Optional[str],
     skip_install: bool,
+    install_method: str,
+    operator_installer: Optional[str],
     helm: str,
     chart: str,
     chart_name: str,
@@ -268,10 +297,10 @@ async def create_cluster(
     output: OutputType,
 ):
     """Create a Kubernetes cluster for running Jumpstarter"""
-    cluster_type = validate_cluster_type_selection(kind, minikube)
+    cluster_type = validate_cluster_type_selection(kind, minikube, k3s)
 
     if output is None:
-        if kind is None and minikube is None:
+        if kind is None and minikube is None and k3s is None:
             click.echo(f"Auto-detected {cluster_type} as the cluster type")
         if skip_install:
             click.echo(f'Creating {cluster_type} cluster "{name}"...')
@@ -313,6 +342,9 @@ async def create_cluster(
             router_endpoint=router_endpoint,
             callback=callback,
             values_files=list(values_files) if values_files else None,
+            k3s_ssh_host=k3s,
+            install_method=install_method,
+            operator_installer=operator_installer,
         )
     except JumpstarterKubernetesError as e:
         # Convert library exceptions to CLI exceptions

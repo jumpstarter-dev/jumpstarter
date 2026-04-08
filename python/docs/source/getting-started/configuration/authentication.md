@@ -16,6 +16,28 @@ To use OIDC with your Jumpstarter installation:
 2. Configure your OIDC provider to work with Jumpstarter
 3. Create users with appropriate OIDC usernames
 
+## Important: Username Collision Risk
+
+When using OIDC auto provisioning, Jumpstarter derives resource names directly from
+the OIDC username by stripping the provider prefix (e.g., "dex:", "keycloak:")
+and sanitizing the result to meet Kubernetes naming requirements.
+
+**This means that if you configure multiple OIDC providers with users that have
+the same username, those users will map to the same Jumpstarter resource name,
+potentially causing conflicts.**
+
+For example:
+- User `dex:developer` maps to resource name `developer`
+- User `keycloak:developer` also maps to resource name `developer`
+
+This is an **accepted limitation** to keep resource names clean and readable.
+To avoid collisions:
+
+1. Use a single OIDC provider per Jumpstarter installation, or
+2. Ensure usernames are unique across all configured OIDC providers, or
+3. Use different username claim mappings that include provider-specific prefixes, or
+4. Pre-create the resource (Client/Exporter) with explicit username mappings when conflicts exist
+
 ## Examples
 
 ### Keycloak

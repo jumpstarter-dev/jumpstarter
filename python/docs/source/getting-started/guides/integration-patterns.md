@@ -220,6 +220,15 @@ resources:
    - Utilization metrics (CPU, memory, I/O)
    - Team attribution via metadata
 
+## AI Agent Integration
+
+Jumpstarter provides an MCP (Model Context Protocol) server that enables AI
+coding agents to interact with hardware using natural language. This works with
+Cursor, Claude Code, Claude Desktop, and any MCP-compatible client.
+
+See the [AI Agent Integration](ai-agent-integration.md) guide for full setup
+instructions and examples.
+
 ## Developer Environments
 
 ### Traditional Developer Workflow

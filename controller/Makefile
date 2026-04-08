@@ -33,6 +33,10 @@ CONTAINER_TOOL ?= podman
 # Deployment method: operator (default) or helm
 METHOD ?= operator
 
+# Cluster type: kind (default) or k3s
+CLUSTER_TYPE ?= kind
+export CLUSTER_TYPE
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
@@ -184,7 +188,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: docker-build cluster grpcurl ## Deploy controller using METHOD (operator or helm)
+deploy: docker-build cluster grpcurl ## Deploy controller using METHOD (operator or helm). Set CLUSTER_TYPE=k3s for k3s.
 ifeq ($(METHOD),operator)
 	$(MAKE) build-operator
 	./hack/deploy_with_operator.sh
@@ -286,12 +290,27 @@ $(KIND): $(LOCALBIN)
 	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
 
 .PHONY: cluster
+ifeq ($(CLUSTER_TYPE),k3s)
+cluster:
+	@source hack/utils && create_cluster
+else ifeq ($(CLUSTER_TYPE),kind)
 cluster: $(KIND)
 	$(KIND) get clusters | grep jumpstarter || $(KIND) create cluster --name jumpstarter --config hack/kind_cluster.yaml
+else
+cluster:
+	$(error Unknown CLUSTER_TYPE=$(CLUSTER_TYPE). Use 'kind' or 'k3s')
+endif
 
-
+ifeq ($(CLUSTER_TYPE),k3s)
+clean:
+	@source hack/utils && delete_cluster
+else ifeq ($(CLUSTER_TYPE),kind)
 clean: $(KIND)
 	$(KIND) delete cluster --name jumpstarter
+else
+clean:
+	$(error Unknown CLUSTER_TYPE=$(CLUSTER_TYPE). Use 'kind' or 'k3s')
+endif
 
 
 
