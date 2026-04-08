@@ -1,5 +1,4 @@
 import ssl
-from unittest.mock import patch
 
 from jumpstarter_cli_common.oidc import Config, _get_ssl_context
 
