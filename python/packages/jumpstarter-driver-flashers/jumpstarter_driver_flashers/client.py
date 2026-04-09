@@ -1029,6 +1029,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 }
             )
         except Exception as e:
+            # fallback to request if we're using a custom certificate
+
             if original_url and original_url.startswith(("http://", "https://")):
                 try:
                     if headers:
