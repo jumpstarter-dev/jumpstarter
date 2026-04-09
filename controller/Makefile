@@ -30,9 +30,6 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= podman
 
-# Deployment method
-METHOD ?= operator
-
 # Cluster type: kind (default) or k3s
 CLUSTER_TYPE ?= kind
 export CLUSTER_TYPE
@@ -186,6 +183,7 @@ ifeq ($(SKIP_BUILD),)
 endif
 	./hack/deploy_with_operator.sh
 
+
 .PHONY: deploy-operator
 deploy-operator: docker-build build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
@@ -199,7 +197,7 @@ operator-logs:
 
 .PHONY: deploy-with-operator-parallel
 deploy-with-operator-parallel:
-	make deploy METHOD=operator -j5 --output-sync=target
+	make deploy -j5 --output-sync=target
 
 .PHONY: deploy-exporters
 deploy-exporters:
