@@ -24,6 +24,9 @@ help:
 	@echo "  pkg-test-all       - Run tests for all packages"
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
 	@echo "  docs-test          - Run documentation tests"
+	@echo "  test-allure        - Run all tests with Allure reporting"
+	@echo "  allure-serve       - Serve the Allure report locally"
+	@echo "  allure-report      - Generate a static Allure report"
 	@echo ""
 	@echo "Linting and type checking:"
 	@echo "  ty                 - Run ty type checking on all packages"
@@ -62,13 +65,20 @@ docs-test:
 docs-linkcheck:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
 
+ALLURE_RESULTS_DIR ?= $(CURDIR)/allure-results
+
 pkg-test-%: packages/%
 	uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
+
+pkg-test-allure-%: packages/%
+	uv run --isolated --directory $< --with allure-pytest pytest --alluredir=$(ALLURE_RESULTS_DIR) || [ $$? -eq 5 ]
 
 pkg-ty-%: packages/%
 	uv run --isolated --directory $< ty check .
 
 pkg-test-all: $(addprefix pkg-test-,$(PKG_TARGETS))
+
+pkg-test-allure-all: $(addprefix pkg-test-allure-,$(PKG_TARGETS))
 
 pkg-ty-all: $(addprefix pkg-ty-,$(PKG_TARGETS))
 
@@ -102,6 +112,8 @@ clean-test:
 	-rm -f .coverage
 	-rm -f coverage.xml
 	-rm -rf htmlcov
+	-rm -rf allure-results
+	-rm -rf allure-report
 
 clean-docs:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs clean
@@ -109,6 +121,14 @@ clean-docs:
 clean: clean-docs clean-venv clean-build clean-test
 
 test: pkg-test-all docs-test
+
+test-allure: pkg-test-allure-all docs-test
+
+allure-serve:
+	allure serve $(ALLURE_RESULTS_DIR)
+
+allure-report:
+	allure generate $(ALLURE_RESULTS_DIR) -o allure-report --clean
 
 ty: pkg-ty-all
 
@@ -119,9 +139,9 @@ lint-fix:
 	uv run ruff check --fix
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
-	docs-linkcheck pkg-test-all pkg-ty-all build generate sync \
-	clean-venv clean-build clean-test clean-all test-all ty-all docs \
-	lint lint-fix \
+	docs-linkcheck pkg-test-all pkg-test-allure-all pkg-ty-all build generate sync \
+	clean-venv clean-build clean-test clean-all test-all test-allure ty-all docs \
+	lint lint-fix allure-serve allure-report \
 	pkg-ty-jumpstarter \
 	pkg-ty-jumpstarter-cli-admin \
 	pkg-ty-jumpstarter-kubernetes \

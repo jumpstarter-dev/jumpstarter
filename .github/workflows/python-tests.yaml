@@ -93,11 +93,44 @@ jobs:
               "https://iad.mirror.rackspace.com/fedora/releases/43/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-43-1.6.${arch}.qcow2"
           done
 
-      - name: Run pytest
+      - name: Run pytest with Allure reporting
         working-directory: python
-        run: |
-            make test
+        run: make test-allure
 
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.runs-on }}-py${{ matrix.python-version }}
+          path: python/allure-results/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  allure-report:
+    needs: [changes, pytest-matrix]
+    if: always() && needs.pytest-matrix.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download all Allure results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          path: allure-results
+          merge-multiple: true
+
+      - name: Generate Allure report
+        run: |
+          npm install -g allure-commandline
+          allure generate allure-results -o allure-report --clean
+
+      - name: Upload Allure report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report/
+          retention-days: 30
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
