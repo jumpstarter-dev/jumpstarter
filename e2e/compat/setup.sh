@@ -55,83 +55,6 @@ is_ci() {
     [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]
 }
 
-# Check if bats libraries are available
-check_bats_libraries() {
-    if ! command -v bats &> /dev/null; then
-        return 1
-    fi
-
-    if ! bats --version &> /dev/null; then
-        return 1
-    fi
-
-    local test_file=$(mktemp)
-    cat > "$test_file" <<'EOF'
-setup() {
-  bats_load_library bats-support
-  bats_load_library bats-assert
-}
-
-@test "dummy" {
-  run echo "test"
-  assert_success
-}
-EOF
-
-    if bats "$test_file" &> /dev/null; then
-        rm -f "$test_file"
-        return 0
-    else
-        rm -f "$test_file"
-        return 1
-    fi
-}
-
-# Install bats libraries locally
-install_bats_libraries_local() {
-    local LIB_DIR="$REPO_ROOT/.bats/lib"
-    local ORIGINAL_DIR="$PWD"
-
-    log_info "Installing bats helper libraries to $LIB_DIR..."
-
-    mkdir -p "$LIB_DIR"
-    cd "$LIB_DIR"
-
-    if [ ! -d "bats-support" ]; then
-        log_info "Cloning bats-support..."
-        git clone --depth 1 https://github.com/bats-core/bats-support.git
-    else
-        log_info "bats-support already installed"
-    fi
-
-    if [ ! -d "bats-assert" ]; then
-        log_info "Cloning bats-assert..."
-        git clone --depth 1 https://github.com/bats-core/bats-assert.git
-    else
-        log_info "bats-assert already installed"
-    fi
-
-    if [ ! -d "bats-file" ]; then
-        log_info "Cloning bats-file..."
-        git clone --depth 1 https://github.com/bats-core/bats-file.git
-    else
-        log_info "bats-file already installed"
-    fi
-
-    cd "$ORIGINAL_DIR"
-
-    export BATS_LIB_PATH="$LIB_DIR:${BATS_LIB_PATH:-}"
-
-    log_info "Bats libraries installed successfully"
-
-    if check_bats_libraries; then
-        log_info "Libraries verified and working"
-    else
-        log_error "Libraries installed but verification failed"
-        exit 1
-    fi
-}
-
 # Install dependencies
 install_dependencies() {
     log_info "Installing dependencies..."
@@ -144,28 +67,6 @@ install_dependencies() {
 
     log_info "Installing Python 3.12..."
     uv python install 3.12
-
-    if ! command -v bats &> /dev/null; then
-        log_info "Installing bats..."
-        if is_ci; then
-            sudo apt-get update
-            sudo apt-get install -y bats
-        elif [[ "$OSTYPE" == "darwin"* ]]; then
-            log_info "Installing bats-core via Homebrew..."
-            brew install bats-core
-        else
-            log_error "bats not found. Please install it manually."
-            exit 1
-        fi
-    fi
-
-    if ! check_bats_libraries; then
-        log_info "Installing bats libraries locally..."
-        install_bats_libraries_local
-    else
-        log_info "Bats libraries are already available"
-        export BATS_LIB_PATH="$REPO_ROOT/.bats/lib:${BATS_LIB_PATH:-}"
-    fi
 
     log_info "Dependencies installed"
 }
@@ -249,8 +150,11 @@ deploy_new_controller() {
 
     cd "$REPO_ROOT"
 
-    # Build image from HEAD and deploy with helm (no OIDC, no extra values)
-    make -C controller docker-build
+    if [ -z "${SKIP_BUILD:-}" ]; then
+        make -C controller docker-build
+    else
+        log_info "Skipping controller image build (SKIP_BUILD is set)"
+    fi
     cd controller
     ./hack/deploy_with_helm.sh
     cd "$REPO_ROOT"
@@ -258,17 +162,9 @@ deploy_new_controller() {
     log_info "New controller deployed"
 }
 
-# Install jumpstarter Python packages from HEAD
-install_jumpstarter() {
-    log_info "Installing jumpstarter from HEAD..."
-
-    cd "$REPO_ROOT"
-    cd python
-    make sync
-    cd ..
-
-    log_info "Jumpstarter python installed"
-}
+# Install jumpstarter Python packages from HEAD (shared helper)
+# shellcheck source=../lib/install.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/install.sh"
 
 # Install old client from PyPI into separate venv
 install_old_client() {

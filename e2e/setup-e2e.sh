@@ -39,95 +39,6 @@ is_ci() {
     [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]
 }
 
-# Check if bats libraries are available
-check_bats_libraries() {
-    if ! command -v bats &> /dev/null; then
-        return 1
-    fi
-    
-    # Try to load the libraries
-    if ! bats --version &> /dev/null; then
-        return 1
-    fi
-    
-    # Check if libraries can be loaded by testing with a simple script
-    local test_file=$(mktemp)
-    cat > "$test_file" <<'EOF'
-setup() {
-  bats_load_library bats-support
-  bats_load_library bats-assert
-}
-
-@test "dummy" {
-  run echo "test"
-  assert_success
-}
-EOF
-    
-    # Run test with current BATS_LIB_PATH
-    if bats "$test_file" &> /dev/null; then
-        rm -f "$test_file"
-        return 0
-    else
-        rm -f "$test_file"
-        return 1
-    fi
-}
-
-# Install bats libraries locally (works on all systems)
-install_bats_libraries_local() {
-    local LIB_DIR="$REPO_ROOT/.bats/lib"
-    local ORIGINAL_DIR="$PWD"
-    
-    log_info "Installing bats helper libraries to $LIB_DIR..."
-    
-    mkdir -p "$LIB_DIR"
-    cd "$LIB_DIR"
-    
-    # Install bats-support
-    if [ ! -d "bats-support" ]; then
-        log_info "Cloning bats-support..."
-        git clone --depth 1 https://github.com/bats-core/bats-support.git
-    else
-        log_info "bats-support already installed"
-    fi
-    
-    # Install bats-assert
-    if [ ! -d "bats-assert" ]; then
-        log_info "Cloning bats-assert..."
-        git clone --depth 1 https://github.com/bats-core/bats-assert.git
-    else
-        log_info "bats-assert already installed"
-    fi
-    
-    # Install bats-file
-    if [ ! -d "bats-file" ]; then
-        log_info "Cloning bats-file..."
-        git clone --depth 1 https://github.com/bats-core/bats-file.git
-    else
-        log_info "bats-file already installed"
-    fi
-    
-    cd "$ORIGINAL_DIR"
-    
-    # Set BATS_LIB_PATH
-    export BATS_LIB_PATH="$LIB_DIR:${BATS_LIB_PATH:-}"
-    
-    log_info "✓ Bats libraries installed successfully"
-    log_info "BATS_LIB_PATH set to: $BATS_LIB_PATH"
-    
-    # Verify installation worked
-    if check_bats_libraries; then
-        log_info "✓ Libraries verified and working"
-    else
-        log_error "Libraries installed but verification failed"
-        log_error "Please check that the following directories exist:"
-        log_error "  $LIB_DIR/bats-support"
-        log_error "  $LIB_DIR/bats-assert"
-        exit 1
-    fi
-}
-
 # Step 1: Install dependencies
 install_dependencies() {
     log_info "Installing dependencies..."
@@ -143,61 +54,147 @@ install_dependencies() {
     log_info "Installing Python 3.12..."
     uv python install 3.12
     
-    # Install bats if not already installed
-    if ! command -v bats &> /dev/null; then
-        log_info "Installing bats..."
-        if is_ci; then
-            sudo apt-get update
-            sudo apt-get install -y bats
-        elif [[ "$OSTYPE" == "darwin"* ]]; then
-            log_info "Installing bats-core via Homebrew..."
-            brew install bats-core
-        else
-            log_error "bats not found. Please install it manually:"
-            log_error "  Ubuntu/Debian: sudo apt-get install bats"
-            log_error "  Fedora/RHEL: sudo dnf install bats"
-            log_error "  macOS: brew install bats-core"
-            exit 1
-        fi
-    fi
-    
-    # Always install bats libraries locally for consistency across all systems
-    # This ensures libraries work regardless of package manager or distribution
-    if ! check_bats_libraries; then
-        log_info "Installing bats libraries locally..."
-        install_bats_libraries_local
-    else
-        log_info "✓ Bats libraries are already available"
-        # Still set BATS_LIB_PATH to include local directory for consistency
-        export BATS_LIB_PATH="$REPO_ROOT/.bats/lib:${BATS_LIB_PATH:-}"
-    fi
-    
     log_info "✓ Dependencies installed"
 }
 
-# Step 2: Deploy dex
+# Step 2: Install e2e tools (cfssl, cfssljson, yq) as prebuilt binaries
+E2E_TOOLS_BIN="$REPO_ROOT/.e2e/bin"
+CFSSL_VERSION="1.6.5"
+YQ_VERSION="v4.52.5"
+
+# SHA256 checksums for prebuilt binaries (from upstream release assets)
+get_expected_sha256() {
+    case "$1" in
+        cfssl_linux_amd64)      echo "ff4d3a1387ea3e1ee74f4bb8e5ffe9cbab5bee43c710333c206d14199543ebdf" ;;
+        cfssl_linux_arm64)      echo "bc1a0b3a33ab415f3532af1d52cad7c9feec0156df2069f1cbbb64255485f108" ;;
+        cfssl_darwin_amd64)     echo "6625b252053d9499bf26102b8fa78d7f675de56703d0808f8ff6dcf43121fa0c" ;;
+        cfssl_darwin_arm64)     echo "9a38b997ac23bc2eed89d6ad79ea5ae27c29710f66fdabdff2aa16eaaadc30d4" ;;
+        cfssljson_linux_amd64)  echo "09fbcb7a3b3d6394936ea61eabff1e8a59a8ac3b528deeb14cf66cdbbe9a534f" ;;
+        cfssljson_linux_arm64)  echo "a389793bc2376116fe2fff996b4a2f772a59a4f65048a5cfb4789b2c0ea4a7c9" ;;
+        cfssljson_darwin_amd64) echo "1529a7a163801be8cf7d7a347b0346cc56cc8f351dbc0131373b6fb76bb4ab64" ;;
+        cfssljson_darwin_arm64) echo "no-prebuilt-binary-available" ;;
+        yq_linux_amd64)         echo "75d893a0d5940d1019cb7cdc60001d9e876623852c31cfc6267047bc31149fa9" ;;
+        yq_linux_arm64)         echo "90fa510c50ee8ca75544dbfffed10c88ed59b36834df35916520cddc623d9aaa" ;;
+        yq_darwin_amd64)        echo "6e399d1eb466860c3202d231727197fdce055888c5c7bec6964156983dd1559d" ;;
+        yq_darwin_arm64)        echo "45a12e64d4bd8a31c72ee1b889e81f1b1110e801baad3d6f030c111db0068de0" ;;
+        *) echo "" ;;
+    esac
+}
+
+verify_sha256() {
+    local file="$1" expected="$2"
+    local actual
+    actual=$(shasum -a 256 "$file" | awk '{print $1}')
+    if [ "$actual" != "$expected" ]; then
+        log_error "SHA256 mismatch for $file"
+        log_error "  expected: $expected"
+        log_error "  actual:   $actual"
+        rm -f "$file"
+        return 1
+    fi
+}
+
+try_download_verified() {
+    local dest="$1" url="$2" hash_key="$3"
+    local expected_hash
+    expected_hash=$(get_expected_sha256 "$hash_key")
+    if [ -z "$expected_hash" ]; then
+        return 1
+    fi
+    if curl -fsSL -o "$dest" "$url" && verify_sha256 "$dest" "$expected_hash"; then
+        chmod +x "$dest"
+        return 0
+    fi
+    rm -f "$dest"
+    return 1
+}
+
+download_or_go_install() {
+    local name="$1" url="$2" go_pkg="$3" hash_key="$4"
+    local dest="$E2E_TOOLS_BIN/$name"
+    if [ -x "$dest" ]; then
+        return 0
+    fi
+    log_info "Downloading ${name}..."
+    if try_download_verified "$dest" "$url" "$hash_key"; then
+        return 0
+    fi
+    # On darwin/arm64, try the amd64 binary via Rosetta before compiling
+    if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+        local amd64_url="${url/darwin_arm64/darwin_amd64}"
+        local amd64_key="${hash_key/darwin_arm64/darwin_amd64}"
+        if [ "$amd64_url" != "$url" ]; then
+            log_info "Trying amd64 binary via Rosetta for ${name}..."
+            if try_download_verified "$dest" "$amd64_url" "$amd64_key"; then
+                return 0
+            fi
+        fi
+    fi
+    log_warn "No verified prebuilt binary available, falling back to go install for ${name}..."
+    rm -f "$dest"
+    GOBIN="$E2E_TOOLS_BIN" go install "$go_pkg"
+}
+
+install_e2e_tools() {
+    log_info "Installing e2e tools..."
+    mkdir -p "$E2E_TOOLS_BIN"
+
+    local arch
+    case "$(uname -m)" in
+        x86_64)  arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) log_error "Unsupported architecture: $(uname -m)"; exit 1 ;;
+    esac
+
+    local os
+    case "$(uname -s)" in
+        Linux)  os="linux" ;;
+        Darwin) os="darwin" ;;
+        *) log_error "Unsupported OS: $(uname -s)"; exit 1 ;;
+    esac
+
+    download_or_go_install cfssl \
+        "https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VERSION}/cfssl_${CFSSL_VERSION}_${os}_${arch}" \
+        "github.com/cloudflare/cfssl/cmd/cfssl@v${CFSSL_VERSION}" \
+        "cfssl_${os}_${arch}"
+
+    download_or_go_install cfssljson \
+        "https://github.com/cloudflare/cfssl/releases/download/v${CFSSL_VERSION}/cfssljson_${CFSSL_VERSION}_${os}_${arch}" \
+        "github.com/cloudflare/cfssl/cmd/cfssljson@v${CFSSL_VERSION}" \
+        "cfssljson_${os}_${arch}"
+
+    download_or_go_install yq \
+        "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_${os}_${arch}" \
+        "github.com/mikefarah/yq/v4@${YQ_VERSION}" \
+        "yq_${os}_${arch}"
+
+    export PATH="$E2E_TOOLS_BIN:$PATH"
+    log_info "✓ e2e tools installed to $E2E_TOOLS_BIN"
+}
+
+# Step 3: Deploy dex
 deploy_dex() {
     log_info "Deploying dex..."
     
     cd "$REPO_ROOT"
     
-    # Generate certificates
+    # Generate certificates using prebuilt cfssl binaries
     log_info "Generating certificates..."
-    go run github.com/cloudflare/cfssl/cmd/cfssl@latest gencert -initca "$SCRIPT_DIR"/ca-csr.json | \
-        go run github.com/cloudflare/cfssl/cmd/cfssljson@latest -bare ca -
-    go run github.com/cloudflare/cfssl/cmd/cfssl@latest gencert -ca=ca.pem -ca-key=ca-key.pem \
+    cfssl gencert -initca "$SCRIPT_DIR"/ca-csr.json | cfssljson -bare ca -
+    cfssl gencert -ca=ca.pem -ca-key=ca-key.pem \
         -config="$SCRIPT_DIR"/ca-config.json -profile=www "$SCRIPT_DIR"/dex-csr.json | \
-        go run github.com/cloudflare/cfssl/cmd/cfssljson@latest -bare server
+        cfssljson -bare server
     
 
     make -C controller cluster
     
-    # Create dex namespace and TLS secret
+    # Create dex namespace and TLS secret (idempotent)
     log_info "Creating dex namespace and secrets..."
-    kubectl create namespace dex
+    kubectl create namespace dex --dry-run=client -o yaml | kubectl apply -f -
     kubectl -n dex create secret tls dex-tls \
         --cert=server.pem \
-        --key=server-key.pem
+        --key=server-key.pem \
+        --dry-run=client -o yaml | kubectl apply -f -
     
     # Create .e2e directory for configuration files
     log_info "Creating .e2e directory for local configuration..."
@@ -208,22 +205,23 @@ deploy_dex() {
     cp "$SCRIPT_DIR"/values.kind.yaml "$REPO_ROOT/.e2e/values.kind.yaml"
     
     log_info "Injecting CA certificate into values..."
-    go run github.com/mikefarah/yq/v4@latest -i \
+    yq -i \
         '.jumpstarter-controller.config.authentication.jwt[0].issuer.certificateAuthority = load_str("ca.pem")' \
         "$REPO_ROOT/.e2e/values.kind.yaml"
     
     log_info "✓ Values file with CA certificate created at .e2e/values.kind.yaml"
     
-    # Create OIDC reviewer binding (important!)
+    # Create OIDC reviewer binding (idempotent)
     log_info "Creating OIDC reviewer cluster role binding..."
     kubectl create clusterrolebinding oidc-reviewer \
         --clusterrole=system:service-account-issuer-discovery \
-        --group=system:unauthenticated
+        --group=system:unauthenticated \
+        --dry-run=client -o yaml | kubectl apply -f -
     
-    # Install dex via helm
+    # Install dex via helm (upgrade --install is idempotent)
     log_info "Installing dex via helm..."
     helm repo add dex https://charts.dexidp.io
-    helm install --namespace dex --wait -f "$SCRIPT_DIR"/dex.values.yaml dex dex/dex
+    helm upgrade --install --namespace dex --wait -f "$SCRIPT_DIR"/dex.values.yaml dex dex/dex
     
     # Install CA certificate
     log_info "Installing CA certificate..."
@@ -262,7 +260,7 @@ deploy_dex() {
     log_info "✓ Dex deployed"
 }
 
-# Step 3: Deploy jumpstarter controller
+# Step 4: Deploy jumpstarter controller
 deploy_controller() {
     log_info "Deploying jumpstarter controller (method: $METHOD)..."
     
@@ -274,31 +272,29 @@ deploy_controller() {
         exit 1
     fi
     
-    # Deploy with CA certificate
+    # Use parallel make on Linux (GNU Make 4+); macOS ships an old make without --output-sync
+    local make_parallel=""
+    if [ "$(uname -s)" = "Linux" ]; then
+        make_parallel="-j5 --output-sync=target"
+    fi
+
     log_info "Deploying controller with CA certificate using $METHOD..."
     if [ "$METHOD" = "operator" ]; then
-        # For operator: use OPERATOR_USE_DEX to inject dex config directly
-        OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" METHOD=$METHOD make -C controller deploy
+        OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" METHOD=$METHOD \
+            make -C controller deploy $make_parallel
     else
-        # For helm: use EXTRA_VALUES to pass the values file
-        EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" METHOD=$METHOD make -C controller deploy
+        EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" METHOD=$METHOD \
+            make -C controller deploy $make_parallel
     fi
     
     log_info "✓ Controller deployed"
 }
 
-# Step 4: Install jumpstarter
-install_jumpstarter() {
-    log_info "Installing jumpstarter..."
-    
-    cd "$REPO_ROOT"
-    cd python
-    make sync
-    cd ..
-    log_info "✓ Jumpstarter python installed"
-}
+# Step 5: Install jumpstarter (shared helper)
+# shellcheck source=lib/install.sh
+source "$SCRIPT_DIR/lib/install.sh"
 
-# Step 5: Setup test environment
+# Step 6: Setup test environment
 setup_test_environment() {
     log_info "Setting up test environment..."
     
@@ -333,10 +329,10 @@ setup_test_environment() {
         log_info "Exporters directory already exists and is writable"
     fi
     
-    # Create service accounts
+    # Create service accounts (idempotent)
     log_info "Creating service accounts..."
-    kubectl create -n "${JS_NAMESPACE}" sa test-client-sa
-    kubectl create -n "${JS_NAMESPACE}" sa test-exporter-sa
+    kubectl create -n "${JS_NAMESPACE}" sa test-client-sa --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create -n "${JS_NAMESPACE}" sa test-exporter-sa --dry-run=client -o yaml | kubectl apply -f -
     
     # Create a marker file to indicate setup is complete
     echo "ENDPOINT=$ENDPOINT" > "$REPO_ROOT/.e2e-setup-complete"
@@ -349,8 +345,8 @@ setup_test_environment() {
     echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REQUESTS_CA_BUNDLE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
     
-    # Save BATS_LIB_PATH for test runs
-    echo "BATS_LIB_PATH=$BATS_LIB_PATH" >> "$REPO_ROOT/.e2e-setup-complete"
+    # Export e2e tools bin so downstream scripts (tests) can find yq, cfssl, etc.
+    echo "export PATH=\"$E2E_TOOLS_BIN:\$PATH\"" >> "$REPO_ROOT/.e2e-setup-complete"
     
     log_info "✓ Test environment ready"
 }
@@ -365,6 +361,9 @@ main() {
     echo ""
     
     install_dependencies
+    echo ""
+    
+    install_e2e_tools
     echo ""
     
     deploy_dex

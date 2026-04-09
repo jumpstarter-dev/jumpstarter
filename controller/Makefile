@@ -188,9 +188,14 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: docker-build cluster grpcurl ## Deploy controller using METHOD (operator or helm). Set CLUSTER_TYPE=k3s for k3s.
+deploy: cluster grpcurl ## Deploy controller using METHOD (operator or helm). Set SKIP_BUILD=1 to skip image builds.
+ifeq ($(SKIP_BUILD),)
+	$(MAKE) docker-build
+endif
 ifeq ($(METHOD),operator)
+ifeq ($(SKIP_BUILD),)
 	$(MAKE) build-operator
+endif
 	./hack/deploy_with_operator.sh
 else ifeq ($(METHOD),helm)
 	./hack/deploy_with_helm.sh
