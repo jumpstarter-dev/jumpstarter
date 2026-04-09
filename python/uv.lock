@@ -2438,8 +2438,13 @@ dev = [
 name = "jumpstarter-driver-dds"
 source = { editable = "packages/jumpstarter-driver-dds" }
 dependencies = [
-    { name = "cyclonedds" },
+    { name = "click" },
     { name = "jumpstarter" },
+]
+
+[package.optional-dependencies]
+cyclonedds = [
+    { name = "cyclonedds" },
 ]
 
 [package.dev-dependencies]
@@ -2450,9 +2455,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cyclonedds", specifier = ">=0.10.0,<1.0" },
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "cyclonedds", marker = "extra == 'cyclonedds'", specifier = ">=0.10.0,<1.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
+provides-extras = ["cyclonedds"]
 
 [package.metadata.requires-dev]
 dev = [
