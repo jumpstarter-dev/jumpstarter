@@ -16,7 +16,6 @@ dependencies = [
 
 [project.entry-points."jumpstarter.drivers"]
 Gptp = "jumpstarter_driver_gptp.driver:Gptp"
-MockGptp = "jumpstarter_driver_gptp.driver:MockGptp"
 
 [tool.hatch.version]
 source = "vcs"
@@ -24,7 +23,7 @@ raw-options = { 'root' = '../../../'}
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
-source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+source_archive = "https://github.com/jumpstarter-dev/jumpstarter/archive/{commit_hash}.zip"
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
@@ -42,6 +41,7 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
+    "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
 ]
