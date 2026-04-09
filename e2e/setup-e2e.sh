@@ -341,10 +341,9 @@ setup_test_environment() {
     # Create a marker file to indicate setup is complete
     echo "ENDPOINT=$ENDPOINT" > "$REPO_ROOT/.e2e-setup-complete"
     echo "LOGIN_ENDPOINT=$LOGIN_ENDPOINT" >> "$REPO_ROOT/.e2e-setup-complete"
-    echo "JS_NAMESPACE=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
+    echo "E2E_TEST_NS=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REPO_ROOT=$REPO_ROOT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "SCRIPT_DIR=$SCRIPT_DIR" >> "$REPO_ROOT/.e2e-setup-complete"
-    echo "METHOD=$METHOD" >> "$REPO_ROOT/.e2e-setup-complete"
     
     # Set SSL certificate paths for Python to use the generated CA
     echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
