@@ -12,7 +12,8 @@ You also need `sshfs` installed on the client machine:
 
 - **Fedora/RHEL**: `sudo dnf install fuse-sshfs`
 - **Debian/Ubuntu**: `sudo apt-get install sshfs`
-- **macOS**: install https://macfuse.github.io/ as brew has removed sshfs support.
+- **macOS**: Install macFUSE from https://macfuse.github.io/ and then install
+  sshfs from source, as Homebrew has removed sshfs support.
 
 ## Configuration
 

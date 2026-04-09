@@ -5,7 +5,7 @@ description = "SSHFS mount/umount driver for Jumpstarter that provides remote fi
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
-    { name = "Ambient Code Bot", email = "bot@ambient-code.local" }
+    { name = "The Jumpstarter Authors" }
 ]
 requires-python = ">=3.11"
 dependencies = [
