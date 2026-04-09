@@ -860,7 +860,6 @@ provisioning:
 		})
 
 		It("should allow access to ingress grpc endpoints", func() {
-			// TODO: fix ingress in kind (not working for helm either)
 			Skip("nginx ingress not working in kind")
 
 			By("checking endpoint grpc access to controller")

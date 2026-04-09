@@ -27,7 +27,6 @@ class TestDeviceStatusDisplay:
         # Capture screenshot for verification
         screenshot = client.video.snapshot()
         assert screenshot is not None
-        # TODO: Use jumpstarter-imagehash or OCR to verify display content
 
     def test_handles_backend_503(self, client, proxy, mock_backend_down):
         """DUT should show a graceful error when backend is down."""

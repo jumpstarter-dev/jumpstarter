@@ -9,7 +9,6 @@ spec:
 # you can boot included alternative configurations, e.g. for SK-AM69 use "bootm 0x90000000#am69"
 # NOTE that for bootm to work with larger kernels (like the fedora kernel in flasher-fedora.itb require larger CONFIG_BOOTM_LEN
 # Using workaround to extract images manually and boot using booti instead
-# FIXME beware - this relies on kernel being the first image and header being 0xd4 bytes large.
   bootcmd: "bootm 0x90000000"
   shelltype: "busybox"
   login:

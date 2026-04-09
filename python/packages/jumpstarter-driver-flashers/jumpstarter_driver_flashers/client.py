@@ -85,7 +85,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def set_console_debug(self, debug: bool):
         """Set console debug mode"""
         self._console_debug = debug
-        # TODO: also set console debug on uboot client
 
     @contextmanager
     def busybox_shell(self):
@@ -1030,10 +1029,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 }
             )
         except Exception as e:
-            # TODO(bennyz): remove when opendal issue is sorted out
-            # https://github.com/apache/opendal/discussions/6418
-            # fallback to request if we're using a custom certificate
-
             if original_url and original_url.startswith(("http://", "https://")):
                 try:
                     if headers:
@@ -1107,7 +1102,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """Upload artifact to storage"""
         filename = self._filename(path)
         if storage.exists(filename):
-            # TODO: check hash for existing files
             self.logger.info(f"Artifact {filename} already exists in storage, skipping")
         storage.write_from_path(filename, path, operator=operator)
 
@@ -1510,7 +1504,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--fls-version",
             type=str,
-            default="0.2.0",  # TODO(majopela): set default to "" once fls is included in our images
+            default="0.2.0",
             help="Download an specific fls version from the github releases",
         )
         @click.option(

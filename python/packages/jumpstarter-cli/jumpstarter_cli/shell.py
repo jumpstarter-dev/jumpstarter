@@ -587,7 +587,6 @@ async def _shell_direct_async(
 @opt_config(allow_missing=True)
 @click.argument("command", nargs=-1)
 # client specific
-# TODO: warn if these are specified with exporter config
 @click.option("--lease", "lease_name")
 @opt_selector
 @opt_exporter_name

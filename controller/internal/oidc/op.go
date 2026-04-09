@@ -104,6 +104,6 @@ func (k *Signer) Token(
 		Subject:   subject,
 		Audience:  []string{k.audience},
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)), // FIXME: rotate keys on expiration
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)),
 	}).SignedString(k.privatekey)
 }

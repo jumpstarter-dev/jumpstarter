@@ -319,19 +319,12 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
-		// TODO: here there's room for improvement, i.e. we could have multiple
-		// clients trying to lease the same exporters, we should look at priorities
-		// and spot access to decide which client gets the exporter, this probably means
-		// that we will need to construct a lease scheduler with the view of all leases
-		// and exporters in the system, and (maybe) a priority queue for the leases.
-
 		// For now, we just select the best available exporter without considering other
 		// ongoing lease requests
 
 		selected := readyAvailableExporters[0]
 
 		if selected.ExistingLease != nil {
-			// TODO: Implement eviction of spot access leases
 			lease.SetStatusPending("NotAvailable",
 				"Exporter %s is already leased by another client under spot access, but spot access eviction still not implemented",
 				selected.Exporter.Name)
@@ -408,9 +401,6 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 									requestedDuration = lease.Spec.EndTime.Sub(lease.Spec.BeginTime.Time)
 								}
 								if requestedDuration > p.MaximumDuration.Duration {
-									// TODO: we probably should keep this on the list of approved exporters
-									// but mark as excessive duration so we can report it on the status
-									// of lease if no other options exist
 									continue
 								}
 							}

@@ -105,7 +105,6 @@ class HttpPower(PowerInterface, Driver):
 
         self._make_http_request(self.power_read)
 
-        # TODO: Parse response_text to extract voltage and current values
         # For now, return dummy values
         self.logger.warning("Power reading response parsing not implemented, returning dummy values")
         yield PowerReading(voltage=0.0, current=0.0)

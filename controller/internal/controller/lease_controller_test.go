@@ -503,7 +503,6 @@ var _ = Describe("Lease Controller", func() {
 
 			updatedLease = getLease(ctx, lease2Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
-			// TODO: add and check status conditions of the lease to indicate that the lease is waiting
 
 			// Poll until first lease expires and second lease acquires exporter
 			Eventually(func() bool {
@@ -530,8 +529,6 @@ var _ = Describe("Lease Controller", func() {
 			exporterName := updatedLease.Status.ExporterRef.Name
 
 			// release the lease early
-			// TODO: through the API we cannot set the status condition, we get this through the RPC,
-			// we should consider adding a flag on the spec to do this, or look at the duration too
 			updatedLease.Spec.Release = true
 
 			Expect(k8sClient.Update(ctx, updatedLease)).To(Succeed())

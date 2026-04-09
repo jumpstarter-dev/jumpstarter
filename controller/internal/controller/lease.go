@@ -10,8 +10,6 @@ import (
 )
 
 func MatchingActiveLeases() client.ListOption {
-	// TODO: use field selector once KEP-4358 is stabilized
-	// Reference: https://github.com/kubernetes/kubernetes/pull/122717
 	requirement, err := labels.NewRequirement(
 		string(jumpstarterdevv1alpha1.LeaseLabelEnded),
 		selection.DoesNotExist,

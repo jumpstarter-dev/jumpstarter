@@ -81,7 +81,6 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 	// Check if Route API is available in the cluster
 	if !r.RouteAvailable {
 		log.Info("Skipping route creation: Route API not available in cluster")
-		// TODO: update status of the jumpstarter object to indicate that the route is not available
 		return nil
 	}
 
@@ -98,7 +97,6 @@ func (r *Reconciler) createRouteForEndpoint(ctx context.Context, owner metav1.Ob
 		log.Error(errors.New(strings.Join(errs, ", ")), "Skipping ingress creation: invalid hostname",
 			"address", endpoint.Address,
 			"hostname", hostname)
-		// TODO: propagate error to status conditions
 		return nil
 	}
 

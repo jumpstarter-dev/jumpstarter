@@ -18,7 +18,7 @@ This example requires the following hardware:
 
 1) Setup an environment with the required hardware, and customize the
    exporter.yaml
-2) Setup the exporter to be run from a container (TODO: link)
+2) Setup the exporter to be run from a container
 3) Label the exporter in k8s with the `board=rpi4` label
 4) Prepare the images by running `make` in the `image` directory
 5) Run the tests in this directory by running:

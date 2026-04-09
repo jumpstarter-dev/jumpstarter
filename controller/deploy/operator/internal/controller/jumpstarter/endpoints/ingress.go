@@ -101,7 +101,6 @@ func (r *Reconciler) createIngressForEndpoint(ctx context.Context, owner metav1.
 	// Check if Ingress API is available in the cluster
 	if !r.IngressAvailable {
 		log.Info("Skipping ingress creation: Ingress API not available in cluster")
-		// TODO: update status of the jumpstarter object to indicate that the ingress is not available
 		return nil
 	}
 
@@ -118,7 +117,6 @@ func (r *Reconciler) createIngressForEndpoint(ctx context.Context, owner metav1.
 		log.Error(errors.New(strings.Join(errs, ", ")), "Skipping ingress creation: invalid hostname",
 			"address", endpoint.Address,
 			"hostname", hostname)
-		// TODO: propagate error to status conditions
 		return nil
 	}
 

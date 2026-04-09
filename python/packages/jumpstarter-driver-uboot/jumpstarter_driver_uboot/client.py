@@ -43,7 +43,7 @@ class UbootConsoleClient(CompositeClient):
             if debug:
                 p.logfile_read = sys.stdout.buffer
 
-            for _ in range(100):  # TODO: configurable retries
+            for _ in range(100):
                 try:
                     p.send(ESC)
                     # in case of "bootmenu" there are all sort of escape sequences in the output so try to

@@ -219,7 +219,6 @@ class ISCSI(Driver):
         """
         try:
             for name in list(self._luns.keys()):
-                # TODO: maybe leave?
                 self.remove_lun(name)
 
             if self._target:

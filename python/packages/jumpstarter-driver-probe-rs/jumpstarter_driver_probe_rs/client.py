@@ -28,7 +28,6 @@ class ProbeRsClient(DriverClient):
 
     def erase(self) -> str:
         """Erase the target memory, this is generally a slow operation."""
-        # TODO: this is a very long operation, create a stream back to the client
         self.logger.info("Erasing target ..... this may take a while")
         return self.call("erase")
 

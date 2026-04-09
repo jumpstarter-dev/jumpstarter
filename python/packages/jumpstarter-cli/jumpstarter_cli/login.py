@@ -125,7 +125,6 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
 @click.option("--name", type=str, help="Enter the Jumpstarter exporter name.", default=None)
 @opt_oidc
 # client specific
-# TODO: warn if used with exporter
 @click.option(
     "--allow",
     type=str,
@@ -351,7 +350,7 @@ async def login(  # noqa: C901
 @blocking
 async def relogin_client(config: ClientConfigV1Alpha1):
     """Relogin into a jumpstarter instance"""
-    client_id = "jumpstarter-cli"  # TODO: store this metadata in the config
+    client_id = "jumpstarter-cli"
     try:
         issuer = decode_jwt_issuer(config.token)
     except Exception as e:
