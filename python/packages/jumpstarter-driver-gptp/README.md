@@ -273,3 +273,4 @@ $ which ptp4l
 - Check physical layer: `ethtool <interface>` should show link up
 - Review ptp4l logs in the exporter output
 - Ensure both ends use the same domain number and transport
+

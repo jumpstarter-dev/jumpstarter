@@ -159,8 +159,7 @@ class TestHwTimestampingDetection:
             b"",
         )
         with patch("jumpstarter_driver_gptp.driver.asyncio.create_subprocess_exec", return_value=mock_proc):
-            driver = Gptp.__new__(Gptp)
-            driver.interface = "eth0"
+            driver = Gptp(interface="eth0")
             assert await driver._supports_hw_timestamping() is True
 
     async def test_detect_sw_only_timestamping(self):
@@ -170,8 +169,7 @@ class TestHwTimestampingDetection:
             b"",
         )
         with patch("jumpstarter_driver_gptp.driver.asyncio.create_subprocess_exec", return_value=mock_proc):
-            driver = Gptp.__new__(Gptp)
-            driver.interface = "eth0"
+            driver = Gptp(interface="eth0")
             assert await driver._supports_hw_timestamping() is False
 
     async def test_detect_timestamping_ethtool_missing(self):
@@ -179,8 +177,7 @@ class TestHwTimestampingDetection:
             "jumpstarter_driver_gptp.driver.asyncio.create_subprocess_exec",
             side_effect=FileNotFoundError("ethtool not found"),
         ):
-            driver = Gptp.__new__(Gptp)
-            driver.interface = "eth0"
+            driver = Gptp(interface="eth0")
             assert await driver._supports_hw_timestamping() is False
 
 
