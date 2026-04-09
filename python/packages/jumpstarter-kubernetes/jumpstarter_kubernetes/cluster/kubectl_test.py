@@ -224,6 +224,8 @@ class TestCheckJumpstarterInstallation:
 
         assert result.installed is False
         assert result.has_crds is False
+        assert result.error is not None
+        assert "kubectl not found" in result.error
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
