@@ -1,3 +1,4 @@
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -70,7 +71,8 @@ def test_mount_sshfs_success():
                         call_args = mock_run.call_args[0][0]
                         assert call_args[0] == "sshfs"
                         assert "testuser@127.0.0.1:/home/user" in call_args
-                        assert "/tmp/test-mount" in call_args
+                        # Use realpath because the client resolves symlinks (e.g. /tmp -> /private/tmp on macOS)
+                        assert os.path.realpath("/tmp/test-mount") in call_args
                         assert "-p" in call_args
                         assert "2222" in call_args
 
@@ -305,9 +307,11 @@ def test_umount_cleans_up_tracked_resources():
     )
 
     with serve(instance) as client:
-        # Simulate a tracked mount
+        # Simulate a tracked mount -- use realpath for the key because the client
+        # resolves paths via os.path.realpath (e.g. /tmp -> /private/tmp on macOS)
+        resolved_mount = os.path.realpath("/tmp/test-mount")
         mock_adapter = MagicMock()
-        client._active_mounts["/tmp/test-mount"] = MagicMock(
+        client._active_mounts[resolved_mount] = MagicMock(
             identity_file="/tmp/fake_key",
             port_forward=mock_adapter,
         )
@@ -326,7 +330,7 @@ def test_umount_cleans_up_tracked_resources():
                     # Port forward should be closed
                     mock_adapter.__exit__.assert_called_once()
                     # Mount should be removed from tracking
-                    assert "/tmp/test-mount" not in client._active_mounts
+                    assert resolved_mount not in client._active_mounts
 
 
 def test_umount_all_session_mounts():
@@ -336,11 +340,12 @@ def test_umount_all_session_mounts():
     )
 
     with serve(instance) as client:
-        # Simulate two tracked mounts
-        client._active_mounts["/tmp/mount1"] = MagicMock(
+        # Simulate two tracked mounts -- use realpath for keys because the client
+        # resolves paths via os.path.realpath (e.g. /tmp -> /private/tmp on macOS)
+        client._active_mounts[os.path.realpath("/tmp/mount1")] = MagicMock(
             identity_file=None, port_forward=None,
         )
-        client._active_mounts["/tmp/mount2"] = MagicMock(
+        client._active_mounts[os.path.realpath("/tmp/mount2")] = MagicMock(
             identity_file=None, port_forward=None,
         )
 
