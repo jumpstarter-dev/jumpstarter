@@ -10,6 +10,10 @@
   - Hardware-related proposals must address the Hardware Considerations section.
   - Protocol/API changes must include backward compatibility analysis.
   - Write as if teaching the feature to a new Jumpstarter contributor.
+  - Each design decision should document alternatives considered and rationale
+    (following the ADR pattern used in the project).
+  - Sections marked (mandatory) must be filled in. Sections marked (optional)
+    may be omitted if not applicable.
 -->
 
 | Field              | Value                                      |
@@ -28,14 +32,14 @@
 
 ---
 
-## Abstract
+## Abstract *(mandatory)*
 
 <!--
   One paragraph (3-5 sentences) summarizing the proposal. A reader should be
   able to decide whether this JEP is relevant to them from the abstract alone.
 -->
 
-## Motivation
+## Motivation *(mandatory)*
 
 <!--
   Why is this change needed? What problem does it solve? Who benefits?
@@ -48,7 +52,7 @@
   Do not describe the solution here — that belongs in the Proposal section.
 -->
 
-### User Stories (Optional)
+### User Stories *(optional)*
 
 <!--
   Describe 2-3 concrete scenarios from the perspective of a Jumpstarter user.
@@ -59,7 +63,7 @@
     specific device is offline.
 -->
 
-## Proposal
+## Proposal *(mandatory)*
 
 <!--
   Explain the proposal as if it were already implemented and you are teaching
@@ -76,7 +80,7 @@
   someone could begin implementation from it.
 -->
 
-### API / Protocol Changes (if applicable)
+### API / Protocol Changes *(if applicable)*
 
 <!--
   If this JEP modifies gRPC .proto definitions, operator CRDs, driver
@@ -87,7 +91,7 @@
   - For breaking changes, describe the migration path.
 -->
 
-### Hardware Considerations (if applicable)
+### Hardware Considerations *(if applicable)*
 
 <!--
   Jumpstarter operates at the hardware-software boundary. If this proposal
@@ -101,7 +105,38 @@
   - Are there power/thermal/physical safety implications?
 -->
 
-## Design Details
+## Design Decisions *(mandatory for Standards Track)*
+
+<!--
+  Document each significant design decision using the pattern below.
+  This follows the Architecture Decision Record (ADR) convention used
+  elsewhere in the project (see python/docs/source/contributing/adr/).
+
+  For each decision, state what was decided, what alternatives were
+  considered, and why the chosen approach was preferred. This section
+  is the most important part of the JEP for long-term project memory —
+  future contributors will refer to it to understand *why* things are
+  the way they are.
+-->
+
+### DD-1: *Decision title*
+
+**Alternatives considered:**
+
+1. **Option A** — Brief description.
+2. **Option B** — Brief description.
+
+**Decision:** Option A.
+
+**Rationale:** Explain why this option was chosen over the alternatives.
+Reference specific project constraints, prior art, or technical tradeoffs.
+
+<!--
+  Add more DD-N subsections as needed. Each decision should be
+  independently understandable.
+-->
+
+## Design Details *(mandatory for Standards Track)*
 
 <!--
   The technical heart of the JEP. Cover:
@@ -116,7 +151,7 @@
   interactions.
 -->
 
-## Test Plan
+## Test Plan *(mandatory for Standards Track)*
 
 <!--
   How will this feature be tested? Jumpstarter's HiL nature means pure unit
@@ -137,7 +172,7 @@
   the implementation?
 -->
 
-## Graduation Criteria (Optional)
+## Graduation Criteria *(optional)*
 
 <!--
   For features that should be introduced incrementally (e.g., behind a
@@ -152,7 +187,7 @@
   - How long should the feature be in experimental before promotion?
 -->
 
-## Backward Compatibility
+## Backward Compatibility *(mandatory for Standards Track)*
 
 <!--
   - Does this change break existing users, drivers, exporters, or deployments?
@@ -162,7 +197,31 @@
   - For protocol changes: is the wire format backward compatible?
 -->
 
-## Rejected Alternatives
+## Consequences *(mandatory)*
+
+<!--
+  Summarize the expected outcomes of this proposal, following ADR convention.
+-->
+
+### Positive
+
+<!--
+  What benefits does this proposal deliver? Be specific.
+-->
+
+### Negative
+
+<!--
+  What downsides or costs does this proposal introduce? Be honest.
+-->
+
+### Risks *(optional)*
+
+<!--
+  What could go wrong? What assumptions might prove incorrect?
+-->
+
+## Rejected Alternatives *(mandatory)*
 
 <!--
   What other designs were considered? Why were they not chosen?
@@ -171,9 +230,15 @@
   explored and helps future contributors understand why the chosen approach
   was preferred. Include brief descriptions of alternatives and the reasons
   they were rejected.
+
+  Note: If you used the Design Decisions section above with alternatives
+  for each decision, you may keep this section brief and refer back to
+  those decisions. Use this section for higher-level alternatives that
+  don't fit into individual design decisions (e.g., "we considered not
+  doing this at all").
 -->
 
-## Prior Art (Optional)
+## Prior Art *(optional)*
 
 <!--
   Are similar features present in other HiL frameworks, testing tools, or
@@ -186,7 +251,7 @@
   - Remote access solutions (if relevant)
 -->
 
-## Unresolved Questions
+## Unresolved Questions *(optional)*
 
 <!--
   What aspects of the design are still open? List specific questions that
@@ -194,7 +259,7 @@
   until implementation should be noted as such.
 -->
 
-## Future Possibilities (Optional)
+## Future Possibilities *(optional)*
 
 <!--
   What natural extensions or follow-up work does this proposal enable? This

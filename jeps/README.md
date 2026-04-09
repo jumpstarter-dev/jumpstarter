@@ -42,6 +42,14 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 |------|-------|--------|-----------|
 | *none yet* | | | |
 
+## Related: Architecture Decision Records (ADRs)
+
+For technical decisions scoped to a single component or driver (e.g., choosing a
+control interface for a new driver), use an Architecture Decision Record instead
+of a JEP. ADRs live in `python/docs/source/contributing/adr/` and are submitted
+alongside the implementation PR. See [JEP-0000](JEP-0000-jep-process.md) for
+guidance on when to use a JEP vs an ADR.
+
 ## Status Key
 
 | Status         | Meaning                                              |
@@ -56,3 +64,50 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | Deferred       | Sound but not a current priority                     |
 | Withdrawn      | Author voluntarily withdrew                          |
 | Superseded     | Replaced by a newer JEP                             |
+
+## For AI Agents
+
+This section provides conventions for AI agents working with JEPs.
+
+### Document structure
+
+JEP files are Markdown documents with a metadata table at the top. The metadata
+table uses pipe-delimited rows with bold field names. Required fields:
+`JEP`, `Title`, `Author(s)`, `Status`, `Type`, `Created`.
+
+### Section markers
+
+Sections in the JEP template are marked `*(mandatory)*`, `*(optional)*`, or
+`*(mandatory for Standards Track)*`. When helping an author draft a JEP, ensure
+all mandatory sections are filled in. Optional sections may be omitted entirely.
+
+### Design Decisions format
+
+Each design decision uses a numbered `DD-N` subsection under `## Design Decisions`
+with the following structure:
+
+```text
+### DD-N: Decision title
+
+**Alternatives considered:**
+
+1. **Option A** — Description.
+2. **Option B** — Description.
+
+**Decision:** Chosen option.
+
+**Rationale:** Why this option was chosen.
+```
+
+This matches the ADR convention used elsewhere in the project (see
+`python/docs/source/contributing/adr/`).
+
+### File naming
+
+JEP files are named `JEP-NNNN-short-title.md` where `NNNN` is the PR number
+(zero-padded to 4 digits). The template file is `JEP-NNNN-template.md`.
+
+### JEP numbering
+
+The JEP number is the pull request number. JEP-0000 through JEP-0009 are
+reserved for process and meta-JEPs.

@@ -70,6 +70,29 @@ Not every change needs a JEP. Use the following guidelines:
 When in doubt, ask in [Matrix](https://matrix.to/#/#jumpstarter:matrix.org) or
 open a GitHub issue to gauge whether your idea warrants a JEP.
 
+## JEPs and Architecture Decision Records (ADRs)
+
+The project uses both JEPs and Architecture Decision Records (ADRs). They serve
+different purposes and operate at different scopes:
+
+| Aspect        | JEP                                        | ADR                                               |
+|---------------|--------------------------------------------|----------------------------------------------------|
+| **Scope**     | Cross-cutting changes to the project       | Scoped to a single component or driver              |
+| **Process**   | Requires community review and maintainer approval | Included with the implementation PR                |
+| **When**      | Before implementation begins               | Alongside or within an implementation PR            |
+| **Location**  | `jeps/` directory                          | `python/docs/source/contributing/adr/` directory    |
+| **Example**   | New lease scheduling strategy              | Choice of telnet vs pyrenode3 for Renode driver     |
+
+**Use a JEP** when the change affects multiple components, changes public APIs or
+protocols, or requires community consensus. **Use an ADR** when you are making a
+significant technical decision within a self-contained piece of work (e.g., a new
+driver) that does not need project-wide review but should be documented for
+posterity.
+
+JEPs borrow the structured decision format from ADRs: each design decision in a
+JEP should document alternatives considered and rationale, following the `DD-N`
+pattern in the [JEP template](JEP-NNNN-template.md).
+
 ## JEP Types
 
 | Type               | Description                                                                                            |
@@ -209,6 +232,13 @@ This process draws inspiration from:
   test plan requirements, graduation criteria, production readiness.
 - [Rust RFCs](https://github.com/rust-lang/rfcs) — PR-based workflow, emphasis
   on motivation and teaching, prior art section.
+- [Architecture Decision Records (ADRs)](https://adr.github.io/) — structured
+  decision documentation with context, alternatives, and consequences. The JEP
+  template adopts the ADR pattern for individual design decisions.
+- [GitHub SpecKit](https://github.com/github/spec-kit) — spec-driven development
+  methodology with structured templates and agent-friendly document conventions.
+  The JEP template adopts SpecKit's practice of marking sections as mandatory or
+  optional and structuring documents for machine readability.
 
 ## Copyright
 
