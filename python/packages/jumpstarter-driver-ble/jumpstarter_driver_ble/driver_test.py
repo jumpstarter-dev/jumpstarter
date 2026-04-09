@@ -105,7 +105,7 @@ def test_ble_notify_handler_queue_full(capsys):
     assert "queue is full" in captured.out
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ble_check_characteristics_missing_service():
     """Test that _check_ble_characteristics raises when service UUID is not found."""
     from bleak.exc import BleakError
@@ -122,7 +122,7 @@ async def test_ble_check_characteristics_missing_service():
         await driver._check_ble_characteristics(mock_client)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ble_check_characteristics_missing_write_char():
     """Test that _check_ble_characteristics raises when write characteristic is missing."""
     from bleak.exc import BleakError
@@ -143,7 +143,7 @@ async def test_ble_check_characteristics_missing_write_char():
         await driver._check_ble_characteristics(mock_client)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ble_check_characteristics_missing_notify_char():
     """Test that _check_ble_characteristics raises when notify characteristic is missing."""
     from bleak.exc import BleakError
@@ -164,7 +164,7 @@ async def test_ble_check_characteristics_missing_notify_char():
         await driver._check_ble_characteristics(mock_client)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_ble_check_characteristics_success():
     """Test that _check_ble_characteristics succeeds with correct characteristics."""
     driver = _make_driver()
