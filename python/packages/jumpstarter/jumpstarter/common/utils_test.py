@@ -1,6 +1,10 @@
 import os
 import shutil
+import subprocess
+import tempfile
 from unittest.mock import patch
+
+import pytest
 
 from .utils import _generate_shell_init, _validate_j_commands, launch_shell
 
@@ -276,3 +280,55 @@ def test_launch_shell_zsh_uses_tmpdir_without_intermediate_file(tmp_path, monkey
 
     assert len(temp_dirs) == 1
     assert not os.path.exists(temp_dirs[0])
+
+
+@pytest.mark.skipif(not shutil.which("zsh"), reason="zsh not installed")
+def test_zsh_init_does_not_produce_compdef_errors():
+    init_content = _generate_shell_init("zsh", use_profiles=False, j_commands=["power", "serial"])
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zshrc_path = os.path.join(tmpdir, ".zshrc")
+        with open(zshrc_path, "w") as f:
+            f.write(init_content)
+        result = subprocess.run(
+            ["zsh", "--rcs", "-c", "exit 0"],
+            env={"ZDOTDIR": tmpdir, "HOME": tmpdir, "PATH": os.environ.get("PATH", "")},
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert "command not found: compdef" not in result.stderr
+        assert result.returncode == 0
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="bash not installed")
+def test_bash_init_produces_no_errors():
+    init_content = _generate_shell_init("bash", use_profiles=False, j_commands=["power", "serial"])
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
+        f.write(init_content)
+        rcfile = f.name
+    try:
+        result = subprocess.run(
+            ["bash", "--rcfile", rcfile, "-c", "exit 0"],
+            env={"HOME": "/nonexistent", "PATH": os.environ.get("PATH", "")},
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert "command not found" not in result.stderr
+        assert result.returncode == 0
+    finally:
+        os.unlink(rcfile)
+
+
+@pytest.mark.skipif(not shutil.which("fish"), reason="fish not installed")
+def test_fish_init_produces_no_errors():
+    init_content = _generate_shell_init("fish", use_profiles=False, j_commands=["power", "serial"])
+    result = subprocess.run(
+        ["fish", "--init-command", init_content, "-c", "exit 0"],
+        env={"HOME": "/nonexistent", "PATH": os.environ.get("PATH", "")},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert "command not found" not in result.stderr
+    assert result.returncode == 0
