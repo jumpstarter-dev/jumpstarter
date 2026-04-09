@@ -90,31 +90,27 @@ async def check_jumpstarter_installation(  # noqa: C901
     }
 
     try:
-        # Check for Jumpstarter CRDs
-        try:
-            crd_cmd = [kubectl, "--context", context, "get", "crd", "-o", "json"]
-            returncode, stdout, _ = await run_command(crd_cmd)
+        crd_cmd = [kubectl, "--context", context, "get", "crd", "-o", "json"]
+        returncode, stdout, _ = await run_command(crd_cmd)
 
-            if returncode == 0:
-                json_start = stdout.find("{")
-                if json_start >= 0:
-                    json_output = stdout[json_start:]
-                    crds = json.loads(json_output)
-                else:
-                    crds = json.loads(stdout)
-                jumpstarter_crds = []
-                for item in crds.get("items", []):
-                    name = item.get("metadata", {}).get("name", "")
-                    if "jumpstarter.dev" in name:
-                        jumpstarter_crds.append(name)
+        if returncode == 0:
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                json_output = stdout[json_start:]
+                crds = json.loads(json_output)
+            else:
+                crds = json.loads(stdout)
+            jumpstarter_crds = []
+            for item in crds.get("items", []):
+                name = item.get("metadata", {}).get("name", "")
+                if "jumpstarter.dev" in name:
+                    jumpstarter_crds.append(name)
 
-                if jumpstarter_crds:
-                    result_data["has_crds"] = True
-                    result_data["installed"] = True
-                    result_data["namespace"] = namespace or "unknown"
-                    result_data["status"] = "installed"
-        except RuntimeError:
-            pass
+            if jumpstarter_crds:
+                result_data["has_crds"] = True
+                result_data["installed"] = True
+                result_data["namespace"] = namespace or "unknown"
+                result_data["status"] = "installed"
 
     except json.JSONDecodeError as e:
         result_data["error"] = f"Failed to parse output: {e}"
