@@ -251,17 +251,8 @@ check_grpc_endpoints() {
 }
 
 # Print deployment success banner
-# Args:
-#   $1: deployment method (e.g., "operator") - optional
 print_deployment_success() {
-  local method=${1:-""}
-  local method_text=""
-  
-  if [ -n "${method}" ]; then
-    method_text=" via ${method}"
-  fi
-  
-  echo -e "${GREEN}Jumpstarter controller deployed successfully${method_text}!${NC}"
+  echo -e "${GREEN}Jumpstarter controller deployed successfully!${NC}"
   echo -e " gRPC        endpoint: ${GRPC_ENDPOINT}"
   echo -e " gRPC router endpoint: ${GRPC_ROUTER_ENDPOINT}"
 }
