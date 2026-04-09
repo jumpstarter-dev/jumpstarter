@@ -236,19 +236,7 @@ class SSHMountClient(CompositeClient):
             return
 
         mountpoint = os.path.realpath(mountpoint)
-
-        # Try fusermount first (Linux), fall back to umount (macOS)
-        fusermount = self._find_executable("fusermount3") or self._find_executable("fusermount")
-        if fusermount:
-            cmd = [fusermount, "-u"]
-            if lazy:
-                cmd.append("-z")
-            cmd.append(mountpoint)
-        else:
-            cmd = ["umount"]
-            if lazy:
-                cmd.append("-l")
-            cmd.append(mountpoint)
+        cmd = self._build_umount_cmd(mountpoint, lazy=lazy)
 
         self.logger.debug("Running unmount command: %s", cmd)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
@@ -257,7 +245,25 @@ class SSHMountClient(CompositeClient):
             stderr = result.stderr.strip()
             raise click.ClickException(f"Unmount failed (exit code {result.returncode}): {stderr}")
 
-        # Clean up tracked resources for this mount
+        self._cleanup_mount_resources(mountpoint)
+        click.echo(f"Unmounted {mountpoint}")
+
+    def _build_umount_cmd(self, mountpoint, *, lazy=False):
+        """Build the unmount command, preferring fusermount on Linux."""
+        fusermount = self._find_executable("fusermount3") or self._find_executable("fusermount")
+        if fusermount:
+            cmd = [fusermount, "-u"]
+            if lazy:
+                cmd.append("-z")
+        else:
+            cmd = ["umount"]
+            if lazy:
+                cmd.append("-l")
+        cmd.append(mountpoint)
+        return cmd
+
+    def _cleanup_mount_resources(self, mountpoint):
+        """Clean up tracked resources (identity file, port forward) for a mount."""
         mount_info = self._active_mounts.pop(mountpoint, None)
         if mount_info:
             self._cleanup_identity_file(mount_info.identity_file)
@@ -267,8 +273,6 @@ class SSHMountClient(CompositeClient):
                     self.logger.debug("Closed port forward for %s", mountpoint)
                 except Exception as e:
                     self.logger.warning("Failed to close port forward for %s: %s", mountpoint, e)
-
-        click.echo(f"Unmounted {mountpoint}")
 
     @staticmethod
     def _find_executable(name):
