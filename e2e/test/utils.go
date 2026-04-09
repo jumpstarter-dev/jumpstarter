@@ -245,6 +245,8 @@ func (pt *ProcessTracker) StartExporterLoop(exporterName string, jmpBin ...strin
 }
 
 // StartExporterSingle starts an exporter once (no restart loop) and tracks the PID.
+// A background goroutine calls Wait() so the process is reaped when it exits,
+// allowing IsProcessRunning() to detect that the process is no longer alive.
 func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 	cmd := exec.Command("jmp", "run", "--exporter", exporterName)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -252,6 +254,14 @@ func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter %s", exporterName)
 	pt.pids = append(pt.pids, cmd.Process.Pid)
 	GinkgoWriter.Printf("Started exporter %s (PID %d)\n", exporterName, cmd.Process.Pid)
+
+	// Reap the child process in the background so it doesn't become a zombie.
+	// Without this, Signal(0) in IsProcessRunning() would return nil for a
+	// zombie process, causing exit-mode tests to time out (especially on ARM).
+	go func() {
+		_ = cmd.Wait()
+	}()
+
 	return cmd
 }
 
