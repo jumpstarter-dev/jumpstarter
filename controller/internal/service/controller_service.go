@@ -652,10 +652,12 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	// briefly server-side to handle the race condition, which also protects old
 	// clients that don't have client-side Dial retry logic (issue #309).
 	{
-		maxRetries := 10
-		retryDelay := 300 * time.Millisecond
+		retryDelay := 500 * time.Millisecond
+		maxDelay := 3 * time.Second
+		maxTotalWait := 10 * time.Second
+		deadline := time.Now().Add(maxTotalWait)
 		var statusErr error
-		for i := 0; i < maxRetries; i++ {
+		for attempt := 0; ; attempt++ {
 			statusErr = checkExporterStatusForDriverCalls(exporter.Status.ExporterStatusValue)
 			if statusErr == nil {
 				break
@@ -665,20 +667,24 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 			if exporter.Status.ExporterStatusValue != jumpstarterdevv1alpha1.ExporterStatusAvailable {
 				break
 			}
-			if i < maxRetries-1 {
-				logger.Info("Exporter in Available status, waiting for lease setup",
-					"attempt", i+1, "maxRetries", maxRetries)
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-time.After(retryDelay):
-				}
-				// Re-fetch exporter status
-				if err := s.Client.Get(ctx,
-					types.NamespacedName{Namespace: client.Namespace, Name: lease.Status.ExporterRef.Name}, &exporter); err != nil {
-					logger.Error(err, "unable to re-fetch exporter during Dial retry")
-					return nil, err
-				}
+			if time.Now().Add(retryDelay).After(deadline) {
+				// Next sleep would exceed the deadline; stop retrying.
+				break
+			}
+			logger.Info("Exporter in Available status, waiting for lease setup",
+				"attempt", attempt+1, "retryDelay", retryDelay)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryDelay):
+			}
+			// Exponential backoff capped at maxDelay.
+			retryDelay = min(retryDelay*2, maxDelay)
+			// Re-fetch exporter status
+			if err := s.Client.Get(ctx,
+				types.NamespacedName{Namespace: client.Namespace, Name: lease.Status.ExporterRef.Name}, &exporter); err != nil {
+				logger.Error(err, "unable to re-fetch exporter during Dial retry")
+				return nil, err
 			}
 		}
 		if statusErr != nil {
