@@ -180,6 +180,13 @@ func Jmp(args ...string) (string, error) {
 	return RunCmd("jmp", args...)
 }
 
+// JmpCmd creates an *exec.Cmd for the jmp CLI without starting it.
+// This is useful when the caller needs process-level control (e.g.,
+// Start/Wait, SysProcAttr, process group management).
+func JmpCmd(args ...string) *exec.Cmd {
+	return exec.Command("jmp", args...)
+}
+
 // MustJmp runs a jmp CLI command and fails the test on error.
 func MustJmp(args ...string) string {
 	out, err := Jmp(args...)

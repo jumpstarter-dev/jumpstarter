@@ -13,40 +13,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Get the monorepo root
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Color output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $*"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $*"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $*"
-}
+# Load shared utilities
+# shellcheck source=../lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
 
 # Check if setup was completed
 check_setup() {
-    if [ ! -f "$REPO_ROOT/.e2e-setup-complete" ]; then
+    if ! load_setup_config "$REPO_ROOT"; then
         log_error "Setup not complete! Please run e2e/compat/setup.sh first."
         return 1
     fi
 
-    # Load setup configuration
-    source "$REPO_ROOT/.e2e-setup-complete"
-
-    # Export OLD_JMP if set
-    export OLD_JMP="${OLD_JMP:-}"
-
-    # Verify critical components are still running
-    if ! kubectl get namespace "$JS_NAMESPACE" &> /dev/null; then
-        log_error "Namespace $JS_NAMESPACE not found. Please run e2e/compat/setup.sh again."
+    if ! verify_namespace; then
+        log_error "Please run e2e/compat/setup.sh again."
         return 1
     fi
 
@@ -61,21 +40,13 @@ run_tests() {
     cd "$REPO_ROOT"
 
     # Activate virtual environment
-    if [ -f python/.venv/bin/activate ]; then
-        source python/.venv/bin/activate
-    else
-        log_error "Virtual environment not found. Please run e2e/compat/setup.sh first."
+    activate_venv "python/.venv" || {
+        log_error "Please run e2e/compat/setup.sh first."
         exit 1
-    fi
+    }
 
     # Use insecure GRPC for testing
     export JUMPSTARTER_GRPC_INSECURE=1
-
-    # Export variables for the Go test suite
-    export JS_NAMESPACE="${JS_NAMESPACE}"
-    export ENDPOINT="${ENDPOINT}"
-    export REPO_ROOT="${REPO_ROOT}"
-    export OLD_JMP="${OLD_JMP:-}"
 
     COMPAT_TEST="${COMPAT_TEST:-old-controller}"
     log_info "Running compat test: $COMPAT_TEST"
@@ -94,20 +65,16 @@ run_tests() {
             ;;
     esac
 
-    cd "$SCRIPT_DIR/../test"
-    go run github.com/onsi/ginkgo/v2/ginkgo \
-        -v --show-node-events --trace --timeout 30m \
-        --label-filter "${label_filter}" \
-        ./...
+    run_ginkgo "$SCRIPT_DIR/../test" "$label_filter"
 }
 
 # Main execution
 main() {
-    export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
+    export E2E_TEST_NS="${E2E_TEST_NS:-${JS_NAMESPACE:-jumpstarter-lab}}"
 
     log_info "=== Jumpstarter Compatibility E2E Test Runner ==="
     log_info "Test: ${COMPAT_TEST:-old-controller}"
-    log_info "Namespace: $JS_NAMESPACE"
+    log_info "Namespace: $E2E_TEST_NS"
     log_info "Repository Root: $REPO_ROOT"
     echo ""
 
