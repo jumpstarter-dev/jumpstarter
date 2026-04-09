@@ -145,7 +145,7 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
         prev = None
 
         while True:
-            [v, a, _] = (
+            readings = (
                 super()
                 .control(
                     usb.ENDPOINT_IN,
@@ -157,7 +157,16 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
                 .split()
             )
 
-            curr = PowerReading(voltage=float(v[:-1]), current=float(a[:-1]))
+            parsed = {}
+            for reading in readings:
+                suffix = reading[-1].upper()
+                value = float(reading[:-1])
+                if suffix == "V":
+                    parsed["voltage"] = value
+                elif suffix == "A":
+                    parsed["current"] = value
+
+            curr = PowerReading(voltage=parsed.get("voltage", 0.0), current=parsed.get("current", 0.0))
 
             if prev != curr:
                 prev = curr
