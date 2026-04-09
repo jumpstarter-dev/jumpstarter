@@ -147,8 +147,7 @@ class StatefulPtp4l(MockGptpBackend):
         self.require_started()
         self._priority1 = value
         if value < 128 and self._port_state in ("SLAVE", "LISTENING", "PASSIVE"):
-            if self._port_state != "MASTER":
-                self._transition_to("MASTER")
+            self._transition_to("MASTER")
         self._call_log.append(f"set_priority1({value})")
 
 
