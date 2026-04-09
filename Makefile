@@ -6,7 +6,7 @@
 # Subdirectories containing projects
 SUBDIRS := python protocol controller e2e
 
-# Deployment method for e2e tests: operator (default) or helm
+# Deployment method for e2e tests
 METHOD ?= operator
 
 # Default target
@@ -33,8 +33,8 @@ help:
 	@echo "  make e2e-full   - Full setup + run (for CI or first time)"
 	@echo "  make e2e-clean  - Clean up e2e test environment (delete cluster, certs, etc.)"
 	@echo ""
-	@echo "  Use METHOD=operator (default) or METHOD=helm to select deployment method"
-	@echo "  Example: make e2e-setup METHOD=helm"
+	@echo "  Use METHOD=operator (default) to select deployment method"
+	@echo "  Example: make e2e-setup METHOD=operator"
 	@echo ""
 	@echo "Per-project targets:"
 	@echo "  make build-<project>  - Build specific project"
