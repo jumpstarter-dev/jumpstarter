@@ -53,9 +53,9 @@ def test_generate_bash_init_without_j_commands():
 
 def test_generate_zsh_init_with_j_commands():
     content = _generate_shell_init("zsh", use_profiles=False, j_commands=["power", "qemu"])
-    assert "power qemu" in content
     assert "jmp completion zsh" in content
     assert "compdef" in content
+    assert "1:subcommand:(power qemu)" in content
 
 
 def test_generate_zsh_init_loads_compinit_before_completions():
@@ -93,12 +93,12 @@ def test_generate_zsh_init_without_j_commands():
     assert "compdef" not in content
 
 
-def test_generate_zsh_init_with_profiles_loads_compinit_after_zshrc():
+def test_generate_zsh_init_with_profiles_loads_compinit_before_zshrc():
     content = _generate_shell_init("zsh", use_profiles=True, j_commands=["power"])
     assert ".zshrc" in content
-    zshrc_pos = content.index(".zshrc")
     compinit_pos = content.index("autoload -Uz compinit && compinit")
-    assert zshrc_pos < compinit_pos
+    zshrc_pos = content.index(".zshrc")
+    assert compinit_pos < zshrc_pos
 
 
 def test_generate_fish_init_with_j_commands():
@@ -285,19 +285,21 @@ def test_launch_shell_zsh_uses_tmpdir_without_intermediate_file(tmp_path, monkey
 @pytest.mark.skipif(not shutil.which("zsh"), reason="zsh not installed")
 def test_zsh_init_does_not_produce_compdef_errors():
     init_content = _generate_shell_init("zsh", use_profiles=False, j_commands=["power", "serial"])
-    with tempfile.TemporaryDirectory() as tmpdir:
-        zshrc_path = os.path.join(tmpdir, ".zshrc")
-        with open(zshrc_path, "w") as f:
-            f.write(init_content)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".zsh", delete=False) as f:
+        f.write(init_content)
+        init_file = f.name
+    try:
         result = subprocess.run(
-            ["zsh", "--rcs", "-c", "exit 0"],
-            env={"ZDOTDIR": tmpdir, "HOME": tmpdir, "PATH": os.environ.get("PATH", "")},
+            ["zsh", "-c", f"source {init_file}; exit 0"],
+            env={"HOME": "/nonexistent", "PATH": os.environ.get("PATH", "")},
             capture_output=True,
             text=True,
             timeout=10,
         )
         assert "command not found: compdef" not in result.stderr
         assert result.returncode == 0
+    finally:
+        os.unlink(init_file)
 
 
 @pytest.mark.skipif(not shutil.which("bash"), reason="bash not installed")
@@ -308,7 +310,7 @@ def test_bash_init_produces_no_errors():
         rcfile = f.name
     try:
         result = subprocess.run(
-            ["bash", "--rcfile", rcfile, "-c", "exit 0"],
+            ["bash", "-c", f"source {rcfile}; exit 0"],
             env={"HOME": "/nonexistent", "PATH": os.environ.get("PATH", "")},
             capture_output=True,
             text=True,
