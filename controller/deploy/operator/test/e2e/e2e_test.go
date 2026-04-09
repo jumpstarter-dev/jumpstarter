@@ -860,9 +860,6 @@ provisioning:
 		})
 
 		It("should allow access to ingress grpc endpoints", func() {
-			// TODO: fix ingress in kind (not working for helm either)
-			Skip("nginx ingress not working in kind")
-
 			By("checking endpoint grpc access to controller")
 			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:5443", 1*time.Minute)
 			By("checking endpoint grpc access to router")
