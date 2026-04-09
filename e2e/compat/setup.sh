@@ -2,8 +2,8 @@
 # Jumpstarter Compatibility E2E Testing Setup Script
 # This script sets up the environment for cross-version compatibility tests.
 #
-# No OIDC/dex is needed — tests use legacy auth (--unsafe --save).
-# Uses helm directly (no operator) for simplicity.
+# No OIDC/dex is needed -- tests use legacy auth (--unsafe --save).
+# Uses operator-based deployment.
 #
 # Environment variables:
 #   COMPAT_SCENARIO      - "old-controller" or "old-client" (required)
@@ -24,8 +24,7 @@ REPO_ROOT="$(cd "$E2E_DIR/.." && pwd)"
 # Default namespace for tests
 export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
-# Always use helm for compat tests (simpler, direct control)
-export METHOD="helm"
+export METHOD="operator"
 
 # Scenario configuration
 COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
@@ -92,14 +91,10 @@ create_cluster() {
     log_info "Kind cluster created"
 }
 
-# Deploy old controller using the OCI helm chart from quay.io
 deploy_old_controller() {
     log_info "Deploying old controller (version: $COMPAT_CONTROLLER_TAG)..."
 
     cd "$REPO_ROOT"
-
-    # Strip leading 'v' for helm version (v0.7.1 -> 0.7.1)
-    local HELM_VERSION="${COMPAT_CONTROLLER_TAG#v}"
 
     # Compute networking variables
     local IP
@@ -110,18 +105,10 @@ deploy_old_controller() {
 
     kubectl config use-context kind-jumpstarter
 
-    # Install old controller from OCI helm chart
-    log_info "Installing old controller via helm (version: ${HELM_VERSION})..."
-    helm install --namespace jumpstarter-lab \
-        --create-namespace \
-        --set global.baseDomain="${BASEDOMAIN}" \
-        --set jumpstarter-controller.grpc.endpoint="${GRPC_ENDPOINT}" \
-        --set jumpstarter-controller.grpc.routerEndpoint="${GRPC_ROUTER_ENDPOINT}" \
-        --set jumpstarter-controller.grpc.nodeport.enabled=true \
-        --set jumpstarter-controller.grpc.mode=nodeport \
-        --set global.metrics.enabled=false \
-        --version="${HELM_VERSION}" \
-        jumpstarter oci://quay.io/jumpstarter-dev/helm/jumpstarter
+    # Install old controller using operator installer from the release tag
+    local INSTALLER_URL="https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/${COMPAT_CONTROLLER_TAG}/controller/deploy/operator/dist/install.yaml"
+    log_info "Installing old controller via operator (version: ${COMPAT_CONTROLLER_TAG})..."
+    kubectl apply -f "${INSTALLER_URL}" || log_warn "Operator installer may not be available for ${COMPAT_CONTROLLER_TAG}, skipping"
 
     kubectl config set-context --current --namespace=jumpstarter-lab
 
@@ -144,20 +131,12 @@ deploy_old_controller() {
     log_info "Old controller deployed"
 }
 
-# Deploy new controller from HEAD
 deploy_new_controller() {
     log_info "Deploying new controller from HEAD..."
 
     cd "$REPO_ROOT"
 
-    if [ -z "${SKIP_BUILD:-}" ]; then
-        make -C controller docker-build
-    else
-        log_info "Skipping controller image build (SKIP_BUILD is set)"
-    fi
-    cd controller
-    ./hack/deploy_with_helm.sh
-    cd "$REPO_ROOT"
+    make -C controller deploy
 
     log_info "New controller deployed"
 }
@@ -199,9 +178,9 @@ setup_test_environment() {
 
     cd "$REPO_ROOT"
 
-    # Get the controller endpoint from helm values
+    # Get the controller endpoint from Jumpstarter CR
     export ENDPOINT
-    ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+    ENDPOINT="grpc.$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}' 2>/dev/null || echo 'jumpstarter.127.0.0.1.nip.io'):8082"
 
     log_info "Controller endpoint: $ENDPOINT"
 

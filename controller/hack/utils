@@ -252,7 +252,7 @@ check_grpc_endpoints() {
 
 # Print deployment success banner
 # Args:
-#   $1: deployment method (e.g., "Helm", "operator") - optional
+#   $1: deployment method (e.g., "operator") - optional
 print_deployment_success() {
   local method=${1:-""}
   local method_text=""

@@ -10,11 +10,9 @@ from ..exceptions import (
     ClusterTypeValidationError,
     ToolNotInstalledError,
 )
-from ..install import helm_installed
-from .common import ClusterType, InstallMethod, extract_host_from_ssh, validate_cluster_name
+from .common import ClusterType, extract_host_from_ssh, validate_cluster_name
 from .detection import auto_detect_cluster_type, detect_existing_cluster_type
 from .endpoints import configure_endpoints
-from .helm import install_jumpstarter_helm_chart
 from .k3s import (
     create_k3s_cluster_with_options,
 )
@@ -119,9 +117,6 @@ async def create_cluster_and_install(  # noqa: C901
     minikube: str,
     extra_certs: Optional[str] = None,
     install_jumpstarter: bool = True,
-    helm: str = "helm",
-    chart: str = "oci://quay.io/jumpstarter-dev/helm/jumpstarter",
-    chart_name: str = "jumpstarter",
     namespace: str = "jumpstarter-lab",
     version: Optional[str] = None,
     kubeconfig: Optional[str] = None,
@@ -131,9 +126,7 @@ async def create_cluster_and_install(  # noqa: C901
     grpc_endpoint: Optional[str] = None,
     router_endpoint: Optional[str] = None,
     callback: OutputCallback = None,
-    values_files: Optional[list[str]] = None,
     k3s_ssh_host: Optional[str] = None,
-    install_method: Optional[InstallMethod] = None,
     operator_installer: Optional[str] = None,
 ) -> None:
     """Create a cluster and optionally install Jumpstarter."""
@@ -147,12 +140,12 @@ async def create_cluster_and_install(  # noqa: C901
         raise ClusterNameValidationError(cluster_name, str(e)) from e
 
     if force_recreate_cluster:
-        callback.warning(f'⚠️  WARNING: Force recreating cluster "{cluster_name}" will destroy ALL data in the cluster!')
+        callback.warning(f'WARNING: Force recreating cluster "{cluster_name}" will destroy ALL data in the cluster!')
         callback.warning("This includes:")
-        callback.warning("  • All deployed applications and services")
-        callback.warning("  • All persistent volumes and data")
-        callback.warning("  • All configurations and secrets")
-        callback.warning("  • All custom resources")
+        callback.warning("  - All deployed applications and services")
+        callback.warning("  - All persistent volumes and data")
+        callback.warning("  - All configurations and secrets")
+        callback.warning("  - All custom resources")
         if not callback.confirm(f'Are you sure you want to recreate cluster "{cluster_name}"?'):
             callback.progress("Cluster recreation cancelled.")
             raise ClusterOperationError("recreate", cluster_name, cluster_type, Exception("User cancelled"))
@@ -183,12 +176,6 @@ async def create_cluster_and_install(  # noqa: C901
 
     # Install Jumpstarter if requested
     if install_jumpstarter:
-        # k3s always uses the operator; kind/minikube default to helm
-        if cluster_type == "k3s":
-            install_method = "operator"
-        elif install_method is None:
-            install_method = "helm"
-
         # For k3s, derive IP from SSH host if not specified
         if cluster_type == "k3s" and ip is None and k3s_ssh_host is not None:
             ip = extract_host_from_ssh(k3s_ssh_host)
@@ -207,39 +194,18 @@ async def create_cluster_and_install(  # noqa: C901
                 Exception("Version must be specified when installing Jumpstarter"),
             )
 
-        if install_method == "operator":
-            await install_jumpstarter_operator(
-                version=version,
-                namespace=namespace,
-                basedomain=actual_basedomain,
-                grpc_endpoint=actual_grpc,
-                router_endpoint=actual_router,
-                mode="nodeport",
-                kubeconfig=kubeconfig,
-                context=context,
-                operator_installer=operator_installer,
-                callback=callback,
-            )
-        else:
-            if not helm_installed(helm):
-                raise ToolNotInstalledError("helm", f"helm is not installed (or not in your PATH): {helm}")
-
-            await install_jumpstarter_helm_chart(
-                chart,
-                chart_name,
-                namespace,
-                actual_basedomain,
-                actual_grpc,
-                actual_router,
-                "nodeport",
-                version,
-                kubeconfig,
-                context,
-                helm,
-                actual_ip,
-                callback,
-                values_files,
-            )
+        await install_jumpstarter_operator(
+            version=version,
+            namespace=namespace,
+            basedomain=actual_basedomain,
+            grpc_endpoint=actual_grpc,
+            router_endpoint=actual_router,
+            mode="nodeport",
+            kubeconfig=kubeconfig,
+            context=context,
+            operator_installer=operator_installer,
+            callback=callback,
+        )
 
 
 async def create_cluster_only(

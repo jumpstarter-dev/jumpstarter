@@ -12,7 +12,7 @@ class JumpstarterKubernetesError(Exception):
 
 
 class ToolNotInstalledError(JumpstarterKubernetesError):
-    """Raised when a required tool (kind, minikube, helm, kubectl) is not installed."""
+    """Raised when a required tool (kind, minikube, kubectl) is not installed."""
 
     def __init__(self, tool_name: str, additional_info: str = ""):
         self.tool_name = tool_name
