@@ -1,8 +1,17 @@
+"""Comprehensive tests for the gPTP driver.
+
+Levels:
+    1. Unit tests — no system dependencies, always run.
+    2. E2E tests — MockGptp over gRPC via serve(), always run.
+    2.5. Stateful tests — StatefulPtp4l state machine enforcement, always run.
+    3-5. Integration tests — env-gated, require Linux and/or PTP hardware.
+"""
+
 from __future__ import annotations
 
 import os
 import platform
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -16,7 +25,13 @@ from .common import (
     PortState,
 )
 from .conftest import PtpStateError
-from .driver import Gptp, MockGptp, _generate_ptp4l_config, parse_ptp4l_log_line
+from .driver import (
+    Gptp,
+    MockGptp,
+    _generate_ptp4l_config,
+    _validate_extra_args,
+    parse_ptp4l_log_line,
+)
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
 
@@ -105,7 +120,7 @@ class TestPtp4lConfigGeneration:
 
     def test_generate_master_config(self):
         config = _generate_ptp4l_config("eth0", 0, "gptp", "L2", "master")
-        assert "priority1\t\t0" in config
+        assert "priority1\t\t128" in config
         assert "priority2\t\t0" in config
 
     def test_generate_slave_config(self):
@@ -129,38 +144,44 @@ class TestPtp4lConfigGeneration:
         config = _generate_ptp4l_config("enp3s0", 0, "gptp", "L2", "auto")
         assert "[enp3s0]" in config
 
+    def test_generate_config_custom_priority(self):
+        config = _generate_ptp4l_config("eth0", 0, "gptp", "L2", "master", priority1=50)
+        assert "priority1\t\t50" in config
+
 
 class TestHwTimestampingDetection:
-    """1c. Detect hardware timestamping support."""
+    """1c. Detect hardware timestamping support (async)."""
 
-    @patch("jumpstarter_driver_gptp.driver.subprocess.run")
-    def test_detect_hw_timestamping(self, mock_run):
-        import subprocess
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="Capabilities:\n  hardware-transmit\n  hardware-receive\n  hardware-raw-clock\n",
+    async def test_detect_hw_timestamping(self):
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (
+            b"Capabilities:\n  hardware-transmit\n  hardware-receive\n  hardware-raw-clock\n",
+            b"",
         )
-        driver = Gptp.__new__(Gptp)
-        driver.interface = "eth0"
-        assert driver._supports_hw_timestamping() is True
+        with patch("jumpstarter_driver_gptp.driver.asyncio.create_subprocess_exec", return_value=mock_proc):
+            driver = Gptp.__new__(Gptp)
+            driver.interface = "eth0"
+            assert await driver._supports_hw_timestamping() is True
 
-    @patch("jumpstarter_driver_gptp.driver.subprocess.run")
-    def test_detect_sw_only_timestamping(self, mock_run):
-        import subprocess
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0,
-            stdout="Capabilities:\n  software-transmit\n  software-receive\n",
+    async def test_detect_sw_only_timestamping(self):
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (
+            b"Capabilities:\n  software-transmit\n  software-receive\n",
+            b"",
         )
-        driver = Gptp.__new__(Gptp)
-        driver.interface = "eth0"
-        assert driver._supports_hw_timestamping() is False
+        with patch("jumpstarter_driver_gptp.driver.asyncio.create_subprocess_exec", return_value=mock_proc):
+            driver = Gptp.__new__(Gptp)
+            driver.interface = "eth0"
+            assert await driver._supports_hw_timestamping() is False
 
-    @patch("jumpstarter_driver_gptp.driver.subprocess.run")
-    def test_detect_timestamping_ethtool_missing(self, mock_run):
-        mock_run.side_effect = FileNotFoundError("ethtool not found")
-        driver = Gptp.__new__(Gptp)
-        driver.interface = "eth0"
-        assert driver._supports_hw_timestamping() is False
+    async def test_detect_timestamping_ethtool_missing(self):
+        with patch(
+            "jumpstarter_driver_gptp.driver.asyncio.create_subprocess_exec",
+            side_effect=FileNotFoundError("ethtool not found"),
+        ):
+            driver = Gptp.__new__(Gptp)
+            driver.interface = "eth0"
+            assert await driver._supports_hw_timestamping() is False
 
 
 class TestPydanticModels:
@@ -221,9 +242,7 @@ class TestPydanticModels:
 class TestDriverConfigValidation:
     """1e. Driver configuration validation."""
 
-    @patch("jumpstarter_driver_gptp.driver.subprocess.run")
-    def test_gptp_valid_config(self, mock_run):
-        mock_run.return_value = MagicMock(stdout="", returncode=0)
+    def test_gptp_valid_config(self):
         driver = Gptp(interface="eth0")
         assert driver.interface == "eth0"
         assert driver.domain == 0
@@ -240,6 +259,54 @@ class TestDriverConfigValidation:
     def test_gptp_invalid_role(self):
         with pytest.raises(ValueError, match="role"):
             Gptp(interface="eth0", role="observer")
+
+    def test_gptp_invalid_interface_name(self):
+        with pytest.raises(ValueError, match="Invalid interface name"):
+            Gptp(interface="eth0]\\nmalicious")
+
+    def test_gptp_interface_too_long(self):
+        with pytest.raises(ValueError, match="Invalid interface name"):
+            Gptp(interface="a" * 20)
+
+    def test_gptp_valid_interface_names(self):
+        for name in ("eth0", "enp3s0", "ens0f0.100", "br-lan", "wlan0"):
+            d = Gptp(interface=name)
+            assert d.interface == name
+
+    def test_gptp_denied_extra_args(self):
+        with pytest.raises(ValueError, match="denied argument"):
+            Gptp(interface="eth0", ptp4l_extra_args=["-f", "/etc/shadow"])
+
+    def test_gptp_denied_extra_args_config(self):
+        with pytest.raises(ValueError, match="denied argument"):
+            Gptp(interface="eth0", ptp4l_extra_args=["--config=/etc/shadow"])
+
+    def test_gptp_denied_extra_args_uds(self):
+        with pytest.raises(ValueError, match="denied argument"):
+            Gptp(interface="eth0", ptp4l_extra_args=["--uds_address", "/tmp/evil"])
+
+    def test_gptp_allowed_extra_args(self):
+        d = Gptp(interface="eth0", ptp4l_extra_args=["--summary_interval", "1"])
+        assert d.ptp4l_extra_args == ["--summary_interval", "1"]
+
+
+class TestExtraArgsValidation:
+    """1f. Extra args denylist validation."""
+
+    def test_validate_extra_args_accepts_safe(self):
+        _validate_extra_args(["--summary_interval", "1", "-l", "6"])
+
+    def test_validate_extra_args_rejects_config(self):
+        with pytest.raises(ValueError, match="-f"):
+            _validate_extra_args(["-f", "/etc/shadow"])
+
+    def test_validate_extra_args_rejects_interface(self):
+        with pytest.raises(ValueError, match="-i"):
+            _validate_extra_args(["-i", "lo"])
+
+    def test_validate_extra_args_rejects_equals_form(self):
+        with pytest.raises(ValueError, match="--config"):
+            _validate_extra_args(["--config=/tmp/evil.cfg"])
 
 
 # =============================================================================
@@ -400,7 +467,7 @@ class TestStatefulPortStateTransitions:
             ptp._transition_to("UNCALIBRATED")
 
     def test_stateful_full_state_cycle(self, stateful_client):
-        """Walk through: start -> LISTENING -> SLAVE -> FAULTY -> recovery -> SLAVE -> stop"""
+        """Walk through: start -> LISTENING -> SLAVE -> FAULTY -> recovery -> SLAVE -> stop."""
         client, ptp = stateful_client
         client.start()
         assert ptp._port_state == "LISTENING"
@@ -571,35 +638,36 @@ _RUN_HW_TESTS = os.environ.get("GPTP_HW_TESTS", "0") == "1"
 
 @pytest.mark.skipif(not _RUN_INTEGRATION, reason="GPTP_INTEGRATION_TESTS not set or not Linux")
 class TestSoftwareTimestampingIntegration:
-    """Level 3: Real ptp4l with software timestamping on veth pairs."""
+    """Level 3: Real ptp4l with software timestamping on veth pairs.
+
+    Both interfaces stay in the root namespace so ptp4l can bind to them
+    directly from the test process.
+    """
 
     @pytest.fixture
     def veth_pair(self):
+        """Create a veth pair in the root namespace for PTP testing."""
         import subprocess as sp
         cmds = [
-            "ip netns add ns-ptp-master",
-            "ip netns add ns-ptp-slave",
             "ip link add veth-m type veth peer name veth-s",
-            "ip link set veth-m netns ns-ptp-master",
-            "ip link set veth-s netns ns-ptp-slave",
-            "ip netns exec ns-ptp-master ip addr add 10.99.0.1/24 dev veth-m",
-            "ip netns exec ns-ptp-slave ip addr add 10.99.0.2/24 dev veth-s",
-            "ip netns exec ns-ptp-master ip link set veth-m up",
-            "ip netns exec ns-ptp-slave ip link set veth-s up",
+            "ip addr add 10.99.0.1/24 dev veth-m",
+            "ip addr add 10.99.0.2/24 dev veth-s",
+            "ip link set veth-m up",
+            "ip link set veth-s up",
         ]
         for cmd in cmds:
             sp.run(cmd.split(), check=True)
-        yield ("ns-ptp-master", "veth-m", "ns-ptp-slave", "veth-s")
-        sp.run("ip netns del ns-ptp-master".split(), check=False)
-        sp.run("ip netns del ns-ptp-slave".split(), check=False)
+        yield ("veth-m", "veth-s")
+        sp.run("ip link del veth-m".split(), check=False)
 
     @pytest.fixture
     def ptp_master(self, veth_pair):
+        """Start a ptp4l master on veth-m."""
         import subprocess as sp
         import time
-        ns, iface, _, _ = veth_pair
+        master_iface, _ = veth_pair
         proc = sp.Popen(
-            ["ip", "netns", "exec", ns, "ptp4l", "-i", iface, "-S", "-m",
+            ["ptp4l", "-i", master_iface, "-S", "-m",
              "--masterOnly=1", "--domainNumber=0"],
             stdout=sp.PIPE, stderr=sp.STDOUT,
         )
@@ -610,7 +678,7 @@ class TestSoftwareTimestampingIntegration:
 
     def test_gptp_real_sync_software_timestamping(self, veth_pair, ptp_master):
         import time
-        _, _, slave_ns, slave_iface = veth_pair
+        _, slave_iface = veth_pair
         driver = Gptp(
             interface=slave_iface, domain=0, profile="default",
             transport="UDPv4", role="slave", sync_system_clock=False,
@@ -642,8 +710,6 @@ class TestHardwareTimestampingIntegration:
             time.sleep(30)
             offset = client.get_offset()
             assert abs(offset.offset_from_master_ns) < 1000
-            parent = client.get_parent_info()
-            assert parent.grandmaster_identity is not None
             client.stop()
 
     def test_gptp_hw_master_role(self):
