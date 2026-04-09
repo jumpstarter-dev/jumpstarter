@@ -6,9 +6,6 @@
 # Subdirectories containing projects
 SUBDIRS := python protocol controller e2e
 
-# Deployment method for e2e tests
-METHOD ?= operator
-
 # Default target
 .PHONY: all
 all: build
@@ -32,9 +29,6 @@ help:
 	@echo "  make e2e        - Same as e2e-run"
 	@echo "  make e2e-full   - Full setup + run (for CI or first time)"
 	@echo "  make e2e-clean  - Clean up e2e test environment (delete cluster, certs, etc.)"
-	@echo ""
-	@echo "  Use METHOD=operator (default) to select deployment method"
-	@echo "  Example: make e2e-setup METHOD=operator"
 	@echo ""
 	@echo "Per-project targets:"
 	@echo "  make build-<project>  - Build specific project"
@@ -121,14 +115,14 @@ test-controller:
 # Setup e2e testing environment (one-time)
 .PHONY: e2e-setup
 e2e-setup:
-	@echo "Setting up e2e test environment (method: $(METHOD))..."
-	@METHOD=$(METHOD) bash e2e/setup-e2e.sh
+	@echo "Setting up e2e test environment..."
+	@bash e2e/setup-e2e.sh
 
 # Run e2e tests
 .PHONY: e2e-run
 e2e-run:
-	@echo "Running e2e tests (method: $(METHOD))..."
-	@METHOD=$(METHOD) bash e2e/run-e2e.sh
+	@echo "Running e2e tests..."
+	@bash e2e/run-e2e.sh
 
 # Convenience alias for running e2e tests
 .PHONY: e2e
@@ -137,7 +131,7 @@ e2e: e2e-run
 # Full e2e setup + run
 .PHONY: e2e-full
 e2e-full:
-	@METHOD=$(METHOD) bash e2e/run-e2e.sh --full
+	@bash e2e/run-e2e.sh --full
 
 # Clean up e2e test environment
 .PHONY: e2e-clean
