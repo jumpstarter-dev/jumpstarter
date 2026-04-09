@@ -17,13 +17,20 @@ from .common import (
     DdsSample,
     DdsTopicQos,
 )
-from .driver import Dds, MockDds, _make_idl_type, _validate_field_names
+from .driver import Dds, MockDds, _validate_field_names
 from jumpstarter.common.utils import serve
 from jumpstarter.driver.decorators import (
     MARKER_DRIVERCALL,
     MARKER_MAGIC,
     MARKER_STREAMING_DRIVERCALL,
 )
+
+try:
+    import cyclonedds as _cyclonedds  # noqa: F401
+
+    _has_cyclonedds = True
+except ImportError:
+    _has_cyclonedds = False
 
 # =============================================================================
 # 1. Backend parity: identical operations must produce identical results
@@ -193,21 +200,28 @@ class TestModelInvariants:
 
 
 # =============================================================================
-# 5. _make_idl_type name collision guard
+# 5. _make_idl_type name collision guard (requires cyclonedds native lib)
 # =============================================================================
 
 
+@pytest.mark.skipif(not _has_cyclonedds, reason="CycloneDDS native library not available")
 class TestIdlTypeCollisions:
     def test_similar_names_produce_distinct_types(self):
+        from .driver import _make_idl_type
+
         t1 = _make_idl_type("sensor/temp", ["v"])
         t2 = _make_idl_type("sensor-temp", ["v"])
         assert t1.__name__ != t2.__name__
 
     def test_numeric_prefix_produces_valid_identifier(self):
+        from .driver import _make_idl_type
+
         t = _make_idl_type("123-topic", ["v"])
         assert t.__name__.isidentifier()
 
     def test_slash_dot_dash_all_handled(self):
+        from .driver import _make_idl_type
+
         for name in ["a/b", "a.b", "a-b", "a/b.c-d"]:
             t = _make_idl_type(name, ["f"])
             assert t.__name__.isidentifier(), f"Invalid identifier for topic '{name}'"
