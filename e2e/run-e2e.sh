@@ -86,10 +86,9 @@ run_tests() {
     export JUMPSTARTER_GRPC_INSECURE=1
 
     # Export variables for the Go test suite
-    export JS_NAMESPACE="${JS_NAMESPACE}"
+    export E2E_TEST_NS="${E2E_TEST_NS:-${JS_NAMESPACE}}"
     export ENDPOINT="${ENDPOINT}"
     export REPO_ROOT="${REPO_ROOT}"
-    export METHOD="${METHOD:-}"
 
     # Extra ginkgo flags (e.g., --label-filter)
     local extra_flags=()
@@ -131,9 +130,10 @@ full_run() {
 main() {
     # Default namespace
     export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
+    export E2E_TEST_NS="${E2E_TEST_NS:-${JS_NAMESPACE}}"
 
     log_info "=== Jumpstarter E2E Test Runner ==="
-    log_info "Namespace: $JS_NAMESPACE"
+    log_info "Namespace: $E2E_TEST_NS"
     log_info "Repository Root: $REPO_ROOT"
     echo ""
 

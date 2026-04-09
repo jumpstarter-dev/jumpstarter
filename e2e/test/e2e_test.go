@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2026. The Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -195,10 +195,6 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 		})
 
 		It("can login with simplified login", Label("operator-only"), func() {
-			if Method() != "operator" {
-				Skip("CA certificate injection only configured with operator deployment")
-			}
-
 			// Remove existing client config first
 			_, _ = Jmp("config", "client", "delete", "test-client-oidc")
 
@@ -212,9 +208,9 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			clientConfig := filepath.Join(os.Getenv("HOME"), ".config", "jumpstarter", "clients", "test-client-oidc.yaml")
 			Expect(clientConfig).To(BeAnExistingFile())
 
-			caOut := MustYq(".tls.ca", clientConfig)
-			Expect(caOut).NotTo(BeEmpty())
-			Expect(caOut).NotTo(Equal("null"))
+			tlsOut := MustReadYAMLField(clientConfig, "tls")
+			Expect(tlsOut).NotTo(BeEmpty())
+			Expect(tlsOut).To(ContainSubstring("ca:"))
 
 			// Verify the new client is set as the default
 			out, err = Jmp("config", "client", "list")
@@ -257,18 +253,14 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 		})
 
 		It("legacy client config contains CA certificate and works with secure TLS", Label("operator-only"), func() {
-			if Method() != "operator" {
-				Skip("CA certificate injection only available with operator deployment")
-			}
-
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 
 			configFile := filepath.Join(os.Getenv("HOME"), ".config", "jumpstarter", "clients", "test-client-legacy.yaml")
 			Expect(configFile).To(BeAnExistingFile())
 
-			caOut := MustYq(".tls.ca", configFile)
-			Expect(caOut).NotTo(BeEmpty())
-			Expect(caOut).NotTo(Equal("null"))
+			tlsOut := MustReadYAMLField(configFile, "tls")
+			Expect(tlsOut).NotTo(BeEmpty())
+			Expect(tlsOut).To(ContainSubstring("ca:"))
 
 			// Test without JUMPSTARTER_GRPC_INSECURE
 			out, err := RunCmdWithEnvUnset([]string{"JUMPSTARTER_GRPC_INSECURE"},
@@ -383,16 +375,14 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			out := MustJmp("create", "lease", "--selector", "example.com/board=oidc",
 				"--duration", "1d", "-o", "yaml")
 
-			// Write YAML to a temp file and extract the lease name with yq.
-			// Using MustYq (which separates stdout/stderr) avoids Go toolchain
-			// messages contaminating the extracted value.
+			// Parse the lease YAML to extract the lease name.
 			tmpFile, tmpErr := os.CreateTemp("", "lease-*.yaml")
 			Expect(tmpErr).NotTo(HaveOccurred())
 			defer os.Remove(tmpFile.Name())
 			_, tmpErr = tmpFile.WriteString(out)
 			Expect(tmpErr).NotTo(HaveOccurred())
 			tmpFile.Close()
-			leaseName := MustYq(".name", tmpFile.Name())
+			leaseName := MustReadYAMLField(tmpFile.Name(), "name")
 
 			ns := Namespace()
 			MustKubectl("-n", ns, "wait", "--timeout", "60s", "--for=condition=Ready",

@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2026. The Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,17 +19,20 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive // ginkgo DSL
 	. "github.com/onsi/gomega"    //nolint:revive // gomega DSL
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -43,12 +46,9 @@ const (
 // --- Environment helpers ---
 
 // Namespace returns the test namespace from E2E_TEST_NS (falling back to
-// JS_NAMESPACE, then the default "jumpstarter-lab").
+// the default "jumpstarter-lab").
 func Namespace() string {
 	if ns := os.Getenv("E2E_TEST_NS"); ns != "" {
-		return ns
-	}
-	if ns := os.Getenv("JS_NAMESPACE"); ns != "" {
 		return ns
 	}
 	return defaultNamespace
@@ -64,11 +64,6 @@ func LoginEndpoint() string {
 	return os.Getenv("LOGIN_ENDPOINT")
 }
 
-// Method returns the deployment method from the METHOD env var (operator or helm).
-func Method() string {
-	return os.Getenv("METHOD")
-}
-
 // PythonVenv returns the path to the Python venv for the current client,
 // or empty string if not set.
 func PythonVenv() string {
@@ -82,8 +77,21 @@ func PythonOldVenv() string {
 }
 
 // OldJmp returns the path to the old jmp binary for compat tests.
+// It derives the path from PYTHON_OLD_VENV by looking for "jmp" or "j"
+// in the venv's bin directory.
 func OldJmp() string {
-	return os.Getenv("OLD_JMP")
+	venv := PythonOldVenv()
+	if venv == "" {
+		return ""
+	}
+	binDir := filepath.Join(venv, "bin")
+	for _, name := range []string{"jmp", "j"} {
+		candidate := filepath.Join(binDir, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // RepoRoot returns the repository root directory (parent of e2e/).
@@ -191,57 +199,146 @@ func MustKubectl(args ...string) string {
 	return out
 }
 
-// Yq runs the yq tool (via go run) and returns stdout only.
-// Stderr is discarded to avoid Go toolchain messages contaminating output.
-func Yq(args ...string) (string, error) {
-	goArgs := append([]string{"run", "github.com/mikefarah/yq/v4@latest"}, args...)
-	stdout, stderr, err := RunCmdSplit("go", goArgs...)
+// ReadYAMLField reads a top-level field from a YAML file and returns its
+// string value. For scalar values the string representation is returned;
+// for nested structures the re-marshalled YAML is returned.
+func ReadYAMLField(filePath, field string) (string, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return stdout + "\n" + stderr, err
+		return "", fmt.Errorf("reading %s: %w", filePath, err)
 	}
-	return stdout, nil
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return "", fmt.Errorf("parsing YAML from %s: %w", filePath, err)
+	}
+	val, ok := doc[field]
+	if !ok {
+		return "", fmt.Errorf("field %q not found in %s", field, filePath)
+	}
+	switch v := val.(type) {
+	case string:
+		return v, nil
+	case nil:
+		return "", nil
+	default:
+		out, err := yaml.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("marshalling field %q: %w", field, err)
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
 }
 
-// MustYq runs the yq tool and fails the test on error.
-func MustYq(args ...string) string {
-	out, err := Yq(args...)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "yq %v failed: %s", args, out)
-	return out
+// MustReadYAMLField is like ReadYAMLField but fails the test on error.
+func MustReadYAMLField(filePath, field string) string {
+	val, err := ReadYAMLField(filePath, field)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "reading YAML field %q from %s", field, filePath)
+	return val
 }
 
 // --- Process management ---
 
+// logBuffer is a thread-safe in-memory buffer for capturing process output.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (lb *logBuffer) Write(p []byte) (int, error) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	return lb.buf.Write(p)
+}
+
+func (lb *logBuffer) String() string {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	return lb.buf.String()
+}
+
+func (lb *logBuffer) WriteString(s string) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.buf.WriteString(s)
+}
+
 // ProcessTracker manages background exporter processes.
 type ProcessTracker struct {
 	pids    []int
-	logsDir string
+	logs    map[string]*logBuffer
+	cancels []context.CancelFunc
 }
 
-// NewProcessTracker creates a new ProcessTracker with a temp log directory.
+// NewProcessTracker creates a new ProcessTracker.
 func NewProcessTracker() *ProcessTracker {
-	dir, err := os.MkdirTemp("", "jumpstarter-e2e-logs-")
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	return &ProcessTracker{logsDir: dir}
+	return &ProcessTracker{
+		logs: make(map[string]*logBuffer),
+	}
 }
 
-// StartExporterLoop starts an exporter in a restart loop (bash wrapper)
-// and tracks the wrapper PID.
+// getOrCreateLog returns the in-memory log buffer for the given name.
+func (pt *ProcessTracker) getOrCreateLog(name string) *logBuffer {
+	if lb, ok := pt.logs[name]; ok {
+		return lb
+	}
+	lb := &logBuffer{}
+	pt.logs[name] = lb
+	return lb
+}
+
+// StartExporterLoop starts an exporter in a restart loop using a Go goroutine
+// (instead of a bash wrapper) and tracks the process PIDs.
 func (pt *ProcessTracker) StartExporterLoop(exporterName string, jmpBin ...string) {
 	jmp := "jmp"
 	if len(jmpBin) > 0 && jmpBin[0] != "" {
 		jmp = jmpBin[0]
 	}
-	logFile := filepath.Join(pt.logsDir, exporterName+".log")
+	lb := pt.getOrCreateLog(exporterName)
 
-	script := fmt.Sprintf(`while true; do %s run --exporter %s >> %s 2>&1; sleep 2; done`,
-		jmp, exporterName, logFile)
-	cmd := exec.Command("bash", "-c", script)
-	// Detach from parent process group so signals aren't forwarded
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	err := cmd.Start()
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter loop for %s", exporterName)
-	pt.pids = append(pt.pids, cmd.Process.Pid)
-	GinkgoWriter.Printf("Started exporter loop for %s (PID %d)\n", exporterName, cmd.Process.Pid)
+	ctx, cancel := context.WithCancel(context.Background())
+	pt.cancels = append(pt.cancels, cancel)
+
+	go func() {
+		restartCount := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			cmd := exec.Command(jmp, "run", "--exporter", exporterName)
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cmd.Stdout = lb
+			cmd.Stderr = lb
+
+			if err := cmd.Start(); err != nil {
+				lb.WriteString(fmt.Sprintf("failed to start exporter %s: %v\n", exporterName, err))
+				return
+			}
+
+			pid := cmd.Process.Pid
+			// Track the PID under the parent lock-free path; this is safe
+			// because StopAll first cancels the context so this goroutine
+			// will not spawn new processes concurrently.
+			pt.pids = append(pt.pids, pid)
+
+			if restartCount > 0 {
+				GinkgoWriter.Printf("Restarted exporter %s (PID %d, restart #%d)\n", exporterName, pid, restartCount)
+			} else {
+				GinkgoWriter.Printf("Started exporter loop for %s (PID %d)\n", exporterName, pid)
+			}
+
+			_ = cmd.Wait()
+			restartCount++
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(exporterProcessWait):
+			}
+		}
+	}()
 }
 
 // StartExporterSingle starts an exporter once (no restart loop) and tracks the PID.
@@ -256,8 +353,6 @@ func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 	GinkgoWriter.Printf("Started exporter %s (PID %d)\n", exporterName, cmd.Process.Pid)
 
 	// Reap the child process in the background so it doesn't become a zombie.
-	// Without this, Signal(0) in IsProcessRunning() would return nil for a
-	// zombie process, causing exit-mode tests to time out (especially on ARM).
 	go func() {
 		_ = cmd.Wait()
 	}()
@@ -266,7 +361,7 @@ func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 }
 
 // StartDirectExporter starts an exporter with --tls-grpc-listener (direct mode).
-func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passphrase string, captureStderr bool) (*exec.Cmd, string) {
+func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passphrase string, captureStderr bool) (*exec.Cmd, *logBuffer) {
 	args := []string{"run", "--exporter-config", configFile,
 		"--tls-grpc-listener", strconv.Itoa(port),
 		"--tls-grpc-insecure"}
@@ -277,59 +372,57 @@ func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passp
 	cmd := exec.Command("jmp", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	var stderrFile string
+	var stderrBuf *logBuffer
 	if captureStderr {
-		stderrFile = filepath.Join(pt.logsDir, "direct-exporter-stderr.log")
-		f, err := os.Create(stderrFile)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		cmd.Stderr = f
+		stderrBuf = pt.getOrCreateLog("direct-exporter-stderr")
+		cmd.Stderr = stderrBuf
 	}
 
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start direct exporter with config %s", configFile)
 	pt.pids = append(pt.pids, cmd.Process.Pid)
 	GinkgoWriter.Printf("Started direct exporter (PID %d) on port %d\n", cmd.Process.Pid, port)
-	return cmd, stderrFile
+	return cmd, stderrBuf
 }
 
-// WriteLogMarker writes a marker into all exporter log files for correlation.
+// WriteLogMarker writes a marker into all in-memory log buffers for correlation.
 func (pt *ProcessTracker) WriteLogMarker(testName string) {
-	marker := fmt.Sprintf("=== TEST START: %s @ %s ===\n", testName, time.Now().Format(time.RFC3339))
-	entries, err := os.ReadDir(pt.logsDir)
-	if err != nil {
-		return
+	marker := fmt.Sprintf("\n\n=== TEST START: %s @ %s ===\n", testName, time.Now().Format(time.RFC3339))
+	for _, lb := range pt.logs {
+		lb.WriteString(marker)
 	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			f, err := os.OpenFile(filepath.Join(pt.logsDir, e.Name()), os.O_APPEND|os.O_WRONLY, 0644)
-			if err == nil {
-				_, _ = f.WriteString(marker)
-				f.Close()
+}
+
+// DumpLogs prints log lines around the most recent test start marker.
+// It shows ~20 lines of context before the marker and all lines after it.
+func (pt *ProcessTracker) DumpLogs(_ int) {
+	const contextBefore = 20
+
+	for name, lb := range pt.logs {
+		GinkgoWriter.Printf("\n--- Exporter logs (%s) ---\n", name)
+		content := lb.String()
+		if content == "" {
+			GinkgoWriter.Println("(no output captured)")
+			continue
+		}
+
+		lines := strings.Split(content, "\n")
+
+		// Find the last test start marker
+		markerIdx := -1
+		for i := len(lines) - 1; i >= 0; i-- {
+			if strings.Contains(lines[i], "=== TEST START:") {
+				markerIdx = i
+				break
 			}
 		}
-	}
-}
 
-// DumpLogs prints the last N lines of log files (for debugging failures).
-func (pt *ProcessTracker) DumpLogs(maxLines int) {
-	entries, err := os.ReadDir(pt.logsDir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		GinkgoWriter.Printf("\n--- Exporter logs (%s) ---\n", e.Name())
-		data, err := os.ReadFile(filepath.Join(pt.logsDir, e.Name()))
-		if err != nil {
-			GinkgoWriter.Printf("(error reading: %v)\n", err)
-			continue
-		}
-		lines := strings.Split(string(data), "\n")
 		start := 0
-		if len(lines) > maxLines {
-			start = len(lines) - maxLines
+		if markerIdx >= 0 {
+			start = markerIdx - contextBefore
+			if start < 0 {
+				start = 0
+			}
 		}
 		for _, line := range lines[start:] {
 			GinkgoWriter.Println(line)
@@ -337,8 +430,15 @@ func (pt *ProcessTracker) DumpLogs(maxLines int) {
 	}
 }
 
-// StopAll kills all tracked processes and any orphans matching the pattern.
+// StopAll cancels all restart loops, kills all tracked processes, and
+// any orphans matching the pattern.
 func (pt *ProcessTracker) StopAll() {
+	// Cancel all restart-loop goroutines first
+	for _, cancel := range pt.cancels {
+		cancel()
+	}
+	pt.cancels = nil
+
 	for _, pid := range pt.pids {
 		proc, err := os.FindProcess(pid)
 		if err != nil {
@@ -353,12 +453,9 @@ func (pt *ProcessTracker) StopAll() {
 	_ = exec.Command("pkill", "-9", "-f", "jmp run --exporter").Run()
 }
 
-// Cleanup stops all processes and removes temp directories.
+// Cleanup stops all processes.
 func (pt *ProcessTracker) Cleanup() {
 	pt.StopAll()
-	if pt.logsDir != "" {
-		os.RemoveAll(pt.logsDir)
-	}
 }
 
 // IsProcessRunning checks if any tracked process is still running.
@@ -471,12 +568,44 @@ func DumpControllerLogs(maxLines int) {
 
 // --- Exporter config helpers ---
 
-// MergeExporterConfig merges an overlay YAML into an exporter config file.
+// MergeExporterConfig merges an overlay YAML into an exporter config file
+// using native Go YAML parsing (no external yq dependency).
 func MergeExporterConfig(exporterConfigPath, overlayFile string) {
-	MustYq("-i", fmt.Sprintf(". * load(\"%s\")", overlayFile), exporterConfigPath)
+	baseData, err := os.ReadFile(exporterConfigPath)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "reading exporter config %s", exporterConfigPath)
+
+	overlayData, err := os.ReadFile(overlayFile)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "reading overlay %s", overlayFile)
+
+	var base, overlay map[string]interface{}
+	ExpectWithOffset(1, yaml.Unmarshal(baseData, &base)).To(Succeed())
+	ExpectWithOffset(1, yaml.Unmarshal(overlayData, &overlay)).To(Succeed())
+
+	if base == nil {
+		base = make(map[string]interface{})
+	}
+	// Shallow merge: overlay keys overwrite base keys
+	for k, v := range overlay {
+		base[k] = v
+	}
+
+	merged, err := yaml.Marshal(base)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "marshalling merged config")
+	ExpectWithOffset(1, os.WriteFile(exporterConfigPath, merged, 0644)).To(Succeed())
 }
 
-// ClearHooksConfig removes the hooks section from an exporter config.
+// ClearHooksConfig removes the hooks section from an exporter config
+// using native Go YAML parsing.
 func ClearHooksConfig(exporterConfigPath string) {
-	MustYq("-i", "del(.hooks)", exporterConfigPath)
+	data, err := os.ReadFile(exporterConfigPath)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "reading exporter config %s", exporterConfigPath)
+
+	var doc map[string]interface{}
+	ExpectWithOffset(1, yaml.Unmarshal(data, &doc)).To(Succeed())
+
+	delete(doc, "hooks")
+
+	out, err := yaml.Marshal(doc)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "marshalling config")
+	ExpectWithOffset(1, os.WriteFile(exporterConfigPath, out, 0644)).To(Succeed())
 }

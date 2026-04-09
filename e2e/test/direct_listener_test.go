@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2026. The Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package e2e
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -110,7 +109,7 @@ var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered,
 
 	It("afterLease hook runs on exporter shutdown", func() {
 		config := configPath("exporter-direct-hooks-both.yaml")
-		cmd, stderrFile := tracker.StartDirectExporter(config, listenerPort, "", true)
+		cmd, stderrBuf := tracker.StartDirectExporter(config, listenerPort, "", true)
 		WaitForDirectExporterPort(listenerPort)
 
 		out, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
@@ -125,13 +124,12 @@ var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered,
 			_, _ = cmd.Process.Wait()
 		}
 
-		// afterLease hook output should appear in the exporter's stderr log
+		// afterLease hook output should appear in the exporter's stderr buffer
 		Eventually(func() string {
-			data, err := os.ReadFile(stderrFile)
-			if err != nil {
+			if stderrBuf == nil {
 				return ""
 			}
-			return string(data)
+			return stderrBuf.String()
 		}, 10*time.Second, 500*time.Millisecond).Should(ContainSubstring("AFTER_HOOK_DIRECT: executed"))
 	})
 

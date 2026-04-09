@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2026. The Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 	BeforeAll(func() {
 		oldJmp = OldJmp()
 		if oldJmp == "" {
-			Skip("OLD_JMP not set; skipping old-client compat tests")
+			Skip("PYTHON_OLD_VENV not set or no jmp/j binary found; skipping old-client compat tests")
 		}
 
 		tracker = NewProcessTracker()
