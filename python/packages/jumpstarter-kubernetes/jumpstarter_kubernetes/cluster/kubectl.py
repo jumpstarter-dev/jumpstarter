@@ -72,7 +72,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
         raise KubeconfigError(f"Error listing kubectl contexts: {e}") from e
 
 
-async def check_jumpstarter_installation(  # noqa: C901
+async def check_jumpstarter_installation(
     context: str, namespace: Optional[str] = None, kubectl: str = "kubectl"
 ) -> V1Alpha1JumpstarterInstance:
     """Check if Jumpstarter is installed in the cluster using CRD detection."""
