@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+import logging
+import shutil
+import socket
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
+from pathlib import Path
+from subprocess import PIPE, Popen, TimeoutExpired
+from tempfile import TemporaryDirectory
+
+from anyio.streams.file import FileWriteStream
+from jumpstarter_driver_opendal.driver import FlasherInterface
+from jumpstarter_driver_power.driver import PowerInterface, PowerReading
+from jumpstarter_driver_pyserial.driver import PySerial
+
+from .monitor import RenodeMonitor
+from jumpstarter.driver import Driver, export
+
+logger = logging.getLogger(__name__)
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _find_renode() -> str:
+    path = shutil.which("renode")
+    if path is None:
+        raise FileNotFoundError(
+            "renode executable not found in PATH. "
+            "Install Renode from https://renode.io/"
+        )
+    return path
+
+
+@dataclass(kw_only=True)
+class RenodeFlasher(FlasherInterface, Driver):
+    parent: Renode
+
+    @export
+    async def flash(self, source, load_command: str | None = None):
+        """Flash firmware to the simulated MCU.
+
+        If the simulation is not yet running, stores the firmware for
+        loading during power-on. If already running, loads the firmware
+        and resets the machine.
+        """
+        firmware_path = self.parent._tmp_dir.name + "/firmware"
+        async with await FileWriteStream.from_path(firmware_path) as stream:
+            async with self.resource(source) as res:
+                async for chunk in res:
+                    await stream.send(chunk)
+
+        cmd = load_command or "sysbus LoadELF"
+        self.parent._firmware_path = firmware_path
+        self.parent._load_command = cmd
+
+        if hasattr(self.parent.children["power"], "_process"):
+            monitor = self.parent.children["power"]._monitor
+            if monitor is not None:
+                await monitor.execute(f'{cmd} @"{firmware_path}"')
+                await monitor.execute("machine Reset")
+                self.logger.info("firmware hot-loaded and machine reset")
+
+    @export
+    async def dump(self, target, partition: str | None = None):
+        raise NotImplementedError("dump is not supported for Renode targets")
+
+
+@dataclass(kw_only=True)
+class RenodePower(PowerInterface, Driver):
+    parent: Renode
+
+    _process: Popen | None = field(init=False, default=None, repr=False)
+    _monitor: RenodeMonitor | None = field(init=False, default=None, repr=False)
+
+    @export
+    async def on(self) -> None:
+        if self._process is not None:
+            self.logger.warning("already powered on, ignoring request")
+            return
+
+        renode_bin = _find_renode()
+        port = self.parent.monitor_port or _find_free_port()
+        self.parent._active_monitor_port = port
+
+        cmdline = [
+            renode_bin,
+            "--disable-xwt",
+            "--plain",
+            "--port",
+            str(port),
+        ]
+
+        self.logger.info("starting Renode: %s", " ".join(cmdline))
+        self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+
+        self._monitor = RenodeMonitor()
+        await self._monitor.connect("127.0.0.1", port)
+
+        machine = self.parent.machine_name
+        await self._monitor.execute(f'mach create "{machine}"')
+        await self._monitor.execute(
+            f'machine LoadPlatformDescription @"{self.parent.platform}"'
+        )
+
+        pty_path = self.parent._pty
+        await self._monitor.execute(
+            f'emulation CreateUartPtyTerminal "term" "{pty_path}"'
+        )
+        await self._monitor.execute(
+            f"connector Connect {self.parent.uart} term"
+        )
+
+        for cmd in self.parent.extra_commands:
+            await self._monitor.execute(cmd)
+
+        if self.parent._firmware_path:
+            load_cmd = self.parent._load_command or "sysbus LoadELF"
+            await self._monitor.execute(
+                f'{load_cmd} @"{self.parent._firmware_path}"'
+            )
+
+        await self._monitor.execute("start")
+        self.logger.info("Renode simulation started")
+
+    @export
+    async def off(self) -> None:
+        if self._process is None:
+            self.logger.warning("already powered off, ignoring request")
+            return
+
+        if self._monitor is not None:
+            try:
+                await self._monitor.execute("quit")
+            except Exception:
+                pass
+            await self._monitor.disconnect()
+            self._monitor = None
+
+        self._process.terminate()
+        try:
+            self._process.wait(timeout=5)
+        except TimeoutExpired:
+            self._process.kill()
+        self._process = None
+
+    @export
+    async def read(self) -> AsyncGenerator[PowerReading, None]:
+        raise NotImplementedError
+
+    def close(self):
+        if self._process is not None:
+            if self._monitor is not None:
+                self._monitor = None
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=5)
+            except TimeoutExpired:
+                self._process.kill()
+            self._process = None
+
+
+@dataclass(kw_only=True)
+class Renode(Driver):
+    """Renode emulation framework driver for Jumpstarter.
+
+    Provides a composite driver that manages a Renode simulation instance
+    with power control, firmware flashing, and serial console access.
+
+    Users inject their Renode target configuration via YAML without
+    modifying driver code:
+
+    - ``platform``: path to a ``.repl`` file or Renode built-in name
+    - ``uart``: peripheral path in the Renode object model
+    - ``extra_commands``: list of monitor commands for target-specific setup
+    """
+
+    platform: str
+    uart: str = "sysbus.uart0"
+    machine_name: str = "machine-0"
+    monitor_port: int = 0
+    extra_commands: list[str] = field(default_factory=list)
+
+    _tmp_dir: TemporaryDirectory = field(
+        init=False, default_factory=TemporaryDirectory
+    )
+    _firmware_path: str | None = field(init=False, default=None)
+    _load_command: str | None = field(init=False, default=None)
+    _active_monitor_port: int = field(init=False, default=0)
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_renode.client.RenodeClient"
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+
+        self.children["power"] = RenodePower(parent=self)
+        self.children["flasher"] = RenodeFlasher(parent=self)
+        self.children["console"] = PySerial(url=self._pty, check_present=False)
+
+    @property
+    def _pty(self) -> str:
+        return str(Path(self._tmp_dir.name) / "pty")
+
+    @export
+    def get_platform(self) -> str:
+        return self.platform
+
+    @export
+    def get_uart(self) -> str:
+        return self.uart
+
+    @export
+    def get_machine_name(self) -> str:
+        return self.machine_name
+
+    @export
+    async def monitor_cmd(self, command: str) -> str:
+        """Send an arbitrary command to the Renode monitor."""
+        power: RenodePower = self.children["power"]
+        if power._monitor is None:
+            raise RuntimeError("Renode is not running")
+        return await power._monitor.execute(command)
