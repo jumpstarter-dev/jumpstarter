@@ -148,6 +148,8 @@ kind_load_image() {
 
 # Install nginx ingress in kind cluster
 # This function deploys nginx ingress and waits for it to be ready
+NGINX_INGRESS_VERSION=${NGINX_INGRESS_VERSION:-controller-v1.12.1}
+
 install_nginx_ingress() {
   echo -e "${GREEN}Deploying nginx ingress in kind ...${NC}"
 
@@ -157,10 +159,15 @@ install_nginx_ingress() {
       (echo "ip_tables module not loaded needed by nginx ingress, please run 'sudo modprobe ip_tables'" && exit 1)
   fi
 
-kubectl apply -f https://github.com/kubernetes/ingress-nginx/raw/refs/heads/main/deploy/static/provider/kind/deploy.yaml
+  kubectl apply -f "https://github.com/kubernetes/ingress-nginx/raw/refs/tags/${NGINX_INGRESS_VERSION}/deploy/static/provider/kind/deploy.yaml"
+
+  echo -e "${GREEN}Enabling ssl-passthrough on nginx ingress controller ...${NC}"
+  kubectl patch deployment ingress-nginx-controller \
+    --namespace ingress-nginx \
+    --type=json \
+    -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--enable-ssl-passthrough"}]'
 
   echo -e "${GREEN}Waiting for nginx to be ready ...${NC}"
-
 
   kubectl wait --namespace ingress-nginx \
     --for=condition=available deployment/ingress-nginx-controller \
