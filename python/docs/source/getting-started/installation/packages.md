@@ -236,6 +236,11 @@ $ docker run --rm -it \
 ```
 ````
 
+```{tip}
+If you need Kubernetes access (e.g. for `jmp admin` commands), also mount your kubeconfig:
+`-v "${HOME}/.kube/config:/root/.kube/config":z`
+```
+
 To interact with Jumpstarter without local Python package installation,
 create an alias to run the `jmp` client in a container.
 
@@ -277,6 +282,7 @@ typically requires `root` privileges:
 :substitutions:
 $ sudo podman run --rm -it \
     -v "${HOME}/.config/jumpstarter/:/root/.config/jumpstarter":z \
+    -v "${HOME}/.kube/config:/root/.kube/config":z \
     --net=host --privileged \
     -v /run/udev:/run/udev -v /dev:/dev -v /etc/jumpstarter:/etc/jumpstarter:z \
     quay.io/jumpstarter-dev/jumpstarter:{{version}} jmp
@@ -288,6 +294,7 @@ $ sudo podman run --rm -it \
 :substitutions:
 $ sudo docker run --rm -it \
     -v "${HOME}/.config/jumpstarter/:/root/.config/jumpstarter":z \
+    -v "${HOME}/.kube/config:/root/.kube/config":z \
     --net=host --privileged \
     -v /run/udev:/run/udev -v /dev:/dev -v /etc/jumpstarter:/etc/jumpstarter:z \
     quay.io/jumpstarter-dev/jumpstarter:{{version}} jmp
