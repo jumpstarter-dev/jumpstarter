@@ -118,14 +118,14 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
 
     elif shell_name.endswith("zsh"):
         lines = []
+        lines.append("autoload -Uz compinit && compinit")
         if use_profiles:
             lines.append('[ -f ~/.zshrc ] && source ~/.zshrc')
-        lines.append("autoload -Uz compinit && compinit")
         lines.append('eval "$(jmp completion zsh 2>/dev/null)"')
         lines.append('eval "$(jmp-admin completion zsh 2>/dev/null)"')
         if j_commands:
             cmds = " ".join(j_commands)
-            lines.append(f"compdef '_arguments \"1:(({cmds}))\"' j")
+            lines.append(f"compdef '_arguments \"1:subcommand:({cmds})\"' j")
         else:
             lines.append('eval "$(j completion zsh 2>/dev/null)"')
         return "\n".join(lines) + "\n"
