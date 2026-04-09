@@ -180,7 +180,13 @@ setup_test_environment() {
 
     # Get the controller endpoint from Jumpstarter CR
     export ENDPOINT
-    ENDPOINT="grpc.$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}' 2>/dev/null || echo 'jumpstarter.127.0.0.1.nip.io'):8082"
+    local BASEDOMAIN
+    BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}' 2>/dev/null) || true
+    if [ -z "${BASEDOMAIN}" ]; then
+        log_error "Failed to get baseDomain from Jumpstarter CR in namespace ${JS_NAMESPACE}. Is the controller deployed with a Jumpstarter CR?"
+        exit 1
+    fi
+    ENDPOINT="grpc.${BASEDOMAIN}:8082"
 
     log_info "Controller endpoint: $ENDPOINT"
 
