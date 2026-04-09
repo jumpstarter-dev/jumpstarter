@@ -123,7 +123,7 @@ export:
 
 PTP ports transition through these states:
 
-```
+```text
 INITIALIZING → LISTENING → SLAVE (synchronized to master)
                          → MASTER (elected as grandmaster)
                          → PASSIVE (backup, not active)
@@ -145,8 +145,14 @@ The clock servo tracks synchronization quality:
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_gptp.client.GptpClient()
     :members: start, stop, status, get_offset, get_port_stats,
-              get_clock_identity, get_parent_info, set_priority1,
               is_synchronized, wait_for_sync, monitor
+```
+
+```{note}
+`get_clock_identity()`, `get_parent_info()`, and `set_priority1()` are
+available on the ``MockGptp`` driver for testing. On the real ``Gptp`` driver
+they raise ``NotImplementedError`` until ptp4l UDS management socket
+integration is added.
 ```
 
 ## Examples
@@ -179,19 +185,6 @@ with serve(Gptp(interface="eth0")) as gptp:
     gptp.stop()
 ```
 
-### Force master role
-
-```python
-with serve(Gptp(interface="eth0", role="auto")) as gptp:
-    gptp.start()
-    gptp.wait_for_sync()
-
-    # Override BMCA: become grandmaster
-    gptp.set_priority1(0)
-    status = gptp.status()
-    assert status.port_state.value == "MASTER"
-```
-
 ### Using MockGptp in tests
 
 ```python
@@ -211,12 +204,12 @@ def test_my_application():
 When used inside `jmp shell`, the driver provides these commands:
 
 ```console
-$ j gptp start              # Start PTP synchronization
-$ j gptp stop               # Stop PTP synchronization
-$ j gptp status             # Show sync status
-$ j gptp offset             # Show current clock offset
-$ j gptp monitor -n 20      # Monitor 20 sync events
-$ j gptp set-priority 0     # Force grandmaster role
+j gptp start              # Start PTP synchronization
+j gptp stop               # Stop PTP synchronization
+j gptp status             # Show sync status
+j gptp offset             # Show current clock offset
+j gptp monitor -n 20      # Monitor 20 sync events
+j gptp set-priority 0     # Force grandmaster role
 ```
 
 ## Hardware Requirements
