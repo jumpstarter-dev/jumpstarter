@@ -347,12 +347,12 @@ def test_someip_accepts_valid_hex_payload(even_hex):
 def test_someip_rejects_out_of_range_16bit_ids(model_cls, field, value):
     """16-bit SOME/IP ID fields must reject values outside 0..0xFFFF."""
     defaults = {
-        SomeIpMessageResponse: dict(
-            service_id=1, method_id=1, client_id=1, session_id=1,
-            message_type=0, return_code=0, payload="AA",
-        ),
-        SomeIpServiceEntry: dict(service_id=1, instance_id=1),
-        SomeIpEventNotification: dict(service_id=1, event_id=1, payload="AA"),
+        SomeIpMessageResponse: {
+            "service_id": 1, "method_id": 1, "client_id": 1, "session_id": 1,
+            "message_type": 0, "return_code": 0, "payload": "AA",
+        },
+        SomeIpServiceEntry: {"service_id": 1, "instance_id": 1},
+        SomeIpEventNotification: {"service_id": 1, "event_id": 1, "payload": "AA"},
     }
     kwargs = {**defaults[model_cls], field: value}
     with pytest.raises(ValidationError):

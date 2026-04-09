@@ -1,6 +1,6 @@
 # SOME/IP Driver
 
-`jumpstarter-driver-someip` provides SOME/IP (Scalable service-Oriented MiddlewarE over IP)
+`jumpstarter-driver-someip` provides SOME/IP (Scalable service-Oriented Middleware over IP)
 protocol operations for Jumpstarter. This driver wraps the
 [opensomeip](https://github.com/vtz/opensomeip-python) Python binding to enable remote
 RPC calls, service discovery, raw messaging, and event subscriptions with automotive
