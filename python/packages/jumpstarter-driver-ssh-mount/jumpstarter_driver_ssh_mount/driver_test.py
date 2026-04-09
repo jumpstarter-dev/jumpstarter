@@ -1,5 +1,3 @@
-"""Tests for the SSH mount driver"""
-
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -373,3 +371,42 @@ def test_cli_has_mount_and_umount_flag():
         result = runner.invoke(cli, ["--help"])
         assert "mountpoint" in result.output.lower() or "MOUNTPOINT" in result.output
         assert "--umount" in result.output
+
+
+def test_cli_dispatches_mount():
+    """Test that CLI invocation with a mountpoint dispatches to self.mount()"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        cli = client.cli()
+        from click.testing import CliRunner
+        runner = CliRunner()
+
+        with patch.object(client, 'mount') as mock_mount:
+            result = runner.invoke(cli, ["/tmp/test-cli-mount", "-r", "/home"])
+            assert result.exit_code == 0
+            mock_mount.assert_called_once_with(
+                "/tmp/test-cli-mount",
+                remote_path="/home",
+                direct=False,
+                extra_args=[],
+            )
+
+
+def test_cli_dispatches_umount():
+    """Test that CLI invocation with --umount dispatches to self.umount()"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        cli = client.cli()
+        from click.testing import CliRunner
+        runner = CliRunner()
+
+        with patch.object(client, 'umount') as mock_umount:
+            result = runner.invoke(cli, ["--umount", "/tmp/test-cli-mount", "--lazy"])
+            assert result.exit_code == 0
+            mock_umount.assert_called_once_with("/tmp/test-cli-mount", lazy=True)
