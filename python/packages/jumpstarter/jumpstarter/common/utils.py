@@ -116,7 +116,7 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
             lines.append('eval "$(j completion bash 2>/dev/null)"')
         return "\n".join(lines) + "\n"
 
-    elif shell_name == "zsh":
+    elif shell_name.endswith("zsh"):
         lines = []
         if use_profiles:
             lines.append('[ -f ~/.zshrc ] && source ~/.zshrc')
@@ -130,7 +130,7 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
             lines.append('eval "$(j completion zsh 2>/dev/null)"')
         return "\n".join(lines) + "\n"
 
-    elif shell_name == "fish":
+    elif shell_name.endswith("fish"):
         lines = []
         lines.append("jmp completion fish 2>/dev/null | source")
         lines.append("jmp-admin completion fish 2>/dev/null | source")
@@ -173,7 +173,8 @@ def _launch_fish(shell, init_file, common_env, context, lease):
     )
     init_cmd = fish_fn
     if init_file:
-        init_cmd += f"; source {init_file.name}"
+        fish_env["_JMP_SHELL_INIT"] = init_file.name
+        init_cmd += '; source "$_JMP_SHELL_INIT"'
     return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
 
 
@@ -237,7 +238,7 @@ def launch_shell(
 
     init_content = _generate_shell_init(shell_name, use_profiles, j_commands)
 
-    if shell_name == "zsh":
+    if shell_name.endswith("zsh"):
         return _launch_zsh(shell, init_content, common_env, context, lease, use_profiles)
 
     init_file = None
@@ -249,7 +250,7 @@ def launch_shell(
     try:
         if shell_name.endswith("bash"):
             return _launch_bash(shell, init_file, use_profiles, common_env, context, lease)
-        elif shell_name == "fish":
+        elif shell_name.endswith("fish"):
             return _launch_fish(shell, init_file, common_env, context, lease)
         else:
             return _run_process([shell], common_env, lease)

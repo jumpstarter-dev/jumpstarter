@@ -196,6 +196,31 @@ def test_launch_fish_passes_context_via_env(tmp_path, monkeypatch):
     assert context not in init_cmd_arg
 
 
+def test_launch_fish_passes_init_file_via_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/fish")
+    captured_env = {}
+    captured_cmd = []
+
+    def mock_run_process(cmd, env, lease=None):
+        captured_env.update(env)
+        captured_cmd.extend(cmd)
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            j_commands=["power"],
+        )
+
+    assert "_JMP_SHELL_INIT" in captured_env
+    init_cmd_arg = captured_cmd[captured_cmd.index("--init-command") + 1]
+    assert captured_env["_JMP_SHELL_INIT"] not in init_cmd_arg
+
+
 def test_generate_bash_init_limits_completion_to_first_arg():
     content = _generate_shell_init("bash", use_profiles=False, j_commands=["power", "serial"])
     assert "COMP_CWORD" in content
