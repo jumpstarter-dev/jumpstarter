@@ -3,7 +3,7 @@
 # This script runs the compatibility test suite (assumes setup.sh was run first)
 #
 # Environment variables:
-#   COMPAT_TEST - Which test to run: "old-controller" or "old-client"
+#   COMPAT_TEST - Which test to run (default: "old-client")
 
 set -euo pipefail
 
@@ -48,19 +48,16 @@ run_tests() {
     # Use insecure GRPC for testing
     export JUMPSTARTER_GRPC_INSECURE=1
 
-    COMPAT_TEST="${COMPAT_TEST:-old-controller}"
+    COMPAT_TEST="${COMPAT_TEST:-old-client}"
     log_info "Running compat test: $COMPAT_TEST"
 
     local label_filter=""
     case "$COMPAT_TEST" in
-        old-controller)
-            label_filter="old-controller"
-            ;;
         old-client)
             label_filter="old-client"
             ;;
         *)
-            log_error "Unknown COMPAT_TEST: $COMPAT_TEST (expected 'old-controller' or 'old-client')"
+            log_error "Unknown COMPAT_TEST: $COMPAT_TEST (expected 'old-client')"
             exit 1
             ;;
     esac
@@ -73,7 +70,7 @@ main() {
     export E2E_TEST_NS="${E2E_TEST_NS:-jumpstarter-lab}"
 
     log_info "=== Jumpstarter Compatibility E2E Test Runner ==="
-    log_info "Test: ${COMPAT_TEST:-old-controller}"
+    log_info "Test: ${COMPAT_TEST:-old-client}"
     log_info "Namespace: $E2E_TEST_NS"
     log_info "Repository Root: $REPO_ROOT"
     echo ""
