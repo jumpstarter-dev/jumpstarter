@@ -80,7 +80,6 @@ async def check_jumpstarter_installation(
         "installed": False,
         "version": None,
         "namespace": None,
-        "chart_name": None,
         "status": None,
         "has_crds": False,
         "error": None,
