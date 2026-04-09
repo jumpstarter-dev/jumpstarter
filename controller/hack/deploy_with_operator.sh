@@ -217,5 +217,5 @@ wait_for_jumpstarter_resources
 check_grpc_endpoints
 
 # Print success banner
-print_deployment_success "operator"
+print_deployment_success
 

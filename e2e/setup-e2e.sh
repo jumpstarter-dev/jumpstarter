@@ -13,9 +13,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Default namespace for tests
 export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
-# Deployment method
-export METHOD="${METHOD:-operator}"
-
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -262,7 +259,7 @@ deploy_dex() {
 
 # Step 4: Deploy jumpstarter controller
 deploy_controller() {
-    log_info "Deploying jumpstarter controller (method: $METHOD)..."
+    log_info "Deploying jumpstarter controller..."
     
     cd "$REPO_ROOT"
     
@@ -312,7 +309,6 @@ setup_test_environment() {
     echo "E2E_TEST_NS=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REPO_ROOT=$REPO_ROOT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "SCRIPT_DIR=$SCRIPT_DIR" >> "$REPO_ROOT/.e2e-setup-complete"
-    
     # Set SSL certificate paths for Python to use the generated CA
     echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REQUESTS_CA_BUNDLE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
@@ -327,7 +323,6 @@ setup_test_environment() {
 main() {
     log_info "=== Jumpstarter E2E Setup ==="
     log_info "Namespace: $JS_NAMESPACE"
-    log_info "Deployment Method: $METHOD"
     log_info "Repository Root: $REPO_ROOT"
     log_info "Script Directory: $SCRIPT_DIR"
     echo ""
