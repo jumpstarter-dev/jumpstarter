@@ -28,9 +28,9 @@ import (
 
 var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), Ordered, func() {
 	var (
-		tracker *ProcessTracker
-		ns      string
-		oldJmp  string
+		tracker    *ProcessTracker
+		ns         string
+		oldJmpPath string
 	)
 
 	waitForCompatExporter := func() {
@@ -41,8 +41,8 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 	}
 
 	BeforeAll(func() {
-		oldJmp = OldJmp()
-		if oldJmp == "" {
+		oldJmpPath = OldJmpPath()
+		if oldJmpPath == "" {
 			Skip("PYTHON_OLD_VENV not set or no jmp/j binary found; skipping old-client compat tests")
 		}
 
@@ -88,7 +88,7 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 	// --- Registration ---
 	Context("Old exporter registration", func() {
 		It("old exporter registers with new controller", func() {
-			tracker.StartExporterLoop("compat-old-exporter", oldJmp)
+			tracker.StartExporterLoop("compat-old-exporter", oldJmpPath)
 			waitForCompatExporter()
 		})
 
@@ -109,7 +109,7 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 	Context("Lease cycles", func() {
 		It("old client can connect through new controller", func() {
 			waitForCompatExporter()
-			out, err := RunCmd(oldJmp, "shell", "--client", "compat-old-client",
+			out, err := OldJmp("shell", "--client", "compat-old-client",
 				"--selector", "example.com/board=compat-old", "j", "power", "on")
 			Expect(err).NotTo(HaveOccurred(), out)
 		})
@@ -153,13 +153,13 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 		})
 
 		It("old exporter recovers Online after reconnect", func() {
-			tracker.StartExporterLoop("compat-old-exporter", oldJmp)
+			tracker.StartExporterLoop("compat-old-exporter", oldJmpPath)
 			waitForCompatExporter()
 		})
 
 		It("lease works after reconnect", func() {
 			waitForCompatExporter()
-			out, err := RunCmd(oldJmp, "shell", "--client", "compat-old-client",
+			out, err := OldJmp("shell", "--client", "compat-old-client",
 				"--selector", "example.com/board=compat-old", "j", "power", "on")
 			Expect(err).NotTo(HaveOccurred(), out)
 		})
@@ -198,7 +198,7 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 			Expect(clientCmd.ProcessState).To(BeNil(), "Client exited before exporter was started")
 
 			// Now start the old exporter
-			tracker.StartExporterLoop("compat-old-exporter-wait", oldJmp)
+			tracker.StartExporterLoop("compat-old-exporter-wait", oldJmpPath)
 
 			// Wait for client to complete (with timeout)
 			done := make(chan error, 1)

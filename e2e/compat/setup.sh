@@ -321,17 +321,10 @@ setup_test_environment() {
     # Write setup configuration
     cat > "$REPO_ROOT/.e2e-setup-complete" <<EOF
 ENDPOINT=$ENDPOINT
-JS_NAMESPACE=$JS_NAMESPACE
+E2E_TEST_NS=$JS_NAMESPACE
 REPO_ROOT=$REPO_ROOT
 SCRIPT_DIR=$SCRIPT_DIR
-METHOD=$METHOD
-BATS_LIB_PATH=${BATS_LIB_PATH:-}
 EOF
-
-    # Add OLD_JMP if set (old-client scenario)
-    if [ -n "${OLD_JMP:-}" ]; then
-        echo "OLD_JMP=$OLD_JMP" >> "$REPO_ROOT/.e2e-setup-complete"
-    fi
 
     log_info "Test environment ready"
 }

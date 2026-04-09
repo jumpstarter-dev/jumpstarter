@@ -88,9 +88,8 @@ full_run() {
 
 # Main execution
 main() {
-    # Default namespace (E2E_TEST_NS is the canonical var; JS_NAMESPACE is
-    # accepted for backward-compat with setup scripts that still export it)
-    export E2E_TEST_NS="${E2E_TEST_NS:-${JS_NAMESPACE:-jumpstarter-lab}}"
+    # Default namespace
+    export E2E_TEST_NS="${E2E_TEST_NS:-jumpstarter-lab}"
 
     log_info "=== Jumpstarter E2E Test Runner ==="
     log_info "Namespace: $E2E_TEST_NS"

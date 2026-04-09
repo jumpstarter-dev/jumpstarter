@@ -70,7 +70,7 @@ run_tests() {
 
 # Main execution
 main() {
-    export E2E_TEST_NS="${E2E_TEST_NS:-${JS_NAMESPACE:-jumpstarter-lab}}"
+    export E2E_TEST_NS="${E2E_TEST_NS:-jumpstarter-lab}"
 
     log_info "=== Jumpstarter Compatibility E2E Test Runner ==="
     log_info "Test: ${COMPAT_TEST:-old-controller}"

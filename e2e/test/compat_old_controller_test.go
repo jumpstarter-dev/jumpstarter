@@ -155,7 +155,7 @@ var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-contro
 			MergeExporterConfig("/etc/jumpstarter/exporters/compat-exporter-wait.yaml", overlayPath)
 
 			// Start client BEFORE exporter
-			clientCmd := exec.Command("jmp", "shell", "--client", "compat-client-wait",
+			clientCmd := JmpCmd("shell", "--client", "compat-client-wait",
 				"--selector", "example.com/board=compat-wait", "j", "power", "on")
 			clientCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			err = clientCmd.Start()

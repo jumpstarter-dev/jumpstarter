@@ -76,11 +76,9 @@ func PythonOldVenv() string {
 	return os.Getenv("PYTHON_OLD_VENV")
 }
 
-// OldJmp returns the path to the old jmp binary for compat tests.
-// It derives the path from PYTHON_OLD_VENV by looking for "jmp" or "j"
-// in the venv's bin directory.
-func OldJmp() string {
-	venv := PythonOldVenv()
+// jmpPathFromVenv searches a venv's bin directory for "jmp" or "j".
+// Returns the full path if found, or empty string otherwise.
+func jmpPathFromVenv(venv string) string {
 	if venv == "" {
 		return ""
 	}
@@ -92,6 +90,32 @@ func OldJmp() string {
 		}
 	}
 	return ""
+}
+
+// JmpPath returns the path to the jmp binary. If PYTHON_VENV is set it
+// searches the venv's bin directory; otherwise it falls back to bare "jmp"
+// (relying on $PATH).
+func JmpPath() string {
+	if p := jmpPathFromVenv(PythonVenv()); p != "" {
+		return p
+	}
+	return "jmp"
+}
+
+// OldJmpPath returns the path to the old jmp binary for compat tests.
+// It derives the path from PYTHON_OLD_VENV by looking for "jmp" or "j"
+// in the venv's bin directory. Returns empty string if not found.
+func OldJmpPath() string {
+	return jmpPathFromVenv(PythonOldVenv())
+}
+
+// OldJmp runs an old-jmp CLI command and returns the output.
+func OldJmp(args ...string) (string, error) {
+	p := OldJmpPath()
+	if p == "" {
+		return "", fmt.Errorf("PYTHON_OLD_VENV not set or no jmp/j binary found")
+	}
+	return RunCmd(p, args...)
 }
 
 // RepoRoot returns the repository root directory (parent of e2e/).
@@ -177,14 +201,14 @@ func MustRunCmd(name string, args ...string) string {
 
 // Jmp runs a jmp CLI command and returns the output.
 func Jmp(args ...string) (string, error) {
-	return RunCmd("jmp", args...)
+	return RunCmd(JmpPath(), args...)
 }
 
 // JmpCmd creates an *exec.Cmd for the jmp CLI without starting it.
 // This is useful when the caller needs process-level control (e.g.,
 // Start/Wait, SysProcAttr, process group management).
 func JmpCmd(args ...string) *exec.Cmd {
-	return exec.Command("jmp", args...)
+	return exec.Command(JmpPath(), args...)
 }
 
 // MustJmp runs a jmp CLI command and fails the test on error.
@@ -296,7 +320,7 @@ func (pt *ProcessTracker) getOrCreateLog(name string) *logBuffer {
 // StartExporterLoop starts an exporter in a restart loop using a Go goroutine
 // (instead of a bash wrapper) and tracks the process PIDs.
 func (pt *ProcessTracker) StartExporterLoop(exporterName string, jmpBin ...string) {
-	jmp := "jmp"
+	jmp := JmpPath()
 	if len(jmpBin) > 0 && jmpBin[0] != "" {
 		jmp = jmpBin[0]
 	}
@@ -352,7 +376,7 @@ func (pt *ProcessTracker) StartExporterLoop(exporterName string, jmpBin ...strin
 // A background goroutine calls Wait() so the process is reaped when it exits,
 // allowing IsProcessRunning() to detect that the process is no longer alive.
 func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
-	cmd := exec.Command("jmp", "run", "--exporter", exporterName)
+	cmd := exec.Command(JmpPath(), "run", "--exporter", exporterName)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter %s", exporterName)
@@ -376,7 +400,7 @@ func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passp
 		args = append(args, "--passphrase", passphrase)
 	}
 
-	cmd := exec.Command("jmp", args...)
+	cmd := exec.Command(JmpPath(), args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	var stderrBuf *logBuffer

@@ -49,8 +49,7 @@ load_setup_config() {
     # shellcheck disable=SC1091
     source "$repo_root/.e2e-setup-complete"
 
-    # Bridge JS_NAMESPACE (from setup scripts) to E2E_TEST_NS (Go tests)
-    export E2E_TEST_NS="${E2E_TEST_NS:-${JS_NAMESPACE:-jumpstarter-lab}}"
+    export E2E_TEST_NS="${E2E_TEST_NS:-jumpstarter-lab}"
     export ENDPOINT="${ENDPOINT:-}"
     export REPO_ROOT="${repo_root}"
 }
