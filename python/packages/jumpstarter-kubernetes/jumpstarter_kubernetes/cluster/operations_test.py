@@ -126,17 +126,15 @@ class TestCreateClusterOnly:
 
 
 class TestCreateClusterAndInstall:
-    """Test cluster creation with installation."""
+    """Test cluster creation with operator installation."""
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_kubernetes.cluster.operations.helm_installed")
     @patch("jumpstarter_kubernetes.cluster.operations.create_kind_cluster_with_options")
     @patch("jumpstarter_kubernetes.cluster.operations.configure_endpoints")
-    @patch("jumpstarter_kubernetes.cluster.operations.install_jumpstarter_helm_chart")
+    @patch("jumpstarter_kubernetes.cluster.operations.install_jumpstarter_operator")
     async def test_create_cluster_and_install_success(
-        self, mock_install, mock_configure, mock_create, mock_helm_installed
+        self, mock_install, mock_configure, mock_create
     ):
-        mock_helm_installed.return_value = True
         mock_configure.return_value = ("192.168.1.100", "test.domain", "grpc.test:8082", "router.test:8083")
 
         await create_cluster_and_install("kind", False, "test-cluster", "", "", "kind", "minikube", version="1.0.0")
@@ -146,32 +144,12 @@ class TestCreateClusterAndInstall:
         mock_install.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("jumpstarter_kubernetes.cluster.operations.helm_installed")
     @patch("jumpstarter_kubernetes.cluster.operations.create_kind_cluster_with_options")
     @patch("jumpstarter_kubernetes.cluster.operations.configure_endpoints")
-    async def test_create_cluster_and_install_no_helm(
-        self, mock_configure, mock_create_wrapper, mock_helm_installed
-    ):
-        from jumpstarter_kubernetes.exceptions import ToolNotInstalledError
-
-        mock_create_wrapper.return_value = None
-        mock_helm_installed.return_value = False
-        mock_configure.return_value = ("192.168.1.100", "test.domain", "grpc.test:8082", "router.test:8083")
-
-        with pytest.raises(ToolNotInstalledError):
-            await create_cluster_and_install(
-                "kind", False, "test-cluster", "", "", "kind", "minikube", version="v0.1.0"
-            )
-
-    @pytest.mark.asyncio
-    @patch("jumpstarter_kubernetes.cluster.operations.helm_installed")
-    @patch("jumpstarter_kubernetes.cluster.operations.create_kind_cluster_with_options")
-    @patch("jumpstarter_kubernetes.cluster.operations.configure_endpoints")
-    async def test_create_cluster_and_install_no_version(self, mock_configure, mock_create, mock_helm_installed):
+    async def test_create_cluster_and_install_no_version(self, mock_configure, mock_create):
         from jumpstarter_kubernetes.exceptions import ClusterOperationError
 
         mock_create.return_value = None
-        mock_helm_installed.return_value = True
         mock_configure.return_value = ("192.168.1.100", "test.domain", "grpc.test:8082", "router.test:8083")
 
         with pytest.raises(ClusterOperationError):

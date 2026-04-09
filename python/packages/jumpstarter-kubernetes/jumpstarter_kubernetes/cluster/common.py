@@ -7,7 +7,6 @@ from typing import Literal, Optional
 from ..exceptions import ClusterTypeValidationError
 
 ClusterType = Literal["kind"] | Literal["minikube"] | Literal["k3s"]
-InstallMethod = Literal["operator", "helm"]
 
 # NodePort assignments (must match kind_cluster.yaml extraPortMappings and operator CR)
 GRPC_NODEPORT = 30010

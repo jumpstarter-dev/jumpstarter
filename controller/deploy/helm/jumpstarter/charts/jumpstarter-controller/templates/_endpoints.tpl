@@ -1,2 +1,0 @@
-{{- define "router.endpoint" }}{{ if .Values.grpc.routerHostname }}{{ .Values.grpc.routerHostname }}{{ else }}router.{{ .Values.global.baseDomain | required "grpc.routerHostname or global.baseDomain must be set"}}{{ end }}{{- end }}
-{{- define "controller.endpoint" }}{{ if .Values.grpc.hostname }}{{ .Values.grpc.hostname }}{{ else }}grpc.{{ .Values.global.baseDomain | required "grpc.hostname or global.baseDomain must be set"}}{{ end }}{{- end }}
