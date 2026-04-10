@@ -47,22 +47,36 @@ export:
 Inside a `jmp shell` session:
 
 ```shell
-# Mount remote filesystem
+# Mount remote filesystem (spawns a subshell; type 'exit' to unmount)
 j mount /local/mountpoint
 j mount /local/mountpoint -r /remote/path
 j mount /local/mountpoint --direct
 
-# Unmount
+# Mount in foreground mode (blocks until Ctrl+C)
+j mount /local/mountpoint --foreground
+
+# Unmount an orphaned mount
 j mount --umount /local/mountpoint
 j mount --umount /local/mountpoint --lazy
 ```
+
+By default, `j mount` runs sshfs in foreground mode and spawns a subshell
+with a modified prompt. The mount stays active while the subshell is running.
+When you type `exit` (or press Ctrl+D), sshfs is terminated and all resources
+(port forwards, temporary identity files) are cleaned up automatically.
+
+Use `--foreground` to skip the subshell and block directly on sshfs. Press
+Ctrl+C to unmount.
+
+The `--umount` flag is available as a fallback for mounts that were orphaned
+(e.g., if the process was killed without cleanup).
 
 ## API Reference
 
 ### SSHMountClient
 
-- `mount(mountpoint, *, remote_path="/", direct=False, extra_args=None)` - Mount remote filesystem locally via sshfs
-- `umount(mountpoint, *, lazy=False)` - Unmount a previously mounted sshfs filesystem
+- `mount(mountpoint, *, remote_path="/", direct=False, foreground=False, extra_args=None)` - Mount remote filesystem locally via sshfs
+- `umount(mountpoint, *, lazy=False)` - Unmount an sshfs filesystem (fallback for orphaned mounts)
 
 ### CLI
 

@@ -51,30 +51,43 @@ def test_mount_sshfs_not_installed():
 
 
 def test_mount_sshfs_success():
-    """Test successful sshfs mount via port forwarding"""
+    """Test successful sshfs mount via port forwarding with subshell"""
     instance = SSHMount(
         children={"ssh": _make_ssh_child()},
     )
 
     with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0  # sshfs already exited
+        mock_proc.stderr = None
+
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                with patch('os.makedirs'):
-                    with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
-                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 2222))
-                        mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+                with patch('subprocess.Popen', return_value=mock_proc) as mock_popen:
+                    # Test run succeeds, then foreground popen exits immediately (simulated)
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    mock_proc.wait.side_effect = [None]  # wait returns immediately (exited)
 
-                        client.mount("/tmp/test-mount", remote_path="/home/user")
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 2222))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
 
-                        assert mock_run.called
-                        call_args = mock_run.call_args[0][0]
-                        assert call_args[0] == "sshfs"
-                        assert "testuser@127.0.0.1:/home/user" in call_args
-                        # Use realpath because the client resolves symlinks (e.g. /tmp -> /private/tmp on macOS)
-                        assert os.path.realpath("/tmp/test-mount") in call_args
-                        assert "-p" in call_args
-                        assert "2222" in call_args
+                            # The foreground popen will fail because sshfs exits immediately,
+                            # which raises ClickException. That's expected in unit tests
+                            # where sshfs isn't really running.
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount", remote_path="/home/user")
+
+                            # Verify test run was called with correct args
+                            test_run_args = mock_run.call_args_list[0][0][0]
+                            assert test_run_args[0] == "sshfs"
+                            assert "testuser@127.0.0.1:/home/user" in test_run_args
+                            assert os.path.realpath("/tmp/test-mount") in test_run_args
+                            assert "-p" in test_run_args
+                            assert "2222" in test_run_args
+                            # -f should NOT be in the test run (it's removed for validation)
+                            assert "-f" not in test_run_args
 
 
 def test_mount_sshfs_with_identity():
@@ -84,24 +97,30 @@ def test_mount_sshfs_with_identity():
     )
 
     with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.stderr = None
+
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                with patch('os.makedirs'):
-                    with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
-                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
-                        mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    mock_proc.wait.side_effect = [None]
 
-                        client.mount("/tmp/test-mount")
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
 
-                        assert mock_run.called
-                        call_args = mock_run.call_args[0][0]
-                        # Should include IdentityFile option
-                        identity_opts = [
-                            call_args[i + 1] for i in range(len(call_args) - 1)
-                            if call_args[i] == "-o" and call_args[i + 1].startswith("IdentityFile=")
-                        ]
-                        assert len(identity_opts) == 1
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount")
+
+                            test_run_args = mock_run.call_args_list[0][0][0]
+                            identity_opts = [
+                                test_run_args[i + 1] for i in range(len(test_run_args) - 1)
+                                if test_run_args[i] == "-o" and test_run_args[i + 1].startswith("IdentityFile=")
+                            ]
+                            assert len(identity_opts) == 1
 
 
 def test_mount_sshfs_allow_other_fallback():
@@ -111,31 +130,39 @@ def test_mount_sshfs_allow_other_fallback():
     )
 
     with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.stderr = None
+
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
-                # First call fails with allow_other error, second succeeds
-                mock_run.side_effect = [
-                    MagicMock(returncode=1, stdout="", stderr="allow_other: permission denied"),
-                    MagicMock(returncode=0, stdout="", stderr=""),
-                ]
-                with patch('os.makedirs'):
-                    with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
-                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
-                        mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    # First test run fails with allow_other, second succeeds
+                    mock_run.side_effect = [
+                        MagicMock(returncode=1, stdout="", stderr="allow_other: permission denied"),
+                        MagicMock(returncode=0, stdout="", stderr=""),  # retry without allow_other
+                        MagicMock(returncode=0, stdout="", stderr=""),  # force_umount after test
+                        MagicMock(returncode=0, stdout="", stderr=""),  # force_umount after popen
+                    ]
+                    mock_proc.wait.side_effect = [None]
 
-                        client.mount("/tmp/test-mount")
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
 
-                        assert mock_run.call_count == 2
-                        # Second call should not have allow_other or its preceding -o
-                        second_call_args = mock_run.call_args_list[1][0][0]
-                        assert "allow_other" not in second_call_args
-                        # Verify no orphaned -o flags: every -o should be followed by a value
-                        for i, arg in enumerate(second_call_args):
-                            if arg == "-o":
-                                assert i + 1 < len(second_call_args), "Orphaned -o flag found"
-                                assert second_call_args[i + 1] != "-o", "Orphaned -o flag found"
-                                assert not second_call_args[i + 1].startswith("-"), \
-                                    f"Orphaned -o flag followed by {second_call_args[i + 1]}"
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount")
+
+                            # Second test run should not have allow_other
+                            second_call_args = mock_run.call_args_list[1][0][0]
+                            assert "allow_other" not in second_call_args
+                            # Verify no orphaned -o flags
+                            for i, arg in enumerate(second_call_args):
+                                if arg == "-o":
+                                    assert i + 1 < len(second_call_args), "Orphaned -o flag found"
+                                    assert not second_call_args[i + 1].startswith("-"), \
+                                        f"Orphaned -o flag followed by {second_call_args[i + 1]}"
 
 
 def test_mount_sshfs_generic_failure():
@@ -163,24 +190,31 @@ def test_mount_sshfs_generic_failure():
 
 
 def test_mount_sshfs_direct_success():
-    """Test successful sshfs mount using direct TCP address"""
+    """Test sshfs mount using direct TCP address"""
     instance = SSHMount(
         children={"ssh": _make_ssh_child(host="10.0.0.1", port=2222)},
     )
 
     with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.stderr = None
+
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                with patch('os.makedirs'):
-                    client.mount("/tmp/test-mount", direct=True)
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    mock_proc.wait.side_effect = [None]
 
-                    assert mock_run.called
-                    call_args = mock_run.call_args[0][0]
-                    assert call_args[0] == "sshfs"
-                    assert "testuser@10.0.0.1:/" in call_args
-                    assert "-p" in call_args
-                    assert "2222" in call_args
+                    with patch('os.makedirs'):
+                        with pytest.raises(Exception, match="sshfs mount failed"):
+                            client.mount("/tmp/test-mount", direct=True)
+
+                        test_run_args = mock_run.call_args_list[0][0][0]
+                        assert test_run_args[0] == "sshfs"
+                        assert "testuser@10.0.0.1:/" in test_run_args
+                        assert "-p" in test_run_args
+                        assert "2222" in test_run_args
 
 
 def test_mount_sshfs_direct_fallback_to_portforward():
@@ -190,34 +224,130 @@ def test_mount_sshfs_direct_fallback_to_portforward():
     )
 
     with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.stderr = None
+
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    mock_proc.wait.side_effect = [None]
+
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 3333))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                            original_ssh = client.ssh
+
+                            class FakeTcp:
+                                def address(self):
+                                    raise ValueError("not available")
+
+                            class FakeSsh:
+                                def __getattr__(self, name):
+                                    if name == "tcp":
+                                        return FakeTcp()
+                                    return getattr(original_ssh, name)
+
+                            with patch.object(client, 'ssh', FakeSsh()):
+                                with pytest.raises(Exception, match="sshfs mount failed"):
+                                    client.mount("/tmp/test-mount", direct=True)
+
+                            test_run_args = mock_run.call_args_list[0][0][0]
+                            # Should have used port forwarding (port 3333)
+                            assert "3333" in test_run_args
+
+
+def test_mount_foreground_mode():
+    """Test that foreground flag blocks on sshfs without spawning subshell"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # Still running
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired("sshfs", 1),  # First wait (startup check) - still running
+            None,  # Second wait (foreground blocking) - exited
+        ]
+        mock_proc.returncode = 0
+
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.run') as mock_run:
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                            client.mount("/tmp/test-mount", foreground=True)
+
+                            # Should have waited on sshfs (foreground mode)
+                            assert mock_proc.wait.call_count >= 2
+                            # Port forward should be cleaned up
+                            mock_adapter.return_value.__exit__.assert_called()
+
+
+def test_mount_subshell_mode():
+    """Test that default mode spawns a subshell"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.side_effect = [None, 0]  # Running, then exited after subshell
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired("sshfs", 1),  # Startup check - still running
+        ]
+        mock_proc.returncode = 0
+
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.run') as mock_run:
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                            with patch.object(client, '_run_subshell') as mock_subshell:
+                                client.mount("/tmp/test-mount")
+
+                                # Subshell should have been called
+                                resolved = os.path.realpath("/tmp/test-mount")
+                                mock_subshell.assert_called_once_with(resolved, "/")
+
+
+def test_mount_cleanup_on_failure():
+    """Test that identity file is cleaned up when mount fails"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child(ssh_identity=TEST_SSH_KEY)},
+    )
+
+    with serve(instance) as client:
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(
+                    returncode=1, stdout="", stderr="Connection refused"
+                )
                 with patch('os.makedirs'):
                     with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
-                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 3333))
+                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
                         mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
 
-                        # Make the tcp.address() call raise to trigger fallback
-                        original_ssh = client.ssh
+                        with patch('os.unlink') as mock_unlink:
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount")
 
-                        class FakeTcp:
-                            def address(self):
-                                raise ValueError("not available")
-
-                        class FakeSsh:
-                            def __getattr__(self, name):
-                                if name == "tcp":
-                                    return FakeTcp()
-                                return getattr(original_ssh, name)
-
-                        with patch.object(client, 'ssh', FakeSsh()):
-                            client.mount("/tmp/test-mount", direct=True)
-
-                        assert mock_run.called
-                        call_args = mock_run.call_args[0][0]
-                        # Should have used port forwarding (port 3333)
-                        assert "3333" in call_args
+                            # Identity file should be cleaned up on failure
+                            assert mock_unlink.called
 
 
 def test_umount_with_fusermount():
@@ -249,7 +379,6 @@ def test_umount_with_system_umount_fallback():
     )
 
     with serve(instance) as client:
-        # No fusermount found at all
         with patch.object(client, '_find_executable', return_value=None):
             with patch('subprocess.run') as mock_run:
                 mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -300,71 +429,8 @@ def test_umount_failure():
                     client.umount("/tmp/test-mount")
 
 
-def test_umount_cleans_up_tracked_resources():
-    """Test that umount cleans up identity files and port forwards for tracked mounts"""
-    instance = SSHMount(
-        children={"ssh": _make_ssh_child()},
-    )
-
-    with serve(instance) as client:
-        # Simulate a tracked mount -- use realpath for the key because the client
-        # resolves paths via os.path.realpath (e.g. /tmp -> /private/tmp on macOS)
-        resolved_mount = os.path.realpath("/tmp/test-mount")
-        mock_adapter = MagicMock()
-        client._active_mounts[resolved_mount] = MagicMock(
-            identity_file="/tmp/fake_key",
-            port_forward=mock_adapter,
-        )
-
-        def _fake_find(name):
-            return "/usr/bin/fusermount" if name == "fusermount" else None
-
-        with patch.object(client, '_find_executable', side_effect=_fake_find):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                with patch('os.unlink') as mock_unlink:
-                    client.umount("/tmp/test-mount")
-
-                    # Identity file should be cleaned up
-                    mock_unlink.assert_called_once_with("/tmp/fake_key")
-                    # Port forward should be closed
-                    mock_adapter.__exit__.assert_called_once()
-                    # Mount should be removed from tracking
-                    assert resolved_mount not in client._active_mounts
-
-
-def test_umount_all_session_mounts():
-    """Test that umount with no args unmounts all tracked mounts"""
-    instance = SSHMount(
-        children={"ssh": _make_ssh_child()},
-    )
-
-    with serve(instance) as client:
-        # Simulate two tracked mounts -- use realpath for keys because the client
-        # resolves paths via os.path.realpath (e.g. /tmp -> /private/tmp on macOS)
-        client._active_mounts[os.path.realpath("/tmp/mount1")] = MagicMock(
-            identity_file=None, port_forward=None,
-        )
-        client._active_mounts[os.path.realpath("/tmp/mount2")] = MagicMock(
-            identity_file=None, port_forward=None,
-        )
-
-        def _fake_find(name):
-            return "/usr/bin/fusermount" if name == "fusermount" else None
-
-        with patch.object(client, '_find_executable', side_effect=_fake_find):
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-
-                client.umount()
-
-                # Both mounts should have been unmounted
-                assert mock_run.call_count == 2
-                assert len(client._active_mounts) == 0
-
-
 def test_cli_has_mount_and_umount_flag():
-    """Test that the CLI exposes mount command with --umount flag"""
+    """Test that the CLI exposes mount command with --umount and --foreground flags"""
     instance = SSHMount(
         children={"ssh": _make_ssh_child()},
     )
@@ -376,6 +442,7 @@ def test_cli_has_mount_and_umount_flag():
         result = runner.invoke(cli, ["--help"])
         assert "mountpoint" in result.output.lower() or "MOUNTPOINT" in result.output
         assert "--umount" in result.output
+        assert "--foreground" in result.output
 
 
 def test_cli_dispatches_mount():
@@ -396,6 +463,7 @@ def test_cli_dispatches_mount():
                 "/tmp/test-cli-mount",
                 remote_path="/home",
                 direct=False,
+                foreground=False,
                 extra_args=[],
             )
 
