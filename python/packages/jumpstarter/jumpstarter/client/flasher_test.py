@@ -1,7 +1,5 @@
 """Tests for the simplified FlasherClient (no opendal dependency)."""
 
-from pathlib import Path
-
 import pytest
 
 from jumpstarter.client.flasher import _parse_path
@@ -53,7 +51,6 @@ class TestHttpUrlAdapter:
     @pytest.mark.anyio
     async def test_read_mode_produces_get_request(self):
         from jumpstarter.client.flasher import _http_url_adapter
-        from jumpstarter.common.resources import PresignedRequestResource
 
         # _http_url_adapter is decorated with @blocking, but the underlying
         # async generator can be tested directly via its __wrapped__ attribute
