@@ -224,7 +224,7 @@ class SSHMountClient(CompositeClient):
             # Prevent bash from reading ~/.bashrc which would override PS1
             # Instead, use --rcfile with a custom init that sources bashrc then sets PS1
             env["JUMPSTARTER_SSHFS_PROMPT"] = prompt_prefix
-            proc = subprocess.run(
+            subprocess.run(
                 [shell, "--norc", "--noprofile", "-i"],
                 env=env,
             )
