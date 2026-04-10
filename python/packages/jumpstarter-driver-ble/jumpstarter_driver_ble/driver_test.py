@@ -1,6 +1,6 @@
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 
 from .driver import BleWriteNotifyStream, _ble_notify_handler
@@ -79,27 +79,27 @@ def test_ble_driver_connect_stream():
 
 
 def test_ble_notify_handler():
-    """Test the notification handler puts data into the queue."""
-    queue = asyncio.Queue(maxsize=10)
+    """Test the notification handler puts data into the stream."""
+    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=10)
     sender = MagicMock()
     test_data = bytearray(b"test_notification")
 
-    _ble_notify_handler(sender, test_data, queue)
+    _ble_notify_handler(sender, test_data, send_stream)
 
-    assert not queue.empty()
-    assert queue.get_nowait() == test_data
+    item = receive_stream.receive_nowait()
+    assert item == test_data
 
 
 def test_ble_notify_handler_queue_full(capsys):
-    """Test the notification handler handles a full queue gracefully."""
-    queue = asyncio.Queue(maxsize=1)
+    """Test the notification handler handles a full buffer gracefully."""
+    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](max_buffer_size=1)
     sender = MagicMock()
 
-    # Fill the queue
-    queue.put_nowait(b"first")
+    # Fill the buffer
+    send_stream.send_nowait(b"first")
 
     # This should print a warning, not raise
-    _ble_notify_handler(sender, bytearray(b"second"), queue)
+    _ble_notify_handler(sender, bytearray(b"second"), send_stream)
 
     captured = capsys.readouterr()
     assert "queue is full" in captured.out

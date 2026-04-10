@@ -1,20 +1,22 @@
-import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 
+import anyio
 from anyio.abc import ObjectStream
+from anyio.streams.memory import MemoryObjectSendStream
 from bleak import BleakClient, BleakGATTCharacteristic
 from bleak.exc import BleakError
 
 from jumpstarter.driver import Driver, export, exportstream
 
 
-def _ble_notify_handler(_sender: BleakGATTCharacteristic, data: bytearray, data_queue: asyncio.Queue):
-    """Notification handler that puts received data into a queue."""
+def _ble_notify_handler(_sender: BleakGATTCharacteristic, data: bytearray,
+                        send_stream: MemoryObjectSendStream):
+    """Notification handler that puts received data into the stream."""
     try:
-        data_queue.put_nowait(data)
-    except asyncio.QueueFull:
+        send_stream.send_nowait(data)
+    except anyio.WouldBlock:
         print("Warning: Data queue is full, dropping message")
 
 
@@ -36,13 +38,13 @@ class AsyncBleConfig():
 class AsyncBleWrapper(ObjectStream):
     client: BleakClient
     config: AsyncBleConfig
-    notify_queue: asyncio.Queue
+    receive_stream: anyio.streams.memory.MemoryObjectReceiveStream
 
     async def send(self, data: bytes):
         await self.client.write_gatt_char(self.config.write_char_uuid, data)
 
     async def receive(self):
-        return bytes(await self.notify_queue.get())
+        return bytes(await self.receive_stream.receive())
 
     async def send_eof(self):
         # BLE characteristics don't have an explicit EOF mechanism
@@ -107,7 +109,8 @@ class BleWriteNotifyStream(Driver):
         async with BleakClient(self.address) as client:
             try:
                 if client.is_connected:
-                    notify_queue = asyncio.Queue(maxsize=1000)
+                    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](
+                        max_buffer_size=1000)
                     self.logger.info(
                         "Connected to BLE device at Address: %s", self.address)
 
@@ -116,14 +119,14 @@ class BleWriteNotifyStream(Driver):
 
                     # register notification handler if notify_char_uuid is provided
                     notify_handler = partial(
-                        _ble_notify_handler, data_queue=notify_queue)
+                        _ble_notify_handler, send_stream=send_stream)
                     await client.start_notify(self.notify_char_uuid, notify_handler)
                     self.logger.info(
                         "Setting up notification handler for characteristic UUID: %s", self.notify_char_uuid)
 
                     async with AsyncBleWrapper(
                         client=client,
-                        notify_queue=notify_queue,
+                        receive_stream=receive_stream,
                         config=AsyncBleConfig(
                             address=self.address,
                             service_uuid=self.service_uuid,

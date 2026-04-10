@@ -29,7 +29,6 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
-asyncio_mode = "auto"
 testpaths = ["jumpstarter_driver_ble"]
 
 [build-system]
@@ -37,7 +36,7 @@ requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["pytest-asyncio>=0.24.0", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-anyio>=0.0.0", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
