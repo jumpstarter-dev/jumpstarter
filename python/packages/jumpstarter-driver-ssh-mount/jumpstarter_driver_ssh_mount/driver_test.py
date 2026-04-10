@@ -269,10 +269,11 @@ def test_mount_foreground_mode():
 
     with serve(instance) as client:
         mock_proc = MagicMock()
-        mock_proc.poll.return_value = None  # Still running
+        mock_proc.poll.return_value = None  # Still running when cleanup checks
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired("sshfs", 1),  # First wait (startup check) - still running
             None,  # Second wait (foreground blocking) - exited
+            None,  # Third wait (cleanup after terminate) - exited
         ]
         mock_proc.returncode = 0
 
@@ -302,9 +303,10 @@ def test_mount_subshell_mode():
 
     with serve(instance) as client:
         mock_proc = MagicMock()
-        mock_proc.poll.side_effect = [None, 0]  # Running, then exited after subshell
+        mock_proc.poll.return_value = None  # Still running when cleanup checks
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired("sshfs", 1),  # Startup check - still running
+            None,  # Cleanup wait after terminate - exited
         ]
         mock_proc.returncode = 0
 
