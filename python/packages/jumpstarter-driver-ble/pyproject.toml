@@ -8,7 +8,9 @@ authors = [{ name = "Andreas Karner", email = "andreas.karner@outlook.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "anyio>=4.10.0",
+    "click>=8.1.8",
     "jumpstarter",
+    "jumpstarter-driver-network",
     "bleak>=1.1.1",
 ]
 
@@ -34,7 +36,7 @@ requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-anyio>=0.0.0", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
