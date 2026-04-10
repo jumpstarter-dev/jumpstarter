@@ -36,6 +36,7 @@ jumpstarter-driver-tftp = { workspace = true }
 jumpstarter-driver-snmp = { workspace = true }
 jumpstarter-driver-shell = { workspace = true }
 jumpstarter-driver-ssh = { workspace = true }
+jumpstarter-driver-ssh-mount = { workspace = true }
 jumpstarter-driver-uboot = { workspace = true }
 jumpstarter-driver-uds = { workspace = true }
 jumpstarter-driver-uds-can = { workspace = true }
