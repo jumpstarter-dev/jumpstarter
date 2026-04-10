@@ -6,6 +6,12 @@ import pytest
 from .driver import BleWriteNotifyStream, _ble_notify_handler
 from jumpstarter.common.utils import serve
 
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 TEST_ADDRESS = "AA:BB:CC:DD:EE:FF"
 TEST_SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb"
 TEST_WRITE_CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
