@@ -115,7 +115,7 @@ class DdsClient(DriverClient):
         @click.argument("fields", nargs=-1, required=True)
         @click.option("--reliability", "-r", default=None, help="QoS reliability")
         @click.option("--durability", "-d", default=None, help="QoS durability")
-        @click.option("--history-depth", "-h", default=None, type=int, help="History depth")
+        @click.option("--history-depth", "-H", default=None, type=int, help="History depth")
         def create_topic_cmd(name, fields, reliability, durability, history_depth):
             """Create a topic: create-topic NAME FIELD1 FIELD2 ..."""
             topic = self.create_topic(name, list(fields), reliability, durability, history_depth)
