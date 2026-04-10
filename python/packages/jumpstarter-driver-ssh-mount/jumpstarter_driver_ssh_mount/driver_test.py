@@ -1,4 +1,5 @@
 import os
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -63,7 +64,7 @@ def test_mount_sshfs_success():
 
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
-                with patch('subprocess.Popen', return_value=mock_proc) as mock_popen:
+                with patch('subprocess.Popen', return_value=mock_proc):
                     # Test run succeeds, then foreground popen exits immediately (simulated)
                     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
                     mock_proc.wait.side_effect = [None]  # wait returns immediately (exited)
