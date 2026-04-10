@@ -6,7 +6,16 @@ from unittest.mock import patch
 
 import pytest
 
-from .utils import _generate_shell_init, _validate_j_commands, launch_shell
+from .utils import (
+    ANSI_GRAY,
+    ANSI_RESET,
+    ANSI_WHITE,
+    ANSI_YELLOW,
+    PROMPT_CWD,
+    _generate_shell_init,
+    _validate_j_commands,
+    launch_shell,
+)
 
 
 def test_launch_shell(tmp_path, monkeypatch):
@@ -334,3 +343,207 @@ def test_fish_init_produces_no_errors():
     )
     assert "command not found" not in result.stderr
     assert result.returncode == 0
+
+
+def test_launch_zsh_sets_prompt_after_profile_in_init(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    captured_zshrc = []
+
+    def mock_run_process(cmd, env, lease=None):
+        zdotdir = env.get("ZDOTDIR")
+        if zdotdir:
+            zshrc = os.path.join(zdotdir, ".zshrc")
+            with open(zshrc) as f:
+                captured_zshrc.append(f.read())
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="test-device",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=True,
+            j_commands=["power"],
+        )
+
+    assert len(captured_zshrc) == 1
+    content = captured_zshrc[0]
+    assert "PROMPT=" in content
+    zshrc_pos = content.index(".zshrc")
+    prompt_pos = content.index("PROMPT=")
+    assert prompt_pos > zshrc_pos
+
+
+def test_launch_zsh_passes_context_via_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    captured_env = {}
+
+    def mock_run_process(cmd, env, lease=None):
+        captured_env.update(env)
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="test-device",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+
+    assert captured_env.get("_JMP_SHELL_CONTEXT") == "test-device"
+
+
+def test_launch_zsh_prompt_references_env_var_not_literal_context(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    captured_zshrc = []
+
+    def mock_run_process(cmd, env, lease=None):
+        zdotdir = env.get("ZDOTDIR")
+        if zdotdir:
+            zshrc = os.path.join(zdotdir, ".zshrc")
+            with open(zshrc) as f:
+                captured_zshrc.append(f.read())
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="test-device-name",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            j_commands=["power"],
+        )
+
+    content = captured_zshrc[0]
+    prompt_line = [line for line in content.split("\n") if "PROMPT=" in line][0]
+    assert "${_JMP_SHELL_CONTEXT}" in prompt_line
+    assert "test-device-name" not in prompt_line
+
+
+def test_launch_bash_sets_prompt_after_profile_in_init(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/bash")
+    captured_content = []
+
+    def mock_run_process(cmd, env, lease=None):
+        if "--rcfile" in cmd:
+            rcfile = cmd[cmd.index("--rcfile") + 1]
+            with open(rcfile) as f:
+                captured_content.append(f.read())
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="test-device",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=True,
+            j_commands=["power"],
+        )
+
+    assert len(captured_content) == 1
+    content = captured_content[0]
+    assert "PS1=" in content
+    bashrc_pos = content.index(".bashrc")
+    ps1_pos = content.index("PS1=")
+    assert ps1_pos > bashrc_pos
+
+
+def test_launch_bash_passes_context_via_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/bash")
+    captured_env = {}
+
+    def mock_run_process(cmd, env, lease=None):
+        captured_env.update(env)
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="test-device",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+
+    assert captured_env.get("_JMP_SHELL_CONTEXT") == "test-device"
+
+
+@pytest.mark.skipif(not shutil.which("zsh"), reason="zsh not installed")
+def test_zsh_prompt_survives_user_profile_override():
+    home_dir = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(home_dir, ".zshrc"), "w") as f:
+            f.write('PROMPT="user-prompt> "\n')
+
+        init_content = _generate_shell_init("zsh", use_profiles=True, j_commands=["power"])
+        init_content += (
+            'PROMPT="%F{8}%1~ %F{yellow}⚡%F{white}'
+            '${_JMP_SHELL_CONTEXT} %F{yellow}➤%f "\n'
+        )
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".zsh", delete=False) as f:
+            f.write(init_content)
+            init_file = f.name
+
+        try:
+            result = subprocess.run(
+                ["zsh", "-c", f"source {init_file}; echo \"$PROMPT\""],
+                env={
+                    "HOME": home_dir,
+                    "PATH": os.environ.get("PATH", ""),
+                    "_JMP_SHELL_CONTEXT": "test-device",
+                },
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert result.returncode == 0, f"zsh failed: {result.stderr}"
+            assert "user-prompt" not in result.stdout
+            assert "test-device" in result.stdout
+        finally:
+            os.unlink(init_file)
+    finally:
+        shutil.rmtree(home_dir, ignore_errors=True)
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="bash not installed")
+def test_bash_prompt_survives_user_profile_override():
+    home_dir = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(home_dir, ".bashrc"), "w") as f:
+            f.write('PS1="user-prompt> "\n')
+
+        init_content = _generate_shell_init("bash", use_profiles=True, j_commands=["power"])
+        init_content += (
+            f'PS1="{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}'
+            '$_JMP_SHELL_CONTEXT'
+            f' {ANSI_YELLOW}➤{ANSI_RESET} "\n'
+        )
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
+            f.write(init_content)
+            rcfile = f.name
+
+        try:
+            result = subprocess.run(
+                ["bash", "-c", f'source {rcfile}; echo "$PS1"'],
+                env={
+                    "HOME": home_dir,
+                    "PATH": os.environ.get("PATH", ""),
+                    "_JMP_SHELL_CONTEXT": "test-device",
+                },
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert result.returncode == 0, f"bash failed: {result.stderr}"
+            assert "user-prompt" not in result.stdout
+            assert "test-device" in result.stdout
+        finally:
+            os.unlink(rcfile)
+    finally:
+        shutil.rmtree(home_dir, ignore_errors=True)
