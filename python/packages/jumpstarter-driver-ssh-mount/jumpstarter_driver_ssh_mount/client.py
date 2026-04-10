@@ -132,7 +132,7 @@ class SSHMountClient(CompositeClient):
                 except KeyboardInterrupt:
                     click.echo("\nUnmounting...")
             else:
-                click.echo(f"Type 'exit' to unmount and return.")
+                click.echo("Type 'exit' to unmount and return.")
                 self._run_subshell(mountpoint, remote_path)
 
             # Terminate sshfs if it's still running
@@ -230,9 +230,9 @@ class SSHMountClient(CompositeClient):
             )
         elif "zsh" in shell:
             env["PS1"] = prompt_prefix + env.get("PS1", "%# ")
-            proc = subprocess.run([shell, "-i"], env=env)
+            subprocess.run([shell, "-i"], env=env)
         else:
-            proc = subprocess.run([shell, "-i"], env=env)
+            subprocess.run([shell, "-i"], env=env)
 
     def _build_sshfs_args(self, host, port, mountpoint, remote_path, identity_file, extra_args):
         default_username = self.username
