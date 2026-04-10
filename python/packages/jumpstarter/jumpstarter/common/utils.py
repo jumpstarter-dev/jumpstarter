@@ -144,16 +144,33 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
     return ""
 
 
-def _launch_bash(shell, init_file, use_profiles, common_env, context, lease):
+def _launch_bash(shell, init_content, use_profiles, common_env, context, lease):
     env = common_env | {
+        "_JMP_SHELL_CONTEXT": context,
         "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
     }
     cmd = [shell]
-    if init_file:
+    init_file = None
+    if init_content:
+        init_content += (
+            f'PS1="{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}'
+            '$_JMP_SHELL_CONTEXT'
+            f' {ANSI_YELLOW}➤{ANSI_RESET} "\n'
+        )
+        init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+        init_file.write(init_content)
+        init_file.close()
         cmd.extend(["--rcfile", init_file.name])
     elif not use_profiles:
         cmd.extend(["--norc", "--noprofile"])
-    return _run_process(cmd, env, lease)
+    try:
+        return _run_process(cmd, env, lease)
+    finally:
+        if init_file:
+            try:
+                os.unlink(init_file.name)
+            except OSError:
+                pass
 
 
 def _launch_fish(shell, init_file, common_env, context, lease):
@@ -180,6 +197,7 @@ def _launch_fish(shell, init_file, common_env, context, lease):
 
 def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
     env = common_env | {
+        "_JMP_SHELL_CONTEXT": context,
         "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
     }
     if "HISTFILE" not in env:
@@ -187,6 +205,10 @@ def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
     cmd = [shell]
     tmpdir = None
     if init_content:
+        init_content += (
+            'PROMPT="%F{8}%1~ %F{yellow}⚡%F{white}'
+            '${_JMP_SHELL_CONTEXT} %F{yellow}➤%f "\n'
+        )
         tmpdir = tempfile.mkdtemp()
         zshrc_path = os.path.join(tmpdir, ".zshrc")
         original_zdotdir = env.get("ZDOTDIR", os.path.expanduser("~"))
@@ -241,6 +263,9 @@ def launch_shell(
     if shell_name.endswith("zsh"):
         return _launch_zsh(shell, init_content, common_env, context, lease, use_profiles)
 
+    if shell_name.endswith("bash"):
+        return _launch_bash(shell, init_content, use_profiles, common_env, context, lease)
+
     init_file = None
     if init_content:
         init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
@@ -248,9 +273,7 @@ def launch_shell(
         init_file.close()
 
     try:
-        if shell_name.endswith("bash"):
-            return _launch_bash(shell, init_file, use_profiles, common_env, context, lease)
-        elif shell_name.endswith("fish"):
+        if shell_name.endswith("fish"):
             return _launch_fish(shell, init_file, common_env, context, lease)
         else:
             return _run_process([shell], common_env, lease)
