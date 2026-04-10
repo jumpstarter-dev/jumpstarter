@@ -80,7 +80,7 @@ different purposes and operate at different scopes:
 | **Scope**     | Cross-cutting changes to the project       | Scoped to a single component or driver              |
 | **Process**   | Requires community review and maintainer approval | Included with the implementation PR                |
 | **When**      | Before implementation begins               | Alongside or within an implementation PR            |
-| **Location**  | `jeps/` directory                          | `python/docs/source/contributing/adr/` directory    |
+| **Location**  | `docs/internal/jeps/` directory             | `docs/internal/adr/` directory                      |
 | **Example**   | New lease scheduling strategy              | Choice of telnet vs pyrenode3 for Renode driver     |
 
 **Use a JEP** when the change affects multiple components, changes public APIs or
@@ -153,8 +153,8 @@ reviewers, and surfaces obvious concerns early.
 
 ### 2. Submit a JEP Pull Request
 
-Create a new branch and add your JEP as a markdown file in the `jeps/`
-directory, following the [JEP template](JEP-NNNN-template.md). Open a pull
+Create a new branch and add your JEP as a markdown file in the `docs/internal/jeps/`
+directory, following the [JEP template](../docs/internal/jeps/JEP-NNNN-template.md). Open a pull
 request against the main branch. The PR-based workflow makes discussion
 easier through inline review comments and suggested changes.
 
@@ -164,7 +164,10 @@ The JEP title should follow the format:
 JEP: Short descriptive title
 ```
 
-The PR number becomes the JEP number (e.g., PR #400 becomes JEP-0400).
+The JEP number is an incrementing integer assigned sequentially (e.g.,
+JEP-0010, JEP-0011, JEP-0012). It is not derived from the PR number.
+To determine the next available number, check the existing JEPs in the
+`docs/internal/jeps/` directory and increment from the highest existing number.
 Apply the `jep` label to the pull request.
 
 Fill in every section of the template. Sections marked `(Optional)` may be
@@ -186,9 +189,14 @@ itself. The author is expected to:
 
 Jumpstarter maintainers make the final decision to accept or reject a JEP.
 Decisions are recorded as a comment on the pull request with a rationale. The
-author updates the JEP status in the markdown file. Rejected JEPs are closed
-but not deleted — they remain as the historical record of why an approach was
-not taken.
+author updates the JEP status in the markdown file.
+
+JEPs should always be merged as PRs so the markdown documentation is
+incorporated directly into the Jumpstarter docs/source. Rejected JEPs are
+normally not merged as PRs. However, if there is an architectural reason to
+preserve a rejected JEP in the repository (e.g., to document why an approach
+was not taken for future reference), it may be merged with a **Rejected**
+status clearly set in the metadata.
 
 ### 5. Implementation
 
@@ -209,14 +217,15 @@ Implemented → Final as work progresses.
 
 ## JEP Numbering
 
-JEP numbers are assigned from the pull request number used to submit the JEP.
-Once assigned, a JEP number is never reused. JEP-0000 through JEP-0009 are
-reserved for process and meta-JEPs.
+JEP numbers are incrementing integers assigned sequentially. They are not
+derived from the pull request number. Once assigned, a JEP number is never
+reused. JEP-0000 through JEP-0009 are reserved for process and meta-JEPs.
 
 ## JEP Index
 
-The file `jeps/README.md` serves as the index of all JEPs. Alternatively,
-all JEPs can be found by filtering GitHub pull requests with the `jep` label.
+The file `docs/internal/jeps/README.md` serves as the index of all JEPs.
+Alternatively, all JEPs can be found by filtering GitHub pull requests with
+the `jep` label.
 
 ## Amendments to This Process
 

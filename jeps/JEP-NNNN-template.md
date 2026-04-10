@@ -2,8 +2,9 @@
 
 <!--
   Use this template to create your JEP. Copy it to a new file named
-  JEP-NNNN-short-title.md (where NNNN will be the PR number) and open a
-  pull request against the main branch.
+  JEP-NNNN-short-title.md (where NNNN is the next available incrementing
+  integer) and place it in the docs/internal/jeps/ directory. Open a pull
+  request against the main branch.
 
   Guidance:
   - Keep the JEP focused on a single proposal. Split multi-part ideas.
@@ -18,7 +19,7 @@
 
 | Field              | Value                                      |
 |--------------------|--------------------------------------------|
-| **JEP**            | NNNN *(replaced with PR number)*           |
+| **JEP**            | NNNN *(next available incrementing integer)* |
 | **Title**          | *Your short, descriptive title*            |
 | **Author(s)**      | *@github-handle (Full Name \<email\>)*     |
 | **Status**         | Draft                                      |
@@ -110,7 +111,7 @@
 <!--
   Document each significant design decision using the pattern below.
   This follows the Architecture Decision Record (ADR) convention used
-  elsewhere in the project (see python/docs/source/contributing/adr/).
+  elsewhere in the project (see docs/internal/adr/).
 
   For each decision, state what was decided, what alternatives were
   considered, and why the chosen approach was preferred. This section

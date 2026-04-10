@@ -46,7 +46,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 
 For technical decisions scoped to a single component or driver (e.g., choosing a
 control interface for a new driver), use an Architecture Decision Record instead
-of a JEP. ADRs live in `python/docs/source/contributing/adr/` and are submitted
+of a JEP. ADRs live in `docs/internal/adr/` and are submitted
 alongside the implementation PR. See [JEP-0000](JEP-0000-jep-process.md) for
 guidance on when to use a JEP vs an ADR.
 
@@ -100,14 +100,16 @@ with the following structure:
 ```
 
 This matches the ADR convention used elsewhere in the project (see
-`python/docs/source/contributing/adr/`).
+`docs/internal/adr/`).
 
 ### File naming
 
-JEP files are named `JEP-NNNN-short-title.md` where `NNNN` is the PR number
-(zero-padded to 4 digits). The template file is `JEP-NNNN-template.md`.
+JEP files are named `JEP-NNNN-short-title.md` where `NNNN` is the next
+available incrementing integer (zero-padded to 4 digits). The template file
+is `JEP-NNNN-template.md`.
 
 ### JEP numbering
 
-The JEP number is the pull request number. JEP-0000 through JEP-0009 are
+The JEP number is an incrementing integer assigned sequentially; it is not
+derived from the pull request number. JEP-0000 through JEP-0009 are
 reserved for process and meta-JEPs.
