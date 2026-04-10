@@ -654,7 +654,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	{
 		retryDelay := 500 * time.Millisecond
 		maxDelay := 3 * time.Second
-		maxTotalWait := 10 * time.Second
+		maxTotalWait := 30 * time.Second
 		deadline := time.Now().Add(maxTotalWait)
 		var statusErr error
 		for attempt := 0; ; attempt++ {
