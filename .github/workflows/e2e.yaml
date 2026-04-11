@@ -262,7 +262,7 @@ jobs:
           CI: true
 
   e2e-compat-old-client:
-    needs: [changes, build-controller-image, build-python-wheels]
+    needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -284,14 +284,24 @@ jobs:
           name: controller-image-amd64
           path: /tmp/artifacts
 
+      - name: Download operator image
+        uses: actions/download-artifact@v4
+        with:
+          name: operator-image-amd64
+          path: /tmp/artifacts
+
       - name: Download python wheels
         uses: actions/download-artifact@v4
         with:
           name: python-wheels
           path: /tmp/python-wheels
 
-      - name: Load controller image
-        run: docker load < /tmp/artifacts/controller-image.tar
+      - name: Load container images and operator manifest
+        run: |
+          docker load < /tmp/artifacts/controller-image.tar
+          docker load < /tmp/artifacts/operator-image.tar
+          mkdir -p controller/deploy/operator/dist
+          cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml
 
       - name: Setup compat environment (old client v0.8.1)
         run: make e2e-compat-setup COMPAT_SCENARIO=old-client
@@ -300,6 +310,7 @@ jobs:
           COMPAT_CLIENT_VERSION: "0.8.1"
           SKIP_BUILD: "true"
           PREBUILT_WHEELS_DIR: /tmp/python-wheels
+          OPERATOR_IMG: quay.io/jumpstarter-dev/jumpstarter-operator:latest
 
       - name: Run compat tests (new controller + old client/exporter)
         run: make e2e-compat-run COMPAT_TEST=old-client
