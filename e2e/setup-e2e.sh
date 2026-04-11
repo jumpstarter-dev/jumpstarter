@@ -284,6 +284,10 @@ setup_test_environment() {
     # failures propagate under set -e (local VAR=$(...) masks exit codes).
     local BASEDOMAIN
     BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
+    if [ -z "${BASEDOMAIN}" ]; then
+        log_error "Failed to get baseDomain from Jumpstarter CR in namespace ${JS_NAMESPACE}"
+        exit 1
+    fi
     export ENDPOINT="grpc.${BASEDOMAIN}:8082"
     export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
     log_info "Controller endpoint: $ENDPOINT"
