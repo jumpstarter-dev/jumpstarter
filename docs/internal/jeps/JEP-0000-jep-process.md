@@ -154,7 +154,7 @@ reviewers, and surfaces obvious concerns early.
 ### 2. Submit a JEP Pull Request
 
 Create a new branch and add your JEP as a markdown file in the `docs/internal/jeps/`
-directory, following the [JEP template](../docs/internal/jeps/JEP-NNNN-template.md). Open a pull
+directory, following the [JEP template](JEP-NNNN-template.md). Open a pull
 request against the main branch. The PR-based workflow makes discussion
 easier through inline review comments and suggested changes.
 

@@ -15,7 +15,7 @@ This rule helps with creating Jumpstarter Enhancement Proposals (JEPs) and Archi
 
 1. **Choose the next JEP number**: Look at existing files in `docs/internal/jeps/` and pick the next available incrementing integer. JEP-0000 through JEP-0009 are reserved for process/meta-JEPs, so start from JEP-0010 for regular proposals.
 
-2. **Create the file**: Copy the template from `jeps/JEP-NNNN-template.md` to `docs/internal/jeps/JEP-NNNN-short-title.md`, replacing `NNNN` with the zero-padded number and `short-title` with a descriptive slug.
+2. **Create the file**: Copy the template from `docs/internal/jeps/JEP-NNNN-template.md` to `docs/internal/jeps/JEP-NNNN-short-title.md`, replacing `NNNN` with the zero-padded number and `short-title` with a descriptive slug.
 
 3. **Fill in the metadata table**:
    - Set the JEP number (incrementing integer, NOT the PR number)
