@@ -329,8 +329,9 @@ class TestRenodeFlasher:
 
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
-            mock_res.__aiter__ = AsyncMock(
-                return_value=iter([firmware_data])
+            mock_res.__aiter__ = lambda self: self
+            mock_res.__anext__ = AsyncMock(
+                side_effect=[firmware_data, StopAsyncIteration()]
             )
             mock_resource.return_value.__aenter__ = AsyncMock(
                 return_value=mock_res
@@ -355,7 +356,10 @@ class TestRenodeFlasher:
 
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
-            mock_res.__aiter__ = AsyncMock(return_value=iter([b"\x00"]))
+            mock_res.__aiter__ = lambda self: self
+            mock_res.__anext__ = AsyncMock(
+                side_effect=[b"\x00", StopAsyncIteration()]
+            )
             mock_resource.return_value.__aenter__ = AsyncMock(
                 return_value=mock_res
             )
@@ -375,7 +379,10 @@ class TestRenodeFlasher:
 
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
-            mock_res.__aiter__ = AsyncMock(return_value=iter([b"\x00"]))
+            mock_res.__aiter__ = lambda self: self
+            mock_res.__anext__ = AsyncMock(
+                side_effect=[b"\x00", StopAsyncIteration()]
+            )
             mock_resource.return_value.__aenter__ = AsyncMock(
                 return_value=mock_res
             )
