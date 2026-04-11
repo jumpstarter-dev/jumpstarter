@@ -229,6 +229,18 @@ class TestCheckJumpstarterInstallation:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_nonzero_exit(self, mock_run_command):
+        mock_run_command.return_value = (1, "", "forbidden")
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.installed is False
+        assert result.has_crds is False
+        assert result.error is not None
+        assert "forbidden" in result.error
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     async def test_check_jumpstarter_installation_custom_namespace(self, mock_run_command):
         crds_response = {"items": [{"metadata": {"name": "exporters.jumpstarter.dev"}}]}
         mock_run_command.return_value = (0, json.dumps(crds_response), "")

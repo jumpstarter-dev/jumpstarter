@@ -108,13 +108,73 @@ deploy_old_controller() {
     log_info "Installing old controller via operator (version: ${COMPAT_CONTROLLER_TAG})..."
     kubectl apply -f "${INSTALLER_URL}"
 
-    kubectl config set-context --current --namespace=jumpstarter-lab
+    log_info "Waiting for operator to be ready..."
+    kubectl wait --namespace jumpstarter-operator-system \
+        --for=condition=available deployment/jumpstarter-operator-controller-manager \
+        --timeout=120s
+
+    kubectl create namespace "${JS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+    log_info "Creating Jumpstarter CR..."
+    kubectl apply -f - <<EOF
+apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: jumpstarter
+  namespace: ${JS_NAMESPACE}
+spec:
+  baseDomain: ${BASEDOMAIN}
+  certManager:
+    enabled: false
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
+    autoProvisioning:
+      enabled: true
+  controller:
+    image: quay.io/jumpstarter-dev/jumpstarter-controller
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: ${GRPC_ENDPOINT}
+          nodeport:
+            enabled: true
+            port: 30010
+  routers:
+    image: quay.io/jumpstarter-dev/jumpstarter-controller
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: ${GRPC_ROUTER_ENDPOINT}
+          nodeport:
+            enabled: true
+            port: 30011
+EOF
+
+    kubectl config set-context --current --namespace="${JS_NAMESPACE}"
+
+    log_info "Waiting for controller deployment..."
+    local retries=90
+    while ! kubectl get deployment jumpstarter-controller -n "${JS_NAMESPACE}" > /dev/null 2>&1; do
+        sleep 2
+        retries=$((retries - 1))
+        if [ ${retries} -eq 0 ]; then
+            log_error "Controller deployment not created after 180s"
+            exit 1
+        fi
+    done
+    kubectl wait --namespace "${JS_NAMESPACE}" \
+        --for=condition=available deployment/jumpstarter-controller \
+        --timeout=180s
 
     # Wait for gRPC endpoints
     local GRPCURL="${REPO_ROOT}/controller/bin/grpcurl"
     log_info "Waiting for gRPC endpoints..."
     for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
-        local retries=60
+        retries=60
         log_info "  Checking ${ep}..."
         while ! ${GRPCURL} -insecure "${ep}" list > /dev/null 2>&1; do
             sleep 2
