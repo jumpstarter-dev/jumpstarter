@@ -1,0 +1,13 @@
+resources:
+- driverinterface-dev-jumpstarter-adb-v1.yaml
+- driverinterface-dev-jumpstarter-composite-v1.yaml
+- driverinterface-dev-jumpstarter-corellium-console-v1.yaml
+- driverinterface-dev-jumpstarter-corellium-v1.yaml
+- driverinterface-dev-jumpstarter-dbus-network-v1.yaml
+- driverinterface-dev-jumpstarter-flasher-v1.yaml
+- driverinterface-dev-jumpstarter-network-v1.yaml
+- driverinterface-dev-jumpstarter-opendal-v1.yaml
+- driverinterface-dev-jumpstarter-power-v1.yaml
+- driverinterface-dev-jumpstarter-storage-mux-flasher-v1.yaml
+- driverinterface-dev-jumpstarter-storage-mux-v1.yaml
+- driverinterface-dev-jumpstarter-virtual-power-v1.yaml

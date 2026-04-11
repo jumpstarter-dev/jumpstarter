@@ -112,6 +112,11 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporters/finalizers,verbs=update
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporterclasses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporterclasses/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporterclasses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=driverinterfaces,verbs=get;list;watch
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=driverinterfaces/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/finalizers,verbs=update

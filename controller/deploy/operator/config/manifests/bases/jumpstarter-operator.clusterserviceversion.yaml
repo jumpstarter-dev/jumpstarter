@@ -94,6 +94,18 @@ spec:
       kind: ExporterAccessPolicy
       name: exporteraccesspolicies.jumpstarter.dev
       version: v1alpha1
+    - description: DriverInterface names a driver interface and links it to its
+        canonical proto definition and driver implementations.
+      displayName: Driver Interface
+      kind: DriverInterface
+      name: driverinterfaces.jumpstarter.dev
+      version: v1alpha1
+    - description: ExporterClass declares a device profile as a set of required
+        and optional DriverInterface references with label selectors.
+      displayName: Exporter Class
+      kind: ExporterClass
+      name: exporterclasses.jumpstarter.dev
+      version: v1alpha1
     - description: Jumpstarter is the Schema for the jumpstarters API.
       displayName: Jumpstarter
       kind: Jumpstarter

@@ -30,8 +30,6 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= podman
 
-# Deployment method: operator (default) or helm
-METHOD ?= operator
 
 # Cluster type: kind (default) or k3s
 CLUSTER_TYPE ?= kind
@@ -67,17 +65,8 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) 	rbac:roleName=jumpstarter-manager-role crd webhook paths="./api/..." paths="./internal/..." \
-						output:crd:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/crds/ \
-						output:rbac:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/
-
-	# Add ArgoCD sync-wave annotation to RBAC role for proper deployment ordering (PR #207)
-	@awk '/^  name: jumpstarter-manager-role$$/{print; print "  annotations:"; print "    argocd.argoproj.io/sync-wave: \"-1\""; next}1' \
-		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml > \
-		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml.tmp && \
-		mv deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml.tmp \
-		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml
-
-	cp deploy/helm/jumpstarter/charts/jumpstarter-controller/crds/* deploy/operator/config/crd/bases/
+						output:crd:artifacts:config=deploy/operator/config/crd/bases/ \
+						output:rbac:artifacts:config=deploy/operator/config/rbac/
 
 	# Generate DriverInterface YAMLs for bundled drivers (requires Python environment, optional)
 	-$(MAKE) driver-interfaces
@@ -85,17 +74,15 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	# Regenerate operator install.yaml to include updated CRDs
 	$(MAKE) -C deploy/operator build-installer
 
-# Directories where DriverInterface YAML manifests are placed alongside CRDs
-DRIVERINTERFACE_HELM_DIR = deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds
-DRIVERINTERFACE_OPERATOR_DIR = deploy/operator/config/crd/bases
+# Directory where DriverInterface YAML manifests are generated
+DRIVERINTERFACE_DIR = deploy/operator/config/driverinterfaces
 
 .PHONY: driver-interfaces
 driver-interfaces: ## Generate DriverInterface YAML manifests for bundled drivers.
 	@echo "Generating DriverInterface YAML manifests..."
 	cd ../python && uv run jmp interface generate-all -d /tmp/jumpstarter-protos
 	cd ../python && uv run python ../controller/hack/generate_driver_interfaces.py \
-		--output-dir ../controller/$(DRIVERINTERFACE_HELM_DIR) \
-		--output-dir ../controller/$(DRIVERINTERFACE_OPERATOR_DIR)
+		--output-dir ../controller/$(DRIVERINTERFACE_DIR)
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -203,25 +190,17 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: cluster grpcurl ## Deploy controller using METHOD (operator or helm). Set SKIP_BUILD=1 to skip image builds.
+deploy: cluster grpcurl ## Deploy controller using the operator. Set SKIP_BUILD=1 to skip image builds.
 ifeq ($(SKIP_BUILD),)
 	$(MAKE) docker-build
-endif
-ifeq ($(METHOD),operator)
-ifeq ($(SKIP_BUILD),)
 	$(MAKE) build-operator
 endif
 	./hack/deploy_with_operator.sh
-else ifeq ($(METHOD),helm)
-	./hack/deploy_with_helm.sh
-else
-	$(error Unknown METHOD=$(METHOD). Use 'operator' or 'helm')
-endif
 
 # Backward compatibility alias
 .PHONY: deploy-with-operator
 deploy-with-operator:
-	$(MAKE) deploy METHOD=operator
+	$(MAKE) deploy
 
 .PHONY: deploy-operator
 deploy-operator: docker-build build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
@@ -236,15 +215,12 @@ operator-logs:
 
 .PHONY: deploy-with-operator-parallel
 deploy-with-operator-parallel:
-	make deploy METHOD=operator -j5 --output-sync=target
+	make deploy -j5 --output-sync=target
 
 .PHONY: deploy-exporters
 deploy-exporters:
 	./hack/demoenv/prepare_exporters.sh
 
-.PHONY: lint-helm
-lint-helm:
-	helm lint deploy/helm/jumpstarter
 
 
 .PHONY: undeploy

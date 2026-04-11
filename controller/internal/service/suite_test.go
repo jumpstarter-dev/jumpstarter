@@ -54,7 +54,7 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "deploy", "helm", "jumpstarter", "charts", "jumpstarter-controller", "templates", "crds")},
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "deploy", "operator", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 
 		// The BinaryAssetsDirectory is only required if you want to run the tests directly

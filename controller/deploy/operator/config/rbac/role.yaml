@@ -108,6 +108,7 @@ rules:
   resources:
   - clients
   - exporteraccesspolicies
+  - exporterclasses
   - exporters
   - leases
   verbs:
@@ -123,6 +124,7 @@ rules:
   resources:
   - clients/finalizers
   - exporteraccesspolicies/finalizers
+  - exporterclasses/finalizers
   - exporters/finalizers
   - leases/finalizers
   verbs:
@@ -131,13 +133,23 @@ rules:
   - jumpstarter.dev
   resources:
   - clients/status
+  - driverinterfaces/status
   - exporteraccesspolicies/status
+  - exporterclasses/status
   - exporters/status
   - leases/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - driverinterfaces
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - monitoring.coreos.com
   resources:

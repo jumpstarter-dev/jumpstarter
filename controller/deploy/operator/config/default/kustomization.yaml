@@ -18,6 +18,9 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+# DriverInterface instances are namespace-scoped and deployed by the operator
+# controller into the target namespace when reconciling a Jumpstarter CR.
+# They are NOT included here (operator system namespace).
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml
 #- ../webhook
