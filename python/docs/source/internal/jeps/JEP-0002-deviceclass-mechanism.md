@@ -221,7 +221,7 @@ DriverInterface CRDs are treated as **part of the Jumpstarter platform**, versio
   - Operator config: `deploy/operator/config/crd/bases/`
   - OLM bundle: included automatically via `operator-sdk generate bundle`
 - The `proto.descriptor` for each DriverInterface is generated at build time by invoking `jmp admin generate driverinterface` (or an equivalent build script) against each bundled driver's Python interface class, producing the serialized `FileDescriptorProto` from JEP-0001's `build_file_descriptor()`
-- A new `make driver-interfaces` Makefile target orchestrates this generation. It first runs `jmp interface generate-all` (from JEP-0001) to ensure all `.proto` files for bundled drivers are up-to-date, then discovers all bundled `@driverinterface`-decorated classes via the `jumpstarter.drivers` entry point group, generates a DriverInterface YAML for each (with `descriptor` derived from the freshly-generated proto), and outputs them to the CRD directories. This target is called by `make manifests` so that DriverInterface YAMLs are always in sync with the driver code
+- A new `make driver-interfaces` Makefile target orchestrates this generation. It first runs `jmp proto export` (per interface) (from JEP-0001) to ensure all `.proto` files for bundled drivers are up-to-date, then discovers all bundled `@driverinterface`-decorated classes via the `jumpstarter.drivers` entry point group, generates a DriverInterface YAML for each (with `descriptor` derived from the freshly-generated proto), and outputs them to the CRD directories. This target is called by `make manifests` so that DriverInterface YAMLs are always in sync with the driver code
 - When Jumpstarter is upgraded, DriverInterface CRDs are updated alongside the operator to reflect any interface changes in the new version
 
 **Third-party/custom drivers:**
@@ -577,7 +577,7 @@ The JEP-0001 PoC (commit `b40abc06`) provides a solid foundation for this JEP. T
 | gRPC Server Reflection                                            | Ready  |
 | Driver entry point registration (`jumpstarter.drivers` group)     | Ready  |
 | `jmp driver list` discovery via `importlib.metadata`              | Ready  |
-| `jmp interface generate` producing .proto from Python interfaces  | Ready  |
+| `jmp proto export` producing .proto from Python interfaces  | Ready  |
 | Proto files shipping with driver packages                         | Ready  |
 
 ### Gaps Requiring Implementation
@@ -588,7 +588,7 @@ The JEP-0001 PoC (commit `b40abc06`) provides a solid foundation for this JEP. T
 
 3. **CLI tooling**: `jmp admin get/apply/generate driverinterface`, `jmp admin get/apply exporterclass`, `jmp validate exporter` commands.
 
-4. **Build integration**: A new `make driver-interfaces` Makefile target must be added to `controller/Makefile`. This target first runs `jmp interface generate-all` to ensure all bundled driver `.proto` files are up-to-date, then generates DriverInterface YAMLs with `proto.descriptor` from `build_file_descriptor()` and outputs them alongside the CRDs. This target should be invoked by the existing `make manifests` target.
+4. **Build integration**: A new `make driver-interfaces` Makefile target must be added to `controller/Makefile`. This target first runs `jmp proto export` (per interface) to ensure all bundled driver `.proto` files are up-to-date, then generates DriverInterface YAMLs with `proto.descriptor` from `build_file_descriptor()` and outputs them alongside the CRDs. This target should be invoked by the existing `make manifests` target.
 
 ## Test Plan
 

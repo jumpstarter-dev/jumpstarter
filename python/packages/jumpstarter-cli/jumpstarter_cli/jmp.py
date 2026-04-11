@@ -11,7 +11,7 @@ from .config import config
 from .create import create
 from .delete import delete
 from .get import get
-from .interface import interface
+from .proto import proto
 from .login import login
 from .run import run
 from .shell import shell
@@ -37,7 +37,8 @@ jmp.add_command(login)
 jmp.add_command(config)
 
 jmp.add_command(driver)
-jmp.add_command(interface)
+jmp.add_command(proto)
+jmp.add_command(proto, "interface")  # backward compat alias
 jmp.add_command(validate)
 jmp.add_command(admin)
 jmp.add_command(version)

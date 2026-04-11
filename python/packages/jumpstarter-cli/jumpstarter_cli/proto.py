@@ -1,5 +1,5 @@
 """
-jmp interface — generate, check, and manage driver interface .proto definitions.
+jmp proto — export, check, and generate code from driver interface .proto definitions.
 """
 
 import importlib
@@ -274,11 +274,11 @@ def render_proto_source(fd: FileDescriptorProto) -> str:
 # ---------------------------------------------------------------------------
 
 @click.group(cls=AliasedGroup)
-def interface():
-    """Manage driver interface definitions."""
+def proto():
+    """Manage driver interface proto definitions."""
 
 
-@interface.command()
+@proto.command("export")
 @click.option(
     "--interface", "-i",
     required=True,
@@ -296,8 +296,8 @@ def interface():
     default=None,
     help="Output file path. Writes to stdout if not specified.",
 )
-def generate(interface: str, version: str, output: str | None):
-    """Generate a .proto file from a Python DriverInterface class."""
+def export_proto(interface: str, version: str, output: str | None):
+    """Export a .proto definition from a Python DriverInterface class."""
     cls = _load_interface_class(interface)
     proto_source = _generate_proto_source(cls, version)
 
@@ -316,59 +316,6 @@ def _generate_proto_source(cls: type, version: str) -> str:
     fd = build_file_descriptor(cls, version=version)
     return render_proto_source(fd)
 
-
-@interface.command("generate-all")
-@click.option(
-    "--output-dir", "-d",
-    type=click.Path(),
-    default=None,
-    help="Output directory for generated .proto files. Defaults to current directory.",
-)
-@click.option(
-    "--version", "-v",
-    default="v1",
-    show_default=True,
-    help="Version string for the proto package.",
-)
-@click.option(
-    "--import-package", "-p",
-    multiple=True,
-    help="Python packages to import before discovery (e.g., jumpstarter_driver_power.driver).",
-)
-def generate_all(output_dir: str | None, version: str, import_package: tuple[str, ...]):
-    """Generate .proto files for all registered DriverInterface classes.
-
-    Interfaces must be imported before they appear in the registry.
-    Use --import-package to load driver modules, or ensure they are
-    installed with entry points.
-    """
-    import os
-
-    from jumpstarter.driver.interface import DriverInterfaceMeta
-
-    # Import requested packages to populate the registry
-    for pkg in import_package:
-        try:
-            importlib.import_module(pkg)
-        except ImportError as e:
-            raise click.ClickException(f"Could not import '{pkg}': {e}") from e
-
-    if not DriverInterfaceMeta._registry:
-        click.echo("No registered interfaces found. Are driver packages installed?")
-        click.echo("Use --import-package to load driver modules first.")
-        return
-
-    out_dir = output_dir or "."
-    os.makedirs(out_dir, exist_ok=True)
-
-    for key, cls in sorted(DriverInterfaceMeta._registry.items()):
-        proto_source = _generate_proto_source(cls, version)
-
-        filename = f"{cls.__name__.lower()}.proto"
-        filepath = os.path.join(out_dir, filename)
-        with open(filepath, "w") as f:
-            f.write(proto_source)
-        click.echo(f"Generated {filepath} ({key})")
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +591,7 @@ def _compare_docs(
 # Check CLI commands
 # ---------------------------------------------------------------------------
 
-@interface.command()
+@proto.command()
 @click.option(
     "--proto",
     required=True,
@@ -734,94 +681,9 @@ def check(
     sys.exit(exit_code)
 
 
-@interface.command("check-all")
-@click.option(
-    "--proto-dir", "-d",
-    required=True,
-    type=click.Path(exists=True),
-    help="Directory containing .proto files (matched by interface name).",
-)
-@click.option(
-    "--version", "-v",
-    default="v1",
-    show_default=True,
-    help="Version string for the proto package.",
-)
-@click.option(
-    "--import-package", "-p",
-    multiple=True,
-    help="Python packages to import before discovery.",
-)
-@click.option(
-    "--proto-path", "-I",
-    multiple=True,
-    help="Additional include paths for protoc.",
-)
-@click.option("--strict", is_flag=True, default=False, help="Fail on contract-level differences.")
-@click.option("--check-docs", is_flag=True, default=False, help="Check doc comments.")
-def check_all(
-    proto_dir: str,
-    version: str,
-    import_package: tuple[str, ...],
-    proto_path: tuple[str, ...],
-    strict: bool,
-    check_docs: bool,
-):
-    """Check all registered interfaces against .proto files in a directory.
-
-    Matches each interface to a .proto file by lowercase class name
-    (e.g., PowerInterface → powerinterface.proto).
-    """
-    from jumpstarter.driver.descriptor_builder import build_file_descriptor
-    from jumpstarter.driver.interface import DriverInterfaceMeta
-
-    for pkg in import_package:
-        try:
-            importlib.import_module(pkg)
-        except ImportError as e:
-            raise click.ClickException(f"Could not import '{pkg}': {e}") from e
-
-    if not DriverInterfaceMeta._registry:
-        click.echo("No registered interfaces found.")
-        sys.exit(0)
-
-    all_ok = True
-    include_paths = list(proto_path) if proto_path else None
-
-    for key, cls in sorted(DriverInterfaceMeta._registry.items()):
-        filename = f"{cls.__name__.lower()}.proto"
-        filepath = os.path.join(proto_dir, filename)
-
-        if not os.path.exists(filepath):
-            click.secho(f"SKIP {cls.__name__}: {filepath} not found", fg="yellow")
-            continue
-
-        python_fd = build_file_descriptor(cls, version=version)
-        proto_fd = _parse_proto_file(filepath, include_paths)
-
-        result = CheckResult()
-        _compare_descriptors(python_fd, proto_fd, result, check_docs=check_docs)
-
-        exit_code = result.exit_code(strict=strict, check_docs=check_docs)
-        if exit_code == 0:
-            click.secho(f"OK   {cls.__name__}", fg="green")
-        else:
-            all_ok = False
-            click.secho(f"FAIL {cls.__name__}", fg="red")
-            for msg in result.structural:
-                click.echo(f"       ✗ {msg}")
-            if strict:
-                for msg in result.contract:
-                    click.echo(f"       ✗ {msg}")
-            if check_docs:
-                for msg in result.docs:
-                    click.echo(f"       ⚠ {msg}")
-
-    sys.exit(0 if all_ok else 1)
-
 
 # ---------------------------------------------------------------------------
-# jmp interface implement — .proto → Python code generation
+# jmp proto generate — .proto → Python code generation
 # ---------------------------------------------------------------------------
 
 # Protobuf field type → Python type annotation string
@@ -1240,37 +1102,111 @@ def _gen_init_py(fd: FileDescriptorProto, output_package: str) -> str:
     return "\n".join(lines)
 
 
-@interface.command("implement")
+@proto.command("generate")
+@click.argument(
+    "package_path",
+    required=False,
+    type=click.Path(exists=True),
+)
 @click.option(
     "--proto", "-p",
-    required=True,
     type=click.Path(exists=True),
-    help="Path to the .proto file to generate Python code from.",
+    help="Path to a specific .proto file (explicit mode).",
 )
 @click.option(
     "--output-package",
-    required=True,
-    help="Python package name for generated code (e.g., jumpstarter_driver_power).",
+    help="Python package name (auto-derived from package path if omitted).",
 )
 @click.option(
     "--output", "-o",
-    required=True,
     type=click.Path(),
-    help="Output directory for generated Python files.",
+    help="Output directory (auto-derived from package path if omitted).",
 )
 @click.option(
     "--proto-path", "-I",
     multiple=True,
     help="Additional include paths for protoc.",
 )
-def implement(proto: str, output_package: str, output: str, proto_path: tuple[str, ...]):
-    """Generate Python interface, client, and driver adapter from a .proto file."""
-    fd = _parse_proto_file(proto, list(proto_path) if proto_path else None)
+def generate(
+    package_path: str | None,
+    proto: str | None,
+    output_package: str | None,
+    output: str | None,
+    proto_path: tuple[str, ...],
+):
+    """Generate Python interface, client, and driver from .proto definitions.
+
+    \b
+    Auto-discovery mode (recommended):
+      jmp proto generate packages/jumpstarter-driver-power
+      Discovers all .proto files under proto/, derives output paths automatically.
+
+    \b
+    Explicit mode:
+      jmp proto generate --proto power.proto --output-package jumpstarter_driver_power -o out/
+      Generates from a single .proto file with explicit paths.
+    """
+    if package_path and proto:
+        raise click.ClickException("Specify PACKAGE_PATH or --proto, not both.")
+
+    if package_path:
+        _generate_from_package(package_path, proto_path)
+    elif proto:
+        if not output_package:
+            raise click.ClickException("--output-package is required in explicit mode.")
+        if not output:
+            raise click.ClickException("--output is required in explicit mode.")
+        _generate_from_proto(proto, output_package, output, proto_path)
+    else:
+        raise click.ClickException(
+            "Provide PACKAGE_PATH for auto-discovery, or --proto for explicit mode.\n"
+            "  Example: jmp proto generate packages/jumpstarter-driver-power"
+        )
+
+
+def _generate_from_package(
+    package_path: str,
+    proto_path: tuple[str, ...],
+) -> None:
+    """Auto-discover protos in a driver package and generate code for each."""
+    import glob
+
+    package_path = os.path.abspath(package_path)
+    proto_dir = os.path.join(package_path, "proto")
+    if not os.path.isdir(proto_dir):
+        raise click.ClickException(f"No proto/ directory found in {package_path}")
+
+    # Derive Python package name from directory name
+    # e.g., "jumpstarter-driver-power" → "jumpstarter_driver_power"
+    pkg_dirname = os.path.basename(package_path)
+    output_package = pkg_dirname.replace("-", "_")
+    output_dir = os.path.join(package_path, output_package)
+
+    # Discover all .proto files under proto/
+    proto_files = sorted(glob.glob(os.path.join(proto_dir, "*", "*", "*.proto")))
+    if not proto_files:
+        raise click.ClickException(f"No .proto files found in {proto_dir}/")
+
+    for proto_file in proto_files:
+        click.echo(f"\n--- {os.path.relpath(proto_file, package_path)} ---")
+        _generate_from_proto(proto_file, output_package, output_dir, proto_path)
+
+    click.echo(f"\nProcessed {len(proto_files)} proto(s) in {pkg_dirname}")
+
+
+def _generate_from_proto(
+    proto_file: str,
+    output_package: str,
+    output_dir: str,
+    proto_path: tuple[str, ...],
+) -> None:
+    """Generate Python interface, client, and driver from a single .proto file."""
+    fd = _parse_proto_file(proto_file, list(proto_path) if proto_path else None)
 
     if not fd.service:
-        raise click.ClickException("No service found in the .proto file.")
+        raise click.ClickException(f"No service found in {proto_file}")
 
-    os.makedirs(output, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     files = {
         "interface.py": _gen_interface_py(fd, output_package),
@@ -1280,9 +1216,7 @@ def implement(proto: str, output_package: str, output: str, proto_path: tuple[st
     }
 
     for filename, content in files.items():
-        filepath = os.path.join(output, filename)
+        filepath = os.path.join(output_dir, filename)
         with open(filepath, "w") as f:
             f.write(content)
         click.echo(f"Generated {filepath}")
-
-    click.echo(f"\nGenerated {len(files)} files in {output}/")
