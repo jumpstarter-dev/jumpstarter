@@ -2,11 +2,22 @@ import os
 import socket
 import subprocess
 import sys
+import types
 from shutil import which
 from unittest.mock import AsyncMock, patch
 
-import allure
 import pytest
+
+try:
+    import allure
+except ImportError:
+    _noop = lambda *a, **kw: lambda f: f
+    allure = types.SimpleNamespace(
+        feature=_noop,
+        story=_noop,
+        severity=_noop,
+        severity_level=types.SimpleNamespace(CRITICAL="critical", MINOR="minor"),
+    )
 from anyio.from_thread import start_blocking_portal
 from click.testing import CliRunner
 
