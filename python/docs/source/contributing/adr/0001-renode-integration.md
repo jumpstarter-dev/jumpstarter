@@ -1,10 +1,28 @@
 # ADR-0001: Renode Integration Approach
 
-- **Status**: Accepted
-- **Date**: 2026-04-06
-- **Authors**: Vinicius Zein
+| Field              | Value                                        |
+|--------------------|----------------------------------------------|
+| **ADR**            | 0001                                         |
+| **Title**          | Renode Integration Approach                  |
+| **Author(s)**      | @vtz (Vinicius Zein)                         |
+| **Status**         | Accepted                                     |
+| **Type**           | Standards Track                              |
+| **Created**        | 2026-04-06                                   |
+| **Updated**        | 2026-04-11                                   |
+| **Discussion**     | [PR #533](https://github.com/jumpstarter-dev/jumpstarter/pull/533) |
 
-## Context
+---
+
+## Abstract
+
+This ADR documents the architectural decisions behind integrating the
+[Renode](https://renode.io/) emulation framework into Jumpstarter as a
+new driver package (`jumpstarter-driver-renode`). The driver enables
+microcontroller-class virtual targets running bare-metal firmware or
+RTOS on Cortex-M and RISC-V MCUs, complementing the existing QEMU
+driver which targets Linux-capable SoCs.
+
+## Motivation
 
 Jumpstarter provides a driver-based framework for interacting with
 devices under test, both physical hardware and virtual systems. The
@@ -14,12 +32,14 @@ provisioning.
 
 There is growing demand for **microcontroller-class** virtual targets
 running bare-metal firmware or RTOS (Zephyr, FreeRTOS, ThreadX) on
-Cortex-M and RISC-V MCUs. [Renode](https://renode.io/) by Antmicro is
-an open-source emulation framework designed specifically for this
-domain, with extensive peripheral models for STM32, NXP S32K, Nordic,
-SiFive, and other MCU platforms.
+Cortex-M and RISC-V MCUs. Renode by Antmicro is an open-source
+emulation framework designed specifically for this domain, with
+extensive peripheral models for STM32, NXP S32K, Nordic, SiFive, and
+other MCU platforms.
 
-The initial reference targets for validation are:
+### Reference Targets
+
+The initial targets for validation are:
 
 - **STM32F407 Discovery** (Cortex-M4F) -- opensomeip FreeRTOS/ThreadX
   ports, Renode built-in platform
@@ -28,7 +48,7 @@ The initial reference targets for validation are:
 - **Nucleo H753ZI** (Cortex-M7) -- openbsw-zephyr, Renode built-in
   `stm32h743.repl`
 
-### Forces
+### Constraints
 
 - The driver must follow Jumpstarter's established composite driver
   pattern (as demonstrated by `jumpstarter-driver-qemu`)
@@ -40,7 +60,7 @@ The initial reference targets for validation are:
   existing `PySerial` and `pexpect` tooling
 - The async framework must be `anyio` (the project's standard)
 
-## Decisions
+## Design Decisions
 
 ### DD-1: Control Interface -- Telnet Monitor
 
@@ -152,3 +172,45 @@ additionally supports hot-loading: if the simulation is already running,
   detection and error handling rely on observed behavior
 - Renode's PTY terminal support on macOS may have edge cases not
   covered in testing
+
+## Rejected Alternatives
+
+Beyond the alternatives listed in each Design Decision above, the
+high-level alternative of **not integrating Renode** and instead
+extending the QEMU driver for MCU targets was considered. QEMU's MCU
+support (e.g., `qemu-system-arm -M stm32vldiscovery`) is limited in
+peripheral modeling and does not match Renode's breadth for embedded
+platforms. The QEMU driver remains the right choice for Linux-capable
+SoCs while Renode fills the MCU gap.
+
+## Prior Art
+
+- **jumpstarter-driver-qemu** -- The existing Jumpstarter QEMU driver
+  established the composite driver pattern, `Popen`-based process
+  management, and side-channel control protocol (QMP) that this ADR
+  follows.
+- **Renode documentation** -- [Renode docs](https://renode.readthedocs.io/)
+  for monitor commands, platform descriptions, and UART terminal types.
+- **opensomeip** -- [github.com/vtz/opensomeip](https://github.com/vtz/opensomeip)
+  provides the reference Renode targets (STM32F407, S32K388) used for
+  validation.
+
+## Implementation History
+
+- 2026-04-06: ADR proposed
+- 2026-04-09: Initial implementation merged ([PR #533](https://github.com/jumpstarter-dev/jumpstarter/pull/533))
+- 2026-04-11: Address review feedback (DEVNULL, try-except cleanup,
+  async wait, RenodeMonitorError, multi-word CLI, docstrings)
+
+## References
+
+- [PR #533: Add Renode emulator driver](https://github.com/jumpstarter-dev/jumpstarter/pull/533)
+- [Renode project](https://renode.io/)
+- [Renode documentation](https://renode.readthedocs.io/)
+- [JEP process (PR #423)](https://github.com/jumpstarter-dev/jumpstarter/pull/423)
+
+---
+
+*This ADR is licensed under the
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0),
+consistent with the Jumpstarter project.*
