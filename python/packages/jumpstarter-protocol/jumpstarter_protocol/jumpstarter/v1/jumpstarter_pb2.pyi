@@ -110,6 +110,7 @@ class DriverInstanceReport(google.protobuf.message.Message):
     DESCRIPTION_FIELD_NUMBER: builtins.int
     METHODS_DESCRIPTION_FIELD_NUMBER: builtins.int
     FILE_DESCRIPTOR_PROTO_FIELD_NUMBER: builtins.int
+    NATIVE_SERVICES_FIELD_NUMBER: builtins.int
     uuid: builtins.str
     """a unique id within the exporter"""
     parent_uuid: builtins.str
@@ -124,6 +125,10 @@ class DriverInstanceReport(google.protobuf.message.Message):
     def methods_description(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """method name -> help text for CLI"""
 
+    @property
+    def native_services(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+        """fully-qualified gRPC service names supported by this driver"""
+
     def __init__(
         self,
         *,
@@ -133,9 +138,10 @@ class DriverInstanceReport(google.protobuf.message.Message):
         description: builtins.str | None = ...,
         methods_description: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         file_descriptor_proto: builtins.bytes | None = ...,
+        native_services: collections.abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_description", b"_description", "_file_descriptor_proto", b"_file_descriptor_proto", "_parent_uuid", b"_parent_uuid", "description", b"description", "file_descriptor_proto", b"file_descriptor_proto", "parent_uuid", b"parent_uuid"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_description", b"_description", "_file_descriptor_proto", b"_file_descriptor_proto", "_parent_uuid", b"_parent_uuid", "description", b"description", "file_descriptor_proto", b"file_descriptor_proto", "labels", b"labels", "methods_description", b"methods_description", "parent_uuid", b"parent_uuid", "uuid", b"uuid"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_description", b"_description", "_file_descriptor_proto", b"_file_descriptor_proto", "_parent_uuid", b"_parent_uuid", "description", b"description", "file_descriptor_proto", b"file_descriptor_proto", "labels", b"labels", "methods_description", b"methods_description", "native_services", b"native_services", "parent_uuid", b"parent_uuid", "uuid", b"uuid"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_description", b"_description"]) -> typing.Literal["description"] | None: ...
     @typing.overload

@@ -226,6 +226,7 @@ class Driver(
         """
         # Build file_descriptor_proto if driver implements a DriverInterface
         fd_bytes = None
+        native_services = []
         interface_class = self._get_interface_class()
         if interface_class is not None:
             try:
@@ -240,6 +241,20 @@ class Driver(
                     exc_info=True,
                 )
 
+            # Check if a native servicer adapter is registered
+            try:
+                from jumpstarter.exporter.registry import get_servicer_adapter
+
+                adapter_info = get_servicer_adapter(interface_class)
+                if adapter_info is not None:
+                    native_services.append(adapter_info.service_name)
+            except Exception:
+                self.logger.debug(
+                    "Could not check servicer adapter for %s",
+                    type(self).__name__,
+                    exc_info=True,
+                )
+
         return jumpstarter_pb2.DriverInstanceReport(
             uuid=str(self.uuid),
             parent_uuid=str(parent.uuid) if parent else None,
@@ -250,6 +265,7 @@ class Driver(
             description=self.description or None,
             methods_description=self.methods_description or {},
             file_descriptor_proto=fd_bytes,
+            native_services=native_services,
         )
 
     def enumerate(self, *, root=None, parent=None, name=None):

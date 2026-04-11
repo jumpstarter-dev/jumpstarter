@@ -3,7 +3,7 @@
 import grpc
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
-from jumpstarter_protocol.jumpstarter.v1 import jumpstarter_pb2 as jumpstarter_dot_v1_dot_jumpstarter__pb2
+from . import jumpstarter_pb2 as jumpstarter_dot_v1_dot_jumpstarter__pb2
 
 
 class ControllerServiceStub(object):

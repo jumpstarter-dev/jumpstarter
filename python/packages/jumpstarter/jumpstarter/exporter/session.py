@@ -102,7 +102,8 @@ class Session(
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-        self._register_reflection(server)
+        _registry, native_service_names = self._register_native_services(server)
+        self._register_reflection(server, extra_services=native_service_names)
 
         await server.start()
         try:
@@ -130,7 +131,8 @@ class Session(
 
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-        self._register_reflection(server)
+        _registry, native_service_names = self._register_native_services(server)
+        self._register_reflection(server, extra_services=native_service_names)
 
         await server.start()
         logger.info("Session server started on %d ports", len(ports))
@@ -145,12 +147,16 @@ class Session(
             await sleep(0.1)
             logger.info("Session server stopped")
 
-    def _register_reflection(self, server):
+    def _register_reflection(self, server, *, extra_services: list[str] | None = None):
         """Register gRPC Server Reflection with driver interface descriptors.
 
         Discovers DriverInterface subclasses in the driver tree and registers
         their FileDescriptorProto objects with grpc-reflection, enabling
         standard tools (grpcurl, Postman, Buf Studio) to discover driver APIs.
+
+        Args:
+            extra_services: Additional fully-qualified gRPC service names
+                to include in reflection (e.g., native gRPC services).
 
         Requires grpcio-reflection to be installed; logs a warning if missing.
         """
@@ -163,7 +169,15 @@ class Session(
 
         from jumpstarter.driver.descriptor_builder import build_file_descriptor
 
-        service_names = [reflection.SERVICE_NAME]
+        service_names = [
+            reflection.SERVICE_NAME,
+            "jumpstarter.v1.ExporterService",
+            "jumpstarter.v1.RouterService",
+        ]
+
+        # Include native gRPC service names from servicer adapters
+        if extra_services:
+            service_names.extend(extra_services)
 
         for _uuid, _parent, _name, instance in self.root_device.enumerate():
             # Find DriverInterface subclasses in the instance's class hierarchy
@@ -195,12 +209,84 @@ class Session(
             len(service_names),
         )
 
+    def _register_native_services(self, server):
+        """Discover and register native gRPC servicer adapters for all drivers.
+
+        Iterates the driver tree, finds DriverInterface subclasses with
+        registered servicer adapters, creates a DriverRegistry, and registers
+        the servicer adapters on the gRPC server.
+
+        Returns:
+            tuple: (DriverRegistry, list of registered service names)
+        """
+        from jumpstarter.exporter.registry import (
+            DriverRegistry,
+            get_servicer_adapter,
+        )
+
+        registry = DriverRegistry()
+        registered_services: set[str] = set()
+
+        for _uuid, _parent, _name, instance in self.root_device.enumerate():
+            interface_class = instance._get_interface_class()
+            if interface_class is None:
+                continue
+
+            # Try to auto-import the servicer module from the driver's package
+            self._try_import_servicer(interface_class)
+
+            adapter_info = get_servicer_adapter(interface_class)
+            if adapter_info is None:
+                logger.debug(
+                    "No servicer adapter for %s, skipping native service",
+                    interface_class.__name__,
+                )
+                continue
+
+            # Register the driver instance in the registry
+            registry.register(str(instance.uuid), adapter_info.service_name, instance)
+
+            # Register the servicer on the gRPC server (once per service)
+            if adapter_info.service_name not in registered_services:
+                servicer = adapter_info.servicer_factory(registry)
+                adapter_info.add_to_server(servicer, server)
+                registered_services.add(adapter_info.service_name)
+                logger.info(
+                    "Registered native gRPC service: %s",
+                    adapter_info.service_name,
+                )
+
+        self._driver_registry = registry
+        return registry, list(registered_services)
+
+    @staticmethod
+    def _try_import_servicer(interface_class: type) -> None:
+        """Try to import the servicer module from the interface's package.
+
+        Convention: the servicer module lives at ``{package}.servicer``
+        where ``{package}`` is the top-level package of the interface class.
+        """
+        import importlib
+
+        module_name = interface_class.__module__
+        # Get the top-level package (e.g., "jumpstarter_driver_power")
+        top_package = module_name.split(".")[0]
+        servicer_module = f"{top_package}.servicer"
+        try:
+            importlib.import_module(servicer_module)
+        except ImportError:
+            logger.debug("No servicer module found at %s", servicer_module)
+
     @asynccontextmanager
     async def _serve_grpc_server_async(self, server):
         """Register servicers, start server, yield, then shut down gracefully."""
         jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
         router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-        self._register_reflection(server)
+
+        # Register native gRPC services for driver interfaces
+        _registry, native_service_names = self._register_native_services(server)
+
+        self._register_reflection(server, extra_services=native_service_names)
 
         await server.start()
         try:
@@ -326,7 +412,7 @@ class Session(
     def __getitem__(self, key: UUID):
         return self.mapping[key]
 
-    def _check_status_for_driver_call(self, context):
+    async def _check_status_for_driver_call(self, context):
         """Check if the current status allows driver calls.
 
         Driver calls are allowed during:
@@ -347,7 +433,7 @@ class Session(
         }
 
         if self._current_status not in ALLOWED_STATUSES:
-            context.abort(
+            await context.abort(
                 grpc.StatusCode.FAILED_PRECONDITION,
                 f"Exporter not ready for driver calls (status: {self._current_status})",
             )
@@ -365,12 +451,12 @@ class Session(
 
     async def DriverCall(self, request, context):
         logger.debug("DriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
         return await self[UUID(request.uuid)].DriverCall(request, context)
 
     async def StreamingDriverCall(self, request, context):
         logger.debug("StreamingDriverCall(uuid=%s, method=%s)", request.uuid, request.method)
-        self._check_status_for_driver_call(context)
+        await self._check_status_for_driver_call(context)
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 

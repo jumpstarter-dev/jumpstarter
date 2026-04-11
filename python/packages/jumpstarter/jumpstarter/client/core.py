@@ -83,11 +83,57 @@ class AsyncDriverClient(
         # Initialize status monitor (not a dataclass field to avoid Pydantic type resolution issues)
         self._status_monitor = None
         self._get_status_unsupported = False
+        # Native gRPC routing state (set up by _setup_native_services)
+        self._native_call_handlers = {}
+        self._native_streaming_handlers = {}
 
         # add default handler
         if not self.logger.handlers:
             handler = RichHandler(show_path=False)
             self.logger.addHandler(handler)
+
+    def _setup_native_services(self, native_services: list[str], channel) -> None:
+        """Set up native gRPC routing for the given services.
+
+        Imports client-side adapters for each native service and creates
+        stubs bound to the channel. After this, call_async/streamingcall_async
+        will transparently route through native stubs when possible.
+        """
+        import importlib
+
+        from jumpstarter.client.native import get_native_client_adapter
+
+        for service_name in native_services:
+            # Try to auto-import the client_native module from the driver package
+            client_path = self.labels.get("jumpstarter.dev/client", "")
+            if client_path:
+                top_package = client_path.split(".")[0]
+                try:
+                    importlib.import_module(f"{top_package}.client_native")
+                except ImportError:
+                    self.logger.debug("No client_native module in %s", top_package)
+
+            adapter = get_native_client_adapter(service_name)
+            if adapter is None:
+                self.logger.debug("No native client adapter for %s", service_name)
+                continue
+
+            # Create the native stub on the same channel
+            native_stub = adapter.stub_class(channel)
+
+            # Register call handlers with the bound stub
+            for method_name, handler in adapter.call_handlers.items():
+                self._native_call_handlers[method_name] = (native_stub, handler)
+
+            for method_name, handler in adapter.streaming_call_handlers.items():
+                self._native_streaming_handlers[method_name] = (native_stub, handler)
+
+            self.logger.debug(
+                "Native gRPC routing enabled for %s (calls: %s, streaming: %s)",
+                service_name,
+                list(adapter.call_handlers.keys()),
+                list(adapter.streaming_call_handlers.keys()),
+            )
 
     def _format_rpc_error(self, method: str, error: AioRpcError) -> str:
         details = error.details() or "<no details>"
@@ -370,8 +416,35 @@ class AsyncDriverClient(
         return result is not None
 
     async def call_async(self, method, *args):
-        """Make DriverCall by method name and arguments"""
+        """Make DriverCall by method name and arguments.
 
+        If a native gRPC handler is registered for this method, uses it
+        instead of the generic DriverCall dispatch. Falls back to DriverCall
+        for methods without native handlers or when talking to old exporters.
+        """
+        # Try native gRPC routing first
+        native = self._native_call_handlers.get(method)
+        if native is not None:
+            native_stub, handler = native
+            try:
+                return await handler(native_stub, self.uuid, *args)
+            except AioRpcError as e:
+                error_message = self._format_rpc_error(method, e)
+                match e.code():
+                    case StatusCode.FAILED_PRECONDITION:
+                        raise ExporterNotReady(e.details()) from None
+                    case StatusCode.NOT_FOUND:
+                        raise DriverMethodNotImplemented(error_message) from None
+                    case StatusCode.UNIMPLEMENTED:
+                        raise DriverMethodNotImplemented(error_message) from None
+                    case StatusCode.INVALID_ARGUMENT:
+                        raise DriverInvalidArgument(error_message) from None
+                    case StatusCode.UNKNOWN:
+                        raise DriverError(error_message) from None
+                    case _:
+                        raise DriverError(error_message) from e
+
+        # Legacy DriverCall fallback
         request = jumpstarter_pb2.DriverCallRequest(
             uuid=str(self.uuid),
             method=method,
@@ -399,8 +472,33 @@ class AsyncDriverClient(
         return decode_value(response.result)
 
     async def streamingcall_async(self, method, *args):
-        """Make StreamingDriverCall by method name and arguments"""
+        """Make StreamingDriverCall by method name and arguments.
 
+        If a native gRPC streaming handler is registered for this method,
+        uses it instead of the generic StreamingDriverCall dispatch.
+        """
+        # Try native gRPC routing first
+        native = self._native_streaming_handlers.get(method)
+        if native is not None:
+            native_stub, handler = native
+            try:
+                async for result in handler(native_stub, self.uuid, *args):
+                    yield result
+            except AioRpcError as e:
+                match e.code():
+                    case StatusCode.FAILED_PRECONDITION:
+                        raise ExporterNotReady(e.details()) from None
+                    case StatusCode.UNIMPLEMENTED:
+                        raise DriverMethodNotImplemented(e.details()) from None
+                    case StatusCode.INVALID_ARGUMENT:
+                        raise DriverInvalidArgument(e.details()) from None
+                    case StatusCode.UNKNOWN:
+                        raise DriverError(e.details()) from None
+                    case _:
+                        raise DriverError(e.details()) from e
+            return
+
+        # Legacy StreamingDriverCall fallback
         request = jumpstarter_pb2.StreamingDriverCallRequest(
             uuid=str(self.uuid),
             method=method,

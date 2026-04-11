@@ -5,4 +5,5 @@ type Device struct {
 	ParentUuid          *string           `json:"parent_uuid,omitempty"`
 	Labels              map[string]string `json:"labels,omitempty"`
 	FileDescriptorProto []byte            `json:"file_descriptor_proto,omitempty"`
+	NativeServices      []string          `json:"native_services,omitempty"`
 }

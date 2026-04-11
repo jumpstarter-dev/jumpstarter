@@ -166,6 +166,7 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 			ParentUuid:          device.ParentUuid,
 			Labels:              device.Labels,
 			FileDescriptorProto: device.FileDescriptorProto,
+			NativeServices:      device.NativeServices,
 		})
 	}
 	exporter.Status.Devices = devices
@@ -1058,6 +1059,7 @@ func (s *ControllerService) ValidateExporter(
 			ParentUuid:          report.ParentUuid,
 			Labels:              report.Labels,
 			FileDescriptorProto: report.FileDescriptorProto,
+			NativeServices:      report.NativeServices,
 		})
 	}
 

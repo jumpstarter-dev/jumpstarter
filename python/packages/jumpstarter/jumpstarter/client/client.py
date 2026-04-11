@@ -121,6 +121,8 @@ async def client_from_channel(
                 logger.warning("Driver client '%s' is not available.", e.class_path)
             client_class = StubDriverClient
 
+        native_services = list(getattr(report, "native_services", []))
+
         client = client_class(
             uuid=UUID(report.uuid),
             labels=report.labels,
@@ -131,6 +133,10 @@ async def client_from_channel(
             description=getattr(report, "description", None) or None,
             methods_description=getattr(report, "methods_description", {}) or {},
         )
+
+        # Set up native gRPC routing if the driver supports it
+        if native_services:
+            client._setup_native_services(native_services, channel)
 
         clients[index] = client
 

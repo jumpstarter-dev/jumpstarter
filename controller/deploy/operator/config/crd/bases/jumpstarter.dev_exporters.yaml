@@ -136,6 +136,10 @@ spec:
                       additionalProperties:
                         type: string
                       type: object
+                    native_services:
+                      items:
+                        type: string
+                      type: array
                     parent_uuid:
                       type: string
                     uuid:

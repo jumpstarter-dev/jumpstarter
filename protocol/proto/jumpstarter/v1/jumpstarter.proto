@@ -76,6 +76,7 @@ message DriverInstanceReport {
   optional string description = 4; // optional custom driver description for CLI
   map<string, string> methods_description = 5; // method name -> help text for CLI
   optional bytes file_descriptor_proto = 6; // serialized google.protobuf.FileDescriptorProto
+  repeated string native_services = 7; // fully-qualified gRPC service names supported by this driver
 }
 
 message RegisterResponse {

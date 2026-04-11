@@ -92,6 +92,7 @@ type DriverInstanceReport struct {
 	Description         *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`                                                                                                             // optional custom driver description for CLI
 	MethodsDescription  map[string]string      `protobuf:"bytes,5,rep,name=methods_description,json=methodsDescription,proto3" json:"methods_description,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // method name -> help text for CLI
 	FileDescriptorProto []byte                 `protobuf:"bytes,6,opt,name=file_descriptor_proto,json=fileDescriptorProto,proto3,oneof" json:"file_descriptor_proto,omitempty"`                                                                // serialized google.protobuf.FileDescriptorProto
+	NativeServices      []string               `protobuf:"bytes,7,rep,name=native_services,json=nativeServices,proto3" json:"native_services,omitempty"`                                                                                       // fully-qualified gRPC service names supported by this driver
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -164,6 +165,13 @@ func (x *DriverInstanceReport) GetMethodsDescription() map[string]string {
 func (x *DriverInstanceReport) GetFileDescriptorProto() []byte {
 	if x != nil {
 		return x.FileDescriptorProto
+	}
+	return nil
+}
+
+func (x *DriverInstanceReport) GetNativeServices() []string {
+	if x != nil {
+		return x.NativeServices
 	}
 	return nil
 }
@@ -2331,7 +2339,7 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\areports\x18\x02 \x03(\v2$.jumpstarter.v1.DriverInstanceReportR\areports\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa5\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xce\x04\n" +
 	"\x14DriverInstanceReport\x12\x12\n" +
 	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12$\n" +
 	"\vparent_uuid\x18\x02 \x01(\tH\x00R\n" +
@@ -2339,7 +2347,8 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\x06labels\x18\x03 \x03(\v20.jumpstarter.v1.DriverInstanceReport.LabelsEntryR\x06labels\x12%\n" +
 	"\vdescription\x18\x04 \x01(\tH\x01R\vdescription\x88\x01\x01\x12m\n" +
 	"\x13methods_description\x18\x05 \x03(\v2<.jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntryR\x12methodsDescription\x127\n" +
-	"\x15file_descriptor_proto\x18\x06 \x01(\fH\x02R\x13fileDescriptorProto\x88\x01\x01\x1a9\n" +
+	"\x15file_descriptor_proto\x18\x06 \x01(\fH\x02R\x13fileDescriptorProto\x88\x01\x01\x12'\n" +
+	"\x0fnative_services\x18\a \x03(\tR\x0enativeServices\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aE\n" +
