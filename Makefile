@@ -166,8 +166,8 @@ test-e2e: e2e-run
 # Compatibility E2E testing (cross-version tests, separate from main e2e)
 COMPAT_SCENARIO ?= old-controller
 COMPAT_TEST ?= old-controller
-COMPAT_CONTROLLER_TAG ?= v0.7.0
-COMPAT_CLIENT_VERSION ?= 0.7.1
+COMPAT_CONTROLLER_TAG ?= v0.8.1
+COMPAT_CLIENT_VERSION ?= 0.8.1
 
 .PHONY: e2e-compat-setup
 e2e-compat-setup:
