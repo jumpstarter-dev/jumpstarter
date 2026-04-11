@@ -10,7 +10,7 @@ from __future__ import annotations
 from google.protobuf.empty_pb2 import Empty
 
 from jumpstarter_driver_power.common import PowerReading
-from jumpstarter_driver_power.power.v1 import power_pb2_grpc
+from jumpstarter_driver_power.protocol.power.v1 import power_pb2_grpc
 from jumpstarter.client.native import register_native_client_adapter
 
 SERVICE_NAME = "jumpstarter.interfaces.power.v1.PowerInterface"

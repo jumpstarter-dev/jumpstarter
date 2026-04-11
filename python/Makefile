@@ -92,6 +92,13 @@ protobuf-gen:
 		-e 's|^from jumpstarter\.annotations import|from . import|g' \
 		{} \; -exec rm {}.bak \; 2>/dev/null || true
 
+generate-native-services: ## Generate native gRPC servicer adapters + pb2 stubs for all driver interfaces.
+	@for pkg in packages/jumpstarter-driver-*; do \
+		if [ -d "$$pkg/proto" ]; then \
+			uv run jmp proto generate "$$pkg" --servicer-only 2>&1 || true; \
+		fi; \
+	done
+
 sync:
 	uv sync --all-packages --all-extras
 

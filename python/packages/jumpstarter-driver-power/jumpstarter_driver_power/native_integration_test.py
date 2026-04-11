@@ -12,7 +12,7 @@ import grpc
 from google.protobuf import empty_pb2
 
 # Import servicer to trigger registration BEFORE Session is created
-import jumpstarter_driver_power.servicer  # noqa: F401
+import jumpstarter_driver_power.protocol.power.v1.servicer  # noqa: F401
 import jumpstarter_driver_power.client_native  # noqa: F401
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import MockPower
@@ -39,7 +39,7 @@ def test_native_grpc_power_read():
 def test_native_services_in_report():
     """MockPower driver reports native_services in DriverInstanceReport."""
     # Import servicer so the adapter is registered
-    from jumpstarter_driver_power.servicer import SERVICE_NAME
+    from jumpstarter_driver_power.protocol.power.v1.servicer import SERVICE_NAME
 
     driver = MockPower()
     report = driver.report()

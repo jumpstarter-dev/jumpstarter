@@ -20,8 +20,8 @@ def anyio_backend(request):
 
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import MockPower, SyncMockPower
-from jumpstarter_driver_power.power.v1 import power_pb2_grpc
-from jumpstarter_driver_power.servicer import SERVICE_NAME as POWER_SERVICE_NAME
+from jumpstarter_driver_power.protocol.power.v1 import power_pb2_grpc
+from jumpstarter_driver_power.protocol.power.v1.servicer import SERVICE_NAME as POWER_SERVICE_NAME
 
 from jumpstarter.common.utils import serve
 from jumpstarter.exporter.session import Session

@@ -261,21 +261,49 @@ class Session(
 
     @staticmethod
     def _try_import_servicer(interface_class: type) -> None:
-        """Try to import the servicer module from the interface's package.
+        """Try to import servicer modules from the interface's package.
 
-        Convention: the servicer module lives at ``{package}.servicer``
-        where ``{package}`` is the top-level package of the interface class.
+        Convention: generated code lives under ``{package}.protocol.{iface}.{ver}/``
+        e.g., ``jumpstarter_driver_power.protocol.power.v1.servicer``
+
+        The servicer registers itself via ``register_servicer_adapter()``
+        at import time.
         """
         import importlib
+        import pkgutil
 
         module_name = interface_class.__module__
-        # Get the top-level package (e.g., "jumpstarter_driver_power")
         top_package = module_name.split(".")[0]
-        servicer_module = f"{top_package}.servicer"
+        protocol_pkg = f"{top_package}.protocol"
+
         try:
-            importlib.import_module(servicer_module)
+            proto = importlib.import_module(protocol_pkg)
         except ImportError:
-            logger.debug("No servicer module found at %s", servicer_module)
+            logger.debug("No protocol package in %s", top_package)
+            return
+
+        if not hasattr(proto, "__path__"):
+            return
+
+        # Scan {package}.protocol.{interface_name}.{version}.servicer
+        for _imp, iface_name, is_pkg in pkgutil.iter_modules(proto.__path__):
+            if not is_pkg:
+                continue
+            iface_full = f"{protocol_pkg}.{iface_name}"
+            try:
+                iface_mod = importlib.import_module(iface_full)
+            except ImportError:
+                continue
+            if not hasattr(iface_mod, "__path__"):
+                continue
+            for _imp2, ver_name, is_ver_pkg in pkgutil.iter_modules(iface_mod.__path__):
+                if not is_ver_pkg:
+                    continue
+                servicer_module = f"{iface_full}.{ver_name}.servicer"
+                try:
+                    importlib.import_module(servicer_module)
+                except ImportError:
+                    pass
 
     @asynccontextmanager
     async def _serve_grpc_server_async(self, server):

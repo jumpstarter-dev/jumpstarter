@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import grpc
 import pytest
 
-from jumpstarter_driver_power.servicer import PowerInterfaceServicer, SERVICE_NAME
+from jumpstarter_driver_power.protocol.power.v1.servicer import PowerInterfaceServicer, SERVICE_NAME
 from jumpstarter.exporter.registry import DriverRegistry
 
 
