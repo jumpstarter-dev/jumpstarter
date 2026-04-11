@@ -1,0 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: DriverInterface
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: dev-jumpstarter-flasher-v1
+spec:
+  proto:
+    package: jumpstarter.interfaces.flasher.v1
+    descriptor: Cg1mbGFzaGVyLnByb3RvEiFqdW1wc3RhcnRlci5pbnRlcmZhY2VzLmZsYXNoZXIudjEaG2dvb2dsZS9wcm90b2J1Zi9lbXB0eS5wcm90byIzCgtEdW1wUmVxdWVzdBIOCgZ0YXJnZXQYASABKAkSFAoJcGFydGl0aW9uGAIgASgJiAEBIjEKDEZsYXNoUmVxdWVzdBIOCgZzb3VyY2UYASABKAkSEQoGdGFyZ2V0GAIgASgJiAEBMrwBChBGbGFzaGVySW50ZXJmYWNlElIKBER1bXASLi5qdW1wc3RhcnRlci5pbnRlcmZhY2VzLmZsYXNoZXIudjEuRHVtcFJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkoADAAElQKBUZsYXNoEi8uanVtcHN0YXJ0ZXIuaW50ZXJmYWNlcy5mbGFzaGVyLnYxLkZsYXNoUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSgAMABKygEKOwoCBgAaNUZsYXNoIGFuZCBkdW1wIGZpcm13YXJlIGltYWdlcyB0byBhbmQgZnJvbSBhIGRldmljZS4KCkQKBAYAAgAaPFJlYWQgYSBmaXJtd2FyZSBpbWFnZSBmcm9tIHRoZSBkZXZpY2UgdG8gYSByZXNvdXJjZSBoYW5kbGUuCgpFCgQGAAIBGj1Xcml0ZSBhIGZpcm13YXJlIGltYWdlIHRvIHRoZSBkZXZpY2UgZnJvbSBhIHJlc291cmNlIGhhbmRsZS4KYgZwcm90bzM=
+  drivers:
+    - language: python
+      package: jumpstarter-driver-opendal
+      clientClass: "jumpstarter_driver_opendal.client.FlasherClient"
+      driverClasses:
+        - "jumpstarter_driver_opendal.driver:MockFlasher"

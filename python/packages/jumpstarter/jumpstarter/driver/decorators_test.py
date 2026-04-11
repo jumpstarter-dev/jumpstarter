@@ -16,7 +16,6 @@ from .decorators import (
     ExportedMethodInfo,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures: decorated methods with proper type annotations
 # ---------------------------------------------------------------------------

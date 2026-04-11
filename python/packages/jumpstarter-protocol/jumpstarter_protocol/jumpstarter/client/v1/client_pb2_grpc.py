@@ -3,7 +3,7 @@
 import grpc
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
-from . import client_pb2 as jumpstarter_dot_client_dot_v1_dot_client__pb2
+from jumpstarter_protocol.jumpstarter.client.v1 import client_pb2 as jumpstarter_dot_client_dot_v1_dot_client__pb2
 
 
 class ClientServiceStub(object):

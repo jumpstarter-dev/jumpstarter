@@ -13,6 +13,8 @@ from jumpstarter_cli_common.opt import (
 from jumpstarter_cli_common.print import model_print
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
+    DriverInterfacesV1Alpha1Api,
+    ExporterClassesV1Alpha1Api,
     ExportersV1Alpha1Api,
     LeasesV1Alpha1Api,
     get_cluster_info,
@@ -169,3 +171,93 @@ async def get_clusters(type: str, kubectl: str, helm: str, kind: str, minikube: 
         raise
     except Exception as e:
         raise click.ClickException(f"Error listing clusters: {e}") from e
+
+
+@get.command("driverinterface")
+@click.argument("name", type=str, required=False, default=None)
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_all
+@blocking
+async def get_driverinterface(
+    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
+):
+    """Get DriverInterface objects in a Kubernetes cluster"""
+    try:
+        async with DriverInterfacesV1Alpha1Api(namespace, kubeconfig, context) as api:
+            if name is not None:
+                di = await api.get_driver_interface(name)
+                model_print(di, output, namespace=namespace)
+            else:
+                dis = await api.list_driver_interfaces()
+                model_print(dis, output, namespace=namespace)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+@get.command("driverinterfaces")
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_all
+@blocking
+async def get_driverinterfaces(
+    kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
+):
+    """List all DriverInterface objects in a Kubernetes cluster"""
+    try:
+        async with DriverInterfacesV1Alpha1Api(namespace, kubeconfig, context) as api:
+            dis = await api.list_driver_interfaces()
+            model_print(dis, output, namespace=namespace)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+@get.command("exporterclass")
+@click.argument("name", type=str, required=False, default=None)
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_all
+@blocking
+async def get_exporterclass(
+    name: Optional[str], kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
+):
+    """Get ExporterClass objects in a Kubernetes cluster"""
+    try:
+        async with ExporterClassesV1Alpha1Api(namespace, kubeconfig, context) as api:
+            if name is not None:
+                ec = await api.get_exporter_class(name)
+                model_print(ec, output, namespace=namespace)
+            else:
+                ecs = await api.list_exporter_classes()
+                model_print(ecs, output, namespace=namespace)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+@get.command("exporterclasses")
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_all
+@blocking
+async def get_exporterclasses(
+    kubeconfig: Optional[str], context: Optional[str], namespace: str, output: OutputType
+):
+    """List all ExporterClass objects in a Kubernetes cluster"""
+    try:
+        async with ExporterClassesV1Alpha1Api(namespace, kubeconfig, context) as api:
+            ecs = await api.list_exporter_classes()
+            model_print(ecs, output, namespace=namespace)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)

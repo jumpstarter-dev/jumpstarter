@@ -769,3 +769,207 @@ class EndSessionResponse(google.protobuf.message.Message):
     def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
 
 Global___EndSessionResponse: typing_extensions.TypeAlias = EndSessionResponse
+
+@typing.final
+class ValidateExporterRequest(google.protobuf.message.Message):
+    """ValidateExporter RPC messages"""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    @typing.final
+    class LabelsEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+
+    LABELS_FIELD_NUMBER: builtins.int
+    REPORTS_FIELD_NUMBER: builtins.int
+    @property
+    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
+    @property
+    def reports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]: ...
+    def __init__(
+        self,
+        *,
+        labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        reports: collections.abc.Iterable[Global___DriverInstanceReport] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["labels", b"labels", "reports", b"reports"]) -> None: ...
+
+Global___ValidateExporterRequest: typing_extensions.TypeAlias = ValidateExporterRequest
+
+@typing.final
+class ValidateExporterResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    RESULTS_FIELD_NUMBER: builtins.int
+    @property
+    def results(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___ExporterClassValidationResult]: ...
+    def __init__(
+        self,
+        *,
+        results: collections.abc.Iterable[Global___ExporterClassValidationResult] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["results", b"results"]) -> None: ...
+
+Global___ValidateExporterResponse: typing_extensions.TypeAlias = ValidateExporterResponse
+
+@typing.final
+class ExporterClassValidationResult(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    EXPORTER_CLASS_NAME_FIELD_NUMBER: builtins.int
+    SATISFIED_FIELD_NUMBER: builtins.int
+    INTERFACES_FIELD_NUMBER: builtins.int
+    exporter_class_name: builtins.str
+    satisfied: builtins.bool
+    @property
+    def interfaces(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___InterfaceValidationResult]: ...
+    def __init__(
+        self,
+        *,
+        exporter_class_name: builtins.str = ...,
+        satisfied: builtins.bool = ...,
+        interfaces: collections.abc.Iterable[Global___InterfaceValidationResult] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["exporter_class_name", b"exporter_class_name", "interfaces", b"interfaces", "satisfied", b"satisfied"]) -> None: ...
+
+Global___ExporterClassValidationResult: typing_extensions.TypeAlias = ExporterClassValidationResult
+
+@typing.final
+class InterfaceValidationResult(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    INTERFACE_NAME_FIELD_NUMBER: builtins.int
+    INTERFACE_REF_FIELD_NUMBER: builtins.int
+    REQUIRED_FIELD_NUMBER: builtins.int
+    FOUND_FIELD_NUMBER: builtins.int
+    STRUCTURALLY_COMPATIBLE_FIELD_NUMBER: builtins.int
+    ERROR_MESSAGE_FIELD_NUMBER: builtins.int
+    interface_name: builtins.str
+    interface_ref: builtins.str
+    required: builtins.bool
+    found: builtins.bool
+    structurally_compatible: builtins.bool
+    error_message: builtins.str
+    def __init__(
+        self,
+        *,
+        interface_name: builtins.str = ...,
+        interface_ref: builtins.str = ...,
+        required: builtins.bool = ...,
+        found: builtins.bool = ...,
+        structurally_compatible: builtins.bool = ...,
+        error_message: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["error_message", b"error_message", "found", b"found", "interface_name", b"interface_name", "interface_ref", b"interface_ref", "required", b"required", "structurally_compatible", b"structurally_compatible"]) -> None: ...
+
+Global___InterfaceValidationResult: typing_extensions.TypeAlias = InterfaceValidationResult
+
+@typing.final
+class GetExporterClassInfoRequest(google.protobuf.message.Message):
+    """GetExporterClassInfo RPC messages"""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    EXPORTER_UUID_FIELD_NUMBER: builtins.int
+    EXPORTER_CLASS_NAME_FIELD_NUMBER: builtins.int
+    exporter_uuid: builtins.str
+    """look up by exporter UUID or name"""
+    exporter_class_name: builtins.str
+    """alternatively, look up by ExporterClass name"""
+    def __init__(
+        self,
+        *,
+        exporter_uuid: builtins.str = ...,
+        exporter_class_name: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["exporter_class_name", b"exporter_class_name", "exporter_uuid", b"exporter_uuid"]) -> None: ...
+
+Global___GetExporterClassInfoRequest: typing_extensions.TypeAlias = GetExporterClassInfoRequest
+
+@typing.final
+class GetExporterClassInfoResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    EXPORTER_CLASSES_FIELD_NUMBER: builtins.int
+    DRIVER_INTERFACES_FIELD_NUMBER: builtins.int
+    @property
+    def exporter_classes(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___ExporterClassValidationResult]: ...
+    @property
+    def driver_interfaces(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInterfaceInfo]: ...
+    def __init__(
+        self,
+        *,
+        exporter_classes: collections.abc.Iterable[Global___ExporterClassValidationResult] | None = ...,
+        driver_interfaces: collections.abc.Iterable[Global___DriverInterfaceInfo] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["driver_interfaces", b"driver_interfaces", "exporter_classes", b"exporter_classes"]) -> None: ...
+
+Global___GetExporterClassInfoResponse: typing_extensions.TypeAlias = GetExporterClassInfoResponse
+
+@typing.final
+class DriverInterfaceInfo(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: builtins.int
+    PACKAGE_FIELD_NUMBER: builtins.int
+    DESCRIPTOR_FIELD_NUMBER: builtins.int
+    DRIVERS_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    package: builtins.str
+    descriptor: builtins.bytes
+    @property
+    def drivers(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInfo]: ...
+    def __init__(
+        self,
+        *,
+        name: builtins.str = ...,
+        package: builtins.str = ...,
+        descriptor: builtins.bytes = ...,
+        drivers: collections.abc.Iterable[Global___DriverInfo] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["descriptor", b"descriptor", "drivers", b"drivers", "name", b"name", "package", b"package"]) -> None: ...
+
+Global___DriverInterfaceInfo: typing_extensions.TypeAlias = DriverInterfaceInfo
+
+@typing.final
+class DriverInfo(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LANG_FIELD_NUMBER: builtins.int
+    PACKAGE_FIELD_NUMBER: builtins.int
+    VERSION_FIELD_NUMBER: builtins.int
+    INDEX_FIELD_NUMBER: builtins.int
+    CLIENT_CLASS_FIELD_NUMBER: builtins.int
+    DRIVER_CLASSES_FIELD_NUMBER: builtins.int
+    lang: builtins.str
+    package: builtins.str
+    version: builtins.str
+    index: builtins.str
+    client_class: builtins.str
+    @property
+    def driver_classes(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]: ...
+    def __init__(
+        self,
+        *,
+        lang: builtins.str = ...,
+        package: builtins.str = ...,
+        version: builtins.str = ...,
+        index: builtins.str = ...,
+        client_class: builtins.str = ...,
+        driver_classes: collections.abc.Iterable[builtins.str] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["client_class", b"client_class", "driver_classes", b"driver_classes", "index", b"index", "lang", b"lang", "package", b"package", "version", b"version"]) -> None: ...
+
+Global___DriverInfo: typing_extensions.TypeAlias = DriverInfo

@@ -3,7 +3,6 @@
 from abc import abstractmethod
 from collections.abc import AsyncGenerator
 
-import pytest
 from click.testing import CliRunner
 from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
@@ -11,11 +10,7 @@ from google.protobuf.descriptor_pb2 import (
     FileDescriptorProto,
     MethodDescriptorProto,
     ServiceDescriptorProto,
-    SourceCodeInfo,
 )
-
-from jumpstarter.driver import DriverInterface, export
-from jumpstarter.driver.descriptor_builder import build_file_descriptor
 
 from .interface import (
     CheckResult,
@@ -30,7 +25,8 @@ from .interface import (
     generate,
     render_proto_source,
 )
-
+from jumpstarter.driver import DriverInterface
+from jumpstarter.driver.descriptor_builder import build_file_descriptor
 
 # ---------------------------------------------------------------------------
 # Test interfaces

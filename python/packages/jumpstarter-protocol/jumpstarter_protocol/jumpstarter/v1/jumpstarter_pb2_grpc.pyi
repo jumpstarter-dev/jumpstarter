@@ -202,7 +202,39 @@ _ControllerServiceListLeasesType = typing_extensions.TypeVar(
     ],
 )
 
-class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceAuditStreamType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType]):
+_ControllerServiceValidateExporterType = typing_extensions.TypeVar(
+    '_ControllerServiceValidateExporterType',
+    grpc.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterRequest,
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterRequest,
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse,
+    ],
+    default=grpc.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterRequest,
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse,
+    ],
+)
+
+_ControllerServiceGetExporterClassInfoType = typing_extensions.TypeVar(
+    '_ControllerServiceGetExporterClassInfoType',
+    grpc.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoRequest,
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoRequest,
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse,
+    ],
+    default=grpc.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoRequest,
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse,
+    ],
+)
+
+class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceAuditStreamType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType, _ControllerServiceValidateExporterType, _ControllerServiceGetExporterClassInfoType]):
     """A service where a exporter can connect to make itself available"""
 
     @typing.overload
@@ -251,6 +283,14 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
             jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
             jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
         ],
+        grpc.UnaryUnaryMultiCallable[
+            jumpstarter.v1.jumpstarter_pb2.ValidateExporterRequest,
+            jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse,
+        ],
+        grpc.UnaryUnaryMultiCallable[
+            jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoRequest,
+            jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse,
+        ],
     ], channel: grpc.Channel) -> None: ...
 
     @typing.overload
@@ -298,6 +338,14 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
         grpc.aio.UnaryUnaryMultiCallable[
             jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
             jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
+        ],
+        grpc.aio.UnaryUnaryMultiCallable[
+            jumpstarter.v1.jumpstarter_pb2.ValidateExporterRequest,
+            jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse,
+        ],
+        grpc.aio.UnaryUnaryMultiCallable[
+            jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoRequest,
+            jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse,
         ],
     ], channel: grpc.aio.Channel) -> None: ...
 
@@ -349,6 +397,12 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
     ListLeases: _ControllerServiceListLeasesType
     """List Leases"""
 
+    ValidateExporter: _ControllerServiceValidateExporterType
+    """Validate exporter configuration against matching ExporterClasses"""
+
+    GetExporterClassInfo: _ControllerServiceGetExporterClassInfoType
+    """Get ExporterClass and DriverInterface info for a leased exporter"""
+
 ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
         jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
@@ -393,6 +447,14 @@ ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
         jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
         jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterRequest,
+        jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoRequest,
+        jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse,
     ],
 ]
 
@@ -501,6 +563,22 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse]]:
         """List Leases"""
+
+    @abc.abstractmethod
+    def ValidateExporter(
+        self,
+        request: jumpstarter.v1.jumpstarter_pb2.ValidateExporterRequest,
+        context: _ServicerContext,
+    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ValidateExporterResponse]]:
+        """Validate exporter configuration against matching ExporterClasses"""
+
+    @abc.abstractmethod
+    def GetExporterClassInfo(
+        self,
+        request: jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoRequest,
+        context: _ServicerContext,
+    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetExporterClassInfoResponse]]:
+        """Get ExporterClass and DriverInterface info for a leased exporter"""
 
 def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
 

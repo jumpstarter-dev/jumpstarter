@@ -29,6 +29,7 @@ rules:
   - jumpstarter.dev
   resources:
   - clients
+  - exporterclasses
   - exporters
   - leases
   verbs:
@@ -43,6 +44,7 @@ rules:
   - jumpstarter.dev
   resources:
   - clients/finalizers
+  - exporterclasses/finalizers
   - exporters/finalizers
   - leases/finalizers
   verbs:
@@ -51,6 +53,8 @@ rules:
   - jumpstarter.dev
   resources:
   - clients/status
+  - driverinterfaces/status
+  - exporterclasses/status
   - exporters/status
   - leases/status
   verbs:
@@ -60,6 +64,7 @@ rules:
 - apiGroups:
   - jumpstarter.dev
   resources:
+  - driverinterfaces
   - exporteraccesspolicies
   verbs:
   - get

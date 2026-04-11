@@ -3,7 +3,7 @@
 import grpc
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
-from . import jumpstarter_pb2 as jumpstarter_dot_v1_dot_jumpstarter__pb2
+from jumpstarter_protocol.jumpstarter.v1 import jumpstarter_pb2 as jumpstarter_dot_v1_dot_jumpstarter__pb2
 
 
 class ControllerServiceStub(object):
@@ -70,6 +70,16 @@ class ControllerServiceStub(object):
                 '/jumpstarter.v1.ControllerService/ListLeases',
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesResponse.FromString,
+                _registered_method=True)
+        self.ValidateExporter = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/ValidateExporter',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ValidateExporterRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ValidateExporterResponse.FromString,
+                _registered_method=True)
+        self.GetExporterClassInfo = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/GetExporterClassInfo',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterClassInfoRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterClassInfoResponse.FromString,
                 _registered_method=True)
 
 
@@ -163,6 +173,20 @@ class ControllerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ValidateExporter(self, request, context):
+        """Validate exporter configuration against matching ExporterClasses
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetExporterClassInfo(self, request, context):
+        """Get ExporterClass and DriverInterface info for a leased exporter
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ControllerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -220,6 +244,16 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.ListLeases,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesResponse.SerializeToString,
+            ),
+            'ValidateExporter': grpc.unary_unary_rpc_method_handler(
+                    servicer.ValidateExporter,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ValidateExporterRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ValidateExporterResponse.SerializeToString,
+            ),
+            'GetExporterClassInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetExporterClassInfo,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterClassInfoRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterClassInfoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -520,6 +554,60 @@ class ControllerService(object):
             '/jumpstarter.v1.ControllerService/ListLeases',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.ListLeasesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ValidateExporter(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/ValidateExporter',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ValidateExporterRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ValidateExporterResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetExporterClassInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/GetExporterClassInfo',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterClassInfoRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.GetExporterClassInfoResponse.FromString,
             options,
             channel_credentials,
             insecure,

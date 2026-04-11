@@ -19,6 +19,23 @@ from .cluster import (
 )
 from .clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from .controller import get_latest_compatible_controller_version
+from .driverinterfaces import (
+    DriverInterfacesV1Alpha1Api,
+    V1Alpha1DriverImplementation,
+    V1Alpha1DriverInterface,
+    V1Alpha1DriverInterfaceList,
+    V1Alpha1DriverInterfaceProto,
+    V1Alpha1DriverInterfaceSpec,
+    V1Alpha1DriverInterfaceStatus,
+)
+from .exporterclasses import (
+    ExporterClassesV1Alpha1Api,
+    V1Alpha1ExporterClass,
+    V1Alpha1ExporterClassList,
+    V1Alpha1ExporterClassSpec,
+    V1Alpha1ExporterClassStatus,
+    V1Alpha1InterfaceRequirement,
+)
 from .exporters import (
     ExportersV1Alpha1Api,
     V1Alpha1Exporter,
@@ -49,6 +66,19 @@ __all__ = [
     "V1Alpha1ClusterInfo",
     "V1Alpha1ClusterList",
     "V1Alpha1JumpstarterInstance",
+    "DriverInterfacesV1Alpha1Api",
+    "V1Alpha1DriverImplementation",
+    "V1Alpha1DriverInterface",
+    "V1Alpha1DriverInterfaceList",
+    "V1Alpha1DriverInterfaceProto",
+    "V1Alpha1DriverInterfaceSpec",
+    "V1Alpha1DriverInterfaceStatus",
+    "ExporterClassesV1Alpha1Api",
+    "V1Alpha1ExporterClass",
+    "V1Alpha1ExporterClassList",
+    "V1Alpha1ExporterClassSpec",
+    "V1Alpha1ExporterClassStatus",
+    "V1Alpha1InterfaceRequirement",
     "ExportersV1Alpha1Api",
     "V1Alpha1Exporter",
     "V1Alpha1ExporterList",

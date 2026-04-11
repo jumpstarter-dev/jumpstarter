@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-from typing import Any, Literal, Optional, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 from uuid import UUID
 
 from google.protobuf.descriptor_pb2 import (
@@ -20,7 +20,6 @@ from google.protobuf.descriptor_pb2 import (
     FieldDescriptorProto,
 )
 from pydantic import BaseModel, TypeAdapter
-
 
 # Well-known type names (fully qualified)
 EMPTY_TYPE = ".google.protobuf.Empty"

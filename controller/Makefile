@@ -67,7 +67,7 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) 	rbac:roleName=jumpstarter-manager-role crd webhook paths="./api/..." paths="./internal/..." \
-						output:crd:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/ \
+						output:crd:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/crds/ \
 						output:rbac:artifacts:config=deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/
 
 	# Add ArgoCD sync-wave annotation to RBAC role for proper deployment ordering (PR #207)
@@ -77,10 +77,25 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 		mv deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml.tmp \
 		deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/rbac/role.yaml
 
-	cp deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/* deploy/operator/config/crd/bases/
+	cp deploy/helm/jumpstarter/charts/jumpstarter-controller/crds/* deploy/operator/config/crd/bases/
+
+	# Generate DriverInterface YAMLs for bundled drivers (requires Python environment, optional)
+	-$(MAKE) driver-interfaces
 
 	# Regenerate operator install.yaml to include updated CRDs
 	$(MAKE) -C deploy/operator build-installer
+
+# Directories where DriverInterface YAML manifests are placed alongside CRDs
+DRIVERINTERFACE_HELM_DIR = deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds
+DRIVERINTERFACE_OPERATOR_DIR = deploy/operator/config/crd/bases
+
+.PHONY: driver-interfaces
+driver-interfaces: ## Generate DriverInterface YAML manifests for bundled drivers.
+	@echo "Generating DriverInterface YAML manifests..."
+	cd ../python && uv run jmp interface generate-all -d /tmp/jumpstarter-protos
+	cd ../python && uv run python ../controller/hack/generate_driver_interfaces.py \
+		--output-dir ../controller/$(DRIVERINTERFACE_HELM_DIR) \
+		--output-dir ../controller/$(DRIVERINTERFACE_OPERATOR_DIR)
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -254,7 +269,7 @@ GRPCURL = $(LOCALBIN)/grpcurl
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.1
-CONTROLLER_TOOLS_VERSION ?= v0.16.3
+CONTROLLER_TOOLS_VERSION ?= v0.17.3
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 GOLANGCI_LINT_VERSION ?= v2.5.0
 KIND_VERSION ?= v0.27.0

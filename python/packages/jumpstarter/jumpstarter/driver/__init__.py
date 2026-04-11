@@ -1,5 +1,5 @@
 from .base import Driver
-from .decorators import CallType, ExportedMethodInfo, export, exportstream, driverinterface, streammethod
+from .decorators import CallType, ExportedMethodInfo, driverinterface, export, exportstream, streammethod
 from .interface import DriverInterface, DriverInterfaceMeta
 
 __all__ = [

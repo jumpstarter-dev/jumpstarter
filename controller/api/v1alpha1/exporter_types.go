@@ -43,13 +43,16 @@ type ExporterStatus struct {
 	ExporterStatusValue string `json:"exporterStatus,omitempty"`
 	// StatusMessage is an optional human-readable message describing the current state
 	StatusMessage string `json:"statusMessage,omitempty"`
+	// SatisfiedExporterClasses lists the ExporterClass names this exporter satisfies.
+	SatisfiedExporterClasses []string `json:"satisfiedExporterClasses,omitempty"`
 }
 
 type ExporterConditionType string
 
 const (
-	ExporterConditionTypeRegistered ExporterConditionType = "Registered"
-	ExporterConditionTypeOnline     ExporterConditionType = "Online"
+	ExporterConditionTypeRegistered          ExporterConditionType = "Registered"
+	ExporterConditionTypeOnline              ExporterConditionType = "Online"
+	ExporterConditionTypeExporterClassCompliance ExporterConditionType = "ExporterClassCompliance"
 )
 
 // ExporterStatus values - PascalCase for Kubernetes, converted from proto ALL_CAPS

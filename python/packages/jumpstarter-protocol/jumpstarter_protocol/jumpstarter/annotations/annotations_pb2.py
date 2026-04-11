@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import descriptor_pb2 as google_dot_protobuf_dot_descriptor__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n)jumpstarter/annotations/annotations.proto\x12\x17jumpstarter.annotations\x1a google/protobuf/descriptor.proto:Q\n\x11interface_version\x12\x1f.google.protobuf.ServiceOptions\x18\xd0\x86\x03 \x01(\tR\x10interfaceVersion\x88\x01\x01:K\n\x0fresource_handle\x12\x1d.google.protobuf.FieldOptions\x18\xd0\x86\x03 \x01(\x08R\x0eresourceHandle\x88\x01\x01\x42\xac\x01\n\x1b\x63om.jumpstarter.annotationsB\x10\x41nnotationsProtoP\x01\xa2\x02\x03JAX\xaa\x02\x17Jumpstarter.Annotations\xca\x02\x17Jumpstarter\\Annotations\xe2\x02#Jumpstarter\\Annotations\\GPBMetadata\xea\x02\x18Jumpstarter::Annotationsb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n)jumpstarter/annotations/annotations.proto\x12\x17jumpstarter.annotations\x1a google/protobuf/descriptor.proto:K\n\x0fresource_handle\x12\x1d.google.protobuf.FieldOptions\x18\xd0\x86\x03 \x01(\x08R\x0eresourceHandle\x88\x01\x01\x42\xac\x01\n\x1b\x63om.jumpstarter.annotationsB\x10\x41nnotationsProtoP\x01\xa2\x02\x03JAX\xaa\x02\x17Jumpstarter.Annotations\xca\x02\x17Jumpstarter\\Annotations\xe2\x02#Jumpstarter\\Annotations\\GPBMetadata\xea\x02\x18Jumpstarter::Annotationsb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)

@@ -1,10 +1,9 @@
 import inspect
 from collections.abc import AsyncGenerator, Generator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from inspect import isasyncgenfunction, iscoroutinefunction, isfunction, isgeneratorfunction
-from typing import Any, Final, get_args, get_origin
-
+from typing import Any, Final, get_origin
 
 MARKER_MAGIC: Final[str] = "07c9b9cc"
 MARKER_DRIVERCALL: Final[str] = "marker_drivercall"

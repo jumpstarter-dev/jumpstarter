@@ -10,11 +10,8 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
-from abc import abstractmethod
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, get_args, get_origin
-
-from pydantic import BaseModel
 
 from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
@@ -24,6 +21,7 @@ from google.protobuf.descriptor_pb2 import (
     ServiceDescriptorProto,
     SourceCodeInfo,
 )
+from pydantic import BaseModel
 
 from .decorators import (
     MARKER_STREAM_METHOD,
@@ -33,7 +31,6 @@ from .decorators import (
     ExportedMethodInfo,
 )
 from .type_mapping import EMPTY_TYPE, VALUE_TYPE, TypeMappingResult, map_python_type
-
 
 # FileDescriptorProto field numbers for source_code_info paths
 _FDP_MESSAGE_TYPE = 4  # FileDescriptorProto.message_type

@@ -2,19 +2,14 @@
 
 from abc import abstractmethod
 from collections.abc import AsyncGenerator
-from typing import Optional
 
-import pytest
 from google.protobuf.descriptor_pb2 import (
-    FieldDescriptorProto,
     FileDescriptorProto,
 )
 from pydantic import BaseModel
 
-from .decorators import CallType, export, exportstream
 from .descriptor_builder import build_file_descriptor
-from .interface import DriverInterface, DriverInterfaceMeta
-
+from .interface import DriverInterface
 
 # ---------------------------------------------------------------------------
 # Test interfaces

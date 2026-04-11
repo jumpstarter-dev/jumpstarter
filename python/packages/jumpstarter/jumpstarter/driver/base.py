@@ -7,8 +7,6 @@ from __future__ import annotations
 import logging
 import os
 from abc import abstractmethod
-
-from .interface import DriverInterfaceMeta
 from contextlib import asynccontextmanager
 from dataclasses import field
 from inspect import isasyncgenfunction, iscoroutinefunction
@@ -29,6 +27,7 @@ from .decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
+from .interface import DriverInterfaceMeta
 from jumpstarter.common import LogSource, Metadata
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
@@ -202,8 +201,10 @@ class Driver(
     def _get_interface_class(self):
         """Find the DriverInterface subclass in this driver's MRO.
 
-        Returns the first concrete DriverInterface (one that defines client())
-        in the class hierarchy, or None if the driver hasn't been migrated yet.
+        Returns the first concrete DriverInterface (one that defines client()
+        in its own namespace) in the class hierarchy, or None if the driver
+        hasn't been migrated yet. Skips concrete driver classes that merely
+        inherit client() from their interface.
         """
         from .interface import DriverInterface, DriverInterfaceMeta
 
@@ -211,7 +212,7 @@ class Driver(
             if (
                 cls is not DriverInterface
                 and isinstance(cls, DriverInterfaceMeta)
-                and hasattr(cls, "client")
+                and "client" in cls.__dict__
                 and not getattr(cls.client, "__isabstractmethod__", False)
             ):
                 return cls

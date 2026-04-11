@@ -51,6 +51,12 @@ service ControllerService {
   rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
   // List Leases
   rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse);
+
+  // Validate exporter configuration against matching ExporterClasses
+  rpc ValidateExporter(ValidateExporterRequest) returns (ValidateExporterResponse);
+
+  // Get ExporterClass and DriverInterface info for a leased exporter
+  rpc GetExporterClassInfo(GetExporterClassInfoRequest) returns (GetExporterClassInfoResponse);
 }
 
 message RegisterRequest {
@@ -238,4 +244,58 @@ message EndSessionRequest {}
 message EndSessionResponse {
   bool success = 1;
   optional string message = 2;
+}
+
+// ValidateExporter RPC messages
+
+message ValidateExporterRequest {
+  map<string, string> labels = 1;
+  repeated DriverInstanceReport reports = 2;
+}
+
+message ValidateExporterResponse {
+  repeated ExporterClassValidationResult results = 1;
+}
+
+message ExporterClassValidationResult {
+  string exporter_class_name = 1;
+  bool satisfied = 2;
+  repeated InterfaceValidationResult interfaces = 3;
+}
+
+message InterfaceValidationResult {
+  string interface_name = 1;
+  string interface_ref = 2;
+  bool required = 3;
+  bool found = 4;
+  bool structurally_compatible = 5;
+  string error_message = 6;
+}
+
+// GetExporterClassInfo RPC messages
+
+message GetExporterClassInfoRequest {
+  string exporter_uuid = 1;  // look up by exporter UUID or name
+  string exporter_class_name = 2;  // alternatively, look up by ExporterClass name
+}
+
+message GetExporterClassInfoResponse {
+  repeated ExporterClassValidationResult exporter_classes = 1;
+  repeated DriverInterfaceInfo driver_interfaces = 2;
+}
+
+message DriverInterfaceInfo {
+  string name = 1;
+  string package = 2;
+  bytes descriptor = 3;
+  repeated DriverInfo drivers = 4;
+}
+
+message DriverInfo {
+  string lang = 1;
+  string package = 2;
+  string version = 3;
+  string index = 4;
+  string client_class = 5;
+  repeated string driver_classes = 6;
 }

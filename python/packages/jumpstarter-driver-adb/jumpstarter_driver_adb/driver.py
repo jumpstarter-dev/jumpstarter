@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from jumpstarter_driver_network.driver import TcpNetwork
 
 from jumpstarter.common.exceptions import ConfigurationError
-from jumpstarter.driver.decorators import export
 from jumpstarter.driver import driverinterface
+from jumpstarter.driver.decorators import export
 
 
 @driverinterface("Adb")

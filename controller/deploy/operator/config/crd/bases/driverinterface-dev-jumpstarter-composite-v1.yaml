@@ -1,0 +1,14 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: DriverInterface
+metadata:
+  name: dev-jumpstarter-composite-v1
+spec:
+  proto:
+    package: jumpstarter.interfaces.composite.v1
+    descriptor: Cg9jb21wb3NpdGUucHJvdG8SI2p1bXBzdGFydGVyLmludGVyZmFjZXMuY29tcG9zaXRlLnYxMhQKEkNvbXBvc2l0ZUludGVyZmFjZUpKCkgKAgYAGkJDb250YWluZXIgZm9yIGEgdHJlZSBvZiBjaGlsZCBkcml2ZXJzIHdpdGggbm8gbWV0aG9kcyBvZiBpdHMgb3duLgpiBnByb3RvMw==
+  drivers:
+    - language: python
+      package: jumpstarter-driver-composite
+      clientClass: "jumpstarter_driver_composite.client.CompositeClient"
+      driverClasses:
+        - "jumpstarter_driver_composite.driver:Composite"

@@ -16,6 +16,7 @@ from .login import login
 from .run import run
 from .shell import shell
 from .update import update
+from .validate import validate
 
 
 @click.group(cls=AliasedGroup)
@@ -37,6 +38,7 @@ jmp.add_command(config)
 
 jmp.add_command(driver)
 jmp.add_command(interface)
+jmp.add_command(validate)
 jmp.add_command(admin)
 jmp.add_command(version)
 

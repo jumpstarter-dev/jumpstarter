@@ -10,13 +10,7 @@ import google.protobuf.internal.extension_dict
 
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
-INTERFACE_VERSION_FIELD_NUMBER: builtins.int
 RESOURCE_HANDLE_FIELD_NUMBER: builtins.int
-interface_version: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.ServiceOptions, builtins.str]
-"""Semantic version of the interface contract (e.g., "1.0.0").
-Used by `buf breaking` and `jmp interface check` to detect
-backward-incompatible changes across releases.
-"""
 resource_handle: google.protobuf.internal.extension_dict._ExtensionFieldDescriptor[google.protobuf.descriptor_pb2.FieldOptions, builtins.bool]
 """Marks this field as a resource handle — a UUID string referencing
 a client-negotiated stream via the Jumpstarter resource system.

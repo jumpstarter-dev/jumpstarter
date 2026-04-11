@@ -22,17 +22,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ControllerService_Register_FullMethodName     = "/jumpstarter.v1.ControllerService/Register"
-	ControllerService_Unregister_FullMethodName   = "/jumpstarter.v1.ControllerService/Unregister"
-	ControllerService_ReportStatus_FullMethodName = "/jumpstarter.v1.ControllerService/ReportStatus"
-	ControllerService_Listen_FullMethodName       = "/jumpstarter.v1.ControllerService/Listen"
-	ControllerService_Status_FullMethodName       = "/jumpstarter.v1.ControllerService/Status"
-	ControllerService_Dial_FullMethodName         = "/jumpstarter.v1.ControllerService/Dial"
-	ControllerService_AuditStream_FullMethodName  = "/jumpstarter.v1.ControllerService/AuditStream"
-	ControllerService_GetLease_FullMethodName     = "/jumpstarter.v1.ControllerService/GetLease"
-	ControllerService_RequestLease_FullMethodName = "/jumpstarter.v1.ControllerService/RequestLease"
-	ControllerService_ReleaseLease_FullMethodName = "/jumpstarter.v1.ControllerService/ReleaseLease"
-	ControllerService_ListLeases_FullMethodName   = "/jumpstarter.v1.ControllerService/ListLeases"
+	ControllerService_Register_FullMethodName             = "/jumpstarter.v1.ControllerService/Register"
+	ControllerService_Unregister_FullMethodName           = "/jumpstarter.v1.ControllerService/Unregister"
+	ControllerService_ReportStatus_FullMethodName         = "/jumpstarter.v1.ControllerService/ReportStatus"
+	ControllerService_Listen_FullMethodName               = "/jumpstarter.v1.ControllerService/Listen"
+	ControllerService_Status_FullMethodName               = "/jumpstarter.v1.ControllerService/Status"
+	ControllerService_Dial_FullMethodName                 = "/jumpstarter.v1.ControllerService/Dial"
+	ControllerService_AuditStream_FullMethodName          = "/jumpstarter.v1.ControllerService/AuditStream"
+	ControllerService_GetLease_FullMethodName             = "/jumpstarter.v1.ControllerService/GetLease"
+	ControllerService_RequestLease_FullMethodName         = "/jumpstarter.v1.ControllerService/RequestLease"
+	ControllerService_ReleaseLease_FullMethodName         = "/jumpstarter.v1.ControllerService/ReleaseLease"
+	ControllerService_ListLeases_FullMethodName           = "/jumpstarter.v1.ControllerService/ListLeases"
+	ControllerService_ValidateExporter_FullMethodName     = "/jumpstarter.v1.ControllerService/ValidateExporter"
+	ControllerService_GetExporterClassInfo_FullMethodName = "/jumpstarter.v1.ControllerService/GetExporterClassInfo"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -72,6 +74,10 @@ type ControllerServiceClient interface {
 	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
 	// List Leases
 	ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error)
+	// Validate exporter configuration against matching ExporterClasses
+	ValidateExporter(ctx context.Context, in *ValidateExporterRequest, opts ...grpc.CallOption) (*ValidateExporterResponse, error)
+	// Get ExporterClass and DriverInterface info for a leased exporter
+	GetExporterClassInfo(ctx context.Context, in *GetExporterClassInfoRequest, opts ...grpc.CallOption) (*GetExporterClassInfoResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -213,6 +219,26 @@ func (c *controllerServiceClient) ListLeases(ctx context.Context, in *ListLeases
 	return out, nil
 }
 
+func (c *controllerServiceClient) ValidateExporter(ctx context.Context, in *ValidateExporterRequest, opts ...grpc.CallOption) (*ValidateExporterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ValidateExporterResponse)
+	err := c.cc.Invoke(ctx, ControllerService_ValidateExporter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) GetExporterClassInfo(ctx context.Context, in *GetExporterClassInfoRequest, opts ...grpc.CallOption) (*GetExporterClassInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExporterClassInfoResponse)
+	err := c.cc.Invoke(ctx, ControllerService_GetExporterClassInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControllerServiceServer is the server API for ControllerService service.
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility.
@@ -250,6 +276,10 @@ type ControllerServiceServer interface {
 	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
 	// List Leases
 	ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error)
+	// Validate exporter configuration against matching ExporterClasses
+	ValidateExporter(context.Context, *ValidateExporterRequest) (*ValidateExporterResponse, error)
+	// Get ExporterClass and DriverInterface info for a leased exporter
+	GetExporterClassInfo(context.Context, *GetExporterClassInfoRequest) (*GetExporterClassInfoResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -292,6 +322,12 @@ func (UnimplementedControllerServiceServer) ReleaseLease(context.Context, *Relea
 }
 func (UnimplementedControllerServiceServer) ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListLeases not implemented")
+}
+func (UnimplementedControllerServiceServer) ValidateExporter(context.Context, *ValidateExporterRequest) (*ValidateExporterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ValidateExporter not implemented")
+}
+func (UnimplementedControllerServiceServer) GetExporterClassInfo(context.Context, *GetExporterClassInfoRequest) (*GetExporterClassInfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetExporterClassInfo not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 func (UnimplementedControllerServiceServer) testEmbeddedByValue()                           {}
@@ -487,6 +523,42 @@ func _ControllerService_ListLeases_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_ValidateExporter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ValidateExporterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).ValidateExporter(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_ValidateExporter_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).ValidateExporter(ctx, req.(*ValidateExporterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_GetExporterClassInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExporterClassInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).GetExporterClassInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_GetExporterClassInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).GetExporterClassInfo(ctx, req.(*GetExporterClassInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControllerService_ServiceDesc is the grpc.ServiceDesc for ControllerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -525,6 +597,14 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListLeases",
 			Handler:    _ControllerService_ListLeases_Handler,
+		},
+		{
+			MethodName: "ValidateExporter",
+			Handler:    _ControllerService_ValidateExporter_Handler,
+		},
+		{
+			MethodName: "GetExporterClassInfo",
+			Handler:    _ControllerService_GetExporterClassInfo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

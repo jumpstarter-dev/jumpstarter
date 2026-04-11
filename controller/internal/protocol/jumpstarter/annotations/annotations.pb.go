@@ -25,14 +25,6 @@ const (
 
 var file_jumpstarter_annotations_annotations_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
-		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
-		ExtensionType: (*string)(nil),
-		Field:         50000,
-		Name:          "jumpstarter.annotations.interface_version",
-		Tag:           "bytes,50000,opt,name=interface_version",
-		Filename:      "jumpstarter/annotations/annotations.proto",
-	},
-	{
 		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
 		ExtensionType: (*bool)(nil),
 		Field:         50000,
@@ -42,16 +34,6 @@ var file_jumpstarter_annotations_annotations_proto_extTypes = []protoimpl.Extens
 	},
 }
 
-// Extension fields to descriptorpb.ServiceOptions.
-var (
-	// Semantic version of the interface contract (e.g., "1.0.0").
-	// Used by `buf breaking` and `jmp interface check` to detect
-	// backward-incompatible changes across releases.
-	//
-	// optional string interface_version = 50000;
-	E_InterfaceVersion = &file_jumpstarter_annotations_annotations_proto_extTypes[0]
-)
-
 // Extension fields to descriptorpb.FieldOptions.
 var (
 	// Marks this field as a resource handle — a UUID string referencing
@@ -59,29 +41,26 @@ var (
 	// See "Resource Handle Pattern" in JEP-0011.
 	//
 	// optional bool resource_handle = 50000;
-	E_ResourceHandle = &file_jumpstarter_annotations_annotations_proto_extTypes[1]
+	E_ResourceHandle = &file_jumpstarter_annotations_annotations_proto_extTypes[0]
 )
 
 var File_jumpstarter_annotations_annotations_proto protoreflect.FileDescriptor
 
 const file_jumpstarter_annotations_annotations_proto_rawDesc = "" +
 	"\n" +
-	")jumpstarter/annotations/annotations.proto\x12\x17jumpstarter.annotations\x1a google/protobuf/descriptor.proto:Q\n" +
-	"\x11interface_version\x12\x1f.google.protobuf.ServiceOptions\x18І\x03 \x01(\tR\x10interfaceVersion\x88\x01\x01:K\n" +
+	")jumpstarter/annotations/annotations.proto\x12\x17jumpstarter.annotations\x1a google/protobuf/descriptor.proto:K\n" +
 	"\x0fresource_handle\x12\x1d.google.protobuf.FieldOptions\x18І\x03 \x01(\bR\x0eresourceHandle\x88\x01\x01B\x89\x02\n" +
 	"\x1bcom.jumpstarter.annotationsB\x10AnnotationsProtoP\x01Z[github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/annotations\xa2\x02\x03JAX\xaa\x02\x17Jumpstarter.Annotations\xca\x02\x17Jumpstarter\\Annotations\xe2\x02#Jumpstarter\\Annotations\\GPBMetadata\xea\x02\x18Jumpstarter::Annotationsb\x06proto3"
 
 var file_jumpstarter_annotations_annotations_proto_goTypes = []any{
-	(*descriptorpb.ServiceOptions)(nil), // 0: google.protobuf.ServiceOptions
-	(*descriptorpb.FieldOptions)(nil),   // 1: google.protobuf.FieldOptions
+	(*descriptorpb.FieldOptions)(nil), // 0: google.protobuf.FieldOptions
 }
 var file_jumpstarter_annotations_annotations_proto_depIdxs = []int32{
-	0, // 0: jumpstarter.annotations.interface_version:extendee -> google.protobuf.ServiceOptions
-	1, // 1: jumpstarter.annotations.resource_handle:extendee -> google.protobuf.FieldOptions
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	0, // [0:2] is the sub-list for extension extendee
+	0, // 0: jumpstarter.annotations.resource_handle:extendee -> google.protobuf.FieldOptions
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	0, // [0:1] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
@@ -97,7 +76,7 @@ func file_jumpstarter_annotations_annotations_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpstarter_annotations_annotations_proto_rawDesc), len(file_jumpstarter_annotations_annotations_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   0,
-			NumExtensions: 2,
+			NumExtensions: 1,
 			NumServices:   0,
 		},
 		GoTypes:           file_jumpstarter_annotations_annotations_proto_goTypes,

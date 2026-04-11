@@ -18,7 +18,7 @@ from anyio._backends._asyncio import SocketStream, StreamProtocol
 from anyio.streams.stapled import StapledObjectStream
 
 from .streams.websocket import WebsocketClientStream
-from jumpstarter.driver import Driver, DriverInterface, export, exportstream, driverinterface, streammethod
+from jumpstarter.driver import Driver, DriverInterface, driverinterface, export, exportstream, streammethod
 
 
 def _is_ipv6_address(host: str) -> bool:

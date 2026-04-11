@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-from . import router_pb2 as jumpstarter_dot_v1_dot_router__pb2
+from jumpstarter_protocol.jumpstarter.v1 import router_pb2 as jumpstarter_dot_v1_dot_router__pb2
 
 
 class RouterServiceStub(object):

@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: DriverInterface
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: dev-jumpstarter-dbus-network-v1
+spec:
+  proto:
+    package: jumpstarter.interfaces.dbus_network.v1
+    descriptor: ChJkYnVzX25ldHdvcmsucHJvdG8SJmp1bXBzdGFydGVyLmludGVyZmFjZXMuZGJ1c19uZXR3b3JrLnYxGhtnb29nbGUvcHJvdG9idWYvZW1wdHkucHJvdG8yTAoLRGJ1c05ldHdvcmsSPQoHQ29ubmVjdBIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eRoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSgBMAFKXgomCgIGABogRC1CdXMgYmFzZWQgbmV0d29yayBjb25uZWN0aW9uLgoKNAoEBgACABosT3BlbiBhIGJpZGlyZWN0aW9uYWwgYnl0ZSBzdHJlYW0gdmlhIEQtQnVzLgpiBnByb3RvMw==
+  drivers:
+    - language: python
+      package: jumpstarter-driver-network
+      clientClass: "jumpstarter_driver_network.client.DbusNetworkClient"

@@ -6,16 +6,13 @@ realistic driver/client scenarios using the serve() test harness.
 
 import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncGenerator
 
-import pytest
 from google.protobuf import empty_pb2
 
 from jumpstarter.common.utils import serve
-from jumpstarter.driver import Driver, DriverInterface, export, exportstream
+from jumpstarter.driver import Driver, DriverInterface, export
 from jumpstarter.driver.decorators import MARKER_TYPE_INFO, CallType
 from jumpstarter.exporter.session import Session
-
 
 # ---------------------------------------------------------------------------
 # Test interfaces and drivers

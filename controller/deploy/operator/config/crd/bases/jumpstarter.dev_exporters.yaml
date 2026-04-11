@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.3
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: exporters.jumpstarter.dev
 spec:
   group: jumpstarter.dev
@@ -129,6 +129,9 @@ spec:
               devices:
                 items:
                   properties:
+                    file_descriptor_proto:
+                      format: byte
+                      type: string
                     labels:
                       additionalProperties:
                         type: string
@@ -173,6 +176,12 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              satisfiedExporterClasses:
+                description: SatisfiedExporterClasses lists the ExporterClass names
+                  this exporter satisfies.
+                items:
+                  type: string
+                type: array
               statusMessage:
                 description: StatusMessage is an optional human-readable message describing
                   the current state

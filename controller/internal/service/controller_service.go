@@ -1036,6 +1036,264 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	}))
 }
 
+// ValidateExporter validates an exporter configuration against matching ExporterClasses.
+// Authenticates using the exporter's credentials.
+func (s *ControllerService) ValidateExporter(
+	ctx context.Context,
+	req *pb.ValidateExporterRequest,
+) (*pb.ValidateExporterResponse, error) {
+	logger := log.FromContext(ctx)
+
+	exporter, err := s.authenticateExporter(ctx)
+	if err != nil {
+		logger.Info("unable to authenticate exporter for ValidateExporter", "error", err.Error())
+		return nil, err
+	}
+
+	// Convert proto DriverInstanceReport to CRD Device types.
+	devices := make([]jumpstarterdevv1alpha1.Device, 0, len(req.Reports))
+	for _, report := range req.Reports {
+		devices = append(devices, jumpstarterdevv1alpha1.Device{
+			Uuid:                report.Uuid,
+			ParentUuid:          report.ParentUuid,
+			Labels:              report.Labels,
+			FileDescriptorProto: report.FileDescriptorProto,
+		})
+	}
+
+	// Merge the exporter's existing labels with the request labels.
+	mergedLabels := make(map[string]string)
+	for k, v := range exporter.Labels {
+		mergedLabels[k] = v
+	}
+	for k, v := range req.Labels {
+		mergedLabels[k] = v
+	}
+
+	// Find all ExporterClasses matching the labels.
+	matchedClasses, err := controller.MatchExporterClassesByLabels(ctx, s.Client, exporter.Namespace, mergedLabels)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to match ExporterClasses: %s", err)
+	}
+
+	// Validate against each matching ExporterClass.
+	var results []*pb.ExporterClassValidationResult
+	for i := range matchedClasses {
+		ec := &matchedClasses[i]
+
+		resolvedInterfaces, err := controller.ResolveInterfaces(ctx, s.Client, ec)
+		if err != nil {
+			results = append(results, &pb.ExporterClassValidationResult{
+				ExporterClassName: ec.Name,
+				Satisfied:         false,
+				Interfaces: []*pb.InterfaceValidationResult{{
+					InterfaceName: "",
+					ErrorMessage:  fmt.Sprintf("failed to resolve interfaces: %s", err),
+				}},
+			})
+			continue
+		}
+
+		driverInterfaces, _ := controller.FetchDriverInterfaces(ctx, s.Client, ec.Namespace, resolvedInterfaces)
+		validationDetails := controller.ValidateDevicesAgainstInterfaces(devices, resolvedInterfaces, driverInterfaces)
+
+		var ifaceResults []*pb.InterfaceValidationResult
+		for _, d := range validationDetails {
+			ifaceResults = append(ifaceResults, &pb.InterfaceValidationResult{
+				InterfaceName:          d.Name,
+				InterfaceRef:           d.InterfaceRef,
+				Required:               d.Required,
+				Found:                  d.Found,
+				StructurallyCompatible: d.StructurallyCompatible,
+				ErrorMessage:           d.ErrorMessage,
+			})
+		}
+
+		results = append(results, &pb.ExporterClassValidationResult{
+			ExporterClassName: ec.Name,
+			Satisfied:         controller.IsSatisfied(validationDetails),
+			Interfaces:        ifaceResults,
+		})
+	}
+
+	return &pb.ValidateExporterResponse{
+		Results: results,
+	}, nil
+}
+
+// GetExporterClassInfo returns ExporterClass compliance status and DriverInterface metadata
+// for a given exporter. Authenticates using the client's credentials.
+func (s *ControllerService) GetExporterClassInfo(
+	ctx context.Context,
+	req *pb.GetExporterClassInfoRequest,
+) (*pb.GetExporterClassInfoResponse, error) {
+	logger := log.FromContext(ctx)
+
+	jclient, err := s.authenticateClient(ctx)
+	if err != nil {
+		logger.Info("unable to authenticate client for GetExporterClassInfo", "error", err.Error())
+		return nil, err
+	}
+
+	namespace := jclient.Namespace
+
+	// Two modes: look up by ExporterClass name, or by exporter UUID/name.
+	if req.ExporterClassName != "" {
+		return s.getExporterClassInfoByClassName(ctx, req.ExporterClassName, namespace)
+	}
+
+	// Look up the exporter by UUID or name.
+	var exporterList jumpstarterdevv1alpha1.ExporterList
+	if err := s.Client.List(ctx, &exporterList); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list exporters: %s", err)
+	}
+
+	var targetExporter *jumpstarterdevv1alpha1.Exporter
+	for i := range exporterList.Items {
+		if string(exporterList.Items[i].UID) == req.ExporterUuid || exporterList.Items[i].Name == req.ExporterUuid {
+			targetExporter = &exporterList.Items[i]
+			break
+		}
+	}
+
+	if targetExporter == nil {
+		return nil, status.Errorf(codes.NotFound, "exporter with UUID or name %q not found", req.ExporterUuid)
+	}
+
+	// Find matching ExporterClasses.
+	matchedClasses, err := controller.MatchExporterClassesByLabels(
+		ctx, s.Client, targetExporter.Namespace, targetExporter.Labels)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to match ExporterClasses: %s", err)
+	}
+
+	// Build ExporterClass validation results.
+	var ecResults []*pb.ExporterClassValidationResult
+	for i := range matchedClasses {
+		ec := &matchedClasses[i]
+
+		resolvedInterfaces, err := controller.ResolveInterfaces(ctx, s.Client, ec)
+		if err != nil {
+			ecResults = append(ecResults, &pb.ExporterClassValidationResult{
+				ExporterClassName: ec.Name,
+				Satisfied:         false,
+			})
+			continue
+		}
+
+		driverInterfaces, _ := controller.FetchDriverInterfaces(ctx, s.Client, ec.Namespace, resolvedInterfaces)
+		validationDetails := controller.ValidateDevicesAgainstInterfaces(
+			targetExporter.Status.Devices, resolvedInterfaces, driverInterfaces)
+
+		var ifaceResults []*pb.InterfaceValidationResult
+		for _, d := range validationDetails {
+			ifaceResults = append(ifaceResults, &pb.InterfaceValidationResult{
+				InterfaceName:          d.Name,
+				InterfaceRef:           d.InterfaceRef,
+				Required:               d.Required,
+				Found:                  d.Found,
+				StructurallyCompatible: d.StructurallyCompatible,
+				ErrorMessage:           d.ErrorMessage,
+			})
+		}
+
+		ecResults = append(ecResults, &pb.ExporterClassValidationResult{
+			ExporterClassName: ec.Name,
+			Satisfied:         controller.IsSatisfied(validationDetails),
+			Interfaces:        ifaceResults,
+		})
+	}
+
+	// Collect DriverInterface info for the exporter's devices.
+	matchedDIs, err := controller.CollectDriverInterfacesForExporter(
+		ctx, s.Client, targetExporter.Namespace, targetExporter.Status.Devices)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to collect DriverInterfaces: %s", err)
+	}
+
+	var diInfos []*pb.DriverInterfaceInfo
+	for _, di := range matchedDIs {
+		var drivers []*pb.DriverInfo
+		for _, impl := range di.Spec.Drivers {
+			drivers = append(drivers, &pb.DriverInfo{
+				Lang:          impl.Language,
+				Package:       impl.Package,
+				Version:       impl.Version,
+				Index:         impl.Index,
+				ClientClass:   impl.ClientClass,
+				DriverClasses: impl.DriverClasses,
+			})
+		}
+		diInfos = append(diInfos, &pb.DriverInterfaceInfo{
+			Name:        di.Name,
+			Package:     di.Spec.Proto.Package,
+			Descriptor_: di.Spec.Proto.Descriptor,
+			Drivers:     drivers,
+		})
+	}
+
+	return &pb.GetExporterClassInfoResponse{
+		ExporterClasses:  ecResults,
+		DriverInterfaces: diInfos,
+	}, nil
+}
+
+// getExporterClassInfoByClassName returns DriverInterface info for a specific ExporterClass.
+func (s *ControllerService) getExporterClassInfoByClassName(
+	ctx context.Context,
+	className string,
+	namespace string,
+) (*pb.GetExporterClassInfoResponse, error) {
+	// Look up the ExporterClass by name.
+	var ec jumpstarterdevv1alpha1.ExporterClass
+	if err := s.Client.Get(ctx, client.ObjectKey{
+		Namespace: namespace,
+		Name:      className,
+	}, &ec); err != nil {
+		return nil, status.Errorf(codes.NotFound, "ExporterClass %q not found: %s", className, err)
+	}
+
+	// Resolve the interfaces (flatten extends chain).
+	resolvedInterfaces, err := controller.ResolveInterfaces(ctx, s.Client, &ec)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to resolve interfaces: %s", err)
+	}
+
+	// Fetch DriverInterface CRDs for each interface ref.
+	var diInfos []*pb.DriverInterfaceInfo
+	for _, iface := range resolvedInterfaces {
+		var di jumpstarterdevv1alpha1.DriverInterface
+		if err := s.Client.Get(ctx, client.ObjectKey{
+			Namespace: namespace,
+			Name:      iface.InterfaceRef,
+		}, &di); err != nil {
+			continue
+		}
+
+		var drivers []*pb.DriverInfo
+		for _, impl := range di.Spec.Drivers {
+			drivers = append(drivers, &pb.DriverInfo{
+				Lang:          impl.Language,
+				Package:       impl.Package,
+				Version:       impl.Version,
+				Index:         impl.Index,
+				ClientClass:   impl.ClientClass,
+				DriverClasses: impl.DriverClasses,
+			})
+		}
+		diInfos = append(diInfos, &pb.DriverInterfaceInfo{
+			Name:        di.Name,
+			Package:     di.Spec.Proto.Package,
+			Descriptor_: di.Spec.Proto.Descriptor,
+			Drivers:     drivers,
+		})
+	}
+
+	return &pb.GetExporterClassInfoResponse{
+		DriverInterfaces: diInfos,
+	}, nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (s *ControllerService) SetupWithManager(mgr ctrl.Manager) error {
 	return mgr.Add(s)

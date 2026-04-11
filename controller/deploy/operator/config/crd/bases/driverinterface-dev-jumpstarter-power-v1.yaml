@@ -1,0 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: DriverInterface
+metadata:
+  name: dev-jumpstarter-power-v1
+spec:
+  proto:
+    package: jumpstarter.interfaces.power.v1
+    descriptor: Cgtwb3dlci5wcm90bxIfanVtcHN0YXJ0ZXIuaW50ZXJmYWNlcy5wb3dlci52MRobZ29vZ2xlL3Byb3RvYnVmL2VtcHR5LnByb3RvIjAKDFBvd2VyUmVhZGluZxIPCgd2b2x0YWdlGAEgASgBEg8KB2N1cnJlbnQYAiABKAEy2AEKDlBvd2VySW50ZXJmYWNlEjkKA09mZhIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eRoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSgAMAASOAoCT24SFi5nb29nbGUucHJvdG9idWYuRW1wdHkaFi5nb29nbGUucHJvdG9idWYuRW1wdHkoADAAElEKBFJlYWQSFi5nb29nbGUucHJvdG9idWYuRW1wdHkaLS5qdW1wc3RhcnRlci5pbnRlcmZhY2VzLnBvd2VyLnYxLlBvd2VyUmVhZGluZygAMAFKvQIKNQoCBgAaL0NvbnRyb2wgcG93ZXIgZGVsaXZlcnkgdG8gYSBkZXZpY2UgdW5kZXIgdGVzdC4KCj8KBAYAAgAaN0RlLWVuZXJnaXplIHRoZSBwb3dlciByZWxheSwgY3V0dGluZyBwb3dlciB0byB0aGUgRFVULgoKPwoEBgACARo3RW5lcmdpemUgdGhlIHBvd2VyIHJlbGF5LCBkZWxpdmVyaW5nIHBvd2VyIHRvIHRoZSBEVVQuCgo7CgIEABo1UmVhbC10aW1lIHBvd2VyIG1lYXN1cmVtZW50IGZyb20gdGhlIERVVCBwb3dlciByYWlsLgoKRQoEBgACAho9U3RyZWFtIHJlYWwtdGltZSBwb3dlciBtZWFzdXJlbWVudHMgZnJvbSB0aGUgRFVUIHBvd2VyIHJhaWwuCmIGcHJvdG8z
+  drivers:
+    - language: python
+      package: jumpstarter-driver-power
+      clientClass: "jumpstarter_driver_power.client.PowerClient"
+      driverClasses:
+        - "jumpstarter_driver_power.driver:MockPower"
+        - "jumpstarter_driver_power.driver:SyncMockPower"

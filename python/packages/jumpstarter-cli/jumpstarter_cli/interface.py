@@ -8,8 +8,6 @@ import sys
 import tempfile
 
 import click
-from jumpstarter_cli_common.alias import AliasedGroup
-
 from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
     EnumDescriptorProto,
@@ -17,9 +15,8 @@ from google.protobuf.descriptor_pb2 import (
     FileDescriptorProto,
     FileDescriptorSet,
     MethodDescriptorProto,
-    SourceCodeInfo,
 )
-
+from jumpstarter_cli_common.alias import AliasedGroup
 
 # FileDescriptorProto field numbers (used to look up source_code_info comments)
 _FDP_MESSAGE_TYPE = 4
@@ -387,8 +384,8 @@ def _parse_proto_file(
     grpcio-tools bundles protoc and well-known types (google/protobuf/*.proto),
     so no external binary is required.
     """
-    from grpc_tools import protoc as grpc_protoc
     import grpc_tools
+    from grpc_tools import protoc as grpc_protoc
 
     proto_path = os.path.abspath(proto_path)
     proto_dir = os.path.dirname(proto_path)
