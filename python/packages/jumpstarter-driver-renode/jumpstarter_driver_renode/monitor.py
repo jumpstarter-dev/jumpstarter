@@ -40,8 +40,13 @@ class RenodeMonitor:
                 except OSError:
                     await sleep(0.5)
 
+    _ERROR_MARKERS = ("Could not find", "Error", "Invalid", "Failed", "Unknown")
+
     async def execute(self, command: str) -> str:
-        """Send a command and return the response text (excluding the prompt)."""
+        """Send a command and return the response text (excluding the prompt).
+
+        Raises RenodeMonitorError if the response indicates a command failure.
+        """
         if self._stream is None:
             raise RuntimeError("not connected to Renode monitor")
 
@@ -49,6 +54,11 @@ class RenodeMonitor:
         await self._stream.send(f"{command}\n".encode())
         response = await self._read_until_prompt()
         logger.debug("monitor< %s", response.strip())
+
+        stripped = response.strip()
+        if stripped and any(stripped.startswith(m) for m in self._ERROR_MARKERS):
+            raise RenodeMonitorError(stripped)
+
         return response
 
     async def disconnect(self) -> None:

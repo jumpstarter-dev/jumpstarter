@@ -6,9 +6,10 @@ import socket
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
-from subprocess import PIPE, Popen, TimeoutExpired
+from subprocess import DEVNULL, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
+from anyio import to_thread
 from anyio.streams.file import FileWriteStream
 from jumpstarter_driver_opendal.driver import FlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -67,11 +68,14 @@ class RenodeFlasher(FlasherInterface, Driver):
 
     @export
     async def dump(self, target, partition: str | None = None):
+        """Not supported for Renode targets."""
         raise NotImplementedError("dump is not supported for Renode targets")
 
 
 @dataclass(kw_only=True)
 class RenodePower(PowerInterface, Driver):
+    """Power controller that manages the Renode process lifecycle."""
+
     parent: Renode
 
     _process: Popen | None = field(init=False, default=None, repr=False)
@@ -79,6 +83,7 @@ class RenodePower(PowerInterface, Driver):
 
     @export
     async def on(self) -> None:
+        """Start Renode, connect monitor, configure platform, and begin simulation."""
         if self._process is not None:
             self.logger.warning("already powered on, ignoring request")
             return
@@ -96,39 +101,44 @@ class RenodePower(PowerInterface, Driver):
         ]
 
         self.logger.info("starting Renode: %s", " ".join(cmdline))
-        self._process = Popen(cmdline, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        self._process = Popen(cmdline, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
 
         self._monitor = RenodeMonitor()
-        await self._monitor.connect("127.0.0.1", port)
+        try:
+            await self._monitor.connect("127.0.0.1", port)
 
-        machine = self.parent.machine_name
-        await self._monitor.execute(f'mach create "{machine}"')
-        await self._monitor.execute(
-            f'machine LoadPlatformDescription @"{self.parent.platform}"'
-        )
-
-        pty_path = self.parent._pty
-        await self._monitor.execute(
-            f'emulation CreateUartPtyTerminal "term" "{pty_path}"'
-        )
-        await self._monitor.execute(
-            f"connector Connect {self.parent.uart} term"
-        )
-
-        for cmd in self.parent.extra_commands:
-            await self._monitor.execute(cmd)
-
-        if self.parent._firmware_path:
-            load_cmd = self.parent._load_command or "sysbus LoadELF"
+            machine = self.parent.machine_name
+            await self._monitor.execute(f'mach create "{machine}"')
             await self._monitor.execute(
-                f'{load_cmd} @"{self.parent._firmware_path}"'
+                f'machine LoadPlatformDescription @"{self.parent.platform}"'
             )
 
-        await self._monitor.execute("start")
-        self.logger.info("Renode simulation started")
+            pty_path = self.parent._pty
+            await self._monitor.execute(
+                f'emulation CreateUartPtyTerminal "term" "{pty_path}"'
+            )
+            await self._monitor.execute(
+                f"connector Connect {self.parent.uart} term"
+            )
+
+            for cmd in self.parent.extra_commands:
+                await self._monitor.execute(cmd)
+
+            if self.parent._firmware_path:
+                load_cmd = self.parent._load_command or "sysbus LoadELF"
+                await self._monitor.execute(
+                    f'{load_cmd} @"{self.parent._firmware_path}"'
+                )
+
+            await self._monitor.execute("start")
+            self.logger.info("Renode simulation started")
+        except Exception:
+            await self.off()
+            raise
 
     @export
     async def off(self) -> None:
+        """Stop simulation, disconnect monitor, and terminate the Renode process."""
         if self._process is None:
             self.logger.warning("already powered off, ignoring request")
             return
@@ -143,16 +153,18 @@ class RenodePower(PowerInterface, Driver):
 
         self._process.terminate()
         try:
-            self._process.wait(timeout=5)
+            await to_thread.run_sync(self._process.wait, 5)
         except TimeoutExpired:
             self._process.kill()
         self._process = None
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
+        """Not supported — Renode does not provide power readings."""
         raise NotImplementedError
 
     def close(self):
+        """Synchronous cleanup for use during driver teardown."""
         if self._process is not None:
             if self._monitor is not None:
                 self._monitor = None
@@ -194,6 +206,7 @@ class Renode(Driver):
 
     @classmethod
     def client(cls) -> str:
+        """Return the fully-qualified client class name."""
         return "jumpstarter_driver_renode.client.RenodeClient"
 
     def __post_init__(self):
@@ -210,14 +223,17 @@ class Renode(Driver):
 
     @export
     def get_platform(self) -> str:
+        """Return the Renode platform description path."""
         return self.platform
 
     @export
     def get_uart(self) -> str:
+        """Return the UART peripheral path in the Renode object model."""
         return self.uart
 
     @export
     def get_machine_name(self) -> str:
+        """Return the Renode machine name."""
         return self.machine_name
 
     @export

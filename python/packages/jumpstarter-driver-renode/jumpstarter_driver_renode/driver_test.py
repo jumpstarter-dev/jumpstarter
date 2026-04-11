@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from jumpstarter_driver_renode.driver import Renode, RenodeFlasher, RenodePower
-from jumpstarter_driver_renode.monitor import RenodeMonitor
+from jumpstarter_driver_renode.monitor import RenodeMonitor, RenodeMonitorError
 
 from jumpstarter.common.utils import serve
 
@@ -73,7 +73,7 @@ class TestRenodeMonitor:
 
     @pytest.mark.anyio
     async def test_monitor_execute_error_response(self):
-        """Monitor returns error text from Renode without raising."""
+        """Monitor raises RenodeMonitorError on error responses."""
         monitor = RenodeMonitor()
         stream = AsyncMock()
         stream.receive = AsyncMock(
@@ -82,8 +82,8 @@ class TestRenodeMonitor:
         monitor._stream = stream
         monitor._buffer = b""
 
-        result = await monitor.execute("bad command")
-        assert "Could not find peripheral" in result
+        with pytest.raises(RenodeMonitorError, match="Could not find peripheral"):
+            await monitor.execute("bad command")
 
     @pytest.mark.anyio
     async def test_monitor_execute_not_connected(self):
