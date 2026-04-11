@@ -7,8 +7,8 @@
 #
 # Environment variables:
 #   COMPAT_SCENARIO      - "old-controller" or "old-client" (required)
-#   COMPAT_CONTROLLER_TAG - Controller image tag for old-controller scenario (default: v0.7.0)
-#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.7.1)
+#   COMPAT_CONTROLLER_TAG - Controller release tag for old-controller scenario (default: v0.8.1)
+#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.8.1)
 
 set -euo pipefail
 
@@ -26,8 +26,8 @@ export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
 # Scenario configuration
 COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
-COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.7.0}"
-COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.1}"
+COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.8.1}"
+COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.8.1}"
 
 # Color output
 RED='\033[0;31m'
@@ -103,10 +103,10 @@ deploy_old_controller() {
 
     kubectl config use-context kind-jumpstarter
 
-    # Install old controller using operator installer from the release tag
-    local INSTALLER_URL="https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/${COMPAT_CONTROLLER_TAG}/controller/deploy/operator/dist/install.yaml"
+    # Install old controller using operator installer from the release assets
+    local INSTALLER_URL="https://github.com/jumpstarter-dev/jumpstarter/releases/download/${COMPAT_CONTROLLER_TAG}/operator-installer.yaml"
     log_info "Installing old controller via operator (version: ${COMPAT_CONTROLLER_TAG})..."
-    kubectl apply -f "${INSTALLER_URL}" || log_warn "Operator installer may not be available for ${COMPAT_CONTROLLER_TAG}, skipping"
+    kubectl apply -f "${INSTALLER_URL}"
 
     kubectl config set-context --current --namespace=jumpstarter-lab
 
