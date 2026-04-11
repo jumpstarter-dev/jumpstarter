@@ -59,6 +59,8 @@ run_tests() {
 
     # Use insecure GRPC for testing
     export JUMPSTARTER_GRPC_INSECURE=1
+    # Use native DNS resolver to avoid c-ares issues with nip.io on macOS
+    export GRPC_DNS_RESOLVER=native
 
     log_info "Running ginkgo e2e tests..."
     run_ginkgo "$SCRIPT_DIR/test" "${GINKGO_LABEL_FILTER:-}"

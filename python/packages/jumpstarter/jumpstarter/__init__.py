@@ -1,4 +1,5 @@
 import os
+import platform
 
 
 def configure_grpc_env():
@@ -9,6 +10,10 @@ def configure_grpc_env():
         os.environ["GRPC_VERBOSITY"] = "ERROR"
     if os.environ.get("GLOG_minloglevel") is None:
         os.environ["GLOG_minloglevel"] = "2"
+    # Use native DNS resolver on macOS to avoid c-ares resolution failures
+    # with wildcard DNS services like nip.io (common in local Kind/k3s deployments)
+    if platform.system() == "Darwin" and os.environ.get("GRPC_DNS_RESOLVER") is None:
+        os.environ["GRPC_DNS_RESOLVER"] = "native"
 
 
 # make sure that the grpc environment is always configured
