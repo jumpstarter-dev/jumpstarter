@@ -6,6 +6,8 @@
 # Uses operator-based deployment.
 #
 # Environment variables:
+#   COMPAT_SCENARIO      - "old-controller" or "old-client" (required)
+#   COMPAT_CONTROLLER_TAG - Controller image tag for old-controller scenario (default: v0.7.0)
 #   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.7.1)
 
 set -euo pipefail
@@ -22,6 +24,9 @@ REPO_ROOT="$(cd "$E2E_DIR/.." && pwd)"
 # Default namespace for tests
 export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
+# Scenario configuration
+COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
+COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.7.0}"
 COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.1}"
 
 # Color output
@@ -63,6 +68,17 @@ install_dependencies() {
     log_info "Dependencies installed"
 }
 
+# Get the external IP for baseDomain
+get_external_ip() {
+    if which ip 2>/dev/null 1>/dev/null; then
+        ip route get 1.1.1.1 | grep -oP 'src \K\S+'
+    else
+        local INTERFACE
+        INTERFACE=$(route get 1.1.1.1 | grep interface | awk '{print $2}')
+        ifconfig | grep "$INTERFACE" -A 10 | grep "inet " | grep -Fv 127.0.0.1 | awk '{print $2}' | head -n 1
+    fi
+}
+
 # Create kind cluster and install grpcurl
 create_cluster() {
     log_info "Creating kind cluster..."
@@ -71,6 +87,46 @@ create_cluster() {
     make -C controller cluster grpcurl
 
     log_info "Kind cluster created"
+}
+
+deploy_old_controller() {
+    log_info "Deploying old controller (version: $COMPAT_CONTROLLER_TAG)..."
+
+    cd "$REPO_ROOT"
+
+    # Compute networking variables
+    local IP
+    IP=$(get_external_ip)
+    BASEDOMAIN="jumpstarter.${IP}.nip.io"
+    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
+
+    kubectl config use-context kind-jumpstarter
+
+    # Install old controller using operator installer from the release tag
+    local INSTALLER_URL="https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/${COMPAT_CONTROLLER_TAG}/controller/deploy/operator/dist/install.yaml"
+    log_info "Installing old controller via operator (version: ${COMPAT_CONTROLLER_TAG})..."
+    kubectl apply -f "${INSTALLER_URL}" || log_warn "Operator installer may not be available for ${COMPAT_CONTROLLER_TAG}, skipping"
+
+    kubectl config set-context --current --namespace=jumpstarter-lab
+
+    # Wait for gRPC endpoints
+    local GRPCURL="${REPO_ROOT}/controller/bin/grpcurl"
+    log_info "Waiting for gRPC endpoints..."
+    for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
+        local retries=60
+        log_info "  Checking ${ep}..."
+        while ! ${GRPCURL} -insecure "${ep}" list > /dev/null 2>&1; do
+            sleep 2
+            retries=$((retries - 1))
+            if [ ${retries} -eq 0 ]; then
+                log_error "${ep} not ready after 120s"
+                exit 1
+            fi
+        done
+    done
+
+    log_info "Old controller deployed"
 }
 
 deploy_new_controller() {
@@ -155,7 +211,7 @@ EOF
 # Main execution
 main() {
     log_info "=== Jumpstarter Compatibility E2E Setup ==="
-    log_info "Scenario: New Controller + Old Client/Exporter ($COMPAT_CLIENT_VERSION)"
+    log_info "Scenario: $COMPAT_SCENARIO"
     log_info "Namespace: $JS_NAMESPACE"
     log_info "Repository Root: $REPO_ROOT"
     echo ""
@@ -166,20 +222,34 @@ main() {
     create_cluster
     echo ""
 
-    deploy_new_controller
-    echo ""
-
-    install_jumpstarter
-    echo ""
-
-    install_old_client
+    case "$COMPAT_SCENARIO" in
+        old-controller)
+            log_info "Scenario: Old Controller ($COMPAT_CONTROLLER_TAG) + New Client/Exporter"
+            deploy_old_controller
+            echo ""
+            install_jumpstarter
+            ;;
+        old-client)
+            log_info "Scenario: New Controller + Old Client/Exporter ($COMPAT_CLIENT_VERSION)"
+            deploy_new_controller
+            echo ""
+            install_jumpstarter
+            echo ""
+            install_old_client
+            ;;
+        *)
+            log_error "Unknown COMPAT_SCENARIO: $COMPAT_SCENARIO (expected 'old-controller' or 'old-client')"
+            exit 1
+            ;;
+    esac
     echo ""
 
     setup_test_environment
     echo ""
 
     log_info "=== Compat setup complete! ==="
-    log_info "To run tests: make e2e-compat-run COMPAT_TEST=old-client"
+    log_info "Scenario: $COMPAT_SCENARIO"
+    log_info "To run tests: make e2e-compat-run COMPAT_TEST=<old-controller|old-client>"
 }
 
 main "$@"
