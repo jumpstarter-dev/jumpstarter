@@ -97,9 +97,18 @@ class RideSXClient(FlasherClient, CompositeClient):
 
     def _is_oci_path(self, path: str) -> bool:
         """Return True if path looks like an OCI image reference."""
-        return path.startswith("oci://") or (
-            ":" in path and "/" in path and not path.startswith("/") and not path.startswith(("http://", "https://"))
-        )
+        if path.startswith("oci://"):
+            return True
+        if ":" not in path or "/" not in path:
+            return False
+        if path.startswith(("/", "http://", "https://", "./", "../")):
+            return False
+        # Split on first colon: OCI tags are short labels (e.g. "latest", "v1"),
+        # while partition:path specs have paths after the colon.
+        _, after_colon = path.split(":", 1)
+        if after_colon.startswith(("/", "./", "../", "~")):
+            return False
+        return True
 
     def _validate_partition_mappings(self, partitions: Dict[str, str] | None) -> None:
         """Validate partition mappings; raise ValueError if any path is empty."""
@@ -202,6 +211,14 @@ class RideSXClient(FlasherClient, CompositeClient):
         else:
             # Traditional single file mode
             if target is None:
+                # Detect partition:path patterns and give a specific hint
+                if isinstance(path, str) and self._looks_like_partition_spec(path):
+                    partition, filepath = path.split(":", 1)
+                    raise ValueError(
+                        f"'{path}' looks like a partition:path mapping.\n"
+                        f"Use the -t flag: j storage flash -t {path}\n"
+                        f"Or use the API: client.flash('{filepath}', target='{partition}')"
+                    )
                 raise ValueError(
                     "This driver requires a target partition for non-OCI paths.\n"
                     "Usage: client.flash('/path/to/file.img', target='boot_a')\n"
@@ -387,6 +404,13 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return mapping, single_target
 
+    def _looks_like_partition_spec(self, value: str) -> bool:
+        """Check if a string looks like a partition:filepath spec rather than an OCI URL."""
+        if ":" not in value:
+            return False
+        _, after_colon = value.split(":", 1)
+        return after_colon.startswith(("/", "./", "../", "~"))
+
     def _execute_flash_command(self, path, target_specs, power_off: bool = True):
         """Execute flash command logic with proper argument handling."""
         # Parse target specifications
@@ -395,6 +419,15 @@ class RideSXClient(FlasherClient, CompositeClient):
 
             if mapping:
                 if path:
+                    # In multi-target mode, positional path must be OCI.
+                    # Any non-OCI value likely means a missing -t mapping.
+                    if not self._is_oci_path(path):
+                        raise click.ClickException(
+                            f"'{path}' is not an OCI reference and is missing the -t flag.\n"
+                            f"Each image must be passed as partition:path with its own -t.\n\n"
+                            f"Example:\n"
+                            f"  j storage flash -t {path} -t {next(iter(target_specs))}"
+                        )
                     # Multi-partition mode with path: extract specific files from OCI image
                     self.flash_with_targets(path, mapping, power_off=power_off)
                 else:

@@ -227,6 +227,24 @@ class RideSXDriver(Driver):
             self.logger.warning(f"stdout: {e.stdout}")
             self.logger.warning(f"stderr: {e.stderr}")
 
+    @staticmethod
+    def _validate_oci_url(oci_url: str):
+        """Validate that the URL is a proper OCI reference."""
+        if oci_url.startswith("oci://"):
+            return
+        hint = ""
+        if ":" in oci_url:
+            _, after = oci_url.split(":", 1)
+            if after.startswith(("/", "./", "../", "~")):
+                hint = (
+                    f"\n\nIt looks like '{oci_url}' is a partition:path mapping, not an OCI reference.\n"
+                    f"For local files, use: j storage flash -t {oci_url}"
+                )
+        raise ValueError(
+            f"OCI URL must start with oci://, got: {oci_url}"
+            f"{hint}"
+        )
+
     def _build_fls_command(self, oci_url, partitions):
         """Build FLS fastboot command and environment."""
         fls_binary = get_fls_binary(
@@ -264,8 +282,7 @@ class RideSXDriver(Driver):
             oci_username: Registry username for OCI authentication
             oci_password: Registry password for OCI authentication
         """
-        if not oci_url.startswith("oci://"):
-            raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
+        self._validate_oci_url(oci_url)
 
         if bool(oci_username) != bool(oci_password):
             raise ValueError("OCI authentication requires both --username and --password")

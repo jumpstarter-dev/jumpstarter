@@ -89,3 +89,98 @@ def test_flash_oci_auto_error_cases(ridesx_client):
 
         with pytest.raises(click.ClickException, match="No fastboot devices found"):
             ridesx_client.flash_oci_auto("oci://image:tag")
+
+
+# _is_oci_path Tests
+
+
+def test_is_oci_path_rejects_partition_specs(ridesx_client):
+    """Partition:path specs should not be detected as OCI references"""
+    assert not ridesx_client._is_oci_path("boot_a:./boot_a.simg")
+    assert not ridesx_client._is_oci_path("boot_a:/path/to/boot_a.simg")
+    assert not ridesx_client._is_oci_path("system_a:../images/system.img")
+    assert not ridesx_client._is_oci_path("boot_a:~/images/boot.img")
+
+
+def test_is_oci_path_accepts_oci_references(ridesx_client):
+    """Valid OCI references should be detected"""
+    assert ridesx_client._is_oci_path("oci://quay.io/org/image:tag")
+    assert ridesx_client._is_oci_path("quay.io/org/image:tag")
+    assert ridesx_client._is_oci_path("registry.com/repo:latest")
+
+
+def test_is_oci_path_rejects_non_oci(ridesx_client):
+    """Non-OCI paths should not be detected"""
+    assert not ridesx_client._is_oci_path("/absolute/path/to/file.img")
+    assert not ridesx_client._is_oci_path("./relative/path")
+    assert not ridesx_client._is_oci_path("http://example.com/file.img")
+    assert not ridesx_client._is_oci_path("https://example.com/file.img")
+    assert not ridesx_client._is_oci_path("just-a-filename")
+
+
+# _execute_flash_command Tests
+
+
+def test_execute_flash_command_detects_missing_t_flag(ridesx_client):
+    """When a partition:path is passed as positional arg with other -t specs, suggest -t"""
+    with pytest.raises(click.ClickException, match="missing the -t flag"):
+        ridesx_client._execute_flash_command(
+            "boot_a:/path/to/boot.img",
+            ("system_a:/path/to/system.img",),
+        )
+
+
+def test_execute_flash_command_detects_missing_t_flag_relative(ridesx_client):
+    """Relative partition:path should also be caught"""
+    with pytest.raises(click.ClickException, match="missing the -t flag"):
+        ridesx_client._execute_flash_command(
+            "boot_a:./boot_a.simg",
+            ("system_a:./system_a.simg",),
+        )
+
+
+def test_execute_flash_command_rejects_non_oci_positional_with_targets(ridesx_client):
+    """Non-OCI positional paths should be rejected in multi-target mode"""
+    # partition:filename without path prefix (previously slipped through)
+    with pytest.raises(click.ClickException, match="not an OCI reference"):
+        ridesx_client._execute_flash_command(
+            "boot_a:boot.img",
+            ("system_a:/path/to/system.img",),
+        )
+
+    # Local file path without colon
+    with pytest.raises(click.ClickException, match="not an OCI reference"):
+        ridesx_client._execute_flash_command(
+            "./boot_a.simg",
+            ("system_a:/path/to/system.img",),
+        )
+
+    # Plain filename
+    with pytest.raises(click.ClickException, match="not an OCI reference"):
+        ridesx_client._execute_flash_command(
+            "boot.img",
+            ("system_a:/path/to/system.img",),
+        )
+
+
+def test_execute_flash_command_allows_oci_positional_with_targets(ridesx_client):
+    """OCI positional paths should pass the guard in multi-target mode"""
+    with patch.object(ridesx_client, "flash_with_targets") as mock_flash:
+        ridesx_client._execute_flash_command(
+            "oci://quay.io/org/image:tag",
+            ("boot_a:boot.img",),
+        )
+        mock_flash.assert_called_once_with(
+            "oci://quay.io/org/image:tag",
+            {"boot_a": "boot.img"},
+            power_off=True,
+        )
+
+
+# flash() partition:path hint Tests
+
+
+def test_flash_hints_partition_spec_without_target(ridesx_client):
+    """Passing partition:/path directly to flash() should give a helpful error"""
+    with pytest.raises(ValueError, match="looks like a partition:path mapping"):
+        ridesx_client.flash("boot_a:/path/to/boot.img")

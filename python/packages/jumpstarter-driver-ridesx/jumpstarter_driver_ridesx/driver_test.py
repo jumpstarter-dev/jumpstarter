@@ -600,3 +600,58 @@ def test_flash_oci_image_requires_oci_scheme(temp_storage_dir, ridesx_driver):
         # Bare registry URL should be rejected
         with pytest.raises(DriverError, match="OCI URL must start with oci://"):
             client.call("flash_oci_image", "quay.io/org/image:v1", None)
+
+
+# OCI URL Validation Tests (direct unit tests for _validate_oci_url)
+
+
+def test_validate_oci_url_accepts_valid():
+    """Valid oci:// URLs should pass without error"""
+    RideSXDriver._validate_oci_url("oci://quay.io/org/image:tag")
+    RideSXDriver._validate_oci_url("oci://registry.example.com/repo:latest")
+
+
+def test_validate_oci_url_rejects_non_oci():
+    """Non-oci:// URLs should raise ValueError"""
+    with pytest.raises(ValueError, match="OCI URL must start with oci://"):
+        RideSXDriver._validate_oci_url("docker://image:tag")
+
+
+def test_validate_oci_url_rejects_bare_registry():
+    """Bare registry URLs (with tag colon) should be rejected without hint"""
+    with pytest.raises(ValueError, match="OCI URL must start with oci://") as exc_info:
+        RideSXDriver._validate_oci_url("quay.io/org/image:v1")
+    # Tag suffix is not a path, so no hint should be shown
+    assert "partition:path" not in str(exc_info.value)
+
+
+def test_validate_oci_url_hint_absolute_path():
+    """partition:/absolute/path should produce a helpful hint"""
+    with pytest.raises(ValueError, match="partition:path mapping") as exc_info:
+        RideSXDriver._validate_oci_url("boot:/path/to/boot.img")
+    assert "j storage flash -t boot:/path/to/boot.img" in str(exc_info.value)
+
+
+def test_validate_oci_url_hint_relative_path():
+    """partition:./relative/path should produce a helpful hint"""
+    with pytest.raises(ValueError, match="partition:path mapping"):
+        RideSXDriver._validate_oci_url("system:./images/system.img")
+
+
+def test_validate_oci_url_hint_parent_path():
+    """partition:../parent/path should produce a helpful hint"""
+    with pytest.raises(ValueError, match="partition:path mapping"):
+        RideSXDriver._validate_oci_url("boot:../other/boot.img")
+
+
+def test_validate_oci_url_hint_home_path():
+    """partition:~/home/path should produce a helpful hint"""
+    with pytest.raises(ValueError, match="partition:path mapping"):
+        RideSXDriver._validate_oci_url("boot:~/images/boot.img")
+
+
+def test_validate_oci_url_no_colon():
+    """URL with no colon should be rejected without hint"""
+    with pytest.raises(ValueError, match="OCI URL must start with oci://") as exc_info:
+        RideSXDriver._validate_oci_url("just-a-string")
+    assert "partition:path" not in str(exc_info.value)
