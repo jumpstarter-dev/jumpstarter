@@ -1,13 +1,16 @@
 //! Jumpstarter network driver client.
 //!
 //! Provides `NetworkClient`, a typed client for the `NetworkInterface` gRPC
-//! service that also exposes TCP and UDP port-forwarding via `@exportstream`.
+//! service that exposes TCP and UDP port-forwarding via native bidi streaming.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, UdpSocket};
+use tokio::sync::{mpsc, oneshot};
 use tonic::transport::Channel;
 
-use jumpstarter_client::portforward::{TcpPortforwardAdapter, UdpPortforwardAdapter};
 use jumpstarter_client::{ExporterSession, UuidInterceptor};
 
 /// Generated protobuf/gRPC types for the NetworkInterface service.
@@ -16,13 +19,14 @@ pub mod proto {
 }
 
 use proto::network_interface_client::NetworkInterfaceClient as GrpcClient;
+use proto::StreamData;
 
 type InterceptedChannel = tonic::service::interceptor::InterceptedService<Channel, UuidInterceptor>;
 
 /// A typed network driver client.
 ///
 /// Wraps the native `NetworkInterface` gRPC stub (with UUID routing) and
-/// provides port-forwarding helpers for the `Connect` stream method.
+/// provides port-forwarding helpers using native bidi streaming on `Connect`.
 ///
 /// # Example
 ///
@@ -34,19 +38,16 @@ type InterceptedChannel = tonic::service::interceptor::InterceptedService<Channe
 /// let session = ExporterSession::from_env().await?;
 /// let mut network = NetworkClient::new(&session, "network")?;
 ///
-/// // Port-forwarding (for @exportstream Connect method)
-/// let tcp = network.connect_tcp(None).await?;
+/// let tcp = network.connect_tcp().await?;
 /// println!("TCP on {}", tcp.local_addr());
 ///
-/// let udp = network.connect_udp(None).await?;
+/// let udp = network.connect_udp().await?;
 /// println!("UDP on {}", udp.local_addr());
 /// # Ok(())
 /// # }
 /// ```
 pub struct NetworkClient {
     stub: GrpcClient<InterceptedChannel>,
-    channel: Channel,
-    driver_uuid: String,
 }
 
 impl NetworkClient {
@@ -64,70 +65,191 @@ impl NetworkClient {
             .ok_or_else(|| format!("driver '{}' not found in exporter report", driver_name))?;
         let uuid = instance.uuid().to_owned();
         let channel = session.channel().clone();
-        let stub = GrpcClient::with_interceptor(channel.clone(), UuidInterceptor::new(&uuid));
-        Ok(Self {
-            stub,
-            channel,
-            driver_uuid: uuid,
-        })
+        let stub = GrpcClient::with_interceptor(channel, UuidInterceptor::new(&uuid));
+        Ok(Self { stub })
     }
 
     /// Access the underlying native gRPC stub for direct RPC calls.
-    ///
-    /// This is useful for calling any future typed methods added to the
-    /// `NetworkInterface` proto definition.
     pub fn stub(&mut self) -> &mut GrpcClient<InterceptedChannel> {
         &mut self.stub
     }
 
-    // -- Port-forwarding for @exportstream methods --
+    // -- Port-forwarding via native bidi streaming --
 
-    /// Open a TCP port-forwarding adapter for the `Connect` stream.
+    /// Open a TCP port-forwarding listener for the `Connect` bidi stream.
     ///
-    /// Returns a handle whose [`local_addr`](TcpPortforwardHandle::local_addr)
-    /// gives the local TCP listener address. Defaults to method `"connect"`.
+    /// Binds a local TCP listener on `127.0.0.1:0`. For each accepted
+    /// connection, opens a native `Connect` bidi stream and bridges bytes
+    /// bidirectionally between the TCP socket and the gRPC stream.
     pub async fn connect_tcp(
         &self,
-        method: Option<&str>,
     ) -> Result<TcpPortforwardHandle, Box<dyn std::error::Error + Send + Sync>> {
-        let adapter = TcpPortforwardAdapter::open_on_channel(
-            self.channel.clone(),
-            &self.driver_uuid,
-            method.unwrap_or("connect"),
-        )
-        .await?;
-        Ok(TcpPortforwardHandle { adapter })
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+
+        let stub = self.stub.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut shutdown_rx => break,
+                    accept = listener.accept() => {
+                        match accept {
+                            Ok((tcp_stream, _)) => {
+                                let mut conn_stub = stub.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = handle_tcp_connection(&mut conn_stub, tcp_stream).await {
+                                        eprintln!("portforward connection error: {e}");
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                eprintln!("portforward accept error: {e}");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(TcpPortforwardHandle {
+            local_addr,
+            shutdown: Some(shutdown_tx),
+        })
     }
 
-    /// Open a UDP port-forwarding adapter for the `Connect` stream.
+    /// Open a UDP port-forwarding socket for the `Connect` bidi stream.
     ///
-    /// Returns a handle whose [`local_addr`](UdpPortforwardHandle::local_addr)
-    /// gives the local UDP socket address. Defaults to method `"connect"`.
+    /// Binds a local UDP socket on `127.0.0.1:0`. Opens a single native
+    /// `Connect` bidi stream and bridges datagrams bidirectionally.
     pub async fn connect_udp(
         &self,
-        method: Option<&str>,
     ) -> Result<UdpPortforwardHandle, Box<dyn std::error::Error + Send + Sync>> {
-        let adapter = UdpPortforwardAdapter::open_on_channel(
-            self.channel.clone(),
-            &self.driver_uuid,
-            method.unwrap_or("connect"),
-        )
-        .await?;
-        Ok(UdpPortforwardHandle { adapter })
+        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let local_addr = socket.local_addr()?;
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+
+        let (outbound_tx, outbound_rx) = mpsc::channel::<StreamData>(64);
+        let outbound_stream = tokio_stream::wrappers::ReceiverStream::new(outbound_rx);
+
+        let mut stub = self.stub.clone();
+        let response = stub.connect(outbound_stream).await?;
+        let mut inbound = response.into_inner();
+
+        let socket = Arc::new(socket);
+        let recv_socket = socket.clone();
+
+        // UDP recv -> outbound gRPC stream
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 65535];
+            loop {
+                tokio::select! {
+                    _ = &mut shutdown_rx => break,
+                    result = recv_socket.recv_from(&mut buf) => {
+                        match result {
+                            Ok((n, _peer)) => {
+                                let msg = StreamData {
+                                    payload: buf[..n].to_vec(),
+                                };
+                                if outbound_tx.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                }
+            }
+        });
+
+        // Inbound gRPC stream -> UDP send
+        let send_socket = socket;
+        tokio::spawn(async move {
+            while let Ok(Some(msg)) = inbound.message().await {
+                if send_socket.send(&msg.payload).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(UdpPortforwardHandle {
+            local_addr,
+            shutdown: Some(shutdown_tx),
+        })
     }
+}
+
+/// Bridge a single TCP connection over a native `Connect` bidi stream.
+async fn handle_tcp_connection(
+    stub: &mut GrpcClient<InterceptedChannel>,
+    tcp_stream: tokio::net::TcpStream,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (outbound_tx, outbound_rx) = mpsc::channel::<StreamData>(64);
+    let outbound_stream = tokio_stream::wrappers::ReceiverStream::new(outbound_rx);
+
+    let response = stub.connect(outbound_stream).await?;
+    let mut inbound = response.into_inner();
+
+    let (mut tcp_read, mut tcp_write) = tcp_stream.into_split();
+
+    // TCP read -> outbound gRPC stream
+    let tx_handle = tokio::spawn(async move {
+        let mut buf = vec![0u8; 8192];
+        loop {
+            match tcp_read.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    let msg = StreamData {
+                        payload: buf[..n].to_vec(),
+                    };
+                    if outbound_tx.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    // Inbound gRPC stream -> TCP write
+    let rx_handle = tokio::spawn(async move {
+        while let Ok(Some(msg)) = inbound.message().await {
+            if tcp_write.write_all(&msg.payload).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    tokio::select! {
+        _ = tx_handle => {}
+        _ = rx_handle => {}
+    }
+
+    Ok(())
 }
 
 /// Handle to an active TCP port-forwarding session.
 ///
 /// The listener shuts down when this handle is dropped.
 pub struct TcpPortforwardHandle {
-    adapter: TcpPortforwardAdapter,
+    local_addr: SocketAddr,
+    shutdown: Option<oneshot::Sender<()>>,
 }
 
 impl TcpPortforwardHandle {
     /// The local address the TCP listener is bound to.
     pub fn local_addr(&self) -> SocketAddr {
-        self.adapter.local_addr()
+        self.local_addr
+    }
+}
+
+impl Drop for TcpPortforwardHandle {
+    fn drop(&mut self) {
+        if let Some(tx) = self.shutdown.take() {
+            let _ = tx.send(());
+        }
     }
 }
 
@@ -135,12 +257,21 @@ impl TcpPortforwardHandle {
 ///
 /// The socket shuts down when this handle is dropped.
 pub struct UdpPortforwardHandle {
-    adapter: UdpPortforwardAdapter,
+    local_addr: SocketAddr,
+    shutdown: Option<oneshot::Sender<()>>,
 }
 
 impl UdpPortforwardHandle {
     /// The local address the UDP socket is bound to.
     pub fn local_addr(&self) -> SocketAddr {
-        self.adapter.local_addr()
+        self.local_addr
+    }
+}
+
+impl Drop for UdpPortforwardHandle {
+    fn drop(&mut self) {
+        if let Some(tx) = self.shutdown.take() {
+            let _ = tx.send(());
+        }
     }
 }

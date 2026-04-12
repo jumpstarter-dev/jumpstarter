@@ -3,9 +3,8 @@
  * `NetworkInterface` service and TCP/UDP port forwarding for the
  * `Connect` bidi stream method.
  *
- * The `Connect` RPC is an `@exportstream` method — it goes through
- * `RouterService.Stream` (port forwarding), not through the native
- * gRPC stub directly.
+ * The `Connect` RPC uses native gRPC bidirectional streaming directly
+ * against the `NetworkInterface` service definition.
  *
  * Usage:
  * ```typescript
@@ -25,13 +24,15 @@
 
 import {
   ExporterSession,
-  TcpPortforwardAdapter,
-  UdpPortforwardAdapter,
   createUuidInterceptor,
 } from "@jumpstarter/client";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import * as path from "path";
+import * as net from "net";
+import * as dgram from "dgram";
+
+const CONNECT_PATH = "/jumpstarter.interfaces.network.v1.NetworkInterface/Connect";
 
 export class NetworkClient {
   private readonly client: grpc.Client;
@@ -40,8 +41,10 @@ export class NetworkClient {
   private readonly session: ExporterSession;
   private readonly driverUuid: string;
 
-  private tcpAdapter: TcpPortforwardAdapter | null = null;
-  private udpAdapter: UdpPortforwardAdapter | null = null;
+  private tcpServer: net.Server | null = null;
+  private tcpConnections: Set<net.Socket> = new Set();
+  private udpSocket: dgram.Socket | null = null;
+  private udpBidiStream: grpc.ClientDuplexStream<any, any> | null = null;
 
   private static _grpcPkg: grpc.GrpcObject | null = null;
 
@@ -67,54 +70,150 @@ export class NetworkClient {
   }
 
   /**
+   * Open a native gRPC bidi stream for the `Connect` RPC.
+   */
+  private _openConnectStream(): grpc.ClientDuplexStream<any, any> {
+    const connectDef = this.svcDef["Connect"];
+    return this.client.makeBidiStreamRequest(
+      CONNECT_PATH,
+      connectDef.requestSerialize,
+      connectDef.responseDeserialize,
+      new grpc.Metadata(),
+      { interceptors: [this.interceptor] },
+    );
+  }
+
+  /**
    * Start a local TCP listener that forwards connections to the remote
    * device's network endpoint via the `Connect` bidi stream.
    *
-   * @param method - The driver method to invoke (default: "connect")
+   * Each incoming TCP connection opens a new bidi stream and bridges
+   * bytes bidirectionally.
+   *
    * @returns The local address and port to connect to
    */
-  async connectTcp(
-    method: string = "connect",
-  ): Promise<{ address: string; port: number }> {
-    this.tcpAdapter = await TcpPortforwardAdapter.open(
-      this.session,
-      this.driverUuid,
-      method,
-    );
-    return { address: this.tcpAdapter.address, port: this.tcpAdapter.port };
+  async connectTcp(): Promise<{ address: string; port: number }> {
+    const server = net.createServer((socket) => {
+      this.tcpConnections.add(socket);
+
+      const bidiStream = this._openConnectStream();
+
+      // Forward socket → gRPC stream
+      socket.on("data", (chunk: Buffer) => {
+        bidiStream.write({ payload: chunk });
+      });
+      socket.on("end", () => {
+        bidiStream.end();
+      });
+      socket.on("error", () => {
+        bidiStream.end();
+      });
+
+      // Forward gRPC stream → socket
+      bidiStream.on("data", (msg: any) => {
+        if (!socket.destroyed) {
+          socket.write(msg.payload);
+        }
+      });
+      bidiStream.on("end", () => {
+        if (!socket.destroyed) {
+          socket.end();
+        }
+      });
+      bidiStream.on("error", () => {
+        socket.destroy();
+      });
+
+      socket.on("close", () => {
+        this.tcpConnections.delete(socket);
+      });
+    });
+
+    const host = "127.0.0.1";
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, host, () => resolve());
+      server.once("error", reject);
+    });
+
+    this.tcpServer = server;
+    const addr = server.address() as net.AddressInfo;
+    return { address: addr.address, port: addr.port };
   }
 
   /**
    * Start a local UDP socket that forwards datagrams to the remote
    * device's network endpoint via the `Connect` bidi stream.
    *
-   * @param method - The driver method to invoke (default: "connect")
+   * Opens a single bidi stream and forwards datagrams bidirectionally.
+   *
    * @returns The local address and port to send datagrams to
    */
-  async connectUdp(
-    method: string = "connect",
-  ): Promise<{ address: string; port: number }> {
-    this.udpAdapter = await UdpPortforwardAdapter.open(
-      this.session,
-      this.driverUuid,
-      method,
-    );
-    return { address: this.udpAdapter.address, port: this.udpAdapter.port };
+  async connectUdp(): Promise<{ address: string; port: number }> {
+    const socket = dgram.createSocket("udp4");
+
+    const host = "127.0.0.1";
+    await new Promise<void>((resolve, reject) => {
+      socket.bind(0, host, () => resolve());
+      socket.once("error", reject);
+    });
+
+    const bidiStream = this._openConnectStream();
+    this.udpSocket = socket;
+    this.udpBidiStream = bidiStream;
+
+    let lastRemotePort = 0;
+    let lastRemoteAddress = "";
+
+    // Forward incoming UDP datagrams → gRPC stream
+    socket.on("message", (msg: Buffer, rinfo: dgram.RemoteInfo) => {
+      lastRemotePort = rinfo.port;
+      lastRemoteAddress = rinfo.address;
+      bidiStream.write({ payload: msg });
+    });
+
+    // Forward gRPC stream → UDP datagrams back to last known peer
+    bidiStream.on("data", (msg: any) => {
+      if (lastRemotePort > 0) {
+        socket.send(msg.payload, lastRemotePort, lastRemoteAddress);
+      }
+    });
+    bidiStream.on("error", () => {
+      // stream ended or errored
+    });
+
+    const addr = socket.address();
+    return { address: addr.address, port: addr.port };
   }
 
   /**
-   * Alias for `connectTcp("connect")` for backwards compatibility.
+   * Alias for `connectTcp()` for backwards compatibility.
    */
   async connect(): Promise<{ address: string; port: number }> {
-    return this.connectTcp("connect");
+    return this.connectTcp();
   }
 
   /** Stop all port-forward listeners and close the gRPC client. */
   close(): void {
-    this.tcpAdapter?.close();
-    this.tcpAdapter = null;
-    this.udpAdapter?.close();
-    this.udpAdapter = null;
+    if (this.tcpServer) {
+      this.tcpServer.close();
+      for (const socket of this.tcpConnections) {
+        socket.destroy();
+      }
+      this.tcpConnections.clear();
+      this.tcpServer = null;
+    }
+    if (this.udpBidiStream) {
+      this.udpBidiStream.end();
+      this.udpBidiStream = null;
+    }
+    if (this.udpSocket) {
+      try {
+        this.udpSocket.close();
+      } catch {
+        // already closed
+      }
+      this.udpSocket = null;
+    }
     this.client.close();
   }
 
