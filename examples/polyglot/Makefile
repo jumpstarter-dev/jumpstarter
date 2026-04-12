@@ -68,11 +68,11 @@ test-java:
 
 test-typescript:
 	@echo "=== TypeScript tests ==="
-	cd typescript && npx tsx test-example-board.ts
+	cd typescript && npx vitest run --config vitest.config.ts
 
 test-rust:
 	@echo "=== Rust tests ==="
-	cd $(ROOT) && cargo run -p jumpstarter-example-board --example test_example_board
+	cd $(ROOT) && cargo test -p jumpstarter-example-board-tests -- --ignored
 
 # ── Clean ────────────────────────────────────────────────────────────
 

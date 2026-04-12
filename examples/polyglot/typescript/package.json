@@ -5,7 +5,7 @@
   "description": "Polyglot codegen example — TypeScript tests",
   "scripts": {
     "build": "cd gen && npx tsc --noEmit",
-    "test": "npx tsx test-example-board.ts"
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@jumpstarter/client": "^0.1.0",
@@ -13,7 +13,7 @@
     "@grpc/proto-loader": "^0.8.0"
   },
   "devDependencies": {
-    "tsx": "^4.21.0",
+    "vitest": "^3.0.0",
     "typescript": "^5.4.0"
   }
 }
