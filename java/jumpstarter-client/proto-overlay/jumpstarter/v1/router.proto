@@ -1,0 +1,33 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+// StreamService
+// Claims:
+// iss: jumpstarter controller
+// aud: jumpstarter router
+// sub: jumpstarter client/exporter
+// stream: stream id
+service RouterService {
+  // Stream connects caller to another caller of the same stream
+  rpc Stream(stream StreamRequest) returns (stream StreamResponse);
+}
+
+enum FrameType {
+  FRAME_TYPE_DATA = 0x00;
+  FRAME_TYPE_RST_STREAM = 0x03;
+  FRAME_TYPE_PING = 0x06;
+  FRAME_TYPE_GOAWAY = 0x07;
+}
+
+message StreamRequest {
+  bytes payload = 1;
+  FrameType frame_type = 2;
+}
+
+message StreamResponse {
+  bytes payload = 1;
+  FrameType frame_type = 2;
+}

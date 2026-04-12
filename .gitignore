@@ -19,6 +19,23 @@ __pycache__/
 dist/
 build/
 
+# Rust
+target/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Java
+.gradle/
+out/
+bin/
+
+# Rust
+# Cargo.lock is committed for binary/workspace crates
+*.rs.bk
+
 # Editor/IDE
 .vscode/
 .idea/

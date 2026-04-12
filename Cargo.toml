@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "rust/jumpstarter-client",
+    "rust/jumpstarter-testing",
+    "rust/jumpstarter-testing-macros",
+    "examples/polyglot/rust/gen",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/jumpstarter-dev/jumpstarter"
+
+[workspace.dependencies]
+tonic = "0.13"
+tonic-build = "0.13"
+prost = "0.13"
+prost-types = "0.13"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+bytes = "1"
+jumpstarter-client = { path = "rust/jumpstarter-client" }
+jumpstarter-testing = { path = "rust/jumpstarter-testing" }
+jumpstarter-testing-macros = { path = "rust/jumpstarter-testing-macros" }

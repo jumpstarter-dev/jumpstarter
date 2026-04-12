@@ -1,0 +1,18 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterClass
+metadata:
+  name: example-board
+spec:
+  selector:
+    matchLabels:
+      jumpstarter.dev/board-type: example-board
+  interfaces:
+    - name: power
+      interfaceRef: dev-jumpstarter-power-v1
+      required: true
+    - name: storage
+      interfaceRef: dev-jumpstarter-storage-mux-v1
+      required: true
+    - name: network
+      interfaceRef: dev-jumpstarter-network-v1
+      required: false

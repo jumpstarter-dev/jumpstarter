@@ -1,0 +1,101 @@
+// Copyright 2024 The Jumpstarter Authors
+// Java-specific overlay: excludes DriverInterfaceInfo message which contains
+// a field named "descriptor" that conflicts with protobuf-java's reserved
+// getDescriptor() method. The excluded messages are only used by the
+// GetExporterClassInfo RPC which is not needed by Java clients.
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "jumpstarter/v1/common.proto";
+
+// A service a exporter can share locally to be used without a server
+// Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+service ExporterService {
+  // Exporter registration
+  rpc GetReport(google.protobuf.Empty) returns (GetReportResponse);
+  rpc DriverCall(DriverCallRequest) returns (DriverCallResponse);
+  rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
+  rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
+  rpc Reset(ResetRequest) returns (ResetResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  // End the current session, triggering the afterLease hook
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
+}
+
+message DriverInstanceReport {
+  string uuid = 1;
+  optional string parent_uuid = 2;
+  map<string, string> labels = 3;
+  optional string description = 4;
+  map<string, string> methods_description = 5;
+  optional bytes file_descriptor_proto = 6;
+  repeated string native_services = 7;
+}
+
+message GetReportResponse {
+  string uuid = 1;
+  map<string, string> labels = 2;
+  repeated DriverInstanceReport reports = 3;
+  repeated Endpoint alternative_endpoints = 4;
+}
+
+message Endpoint {
+  string endpoint = 1;
+  string certificate = 2;
+  string client_certificate = 3;
+  string client_private_key = 4;
+}
+
+message DriverCallRequest {
+  string uuid = 1;
+  string method = 2;
+  repeated google.protobuf.Value args = 3;
+}
+
+message DriverCallResponse {
+  string uuid = 1;
+  google.protobuf.Value result = 2;
+}
+
+message StreamingDriverCallRequest {
+  string uuid = 1;
+  string method = 2;
+  repeated google.protobuf.Value args = 3;
+}
+
+message StreamingDriverCallResponse {
+  string uuid = 1;
+  google.protobuf.Value result = 2;
+}
+
+message LogStreamResponse {
+  string uuid = 1;
+  string severity = 2;
+  string message = 3;
+  optional LogSource source = 4;
+}
+
+message ResetRequest {}
+message ResetResponse {}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  ExporterStatus status = 1;
+  optional string message = 2;
+  uint64 status_version = 3;
+  optional ExporterStatus previous_status = 4;
+}
+
+message EndSessionRequest {}
+
+message EndSessionResponse {
+  bool success = 1;
+  optional string message = 2;
+}

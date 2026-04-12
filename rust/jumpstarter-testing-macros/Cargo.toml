@@ -1,0 +1,15 @@
+[package]
+name = "jumpstarter-testing-macros"
+description = "Proc macros for Jumpstarter test framework — #[jumpstarter_test] attribute"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

@@ -4,7 +4,7 @@
 #
 
 # Subdirectories containing projects
-SUBDIRS := python protocol controller e2e
+SUBDIRS := python protocol controller java typescript rust e2e
 
 # Deployment method for e2e tests: operator (default) or helm
 METHOD ?= operator
@@ -40,6 +40,11 @@ help:
 	@echo "  make build-<project>  - Build specific project"
 	@echo "  make test-<project>   - Test specific project"
 	@echo "  make clean-<project>  - Clean specific project"
+	@echo ""
+	@echo ""
+	@echo "Polyglot example:"
+	@echo "  make codegen            - Regenerate polyglot example code"
+	@echo "  make codegen-test       - Run polyglot example tests (requires jmp shell)"
 	@echo ""
 	@echo "Projects: $(SUBDIRS)"
 
@@ -94,7 +99,7 @@ fmt:
 	done
 
 # Per-project build targets
-.PHONY: build-python build-protocol build-controller build-e2e
+.PHONY: build-python build-protocol build-controller build-java build-typescript build-rust build-e2e
 build-python:
 	@if [ -f python/Makefile ]; then $(MAKE) -C python build; fi
 
@@ -104,11 +109,20 @@ build-protocol:
 build-controller:
 	@if [ -f controller/Makefile ]; then $(MAKE) -C controller build; fi
 
+build-java:
+	@if [ -f java/Makefile ]; then $(MAKE) -C java build; fi
+
+build-typescript:
+	@if [ -f typescript/Makefile ]; then $(MAKE) -C typescript build; fi
+
+build-rust:
+	@if [ -f rust/Makefile ]; then $(MAKE) -C rust build; fi
+
 build-e2e:
 	@if [ -f e2e/Makefile ]; then $(MAKE) -C e2e build; fi
 
 # Per-project test targets
-.PHONY: test-python test-protocol test-controller test-e2e
+.PHONY: test-python test-protocol test-controller test-java test-typescript test-rust test-e2e
 test-python:
 	@if [ -f python/Makefile ]; then $(MAKE) -C python test; fi
 
@@ -117,6 +131,15 @@ test-protocol:
 
 test-controller:
 	@if [ -f controller/Makefile ]; then $(MAKE) -C controller test; fi
+
+test-java:
+	@if [ -f java/Makefile ]; then $(MAKE) -C java test; fi
+
+test-typescript:
+	@if [ -f typescript/Makefile ]; then $(MAKE) -C typescript test; fi
+
+test-rust:
+	@if [ -f rust/Makefile ]; then $(MAKE) -C rust test; fi
 
 # Setup e2e testing environment (one-time)
 .PHONY: e2e-setup
@@ -187,7 +210,7 @@ e2e-compat-run:
 	@COMPAT_TEST=$(COMPAT_TEST) bash e2e/compat/run.sh
 
 # Per-project clean targets
-.PHONY: clean-python clean-protocol clean-controller clean-e2e
+.PHONY: clean-python clean-protocol clean-controller clean-java clean-typescript clean-rust clean-e2e
 clean-python:
 	@if [ -f python/Makefile ]; then $(MAKE) -C python clean; fi
 
@@ -197,5 +220,22 @@ clean-protocol:
 clean-controller:
 	@if [ -f controller/Makefile ]; then $(MAKE) -C controller clean; fi
 
+clean-java:
+	@if [ -f java/Makefile ]; then $(MAKE) -C java clean; fi
+
+clean-typescript:
+	@if [ -f typescript/Makefile ]; then $(MAKE) -C typescript clean; fi
+
+clean-rust:
+	@if [ -f rust/Makefile ]; then $(MAKE) -C rust clean; fi
+
 clean-e2e:
 	@if [ -f e2e/Makefile ]; then $(MAKE) -C e2e clean; fi
+
+# Polyglot example codegen and testing
+.PHONY: codegen codegen-test
+codegen:
+	$(MAKE) -C examples/polyglot generate-all
+
+codegen-test:
+	$(MAKE) -C examples/polyglot test-all

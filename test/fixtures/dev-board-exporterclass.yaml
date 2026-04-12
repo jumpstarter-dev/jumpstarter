@@ -1,0 +1,18 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterClass
+metadata:
+  name: dev-board
+spec:
+  selector:
+    matchLabels:
+      jumpstarter.dev/board-type: dev-board
+  interfaces:
+    - name: power
+      interfaceRef: di-power-v1
+      required: true
+    - name: serial
+      interfaceRef: di-serial-v1
+      required: true
+    - name: network
+      interfaceRef: di-network-v1
+      required: false

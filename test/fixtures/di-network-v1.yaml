@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: DriverInterface
+metadata:
+  name: di-network-v1
+spec:
+  proto:
+    package: jumpstarter.interfaces.network.v1
+  drivers:
+    - language: python
+      package: jumpstarter-driver-network
+      clientClass: "jumpstarter_driver_network.client:NetworkClient"
+      driverClasses:
+        - "jumpstarter_driver_network.driver:MockNetwork"

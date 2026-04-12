@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: DriverInterface
+metadata:
+  name: di-serial-v1
+spec:
+  proto:
+    package: jumpstarter.interfaces.py_serial.v1
+  drivers:
+    - language: python
+      package: jumpstarter-driver-pyserial
+      clientClass: "jumpstarter_driver_pyserial.client:PySerialClient"
+      driverClasses:
+        - "jumpstarter_driver_pyserial.driver:PySerial"

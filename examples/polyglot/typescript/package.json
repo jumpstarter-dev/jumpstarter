@@ -1,0 +1,19 @@
+{
+  "name": "@jumpstarter/example-polyglot-typescript",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Polyglot codegen example — TypeScript tests",
+  "scripts": {
+    "build": "cd gen && npx tsc --noEmit",
+    "test": "npx tsx test-example-board.ts"
+  },
+  "dependencies": {
+    "@jumpstarter/client": "^0.1.0",
+    "@grpc/grpc-js": "^1.14.0",
+    "@grpc/proto-loader": "^0.8.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.4.0"
+  }
+}

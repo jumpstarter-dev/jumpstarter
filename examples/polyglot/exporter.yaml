@@ -1,0 +1,14 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: example-board-exporter
+endpoint: ""
+token: ""
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+  storage:
+    type: jumpstarter_driver_opendal.driver.MockStorageMux
+  network:
+    type: jumpstarter_driver_network.driver.EchoNetwork

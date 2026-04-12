@@ -1,0 +1,32 @@
+{
+  "name": "@jumpstarter/client",
+  "version": "0.1.0",
+  "description": "Jumpstarter client runtime for TypeScript — session management and driver discovery under jmp shell",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "jumpstarter",
+    "grpc",
+    "hardware-testing"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0",
+    "google-protobuf": "^3.21.0"
+  },
+  "devDependencies": {
+    "@types/google-protobuf": "^3.15.0",
+    "typescript": "^5.4.0"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "workspaces": [
+    "typescript/packages/*",
+    "examples/polyglot/typescript",
+    "examples/polyglot/typescript/gen"
+  ]
+}

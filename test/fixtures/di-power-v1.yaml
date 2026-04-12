@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: DriverInterface
+metadata:
+  name: di-power-v1
+spec:
+  proto:
+    package: jumpstarter.interfaces.power.v1
+  drivers:
+    - language: python
+      package: jumpstarter-driver-power
+      clientClass: "jumpstarter_driver_power.client:PowerClient"
+      driverClasses:
+        - "jumpstarter_driver_power.driver:MockPower"

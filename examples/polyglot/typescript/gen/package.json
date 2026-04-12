@@ -1,0 +1,19 @@
+{
+  "name": "@jumpstarter/device-example-board",
+  "version": "0.1.0",
+  "description": "Generated typed device wrapper for Jumpstarter ExporterClass example-board",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@jumpstarter/client": "^0.1.0",
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "license": "Apache-2.0"
+}

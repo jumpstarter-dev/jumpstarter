@@ -1,0 +1,21 @@
+[package]
+name = "jumpstarter-client"
+description = "Jumpstarter client runtime for Rust — session management, driver discovery, and stream channels"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+bytes = { workspace = true }
+http = "1"
+hyper-util = { version = "0.1", features = ["tokio"] }
+async-stream = "0.3"
+
+[build-dependencies]
+tonic-build = { workspace = true }
