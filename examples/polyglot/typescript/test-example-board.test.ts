@@ -7,14 +7,21 @@
  */
 
 import * as net from "net";
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createExampleBoardDevice } from "./gen/src/testing";
+import type { ExampleBoardDevice } from "./gen/src/ExampleBoardDevice";
 
-const ctx = await createExampleBoardDevice();
-const device = ctx.device;
+let device: ExampleBoardDevice;
+let close: () => void;
+
+beforeAll(async () => {
+  const ctx = await createExampleBoardDevice();
+  device = ctx.device;
+  close = () => ctx.close();
+});
 
 afterAll(() => {
-  ctx.close();
+  close?.();
 });
 
 // -- Power control --
