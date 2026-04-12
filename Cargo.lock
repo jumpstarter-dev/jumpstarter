@@ -418,6 +418,7 @@ dependencies = [
  "prost",
  "prost-types",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
 ]
@@ -428,6 +429,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "jumpstarter-client",
+ "jumpstarter-driver-network",
  "jumpstarter-testing",
  "prost",
  "tokio",
