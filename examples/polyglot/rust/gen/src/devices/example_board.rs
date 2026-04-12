@@ -4,7 +4,7 @@ use jumpstarter_client::ExporterSession;
 
 use crate::clients::power_client::PowerClient;
 use crate::clients::storage_mux_client::StorageMuxClient;
-use crate::clients::network_client::NetworkClient;
+use jumpstarter_driver_network::NetworkClient;
 
 /// Typed device wrapper for ExporterClass `example-board`.
 ///
@@ -26,7 +26,7 @@ impl<'a> ExampleBoardDevice<'a> {
         let power = PowerClient::new(session, "power");
         let storage = StorageMuxClient::new(session, "storage");
         let network = if session.report().find_by_name("network").is_some() {
-            Some(NetworkClient::new(session, "network"))
+            NetworkClient::new(session, "network").ok()
         } else {
             None
         };

@@ -10,6 +10,7 @@ java {
 
 dependencies {
     implementation("dev.jumpstarter:jumpstarter-client:0.1.0-SNAPSHOT")
+    implementation(project(":java:jumpstarter-driver-network"))
     implementation("io.grpc:grpc-netty-shaded:1.68.1")
     implementation("io.grpc:grpc-protobuf:1.68.1")
     implementation("io.grpc:grpc-stub:1.68.1")

@@ -8,6 +8,8 @@ Each test method receives a fully-typed `ExampleBoardDevice` with IDE auto-compl
 and compile-time type checking for all interface accessors.
 """
 
+import pytest
+
 from jumpstarter_gen.testing.example_board import ExampleBoardTest
 from jumpstarter_gen.devices.example_board import ExampleBoardDevice
 
@@ -41,11 +43,18 @@ class TestStorageMux(ExampleBoardTest):
         device.storage.off()
 
 
-class TestOptionalNetwork(ExampleBoardTest):
-    """Demonstrate optional interface handling."""
+class TestNetwork(ExampleBoardTest):
+    """Exercise network byte streaming via the EchoNetwork driver."""
 
     def test_network_is_optional(self, device: ExampleBoardDevice):
-        # network is declared optional in the ExporterClass,
-        # so it may be None if the exporter doesn't provide it
-        if device.network is not None:
-            pass  # network.connect() returns a bidi byte stream
+        # network is declared optional in the ExporterClass
+        # — it may be None if the exporter doesn't provide it
+        assert device.network is not None, "Expected network driver in this exporter"
+
+    def test_network_echo(self, device: ExampleBoardDevice):
+        if device.network is None:
+            pytest.skip("network driver not available")
+        # Open a bidi byte stream to the EchoNetwork driver
+        with device.network.stream("connect") as conn:
+            conn.send(b"hello")
+            assert conn.receive() == b"hello"

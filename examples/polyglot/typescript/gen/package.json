@@ -10,7 +10,8 @@
   "dependencies": {
     "@jumpstarter/client": "^0.1.0",
     "@grpc/grpc-js": "^1.10.0",
-    "@grpc/proto-loader": "^0.7.0"
+    "@grpc/proto-loader": "^0.7.0",
+    "@jumpstarter/driver-network": "^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

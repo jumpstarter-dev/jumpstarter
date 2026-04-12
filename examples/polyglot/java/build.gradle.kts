@@ -1,11 +1,5 @@
 // Monorepo build config for the polyglot Java example.
 // This file lives OUTSIDE gen/ so it is not overwritten by `jmp codegen`.
-//
-// The generated build.gradle.kts inside gen/ uses standalone Maven coordinates
-// for external users. This file adds monorepo-specific configuration:
-//   - Proto source compilation from gen/src/main/proto/
-//   - Hand-written test sources from src/test/java/
-//   - Project dependency on :java:jumpstarter-client (via substitution)
 
 plugins {
     java
@@ -18,8 +12,9 @@ java {
 }
 
 dependencies {
-    // Standalone coordinate — resolved to local project by settings.gradle.kts substitution
+    // Standalone coordinates — resolved to local projects by settings.gradle.kts substitution
     implementation("dev.jumpstarter:jumpstarter-client:0.1.0-SNAPSHOT")
+    implementation("dev.jumpstarter:jumpstarter-driver-network:0.1.0-SNAPSHOT")
     implementation(libs.grpc.netty.shaded)
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
@@ -34,12 +29,15 @@ dependencies {
 sourceSets {
     main {
         // Generated typed wrappers from jmp codegen
-        java.srcDir("gen/src/main/java")
+        java {
+            srcDir("gen")
+            // Exclude non-Java codegen artifacts
+            exclude("build.gradle.kts", "src/**")
+        }
         // Proto files for protoc compilation
         proto.srcDir("gen/src/main/proto")
     }
     test {
-        // Hand-written tests (outside gen/)
         java.srcDir("src/test/java")
     }
 }

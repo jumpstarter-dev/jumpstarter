@@ -3,7 +3,6 @@
 pub mod clients {
     pub mod power_client;
     pub mod storage_mux_client;
-    pub mod network_client;
 }
 
 pub mod devices;

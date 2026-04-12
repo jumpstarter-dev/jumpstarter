@@ -450,8 +450,12 @@ def _gen_barrel_index(ctx: CodegenContext) -> str:
     lines.append("")
 
     for iface in ec.interfaces:
-        client_class = _client_class_name(iface)
-        lines.append(f'export * from "./{client_class}";')
+        import_path, client_class, is_external = _resolve_ts_import(iface)
+        if is_external:
+            # Re-export from the external package
+            lines.append(f'export {{ {client_class} }} from "{import_path}";')
+        else:
+            lines.append(f'export * from "./{client_class}";')
 
     lines.append(f'export {{ {wrapper_class} }} from "./{wrapper_class}";')
 

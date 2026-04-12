@@ -38,10 +38,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     device.storage.off().await?;
     println!("storage.off(): OK");
 
-    println!("\n--- Optional Network ---");
-    match &device.network {
-        Some(_) => println!("network driver available"),
-        None => println!("network driver is None (optional)"),
+    println!("\n--- Network Echo Test ---");
+    match &mut device.network {
+        Some(ref mut network) => {
+            let handle = network.connect_tcp().await?;
+            println!("network.connect_tcp(): listening on {}", handle.local_addr());
+
+            let mut tcp = tokio::net::TcpStream::connect(handle.local_addr()).await?;
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            tcp.write_all(b"hello").await?;
+            let mut buf = [0u8; 5];
+            tcp.read_exact(&mut buf).await?;
+            assert_eq!(&buf, b"hello");
+            println!("network echo: sent \"hello\", received \"hello\"");
+            println!("network echo: OK");
+        }
+        None => println!("network driver is None (optional — skipping echo test)"),
     }
 
     println!("\n=== All Rust tests PASSED! ===");

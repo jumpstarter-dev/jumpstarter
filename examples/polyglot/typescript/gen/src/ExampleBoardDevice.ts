@@ -3,7 +3,7 @@
 import { ExporterSession } from "@jumpstarter/client";
 import { PowerClient } from "./PowerClient";
 import { StorageMuxClient } from "./StorageMuxClient";
-import { NetworkClient } from "./NetworkClient";
+import { NetworkClient } from "@jumpstarter/driver-network";
 
 /** Typed device wrapper for ExporterClass example-board. */
 export class ExampleBoardDevice {

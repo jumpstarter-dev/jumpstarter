@@ -2,6 +2,6 @@
 
 export * from "./PowerClient";
 export * from "./StorageMuxClient";
-export * from "./NetworkClient";
+export { NetworkClient } from "@jumpstarter/driver-network";
 export { ExampleBoardDevice } from "./ExampleBoardDevice";
 export { createExampleBoardDevice } from "./testing";

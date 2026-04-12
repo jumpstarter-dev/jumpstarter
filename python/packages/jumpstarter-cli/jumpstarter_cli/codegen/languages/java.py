@@ -233,9 +233,12 @@ class JavaLanguageGenerator(LanguageGenerator):
             input_short = method.input_type.rsplit(".", 1)[-1]
             output_short = method.output_type.rsplit(".", 1)[-1]
 
+            # Qualify with the proto outer class (e.g., PowerReading → Power.PowerReading)
+            output_qualified = _qualify_java_type(output_short, interface)
+
             # Build parameter list from input message fields
             params, call_builder = _build_method_params(
-                input_short, method, interface.messages
+                input_short, method, interface.messages, interface,
             )
 
             # Javadoc
@@ -244,7 +247,7 @@ class JavaLanguageGenerator(LanguageGenerator):
 
             if method.server_streaming:
                 lines.append(
-                    f"    public Iterator<{output_short}> {method_java_name}({', '.join(params)}) {{"
+                    f"    public Iterator<{output_qualified}> {method_java_name}({', '.join(params)}) {{"
                 )
                 lines.append(f"        return stub.{method_java_name}({call_builder});")
             else:
@@ -255,7 +258,7 @@ class JavaLanguageGenerator(LanguageGenerator):
                     lines.append(f"        stub.{method_java_name}({call_builder});")
                 else:
                     lines.append(
-                        f"    public {output_short} {method_java_name}({', '.join(params)}) {{"
+                        f"    public {output_qualified} {method_java_name}({', '.join(params)}) {{"
                     )
                     lines.append(
                         f"        return stub.{method_java_name}({call_builder});"
@@ -454,10 +457,38 @@ def _pascal_to_snake(name: str) -> str:
     return s.lower()
 
 
+def _proto_outer_class(interface: DriverInterfaceRef) -> str:
+    """Derive the Java outer class name from the proto package.
+
+    Proto package jumpstarter.interfaces.power.v1 → file power.proto → outer class Power
+    Proto package jumpstarter.interfaces.storage_mux.v1 → file storage_mux.proto → outer class StorageMux
+    """
+    parts = interface.proto_package.split(".")
+    if len(parts) >= 3 and parts[0] == "jumpstarter" and parts[1] == "interfaces":
+        name = parts[2]
+    else:
+        name = parts[-2] if len(parts) >= 2 else parts[-1]
+    return _snake_to_pascal(name)
+
+
+def _qualify_java_type(type_short: str, interface: DriverInterfaceRef) -> str:
+    """Qualify a short proto message name with the Java outer class.
+
+    PowerReading → Power.PowerReading
+    ReadRequest → StorageMux.ReadRequest
+    Empty → Empty (no change for well-known types)
+    """
+    if type_short == "Empty":
+        return type_short
+    outer = _proto_outer_class(interface)
+    return f"{outer}.{type_short}"
+
+
 def _build_method_params(
     input_short: str,
     method: InterfaceMethod,
     messages: list[ProtoMessage],
+    interface: DriverInterfaceRef | None = None,
 ) -> tuple[list[str], str]:
     """Build Java method parameters and call expression for a gRPC method.
 
@@ -465,6 +496,9 @@ def _build_method_params(
     """
     if input_short == "Empty":
         return [], "Empty.getDefaultInstance()"
+
+    # Qualify with outer class if interface is provided
+    input_qualified = _qualify_java_type(input_short, interface) if interface else input_short
 
     # Find the input message
     input_msg = None
@@ -474,7 +508,7 @@ def _build_method_params(
             break
 
     if input_msg is None or not input_msg.fields:
-        return [], f"{input_short}.getDefaultInstance()"
+        return [], f"{input_qualified}.getDefaultInstance()"
 
     params: list[str] = []
     builder_calls: list[str] = []
@@ -495,7 +529,7 @@ def _build_method_params(
         builder_calls.append(f".{setter}({param_name})")
 
     builder_expr = (
-        f"{input_short}.newBuilder()"
+        f"{input_qualified}.newBuilder()"
         + "".join(builder_calls)
         + ".build()"
     )

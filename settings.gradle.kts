@@ -15,6 +15,8 @@ gradle.allprojects {
         resolutionStrategy.dependencySubstitution {
             substitute(module("dev.jumpstarter:jumpstarter-client"))
                 .using(project(":java:jumpstarter-client"))
+            substitute(module("dev.jumpstarter:jumpstarter-driver-network"))
+                .using(project(":java:jumpstarter-driver-network"))
         }
     }
 }

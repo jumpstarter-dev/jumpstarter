@@ -68,11 +68,17 @@ class ExampleBoardTest {
     // -- Optional network --
 
     @Test
-    void optionalNetwork() {
-        // network is declared optional in the ExporterClass,
-        // so it may be null if the exporter doesn't provide it
-        if (device.network() != null) {
-            // network.connect() returns a bidi byte stream
+    void networkEcho() throws Exception {
+        assertNotNull(device.network(), "Expected network driver in this exporter");
+        java.net.InetSocketAddress addr = device.network().connectTcp();
+        try (java.net.Socket sock = new java.net.Socket(addr.getAddress(), addr.getPort())) {
+            sock.getOutputStream().write("hello".getBytes());
+            sock.getOutputStream().flush();
+            byte[] buf = new byte[5];
+            int n = sock.getInputStream().read(buf);
+            assertEquals("hello", new String(buf, 0, n));
+        } finally {
+            device.network().close();
         }
     }
 }

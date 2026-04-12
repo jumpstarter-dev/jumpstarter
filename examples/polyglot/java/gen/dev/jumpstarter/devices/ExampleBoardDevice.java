@@ -3,7 +3,7 @@ package dev.jumpstarter.devices;
 import dev.jumpstarter.client.ExporterSession;
 import dev.jumpstarter.interfaces.power.v1.PowerClient;
 import dev.jumpstarter.interfaces.storage_mux.v1.StorageMuxClient;
-import dev.jumpstarter.interfaces.network.v1.NetworkClient;
+import dev.jumpstarter.driver.network.NetworkClient;
 import org.jetbrains.annotations.Nullable;
 
 /**

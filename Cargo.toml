@@ -28,3 +28,12 @@ jumpstarter-client = { path = "rust/jumpstarter-client" }
 jumpstarter-driver-network = { path = "rust/jumpstarter-driver-network" }
 jumpstarter-testing = { path = "rust/jumpstarter-testing" }
 jumpstarter-testing-macros = { path = "rust/jumpstarter-testing-macros" }
+
+# Force all crate dependencies to resolve to local paths.
+# This lets generated Cargo.toml files use standalone crates.io versions
+# (for external users) while the monorepo resolves them locally.
+[patch.crates-io]
+jumpstarter-client = { path = "rust/jumpstarter-client" }
+jumpstarter-driver-network = { path = "rust/jumpstarter-driver-network" }
+jumpstarter-testing = { path = "rust/jumpstarter-testing" }
+jumpstarter-testing-macros = { path = "rust/jumpstarter-testing-macros" }
