@@ -116,6 +116,24 @@ def _client_class_name(interface: DriverInterfaceRef) -> str:
     return interface.service_name.replace("Interface", "Client")
 
 
+def _resolve_ts_import(interface: DriverInterfaceRef) -> tuple[str, str, bool]:
+    """Resolve the TypeScript import for an interface client.
+
+    Returns (import_path, class_name, is_external).
+    When is_external is True, the client comes from an external npm package
+    and should not be generated.
+    """
+    hint = interface.drivers.get("typescript")
+    if hint and hint.client_class:
+        # External package provides the client
+        pkg = hint.package or f"@jumpstarter/driver-{interface.name}"
+        return pkg, hint.client_class, True
+
+    # Convention: use generated local client
+    client_class = _client_class_name(interface)
+    return f"./{client_class}", client_class, False
+
+
 def _proto_filename(interface: DriverInterfaceRef) -> str:
     """Derive the proto filename from the interface.
 
@@ -335,8 +353,8 @@ def _gen_device_wrapper(ctx: CodegenContext) -> str:
     lines.append('import { ExporterSession } from "@jumpstarter/client";')
 
     for iface in ec.interfaces:
-        client_class = _client_class_name(iface)
-        lines.append(f'import {{ {client_class} }} from "./{client_class}";')
+        import_path, client_class, _ = _resolve_ts_import(iface)
+        lines.append(f'import {{ {client_class} }} from "{import_path}";')
 
     lines.append("")
 
@@ -449,6 +467,19 @@ def _gen_package_json(ctx: CodegenContext) -> str:
     ec = ctx.exporter_class
     pkg_name = ctx.package_name or f"@jumpstarter/device-{ec.name}"
 
+    deps: dict[str, str] = {
+        "@jumpstarter/client": "^0.1.0",
+        "@grpc/grpc-js": "^1.10.0",
+        "@grpc/proto-loader": "^0.7.0",
+    }
+
+    # Add external driver package dependencies
+    for iface in ec.interfaces:
+        hint = iface.drivers.get("typescript")
+        if hint and hint.client_class and hint.package:
+            version = hint.version or "^0.1.0"
+            deps[hint.package] = version
+
     pkg = {
         "name": pkg_name,
         "version": "0.1.0",
@@ -458,11 +489,7 @@ def _gen_package_json(ctx: CodegenContext) -> str:
         "scripts": {
             "build": "tsc",
         },
-        "dependencies": {
-            "@jumpstarter/client": "^0.1.0",
-            "@grpc/grpc-js": "^1.10.0",
-            "@grpc/proto-loader": "^0.7.0",
-        },
+        "dependencies": deps,
         "devDependencies": {
             "typescript": "^5.4.0",
         },
@@ -514,6 +541,11 @@ class TypeScriptLanguageGenerator(LanguageGenerator):
         interface: DriverInterfaceRef,
     ) -> dict[str, str]:
         """Generate a per-interface typed client .ts file and bundle the .proto file."""
+        # If an external TypeScript client package is declared, skip generation
+        _, _, is_external = _resolve_ts_import(interface)
+        if is_external:
+            return {}
+
         client_class = _client_class_name(interface)
         source = _gen_interface_client(ctx, interface)
         proto_file = _proto_filename(interface)

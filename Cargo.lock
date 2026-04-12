@@ -425,6 +425,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-example-board-tests"
+version = "0.1.0"
+dependencies = [
+ "jumpstarter-client",
+ "jumpstarter-example-board",
+ "jumpstarter-testing",
+ "tokio",
+]
+
+[[package]]
 name = "jumpstarter-testing"
 version = "0.1.0"
 dependencies = [

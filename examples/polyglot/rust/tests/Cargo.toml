@@ -1,0 +1,14 @@
+[package]
+name = "jumpstarter-example-board-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# Hand-written integration tests for the generated example-board crate.
+# This crate lives OUTSIDE gen/ so it is not overwritten by `jmp codegen`.
+
+[dependencies]
+jumpstarter-example-board = { path = "../gen" }
+jumpstarter-client = { workspace = true }
+jumpstarter-testing = { workspace = true }
+tokio = { workspace = true }

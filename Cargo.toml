@@ -5,6 +5,7 @@ members = [
     "rust/jumpstarter-testing",
     "rust/jumpstarter-testing-macros",
     "examples/polyglot/rust/gen",
+    "examples/polyglot/rust/tests",
 ]
 
 [workspace.package]

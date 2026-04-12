@@ -1,17 +1,13 @@
-//! Example tests for the generated ExampleBoardDevice wrapper.
+//! Integration tests for the generated ExampleBoardDevice wrapper.
 //!
 //! Run with:
 //!   cd python && uv run jmp shell --exporter-config ../examples/polyglot/exporter.yaml \
-//!     -- cargo test --manifest-path ../examples/polyglot/rust/gen/Cargo.toml
+//!     -- cargo test -p jumpstarter-example-board-tests -- --ignored
 //!
-//! Or as an example binary (no test harness needed):
-//!   cargo run --example test_example_board
+//! Tests are marked `#[ignore]` because they require a running exporter via `jmp shell`.
 
 use jumpstarter_client::ExporterSession;
 use jumpstarter_example_board::devices::example_board::ExampleBoardDevice;
-
-// Integration tests require jmp shell — marked as ignored by default.
-// Run with: cargo test -- --ignored
 
 #[tokio::test]
 #[ignore = "requires jmp shell (JUMPSTARTER_HOST)"]
@@ -44,7 +40,6 @@ async fn test_storage_mux() {
 async fn test_optional_network() {
     let session = ExporterSession::from_env().await.unwrap();
     let device = ExampleBoardDevice::new(&session);
-    // network is optional — may be None
     if let Some(ref _network) = device.network {
         // network.connect() opens a bidi byte stream
     }

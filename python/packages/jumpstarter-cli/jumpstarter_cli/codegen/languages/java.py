@@ -124,6 +124,34 @@ def _wrap_javadoc(text: str | None, indent: str = "    ") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Client import resolution
+# ---------------------------------------------------------------------------
+
+
+def _resolve_java_import(interface: DriverInterfaceRef) -> tuple[str, str, bool]:
+    """Resolve the Java import for an interface client.
+
+    Returns (fully_qualified_class, short_class_name, is_external).
+    When is_external is True, the client comes from an external package
+    and should not be generated. When False, we generate a stub client.
+    """
+    hint = interface.drivers.get("java")
+    if hint and hint.client_class:
+        client_class = hint.client_class
+        if "." in client_class:
+            short = client_class.rsplit(".", 1)[-1]
+            return client_class, short, True
+        elif hint.package:
+            fqn = f"{hint.package}.{client_class}"
+            return fqn, client_class, True
+
+    # Convention: generate from proto package
+    java_package = _proto_package_to_java(interface.proto_package)
+    client_name = _service_to_client_name(interface.service_name)
+    return f"{java_package}.{client_name}", client_name, False
+
+
+# ---------------------------------------------------------------------------
 # Java generator
 # ---------------------------------------------------------------------------
 
@@ -137,6 +165,11 @@ class JavaLanguageGenerator(LanguageGenerator):
     def generate_interface_client(
         self, ctx: CodegenContext, interface: DriverInterfaceRef,
     ) -> dict[str, str]:
+        # If an external Java client package is declared, skip generation
+        _, _, is_external = _resolve_java_import(interface)
+        if is_external:
+            return {}
+
         java_package = _proto_package_to_java(interface.proto_package)
         package_path = java_package.replace(".", "/")
         client_name = _service_to_client_name(interface.service_name)
@@ -247,11 +280,10 @@ class JavaLanguageGenerator(LanguageGenerator):
         lines.append("")
         lines.append("import dev.jumpstarter.client.ExporterSession;")
 
-        # Import per-interface client classes
+        # Import per-interface client classes (external packages or generated stubs)
         for iface in ec.interfaces:
-            java_package = _proto_package_to_java(iface.proto_package)
-            client_name = _service_to_client_name(iface.service_name)
-            lines.append(f"import {java_package}.{client_name};")
+            fqn, _, _ = _resolve_java_import(iface)
+            lines.append(f"import {fqn};")
 
         # Nullable annotation for optional interfaces
         has_optional = any(
@@ -273,7 +305,7 @@ class JavaLanguageGenerator(LanguageGenerator):
 
         # Fields
         for iface in ec.interfaces:
-            client_name = _service_to_client_name(iface.service_name)
+            _, client_name, _ = _resolve_java_import(iface)
             accessor = iface.name
             if iface.optionality == Optionality.OPTIONAL:
                 lines.append(
@@ -291,7 +323,7 @@ class JavaLanguageGenerator(LanguageGenerator):
         # Constructor
         lines.append(f"    public {device_class}(ExporterSession session) {{")
         for iface in ec.interfaces:
-            client_name = _service_to_client_name(iface.service_name)
+            _, client_name, _ = _resolve_java_import(iface)
             accessor = iface.name
             if iface.optionality == Optionality.OPTIONAL:
                 lines.append(
@@ -307,7 +339,7 @@ class JavaLanguageGenerator(LanguageGenerator):
 
         # Accessors
         for iface in ec.interfaces:
-            client_name = _service_to_client_name(iface.service_name)
+            _, client_name, _ = _resolve_java_import(iface)
             accessor = iface.name
             if iface.optionality == Optionality.OPTIONAL:
                 lines.append(f"    @Nullable")
@@ -355,6 +387,22 @@ class JavaLanguageGenerator(LanguageGenerator):
         lines.append("")
         lines.append("dependencies {")
         lines.append('    implementation("dev.jumpstarter:jumpstarter-client:0.1.0-SNAPSHOT")')
+
+        # Add external driver package dependencies
+        for iface in ec.interfaces:
+            hint = iface.drivers.get("java")
+            if hint and hint.client_class and hint.package:
+                # hint.package is a Gradle project path (e.g. ":java:jumpstarter-driver-network")
+                # or a Maven coordinate (e.g. "dev.jumpstarter:driver-network:0.1.0")
+                pkg = hint.package
+                if pkg.startswith(":") or pkg.startswith("java:"):
+                    # Gradle project reference
+                    if not pkg.startswith(":"):
+                        pkg = f":{pkg}"
+                    lines.append(f'    implementation(project("{pkg}"))')
+                else:
+                    lines.append(f'    implementation("{pkg}")')
+
         lines.append('    implementation("io.grpc:grpc-netty-shaded:1.68.1")')
         lines.append('    implementation("io.grpc:grpc-protobuf:1.68.1")')
         lines.append('    implementation("io.grpc:grpc-stub:1.68.1")')
