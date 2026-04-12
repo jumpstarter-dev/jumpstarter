@@ -1456,6 +1456,11 @@ def _compile_proto_stubs(
     default=False,
     help="Only generate the servicer adapter (skip interface/client/driver).",
 )
+@click.option(
+    "--language", "-l",
+    default="python",
+    help="Target language (python, java, typescript, rust). Default: python.",
+)
 def generate(
     package_path: str | None,
     proto: str | None,
@@ -1463,35 +1468,95 @@ def generate(
     output: str | None,
     proto_path: tuple[str, ...],
     servicer_only: bool,
+    language: str,
 ):
     """Generate native gRPC code from .proto interface definitions.
 
     \b
-    Auto-discovery mode (recommended):
+    Auto-discovery mode (recommended, Python only):
       jmp proto generate packages/jumpstarter-driver-power
       Discovers all .proto files under proto/, derives output paths automatically.
 
     \b
-    Explicit mode:
+    Explicit mode (all languages):
       jmp proto generate --proto power.proto --output-package jumpstarter_driver_power -o out/
-      Generates from a single .proto file with explicit paths.
+      jmp proto generate -l java --proto power.proto --output-package dev.jumpstarter.driver.power -o java/jumpstarter-driver-power/
+
+    \b
+    Non-Python languages generate a complete driver client package with
+    build configuration, proto compilation, and @exportstream port-forward wiring.
     """
+    if language != "python" and package_path:
+        raise click.ClickException(
+            "Auto-discovery mode (PACKAGE_PATH) is only supported for Python.\n"
+            "Use --proto with --language for non-Python languages."
+        )
+
     if package_path and proto:
         raise click.ClickException("Specify PACKAGE_PATH or --proto, not both.")
 
-    if package_path:
-        _generate_from_package(package_path, proto_path, servicer_only)
-    elif proto:
-        if not output_package:
-            raise click.ClickException("--output-package is required in explicit mode.")
-        if not output:
-            raise click.ClickException("--output is required in explicit mode.")
-        _generate_from_proto(proto, output_package, output, proto_path, servicer_only)
+    if language == "python":
+        if package_path:
+            _generate_from_package(package_path, proto_path, servicer_only)
+        elif proto:
+            if not output_package:
+                raise click.ClickException("--output-package is required in explicit mode.")
+            if not output:
+                raise click.ClickException("--output is required in explicit mode.")
+            _generate_from_proto(proto, output_package, output, proto_path, servicer_only)
+        else:
+            raise click.ClickException(
+                "Provide PACKAGE_PATH for auto-discovery, or --proto for explicit mode.\n"
+                "  Example: jmp proto generate packages/jumpstarter-driver-power"
+            )
     else:
+        # Non-Python: generate driver client package
+        if not proto:
+            raise click.ClickException("--proto is required for non-Python languages.")
+        if not output:
+            raise click.ClickException("--output is required for non-Python languages.")
+        if not output_package:
+            raise click.ClickException("--output-package is required for non-Python languages.")
+
+        _generate_driver_package(language, proto, output_package, output, proto_path)
+
+
+def _generate_driver_package(
+    language: str,
+    proto_file: str,
+    output_package: str,
+    output_dir: str,
+    proto_path: tuple[str, ...],
+) -> None:
+    """Generate a complete driver client package for a non-Python language."""
+    from jumpstarter_cli.proto_languages import get_language_generator
+
+    generator = get_language_generator(language)
+    if generator is None:
+        available = ", ".join(["python", "java", "typescript", "rust"])
         raise click.ClickException(
-            "Provide PACKAGE_PATH for auto-discovery, or --proto for explicit mode.\n"
-            "  Example: jmp proto generate packages/jumpstarter-driver-power"
+            f"Unsupported language: {language}. Available: {available}"
         )
+
+    fd = _parse_proto_file(proto_file, list(proto_path) if proto_path else None)
+    if not fd.service:
+        raise click.ClickException(f"No service found in {proto_file}")
+
+    # Read the .proto source for bundling
+    with open(proto_file) as f:
+        proto_source = f.read()
+
+    files = generator(fd, output_dir, output_package, proto_source)
+
+    os.makedirs(output_dir, exist_ok=True)
+    for rel_path, content in files.items():
+        filepath = os.path.join(output_dir, rel_path)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w") as f:
+            f.write(content)
+        click.echo(f"  Generated {filepath}")
+
+    click.echo(f"\nGenerated {len(files)} file(s) for {language} driver package '{output_package}'.")
 
 
 def _generate_from_package(

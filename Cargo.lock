@@ -411,6 +411,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-network"
+version = "0.1.0"
+dependencies = [
+ "jumpstarter-client",
+ "prost",
+ "prost-types",
+ "tokio",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "jumpstarter-example-board"
 version = "0.1.0"
 dependencies = [

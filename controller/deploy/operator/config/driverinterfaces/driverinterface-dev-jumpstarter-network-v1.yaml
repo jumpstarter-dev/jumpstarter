@@ -18,3 +18,12 @@ spec:
         - "jumpstarter_driver_network.driver:UnixNetwork"
         - "jumpstarter_driver_network.driver:VsockNetwork"
         - "jumpstarter_driver_network.driver:WebsocketNetwork"
+    - language: java
+      package: ":java:jumpstarter-driver-network"
+      clientClass: "dev.jumpstarter.driver.network.NetworkClient"
+    - language: typescript
+      package: "@jumpstarter/driver-network"
+      clientClass: "NetworkClient"
+    - language: rust
+      package: "jumpstarter-driver-network"
+      clientClass: "jumpstarter_driver_network::NetworkClient"

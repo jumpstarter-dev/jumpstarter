@@ -5,6 +5,7 @@
 //! `jmp shell`.
 
 pub mod interceptor;
+pub mod portforward;
 pub mod report;
 pub mod session;
 pub mod stream_channel;
@@ -19,6 +20,8 @@ pub mod proto {
 }
 
 pub use interceptor::UuidInterceptor;
+pub use portforward::TcpPortforwardAdapter;
+pub use portforward::UdpPortforwardAdapter;
 pub use report::DriverReport;
 pub use session::ExporterSession;
 pub use stream_channel::StreamChannel;

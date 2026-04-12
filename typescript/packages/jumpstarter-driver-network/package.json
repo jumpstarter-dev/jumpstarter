@@ -1,0 +1,35 @@
+{
+  "name": "@jumpstarter/driver-network",
+  "version": "0.1.0",
+  "description": "Jumpstarter network driver client for TypeScript — typed gRPC access and TCP/UDP port forwarding",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "jumpstarter",
+    "grpc",
+    "hardware-testing",
+    "network",
+    "port-forwarding"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@jumpstarter/client": "0.1.0",
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "proto/**/*.proto"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

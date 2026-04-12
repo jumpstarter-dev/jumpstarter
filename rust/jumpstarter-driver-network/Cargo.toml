@@ -1,0 +1,17 @@
+[package]
+name = "jumpstarter-driver-network"
+description = "Jumpstarter network driver client — TCP and UDP port-forwarding to remote network interfaces"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+jumpstarter-client = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+tonic = { workspace = true }
+tokio = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }

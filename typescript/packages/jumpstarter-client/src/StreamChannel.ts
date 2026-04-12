@@ -73,6 +73,16 @@ export class StreamChannel implements AsyncIterable<Uint8Array> {
   }
 
   /**
+   * Wrap an already-opened bidirectional stream as a StreamChannel.
+   *
+   * @param stream - An open ClientDuplexStream (e.g. from `makeBidiStreamRequest`)
+   * @returns A StreamChannel wrapping the stream
+   */
+  static fromStream(stream: ClientDuplexStream<any, any>): StreamChannel {
+    return new StreamChannel(stream);
+  }
+
+  /**
    * Write data to the remote side.
    *
    * @param data - The data to send

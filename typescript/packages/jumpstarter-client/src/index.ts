@@ -16,3 +16,5 @@ export { DriverReport } from "./DriverReport";
 export type { DriverInstance } from "./DriverReport";
 export { StreamChannel } from "./StreamChannel";
 export { createUuidInterceptor, uuidInterceptors } from "./UuidMetadataInterceptor";
+export { TcpPortforwardAdapter } from "./TcpPortforwardAdapter";
+export { UdpPortforwardAdapter } from "./UdpPortforwardAdapter";

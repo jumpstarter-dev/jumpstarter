@@ -2,6 +2,7 @@
 
 use bytes::Bytes;
 use tokio::sync::mpsc;
+use tonic::metadata::MetadataMap;
 use tonic::Streaming;
 
 use crate::proto::jumpstarter::v1::router_service_client::RouterServiceClient;
@@ -40,6 +41,20 @@ impl StreamChannel {
         (mpsc::Sender<Bytes>, mpsc::Receiver<Bytes>),
         Box<dyn std::error::Error + Send + Sync>,
     > {
+        Self::open_with_metadata(channel, MetadataMap::new()).await
+    }
+
+    /// Open a new stream channel with custom gRPC metadata headers.
+    ///
+    /// This is used by `TcpPortforwardAdapter` to route streams to the correct
+    /// driver instance and method.
+    pub async fn open_with_metadata(
+        channel: tonic::transport::Channel,
+        metadata: MetadataMap,
+    ) -> Result<
+        (mpsc::Sender<Bytes>, mpsc::Receiver<Bytes>),
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         let mut client = RouterServiceClient::new(channel);
 
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<Bytes>(64);
@@ -55,7 +70,10 @@ impl StreamChannel {
             }
         };
 
-        let response = client.stream(outbound_stream).await?;
+        let mut request = tonic::Request::new(outbound_stream);
+        *request.metadata_mut() = metadata;
+
+        let response = client.stream(request).await?;
         let mut inbound: Streaming<StreamResponse> = response.into_inner();
 
         // Spawn a task to forward inbound messages to the receiver

@@ -1,5 +1,12 @@
 package dev.jumpstarter.client;
 
+import io.grpc.CallOptions;
+import io.grpc.Channel;
+import io.grpc.ClientCall;
+import io.grpc.ClientInterceptor;
+import io.grpc.ForwardingClientCall;
+import io.grpc.Metadata;
+import io.grpc.MethodDescriptor;
 import io.grpc.stub.StreamObserver;
 import jumpstarter.v1.Router;
 import jumpstarter.v1.RouterServiceGrpc;
@@ -43,6 +50,50 @@ public final class StreamChannel implements AutoCloseable {
      */
     @NotNull
     public static StreamChannel open(@NotNull RouterServiceGrpc.RouterServiceStub stub) {
+        return open(stub, null);
+    }
+
+    /**
+     * Open a new stream channel for a driver stream method.
+     *
+     * <p>Sends gRPC metadata matching the Python client's {@code StreamRequestMetadata}
+     * format: a {@code request} header containing a JSON-encoded
+     * {@code DriverStreamRequest}.
+     *
+     * @param stub       the RouterService async stub
+     * @param driverUuid the target driver instance UUID
+     * @param method     the stream method name (e.g. "connect")
+     * @return an open stream channel
+     */
+    @NotNull
+    public static StreamChannel open(
+            @NotNull RouterServiceGrpc.RouterServiceStub stub,
+            @NotNull String driverUuid,
+            @NotNull String method) {
+        Metadata metadata = new Metadata();
+        metadata.put(
+                Metadata.Key.of("request", Metadata.ASCII_STRING_MARSHALLER),
+                "{\"kind\":\"driver\",\"uuid\":\"" + driverUuid + "\",\"method\":\"" + method + "\"}");
+        return open(stub.withInterceptors(new ClientInterceptor() {
+            @Override
+            public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
+                    MethodDescriptor<ReqT, RespT> method, CallOptions callOptions, Channel next) {
+                return new ForwardingClientCall.SimpleForwardingClientCall<>(
+                        next.newCall(method, callOptions)) {
+                    @Override
+                    public void start(Listener<RespT> responseListener, Metadata headers) {
+                        headers.merge(metadata);
+                        super.start(responseListener, headers);
+                    }
+                };
+            }
+        }), null);
+    }
+
+    @NotNull
+    private static StreamChannel open(
+            @NotNull RouterServiceGrpc.RouterServiceStub stub,
+            @SuppressWarnings("unused") Void ignored) {
         StreamChannel channel = new StreamChannel(null);
         StreamObserver<Router.StreamRequest> reqObserver = stub.stream(
                 new StreamObserver<>() {
