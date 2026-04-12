@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
+from . import network_pb2 as network__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -37,8 +37,8 @@ class NetworkInterfaceStub(object):
         """
         self.Connect = channel.stream_stream(
                 '/jumpstarter.interfaces.network.v1.NetworkInterface/Connect',
-                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                request_serializer=network__pb2.StreamData.SerializeToString,
+                response_deserializer=network__pb2.StreamData.FromString,
                 _registered_method=True)
 
 
@@ -58,8 +58,8 @@ def add_NetworkInterfaceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Connect': grpc.stream_stream_rpc_method_handler(
                     servicer.Connect,
-                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                    request_deserializer=network__pb2.StreamData.FromString,
+                    response_serializer=network__pb2.StreamData.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -88,8 +88,8 @@ class NetworkInterface(object):
             request_iterator,
             target,
             '/jumpstarter.interfaces.network.v1.NetworkInterface/Connect',
-            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            network__pb2.StreamData.SerializeToString,
+            network__pb2.StreamData.FromString,
             options,
             channel_credentials,
             insecure,

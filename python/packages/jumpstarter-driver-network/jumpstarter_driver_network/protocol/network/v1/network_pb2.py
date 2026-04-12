@@ -22,16 +22,17 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rnetwork.proto\x12!jumpstarter.interfaces.network.v1\x1a\x1bgoogle/protobuf/empty.proto2Q\n\x10NetworkInterface\x12=\n\x07\x43onnect\x12\x16.google.protobuf.Empty\x1a\x16.google.protobuf.Empty(\x01\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rnetwork.proto\x12!jumpstarter.interfaces.network.v1\"\x1d\n\nStreamData\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\x32\x7f\n\x10NetworkInterface\x12k\n\x07\x43onnect\x12-.jumpstarter.interfaces.network.v1.StreamData\x1a-.jumpstarter.interfaces.network.v1.StreamData(\x01\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'network_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_NETWORKINTERFACE']._serialized_start=81
-  _globals['_NETWORKINTERFACE']._serialized_end=162
+  _globals['_STREAMDATA']._serialized_start=52
+  _globals['_STREAMDATA']._serialized_end=81
+  _globals['_NETWORKINTERFACE']._serialized_start=83
+  _globals['_NETWORKINTERFACE']._serialized_end=210
 # @@protoc_insertion_point(module_scope)

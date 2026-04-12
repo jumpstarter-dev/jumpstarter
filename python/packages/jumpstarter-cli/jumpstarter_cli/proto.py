@@ -1150,7 +1150,14 @@ def _gen_servicer_py(fd: FileDescriptorProto, output_package: str) -> str:
         lines.append(f"from inspect import {', '.join(sorted(inspect_imports))}")
         lines.append("")
 
+    has_stream_data_bidi = any(
+        m.client_streaming and m.input_type.endswith(".StreamData")
+        for m in service.method
+    )
+
     lines.append("import grpc")
+    if has_stream_data_bidi:
+        lines.append("import anyio")
     if needs_empty:
         lines.append("from google.protobuf.empty_pb2 import Empty")
     lines.append("")
@@ -1216,12 +1223,32 @@ def _gen_servicer_method(
     is_empty_input = input_short == "Empty"
     is_empty_output = output_short == "Empty"
 
-    # Bidi or client-streaming → UNIMPLEMENTED (uses RouterService.Stream)
+    # Bidi streaming with StreamData → native @exportstream byte forwarding
+    if method.client_streaming and input_short == "StreamData":
+        lines.append(f"    async def {proto_method_name}(self, request_iterator, context):")
+        lines.append(f"        driver = await self._registry.resolve(context, SERVICE_NAME)")
+        lines.append(f"        async with driver.{method_name}() as stream:")
+        lines.append(f"            async def _inbound():")
+        lines.append(f"                async for msg in request_iterator:")
+        lines.append(f"                    await stream.send(msg.payload)")
+        lines.append(f"                await stream.send_eof()")
+        lines.append(f"            async with anyio.create_task_group() as tg:")
+        lines.append(f"                tg.start_soon(_inbound)")
+        lines.append(f"                try:")
+        lines.append(f"                    while True:")
+        lines.append(f"                        data = await stream.receive()")
+        lines.append(f"                        yield {proto_filename}_pb2.StreamData(payload=data)")
+        lines.append(f"                except (anyio.EndOfStream, anyio.ClosedResourceError):")
+        lines.append(f"                    pass")
+        lines.append(f"                tg.cancel_scope.cancel()")
+        return
+
+    # Bidi or client-streaming with other types → UNIMPLEMENTED
     if method.client_streaming:
         lines.append(f"    async def {proto_method_name}(self, request_iterator, context):")
         lines.append(f"        await context.abort(")
         lines.append(f"            grpc.StatusCode.UNIMPLEMENTED,")
-        lines.append(f'            "{proto_method_name} uses RouterService.Stream, not native gRPC",')
+        lines.append(f'            "{proto_method_name} bidi streaming not implemented for native gRPC",')
         lines.append(f"        )")
         return
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 from inspect import isasyncgenfunction
 
 import grpc
-from google.protobuf.empty_pb2 import Empty
+import anyio
 
 from . import network_pb2, network_pb2_grpc
 
@@ -37,10 +37,21 @@ class NetworkInterfaceServicer(network_pb2_grpc.NetworkInterfaceServicer):
         self._registry = registry
 
     async def Connect(self, request_iterator, context):
-        await context.abort(
-            grpc.StatusCode.UNIMPLEMENTED,
-            "Connect uses RouterService.Stream, not native gRPC",
-        )
+        driver = await self._registry.resolve(context, SERVICE_NAME)
+        async with driver.connect() as stream:
+            async def _inbound():
+                async for msg in request_iterator:
+                    await stream.send(msg.payload)
+                await stream.send_eof()
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(_inbound)
+                try:
+                    while True:
+                        data = await stream.receive()
+                        yield network_pb2.StreamData(payload=data)
+                except (anyio.EndOfStream, anyio.ClosedResourceError):
+                    pass
+                tg.cancel_scope.cancel()
 
 
 # Register the adapter at import time so the Session can discover it.
