@@ -342,25 +342,18 @@ func extractOIDCConfigs(reader client.Reader, namespace string) []login.OIDCConf
 		return nil
 	}
 
-	// Try new config format first
 	rawConfig, ok := configmap.Data["config"]
-	if ok {
-		var cfg config.Config
-		if err := yaml.UnmarshalStrict([]byte(rawConfig), &cfg); err == nil {
-			return jwtAuthenticatorsToOIDCConfigs(cfg.Authentication.JWT)
-		}
+	if !ok {
+		return nil
 	}
 
-	// Fall back to legacy authentication format
-	rawAuth, ok := configmap.Data["authentication"]
-	if ok {
-		var auth config.Authentication
-		if err := yaml.Unmarshal([]byte(rawAuth), &auth); err == nil {
-			return jwtAuthenticatorsToOIDCConfigs(auth.JWT)
-		}
+	var cfg config.Config
+	if err := yaml.UnmarshalStrict([]byte(rawConfig), &cfg); err != nil {
+		setupLog.Error(err, "unable to parse config for OIDC config extraction")
+		return nil
 	}
 
-	return nil
+	return jwtAuthenticatorsToOIDCConfigs(cfg.Authentication.JWT)
 }
 
 // jwtAuthenticatorsToOIDCConfigs converts JWT authenticators to login OIDC configs
