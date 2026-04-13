@@ -18,7 +18,7 @@
 
 ## Abstract
 
-This JEP replaces Jumpstarter's underlying driver wire protocol — the generic `ExporterService.DriverCall` / `StreamingDriverCall` dispatch — with native gRPC services generated from the `.proto` interface definitions that JEP-0001 already produces. Each driver interface (power, ADB, serial, flasher, etc.) becomes a real gRPC service on the exporter, with `protoc`-generated code handling serialization on both sides. Critically, **both the client-side and exporter-side programming models remain unchanged**: drivers continue to use `@export` decorated methods, and clients continue to use `DriverClient.call("method")` or typed client classes like `PowerClient`. The native gRPC translation is handled transparently by generated adapter code under the hood. A metadata-based UUID routing mechanism (`x-jumpstarter-driver-uuid`) disambiguates multiple instances of the same interface. `@exportstream` methods and the resource mechanism continue to use `RouterService.Stream` for raw byte transport. This JEP eliminates the `Value` serialization layer at the transport level, enables standard gRPC tooling (per-method metrics, `grpcurl`, interceptors), and simplifies JEP-0004's polyglot codegen — new language clients can optionally use native `protoc` stubs directly, but are not required to.
+This JEP replaces Jumpstarter's underlying driver wire protocol — the generic `ExporterService.DriverCall` / `StreamingDriverCall` dispatch — with native gRPC services generated from the `.proto` interface definitions that JEP-0001 already produces. Each driver interface (power, ADB, serial, flasher, etc.) becomes a real gRPC service on the exporter, with `protoc`-generated code handling serialization on both sides. Critically, **both the client-side and exporter-side programming models remain unchanged**: drivers continue to use `@export` decorated methods, and clients continue to use `DriverClient.call("method")` or typed client classes like `PowerClient`. The native gRPC translation is handled transparently by generated adapter code under the hood. A metadata-based UUID routing mechanism (`x-jumpstarter-driver-uuid`) disambiguates multiple instances of the same interface. `@exportstream` methods now use native gRPC bidi streaming with `StreamData { bytes payload }` messages, while the resource mechanism continues to use `RouterService.Stream`. This JEP eliminates the `Value` serialization layer at the transport level, enables standard gRPC tooling (per-method metrics, `grpcurl`, interceptors), and simplifies JEP-0004's polyglot codegen — new language clients can optionally use native `protoc` stubs directly, but are not required to.
 
 ## Motivation
 
@@ -149,11 +149,11 @@ x-jumpstarter-driver-uuid: <uuid-string>
 
 The generated servicer reads this metadata to route to the correct driver instance. If only one instance of an interface exists on the exporter, the metadata can be omitted — the servicer defaults to the single instance. If multiple instances exist and no UUID is provided, the servicer returns `FAILED_PRECONDITION` with a descriptive message listing available instances.
 
-#### `@exportstream` Continuation
+#### `@exportstream` Native Bidi Streaming
 
-Methods decorated with `@exportstream` (e.g., `PySerial.connect()`, `TcpNetwork.connect()`) produce raw bidirectional byte streams through `RouterService.Stream`. These are transport-level constructs that don't map to typed request/response patterns. In the interface proto they appear as `rpc Connect(stream google.protobuf.Empty) returns (stream google.protobuf.Empty)`.
+Methods decorated with `@exportstream` (e.g., `PySerial.connect()`, `TcpNetwork.connect()`) produce raw bidirectional byte streams. With JEP-1's `StreamData { bytes payload }` message type, these are now served as **native gRPC bidi streaming RPCs** — the same transport as unary and server-streaming methods. In the interface proto they appear as `rpc Connect(stream StreamData) returns (stream StreamData)`.
 
-These methods continue to use `RouterService.Stream` for raw byte transport. The generated native servicer detects `@exportstream` methods and delegates them to the existing stream machinery rather than attempting typed dispatch. A client calling a stream method through the native service receives a `StreamInfo` response directing it to open a `RouterService.Stream` channel, preserving the existing behavior.
+The generated native servicer implements the bidi handler directly: it calls the driver's `@exportstream` context manager, spawns concurrent tasks for inbound (client→driver) and outbound (driver→client) byte forwarding via `StreamData.payload`, and sends initial metadata eagerly (via `context.send_initial_metadata(())`) so that clients like tonic can establish the connection without deadlocking. Non-Python clients call the native `Connect` endpoint directly, bridging local TCP/UDP sockets to the bidi stream for port forwarding — no `RouterService.Stream` dispatch needed.
 
 ### CLI Interface
 
@@ -245,17 +245,29 @@ _register()
                 )
 ```
 
-#### `@exportstream` Methods (Delegation)
+#### `@exportstream` Methods (Native Bidi Handler)
 
-For bidi-streaming methods that represent `@exportstream` constructors, the servicer delegates to the existing stream mechanism:
+For bidi-streaming methods that represent `@exportstream` constructors, the servicer implements a native handler that bridges the gRPC bidi stream to the driver's byte stream:
 
 ```python
     async def Connect(self, request_iterator, context: grpc.aio.ServicerContext):
-        driver = self._registry.resolve(context, "jumpstarter.interfaces.serial.v1.SerialInterface")
-        # Delegate to existing RouterService.Stream mechanism
+        driver = await self._registry.resolve(context, SERVICE_NAME)
         async with driver.connect() as stream:
-            async for chunk in stream:
-                yield serial_pb2.ConnectResponse(data=chunk)
+            # Send initial metadata eagerly so bidi clients don't block
+            await context.send_initial_metadata(())
+            async def _inbound():
+                async for msg in request_iterator:
+                    await stream.send(msg.payload)
+                await stream.send_eof()
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(_inbound)
+                try:
+                    while True:
+                        data = await stream.receive()
+                        yield network_pb2.StreamData(payload=data)
+                except (anyio.EndOfStream, anyio.ClosedResourceError):
+                    pass
+                tg.cancel_scope.cancel()
 ```
 
 ### DriverRegistry
