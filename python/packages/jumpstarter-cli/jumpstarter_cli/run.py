@@ -105,7 +105,7 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
                 if tls_insecure:
                     if passphrase:
                         click.echo(
-                            "WARNING: --passphrase has no effect without TLS; "
+                            "WARNING: passphrase authentication is active but TLS is disabled; "
                             "the passphrase will be transmitted in plaintext",
                             err=True,
                         )
