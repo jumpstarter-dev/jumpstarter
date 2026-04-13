@@ -214,7 +214,12 @@ async def test_fetch_exporter_labels_failure():
     assert lease.exporter_labels == {}
 
 
-def test_generate_shell_init_uses_absolute_paths_for_completion():
+def test_generate_shell_init_uses_absolute_paths_for_completion(monkeypatch):
+    def fake_which(name):
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr(shutil, "which", fake_which)
+
     content = _generate_shell_init("zsh", use_profiles=True, j_commands=None)
     for line in content.splitlines():
         if "completion zsh" in line and "eval" in line:
