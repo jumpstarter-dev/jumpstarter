@@ -1,41 +1,133 @@
 """Tests for CSV format parser."""
 
+from base64 import b64encode
 from shutil import which
 
 import pytest
 
 from .client import SigrokClient
-from .common import CaptureConfig, CaptureResult, OutputFormat
-from .driver import Sigrok
-from jumpstarter.common.utils import serve
+from .common import CaptureConfig, CaptureResult, OutputFormat, Sample
+from .csv import parse_csv
 
 
-@pytest.fixture
-def demo_driver_instance():
-    """Create a Sigrok driver instance configured for the demo device."""
-    # Demo driver has 8 digital channels (D0-D7) and 5 analog (A0-A4)
-    # Map device channels to decoder-friendly semantic names
-    return Sigrok(
-        driver="demo",
-        executable="sigrok-cli",
-        channels={
-            "D0": "vcc",
-            "D1": "cs",
-            "D2": "miso",
-            "D3": "mosi",
-            "D4": "clk",
-            "D5": "sda",
-            "D6": "scl",
-            "D7": "gnd",
-        },
-    )
+# ---------------------------------------------------------------------------
+# Unit tests for parse_csv (no sigrok-cli required)
+# ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def demo_client(demo_driver_instance):
-    """Create a client for the demo Sigrok driver."""
-    with serve(demo_driver_instance) as client:
-        yield client
+class TestParseCsvDigitalOnly:
+    """Test parse_csv with digital-only CSV data."""
+
+    def test_digital_channels(self):
+        csv_data = (
+            b"; sigrok-cli output\n"
+            b"logic,logic,logic\n"
+            b"1,0,1\n"
+            b"0,1,0\n"
+            b"1,1,1\n"
+        )
+        samples = list(parse_csv(csv_data, "100kHz"))
+        assert len(samples) == 3
+        assert samples[0]["values"] == {"D0": 1, "D1": 0, "D2": 1}
+        assert samples[1]["values"] == {"D0": 0, "D1": 1, "D2": 0}
+        assert samples[2]["values"] == {"D0": 1, "D1": 1, "D2": 1}
+
+    def test_digital_timing(self):
+        csv_data = b"logic,logic\n1,0\n0,1\n"
+        samples = list(parse_csv(csv_data, "1MHz"))
+        assert samples[0]["time"] == pytest.approx(0.0)
+        assert samples[1]["time"] == pytest.approx(1e-6)
+
+
+class TestParseCsvAnalogOnly:
+    """Test parse_csv with analog-only CSV data."""
+
+    def test_analog_channels(self):
+        csv_data = (
+            b"; analog capture\n"
+            b"V DC,V DC\n"
+            b"3.14,2.71\n"
+            b"-1.5,0.0\n"
+        )
+        samples = list(parse_csv(csv_data, "100kHz"))
+        assert len(samples) == 2
+        assert samples[0]["values"]["A0"] == pytest.approx(3.14)
+        assert samples[0]["values"]["A1"] == pytest.approx(2.71)
+        assert samples[1]["values"]["A0"] == pytest.approx(-1.5)
+        assert samples[1]["values"]["A1"] == pytest.approx(0.0)
+
+
+class TestParseCsvMixed:
+    """Test parse_csv with mixed digital and analog CSV data."""
+
+    def test_mixed_channels(self):
+        csv_data = (
+            b"logic,logic,V DC\n"
+            b"1,0,3.3\n"
+            b"0,1,-1.2\n"
+        )
+        samples = list(parse_csv(csv_data, "100kHz"))
+        assert len(samples) == 2
+        assert samples[0]["values"] == {"D0": 1, "D1": 0, "A0": pytest.approx(3.3)}
+        assert samples[1]["values"] == {"D0": 0, "D1": 1, "A0": pytest.approx(-1.2)}
+
+
+class TestParseCsvEmpty:
+    """Test parse_csv with empty or minimal data."""
+
+    def test_empty_bytes(self):
+        samples = list(parse_csv(b"", "1MHz"))
+        assert samples == []
+
+    def test_only_comments(self):
+        csv_data = b"; comment line 1\n; comment line 2\n"
+        samples = list(parse_csv(csv_data, "1MHz"))
+        assert samples == []
+
+    def test_header_only_no_data(self):
+        csv_data = b"logic,logic\n"
+        samples = list(parse_csv(csv_data, "1MHz"))
+        assert samples == []
+
+
+class TestParseCsvSkipsAnalogPreview:
+    """Test that analog preview lines are properly skipped."""
+
+    def test_skips_preview_lines(self):
+        csv_data = (
+            b"; sigrok output\n"
+            b"A0: -10.0000 V DC\n"
+            b"A1:  5.5000 V DC\n"
+            b"V DC,V DC\n"
+            b"1.0,2.0\n"
+        )
+        samples = list(parse_csv(csv_data, "100kHz"))
+        assert len(samples) == 1
+        assert samples[0]["values"]["A0"] == pytest.approx(1.0)
+
+
+class TestParseCsvSampleRates:
+    """Test parse_csv with various sample rate formats."""
+
+    def test_khz_rate(self):
+        csv_data = b"logic\n1\n0\n"
+        samples = list(parse_csv(csv_data, "100kHz"))
+        assert samples[1]["time"] == pytest.approx(1.0 / 100e3)
+
+    def test_mhz_rate(self):
+        csv_data = b"logic\n1\n0\n"
+        samples = list(parse_csv(csv_data, "1MHz"))
+        assert samples[1]["time"] == pytest.approx(1e-6)
+
+    def test_plain_suffix_rate(self):
+        csv_data = b"logic\n1\n0\n"
+        samples = list(parse_csv(csv_data, "1M"))
+        assert samples[1]["time"] == pytest.approx(1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests (require sigrok-cli)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
