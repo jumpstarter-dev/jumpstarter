@@ -14,7 +14,7 @@ def list_drivers():
         table = Table(
             box=None,
             header_style=None,
-            pad_edge=None,
+            pad_edge=False,
         )
 
         table.add_column("NAME", no_wrap=True)
