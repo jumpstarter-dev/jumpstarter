@@ -1,10 +1,3 @@
-"""
-Common flasher interface for drivers that flash images to devices.
-
-This is a pure ABC with no external dependencies, providing a common interface
-for flasher drivers across the jumpstarter ecosystem.
-"""
-
 from __future__ import annotations
 
 from abc import ABCMeta, abstractmethod
