@@ -1,10 +1,10 @@
 //! Proc macros for the Jumpstarter test framework.
 //!
 //! Provides `#[jumpstarter_test]` which:
-//! 1. Creates an `ExporterSession` from the environment
+//! 1. Reuses a shared tokio runtime and ExporterSession (via `jumpstarter_testing::shared_session`)
 //! 2. Constructs the typed device wrapper
-//! 3. Passes it to the test function
-//! 4. Runs the test inside a `tokio` async runtime
+//! 3. Passes it to the test function body
+//! 4. Runs inside the shared runtime so tonic gRPC channels stay alive
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -13,29 +13,39 @@ use syn::{parse_macro_input, ItemFn};
 /// Attribute macro for Jumpstarter hardware test functions.
 ///
 /// Transforms an async function that takes a typed device wrapper into a
-/// `#[tokio::test]` that automatically sets up the exporter session.
+/// `#[test]` that shares a single tokio runtime and exporter session across
+/// all tests in the binary. This avoids tonic channel staleness issues that
+/// occur when each test creates its own runtime (as `#[tokio::test]` does).
 ///
 /// # Usage
 ///
 /// ```ignore
+/// use jumpstarter_testing::jumpstarter_test;
+///
 /// #[jumpstarter_test]
 /// async fn test_power_cycle(device: DevBoardDevice<'_>) {
-///     device.power.on(()).await.unwrap();
-///     device.power.off(()).await.unwrap();
+///     device.power.on().await.unwrap();
+///     device.power.off().await.unwrap();
 /// }
 /// ```
 ///
 /// Expands to:
 ///
 /// ```ignore
-/// #[tokio::test]
-/// async fn test_power_cycle() {
-///     let session = jumpstarter_testing::ExporterSession::from_env()
-///         .await
-///         .expect("failed to connect to exporter");
-///     let device = DevBoardDevice::new(&session);
-///     // ... original function body ...
+/// #[test]
+/// #[ignore = "requires jmp shell (JUMPSTARTER_HOST)"]
+/// fn test_power_cycle() {
+///     let (rt, session) = jumpstarter_testing::shared_runtime_and_session();
+///     rt.block_on(async {
+///         let device = DevBoardDevice::new(session);
+///         // ... original function body ...
+///     });
 /// }
+/// ```
+///
+/// **Important:** Run with `--test-threads=1` to ensure sequential execution:
+/// ```bash
+/// cargo test -- --ignored --test-threads=1
 /// ```
 #[proc_macro_attribute]
 pub fn jumpstarter_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -67,13 +77,14 @@ pub fn jumpstarter_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         #(#attrs)*
-        #[tokio::test]
-        async fn #fn_name() {
-            let session = jumpstarter_testing::ExporterSession::from_env()
-                .await
-                .expect("failed to connect to Jumpstarter exporter");
-            let #param_name: #param_type = #constructor_type::new(&session);
-            #fn_body
+        #[test]
+        #[ignore = "requires jmp shell (JUMPSTARTER_HOST)"]
+        fn #fn_name() {
+            let (rt, session) = jumpstarter_testing::shared_runtime_and_session();
+            rt.block_on(async {
+                let #param_name: #param_type = #constructor_type::new(session);
+                #fn_body
+            });
         }
     };
 
