@@ -108,7 +108,7 @@ def export(func):
     ...
 ```
 
-The Python type annotations are stored as-is on the function object. The conversion to protobuf descriptors happens later, at `FileDescriptorProto` generation time. The `_infer_call_type()` helper examines both the parameter and return annotations to determine streaming semantics: `AsyncGenerator[T]` or `Generator[T]` as a return type indicates server streaming, an `AsyncGenerator` parameter indicates client streaming, and the combination indicates bidirectional streaming (as used by the TCP driver). All other signatures indicate unary calls. Methods decorated with `@exportstream` (detected via the `MARKER_STREAMCALL` attribute) are handled separately — they are raw byte stream constructors that go through the `RouterService`, not `DriverCall` (see "Driver Patterns and Introspection Scope" in Design Details).
+The Python type annotations are stored as-is on the function object. The conversion to protobuf descriptors happens later, at `FileDescriptorProto` generation time. The `_infer_call_type()` helper examines both the parameter and return annotations to determine streaming semantics: `AsyncGenerator[T]` or `Generator[T]` as a return type indicates server streaming, an `AsyncGenerator` parameter indicates client streaming, and the combination indicates bidirectional streaming (as used by the TCP driver). All other signatures indicate unary calls. Methods decorated with `@exportstream` (detected via the `MARKER_STREAMCALL` attribute) are handled separately — they are raw byte stream constructors that use a `StreamData { bytes payload }` message for native gRPC bidi streaming (see "Driver Patterns and Introspection Scope" in Design Details).
 
 ### Type Mapping
 
@@ -131,7 +131,7 @@ The following table defines how Python type annotations map to protobuf field ty
 | `Literal["a", "b"]`                                | Proto `enum`                                       | String literals mapped to generated enum values                                        |
 | `AsyncGenerator[T]` / `Generator[T]`               | `server_streaming: true`                           | Method marked as server streaming                                                      |
 | Bidirectional (generator param + generator return) | `client_streaming: true`, `server_streaming: true` | Used by TCP driver, mapped to bidi stream                                              |
-| `@exportstream` context manager                    | Bidi stream `BytesValue`                           | Raw byte channel via `RouterService`; inferred from bidi `BytesValue` pattern          |
+| `@exportstream` context manager                    | Bidi stream `StreamData { bytes payload }`         | Raw byte channel via native gRPC bidi stream                                           |
 | `Optional[T]`                                      | `optional` field                                   | Proto3 optional                                                                        |
 
 #### Leveraging Pydantic for type mapping
@@ -246,7 +246,7 @@ extend google.protobuf.FieldOptions {
 
 Field number 50000 falls within the range reserved by protobuf for organization-internal use (50000–99999), avoiding collision with other projects or future protobuf additions.
 
-Note that `@exportstream` methods (raw byte stream constructors) do not need a custom annotation. They are represented as bidirectional streaming RPCs with `google.protobuf.BytesValue` request and response types — this pattern is unambiguous and sufficient for codegen tools to infer the correct dispatch mechanism (`self.stream()` on clients, `@exportstream` on drivers).
+Note that `@exportstream` methods (raw byte stream constructors) do not need a custom annotation. They are represented as bidirectional streaming RPCs with a `StreamData { bytes payload }` message type — this pattern is unambiguous and sufficient for codegen tools to infer the correct dispatch mechanism. The `StreamData` message is auto-generated into the proto package when any `@exportstream` method exists, enabling native gRPC bidi streaming for byte transport without relying on `RouterService.Stream`.
 
 #### Doc comments from docstrings
 
@@ -1063,24 +1063,25 @@ class PySerial(Driver):
             yield stream
 ```
 
-The `@exportstream` methods are async context managers that yield raw byte streams. They go through the `RouterService`'s bidirectional `Stream` RPC (which carries `StreamRequest`/`StreamResponse` with opaque `bytes payload`), not through `DriverCall`. On the client side, they're consumed via `self.stream("connect")`, not `self.call()`.
+The `@exportstream` methods are async context managers that yield raw byte streams. They are represented as native gRPC bidirectional streaming RPCs using a `StreamData { bytes payload }` message type that carries raw bytes. On the exporter, the generated servicer bridges between the gRPC bidi stream and the driver's byte stream. On the client side, non-Python clients call the native gRPC bidi endpoint directly and bridge it to local TCP/UDP sockets for port forwarding.
 
-**Proto mapping for `@exportstream`:** These methods are represented in the `FileDescriptorProto` as RPC methods with a special marker indicating they are stream constructors rather than typed RPCs. The builder detects the `MARKER_STREAMCALL` attribute set by `@exportstream` and emits a method with a Jumpstarter-specific annotation:
+**Proto mapping for `@exportstream`:** The descriptor builder detects the `MARKER_STREAMCALL` attribute set by `@exportstream` and emits a bidi streaming RPC with `StreamData` — a simple message containing a `bytes payload` field. The `StreamData` message is auto-generated into the proto package:
 
 ```protobuf
-import "google/protobuf/wrappers.proto";
-
 service NetworkInterface {
   // Opens a bidirectional byte stream to the network endpoint.
-  // This is a raw byte channel, not a typed RPC.
-  rpc Connect(stream google.protobuf.BytesValue)
-      returns (stream google.protobuf.BytesValue);
+  rpc Connect(stream StreamData) returns (stream StreamData);
+}
+
+// Byte payload for bidirectional stream methods (@exportstream).
+message StreamData {
+  bytes payload = 1;
 }
 ```
 
 Note that the `NetworkInterface` in the current codebase only defines `connect()` as an abstract method. The `address()` method that exists on some implementations (e.g., `TcpNetwork`, `WebsocketNetwork`) is a driver-level extension, not part of the interface contract, and is therefore not included in the proto.
 
-Codegen tools infer the dispatch mechanism from the proto structure: a bidirectional streaming RPC with `BytesValue` request and response is a raw byte stream constructor (`@exportstream` / `self.stream()`). No custom annotation is needed — the pattern is unambiguous. The generated client emits `self.stream("connect")` rather than `self.call("connect")`, and the generated driver adapter emits `@exportstream` rather than `@export`:
+Codegen tools infer the dispatch mechanism from the proto structure: a bidirectional streaming RPC with `StreamData` request and response is a raw byte stream constructor (`@exportstream`). The `StreamData` pattern is unambiguous — no custom annotation is needed. The generated native gRPC servicer bridges bytes between the gRPC stream and the driver's `@exportstream` context manager:
 
 ```python
 # Auto-generated client
