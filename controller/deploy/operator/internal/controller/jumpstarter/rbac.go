@@ -61,7 +61,9 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		"namespace", existingSA.Namespace,
 		"operation", op)
 
-	// Router ServiceAccount (zero RBAC, no token automount)
+	// Router ServiceAccount (uses dedicated minimal Role)
+	// Note: We intentionally do NOT set controller reference on ServiceAccount to prevent
+	// it from being garbage collected when the Jumpstarter CR is deleted
 	desiredRouterSA := r.createRouterServiceAccount(jumpstarter)
 
 	existingRouterSA := &corev1.ServiceAccount{}
@@ -289,7 +291,7 @@ func (r *JumpstarterReconciler) createServiceAccount(jumpstarter *operatorv1alph
 	}
 }
 
-// createRouterServiceAccount creates a service account for the router with minimal RBAC permissions
+// createRouterServiceAccount creates a dedicated service account for router workloads
 func (r *JumpstarterReconciler) createRouterServiceAccount(jumpstarter *operatorv1alpha1.Jumpstarter) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
