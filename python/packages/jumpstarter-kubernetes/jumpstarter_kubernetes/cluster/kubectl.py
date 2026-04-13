@@ -72,6 +72,27 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
         raise KubeconfigError(f"Error listing kubectl contexts: {e}") from e
 
 
+async def _check_cr_instances(
+    kubectl: str, context: str, namespace: Optional[str]
+) -> dict:
+    """Query for Jumpstarter CR instances to confirm full installation."""
+    cr_resource = "jumpstarters.operator.jumpstarter.dev"
+    try:
+        cr_cmd = [kubectl, "--context", context, "get", cr_resource, "-A", "-o", "json"]
+        cr_returncode, cr_stdout, _ = await run_command(cr_cmd)
+        if cr_returncode == 0:
+            cr_data = json.loads(cr_stdout)
+            if cr_data.get("items"):
+                return {
+                    "installed": True,
+                    "namespace": namespace or "unknown",
+                    "status": "installed",
+                }
+    except (json.JSONDecodeError, RuntimeError):
+        pass
+    return {}
+
+
 async def check_jumpstarter_installation(
     context: str, namespace: Optional[str] = None, kubectl: str = "kubectl"
 ) -> V1Alpha1JumpstarterInstance:
@@ -110,9 +131,11 @@ async def check_jumpstarter_installation(
 
         if jumpstarter_crds:
             result_data["has_crds"] = True
-            result_data["installed"] = True
-            result_data["namespace"] = namespace or "unknown"
-            result_data["status"] = "installed"
+
+            if "jumpstarters.operator.jumpstarter.dev" in jumpstarter_crds:
+                result_data.update(
+                    await _check_cr_instances(kubectl, context, namespace)
+                )
 
     except json.JSONDecodeError as e:
         result_data["error"] = f"Failed to parse output: {e}"

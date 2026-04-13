@@ -158,7 +158,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd deploy/operator/config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd deploy/operator/config/manager && $(KUSTOMIZE) edit set image quay.io/jumpstarter-dev/jumpstarter-operator=${IMG}
 	$(KUSTOMIZE) build deploy/operator/config/default > dist/install.yaml
 
 ##@ Deployment
