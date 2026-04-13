@@ -189,12 +189,12 @@ async fn handle_tcp_connection(
     let (outbound_tx, outbound_rx) = mpsc::channel::<StreamData>(64);
     let outbound_stream = tokio_stream::wrappers::ReceiverStream::new(outbound_rx);
 
-    let response = stub.connect(outbound_stream).await?;
-    let mut inbound = response.into_inner();
-
     let (mut tcp_read, mut tcp_write) = tcp_stream.into_split();
 
-    // TCP read -> outbound gRPC stream
+    // Start TCP→outbound producer BEFORE calling connect().
+    // This avoids a deadlock: tonic's connect().await blocks until the server
+    // sends response headers, but the server may wait for inbound data first.
+    // By spawning the producer early, data flows as soon as the TCP client sends.
     let tx_handle = tokio::spawn(async move {
         let mut buf = vec![0u8; 8192];
         loop {
@@ -211,9 +211,14 @@ async fn handle_tcp_connection(
                 Err(_) => break,
             }
         }
+        drop(outbound_tx); // Signal end of outbound stream
     });
 
-    // Inbound gRPC stream -> TCP write
+    // Now connect — outbound data can flow while we await response headers
+    let response = stub.connect(outbound_stream).await?;
+    let mut inbound = response.into_inner();
+
+    // Inbound gRPC stream → TCP write
     let rx_handle = tokio::spawn(async move {
         while let Ok(Some(msg)) = inbound.message().await {
             if tcp_write.write_all(&msg.payload).await.is_err() {

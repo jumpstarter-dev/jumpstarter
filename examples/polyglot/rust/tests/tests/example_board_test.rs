@@ -33,18 +33,12 @@ async fn test_example_board() {
     device.storage.off().await.unwrap();
 
     // -- Network echo --
-    // TODO: The native gRPC bidi stream hangs due to a tonic deadlock.
-    // tonic's stub.connect(outbound_stream).await blocks waiting for server
-    // response headers, but the Python servicer doesn't send headers until it
-    // receives inbound data — creating a deadlock. Needs restructuring to
-    // produce outbound data before awaiting the response.
-    //
-    // let network = device.network.as_mut().expect("expected network driver");
-    // let handle = network.connect_tcp().await.unwrap();
-    // let mut tcp = tokio::net::TcpStream::connect(handle.local_addr()).await.unwrap();
-    // use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    // tcp.write_all(b"hello").await.unwrap();
-    // let mut buf = [0u8; 5];
-    // tcp.read_exact(&mut buf).await.unwrap();
-    // assert_eq!(&buf, b"hello");
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let network = device.network.as_mut().expect("expected network driver in this exporter");
+    let handle = network.connect_tcp().await.unwrap();
+    let mut tcp = tokio::net::TcpStream::connect(handle.local_addr()).await.unwrap();
+    tcp.write_all(b"hello").await.unwrap();
+    let mut buf = [0u8; 5];
+    tcp.read_exact(&mut buf).await.unwrap();
+    assert_eq!(&buf, b"hello");
 }

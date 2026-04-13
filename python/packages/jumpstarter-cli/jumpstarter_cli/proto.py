@@ -1228,6 +1228,8 @@ def _gen_servicer_method(
         lines.append(f"    async def {proto_method_name}(self, request_iterator, context):")
         lines.append(f"        driver = await self._registry.resolve(context, SERVICE_NAME)")
         lines.append(f"        async with driver.{method_name}() as stream:")
+        lines.append(f"            # Send initial metadata eagerly so bidi clients (esp. tonic) don't block")
+        lines.append(f"            await context.send_initial_metadata(())")
         lines.append(f"            async def _inbound():")
         lines.append(f"                async for msg in request_iterator:")
         lines.append(f"                    await stream.send(msg.payload)")

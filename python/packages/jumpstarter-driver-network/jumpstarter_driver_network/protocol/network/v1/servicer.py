@@ -39,6 +39,8 @@ class NetworkInterfaceServicer(network_pb2_grpc.NetworkInterfaceServicer):
     async def Connect(self, request_iterator, context):
         driver = await self._registry.resolve(context, SERVICE_NAME)
         async with driver.connect() as stream:
+            # Send initial metadata eagerly so bidi clients (esp. tonic) don't block
+            await context.send_initial_metadata(())
             async def _inbound():
                 async for msg in request_iterator:
                     await stream.send(msg.payload)
