@@ -1,11 +1,3 @@
-"""
-Simplified FlasherClient that does not depend on opendal.
-
-For local files: streams via the existing resource_async mechanism using anyio.
-For HTTP URLs: passes a PresignedRequestResource directly to the exporter,
-which already handles presigned downloads via aiohttp.
-"""
-
 from __future__ import annotations
 
 from abc import ABCMeta, abstractmethod
@@ -49,7 +41,7 @@ class _AsyncIteratorStream(ObjectStream[bytes]):
         pass
 
     async def aclose(self):
-        pass
+        await self.iterator.aclose()
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
