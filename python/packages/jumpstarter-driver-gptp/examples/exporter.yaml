@@ -1,0 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+endpoint: grpc://localhost:8082
+drivers:
+  gptp:
+    type: jumpstarter_driver_gptp.driver.Gptp
+    config:
+      interface: eth0
+      domain: 0
+      profile: gptp
+      transport: L2
+      role: auto
+      sync_system_clock: true
