@@ -3,11 +3,14 @@
 syntax = "proto3";
 package jumpstarter.interfaces.network.v1;
 
-import "google/protobuf/empty.proto";
-
 // Bidirectional byte stream connection to a network endpoint.
 service NetworkInterface {
 
   // Open a bidirectional byte stream to the network endpoint.
-  rpc Connect(stream google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc Connect(stream StreamData) returns (stream StreamData);
+}
+
+// Byte payload for bidirectional stream methods (@exportstream).
+message StreamData {
+  bytes payload = 1;
 }

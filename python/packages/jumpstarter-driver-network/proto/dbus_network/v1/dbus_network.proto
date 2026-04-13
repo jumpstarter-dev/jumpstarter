@@ -3,11 +3,14 @@
 syntax = "proto3";
 package jumpstarter.interfaces.dbus_network.v1;
 
-import "google/protobuf/empty.proto";
-
 // D-Bus based network connection.
 service DbusNetwork {
 
   // Open a bidirectional byte stream via D-Bus.
-  rpc Connect(stream google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc Connect(stream StreamData) returns (stream StreamData);
+}
+
+// Byte payload for bidirectional stream methods (@exportstream).
+message StreamData {
+  bytes payload = 1;
 }

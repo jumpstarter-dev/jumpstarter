@@ -3,8 +3,6 @@
 syntax = "proto3";
 package jumpstarter.interfaces.sshmitm.v1;
 
-import "google/protobuf/empty.proto";
-
 // SSH MITM proxy driver with server-side key storage.
 // This driver acts as a network layer that provides authenticated SSH proxy
 // connections. It is designed to be used as a child of SSHWrapper.
@@ -18,5 +16,10 @@ service SSHMITM {
   //
   // This is used by SSHWrapper as the 'tcp' child - SSHWrapper spawns
   // a local SSH binary that connects through this proxy.
-  rpc Connect(stream google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc Connect(stream StreamData) returns (stream StreamData);
+}
+
+// Byte payload for bidirectional stream methods (@exportstream).
+message StreamData {
+  bytes payload = 1;
 }

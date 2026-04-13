@@ -10,9 +10,14 @@ import "google/protobuf/empty.proto";
 // provides a write (write_char_uuid) and a read (notify_char_uuid) stream
 // for data transfer.
 service BleWriteNotifyStream {
-  rpc Connect(stream google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc Connect(stream StreamData) returns (stream StreamData);
 
   rpc Info(google.protobuf.Empty) returns (InfoResponse);
+}
+
+// Byte payload for bidirectional stream methods (@exportstream).
+message StreamData {
+  bytes payload = 1;
 }
 
 message InfoResponse {

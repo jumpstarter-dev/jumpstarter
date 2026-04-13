@@ -7,11 +7,16 @@ import "google/protobuf/empty.proto";
 
 // UStreamer(*, uuid: uuid.UUID = <factory>, labels: dict[str, str] = <factory>, children: 'dict[str, Driver]' = <factory>, description: 'str | None' = None, methods_description: 'dict[str, str]' = <factory>, log_level: 'str' = 'INFO')
 service UStreamer {
-  rpc Connect(stream google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc Connect(stream StreamData) returns (stream StreamData);
 
   rpc Snapshot(google.protobuf.Empty) returns (SnapshotResponse);
 
   rpc State(google.protobuf.Empty) returns (UStreamerState);
+}
+
+// Byte payload for bidirectional stream methods (@exportstream).
+message StreamData {
+  bytes payload = 1;
 }
 
 message SnapshotResponse {

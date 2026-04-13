@@ -7,13 +7,18 @@ import "google/protobuf/empty.proto";
 
 // PySerial(*, uuid: uuid.UUID = <factory>, labels: dict[str, str] = <factory>, children: 'dict[str, Driver]' = <factory>, description: 'str | None' = None, methods_description: 'dict[str, str]' = <factory>, log_level: 'str' = 'INFO')
 service PySerial {
-  rpc Connect(stream google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc Connect(stream StreamData) returns (stream StreamData);
 
   // Set the DTR control signal.
   rpc SetDtr(SetDtrRequest) returns (google.protobuf.Empty);
 
   // Set the RTS control signal.
   rpc SetRts(SetRtsRequest) returns (google.protobuf.Empty);
+}
+
+// Byte payload for bidirectional stream methods (@exportstream).
+message StreamData {
+  bytes payload = 1;
 }
 
 message SetDtrRequest {
