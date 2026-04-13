@@ -100,56 +100,78 @@ def build_file_descriptor(
     if class_doc:
         _add_comment(locations, [_FDP_SERVICE, service_index], class_doc)
 
+    # Check if we need a StreamData message for @exportstream bidi methods
+    needs_stream_data = False
+
     interface_methods = _get_interface_methods(interface_class)
     for method_index, (method_name, method_info) in enumerate(interface_methods):
-        # Build request message
-        request_msg, req_deps = _build_request_message(
-            method_name, method_info.params, package
-        )
-        # Build response message
-        response_msg, resp_deps = _build_response_message(
-            method_name, method_info.return_type, method_info.call_type, package
+        # Detect @exportstream bidi methods with no typed params/return
+        # These are pure byte streams that use StreamData instead of Empty
+        is_exportstream_bytes = (
+            method_info.call_type == CallType.BIDI_STREAMING
+            and not method_info.params
+            and (
+                method_info.return_type is None
+                or method_info.return_type is type(None)
+                or method_info.return_type is inspect.Parameter.empty
+                or method_info.return_type == "None"
+            )
         )
 
-        # Track dependencies
-        if req_deps.get("empty") or resp_deps.get("empty"):
-            needs_empty = True
-        if req_deps.get("value") or resp_deps.get("value"):
-            needs_value = True
+        if is_exportstream_bytes:
+            needs_stream_data = True
+            # Use StreamData for byte-carrying bidi streams
+            input_type = f".{package}.StreamData"
+            output_type = f".{package}.StreamData"
+        else:
+            # Build request message
+            request_msg, req_deps = _build_request_message(
+                method_name, method_info.params, package
+            )
+            # Build response message
+            response_msg, resp_deps = _build_response_message(
+                method_name, method_info.return_type, method_info.call_type, package
+            )
 
-        # Add messages to the file descriptor and track indices
-        if request_msg is not None:
-            fd.message_type.append(request_msg)
-            message_index += 1
-        if response_msg is not None:
-            fd.message_type.append(response_msg)
-            # Add message-level docstring if this is a model type
-            resp_doc = _get_type_docstring(method_info.return_type, method_info.call_type)
-            if resp_doc:
-                _add_comment(
+            # Track dependencies
+            if req_deps.get("empty") or resp_deps.get("empty"):
+                needs_empty = True
+            if req_deps.get("value") or resp_deps.get("value"):
+                needs_value = True
+
+            # Add messages to the file descriptor and track indices
+            if request_msg is not None:
+                fd.message_type.append(request_msg)
+                message_index += 1
+            if response_msg is not None:
+                fd.message_type.append(response_msg)
+                # Add message-level docstring if this is a model type
+                resp_doc = _get_type_docstring(method_info.return_type, method_info.call_type)
+                if resp_doc:
+                    _add_comment(
+                        locations,
+                        [_FDP_MESSAGE_TYPE, message_index],
+                        resp_doc,
+                    )
+                # Add field-level docstrings for the response message
+                _add_field_comments(
                     locations,
                     [_FDP_MESSAGE_TYPE, message_index],
-                    resp_doc,
+                    method_info.return_type,
+                    method_info.call_type,
                 )
-            # Add field-level docstrings for the response message
-            _add_field_comments(
-                locations,
-                [_FDP_MESSAGE_TYPE, message_index],
-                method_info.return_type,
-                method_info.call_type,
-            )
-            message_index += 1
+                message_index += 1
 
-        # Determine input/output type names
-        if request_msg is not None:
-            input_type = f".{package}.{request_msg.name}"
-        else:
-            input_type = EMPTY_TYPE
+            # Determine input/output type names
+            if request_msg is not None:
+                input_type = f".{package}.{request_msg.name}"
+            else:
+                input_type = EMPTY_TYPE
 
-        if response_msg is not None:
-            output_type = f".{package}.{response_msg.name}"
-        else:
-            output_type = EMPTY_TYPE
+            if response_msg is not None:
+                output_type = f".{package}.{response_msg.name}"
+            else:
+                output_type = EMPTY_TYPE
 
         # Create method descriptor
         service.method.append(
@@ -172,6 +194,34 @@ def build_file_descriptor(
                 [_FDP_SERVICE, service_index, _SDP_METHOD, method_index],
                 method_doc,
             )
+
+    # Add the StreamData message if any @exportstream methods need it
+    if needs_stream_data:
+        stream_data_msg = DescriptorProto(name="StreamData")
+        stream_data_msg.field.append(
+            FieldDescriptorProto(
+                name="payload",
+                number=1,
+                type=FieldDescriptorProto.TYPE_BYTES,
+                label=FieldDescriptorProto.LABEL_OPTIONAL,
+            )
+        )
+        # Insert at the beginning so it's available to all methods
+        fd.message_type.insert(0, stream_data_msg)
+        _add_comment(
+            locations,
+            [_FDP_MESSAGE_TYPE, 0],
+            "Byte payload for bidirectional stream methods (@exportstream).\n",
+        )
+        # Shift message indices for comments that were already added
+        # (they reference indices that just moved by +1)
+        for loc in locations:
+            if (
+                len(loc.path) >= 2
+                and loc.path[0] == _FDP_MESSAGE_TYPE
+                and loc != locations[-1]  # Don't shift the one we just added
+            ):
+                loc.path[1] += 1
 
     fd.service.append(service)
 
