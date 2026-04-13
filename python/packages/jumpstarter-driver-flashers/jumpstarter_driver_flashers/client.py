@@ -10,7 +10,7 @@ import time
 from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path, PosixPath
+from pathlib import Path
 from queue import Queue
 from urllib.parse import urlparse
 
@@ -18,7 +18,7 @@ import click
 import pexpect
 import requests
 from jumpstarter_driver_composite.client import CompositeClient
-from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
+from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, clean_filename, operator_for_path
 from jumpstarter_driver_opendal.common import PathBuf
 from jumpstarter_driver_pyserial.client import Console
 from opendal import Metadata, Operator
@@ -1102,15 +1102,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             else:
                 repo_name = oci_path.split("/")[-1] if "/" in oci_path else oci_path
                 return repo_name
-        elif isinstance(path, str) and path.startswith(("http://", "https://")):
-            return urlparse(path).path.split("/")[-1]
         else:
-            # Strip query parameters from the path (e.g. from signed URLs
-            # like /path/to/image.raw.xz?Expires=...&Signature=...)
-            name = Path(path).name
-            if isinstance(name, str) and "?" in name:
-                name = name.split("?", 1)[0]
-            return name
+            return clean_filename(path)
 
     def _upload_artifact(self, storage, path: PathBuf, operator: Operator):
         """Upload artifact to storage"""
@@ -1650,18 +1643,7 @@ def _get_decompression_command(filename_or_url) -> str:
     Returns:
         str: Decompression command ('zcat', 'xzcat', or 'cat' for uncompressed)
     """
-    if type(filename_or_url) is PosixPath:
-        filename = filename_or_url.name
-    elif isinstance(filename_or_url, str) and filename_or_url.startswith(("http://", "https://")):
-        filename = urlparse(filename_or_url).path.split("/")[-1]
-    else:
-        # Handle plain string paths, possibly with query parameters
-        # (e.g. /path/to/image.raw.xz?Expires=...&Signature=...)
-        filename = str(filename_or_url).split("/")[-1]
-        if "?" in filename:
-            filename = filename.split("?", 1)[0]
-
-    filename = filename.lower()
+    filename = clean_filename(filename_or_url).lower()
     if filename.endswith((".gz", ".gzip")):
         return "zcat |"
     elif filename.endswith(".xz"):
