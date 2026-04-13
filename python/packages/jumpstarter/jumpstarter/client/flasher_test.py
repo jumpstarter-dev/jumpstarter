@@ -1,5 +1,3 @@
-"""Tests for the simplified FlasherClient (no opendal dependency)."""
-
 import pytest
 
 from jumpstarter.client.flasher import _parse_path
@@ -163,3 +161,27 @@ class TestFlasherClientRouting:
             http_patch.assert_called_once_with(client=client, url="https://example.com/dump.bin", mode="wb")
             local_patch.assert_not_called()
             call_mock.assert_called_once_with("dump", "http_handle", None)
+
+    def test_dump_routes_local_path(self, tmp_path):
+        """Verify that dump with a local path goes through _local_file_adapter."""
+        from unittest.mock import MagicMock, patch
+
+        from jumpstarter.client.flasher import FlasherClient
+
+        client = object.__new__(FlasherClient)
+        test_file = tmp_path / "dump.bin"
+
+        mock_local = MagicMock()
+        mock_local.__enter__ = MagicMock(return_value="local_handle")
+        mock_local.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch("jumpstarter.client.flasher._http_url_adapter") as http_patch,
+            patch("jumpstarter.client.flasher._local_file_adapter", return_value=mock_local) as local_patch,
+            patch.object(client, "call", return_value=None) as call_mock,
+        ):
+            client.dump(str(test_file), target=None)
+
+            local_patch.assert_called_once()
+            http_patch.assert_not_called()
+            call_mock.assert_called_once_with("dump", "local_handle", None)
