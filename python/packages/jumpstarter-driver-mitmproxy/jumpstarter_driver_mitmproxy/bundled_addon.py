@@ -419,7 +419,7 @@ class AddonRegistry:
             spec.loader.exec_module(module)
 
             if hasattr(module, "Handler"):
-                handler = module.Handler()
+                handler = module.Handler()  # ty: ignore[call-non-callable]
                 self._handlers[name] = handler
                 ctx.log.info(f"Loaded addon: {name}")
                 return handler

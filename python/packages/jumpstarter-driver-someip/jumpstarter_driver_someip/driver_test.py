@@ -283,12 +283,12 @@ def test_someip_connection_error(mock_osip_cls):
 
 def test_someip_missing_required_host():
     with pytest.raises(ValidationError, match="host"):
-        SomeIp(port=30490)
+        SomeIp(port=30490)  # ty: ignore[missing-argument]
 
 
 def test_someip_invalid_port_type():
     with pytest.raises(ValidationError):
-        SomeIp(host="127.0.0.1", port="not_a_port")
+        SomeIp(host="127.0.0.1", port="not_a_port")  # ty: ignore[invalid-argument-type]
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")

@@ -183,7 +183,7 @@ def test_drivers_pi_pico_enter_bootloader_via_gpio(monkeypatch, tmp_path):
 
     def _fake_mounts():
         nonlocal call_count
-        call_count += 1
+        call_count += 1  # ty: ignore[unresolved-reference]
         if call_count <= 1:
             return []
         return [boot]
@@ -213,7 +213,7 @@ def test_drivers_pi_pico_gpio_preferred_over_serial(monkeypatch, tmp_path):
 
     def _fake_mounts():
         nonlocal call_count
-        call_count += 1
+        call_count += 1  # ty: ignore[unresolved-reference]
         if call_count <= 1:
             return []
         return [boot]
@@ -242,7 +242,7 @@ def test_drivers_pi_pico_flash_via_gpio(monkeypatch, tmp_path):
 
     def _fake_mounts():
         nonlocal call_count
-        call_count += 1
+        call_count += 1  # ty: ignore[unresolved-reference]
         if call_count <= 2:
             return []
         return [boot]

@@ -122,7 +122,7 @@ def test_throttled_stream_async():
         expected_min_time = (len(test_data) - 1) / cps  # Should take at least 11/5 = 2.2 seconds
 
         # Create a memory stream for testing
-        tx, rx = create_memory_object_stream[bytes](32)
+        tx, rx = create_memory_object_stream[bytes](32)  # ty: ignore[call-non-callable]
         stapled_stream = StapledObjectStream(tx, rx)
         # Wrap it with throttling and ensure proper closure
         async with ThrottledStream(stream=stapled_stream, cps=cps) as throttled_stream:

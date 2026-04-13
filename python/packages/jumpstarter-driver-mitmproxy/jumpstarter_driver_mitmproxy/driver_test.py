@@ -655,7 +655,7 @@ def deep_merge_patch():
             return
         return original_mkdir(self, *args, **kwargs)
 
-    Path.mkdir = safe_mkdir
+    Path.mkdir = safe_mkdir  # ty: ignore[invalid-assignment]
     try:
         if "jumpstarter_driver_mitmproxy.bundled_addon" in sys.modules:
             mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
@@ -663,7 +663,7 @@ def deep_merge_patch():
             mod = importlib.import_module(
                 "jumpstarter_driver_mitmproxy.bundled_addon"
             )
-        return mod._deep_merge_patch
+        return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
     finally:
         Path.mkdir = original_mkdir
 
@@ -673,7 +673,7 @@ def apply_patches(deep_merge_patch):
     """Import _apply_patches lazily."""
     import sys
     mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
-    return mod._apply_patches
+    return mod._apply_patches  # ty: ignore[unresolved-attribute]
 
 
 class TestDeepMergePatch:

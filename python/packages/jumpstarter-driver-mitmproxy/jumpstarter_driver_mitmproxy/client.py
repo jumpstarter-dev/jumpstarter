@@ -1447,11 +1447,12 @@ def _mock_summary(defn: dict) -> str:
 
 def _human_size(nbytes: int) -> str:
     """Format a byte count as a human-readable string."""
+    nbytes_float = float(nbytes)
     for unit in ("B", "KB", "MB", "GB"):
-        if nbytes < 1024:
-            return f"{nbytes:.0f} {unit}" if unit == "B" else f"{nbytes:.1f} {unit}"
-        nbytes /= 1024
-    return f"{nbytes:.1f} TB"
+        if nbytes_float < 1024:
+            return f"{nbytes_float:.0f} {unit}" if unit == "B" else f"{nbytes_float:.1f} {unit}"
+        nbytes_float /= 1024
+    return f"{nbytes_float:.1f} TB"
 
 
 def _collect_entries_from_item(item: dict) -> list[dict]:

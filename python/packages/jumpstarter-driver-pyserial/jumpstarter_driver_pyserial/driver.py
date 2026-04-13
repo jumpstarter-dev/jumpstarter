@@ -18,7 +18,7 @@ from jumpstarter.driver import Driver, export, exportstream
 try:
     import termios
 except ImportError:  # pragma: no cover - non-POSIX platforms
-    termios = None
+    termios = None  # ty: ignore[invalid-assignment]
 
 LOOP = "loop://"
 

@@ -57,10 +57,10 @@ def mock_master():
 @pytest.fixture
 def client(mock_master):
     instance = Xcp(
-        transport="ETH",
+        transport="ETH",  # ty: ignore[invalid-argument-type]
         host="127.0.0.1",
         port=5555,
-        protocol="TCP",
+        protocol="TCP",  # ty: ignore[invalid-argument-type]
     )
 
     with patch(
@@ -279,7 +279,7 @@ def test_unlock_with_resources(client, mock_master):
 def test_connect_timeout(mock_master):
     mock_master.connect.side_effect = TimeoutError("No response from ECU")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
@@ -292,7 +292,7 @@ def test_connect_timeout(mock_master):
 def test_upload_error(mock_master):
     mock_master.shortUpload.side_effect = RuntimeError("XCP ERR_ACCESS_DENIED")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
@@ -306,7 +306,7 @@ def test_upload_error(mock_master):
 def test_download_error(mock_master):
     mock_master.download.side_effect = RuntimeError("XCP ERR_OUT_OF_RANGE")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
@@ -320,7 +320,7 @@ def test_download_error(mock_master):
 def test_program_clear_error(mock_master):
     mock_master.programClear.side_effect = RuntimeError("Erase failed")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
@@ -334,7 +334,7 @@ def test_program_clear_error(mock_master):
 def test_unlock_error(mock_master):
     mock_master.cond_unlock.side_effect = RuntimeError("Seed & key failed")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
@@ -348,7 +348,7 @@ def test_unlock_error(mock_master):
 def test_get_daq_info_error(mock_master):
     mock_master.getDaqInfo.side_effect = RuntimeError("DAQ not supported")
 
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=mock_master,
@@ -366,17 +366,17 @@ def test_get_daq_info_error(mock_master):
 
 def test_invalid_transport_type():
     with pytest.raises(ValidationError):
-        Xcp(transport="INVALID", host="127.0.0.1", port=5555)
+        Xcp(transport="INVALID", host="127.0.0.1", port=5555)  # ty: ignore[invalid-argument-type]
 
 
 def test_invalid_protocol_type():
     with pytest.raises(ValidationError):
-        Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="INVALID")
+        Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="INVALID")  # ty: ignore[invalid-argument-type]
 
 
 def test_invalid_port_type():
     with pytest.raises(ValidationError):
-        Xcp(transport="ETH", host="127.0.0.1", port="not_a_port")
+        Xcp(transport="ETH", host="127.0.0.1", port="not_a_port")  # ty: ignore[invalid-argument-type]
 
 
 def test_default_config_values():
@@ -397,7 +397,7 @@ def test_custom_config_forwarded(mock_create):
     mock_create.return_value = _make_mock_master()
 
     instance = Xcp(
-        transport="CAN",
+        transport="CAN",  # ty: ignore[invalid-argument-type]
         can_interface="vector",
         channel=0,
         bitrate=500000,
@@ -428,7 +428,7 @@ def test_custom_config_forwarded(mock_create):
 
 def _stateful_client_ctx(stateful_master):
     """Context manager helper: serve() an Xcp driver backed by the stateful mock."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,
@@ -608,7 +608,7 @@ def test_stateful_full_programming_flow(stateful_client, stateful_master):
 
 def test_stateful_program_clear_before_start_raises(stateful_master):
     """programClear without programStart should fail."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,
@@ -621,7 +621,7 @@ def test_stateful_program_clear_before_start_raises(stateful_master):
 
 def test_stateful_program_before_clear_raises(stateful_master):
     """program without programClear should fail."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,
@@ -668,7 +668,7 @@ def test_stateful_calibration_workflow(stateful_client):
 
 def test_stateful_operations_before_connect_raise(stateful_master):
     """Methods called before connect() should fail."""
-    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")
+    instance = Xcp(transport="ETH", host="127.0.0.1", port=5555, protocol="TCP")  # ty: ignore[invalid-argument-type]  # noqa: E501
     with patch(
         "jumpstarter_driver_xcp.driver._create_xcp_master",
         return_value=stateful_master,

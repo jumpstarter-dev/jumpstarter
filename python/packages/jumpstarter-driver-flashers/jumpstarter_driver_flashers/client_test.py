@@ -242,9 +242,9 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
         def get_url(self):
             return "http://exporter"
 
-    client.http = DummyService()
-    client.tftp = DummyService()
-    client.call = lambda *args, **kwargs: None
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
 
     captured = {}
 
@@ -254,7 +254,7 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
         captured["oci_username"] = args[14]
         captured["oci_password"] = args[15]
 
-    client._perform_flash_operation = capture_perform
+    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
 
     client.flash(
         "https://example.com/image.raw.xz",

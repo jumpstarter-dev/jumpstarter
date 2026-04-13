@@ -7,11 +7,12 @@ import logging
 from typing import Any
 
 import click
+import click.core
 
 logger = logging.getLogger(__name__)
 
 
-def walk_click_tree(cmd: click.BaseCommand, path: list[str] | None = None) -> dict[str, Any]:
+def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) -> dict[str, Any]:  # ty: ignore[unresolved-attribute]
     """Recursively walk a Click command tree and return structured JSON.
 
     Returns command names, help text, parameters (with types and defaults),

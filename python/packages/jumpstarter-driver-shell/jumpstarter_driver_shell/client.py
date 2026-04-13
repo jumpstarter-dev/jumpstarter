@@ -2,6 +2,7 @@ import sys
 from dataclasses import dataclass
 
 import click
+import click.exceptions
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group

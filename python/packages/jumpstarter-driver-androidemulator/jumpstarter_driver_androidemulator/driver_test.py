@@ -2,8 +2,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from .driver import AndroidEmulator
+from .driver import AndroidEmulator, AndroidEmulatorPower
 from jumpstarter.common.exceptions import ConfigurationError
+from jumpstarter_driver_adb.driver import AdbServer
 
 
 def _mock_adb_ok():
@@ -42,7 +43,7 @@ def test_init_invalid_port(mock_run, mock_adb_which, mock_emu_which):
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_power_on_builds_cmdline(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd", console_port=5556)
-    power = emu.children["power"]
+    power: AndroidEmulatorPower = emu.children["power"]  # ty: ignore[invalid-assignment]
 
     with patch("subprocess.Popen") as mock_popen:
         mock_proc = MagicMock()
@@ -73,7 +74,7 @@ def test_power_on_builds_cmdline(mock_run, mock_adb_which, mock_emu_which):
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_power_on_not_headless(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd", headless=False)
-    power = emu.children["power"]
+    power: AndroidEmulatorPower = emu.children["power"]  # ty: ignore[invalid-assignment]
 
     with patch("subprocess.Popen") as mock_popen:
         mock_proc = MagicMock()
@@ -93,7 +94,7 @@ def test_power_on_not_headless(mock_run, mock_adb_which, mock_emu_which):
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_power_off_graceful(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd")
-    power = emu.children["power"]
+    power: AndroidEmulatorPower = emu.children["power"]  # ty: ignore[invalid-assignment]
 
     mock_proc = MagicMock()
     mock_proc.returncode = None
@@ -115,7 +116,7 @@ def test_power_off_force_kill(mock_run, mock_adb_which, mock_emu_which):
     from subprocess import TimeoutExpired
 
     emu = AndroidEmulator(avd_name="test_avd")
-    power = emu.children["power"]
+    power: AndroidEmulatorPower = emu.children["power"]  # ty: ignore[invalid-assignment]
 
     mock_proc = MagicMock()
     mock_proc.returncode = None
@@ -137,5 +138,5 @@ def test_custom_ports(mock_run, mock_adb_which, mock_emu_which):
     emu = AndroidEmulator(avd_name="test_avd", console_port=5556, adb_server_port=15038)
     assert emu.console_port == 5556
     assert emu.adb_server_port == 15038
-    adb_child = emu.children["adb"]
+    adb_child: AdbServer = emu.children["adb"]  # ty: ignore[invalid-assignment]
     assert adb_child.port == 15038

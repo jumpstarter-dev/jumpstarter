@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 try:
     import gpiod
 except ImportError:
-    gpiod = None
+    gpiod = None  # ty: ignore[invalid-assignment]
 
 from jumpstarter_driver_power.driver import PowerInterface
 

@@ -58,7 +58,7 @@ class UdsCan(UdsInterface, Driver):
 
             self._uds_conn = PythonIsoTpConnection(self._stack)
             config = make_uds_client_config(request_timeout=self.request_timeout)
-            self._uds_client = UdsoncanClient(self._uds_conn, config=config)
+            self._uds_client = UdsoncanClient(self._uds_conn, config=config)  # ty: ignore[invalid-argument-type]
             self._uds_client.open()
         except Exception:
             self.close()
