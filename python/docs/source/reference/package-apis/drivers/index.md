@@ -80,6 +80,8 @@ Drivers for automotive diagnostic protocols:
   diagnostics over DoIP transport
 * **[UDS over CAN](uds-can.md)** (`jumpstarter-driver-uds-can`) - UDS
   diagnostics over CAN/ISO-TP transport
+* **[SOME/IP](someip.md)** (`jumpstarter-driver-someip`) - SOME/IP protocol
+  operations (RPC, service discovery, events) via opensomeip
 
 ### Debug and Programming Drivers
 
@@ -140,6 +142,7 @@ sdwire.md
 shell.md
 ssh.md
 snmp.md
+someip.md
 tasmota.md
 tmt.md
 tftp.md
