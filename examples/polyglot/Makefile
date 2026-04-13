@@ -72,7 +72,7 @@ test-typescript:
 
 test-rust:
 	@echo "=== Rust tests ==="
-	cd $(ROOT) && cargo test -p jumpstarter-example-board-tests -- --ignored
+	cd $(ROOT) && cargo test -p jumpstarter-example-board-tests -- --ignored --test-threads=1
 
 # ── Clean ────────────────────────────────────────────────────────────
 
