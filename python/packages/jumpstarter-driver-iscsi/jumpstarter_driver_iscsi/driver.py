@@ -73,6 +73,14 @@ class ISCSI(Driver):
 
         self._iqn = f"{self.iqn_prefix}:{self.target_name}"
 
+        # Validate and resolve block_device_allowlist entries
+        for path in self.block_device_allowlist:
+            if not os.path.isabs(path):
+                raise ConfigurationError(
+                    f"block_device_allowlist entry '{path}' is not an absolute path"
+                )
+        self.block_device_allowlist = [os.path.realpath(p) for p in self.block_device_allowlist]
+
     def get_default_ip(self):
         """Get the IP address of the default route interface"""
         try:

@@ -8,7 +8,7 @@ import pytest
 if sys.platform != "linux":
     pytest.skip("iSCSI driver requires Linux (libudev)", allow_module_level=True)
 
-from jumpstarter_driver_iscsi.driver import ISCSI, ISCSIError
+from jumpstarter_driver_iscsi.driver import ISCSI, ConfigurationError, ISCSIError
 
 
 @pytest.fixture
@@ -90,3 +90,39 @@ class TestGetFullPathFile:
         driver = _make_driver(tmp_root)
         with pytest.raises(ISCSIError, match="Invalid file path"):
             driver._get_full_path("../../etc/passwd", is_block=False)
+
+
+class TestAllowlistValidation:
+    """Tests for block_device_allowlist validation in __post_init__."""
+
+    def test_relative_path_in_allowlist_rejected(self, tmp_root):
+        """Non-absolute paths in block_device_allowlist raise ConfigurationError."""
+        driver = object.__new__(ISCSI)
+        driver.root_dir = tmp_root
+        driver.block_device_allowlist = ["dev/sda"]
+        driver.remove_created_on_close = False
+        driver.host = "127.0.0.1"
+        driver.iqn_prefix = "iqn.2024-06.dev.jumpstarter"
+        driver.target_name = "test"
+        driver.children = {}
+        with pytest.raises(ConfigurationError, match="not an absolute path"):
+            driver.__post_init__()
+
+    def test_allowlist_entries_resolved(self, tmp_root):
+        """Allowlist symlink entries are resolved to real paths during init."""
+        real_dev = os.path.join(tmp_root, "real_device")
+        link_path = os.path.join(tmp_root, "link_device")
+        with open(real_dev, "w") as f:
+            f.write("")
+        os.symlink(real_dev, link_path)
+
+        driver = object.__new__(ISCSI)
+        driver.root_dir = tmp_root
+        driver.block_device_allowlist = [link_path]
+        driver.remove_created_on_close = False
+        driver.host = "127.0.0.1"
+        driver.iqn_prefix = "iqn.2024-06.dev.jumpstarter"
+        driver.target_name = "test"
+        driver.children = {}
+        driver.__post_init__()
+        assert driver.block_device_allowlist == [real_dev]
