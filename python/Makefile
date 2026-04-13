@@ -25,8 +25,8 @@ help:
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
 	@echo "  docs-test          - Run documentation tests"
 	@echo "  test-allure        - Run all tests with Allure reporting"
-	@echo "  allure-serve       - Serve the Allure report locally"
-	@echo "  allure-report      - Generate a static Allure report"
+	@echo "  allure-serve       - Serve the Allure report locally (requires: npm i -g allure-commandline)"
+	@echo "  allure-report      - Generate a static Allure report (requires: npm i -g allure-commandline)"
 	@echo ""
 	@echo "Linting and type checking:"
 	@echo "  ty                 - Run ty type checking on all packages"
@@ -122,12 +122,17 @@ clean: clean-docs clean-venv clean-build clean-test
 
 test: pkg-test-all docs-test
 
-test-allure: pkg-test-allure-all docs-test
+test-allure: clean-allure pkg-test-allure-all docs-test
+
+clean-allure:
+	-rm -rf $(ALLURE_RESULTS_DIR)
 
 allure-serve:
+	@command -v allure >/dev/null 2>&1 || { echo "Allure CLI required: npm install -g allure-commandline"; exit 1; }
 	allure serve $(ALLURE_RESULTS_DIR)
 
 allure-report:
+	@command -v allure >/dev/null 2>&1 || { echo "Allure CLI required: npm install -g allure-commandline"; exit 1; }
 	allure generate $(ALLURE_RESULTS_DIR) -o allure-report --clean
 
 ty: pkg-ty-all
@@ -140,7 +145,7 @@ lint-fix:
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
 	docs-linkcheck pkg-test-all pkg-test-allure-all pkg-ty-all build generate sync \
-	clean-venv clean-build clean-test clean-all test-all test-allure ty-all docs \
+	clean-venv clean-build clean-test clean-allure clean-all test-all test-allure ty-all docs \
 	lint lint-fix allure-serve allure-report \
 	pkg-ty-jumpstarter \
 	pkg-ty-jumpstarter-cli-admin \

@@ -86,7 +86,7 @@ try:
                 "OS": platform.system(),
                 "Architecture": platform.machine(),
             }
-            with open(env_file, "w") as f:
+            with open(env_file, "w", encoding="utf-8") as f:
                 for key, value in props.items():
                     f.write(f"{key}={value}\n")
 

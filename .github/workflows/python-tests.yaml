@@ -122,15 +122,21 @@ jobs:
 
       - name: Generate Allure report
         run: |
-          npm install -g allure-commandline
-          allure generate allure-results -o allure-report --clean
+          if [ -d "allure-results" ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
+            npm install -g allure-commandline@2.32.0
+            allure generate allure-results -o allure-report --clean
+          else
+            echo "No Allure results found, skipping report generation"
+          fi
 
       - name: Upload Allure report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: allure-report
           path: allure-report/
           retention-days: 30
+          if-no-files-found: ignore
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
