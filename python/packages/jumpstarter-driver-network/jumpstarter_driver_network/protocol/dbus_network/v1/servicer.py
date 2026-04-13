@@ -39,7 +39,7 @@ class DbusNetworkServicer(dbus_network_pb2_grpc.DbusNetworkServicer):
     async def Connect(self, request_iterator, context):
         await context.abort(
             grpc.StatusCode.UNIMPLEMENTED,
-            "Connect uses RouterService.Stream, not native gRPC",
+            "Connect bidi streaming not implemented for native gRPC",
         )
 
 
