@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-import anyio.to_thread
+import anyio.to_thread  # noqa: F401
 
 from jumpstarter_mcp.connections import ConnectionManager
 from jumpstarter_mcp.introspect import list_drivers, walk_click_tree

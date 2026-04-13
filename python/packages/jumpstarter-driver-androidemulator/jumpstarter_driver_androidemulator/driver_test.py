@@ -1,10 +1,10 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from jumpstarter_driver_adb.driver import AdbServer
 
 from .driver import AndroidEmulator, AndroidEmulatorPower
 from jumpstarter.common.exceptions import ConfigurationError
-from jumpstarter_driver_adb.driver import AdbServer
 
 
 def _mock_adb_ok():
