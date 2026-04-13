@@ -44,6 +44,21 @@ class BytesIOStream(ObjectStream[bytes]):
         pass
 
 
+def clean_filename(path: PathBuf) -> str:
+    """Extract a clean filename from a path or URL, stripping query parameters.
+
+    This handles paths returned by operator_for_path() which may contain
+    query parameters for signed URLs (e.g. /path/to/image.raw.xz?Expires=...&Signature=...).
+    """
+    path_str = str(path)
+    if path_str.startswith(("http://", "https://")):
+        return urlparse(path_str).path.split("/")[-1]
+    name = Path(path_str).name
+    if "?" in name:
+        name = name.split("?", 1)[0]
+    return name
+
+
 def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
     """Create an operator for the given path
     Return a tuple of:
