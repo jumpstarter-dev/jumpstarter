@@ -95,12 +95,6 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return flash_result
 
-    def _is_oci_path(self, path: str) -> bool:
-        """Return True if path looks like an OCI image reference."""
-        return path.startswith("oci://") or (
-            ":" in path and "/" in path and not path.startswith("/") and not path.startswith(("http://", "https://"))
-        )
-
     def _validate_partition_mappings(self, partitions: Dict[str, str] | None) -> None:
         """Validate partition mappings; raise ValueError if any path is empty."""
         if partitions is None:
@@ -188,7 +182,7 @@ class RideSXClient(FlasherClient, CompositeClient):
             operators_dict = operator if isinstance(operator, dict) else None
             return self.flash_local(path, operators_dict, power_off=power_off)
 
-        elif isinstance(path, str) and (path.startswith("oci://") or self._is_oci_path(path)):
+        elif isinstance(path, str) and path.startswith("oci://"):
             # OCI mode: auto-detect partitions or use target as partition->filename mapping
             if target and ":" in target:
                 # Target is "partition:filename" format for OCI explicit mapping
@@ -202,7 +196,21 @@ class RideSXClient(FlasherClient, CompositeClient):
         else:
             # Traditional single file mode
             if target is None:
-                raise ValueError(
+                if isinstance(path, str) and ":" in path:
+                    before_colon, after_colon = path.split(":", 1)
+                    if "/" in before_colon:
+                        # registry/path:tag — likely an OCI ref missing the oci:// prefix
+                        raise click.ClickException(
+                            f"OCI URLs must start with oci://, got: {path}\n"
+                            f"Usage: j storage flash oci://{path}"
+                        )
+                    # partition:something — likely a partition:path mapping
+                    raise click.ClickException(
+                        f"'{path}' looks like a partition:path mapping.\n"
+                        f"Use the -t flag: j storage flash -t {path}\n"
+                        f"Or use the API: client.flash('{after_colon}', target='{before_colon}')"
+                    )
+                raise click.ClickException(
                     "This driver requires a target partition for non-OCI paths.\n"
                     "Usage: client.flash('/path/to/file.img', target='boot_a')\n"
                     "For OCI: client.flash('oci://registry.com/image:tag')\n"
@@ -337,14 +345,11 @@ class RideSXClient(FlasherClient, CompositeClient):
             partitions: Optional mapping of partition -> filename inside OCI image
             power_off: Whether to power off the device after flashing (default: True)
         """
-        # Normalize OCI URL
         if not oci_url.startswith("oci://"):
-            if "://" in oci_url:
-                raise ValueError(f"Only oci:// URLs are supported, got: {oci_url}")
-            if ":" in oci_url and "/" in oci_url:
-                oci_url = f"oci://{oci_url}"
-            else:
-                raise ValueError(f"Invalid OCI URL format: {oci_url}")
+            raise ValueError(
+                f"OCI URL must start with oci://, got: {oci_url}\n"
+                f"Usage: j storage flash oci://{oci_url}"
+            )
 
         if partitions:
             self.logger.info(f"Flashing OCI image with explicit mapping: {list(partitions.keys())}")
@@ -395,6 +400,17 @@ class RideSXClient(FlasherClient, CompositeClient):
 
             if mapping:
                 if path:
+                    # In multi-target mode, positional path must be an oci:// reference.
+                    if not path.startswith("oci://"):
+                        t_flags = " ".join(f"-t {s}" for s in target_specs)
+                        raise click.ClickException(
+                            f"'{path}' is missing the -t flag.\n"
+                            f"Each partition mapping needs its own -t flag.\n\n"
+                            f"Example:\n"
+                            f"  j storage flash -t {path} {t_flags}\n\n"
+                            f"For OCI images, use the oci:// prefix:\n"
+                            f"  j storage flash oci://registry.com/image:tag {t_flags}"
+                        )
                     # Multi-partition mode with path: extract specific files from OCI image
                     self.flash_with_targets(path, mapping, power_off=power_off)
                 else:

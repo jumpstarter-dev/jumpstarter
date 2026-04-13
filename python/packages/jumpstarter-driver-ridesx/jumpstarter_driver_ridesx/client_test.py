@@ -76,12 +76,12 @@ def test_flash_oci_auto_success(ridesx_client):
 def test_flash_oci_auto_error_cases(ridesx_client):
     """Test flash_oci_auto error handling"""
     # URL without oci:// scheme
-    with pytest.raises(ValueError, match="Only oci:// URLs are supported"):
+    with pytest.raises(ValueError, match="OCI URL must start with oci://"):
         ridesx_client.flash_oci_auto("docker://image:tag")
 
-    # Invalid URL format
-    with pytest.raises(ValueError, match="Invalid OCI URL format"):
-        ridesx_client.flash_oci_auto("invalid-url")
+    # Bare registry URL without oci:// prefix
+    with pytest.raises(ValueError, match="OCI URL must start with oci://"):
+        ridesx_client.flash_oci_auto("quay.io/org/image:tag")
 
     # No device found
     with patch.object(ridesx_client, "call") as mock_call:
@@ -89,3 +89,75 @@ def test_flash_oci_auto_error_cases(ridesx_client):
 
         with pytest.raises(click.ClickException, match="No fastboot devices found"):
             ridesx_client.flash_oci_auto("oci://image:tag")
+
+
+# _execute_flash_command Tests
+
+
+@pytest.mark.parametrize("invalid_path", [
+    "boot_a:/path/to/boot.img",   # partition:absolute_path
+    "boot_a:./boot_a.simg",       # partition:relative_path
+    "boot_a:boot.img",            # partition:filename
+    "./boot_a.simg",              # local file path
+    "quay.io/org/image:tag",      # bare registry URL missing oci://
+])
+def test_execute_flash_command_rejects_non_oci_positional_with_targets(ridesx_client, invalid_path):
+    """Non-oci:// positional paths should be rejected in multi-target mode"""
+    with pytest.raises(click.ClickException, match="missing the -t flag"):
+        ridesx_client._execute_flash_command(
+            invalid_path,
+            ("system_a:/path/to/system.img",),
+        )
+
+
+def test_execute_flash_command_error_shows_all_target_specs(ridesx_client):
+    """Error example should include all -t specs, not just the first"""
+    with pytest.raises(click.ClickException) as exc_info:
+        ridesx_client._execute_flash_command(
+            "boot_a:boot.img",
+            ("system_a:/path/to/system.img", "vendor_a:/path/to/vendor.img"),
+        )
+    msg = str(exc_info.value)
+    assert "-t system_a:/path/to/system.img" in msg
+    assert "-t vendor_a:/path/to/vendor.img" in msg
+
+
+def test_execute_flash_command_allows_oci_positional_with_targets(ridesx_client):
+    """OCI positional paths should pass the guard in multi-target mode"""
+    with patch.object(ridesx_client, "flash_with_targets") as mock_flash:
+        ridesx_client._execute_flash_command(
+            "oci://quay.io/org/image:tag",
+            ("boot_a:boot.img",),
+        )
+        mock_flash.assert_called_once_with(
+            "oci://quay.io/org/image:tag",
+            {"boot_a": "boot.img"},
+            power_off=True,
+        )
+
+
+# flash() partition:path hint Tests
+
+
+def test_flash_hints_partition_spec_without_target(ridesx_client):
+    """Passing partition:path directly to flash() should give a helpful error"""
+    # Absolute path after colon
+    with pytest.raises(click.ClickException, match="looks like a partition:path mapping"):
+        ridesx_client.flash("boot_a:/path/to/boot.img")
+
+    # Bare filename after colon
+    with pytest.raises(click.ClickException, match="looks like a partition:path mapping"):
+        ridesx_client.flash("boot_a:boot.img")
+
+
+def test_flash_hints_oci_missing_prefix(ridesx_client):
+    """Bare registry URL without oci:// should suggest adding the prefix"""
+    with pytest.raises(click.ClickException, match="OCI URLs must start with oci://") as exc_info:
+        ridesx_client.flash("quay.io/org/image:tag")
+    assert "oci://quay.io/org/image:tag" in str(exc_info.value)
+
+
+def test_flash_no_target_no_partition_spec(ridesx_client):
+    """Non-OCI path without colon or target should give a generic helpful error"""
+    with pytest.raises(click.ClickException, match="requires a target partition"):
+        ridesx_client.flash("/path/to/boot.img")
