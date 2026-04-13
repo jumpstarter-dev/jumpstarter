@@ -445,8 +445,8 @@ class TestRenodeConfig:
     def test_renode_pty_path(self):
         """PTY path is inside the temp directory."""
         driver = _make_driver()
-        assert driver._pty.endswith("/pty")
-        assert driver._tmp_dir.name in driver._pty
+        pty_path = Path(driver._pty)
+        assert pty_path == Path(driver._tmp_dir.name) / "pty"
 
     def test_renode_temp_directory_lifecycle(self):
         """TemporaryDirectory is created and can be cleaned up."""
