@@ -1,6 +1,7 @@
 import os
 import re
 import shlex
+import shutil
 import signal
 import sys
 import tempfile
@@ -96,14 +97,22 @@ def _validate_j_commands(j_commands: list[str] | None) -> list[str] | None:
     return [cmd for cmd in j_commands if _SAFE_COMMAND_NAME.match(cmd)]
 
 
+def _resolve_cli_paths() -> tuple[str, str, str]:
+    jmp = shutil.which("jmp") or "jmp"
+    jmp_admin = shutil.which("jmp-admin") or "jmp-admin"
+    j = shutil.which("j") or "j"
+    return jmp, jmp_admin, j
+
+
 def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[str] | None = None) -> str:
     j_commands = _validate_j_commands(j_commands)
+    jmp, jmp_admin, j = _resolve_cli_paths()
     if shell_name.endswith("bash"):
         lines = []
         if use_profiles:
             lines.append('[ -f ~/.bashrc ] && source ~/.bashrc')
-        lines.append('eval "$(jmp completion bash 2>/dev/null)"')
-        lines.append('eval "$(jmp-admin completion bash 2>/dev/null)"')
+        lines.append(f'eval "$({jmp} completion bash 2>/dev/null)"')
+        lines.append(f'eval "$({jmp_admin} completion bash 2>/dev/null)"')
         if j_commands:
             cmds = " ".join(j_commands)
             completion_fn = (
@@ -113,7 +122,7 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
             lines.append(completion_fn)
             lines.append("complete -o default -F _j_completion j")
         else:
-            lines.append('eval "$(j completion bash 2>/dev/null)"')
+            lines.append(f'eval "$({j} completion bash 2>/dev/null)"')
         return "\n".join(lines) + "\n"
 
     elif shell_name.endswith("zsh"):
@@ -121,24 +130,24 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
         lines.append("autoload -Uz compinit && compinit")
         if use_profiles:
             lines.append('[ -f ~/.zshrc ] && source ~/.zshrc')
-        lines.append('eval "$(jmp completion zsh 2>/dev/null)"')
-        lines.append('eval "$(jmp-admin completion zsh 2>/dev/null)"')
+        lines.append(f'eval "$({jmp} completion zsh 2>/dev/null)"')
+        lines.append(f'eval "$({jmp_admin} completion zsh 2>/dev/null)"')
         if j_commands:
             cmds = " ".join(j_commands)
             lines.append(f"compdef '_arguments \"1:subcommand:({cmds})\"' j")
         else:
-            lines.append('eval "$(j completion zsh 2>/dev/null)"')
+            lines.append(f'eval "$({j} completion zsh 2>/dev/null)"')
         return "\n".join(lines) + "\n"
 
     elif shell_name.endswith("fish"):
         lines = []
-        lines.append("jmp completion fish 2>/dev/null | source")
-        lines.append("jmp-admin completion fish 2>/dev/null | source")
+        lines.append(f"{jmp} completion fish 2>/dev/null | source")
+        lines.append(f"{jmp_admin} completion fish 2>/dev/null | source")
         if j_commands:
             for cmd in j_commands:
                 lines.append(f"complete -c j -f -n '__fish_use_subcommand' -a '{cmd}'")
         else:
-            lines.append("j completion fish 2>/dev/null | source")
+            lines.append(f"{j} completion fish 2>/dev/null | source")
         return "\n".join(lines) + "\n"
 
     return ""
