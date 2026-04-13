@@ -45,8 +45,7 @@ async def j_async():
                 tg.cancel_scope.cancel()
     except* ClickExit as excgroup:
         for exc in leaf_exceptions(excgroup):
-            if isinstance(exc, ClickExit):
-                sys.exit(exc.exit_code)
+            sys.exit(cast(ClickExit, exc).exit_code)
     except* click.ClickException as excgroup:
         for exc in leaf_exceptions(excgroup):
             cast(click.ClickException, exc).show()
