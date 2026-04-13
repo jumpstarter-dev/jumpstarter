@@ -194,15 +194,34 @@ class TestCheckJumpstarterInstallation:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
-    async def test_check_jumpstarter_installation_crds_found(self, mock_run_command):
+    async def test_check_jumpstarter_installation_crds_only(self, mock_run_command):
         crds_response = {"items": [{"metadata": {"name": "exporters.jumpstarter.dev"}}]}
 
         mock_run_command.return_value = (0, json.dumps(crds_response), "")
 
         result = await check_jumpstarter_installation("test-context")
 
-        assert result.installed is True
         assert result.has_crds is True
+        assert result.installed is False
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_with_cr_instances(self, mock_run_command):
+        crds_response = {"items": [
+            {"metadata": {"name": "exporters.jumpstarter.dev"}},
+            {"metadata": {"name": "jumpstarters.operator.jumpstarter.dev"}},
+        ]}
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter", "namespace": "jumpstarter"}}]}
+
+        mock_run_command.side_effect = [
+            (0, json.dumps(crds_response), ""),
+            (0, json.dumps(cr_response), ""),
+        ]
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.has_crds is True
+        assert result.installed is True
         assert result.status == "installed"
 
     @pytest.mark.asyncio
@@ -242,8 +261,16 @@ class TestCheckJumpstarterInstallation:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     async def test_check_jumpstarter_installation_custom_namespace(self, mock_run_command):
-        crds_response = {"items": [{"metadata": {"name": "exporters.jumpstarter.dev"}}]}
-        mock_run_command.return_value = (0, json.dumps(crds_response), "")
+        crds_response = {"items": [
+            {"metadata": {"name": "exporters.jumpstarter.dev"}},
+            {"metadata": {"name": "jumpstarters.operator.jumpstarter.dev"}},
+        ]}
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter", "namespace": "custom-ns"}}]}
+
+        mock_run_command.side_effect = [
+            (0, json.dumps(crds_response), ""),
+            (0, json.dumps(cr_response), ""),
+        ]
 
         result = await check_jumpstarter_installation("test-context", namespace="custom-ns")
 
