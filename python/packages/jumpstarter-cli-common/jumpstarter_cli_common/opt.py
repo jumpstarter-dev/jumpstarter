@@ -188,8 +188,8 @@ def _validate_tokens(tokens: list[str], allowed_values: set[str], ctx, param) ->
 
 
 def parse_comma_separated(
-    ctx: click.Context,
-    param: click.Parameter,
+    ctx: click.Context | None,
+    param: click.Parameter | None,
     value: str | tuple[str, ...] | None,
     allowed_values: set[str] | None = None,
     normalize_case: bool = True
