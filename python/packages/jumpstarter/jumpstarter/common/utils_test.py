@@ -39,6 +39,15 @@ def test_launch_shell(tmp_path, monkeypatch):
     assert exit_code == 1
 
 
+def test_generate_shell_init_uses_absolute_paths_for_completion():
+    content = _generate_shell_init("zsh", use_profiles=True, j_commands=None)
+    for line in content.splitlines():
+        if "completion zsh" in line and "eval" in line:
+            dollar_paren = line.split("$(")[1].split(")")[0]
+            cmd = dollar_paren.split()[0]
+            assert cmd.startswith("/"), f"Expected absolute path for command, got: {cmd}"
+
+
 def test_generate_bash_init_with_j_commands():
     content = _generate_shell_init("bash", use_profiles=False, j_commands=["power", "serial", "ssh"])
     assert "_j_completion" in content
@@ -71,7 +80,7 @@ def test_generate_zsh_init_loads_compinit_before_completions():
     content = _generate_shell_init("zsh", use_profiles=False, j_commands=["power"])
     assert "autoload -Uz compinit && compinit" in content
     compinit_pos = content.index("autoload -Uz compinit && compinit")
-    eval_jmp_pos = content.index('eval "$(jmp completion zsh')
+    eval_jmp_pos = content.index("completion zsh")
     assert compinit_pos < eval_jmp_pos
 
 
@@ -86,7 +95,7 @@ def test_generate_zsh_init_without_j_commands_loads_compinit():
     content = _generate_shell_init("zsh", use_profiles=False, j_commands=None)
     assert "autoload -Uz compinit && compinit" in content
     compinit_pos = content.index("autoload -Uz compinit && compinit")
-    eval_jmp_pos = content.index('eval "$(jmp completion zsh')
+    eval_jmp_pos = content.index("completion zsh")
     assert compinit_pos < eval_jmp_pos
 
 
