@@ -39,7 +39,12 @@ def test_launch_shell(tmp_path, monkeypatch):
     assert exit_code == 1
 
 
-def test_generate_shell_init_uses_absolute_paths_for_completion():
+def test_generate_shell_init_uses_absolute_paths_for_completion(monkeypatch):
+    def fake_which(name):
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr(shutil, "which", fake_which)
+
     content = _generate_shell_init("zsh", use_profiles=True, j_commands=None)
     for line in content.splitlines():
         if "completion zsh" in line and "eval" in line:
