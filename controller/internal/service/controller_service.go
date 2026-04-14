@@ -472,6 +472,16 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 				// reconnecting exporter can still inherit the queue and consume
 				// any Dial token that was buffered between the error and now.
 				// listenQueueCleanupDelay gives the exporter time to reconnect.
+				//
+				// Known limitation: there is a narrow race at timer expiry —
+				// if Dial() calls LoadOrStore and obtains the queue just before
+				// this callback deletes it, the buffered token is lost.  The
+				// window is microseconds wide and only opens after
+				// listenQueueCleanupDelay has fully elapsed (i.e. the exporter
+				// has been gone for 2+ minutes), at which point the lease is
+				// typically being reclaimed anyway.  Replacing sync.Map with a
+				// mutex-protected map would close this race by holding the lock
+				// across both the timer check and the queue access.
 				t := time.AfterFunc(listenQueueCleanupDelay, func() {
 					s.listenQueues.Delete(leaseName)
 					s.listenTimers.Delete(leaseName)
