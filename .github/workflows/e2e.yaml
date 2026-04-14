@@ -192,19 +192,19 @@ jobs:
           go-version: "1.22"
 
       - name: Download controller image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: controller-image-${{ matrix.arch }}
           path: /tmp/artifacts
 
       - name: Download operator image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: operator-image-${{ matrix.arch }}
           path: /tmp/artifacts
 
       - name: Download python wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-wheels
           path: /tmp/python-wheels
@@ -254,7 +254,7 @@ jobs:
           go-version: "1.22"
 
       - name: Download python wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-wheels
           path: /tmp/python-wheels
@@ -289,13 +289,13 @@ jobs:
           go-version: "1.22"
 
       - name: Download controller image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: controller-image-amd64
           path: /tmp/artifacts
 
       - name: Download python wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-wheels
           path: /tmp/python-wheels
