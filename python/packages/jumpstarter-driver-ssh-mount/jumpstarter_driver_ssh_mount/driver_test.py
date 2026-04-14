@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -142,8 +143,7 @@ def test_mount_sshfs_allow_other_fallback():
                     mock_run.side_effect = [
                         MagicMock(returncode=1, stdout="", stderr="allow_other: permission denied"),
                         MagicMock(returncode=0, stdout="", stderr=""),  # retry without allow_other
-                        MagicMock(returncode=0, stdout="", stderr=""),  # force_umount after test
-                        MagicMock(returncode=0, stdout="", stderr=""),  # force_umount after popen
+                        MagicMock(returncode=0, stdout="", stderr=""),  # force_umount
                     ]
                     mock_proc.wait.side_effect = [None]
 
@@ -270,6 +270,7 @@ def test_mount_foreground_mode():
     with serve(instance) as client:
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # Still running when cleanup checks
+        mock_proc.stderr = MagicMock()
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired("sshfs", 1),  # First wait (startup check) - still running
             None,  # Second wait (foreground blocking) - exited
@@ -279,7 +280,7 @@ def test_mount_foreground_mode():
 
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
-                with patch('subprocess.Popen', return_value=mock_proc):
+                with patch('subprocess.Popen', return_value=mock_proc) as mock_popen:
                     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
                     with patch('os.makedirs'):
@@ -293,6 +294,9 @@ def test_mount_foreground_mode():
                             assert mock_proc.wait.call_count >= 2
                             # Port forward should be cleaned up
                             mock_adapter.return_value.__exit__.assert_called()
+                            # Verify -f flag is in the Popen args
+                            popen_args = mock_popen.call_args[0][0]
+                            assert "-f" in popen_args
 
 
 def test_mount_subshell_mode():
@@ -304,6 +308,7 @@ def test_mount_subshell_mode():
     with serve(instance) as client:
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # Still running when cleanup checks
+        mock_proc.stderr = MagicMock()
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired("sshfs", 1),  # Startup check - still running
             None,  # Cleanup wait after terminate - exited
@@ -350,7 +355,10 @@ def test_mount_cleanup_on_failure():
                                 client.mount("/tmp/test-mount")
 
                             # Identity file should be cleaned up on failure
+                            # Verify unlink was called with a path ending in _ssh_key
                             assert mock_unlink.called
+                            unlink_path = mock_unlink.call_args_list[-1][0][0]
+                            assert unlink_path.endswith("_ssh_key")
 
 
 def test_umount_with_fusermount():
@@ -486,3 +494,126 @@ def test_cli_dispatches_umount():
             result = runner.invoke(cli, ["--umount", "/tmp/test-cli-mount", "--lazy"])
             assert result.exit_code == 0
             mock_umount.assert_called_once_with("/tmp/test-cli-mount", lazy=True)
+
+
+def test_mount_foreground_keyboard_interrupt():
+    """Test that KeyboardInterrupt during foreground mode terminates sshfs and unmounts"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None  # Still running
+        mock_proc.stderr = MagicMock()
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired("sshfs", 1),  # Startup check - still running
+            KeyboardInterrupt(),  # Foreground blocking - user presses Ctrl+C
+            None,  # Cleanup wait after terminate
+        ]
+        mock_proc.returncode = 0
+
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.run') as mock_run:
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                            client.mount("/tmp/test-mount", foreground=True)
+
+                            # sshfs should have been terminated
+                            mock_proc.terminate.assert_called_once()
+
+
+def test_umount_passes_timeout():
+    """Test that umount subprocess calls include SUBPROCESS_TIMEOUT"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.object(client, '_find_executable', return_value=None):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                client.umount("/tmp/test-mount")
+
+                # Verify timeout=120 is passed
+                assert mock_run.call_args[1].get("timeout") == 120
+
+
+def test_mount_port_22_omits_p_flag():
+    """Test that port 22 does not add -p flag to sshfs args"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child(port=22)},
+    )
+
+    with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.stderr = None
+
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.run') as mock_run:
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    mock_proc.wait.side_effect = [None]
+
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount")
+
+                            test_run_args = mock_run.call_args_list[0][0][0]
+                            assert "-p" not in test_run_args
+
+
+def test_umount_prefers_fusermount3():
+    """Test that fusermount3 is preferred over fusermount when both are available"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        def _fake_find(name):
+            if name == "fusermount3":
+                return "/usr/bin/fusermount3"
+            if name == "fusermount":
+                return "/usr/bin/fusermount"
+            return None
+
+        with patch.object(client, '_find_executable', side_effect=_fake_find):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                client.umount("/tmp/test-mount")
+
+                call_args = mock_run.call_args[0][0]
+                assert call_args[0] == "/usr/bin/fusermount3"
+
+
+def test_umount_lazy_macos_uses_force():
+    """Test that lazy unmount on macOS uses -f instead of -l"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.object(client, '_find_executable', return_value=None):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+                with patch('jumpstarter_driver_ssh_mount.client.sys') as mock_sys:
+                    mock_sys.platform = "darwin"
+                    client.umount("/tmp/test-mount", lazy=True)
+
+                    call_args = mock_run.call_args[0][0]
+                    assert "-f" in call_args
+                    assert "-l" not in call_args
