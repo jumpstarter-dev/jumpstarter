@@ -67,7 +67,7 @@ This means per-language runtimes do **not** need to implement lease lifecycle (`
 1. Reads `JUMPSTARTER_HOST` → creates an insecure gRPC channel
 2. Calls `GetReport()` to discover the driver tree
 3. Uses native gRPC stubs (from `protoc`) with a UUID metadata interceptor
-4. Handles `RouterService.Stream` for `@exportstream` byte channels
+4. Calls native gRPC bidi streams for `@exportstream` byte channels (using `StreamData` messages)
 
 This keeps per-language runtimes at ~200 lines instead of ~1000+. Full standalone client packages with lease acquisition and controller integration are a future extension.
 
@@ -141,7 +141,7 @@ With JEP-0003's native gRPC transport, the per-language runtime is minimal:
 
 The eliminated components (Value serde, driver dispatch) were the most error-prone and hardest to test across languages. Standard `protoc` stubs are battle-tested in every target language.
 
-`@exportstream` methods (JEP-0001) continue to use `RouterService.Stream` calls for raw byte transport.
+`@exportstream` methods (JEP-0001) use native gRPC bidi streaming with `StreamData { bytes payload }` messages for byte transport.
 
 ### CLI Interface
 
@@ -459,7 +459,7 @@ Each language needs a minimal runtime library alongside the generated code. With
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- | -------------- |
 | Session management     | Read `JUMPSTARTER_HOST`, create gRPC channel, call `GetReport()` for driver discovery                       | ~40 lines      |
 | UUID metadata interceptor | Inject `x-jumpstarter-driver-uuid` gRPC metadata header for driver instance routing                     | ~15 lines      |
-| Stream forwarding      | `RouterService.Stream` bidi byte channel for `@exportstream` methods                                        | ~60 lines      |
+| Stream forwarding      | Native gRPC bidi stream bridging for `@exportstream` methods (TCP/UDP port forwarding)                       | ~60 lines      |
 | Resource adapter       | Client-side data source/sink for flash/storage operations (see "Client-Side Logic Audit" in Design Details) | ~80 lines      |
 | Test framework integration | JUnit extension, pytest fixture, Rust proc macro, Jest helper                                           | ~50 lines      |
 
@@ -523,7 +523,7 @@ No new protocol changes beyond those introduced by JEP-0003. This JEP consumes J
 
 ### Hardware Considerations
 
-This JEP is purely a code generation and build tooling change. No hardware is required or affected. The generated clients interact with hardware through native gRPC services (JEP-0003) and `RouterService` for `@exportstream` byte transport — the same path the Python client uses today.
+This JEP is purely a code generation and build tooling change. No hardware is required or affected. The generated clients interact with hardware through native gRPC services (JEP-0003), including native bidi streaming for `@exportstream` byte transport.
 
 ## Design Details
 
@@ -561,7 +561,7 @@ This JEP is purely a code generation and build tooling change. No hardware is re
 
 ### Handling `@exportstream` Methods in Non-Python Languages
 
-JEP-0001 defines `@exportstream` methods as raw byte stream constructors (e.g., `TcpNetwork.connect()`, `PySerial.connect()`) that produce bidirectional byte channels through the `RouterService`. These are marked with `stream_constructor = true` in the proto annotation.
+JEP-0001 defines `@exportstream` methods as raw byte stream constructors (e.g., `TcpNetwork.connect()`, `PySerial.connect()`) that produce bidirectional byte channels. These are represented as native gRPC bidi streaming RPCs with `StreamData { bytes payload }` messages.
 
 In generated non-Python clients, `stream_constructor` methods produce a language-native byte stream object:
 
@@ -569,7 +569,7 @@ In generated non-Python clients, `stream_constructor` methods produce a language
 - **TypeScript:** Returns a Node.js `Duplex` stream or an `AsyncIterableIterator<Uint8Array>`.
 - **Rust:** Returns a `(Sender<Bytes>, Receiver<Bytes>)` pair using `tokio::sync::mpsc`.
 
-The generated code calls `RouterService.Stream` under the hood, wrapping the gRPC bidi stream in a language-idiomatic interface. The runtime library handles the `StreamRequest`/`StreamResponse` framing.
+The generated code calls the native gRPC bidi endpoint directly (e.g., `NetworkInterface/Connect`), wrapping the `StreamData` stream in a language-idiomatic interface. No `RouterService.Stream` framing is needed — standard gRPC handles connection lifecycle.
 
 ### Client-Side Logic Audit: What Auto-Generation Covers and What It Doesn't
 
@@ -635,12 +635,12 @@ The generated clients inherit the security model of the Jumpstarter Python clien
 
 - **ExporterClass resolution:** Verify that the code generator correctly resolves an ExporterClass's `DriverInterface` references and produces the correct set of accessor fields (required as non-nullable, optional as nullable) for each target language.
 - **Proto comment propagation:** Verify that doc comments from `.proto` files appear as language-native documentation in generated stubs (Javadoc, TSDoc, `///`, docstrings).
-- **`stream_constructor` handling:** Verify that methods marked with `stream_constructor = true` generate `RouterService.Stream` calls (not direct gRPC calls) in every target language.
+- **`@exportstream` handling:** Verify that bidi streaming methods with `StreamData` generate native gRPC bidi calls with proper port-forward bridging in every target language.
 - **Naming conventions:** Verify that proto `snake_case` method names are converted to language-idiomatic conventions (camelCase for Java/TypeScript, snake_case for Python/Rust).
 
 ### Integration Tests
 
-- **Java end-to-end:** Generate a Java client from the `dev-board` ExporterClass, compile it with Gradle, run under `jmp shell` against a mock exporter, and verify that `device.power().on()`, `device.power().read()`, and `device.serial().stream()` produce correct native gRPC RPCs (`PowerInterface/On`, `PowerInterface/Read`) and `RouterService.Stream` calls.
+- **Java end-to-end:** Generate a Java client from the `dev-board` ExporterClass, compile it with Gradle, run under `jmp shell` against a mock exporter, and verify that `device.power().on()`, `device.power().read()`, and `device.network().connectTcp()` produce correct native gRPC RPCs (`PowerInterface/On`, `PowerInterface/Read`, `NetworkInterface/Connect` bidi).
 - **TypeScript end-to-end:** Generate a TypeScript client, compile with `tsc`, run under `jmp shell` against a mock exporter, and verify typed method calls produce correct native gRPC RPCs.
 - **Python ExporterClass wrapper:** Generate a Python `DevBoardDevice`, verify it correctly wraps the existing Python interface clients with typed accessors.
 - **Cross-language interop:** Run the same exporter under `jmp shell`, invoke it from both a Python client and a Java client, verify both can call the same driver methods and receive identical results.
@@ -667,7 +667,7 @@ No HiL tests are required for the codegen tooling itself. The generated clients 
 
 ### Experimental
 
-- The Java runtime supports native gRPC via `ExporterSession` + UUID metadata interceptor + `RouterService.Stream` forwarding for `@exportstream`.
+- The Java runtime supports native gRPC via `ExporterSession` + UUID metadata interceptor + native bidi streaming for `@exportstream`.
 - `jmp codegen` produces compilable Java and Python clients from at least one ExporterClass.
 - JUnit 5 `JumpstarterExtension` injects typed device objects into test methods when running under `jmp shell`.
 - Python `DevBoardTest` base class works with existing `JumpstarterTest` infrastructure.
@@ -689,7 +689,7 @@ No HiL tests are required for the codegen tooling itself. The generated clients 
 This JEP is **fully backward compatible.** It introduces new tooling and generated code without modifying any existing components:
 
 - The existing Python client is unchanged. The generated Python ExporterClass wrapper is a new layer on top of the existing interface clients — it doesn't replace them.
-- The generated clients use native gRPC services (JEP-0003) as the primary transport and `RouterService` for `@exportstream` byte streams. The existing `ExporterService` and `DriverCall` RPC remain available for legacy clients.
+- The generated clients use native gRPC services (JEP-0003) for all driver communication, including native bidi streaming for `@exportstream` byte channels. The existing `ExporterService` and `DriverCall` RPC remain available for legacy clients.
 - No operator-side changes. The generated clients connect to existing exporters through the existing controller and router infrastructure.
 - The `jmp codegen` command is a new CLI subcommand that doesn't affect existing commands.
 
