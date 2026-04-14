@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -13,7 +14,7 @@ from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_command
 
-# Timeout in seconds for subprocess calls (umount)
+# Timeout in seconds for subprocess calls (mount test run, umount)
 SUBPROCESS_TIMEOUT = 120
 
 
@@ -98,17 +99,14 @@ class SSHMountClient(CompositeClient):
                            foreground=foreground, extra_args=extra_args)
         else:
             self.logger.debug("Using SSH port forwarding for sshfs connection")
-            adapter = TcpPortforwardAdapter(client=self.ssh.tcp)
-            host, port = adapter.__enter__()
-            self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
-            try:
+            with TcpPortforwardAdapter(client=self.ssh.tcp) as (host, port):
+                self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
                 self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                                port_forward=adapter, foreground=foreground)
-            finally:
-                adapter.__exit__(None, None, None)
+                                port_forward=None, foreground=foreground)
 
     def _run_sshfs(self, host, port, mountpoint, remote_path, extra_args, *, port_forward, foreground):
         identity_file = self._create_temp_identity_file()
+        sshfs_proc = None
 
         try:
             sshfs_args = self._build_sshfs_args(host, port, mountpoint, remote_path, identity_file, extra_args)
@@ -134,9 +132,9 @@ class SSHMountClient(CompositeClient):
             else:
                 click.echo("Type 'exit' to unmount and return.")
                 self._run_subshell(mountpoint, remote_path)
-
+        finally:
             # Terminate sshfs if it's still running
-            if sshfs_proc.poll() is None:
+            if sshfs_proc is not None and sshfs_proc.poll() is None:
                 sshfs_proc.terminate()
                 try:
                     sshfs_proc.wait(timeout=10)
@@ -147,7 +145,6 @@ class SSHMountClient(CompositeClient):
             # Run fusermount/umount to ensure clean unmount
             self._force_umount(mountpoint)
             click.echo(f"Unmounted {mountpoint}")
-        finally:
             self._cleanup_identity_file(identity_file)
 
     def _start_sshfs_with_fallback(self, sshfs_args):
@@ -190,12 +187,17 @@ class SSHMountClient(CompositeClient):
             proc.wait(timeout=1)
             # If it exited already, something went wrong
             stderr = proc.stderr.read().decode() if proc.stderr else ""
+            if proc.stderr:
+                proc.stderr.close()
             raise click.ClickException(
                 f"sshfs mount failed (exit code {proc.returncode}): {stderr.strip()}"
             )
         except subprocess.TimeoutExpired:
-            # Good -- sshfs is running in foreground mode
-            pass
+            # Good -- sshfs is running in foreground mode.
+            # Close the stderr pipe to prevent deadlock: sshfs would block
+            # if it fills the OS pipe buffer (~64KB) while we never read.
+            if proc.stderr:
+                proc.stderr.close()
 
         return proc
 
@@ -221,9 +223,6 @@ class SSHMountClient(CompositeClient):
         prompt_prefix = f"[sshfs:{remote_path}] "
         if "bash" in shell:
             env["PS1"] = prompt_prefix + env.get("PS1", r"\$ ")
-            # Prevent bash from reading ~/.bashrc which would override PS1
-            # Instead, use --rcfile with a custom init that sources bashrc then sets PS1
-            env["JUMPSTARTER_SSHFS_PROMPT"] = prompt_prefix
             subprocess.run(
                 [shell, "--norc", "--noprofile", "-i"],
                 env=env,
@@ -264,7 +263,6 @@ class SSHMountClient(CompositeClient):
         return sshfs_args
 
     def _create_temp_identity_file(self):
-        """Create a temporary file with the SSH identity key, if configured."""
         ssh_identity = self.identity
         if not ssh_identity:
             return None
@@ -280,6 +278,10 @@ class SSHMountClient(CompositeClient):
         except Exception as e:
             self.logger.error("Failed to create temporary identity file: %s", e)
             if temp_file:
+                try:
+                    temp_file.close()
+                except Exception:
+                    pass
                 try:
                     os.unlink(temp_file.name)
                 except Exception:
@@ -325,7 +327,11 @@ class SSHMountClient(CompositeClient):
         else:
             cmd = ["umount"]
             if lazy:
-                cmd.append("-l")
+                # macOS umount does not support -l; use -f (force) instead
+                if sys.platform == "darwin":
+                    cmd.append("-f")
+                else:
+                    cmd.append("-l")
         cmd.append(mountpoint)
         return cmd
 
