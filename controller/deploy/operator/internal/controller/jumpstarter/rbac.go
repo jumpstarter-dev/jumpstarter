@@ -6,7 +6,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -146,50 +149,11 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		"operation", op)
 
 	// RoleBinding
+	// Note: RoleRef is immutable in Kubernetes. If it changes, we must delete and recreate.
 	desiredRoleBinding := r.createRoleBinding(jumpstarter)
-
-	existingRoleBinding := &rbacv1.RoleBinding{}
-	existingRoleBinding.Name = desiredRoleBinding.Name
-	existingRoleBinding.Namespace = desiredRoleBinding.Namespace
-
-	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRoleBinding, func() error {
-		// Check if this is a new role binding or an existing one
-		if existingRoleBinding.CreationTimestamp.IsZero() {
-			// RoleBinding is being created, copy all fields from desired
-			existingRoleBinding.Labels = desiredRoleBinding.Labels
-			existingRoleBinding.Annotations = desiredRoleBinding.Annotations
-			existingRoleBinding.Subjects = desiredRoleBinding.Subjects
-			existingRoleBinding.RoleRef = desiredRoleBinding.RoleRef
-			return controllerutil.SetControllerReference(jumpstarter, existingRoleBinding, r.Scheme)
-		}
-
-		// RoleBinding exists, check if update is needed
-		if !roleBindingNeedsUpdate(existingRoleBinding, desiredRoleBinding) {
-			log.V(1).Info("RoleBinding is up to date, skipping update",
-				"name", existingRoleBinding.Name,
-				"namespace", existingRoleBinding.Namespace)
-			return nil
-		}
-
-		// Update needed - apply changes
-		existingRoleBinding.Labels = desiredRoleBinding.Labels
-		existingRoleBinding.Annotations = desiredRoleBinding.Annotations
-		existingRoleBinding.Subjects = desiredRoleBinding.Subjects
-		existingRoleBinding.RoleRef = desiredRoleBinding.RoleRef
-		return controllerutil.SetControllerReference(jumpstarter, existingRoleBinding, r.Scheme)
-	})
-
-	if err != nil {
-		log.Error(err, "Failed to reconcile RoleBinding",
-			"name", desiredRoleBinding.Name,
-			"namespace", desiredRoleBinding.Namespace)
+	if err := r.reconcileRoleBinding(ctx, jumpstarter, desiredRoleBinding); err != nil {
 		return err
 	}
-
-	log.Info("RoleBinding reconciled",
-		"name", existingRoleBinding.Name,
-		"namespace", existingRoleBinding.Namespace,
-		"operation", op)
 
 	// Router Role (minimal permissions: read configmaps)
 	desiredRouterRole := r.createRouterRole(jumpstarter)
@@ -232,47 +196,111 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		"operation", op)
 
 	// Router RoleBinding
+	// Note: RoleRef is immutable in Kubernetes. If it changes, we must delete and recreate.
 	desiredRouterRoleBinding := r.createRouterRoleBinding(jumpstarter)
-
-	existingRouterRoleBinding := &rbacv1.RoleBinding{}
-	existingRouterRoleBinding.Name = desiredRouterRoleBinding.Name
-	existingRouterRoleBinding.Namespace = desiredRouterRoleBinding.Namespace
-
-	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRouterRoleBinding, func() error {
-		if existingRouterRoleBinding.CreationTimestamp.IsZero() {
-			existingRouterRoleBinding.Labels = desiredRouterRoleBinding.Labels
-			existingRouterRoleBinding.Annotations = desiredRouterRoleBinding.Annotations
-			existingRouterRoleBinding.Subjects = desiredRouterRoleBinding.Subjects
-			existingRouterRoleBinding.RoleRef = desiredRouterRoleBinding.RoleRef
-			return controllerutil.SetControllerReference(jumpstarter, existingRouterRoleBinding, r.Scheme)
-		}
-
-		if !roleBindingNeedsUpdate(existingRouterRoleBinding, desiredRouterRoleBinding) {
-			log.V(1).Info("Router RoleBinding is up to date, skipping update",
-				"name", existingRouterRoleBinding.Name,
-				"namespace", existingRouterRoleBinding.Namespace)
-			return nil
-		}
-
-		existingRouterRoleBinding.Labels = desiredRouterRoleBinding.Labels
-		existingRouterRoleBinding.Annotations = desiredRouterRoleBinding.Annotations
-		existingRouterRoleBinding.Subjects = desiredRouterRoleBinding.Subjects
-		existingRouterRoleBinding.RoleRef = desiredRouterRoleBinding.RoleRef
-		return controllerutil.SetControllerReference(jumpstarter, existingRouterRoleBinding, r.Scheme)
-	})
-
-	if err != nil {
-		log.Error(err, "Failed to reconcile Router RoleBinding",
-			"name", desiredRouterRoleBinding.Name,
-			"namespace", desiredRouterRoleBinding.Namespace)
+	if err := r.reconcileRoleBinding(ctx, jumpstarter, desiredRouterRoleBinding); err != nil {
 		return err
 	}
 
-	log.Info("Router RoleBinding reconciled",
-		"name", existingRouterRoleBinding.Name,
-		"namespace", existingRouterRoleBinding.Namespace,
-		"operation", op)
+	return nil
+}
 
+// reconcileRoleBinding reconciles a RoleBinding, handling the immutable RoleRef field.
+// Kubernetes does not allow updating RoleRef on an existing RoleBinding. If the desired
+// RoleRef differs from the existing one, this function deletes the old RoleBinding and
+// creates a new one. For all other fields, it uses a standard get-and-update pattern.
+func (r *JumpstarterReconciler) reconcileRoleBinding(
+	ctx context.Context,
+	jumpstarter *operatorv1alpha1.Jumpstarter,
+	desired *rbacv1.RoleBinding,
+) error {
+	log := logf.FromContext(ctx)
+
+	existing := &rbacv1.RoleBinding{}
+	key := client.ObjectKeyFromObject(desired)
+	err := r.Client.Get(ctx, key, existing)
+
+	if apierrors.IsNotFound(err) {
+		// RoleBinding does not exist, create it
+		if err := controllerutil.SetControllerReference(jumpstarter, desired, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.Client.Create(ctx, desired); err != nil {
+			log.Error(err, "Failed to create RoleBinding",
+				"name", desired.Name,
+				"namespace", desired.Namespace)
+			return err
+		}
+		log.Info("RoleBinding reconciled",
+			"name", desired.Name,
+			"namespace", desired.Namespace,
+			"operation", "created")
+		return nil
+	}
+
+	if err != nil {
+		log.Error(err, "Failed to get RoleBinding",
+			"name", desired.Name,
+			"namespace", desired.Namespace)
+		return err
+	}
+
+	// RoleRef is immutable -- if it differs we must delete and recreate
+	if !equality.Semantic.DeepEqual(existing.RoleRef, desired.RoleRef) {
+		log.Info("RoleBinding RoleRef changed, deleting and recreating",
+			"name", existing.Name,
+			"namespace", existing.Namespace)
+		if err := r.Client.Delete(ctx, existing); err != nil {
+			log.Error(err, "Failed to delete RoleBinding for recreation",
+				"name", existing.Name,
+				"namespace", existing.Namespace)
+			return err
+		}
+		if err := controllerutil.SetControllerReference(jumpstarter, desired, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.Client.Create(ctx, desired); err != nil {
+			log.Error(err, "Failed to recreate RoleBinding",
+				"name", desired.Name,
+				"namespace", desired.Namespace)
+			return err
+		}
+		log.Info("RoleBinding reconciled",
+			"name", desired.Name,
+			"namespace", desired.Namespace,
+			"operation", "recreated")
+		return nil
+	}
+
+	// RoleRef unchanged -- update other fields if needed
+	if !roleBindingNeedsUpdate(existing, desired) {
+		log.V(1).Info("RoleBinding is up to date, skipping update",
+			"name", existing.Name,
+			"namespace", existing.Namespace)
+		log.Info("RoleBinding reconciled",
+			"name", existing.Name,
+			"namespace", existing.Namespace,
+			"operation", "unchanged")
+		return nil
+	}
+
+	existing.Labels = desired.Labels
+	existing.Annotations = desired.Annotations
+	existing.Subjects = desired.Subjects
+	if err := controllerutil.SetControllerReference(jumpstarter, existing, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Client.Update(ctx, existing); err != nil {
+		log.Error(err, "Failed to update RoleBinding",
+			"name", existing.Name,
+			"namespace", existing.Namespace)
+		return err
+	}
+
+	log.Info("RoleBinding reconciled",
+		"name", existing.Name,
+		"namespace", existing.Namespace,
+		"operation", "updated")
 	return nil
 }
 
