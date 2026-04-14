@@ -55,6 +55,9 @@ j mount /local/mountpoint --direct
 # Mount in foreground mode (blocks until Ctrl+C)
 j mount /local/mountpoint --foreground
 
+# Pass extra sshfs options
+j mount /local/mountpoint -o reconnect -o cache=yes
+
 # Unmount an orphaned mount
 j mount --umount /local/mountpoint
 j mount --umount /local/mountpoint --lazy
@@ -78,6 +81,16 @@ The `--umount` flag is available as a fallback for mounts that were orphaned
 - `mount(mountpoint, *, remote_path="/", direct=False, foreground=False, extra_args=None)` - Mount remote filesystem locally via sshfs
 - `umount(mountpoint, *, lazy=False)` - Unmount an sshfs filesystem (fallback for orphaned mounts)
 
+### Required Children
+
+| Child name | Type | Description |
+|-----------|------|-------------|
+| `ssh` | `jumpstarter_driver_ssh.driver.SSHWrapper` | SSH driver providing credentials (username, identity key) and TCP connectivity. Must itself have a `tcp` child of type `TcpNetwork`. |
+
 ### CLI
 
 The driver registers as `mount` in the exporter config. When used in a `jmp shell` session, the CLI is a single command with a `--umount` flag for unmounting.
+
+Note: `extra_args` values (passed via `-o`) are forwarded directly to sshfs. This
+can be used to override defaults such as `StrictHostKeyChecking=no` -- for example,
+`-o StrictHostKeyChecking=yes`.
