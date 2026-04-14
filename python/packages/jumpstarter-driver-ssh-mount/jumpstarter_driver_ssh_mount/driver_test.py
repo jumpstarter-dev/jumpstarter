@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -186,8 +185,13 @@ def test_mount_sshfs_generic_failure():
                         with pytest.raises(Exception, match="sshfs mount failed"):
                             client.mount("/tmp/test-mount")
 
-                        # Should only have been called once (no retry)
-                        assert mock_run.call_count == 1
+                        # First call is the sshfs test run (should not retry since
+                        # error is not allow_other). Second call is _force_umount
+                        # in the finally block cleanup.
+                        assert mock_run.call_count == 2
+                        # Verify the first call was the sshfs test run
+                        first_call_args = mock_run.call_args_list[0][0][0]
+                        assert first_call_args[0] == "sshfs"
 
 
 def test_mount_sshfs_direct_success():
