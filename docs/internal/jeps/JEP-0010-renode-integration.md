@@ -357,8 +357,8 @@ SoCs while Renode fills the MCU gap.
 
 ## Implementation History
 
-- 2026-04-06: JEP proposed
-- 2026-04-09: Initial implementation merged
+- 2026-04-06 JEP proposed
+- 2026-04-06: Initial implementation proposed
   ([PR #533](https://github.com/jumpstarter-dev/jumpstarter/pull/533))
 - 2026-04-11: Address review feedback (DEVNULL, try-except cleanup,
   async wait, RenodeMonitorError, multi-word CLI, docstrings)
