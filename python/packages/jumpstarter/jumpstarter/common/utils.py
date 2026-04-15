@@ -10,14 +10,22 @@ from typing import TYPE_CHECKING
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_GRPC_INSECURE, JMP_GRPC_PASSPHRASE, JUMPSTARTER_HOST
+from jumpstarter.config.env import (
+    JMP_DRIVERS_ALLOW,
+    JMP_EXPORTER,
+    JMP_EXPORTER_LABELS,
+    JMP_GRPC_INSECURE,
+    JMP_GRPC_PASSPHRASE,
+    JMP_LEASE,
+    JUMPSTARTER_HOST,
+)
 from jumpstarter.exporter import Session
-from jumpstarter.utils.env import env
+from jumpstarter.utils.env import ExporterMetadata, env, env_with_metadata
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
-__all__ = ["env"]
+__all__ = ["ExporterMetadata", "env", "env_with_metadata"]
 
 
 @asynccontextmanager
@@ -84,6 +92,43 @@ def _run_process(
     return process.wait()
 
 
+def _lease_env_vars(lease) -> dict[str, str]:
+    """Extract environment variables from a lease object."""
+    env_vars: dict[str, str] = {}
+    env_vars[JMP_EXPORTER] = lease.exporter_name
+    if lease.name:
+        env_vars[JMP_LEASE] = lease.name
+    if lease.exporter_labels:
+        env_vars[JMP_EXPORTER_LABELS] = ",".join(
+            f"{k}={v}" for k, v in sorted(lease.exporter_labels.items())
+        )
+    return env_vars
+
+
+def _build_common_env(
+    host: str,
+    allow: list[str],
+    unsafe: bool,
+    *,
+    lease=None,
+    insecure: bool = False,
+    passphrase: str | None = None,
+) -> dict[str, str]:
+    """Build the base environment dict for shell/command processes."""
+    env = os.environ | {
+        JUMPSTARTER_HOST: host,
+        JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
+        "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
+    }
+    if insecure:
+        env = env | {JMP_GRPC_INSECURE: "1"}
+    if passphrase:
+        env = env | {JMP_GRPC_PASSPHRASE: passphrase}
+    if lease is not None:
+        env.update(_lease_env_vars(lease))
+    return env
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -114,15 +159,9 @@ def launch_shell(
     shell = os.environ.get("SHELL", "bash")
     shell_name = os.path.basename(shell)
 
-    common_env = os.environ | {
-        JUMPSTARTER_HOST: host,
-        JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
-        "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
-    }
-    if insecure:
-        common_env = common_env | {JMP_GRPC_INSECURE: "1"}
-    if passphrase:
-        common_env = common_env | {JMP_GRPC_PASSPHRASE: passphrase}
+    common_env = _build_common_env(
+        host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase
+    )
 
     if command:
         return _run_process(list(command), common_env, lease)
