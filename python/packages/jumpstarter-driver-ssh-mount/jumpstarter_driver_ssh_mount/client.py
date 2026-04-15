@@ -176,29 +176,36 @@ class SSHMountClient(CompositeClient):
         mountpoint = sshfs_args[2]
         self._force_umount(mountpoint)
 
-        # Now start the real foreground process
+        # Now start the real foreground process.
+        # Use DEVNULL for stderr to avoid SIGPIPE: if we used PIPE and
+        # closed the parent end after the startup check, sshfs would
+        # receive SIGPIPE on its next stderr write and terminate.
         proc = subprocess.Popen(
             sshfs_args,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
         )
 
         # Give sshfs a moment to start and check it hasn't failed immediately
         try:
             proc.wait(timeout=1)
-            # If it exited already, something went wrong
-            stderr = proc.stderr.read().decode() if proc.stderr else ""
-            if proc.stderr:
-                proc.stderr.close()
+            # If it exited within 1s, something went wrong
             raise click.ClickException(
-                f"sshfs mount failed (exit code {proc.returncode}): {stderr.strip()}"
+                f"sshfs mount failed immediately (exit code {proc.returncode})"
             )
         except subprocess.TimeoutExpired:
-            # Good -- sshfs is running in foreground mode.
-            # Close the stderr pipe to prevent deadlock: sshfs would block
-            # if it fills the OS pipe buffer (~64KB) while we never read.
-            if proc.stderr:
-                proc.stderr.close()
+            # Good -- sshfs is still running after 1s.
+            # Verify the mount is actually active.
+            if not os.path.ismount(mountpoint):
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                raise click.ClickException(
+                    f"sshfs started but {mountpoint} is not mounted"
+                )
 
         return proc
 
@@ -234,10 +241,10 @@ class SSHMountClient(CompositeClient):
                 subprocess.run([shell, "-i"], env=env)
             else:
                 subprocess.run([shell, "-i"], env=env)
-        except FileNotFoundError:
+        except FileNotFoundError as err:
             raise click.ClickException(
                 f"Shell '{shell}' not found. Set the SHELL environment variable to a valid shell."
-            )
+            ) from err
 
     def _build_sshfs_args(self, host, port, mountpoint, remote_path, identity_file, extra_args):
         default_username = self.username
