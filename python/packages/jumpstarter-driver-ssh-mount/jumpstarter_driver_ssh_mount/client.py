@@ -205,7 +205,7 @@ class SSHMountClient(CompositeClient):
                     proc.wait()
                 raise click.ClickException(
                     f"sshfs started but {mountpoint} is not mounted"
-                )
+                ) from None
 
         return proc
 
