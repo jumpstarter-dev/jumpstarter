@@ -299,6 +299,89 @@ func TestSyncOnlineConditionWithStatus(t *testing.T) {
 	}
 }
 
+func TestListenQueueCompareAndDeleteOnStreamError(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-stream-error"
+
+	originalQueue := make(chan *pb.ListenResponse, 8)
+	svc.listenQueues.Store(leaseName, originalQueue)
+
+	t.Run("queue is deleted when no reconnect replaced it", func(t *testing.T) {
+		svc.listenQueues.CompareAndDelete(leaseName, originalQueue)
+
+		if _, ok := svc.listenQueues.Load(leaseName); ok {
+			t.Fatal("queue should be deleted when it is still the same instance")
+		}
+	})
+
+	t.Run("queue survives when a reconnecting Listen replaced it", func(t *testing.T) {
+		newQueue := make(chan *pb.ListenResponse, 8)
+		svc.listenQueues.Store(leaseName, newQueue)
+
+		svc.listenQueues.CompareAndDelete(leaseName, originalQueue)
+
+		got, ok := svc.listenQueues.Load(leaseName)
+		if !ok {
+			t.Fatal("queue was deleted even though a new Listen replaced it")
+		}
+		if got != newQueue {
+			t.Fatal("queue was replaced with something unexpected")
+		}
+	})
+}
+
+func TestListenQueueCompareAndDeleteOnCleanShutdown(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-shutdown"
+
+	queue := make(chan *pb.ListenResponse, 8)
+	svc.listenQueues.Store(leaseName, queue)
+
+	svc.listenQueues.CompareAndDelete(leaseName, queue)
+
+	if _, ok := svc.listenQueues.Load(leaseName); ok {
+		t.Fatal("queue should be removed on clean shutdown")
+	}
+}
+
+func TestListenQueueReconnectInheritsExistingQueue(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-reconnect"
+
+	originalQueue := make(chan *pb.ListenResponse, 8)
+	svc.listenQueues.Store(leaseName, originalQueue)
+
+	got, loaded := svc.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	if !loaded {
+		t.Fatal("LoadOrStore should have loaded the existing queue")
+	}
+	if got != originalQueue {
+		t.Fatal("reconnecting Listen did not inherit the existing queue")
+	}
+}
+
+func TestListenQueueDialTokenSurvivesTransientDisconnect(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-dial-token"
+
+	originalQueue := make(chan *pb.ListenResponse, 8)
+	svc.listenQueues.Store(leaseName, originalQueue)
+
+	token := &pb.ListenResponse{RouterEndpoint: "test-endpoint", RouterToken: "test-token"}
+	originalQueue <- token
+
+	svc.listenQueues.CompareAndDelete(leaseName, originalQueue)
+
+	select {
+	case got := <-originalQueue:
+		if got.RouterEndpoint != "test-endpoint" || got.RouterToken != "test-token" {
+			t.Fatal("dial token was corrupted")
+		}
+	default:
+		t.Fatal("dial token was lost from the channel")
+	}
+}
+
 // contains checks if substr is contained in s
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
