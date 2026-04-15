@@ -111,13 +111,11 @@ class SSHMountClient(CompositeClient):
 
         try:
             sshfs_args = self._build_sshfs_args(host, port, mountpoint, remote_path, identity_file, extra_args)
-            # Add -f to run sshfs in foreground mode so it blocks
             sshfs_args.append("-f")
 
             self.logger.debug("Running sshfs command: %s", sshfs_args)
 
-            # First try with allow_other; if that fails, retry without it
-            sshfs_proc = self._start_sshfs_with_fallback(sshfs_args)
+            sshfs_proc = self._start_sshfs_with_fallback(sshfs_args, mountpoint)
 
             default_username = self.username
             user_prefix = f"{default_username}@" if default_username else ""
@@ -134,7 +132,6 @@ class SSHMountClient(CompositeClient):
                 click.echo("Type 'exit' to unmount and return.")
                 self._run_subshell(mountpoint, remote_path)
         finally:
-            # Terminate sshfs if it's still running
             if sshfs_proc is not None and sshfs_proc.poll() is None:
                 sshfs_proc.terminate()
                 try:
@@ -143,25 +140,25 @@ class SSHMountClient(CompositeClient):
                     sshfs_proc.kill()
                     sshfs_proc.wait()
 
-            # Run fusermount/umount to ensure clean unmount
             self._force_umount(mountpoint)
-            click.echo(f"Unmounted {mountpoint}")
+            if os.path.ismount(mountpoint):
+                self.logger.warning("Mountpoint %s may still be mounted after cleanup", mountpoint)
+            else:
+                click.echo(f"Unmounted {mountpoint}")
             self._cleanup_identity_file(identity_file)
 
-    def _start_sshfs_with_fallback(self, sshfs_args):
+    def _start_sshfs_with_fallback(self, sshfs_args, mountpoint):
         """Start sshfs, retrying without allow_other if it fails on that option.
 
         We do a quick test run (without -f) to check if sshfs can mount
         successfully, then start the real foreground process.
         """
-        # Test run without -f to validate args quickly
         test_args = [a for a in sshfs_args if a != "-f"]
         result = subprocess.run(test_args, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
 
         if result.returncode != 0 and "allow_other" in result.stderr:
             self.logger.debug("Retrying sshfs without allow_other option")
             sshfs_args = self._remove_allow_other(sshfs_args)
-            # Test again without allow_other
             test_args = [a for a in sshfs_args if a != "-f"]
             result = subprocess.run(test_args, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
 
@@ -171,12 +168,8 @@ class SSHMountClient(CompositeClient):
                 f"sshfs mount failed (exit code {result.returncode}): {stderr}"
             )
 
-        # The test mount succeeded. Unmount it, then re-mount in foreground mode.
-        # Extract the mountpoint from args (it's the 3rd arg: sshfs remote mount)
-        mountpoint = sshfs_args[2]
         self._force_umount(mountpoint)
 
-        # Now start the real foreground process.
         # Use DEVNULL for stderr to avoid SIGPIPE: if we used PIPE and
         # closed the parent end after the startup check, sshfs would
         # receive SIGPIPE on its next stderr write and terminate.
@@ -281,23 +274,27 @@ class SSHMountClient(CompositeClient):
         if not ssh_identity:
             return None
 
-        temp_file = None
+        fd = None
+        temp_path = None
         try:
-            temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key')
-            temp_file.write(ssh_identity)
-            temp_file.close()
-            os.chmod(temp_file.name, 0o600)
-            self.logger.debug("Created temporary identity file: %s", temp_file.name)
-            return temp_file.name
+            # mkstemp creates the file with 0o600 permissions atomically,
+            # avoiding the TOCTOU window of NamedTemporaryFile + chmod.
+            fd, temp_path = tempfile.mkstemp(suffix='_ssh_key')
+            os.write(fd, ssh_identity.encode())
+            os.close(fd)
+            fd = None
+            self.logger.debug("Created temporary identity file: %s", temp_path)
+            return temp_path
         except Exception as e:
             self.logger.error("Failed to create temporary identity file: %s", e)
-            if temp_file:
+            if fd is not None:
                 try:
-                    temp_file.close()
+                    os.close(fd)
                 except Exception:
                     pass
+            if temp_path:
                 try:
-                    os.unlink(temp_file.name)
+                    os.unlink(temp_path)
                 except Exception:
                     pass
             raise
@@ -325,12 +322,12 @@ class SSHMountClient(CompositeClient):
         click.echo(f"Unmounted {mountpoint}")
 
     def _force_umount(self, mountpoint):
-        """Best-effort unmount, ignoring errors (used during cleanup)."""
+        """Best-effort unmount, logging errors at debug level (used during cleanup)."""
         cmd = self._build_umount_cmd(mountpoint, lazy=False)
         try:
             subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.debug("Force umount of %s failed: %s", mountpoint, e)
 
     def _build_umount_cmd(self, mountpoint, *, lazy=False):
         fusermount = self._find_executable("fusermount3") or self._find_executable("fusermount")
