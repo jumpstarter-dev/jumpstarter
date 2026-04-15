@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from anyio import connect_tcp, fail_after, sleep
-from anyio.abc import SocketStream
+from anyio.abc import SocketAttribute, SocketStream
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,15 @@ class RenodeMonitor:
                         self._stream = None
                     await sleep(0.5)
 
-    _ERROR_MARKERS = ("Could not find", "Error", "Invalid", "Failed", "Unknown")
+    _ERROR_MARKERS = (
+        "Could not find",
+        "Error",
+        "Invalid",
+        "Failed",
+        "Unknown",
+        "There was an error",
+        "Parameters did not match",
+    )
 
     async def execute(self, command: str, timeout: float = 30) -> str:
         """Send a command and return the response text (excluding the prompt).
@@ -75,7 +83,8 @@ class RenodeMonitor:
         stripped = response.strip()
         if stripped:
             for line in stripped.splitlines():
-                if any(line.startswith(m) for m in self._ERROR_MARKERS):
+                clean = line.strip()
+                if any(clean.startswith(m) for m in self._ERROR_MARKERS):
                     raise RenodeMonitorError(stripped)
 
         return response
@@ -89,6 +98,22 @@ class RenodeMonitor:
                 pass
             self._stream = None
             self._buffer = b""
+
+    def close_sync(self) -> None:
+        """Best-effort synchronous close of the monitor connection.
+
+        Used during synchronous driver teardown when an event loop may
+        not be available for ``await disconnect()``.
+        """
+        stream = self._stream
+        self._stream = None
+        self._buffer = b""
+        if stream is not None:
+            try:
+                raw_sock = stream.extra(SocketAttribute.raw_socket)
+                raw_sock.close()
+            except Exception:
+                pass
 
     async def _read_until_prompt(self) -> str:
         """Read from the stream until a monitor prompt line is detected.
