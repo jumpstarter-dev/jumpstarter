@@ -83,7 +83,8 @@ type ControllerService struct {
 }
 
 type listenQueue struct {
-	ch chan *pb.ListenResponse
+	ch   chan *pb.ListenResponse
+	done chan struct{}
 }
 
 type wrappedStream struct {
@@ -443,23 +444,21 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
-	actual, loaded := s.listenQueues.LoadOrStore(leaseName, wrapper)
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	old, loaded := s.listenQueues.Swap(leaseName, wrapper)
 	if loaded {
-		existing := actual.(*listenQueue)
-		wrapper = &listenQueue{ch: existing.ch}
-		if !s.listenQueues.CompareAndSwap(leaseName, existing, wrapper) {
-			if v, ok := s.listenQueues.Load(leaseName); ok {
-				current := v.(*listenQueue)
-				wrapper = &listenQueue{ch: current.ch}
-				s.listenQueues.CompareAndSwap(leaseName, current, wrapper)
-			}
-		}
+		prev := old.(*listenQueue)
+		close(prev.done)
 	}
 	defer s.listenQueues.CompareAndDelete(leaseName, wrapper)
 	for {
 		select {
 		case <-ctx.Done():
+			return nil
+		case <-wrapper.done:
 			return nil
 		case msg := <-wrapper.ch:
 			if err := stream.Send(msg); err != nil {
@@ -749,9 +748,11 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	dialWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
-	actual, _ := s.listenQueues.LoadOrStore(leaseName, dialWrapper)
-	q := actual.(*listenQueue)
+	v, ok := s.listenQueues.Load(leaseName)
+	if !ok {
+		return nil, status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	}
+	q := v.(*listenQueue)
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
