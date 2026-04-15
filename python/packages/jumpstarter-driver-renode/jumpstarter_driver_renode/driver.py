@@ -170,7 +170,7 @@ class RenodePower(PowerInterface, Driver):
 
         if self.parent._firmware_path:
             load_cmd = self.parent._load_command or "sysbus LoadELF"
-            await self._monitor.execute(f'{load_cmd} @"{self.parent._firmware_path}"')
+            await self._monitor.execute(f'{load_cmd} "{self.parent._firmware_path}"')
 
     @export
     async def off(self) -> None:

@@ -52,7 +52,15 @@ class RenodeMonitor:
                         self._stream = None
                     await sleep(0.5)
 
-    _ERROR_MARKERS = ("Could not find", "Error", "Invalid", "Failed", "Unknown")
+    _ERROR_MARKERS = (
+        "Could not find",
+        "Error",
+        "Invalid",
+        "Failed",
+        "Unknown",
+        "There was an error",
+        "Parameters did not match",
+    )
 
     async def execute(self, command: str, timeout: float = 30) -> str:
         """Send a command and return the response text (excluding the prompt).
@@ -75,7 +83,8 @@ class RenodeMonitor:
         stripped = response.strip()
         if stripped:
             for line in stripped.splitlines():
-                if any(line.startswith(m) for m in self._ERROR_MARKERS):
+                clean = line.strip()
+                if any(clean.startswith(m) for m in self._ERROR_MARKERS):
                     raise RenodeMonitorError(stripped)
 
         return response

@@ -158,6 +158,39 @@ class TestRenodeMonitor:
         with pytest.raises(RenodeMonitorError, match="Error executing"):
             await monitor.execute("bad command")
 
+    @pytest.mark.anyio
+    async def test_monitor_detects_parameter_mismatch_error(self):
+        """Monitor raises RenodeMonitorError on parameter mismatch responses."""
+        monitor = RenodeMonitor()
+        stream = AsyncMock()
+        stream.receive = AsyncMock(
+            return_value=(
+                b"The following methods are available:\n"
+                b" - Void LoadELF (ReadFilePath fileName)\n"
+                b"\n"
+                b"There was an error executing command 'sysbus LoadELF'\n"
+                b"Parameters did not match the signature\n"
+                b"(monitor) \n"
+            )
+        )
+        monitor._stream = stream
+        monitor._buffer = b""
+
+        with pytest.raises(RenodeMonitorError, match="There was an error"):
+            await monitor.execute('sysbus LoadELF @"/tmp/firmware"')
+
+    @pytest.mark.anyio
+    async def test_monitor_detects_error_with_leading_whitespace(self):
+        """Error markers are detected even with leading whitespace."""
+        monitor = RenodeMonitor()
+        stream = AsyncMock()
+        stream.receive = AsyncMock(return_value=b"  Could not find peripheral 'foo'\n(monitor) \n")
+        monitor._stream = stream
+        monitor._buffer = b""
+
+        with pytest.raises(RenodeMonitorError, match="Could not find"):
+            await monitor.execute("bad command")
+
     def test_monitor_prompt_matches_expected_only(self):
         """_is_prompt only matches prompts in the expected set."""
         monitor = RenodeMonitor()
