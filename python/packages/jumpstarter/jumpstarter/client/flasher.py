@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -232,6 +233,11 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         local_path, url = _parse_path(image)
 
         if url is not None:
+            if compression is not None:
+                warnings.warn(
+                    "compression parameter is ignored for HTTP URLs",
+                    stacklevel=2,
+                )
             # HTTP URL: pass as presigned request for exporter-side download
             with _http_url_adapter(client=self, url=url, mode="rb") as handle:
                 return self.call("flash", handle, target)
@@ -271,6 +277,11 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         local_path, url = _parse_path(path)
 
         if url is not None:
+            if compression is not None:
+                warnings.warn(
+                    "compression parameter is ignored for HTTP URLs",
+                    stacklevel=2,
+                )
             with _http_url_adapter(client=self, url=url, mode="wb") as handle:
                 return self.call("dump", handle, target)
         else:
