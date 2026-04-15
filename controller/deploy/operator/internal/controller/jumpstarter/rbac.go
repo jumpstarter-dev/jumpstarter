@@ -277,10 +277,6 @@ func (r *JumpstarterReconciler) reconcileRoleBinding(
 		log.V(1).Info("RoleBinding is up to date, skipping update",
 			"name", existing.Name,
 			"namespace", existing.Namespace)
-		log.Info("RoleBinding reconciled",
-			"name", existing.Name,
-			"namespace", existing.Namespace,
-			"operation", "unchanged")
 		return nil
 	}
 
