@@ -440,6 +440,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	}
 
 	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	defer s.listenQueues.CompareAndDelete(leaseName, queue)
 	for {
 		select {
 		case <-ctx.Done():
