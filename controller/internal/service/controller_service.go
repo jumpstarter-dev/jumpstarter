@@ -458,8 +458,8 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		prev := old.(*listenQueue)
 		prev.closeDone()
 	}
-	defer wrapper.closeDone()
 	defer s.listenQueues.CompareAndDelete(leaseName, wrapper)
+	defer wrapper.closeDone()
 	for {
 		select {
 		case <-ctx.Done():

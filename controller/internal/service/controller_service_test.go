@@ -701,6 +701,94 @@ func TestListenQueueSupersessionSignaling(t *testing.T) {
 	}
 }
 
+func TestListenQueueDoneClosedBeforeMapDelete(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-defer-order"
+
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, wrapper)
+
+	// Simulate a Dial that loaded the queue reference before Listen exits.
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should exist")
+	}
+	q := v.(*listenQueue)
+
+	// Simulate Listen exit with correct defer order: closeDone first, then CompareAndDelete.
+	// This is the order that prevents the TOCTOU race.
+	q.closeDone()
+	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
+
+	// The Dial that loaded q before cleanup must see done is closed.
+	select {
+	case <-q.done:
+		// correct: Dial detects the listener exited
+	default:
+		t.Fatal("Dial did not detect listener exit via done channel")
+	}
+
+	// Map entry should be removed.
+	if _, ok := svc.listenQueues.Load(leaseName); ok {
+		t.Fatal("map entry should be removed after cleanup")
+	}
+}
+
+func TestListenQueueDoneClosedBeforeMapDeleteWithConcurrentDial(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-defer-order-concurrent"
+
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, wrapper)
+
+	// Simulate a Dial that loads the queue ref and then checks done.
+	// With correct defer order (closeDone before CompareAndDelete),
+	// done is closed before the map entry is removed, so Dial always
+	// sees the closed done channel.
+	v, _ := svc.listenQueues.Load(leaseName)
+	q := v.(*listenQueue)
+
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+
+	// Close done (simulating closeDone() running first in defer chain).
+	q.closeDone()
+
+	// Dial's pre-check: done is already closed, so send is rejected.
+	rejected := false
+	select {
+	case <-q.done:
+		rejected = true
+	default:
+	}
+	if !rejected {
+		select {
+		case <-q.done:
+			rejected = true
+		case q.ch <- response:
+		}
+	}
+
+	if !rejected {
+		t.Fatal("Dial must reject send when done is closed before map delete")
+	}
+
+	// Now map entry is removed (second defer).
+	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
+
+	// No token should be buffered.
+	select {
+	case <-q.ch:
+		t.Fatal("token should not be buffered in a queue whose done was closed first")
+	default:
+	}
+}
+
 // contains checks if substr is contained in s
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
