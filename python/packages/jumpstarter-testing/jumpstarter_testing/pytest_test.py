@@ -1,3 +1,5 @@
+import types
+
 from jumpstarter_driver_power.driver import MockPower
 from pytest import Pytester
 
@@ -5,7 +7,19 @@ from jumpstarter.common import ExporterStatus
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
 from jumpstarter.exporter import Session
 
+try:
+    import allure
+except ImportError:
+    _noop = lambda *a, **kw: lambda f: f
+    allure = types.SimpleNamespace(
+        feature=_noop,
+        severity=_noop,
+        severity_level=types.SimpleNamespace(CRITICAL="critical"),
+    )
 
+
+@allure.feature("pytest integration")
+@allure.severity(allure.severity_level.CRITICAL)
 def test_env(pytester: Pytester, monkeypatch):
     pytester.makepyfile(
         """

@@ -2,10 +2,22 @@ import os
 import socket
 import subprocess
 import sys
+import types
 from shutil import which
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+try:
+    import allure
+except ImportError:
+    _noop = lambda *a, **kw: lambda f: f
+    allure = types.SimpleNamespace(
+        feature=_noop,
+        story=_noop,
+        severity=_noop,
+        severity_level=types.SimpleNamespace(CRITICAL="critical", MINOR="minor"),
+    )
 from anyio.from_thread import start_blocking_portal
 from click.testing import CliRunner
 
@@ -24,6 +36,8 @@ async def echo_handler(stream):
                 pass
 
 
+@allure.feature("TCP")
+@allure.story("Port forwarding")
 def test_tcp_network_portforward(tcp_echo_server):
     with serve(TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1])) as client:
         with TcpPortforwardAdapter(client=client) as addr:
@@ -33,6 +47,8 @@ def test_tcp_network_portforward(tcp_echo_server):
             assert stream.recv(5) == b"hello"
 
 
+@allure.feature("Unix socket")
+@allure.story("Port forwarding")
 def test_unix_network_portforward():
     with start_blocking_portal() as portal:
         with portal.wrap_async_context_manager(TemporaryUnixListener(echo_handler)) as inner:
@@ -72,6 +88,9 @@ def test_unix_network():
                     assert stream.receive() == b"hello"
 
 
+@allure.feature("TCP")
+@allure.story("Performance")
+@allure.severity(allure.severity_level.MINOR)
 @pytest.mark.skipif(which("iperf3") is None, reason="iperf3 not available")
 def test_tcp_network_performance():
     with serve(
@@ -169,6 +188,7 @@ def test_dbus_network_session(monkeypatch):
         assert oldvar == os.getenv("DBUS_SESSION_BUS_ADDRESS")
 
 
+@allure.feature("WebSocket")
 @pytest.mark.asyncio
 async def test_websocket_network_connect():
     ws = AsyncMock()

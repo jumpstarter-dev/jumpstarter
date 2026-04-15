@@ -74,6 +74,7 @@ dev = [
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
     "ty>=0.0.1a8",
+    "allure-pytest>=2.13.0",
 ]
 
 [tool.ruff]
