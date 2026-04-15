@@ -141,9 +141,9 @@ gpiod.md
 ridesx.md
 sdwire.md
 shell.md
+snmp.md
 ssh.md
 ssh-mount.md
-snmp.md
 someip.md
 tasmota.md
 tmt.md
