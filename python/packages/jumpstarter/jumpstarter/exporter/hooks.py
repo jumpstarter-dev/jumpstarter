@@ -18,6 +18,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MAX_DRAIN_BYTES = 256 * 1024
+DRAIN_TIMEOUT_SECONDS = 2.0
+
+
+def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
+    """Extract and log complete lines from a byte buffer.
+
+    Splits the buffer on newline boundaries, decodes each complete line,
+    and appends non-empty lines to output_lines while logging them.
+
+    Returns the remaining bytes after the last newline (incomplete line).
+    """
+    while b"\n" in buffer:
+        line, buffer = buffer.split(b"\n", 1)
+        line_decoded = line.decode(errors="replace").rstrip()
+        if line_decoded:
+            output_lines.append(line_decoded)
+            logger.info("%s", line_decoded)
+    return buffer
+
 
 @dataclass
 class HookExecutionError(Exception):
@@ -346,12 +366,7 @@ class HookExecutor:
                                     break
 
                                 # Process complete lines
-                                while b"\n" in buffer:
-                                    line, buffer = buffer.split(b"\n", 1)
-                                    line_decoded = line.decode(errors="replace").rstrip()
-                                    if line_decoded:
-                                        output_lines.append(line_decoded)
-                                        logger.info("%s", line_decoded)
+                                buffer = _flush_lines(buffer, output_lines)
 
                             except OSError as e:
                                 # PTY closed or read error
@@ -370,12 +385,7 @@ class HookExecutor:
                             except (BlockingIOError, OSError):
                                 break
 
-                        while b"\n" in buffer:
-                            line, buffer = buffer.split(b"\n", 1)
-                            line_decoded = line.decode(errors="replace").rstrip()
-                            if line_decoded:
-                                output_lines.append(line_decoded)
-                                logger.info("%s", line_decoded)
+                        buffer = _flush_lines(buffer, output_lines)
 
                         logger.debug("read_pty_output: exiting, processed %d iterations", read_count)
                         if buffer:

@@ -5,9 +5,41 @@ import pytest
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
-from jumpstarter.exporter.hooks import HookExecutionError, HookExecutor
+from jumpstarter.exporter.hooks import HookExecutionError, HookExecutor, _flush_lines
 
 pytestmark = pytest.mark.anyio
+
+
+class TestFlushLines:
+    def test_extracts_complete_lines(self) -> None:
+        output: list[str] = []
+        remainder = _flush_lines(b"line1\nline2\npartial", output)
+        assert output == ["line1", "line2"]
+        assert remainder == b"partial"
+
+    def test_returns_empty_when_all_consumed(self) -> None:
+        output: list[str] = []
+        remainder = _flush_lines(b"line1\nline2\n", output)
+        assert output == ["line1", "line2"]
+        assert remainder == b""
+
+    def test_skips_empty_lines(self) -> None:
+        output: list[str] = []
+        remainder = _flush_lines(b"line1\n\nline2\n", output)
+        assert output == ["line1", "line2"]
+        assert remainder == b""
+
+    def test_no_newlines_returns_buffer_unchanged(self) -> None:
+        output: list[str] = []
+        remainder = _flush_lines(b"no newline here", output)
+        assert output == []
+        assert remainder == b"no newline here"
+
+    def test_empty_buffer(self) -> None:
+        output: list[str] = []
+        remainder = _flush_lines(b"", output)
+        assert output == []
+        assert remainder == b""
 
 
 @pytest.fixture
