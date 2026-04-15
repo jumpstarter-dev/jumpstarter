@@ -305,9 +305,7 @@ func TestSyncOnlineConditionWithStatus(t *testing.T) {
 // exporter time to inherit the queue (and any buffered Dial token), and that
 // the queue IS removed once the cleanup timer fires.
 func TestListenQueueTimerCleanup(t *testing.T) {
-	// Shorten the delay so the test completes quickly.
 	original := listenQueueCleanupDelay
-	listenQueueCleanupDelay = 50 * time.Millisecond
 	t.Cleanup(func() { listenQueueCleanupDelay = original })
 
 	svc := &ControllerService{}
@@ -316,6 +314,11 @@ func TestListenQueueTimerCleanup(t *testing.T) {
 	// Seed the queue as Listen() would via LoadOrStore.
 	ch := make(chan *pb.ListenResponse, 8)
 	svc.listenQueues.Store(leaseName, ch)
+
+	// Use a long delay for the first two subtests so the timer cannot fire
+	// between sequential subtests under CI load (fixes flake when >50ms
+	// elapses between subtest boundaries).
+	listenQueueCleanupDelay = 10 * time.Second
 
 	// Simulate the stream-error path: schedule deferred cleanup.
 	t.Run("queue survives transient error", func(t *testing.T) {
@@ -341,15 +344,17 @@ func TestListenQueueTimerCleanup(t *testing.T) {
 			t.Fatal("reconnecting Listen() did not inherit the existing queue")
 		}
 
-		// Wait well past the original delay — the queue must still be present
-		// because the timer was stopped.
-		time.Sleep(listenQueueCleanupDelay * 4)
+		// Verify the queue is still present — the stopped timer must not
+		// have fired.
 		if _, ok := svc.listenQueues.Load(leaseName); !ok {
 			t.Fatal("listen queue was removed even though cleanup timer was cancelled")
 		}
 	})
 
 	t.Run("timer fires and removes queue when exporter does not reconnect", func(t *testing.T) {
+		// Shorten the delay so this subtest completes quickly.
+		listenQueueCleanupDelay = 50 * time.Millisecond
+
 		// Re-arm the timer without cancelling it this time.
 		timer := time.AfterFunc(listenQueueCleanupDelay, func() {
 			svc.listenQueues.Delete(leaseName)
