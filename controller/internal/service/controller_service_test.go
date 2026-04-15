@@ -303,7 +303,7 @@ func TestListenQueueCompareAndDeleteOnStreamError(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-stream-error"
 
-	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
 	svc.listenQueues.Store(leaseName, wrapper)
 
 	t.Run("queue is deleted when no reconnect replaced it", func(t *testing.T) {
@@ -315,7 +315,7 @@ func TestListenQueueCompareAndDeleteOnStreamError(t *testing.T) {
 	})
 
 	t.Run("queue survives when a reconnecting Listen replaced it", func(t *testing.T) {
-		newWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+		newWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
 		svc.listenQueues.Store(leaseName, newWrapper)
 
 		svc.listenQueues.CompareAndDelete(leaseName, wrapper)
@@ -334,7 +334,7 @@ func TestListenQueueCompareAndDeleteOnCleanShutdown(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-shutdown"
 
-	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
 	svc.listenQueues.Store(leaseName, wrapper)
 
 	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
@@ -344,42 +344,72 @@ func TestListenQueueCompareAndDeleteOnCleanShutdown(t *testing.T) {
 	}
 }
 
-func TestListenQueueReconnectInheritsExistingChannel(t *testing.T) {
+func TestListenQueueReconnectCreatesNewChannel(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-reconnect"
 
-	originalWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	originalWrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
 	svc.listenQueues.Store(leaseName, originalWrapper)
 
-	newWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
-	got, loaded := svc.listenQueues.LoadOrStore(leaseName, newWrapper)
-	if !loaded {
-		t.Fatal("LoadOrStore should have loaded the existing queue")
+	newWrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
 	}
-	if got.(*listenQueue).ch != originalWrapper.ch {
-		t.Fatal("reconnecting Listen did not inherit the existing channel")
+	old, loaded := svc.listenQueues.Swap(leaseName, newWrapper)
+	if !loaded {
+		t.Fatal("Swap should have found the existing entry")
+	}
+	close(old.(*listenQueue).done)
+
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should still exist")
+	}
+	current := v.(*listenQueue)
+	if current.ch == originalWrapper.ch {
+		t.Fatal("reconnecting Listen must use a new channel, not the old one")
+	}
+	if current != newWrapper {
+		t.Fatal("queue entry should be the new wrapper")
 	}
 }
 
-func TestListenQueueDialTokenSurvivesTransientDisconnect(t *testing.T) {
+func TestListenQueueDialTokenDeliveredToNewListener(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-dial-token"
 
-	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
-	svc.listenQueues.Store(leaseName, wrapper)
+	g1 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
+	svc.listenQueues.Store(leaseName, g1)
 
-	token := &pb.ListenResponse{RouterEndpoint: "test-endpoint", RouterToken: "test-token"}
-	wrapper.ch <- token
+	g2 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
+	old, _ := svc.listenQueues.Swap(leaseName, g2)
+	close(old.(*listenQueue).done)
 
-	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
+	// Dial loads the current queue and sends a token.
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should exist")
+	}
+	v.(*listenQueue).ch <- &pb.ListenResponse{RouterEndpoint: "test-endpoint", RouterToken: "test-token"}
 
+	// Token must be on G2's channel, not G1's.
 	select {
-	case got := <-wrapper.ch:
+	case got := <-g2.ch:
 		if got.RouterEndpoint != "test-endpoint" || got.RouterToken != "test-token" {
 			t.Fatal("dial token was corrupted")
 		}
 	default:
-		t.Fatal("dial token was lost from the channel")
+		t.Fatal("dial token was not delivered to the new listener")
+	}
+
+	select {
+	case <-g1.ch:
+		t.Fatal("dial token was delivered to the old listener")
+	default:
+		// expected: G1 has nothing
 	}
 }
 
@@ -387,12 +417,20 @@ func TestListenQueueReconnectPreventsStaleCleanup(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-stale-cleanup"
 
-	originalWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	originalWrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
 	svc.listenQueues.Store(leaseName, originalWrapper)
 
-	reconnectWrapper := &listenQueue{ch: originalWrapper.ch}
-	svc.listenQueues.CompareAndSwap(leaseName, originalWrapper, reconnectWrapper)
+	reconnectWrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	old, _ := svc.listenQueues.Swap(leaseName, reconnectWrapper)
+	close(old.(*listenQueue).done)
 
+	// Original wrapper's deferred CompareAndDelete should be a no-op.
 	svc.listenQueues.CompareAndDelete(leaseName, originalWrapper)
 
 	got, ok := svc.listenQueues.Load(leaseName)
@@ -416,46 +454,191 @@ func TestListenQueueReconnectPreventsStaleCleanup(t *testing.T) {
 	}
 }
 
-func TestListenQueueConcurrentCompareAndSwapRetries(t *testing.T) {
+func TestListenQueueConcurrentSwapSupersedes(t *testing.T) {
 	svc := &ControllerService{}
-	leaseName := "test-lease-concurrent-cas"
+	leaseName := "test-lease-concurrent-swap"
 
-	originalWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
-	svc.listenQueues.Store(leaseName, originalWrapper)
+	g1 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
+	svc.listenQueues.Store(leaseName, g1)
 
-	// Simulate goroutine A winning the CompareAndSwap
-	winnerWrapper := &listenQueue{ch: originalWrapper.ch}
-	if !svc.listenQueues.CompareAndSwap(leaseName, originalWrapper, winnerWrapper) {
-		t.Fatal("winner CompareAndSwap should succeed")
+	// G2 swaps in, superseding G1.
+	g2 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
+	old2, _ := svc.listenQueues.Swap(leaseName, g2)
+	close(old2.(*listenQueue).done)
+
+	// G3 swaps in, superseding G2.
+	g3 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
+	old3, _ := svc.listenQueues.Swap(leaseName, g3)
+	close(old3.(*listenQueue).done)
+
+	// G1 and G2 should both have their done channels closed.
+	select {
+	case <-g1.done:
+	default:
+		t.Fatal("G1 done channel should be closed")
+	}
+	select {
+	case <-g2.done:
+	default:
+		t.Fatal("G2 done channel should be closed")
 	}
 
-	// Simulate goroutine B trying CompareAndSwap with stale originalWrapper reference.
-	// This mirrors the production code path where loaded=true and CAS fails.
-	loserWrapper := &listenQueue{ch: originalWrapper.ch}
-	if svc.listenQueues.CompareAndSwap(leaseName, originalWrapper, loserWrapper) {
-		t.Fatal("loser CompareAndSwap should fail because map was already swapped by winner")
+	// G3 should still be active.
+	select {
+	case <-g3.done:
+		t.Fatal("G3 done channel should not be closed")
+	default:
 	}
 
-	// After production retry logic, the loser should re-load and swap successfully.
-	// Load the current value and create a new wrapper from it.
-	v, ok := svc.listenQueues.Load(leaseName)
-	if !ok {
-		t.Fatal("queue entry should still exist after failed CompareAndSwap")
-	}
-	current := v.(*listenQueue)
-	retryWrapper := &listenQueue{ch: current.ch}
-	if !svc.listenQueues.CompareAndSwap(leaseName, current, retryWrapper) {
-		t.Fatal("retry CompareAndSwap should succeed")
-	}
+	// G1 and G2 deferred CompareAndDelete are no-ops.
+	svc.listenQueues.CompareAndDelete(leaseName, g1)
+	svc.listenQueues.CompareAndDelete(leaseName, g2)
 
-	// Now the winner's deferred CompareAndDelete should be a no-op
-	svc.listenQueues.CompareAndDelete(leaseName, winnerWrapper)
 	got, ok := svc.listenQueues.Load(leaseName)
 	if !ok {
-		t.Fatal("queue was deleted by winner's stale CompareAndDelete after concurrent retry")
+		t.Fatal("queue was deleted by stale CompareAndDelete")
 	}
-	if got != retryWrapper {
-		t.Fatal("queue entry does not match the retried wrapper")
+	if got != g3 {
+		t.Fatal("queue entry does not match G3")
+	}
+}
+
+func TestListenQueueStaleReaderConsumesDialToken(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-stale-reader"
+
+	// G1 starts listening: creates its own queue and stores it.
+	g1Queue := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, g1Queue)
+
+	// G2 reconnects: creates a NEW queue with its own channel and swaps it in.
+	g2Queue := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	old, loaded := svc.listenQueues.Swap(leaseName, g2Queue)
+	if !loaded {
+		t.Fatal("Swap should have found the existing G1 entry")
+	}
+	// Signal the old goroutine to stop.
+	oldQueue := old.(*listenQueue)
+	close(oldQueue.done)
+
+	// Simulate Dial: loads the current queue and sends a token.
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should exist for lease")
+	}
+	currentQueue := v.(*listenQueue)
+	token := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	currentQueue.ch <- token
+
+	// G1 should NOT receive the token (its done channel is closed).
+	select {
+	case <-g1Queue.done:
+		// G1 detected supersession -- correct behavior.
+	case <-g1Queue.ch:
+		t.Fatal("stale reader G1 consumed the dial token")
+	}
+
+	// G2 MUST receive the token.
+	select {
+	case got := <-g2Queue.ch:
+		if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+			t.Fatal("token received by G2 was corrupted")
+		}
+	default:
+		t.Fatal("active reader G2 did not receive the dial token")
+	}
+}
+
+func TestListenQueueConcurrentReadersAreNonDeterministic(t *testing.T) {
+	staleWins := 0
+	iterations := 100
+
+	for i := 0; i < iterations; i++ {
+		svc := &ControllerService{}
+		leaseName := "test-lease-concurrent"
+
+		g1Queue := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+		svc.listenQueues.Store(leaseName, g1Queue)
+
+		g2Queue := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+		old, _ := svc.listenQueues.Swap(leaseName, g2Queue)
+		close(old.(*listenQueue).done)
+
+		v, _ := svc.listenQueues.Load(leaseName)
+		currentQueue := v.(*listenQueue)
+		currentQueue.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+
+		// G1's done is closed, so it should always detect supersession.
+		// If the token ends up on G1's channel, that is a stale win.
+		select {
+		case <-g1Queue.done:
+			// correct: G1 sees done
+		case <-g1Queue.ch:
+			staleWins++
+		}
+	}
+
+	if staleWins > 0 {
+		t.Fatalf("stale reader won %d out of %d iterations, expected 0", staleWins, iterations)
+	}
+}
+
+func TestListenQueueSupersessionSignaling(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-supersession"
+
+	g1Queue := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, g1Queue)
+
+	g2Queue := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	old, loaded := svc.listenQueues.Swap(leaseName, g2Queue)
+	if !loaded {
+		t.Fatal("Swap should return the old entry")
+	}
+	close(old.(*listenQueue).done)
+
+	// Verify G1's done channel is closed.
+	select {
+	case <-g1Queue.done:
+		// expected
+	default:
+		t.Fatal("G1 done channel was not closed after supersession")
+	}
+
+	// Verify G2's done channel is still open.
+	select {
+	case <-g2Queue.done:
+		t.Fatal("G2 done channel should not be closed")
+	default:
+		// expected
+	}
+
+	// CompareAndDelete by G1 should be a no-op (G2 is current).
+	svc.listenQueues.CompareAndDelete(leaseName, g1Queue)
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("G1 cleanup deleted the queue that G2 owns")
+	}
+	if v != g2Queue {
+		t.Fatal("queue entry does not match G2's queue")
 	}
 }
 
