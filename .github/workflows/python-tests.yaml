@@ -76,7 +76,7 @@ jobs:
       - name: Install Renode (Linux)
         if: runner.os == 'Linux'
         run: |
-          wget https://builds.renode.io/renode_1.15.3+20241210git19e40b562_amd64.deb -O /tmp/renode.deb
+          wget https://github.com/renode/renode/releases/download/v1.16.1/renode_1.16.1_amd64.deb -O /tmp/renode.deb
           sudo apt-get install -y /tmp/renode.deb
 
       - name: Install Qemu (macOS)
