@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from anyio import connect_tcp, fail_after, sleep
-from anyio.abc import SocketStream
+from anyio.abc import SocketAttribute, SocketStream
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,22 @@ class RenodeMonitor:
                 pass
             self._stream = None
             self._buffer = b""
+
+    def close_sync(self) -> None:
+        """Best-effort synchronous close of the monitor connection.
+
+        Used during synchronous driver teardown when an event loop may
+        not be available for ``await disconnect()``.
+        """
+        stream = self._stream
+        self._stream = None
+        self._buffer = b""
+        if stream is not None:
+            try:
+                raw_sock = stream.extra(SocketAttribute.raw_socket)
+                raw_sock.close()
+            except Exception:
+                pass
 
     async def _read_until_prompt(self) -> str:
         """Read from the stream until a monitor prompt line is detected.

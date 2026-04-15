@@ -12,6 +12,7 @@ from jumpstarter_driver_renode.driver import (
     RenodeFlasher,
     RenodePower,
     _detect_load_command,
+    _find_renode,
 )
 from jumpstarter_driver_renode.monitor import RenodeMonitor, RenodeMonitorError
 
@@ -21,11 +22,6 @@ from jumpstarter.common.utils import serve
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
-
-# ---------------------------------------------------------------------------
-# 5.1 RenodeMonitor unit tests
-# ---------------------------------------------------------------------------
 
 
 class TestRenodeMonitor:
@@ -41,18 +37,14 @@ class TestRenodeMonitor:
             if call_count < 3:
                 raise OSError("Connection refused")
             stream = AsyncMock()
-            stream.receive = AsyncMock(
-                return_value=b"Renode v1.15\n(monitor) \n"
-            )
+            stream.receive = AsyncMock(return_value=b"Renode v1.15\n(monitor) \n")
             return stream
 
         with patch(
             "jumpstarter_driver_renode.monitor.connect_tcp",
             side_effect=mock_connect_tcp,
         ):
-            with patch(
-                "jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock
-            ):
+            with patch("jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock):
                 await monitor.connect("127.0.0.1", 12345)
 
         assert call_count == 3
@@ -63,9 +55,7 @@ class TestRenodeMonitor:
         """Execute sends command and returns response text."""
         monitor = RenodeMonitor()
         stream = AsyncMock()
-        responses = iter(
-            [b"some output\n(monitor) \n", b""]
-        )
+        responses = iter([b"some output\n(monitor) \n", b""])
         stream.receive = AsyncMock(side_effect=lambda size: next(responses))
         monitor._stream = stream
         monitor._buffer = b""
@@ -79,9 +69,7 @@ class TestRenodeMonitor:
         """Monitor raises RenodeMonitorError on error responses."""
         monitor = RenodeMonitor()
         stream = AsyncMock()
-        stream.receive = AsyncMock(
-            return_value=b"Could not find peripheral\n(monitor) \n"
-        )
+        stream.receive = AsyncMock(return_value=b"Could not find peripheral\n(monitor) \n")
         monitor._stream = stream
         monitor._buffer = b""
 
@@ -146,18 +134,14 @@ class TestRenodeMonitor:
             if call_count < 2:
                 stream.receive = AsyncMock(side_effect=OSError("not ready"))
             else:
-                stream.receive = AsyncMock(
-                    return_value=b"Renode v1.15\n(monitor) \n"
-                )
+                stream.receive = AsyncMock(return_value=b"Renode v1.15\n(monitor) \n")
             return stream
 
         with patch(
             "jumpstarter_driver_renode.monitor.connect_tcp",
             side_effect=mock_connect_tcp,
         ):
-            with patch(
-                "jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock
-            ):
+            with patch("jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock):
                 await monitor.connect("127.0.0.1", 12345)
 
         streams[0].aclose.assert_called_once()
@@ -167,9 +151,7 @@ class TestRenodeMonitor:
         """Error markers are detected even when not on the first line."""
         monitor = RenodeMonitor()
         stream = AsyncMock()
-        stream.receive = AsyncMock(
-            return_value=b"info text\nError executing command\n(monitor) \n"
-        )
+        stream.receive = AsyncMock(return_value=b"info text\nError executing command\n(monitor) \n")
         monitor._stream = stream
         monitor._buffer = b""
 
@@ -187,10 +169,53 @@ class TestRenodeMonitor:
         assert monitor._is_prompt(b"(my-machine)") is True
         assert monitor._is_prompt(b"(other)") is False
 
+    @pytest.mark.anyio
+    async def test_connect_timeout_on_persistent_error(self):
+        """connect() raises TimeoutError when OSError persists."""
+        monitor = RenodeMonitor()
 
-# ---------------------------------------------------------------------------
-# 5.2 RenodePower unit tests
-# ---------------------------------------------------------------------------
+        async def always_fail(host, port):
+            raise OSError("Connection refused")
+
+        with patch(
+            "jumpstarter_driver_renode.monitor.connect_tcp",
+            side_effect=always_fail,
+        ):
+            with pytest.raises(TimeoutError):
+                await monitor.connect("127.0.0.1", 12345, timeout=0.5)
+
+    @pytest.mark.anyio
+    async def test_read_until_prompt_connection_closed(self):
+        """_read_until_prompt raises ConnectionError on empty receive."""
+        monitor = RenodeMonitor()
+        stream = AsyncMock()
+        stream.receive = AsyncMock(return_value=b"")
+        monitor._stream = stream
+        monitor._buffer = b""
+
+        with pytest.raises(ConnectionError, match="connection closed"):
+            await monitor._read_until_prompt()
+
+    def test_close_sync_closes_raw_socket(self):
+        """close_sync() closes the underlying socket and clears state."""
+        monitor = RenodeMonitor()
+        mock_socket = MagicMock()
+        stream = MagicMock()
+        stream.extra = MagicMock(return_value=mock_socket)
+        monitor._stream = stream
+        monitor._buffer = b"leftover"
+
+        monitor.close_sync()
+
+        mock_socket.close.assert_called_once()
+        assert monitor._stream is None
+        assert monitor._buffer == b""
+
+    def test_close_sync_no_stream(self):
+        """close_sync() is safe to call when not connected."""
+        monitor = RenodeMonitor()
+        monitor.close_sync()
+        assert monitor._stream is None
 
 
 def _make_driver(**kwargs) -> Renode:
@@ -218,9 +243,7 @@ class TestRenodePower:
                 "jumpstarter_driver_renode.driver._find_free_port",
                 return_value=54321,
             ):
-                with patch(
-                    "jumpstarter_driver_renode.driver.Popen"
-                ) as mock_popen:
+                with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
                     mock_popen.return_value = MagicMock()
                     with patch(
                         "jumpstarter_driver_renode.driver.RenodeMonitor",
@@ -240,9 +263,7 @@ class TestRenodePower:
     @pytest.mark.anyio
     async def test_power_on_with_extra_commands(self):
         """Extra commands are sent between connector Connect and LoadELF."""
-        driver = _make_driver(
-            extra_commands=["sysbus WriteDoubleWord 0x40090030 0x0301"]
-        )
+        driver = _make_driver(extra_commands=["sysbus WriteDoubleWord 0x40090030 0x0301"])
         driver._firmware_path = "/tmp/test.elf"
         power: RenodePower = driver.children["power"]
         mock_monitor = AsyncMock(spec=RenodeMonitor)
@@ -255,9 +276,7 @@ class TestRenodePower:
                 "jumpstarter_driver_renode.driver._find_free_port",
                 return_value=54321,
             ):
-                with patch(
-                    "jumpstarter_driver_renode.driver.Popen"
-                ) as mock_popen:
+                with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
                     mock_popen.return_value = MagicMock()
                     with patch(
                         "jumpstarter_driver_renode.driver.RenodeMonitor",
@@ -266,17 +285,9 @@ class TestRenodePower:
                         await power.on()
 
         calls = [c.args[0] for c in mock_monitor.execute.call_args_list]
-        connect_idx = next(
-            i for i, c in enumerate(calls) if "connector Connect" in c
-        )
-        load_idx = next(
-            i for i, c in enumerate(calls) if "LoadELF" in c
-        )
-        extra_idx = next(
-            i
-            for i, c in enumerate(calls)
-            if "WriteDoubleWord" in c
-        )
+        connect_idx = next(i for i, c in enumerate(calls) if "connector Connect" in c)
+        load_idx = next(i for i, c in enumerate(calls) if "LoadELF" in c)
+        extra_idx = next(i for i, c in enumerate(calls) if "WriteDoubleWord" in c)
         assert connect_idx < extra_idx < load_idx
 
     @pytest.mark.anyio
@@ -294,9 +305,7 @@ class TestRenodePower:
                 "jumpstarter_driver_renode.driver._find_free_port",
                 return_value=54321,
             ):
-                with patch(
-                    "jumpstarter_driver_renode.driver.Popen"
-                ) as mock_popen:
+                with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
                     mock_popen.return_value = MagicMock()
                     with patch(
                         "jumpstarter_driver_renode.driver.RenodeMonitor",
@@ -315,7 +324,12 @@ class TestRenodePower:
         power: RenodePower = driver.children["power"]
         power._process = MagicMock()
 
-        await power.on()
+        with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
+            with patch("jumpstarter_driver_renode.driver.RenodeMonitor") as mock_monitor_cls:
+                await power.on()
+
+        mock_popen.assert_not_called()
+        mock_monitor_cls.assert_not_called()
 
     @pytest.mark.anyio
     async def test_power_off_terminates_process(self):
@@ -366,6 +380,9 @@ class TestRenodePower:
 
         await power.off()
 
+        assert power._process is None
+        assert power._monitor is None
+
     @pytest.mark.anyio
     async def test_power_close_calls_off(self):
         """close() terminates the process."""
@@ -380,10 +397,110 @@ class TestRenodePower:
         mock_process.terminate.assert_called_once()
         assert power._process is None
 
+    def test_close_kills_on_timeout(self):
+        """close() kills process when wait() times out."""
+        driver = _make_driver()
+        power: RenodePower = driver.children["power"]
+        mock_process = MagicMock()
+        mock_process.wait = MagicMock(side_effect=TimeoutExpired("renode", 5))
+        power._process = mock_process
 
-# ---------------------------------------------------------------------------
-# 5.3 RenodeFlasher unit tests
-# ---------------------------------------------------------------------------
+        power.close()
+
+        mock_process.terminate.assert_called_once()
+        mock_process.kill.assert_called_once()
+        assert power._process is None
+
+    def test_close_cleans_up_monitor_socket(self):
+        """close() calls close_sync() on the monitor before terminating."""
+        driver = _make_driver()
+        power: RenodePower = driver.children["power"]
+        mock_process = MagicMock()
+        mock_process.wait = MagicMock()
+        power._process = mock_process
+        mock_monitor = MagicMock(spec=RenodeMonitor)
+        power._monitor = mock_monitor
+
+        power.close()
+
+        mock_monitor.close_sync.assert_called_once()
+        assert power._monitor is None
+        assert power._process is None
+
+    @pytest.mark.anyio
+    async def test_power_on_cleanup_on_failure(self):
+        """on() cleans up process when monitor setup fails."""
+        driver = _make_driver()
+        power: RenodePower = driver.children["power"]
+
+        mock_monitor = AsyncMock(spec=RenodeMonitor)
+        mock_monitor.execute.side_effect = RenodeMonitorError("setup failed")
+        mock_process = MagicMock()
+        mock_process.wait = MagicMock()
+
+        with patch(
+            "jumpstarter_driver_renode.driver._find_renode",
+            return_value="/usr/bin/renode",
+        ):
+            with patch(
+                "jumpstarter_driver_renode.driver._find_free_port",
+                return_value=54321,
+            ):
+                with patch(
+                    "jumpstarter_driver_renode.driver.Popen",
+                    return_value=mock_process,
+                ):
+                    with patch(
+                        "jumpstarter_driver_renode.driver.RenodeMonitor",
+                        return_value=mock_monitor,
+                    ):
+                        with pytest.raises(RenodeMonitorError):
+                            await power.on()
+
+        assert power._process is None
+        assert power._monitor is None
+        mock_process.terminate.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_off_cleans_up_on_terminate_failure(self):
+        """off() resets _process to None even if terminate() raises."""
+        driver = _make_driver()
+        power: RenodePower = driver.children["power"]
+
+        mock_process = MagicMock()
+        mock_process.terminate = MagicMock(side_effect=ProcessLookupError)
+        power._process = mock_process
+        power._monitor = AsyncMock(spec=RenodeMonitor)
+
+        await power.off()
+
+        assert power._process is None
+        assert power._monitor is None
+
+    @pytest.mark.anyio
+    async def test_power_read_not_implemented(self):
+        """read() raises NotImplementedError."""
+        driver = _make_driver()
+        power: RenodePower = driver.children["power"]
+
+        with pytest.raises(NotImplementedError):
+            await power.read()
+
+    def test_is_running_property(self):
+        """is_running reflects process and monitor state."""
+        driver = _make_driver()
+        power: RenodePower = driver.children["power"]
+
+        assert power.is_running is False
+
+        power._process = MagicMock()
+        assert power.is_running is False
+
+        power._monitor = MagicMock()
+        assert power.is_running is True
+
+        power._process = None
+        assert power.is_running is False
 
 
 class TestRenodeFlasher:
@@ -401,12 +518,8 @@ class TestRenodeFlasher:
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
             mock_res.__aiter__ = lambda self: self
-            mock_res.__anext__ = AsyncMock(
-                side_effect=[firmware_data, StopAsyncIteration()]
-            )
-            mock_resource.return_value.__aenter__ = AsyncMock(
-                return_value=mock_res
-            )
+            mock_res.__anext__ = AsyncMock(side_effect=[firmware_data, StopAsyncIteration()])
+            mock_resource.return_value.__aenter__ = AsyncMock(return_value=mock_res)
             mock_resource.return_value.__aexit__ = AsyncMock()
 
             await flasher.flash(str(firmware_file))
@@ -429,12 +542,8 @@ class TestRenodeFlasher:
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
             mock_res.__aiter__ = lambda self: self
-            mock_res.__anext__ = AsyncMock(
-                side_effect=[elf_data, StopAsyncIteration()]
-            )
-            mock_resource.return_value.__aenter__ = AsyncMock(
-                return_value=mock_res
-            )
+            mock_res.__anext__ = AsyncMock(side_effect=[elf_data, StopAsyncIteration()])
+            mock_resource.return_value.__aenter__ = AsyncMock(return_value=mock_res)
             mock_resource.return_value.__aexit__ = AsyncMock()
 
             await flasher.flash("/some/firmware.elf")
@@ -452,12 +561,8 @@ class TestRenodeFlasher:
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
             mock_res.__aiter__ = lambda self: self
-            mock_res.__anext__ = AsyncMock(
-                side_effect=[b"\x00", StopAsyncIteration()]
-            )
-            mock_resource.return_value.__aenter__ = AsyncMock(
-                return_value=mock_res
-            )
+            mock_res.__anext__ = AsyncMock(side_effect=[b"\x00", StopAsyncIteration()])
+            mock_resource.return_value.__aenter__ = AsyncMock(return_value=mock_res)
             mock_resource.return_value.__aexit__ = AsyncMock()
 
             await flasher.flash(
@@ -496,11 +601,6 @@ class TestRenodeFlasher:
         raw = tmp_path / "fw.bin"
         raw.write_bytes(b"\x00" * 64)
         assert _detect_load_command(str(raw)) == "sysbus LoadBinary"
-
-
-# ---------------------------------------------------------------------------
-# 5.4 Configuration validation tests
-# ---------------------------------------------------------------------------
 
 
 class TestRenodeConfig:
@@ -565,10 +665,35 @@ class TestRenodeConfig:
         driver = _make_driver(machine_name="test-mcu")
         assert driver.get_machine_name() == "test-mcu"
 
+    def test_find_renode_not_on_path(self):
+        """_find_renode raises FileNotFoundError when binary is not on PATH."""
+        with patch(
+            "jumpstarter_driver_renode.driver.shutil.which",
+            return_value=None,
+        ):
+            with pytest.raises(FileNotFoundError, match="renode executable not found"):
+                _find_renode()
 
-# ---------------------------------------------------------------------------
-# 5.5 E2E test with serve()
-# ---------------------------------------------------------------------------
+    def test_set_firmware(self):
+        """set_firmware stores path and command on the driver."""
+        driver = _make_driver()
+        driver.set_firmware("/tmp/fw.elf", "sysbus LoadELF")
+        assert driver._firmware_path == "/tmp/fw.elf"
+        assert driver._load_command == "sysbus LoadELF"
+
+    @pytest.mark.anyio
+    async def test_monitor_cmd_success(self):
+        """monitor_cmd succeeds when allow_raw_monitor is True and running."""
+        driver = _make_driver(allow_raw_monitor=True)
+        power: RenodePower = driver.children["power"]
+        mock_monitor = AsyncMock(spec=RenodeMonitor)
+        mock_monitor.execute = AsyncMock(return_value="OK\n")
+        power._process = MagicMock()
+        power._monitor = mock_monitor
+
+        result = await driver.monitor_cmd("version")
+        assert result == "OK\n"
+        mock_monitor.execute.assert_called_once_with("version")
 
 
 @pytest.mark.skipif(
@@ -589,11 +714,6 @@ def test_driver_renode_e2e(tmp_path):
 
         renode.power.on()
         renode.power.off()
-
-
-# ---------------------------------------------------------------------------
-# 5.6 Client and CLI tests
-# ---------------------------------------------------------------------------
 
 
 class TestRenodeClient:
