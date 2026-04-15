@@ -703,7 +703,7 @@ class TestMonitorTokenExpiry:
 
         def check_cancelled():
             nonlocal call_count
-            call_count += 1
+            call_count += 1  # ty: ignore[unresolved-reference]
             return call_count > 1
 
         config = _make_config()

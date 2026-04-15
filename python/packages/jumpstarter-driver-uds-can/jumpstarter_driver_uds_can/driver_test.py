@@ -326,27 +326,27 @@ def test_uds_can_close_resources(mock_bus_cls, mock_notifier_cls, mock_stack_cls
 
 def test_uds_can_missing_required_channel():
     with pytest.raises(ValidationError, match="channel"):
-        UdsCan(rxid=0x641, txid=0x642)
+        UdsCan(rxid=0x641, txid=0x642)  # ty: ignore[missing-argument]
 
 
 def test_uds_can_missing_required_rxid():
     with pytest.raises(ValidationError, match="rxid"):
-        UdsCan(channel="vcan0", txid=0x642)
+        UdsCan(channel="vcan0", txid=0x642)  # ty: ignore[missing-argument]
 
 
 def test_uds_can_missing_required_txid():
     with pytest.raises(ValidationError, match="txid"):
-        UdsCan(channel="vcan0", rxid=0x641)
+        UdsCan(channel="vcan0", rxid=0x641)  # ty: ignore[missing-argument]
 
 
 def test_uds_can_invalid_channel_type():
     with pytest.raises(ValidationError):
-        UdsCan(channel=12345, rxid=0x641, txid=0x642)
+        UdsCan(channel=12345, rxid=0x641, txid=0x642)  # ty: ignore[invalid-argument-type]
 
 
 def test_uds_can_invalid_timeout_type():
     with pytest.raises(ValidationError):
-        UdsCan(channel="vcan0", rxid=0x641, txid=0x642, request_timeout="not_a_float")
+        UdsCan(channel="vcan0", rxid=0x641, txid=0x642, request_timeout="not_a_float")  # ty: ignore[invalid-argument-type]
 
 
 @patch("jumpstarter_driver_uds_can.driver.UdsoncanClient")

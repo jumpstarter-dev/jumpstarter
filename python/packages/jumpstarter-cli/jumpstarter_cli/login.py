@@ -228,9 +228,11 @@ async def login(  # noqa: C901
     match config:
         # we are updating an existing config
         case ClientConfigV1Alpha1():
+            assert config.token is not None
             issuer = decode_jwt_issuer(config.token)
             config_kind = "client"
         case ExporterConfigV1Alpha1():
+            assert config.token is not None
             issuer = decode_jwt_issuer(config.token)
             config_kind = "exporter"
         # we are creating a new config
@@ -313,7 +315,7 @@ async def login(  # noqa: C901
     if stored_refresh_token and token is None and username is None and password is None:
         try:
             tokens = await oidc.refresh_token_grant(stored_refresh_token)
-            config.token = tokens["access_token"]
+            config.token = tokens["access_token"]  # ty: ignore[invalid-assignment]
             refresh_token = tokens.get("refresh_token")
             if refresh_token is not None and isinstance(config, ClientConfigV1Alpha1):
                 config.refresh_token = refresh_token
@@ -333,7 +335,7 @@ async def login(  # noqa: C901
     else:
         tokens = await oidc.authorization_code_grant(callback_port=callback_port)
 
-    config.token = tokens["access_token"]
+    config.token = tokens["access_token"]  # ty: ignore[invalid-assignment]
     refresh_token = tokens.get("refresh_token")
 
     # only client configs support refresh_token
@@ -352,6 +354,8 @@ async def login(  # noqa: C901
 async def relogin_client(config: ClientConfigV1Alpha1):
     """Relogin into a jumpstarter instance"""
     client_id = "jumpstarter-cli"  # TODO: store this metadata in the config
+    if config.token is None:
+        raise ReauthenticationFailed("No token set in client config")
     try:
         issuer = decode_jwt_issuer(config.token)
     except Exception as e:

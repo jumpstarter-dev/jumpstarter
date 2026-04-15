@@ -155,7 +155,7 @@ class DemuxerManager:
         if cls._signal_handlers_installed:
             return
 
-        def make_handler(sig: signal.Signals) -> Callable[[int, any], None]:
+        def make_handler(sig: signal.Signals) -> Callable[[int, any], None]:  # ty: ignore[invalid-type-form]
             """Create a signal handler that cleans up and re-raises the signal."""
 
             def handler(signum: int, frame):

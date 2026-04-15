@@ -51,6 +51,7 @@ class MockHTTPHandler(BaseHTTPRequestHandler):
 def test_drivers_http_power():
     # Start a mock HTTP server
     server = HTTPServer(('localhost', 0), MockHTTPHandler)
+    server.requests = []  # ty: ignore[unresolved-attribute]
     server_port = server.server_address[1]
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.daemon = True
@@ -82,22 +83,22 @@ def test_drivers_http_power():
             assert readings[0].current == 0.0
 
             # Verify HTTP requests were made
-            assert len(server.requests) == 3
+            assert len(server.requests) == 3  # ty: ignore[unresolved-attribute]
 
             # Check on request
-            on_request = server.requests[0]
+            on_request = server.requests[0]  # ty: ignore[unresolved-attribute]
             assert on_request['method'] == 'POST'
             assert on_request['path'] == '/on'
             assert on_request['body'] == 'power=on'
 
             # Check off request
-            off_request = server.requests[1]
+            off_request = server.requests[1]  # ty: ignore[unresolved-attribute]
             assert off_request['method'] == 'POST'
             assert off_request['path'] == '/off'
             assert off_request['body'] == 'power=off'
 
             # Check read request
-            read_request = server.requests[2]
+            read_request = server.requests[2]  # ty: ignore[unresolved-attribute]
             assert read_request['method'] == 'GET'
             assert read_request['path'] == '/read'
             assert read_request['body'] is None

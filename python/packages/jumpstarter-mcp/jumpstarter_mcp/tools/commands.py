@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import asyncio.subprocess
 import logging
 import shutil
 
 import anyio
+import anyio.to_thread
 import click
 
 from jumpstarter_mcp.connections import ConnectionManager
@@ -99,7 +101,7 @@ async def explore(
     if not hasattr(client, "cli"):
         return {"error": "Client does not have a CLI interface"}
 
-    cli_cmd = await anyio.to_thread.run_sync(client.cli)
+    cli_cmd = await anyio.to_thread.run_sync(client.cli)  # ty: ignore[invalid-argument-type]
 
     if command_path:
         for name in command_path:

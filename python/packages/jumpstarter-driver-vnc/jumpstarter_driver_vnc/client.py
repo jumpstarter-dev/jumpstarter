@@ -12,21 +12,21 @@ from jumpstarter_driver_network.adapters.novnc import NovncAdapter
 from jumpstarter.client.decorators import driver_click_group
 
 if typing.TYPE_CHECKING:
-    from jumpstarter_driver_network.client import TCPClient
+    from jumpstarter_driver_network.client import NetworkClient
 
 
 class VNClient(CompositeClient):
     """Client for interacting with a VNC server."""
 
     @property
-    def tcp(self) -> TCPClient:
+    def tcp(self) -> NetworkClient:
         """
         Access the underlying TCP client.
 
         Returns:
-            TCPClient: The TCP client instance stored in this composite client's children mapping.
+            NetworkClient: The TCP client instance stored in this composite client's children mapping.
         """
-        return typing.cast("TCPClient", self.children["tcp"])
+        return typing.cast("NetworkClient", self.children["tcp"])
 
     def stream(self, method="connect"):
         """Create a new stream, proxied to the underlying TCP driver."""

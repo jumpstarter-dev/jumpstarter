@@ -314,7 +314,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
         # Check if this is an ExceptionGroup and look through its exceptions
         if hasattr(exception, "exceptions"):
-            for sub_exc in exception.exceptions:
+            for sub_exc in exception.exceptions:  # ty: ignore[not-iterable]
                 result = self._find_exception_in_chain(sub_exc, target_type)
                 if result is not None:
                     return result

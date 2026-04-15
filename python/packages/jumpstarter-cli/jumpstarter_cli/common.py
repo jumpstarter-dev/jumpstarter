@@ -52,7 +52,7 @@ class DurationParamType(click.ParamType):
                 td = None
                 try:
                     seconds = parse_duration(value)
-                    if seconds is not None:
+                    if seconds is not None and isinstance(seconds, (int, float)):
                         td = timedelta(seconds=seconds)
                 except (ValueError, TypeError):
                     pass

@@ -208,22 +208,22 @@ def test_doip_reconnect_failure(mock_doip_cls):
 
 def test_doip_missing_required_ecu_ip():
     with pytest.raises(ValidationError, match="ecu_ip"):
-        DoIP(ecu_logical_address=0x00E0)
+        DoIP(ecu_logical_address=0x00E0)  # ty: ignore[missing-argument]
 
 
 def test_doip_missing_required_ecu_logical_address():
     with pytest.raises(ValidationError, match="ecu_logical_address"):
-        DoIP(ecu_ip="192.168.1.100")
+        DoIP(ecu_ip="192.168.1.100")  # ty: ignore[missing-argument]
 
 
 def test_doip_invalid_ecu_ip_type():
     with pytest.raises(ValidationError):
-        DoIP(ecu_ip=12345, ecu_logical_address=0x00E0)
+        DoIP(ecu_ip=12345, ecu_logical_address=0x00E0)  # ty: ignore[invalid-argument-type]
 
 
 def test_doip_invalid_tcp_port_type():
     with pytest.raises(ValidationError):
-        DoIP(ecu_ip="192.168.1.100", ecu_logical_address=0x00E0, tcp_port="not_a_port")
+        DoIP(ecu_ip="192.168.1.100", ecu_logical_address=0x00E0, tcp_port="not_a_port")  # ty: ignore[invalid-argument-type]
 
 
 def test_doip_invalid_auto_reconnect_tcp_type():
@@ -231,7 +231,7 @@ def test_doip_invalid_auto_reconnect_tcp_type():
         DoIP(
             ecu_ip="192.168.1.100",
             ecu_logical_address=0x00E0,
-            auto_reconnect_tcp="not_bool",
+            auto_reconnect_tcp="not_bool",  # ty: ignore[invalid-argument-type]
         )
 
 

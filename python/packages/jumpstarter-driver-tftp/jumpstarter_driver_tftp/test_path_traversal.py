@@ -11,7 +11,7 @@ def server():
     return TftpServer(
         host="127.0.0.1",
         port=0,
-        operator=operator,
+        operator=operator,  # ty: ignore[invalid-argument-type]
     )
 
 
