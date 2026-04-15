@@ -65,7 +65,7 @@ jobs:
 
       - name: Cache controller image
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/controller-image.tar
           key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Dockerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
@@ -108,7 +108,7 @@ jobs:
 
       - name: Cache operator artifacts
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             /tmp/operator-image.tar
@@ -147,7 +147,7 @@ jobs:
 
       - name: Cache python wheels
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: python/dist
           key: python-wheels-${{ hashFiles('python/**/*.py', 'python/**/pyproject.toml', 'python/uv.lock') }}
