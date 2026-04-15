@@ -330,11 +330,44 @@ func TestListenQueueTimerCleanup(t *testing.T) {
 
 		// Queue must still be present immediately after the error.
 		if _, ok := svc.listenQueues.Load(leaseName); !ok {
-			t.Fatal("listen queue was removed immediately after stream error — Dial token would be lost")
+			t.Fatal("listen queue was removed immediately after stream error -- Dial token would be lost")
+		}
+	})
+
+	t.Run("buffered token survives disconnect and is readable after reconnect", func(t *testing.T) {
+		// Write a Dial token into the queue while the exporter is disconnected.
+		token := &pb.ListenResponse{}
+		ch <- token
+
+		// Simulate Listen() reconnect: cancel the timer and call LoadOrStore.
+		if raw, ok := svc.listenTimers.LoadAndDelete(leaseName); ok {
+			raw.(*time.Timer).Stop()
+		}
+		got, _ := svc.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+		inherited := got.(chan *pb.ListenResponse)
+		if inherited != ch {
+			t.Fatal("reconnecting Listen() did not inherit the existing queue")
+		}
+
+		// Read the token back -- this is the primary scenario this fix targets.
+		select {
+		case msg := <-inherited:
+			if msg != token {
+				t.Fatal("token read from inherited queue does not match the one written during disconnect")
+			}
+		default:
+			t.Fatal("no token available in inherited queue -- Dial token was lost")
 		}
 	})
 
 	t.Run("reconnecting exporter cancels cleanup timer", func(t *testing.T) {
+		// Re-arm a timer to simulate another transient error.
+		timer := time.AfterFunc(listenQueueCleanupDelay, func() {
+			svc.listenQueues.Delete(leaseName)
+			svc.listenTimers.Delete(leaseName)
+		})
+		svc.listenTimers.Store(leaseName, timer)
+
 		// Simulate Listen() reconnect: cancel the timer and call LoadOrStore.
 		if raw, ok := svc.listenTimers.LoadAndDelete(leaseName); ok {
 			raw.(*time.Timer).Stop()
@@ -344,7 +377,7 @@ func TestListenQueueTimerCleanup(t *testing.T) {
 			t.Fatal("reconnecting Listen() did not inherit the existing queue")
 		}
 
-		// Verify the queue is still present — the stopped timer must not
+		// Verify the queue is still present -- the stopped timer must not
 		// have fired.
 		if _, ok := svc.listenQueues.Load(leaseName); !ok {
 			t.Fatal("listen queue was removed even though cleanup timer was cancelled")
@@ -355,15 +388,22 @@ func TestListenQueueTimerCleanup(t *testing.T) {
 		// Shorten the delay so this subtest completes quickly.
 		listenQueueCleanupDelay = 50 * time.Millisecond
 
-		// Re-arm the timer without cancelling it this time.
+		// Use a channel to detect when the timer callback completes,
+		// avoiding time.Sleep-based flakiness under CI load.
+		done := make(chan struct{})
 		timer := time.AfterFunc(listenQueueCleanupDelay, func() {
 			svc.listenQueues.Delete(leaseName)
 			svc.listenTimers.Delete(leaseName)
+			close(done)
 		})
 		svc.listenTimers.Store(leaseName, timer)
 
-		// Wait for the timer to fire.
-		time.Sleep(listenQueueCleanupDelay * 4)
+		// Wait for the timer callback to signal completion.
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("cleanup timer did not fire within timeout")
+		}
 		if _, ok := svc.listenQueues.Load(leaseName); ok {
 			t.Fatal("listen queue was not removed after cleanup timer fired")
 		}
@@ -375,7 +415,7 @@ func TestListenQueueTimerCleanup(t *testing.T) {
 // the cleanup timer.
 func TestListenQueueCleanShutdown(t *testing.T) {
 	original := listenQueueCleanupDelay
-	listenQueueCleanupDelay = 2 * time.Minute // keep long — must NOT fire during test
+	listenQueueCleanupDelay = 2 * time.Minute // keep long -- must NOT fire during test
 	t.Cleanup(func() { listenQueueCleanupDelay = original })
 
 	svc := &ControllerService{}

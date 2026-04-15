@@ -89,7 +89,7 @@ type ControllerService struct {
 	ServerOptions []grpc.ServerOption
 	Router        config.Router
 	listenQueues  sync.Map // key: leaseName, value: chan *pb.ListenResponse
-	listenTimers  sync.Map // key: leaseName, value: *time.Timer — deferred cleanup after transient disconnect
+	listenTimers  sync.Map // key: leaseName, value: *time.Timer -- deferred cleanup after transient disconnect
 }
 
 type wrappedStream struct {
@@ -449,7 +449,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	// Cancel any pending cleanup timer — the exporter is reconnecting and
+	// Cancel any pending cleanup timer -- the exporter is reconnecting and
 	// should inherit the existing queue (which may hold a buffered Dial token).
 	if t, ok := s.listenTimers.LoadAndDelete(leaseName); ok {
 		t.(*time.Timer).Stop()
@@ -473,7 +473,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 				// any Dial token that was buffered between the error and now.
 				// listenQueueCleanupDelay gives the exporter time to reconnect.
 				//
-				// Known limitation: there is a narrow race at timer expiry —
+				// Known limitation: there is a narrow race at timer expiry --
 				// if Dial() calls LoadOrStore and obtains the queue just before
 				// this callback deletes it, the buffered token is lost.  The
 				// window is microseconds wide and only opens after
@@ -482,8 +482,15 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 				// typically being reclaimed anyway.  Replacing sync.Map with a
 				// mutex-protected map would close this race by holding the lock
 				// across both the timer check and the queue access.
+				if old, ok := s.listenTimers.LoadAndDelete(leaseName); ok {
+					old.(*time.Timer).Stop()
+				}
 				t := time.AfterFunc(listenQueueCleanupDelay, func() {
-					s.listenQueues.Delete(leaseName)
+					if q, ok := s.listenQueues.LoadAndDelete(leaseName); ok {
+						logger.Info("listen queue cleanup timer fired",
+							"lease", leaseName,
+							"bufferedTokens", len(q.(chan *pb.ListenResponse)))
+					}
 					s.listenTimers.Delete(leaseName)
 				})
 				s.listenTimers.Store(leaseName, t)
