@@ -17,8 +17,10 @@ limitations under the License.
 package service
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
@@ -556,7 +558,7 @@ func TestListenQueueStaleReaderConsumesDialToken(t *testing.T) {
 	}
 }
 
-func TestListenQueueConcurrentReadersAreNonDeterministic(t *testing.T) {
+func TestListenQueueStaleReaderAlwaysDetectsSupersession(t *testing.T) {
 	staleWins := 0
 	iterations := 100
 
@@ -786,6 +788,330 @@ func TestListenQueueDoneClosedBeforeMapDeleteWithConcurrentDial(t *testing.T) {
 	case <-q.ch:
 		t.Fatal("token should not be buffered in a queue whose done was closed first")
 	default:
+	}
+}
+
+func TestListenQueueDialReturnsUnavailableWhenNoListener(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "nonexistent-lease"
+
+	_, ok := svc.listenQueues.Load(leaseName)
+	if ok {
+		t.Fatal("expected no entry for nonexistent lease")
+	}
+}
+
+func TestListenQueueDialReturnsUnavailableWhenDoneClosed(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-done-closed"
+
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	q.closeDone()
+	svc.listenQueues.Store(leaseName, q)
+
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should exist")
+	}
+	loaded := v.(*listenQueue)
+
+	select {
+	case <-loaded.done:
+	default:
+		t.Fatal("dial pre-check should detect closed done channel")
+	}
+}
+
+func TestListenQueueContextCancellationExitsListenLoop(t *testing.T) {
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	exited := make(chan struct{})
+
+	go func() {
+		defer close(exited)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-wrapper.done:
+				return
+			case <-wrapper.ch:
+			}
+		}
+	}()
+
+	cancel()
+
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+		t.Fatal("listen loop did not exit after context cancellation")
+	}
+}
+
+func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-concurrent-dial"
+
+	g1 := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, g1)
+
+	var deliveredCount int64
+	var mu sync.Mutex
+
+	g1ListenerDone := make(chan struct{})
+	go func() {
+		defer close(g1ListenerDone)
+		for {
+			select {
+			case <-g1.done:
+				return
+			case <-g1.ch:
+				mu.Lock()
+				deliveredCount++
+				mu.Unlock()
+			}
+		}
+	}()
+
+	dialAttempts := 50
+	var dialWg sync.WaitGroup
+	var rejectedCount int64
+	var rejectedMu sync.Mutex
+	var sentCount int64
+	var sentMu sync.Mutex
+
+	var g2 *listenQueue
+	g2ListenerDone := make(chan struct{})
+
+	for i := 0; i < dialAttempts; i++ {
+		dialWg.Add(1)
+		go func() {
+			defer dialWg.Done()
+			v, ok := svc.listenQueues.Load(leaseName)
+			if !ok {
+				rejectedMu.Lock()
+				rejectedCount++
+				rejectedMu.Unlock()
+				return
+			}
+			q := v.(*listenQueue)
+			select {
+			case <-q.done:
+				rejectedMu.Lock()
+				rejectedCount++
+				rejectedMu.Unlock()
+				return
+			default:
+			}
+			select {
+			case <-q.done:
+				rejectedMu.Lock()
+				rejectedCount++
+				rejectedMu.Unlock()
+			case q.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}:
+				sentMu.Lock()
+				sentCount++
+				sentMu.Unlock()
+			}
+		}()
+
+		if i == 25 {
+			g2 = &listenQueue{
+				ch:   make(chan *pb.ListenResponse, 8),
+				done: make(chan struct{}),
+			}
+			old, _ := svc.listenQueues.Swap(leaseName, g2)
+			old.(*listenQueue).closeDone()
+
+			localG2 := g2
+			go func() {
+				defer close(g2ListenerDone)
+				for {
+					select {
+					case <-localG2.done:
+						return
+					case <-localG2.ch:
+						mu.Lock()
+						deliveredCount++
+						mu.Unlock()
+					}
+				}
+			}()
+		}
+	}
+
+	dialWg.Wait()
+
+	<-g1ListenerDone
+
+	drainCount := 0
+	for {
+		select {
+		case <-g1.ch:
+			drainCount++
+		default:
+			goto drained
+		}
+	}
+drained:
+
+	if g2 != nil {
+		g2.closeDone()
+		<-g2ListenerDone
+		for {
+			select {
+			case <-g2.ch:
+				drainCount++
+			default:
+				goto g2drained
+			}
+		}
+	}
+g2drained:
+
+	mu.Lock()
+	delivered := deliveredCount
+	mu.Unlock()
+	rejectedMu.Lock()
+	rejected := rejectedCount
+	rejectedMu.Unlock()
+	sentMu.Lock()
+	sent := sentCount
+	sentMu.Unlock()
+
+	totalHandled := delivered + rejected + int64(drainCount)
+	if totalHandled != int64(dialAttempts) {
+		t.Fatalf("expected %d total outcomes, got %d delivered + %d rejected + %d drained = %d",
+			dialAttempts, delivered, rejected, drainCount, totalHandled)
+	}
+
+	if sent != delivered+int64(drainCount) {
+		t.Fatalf("sent count %d does not match delivered %d + drained %d",
+			sent, delivered, drainCount)
+	}
+
+	select {
+	case <-g1.done:
+	default:
+		t.Fatal("g1 done channel should be closed after reconnection")
+	}
+}
+
+func TestListenQueueListenLoopDeliversTokensAndExitsOnDone(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-listen-loop"
+
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	old, loaded := svc.listenQueues.Swap(leaseName, wrapper)
+	if loaded {
+		old.(*listenQueue).closeDone()
+	}
+
+	delivered := make(chan *pb.ListenResponse, 8)
+	loopExited := make(chan struct{})
+
+	go func() {
+		defer close(loopExited)
+		defer svc.listenQueues.CompareAndDelete(leaseName, wrapper)
+		defer wrapper.closeDone()
+		for {
+			select {
+			case <-wrapper.done:
+				return
+			case msg := <-wrapper.ch:
+				delivered <- msg
+			}
+		}
+	}()
+
+	wrapper.ch <- &pb.ListenResponse{RouterEndpoint: "ep1", RouterToken: "tok1"}
+	wrapper.ch <- &pb.ListenResponse{RouterEndpoint: "ep2", RouterToken: "tok2"}
+
+	for i := 0; i < 2; i++ {
+		select {
+		case msg := <-delivered:
+			if msg.RouterEndpoint == "" || msg.RouterToken == "" {
+				t.Fatal("received empty token")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for token delivery")
+		}
+	}
+
+	superseder := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	prev, _ := svc.listenQueues.Swap(leaseName, superseder)
+	prev.(*listenQueue).closeDone()
+
+	select {
+	case <-loopExited:
+	case <-time.After(time.Second):
+		t.Fatal("listen loop did not exit after supersession")
+	}
+
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should still exist for superseder")
+	}
+	if v != superseder {
+		t.Fatal("queue entry should be the superseder")
+	}
+}
+
+func TestListenQueueDialFlowSendsToActiveListener(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-dial-flow"
+
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Swap(leaseName, wrapper)
+
+	ctx := context.Background()
+	response := &pb.ListenResponse{RouterEndpoint: "dial-ep", RouterToken: "dial-tok"}
+
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should exist")
+	}
+	q := v.(*listenQueue)
+	select {
+	case <-q.done:
+		t.Fatal("done channel should not be closed for active listener")
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		t.Fatal("context should not be done")
+	case <-q.done:
+		t.Fatal("done channel should not be closed for active listener")
+	case q.ch <- response:
+	}
+
+	select {
+	case got := <-wrapper.ch:
+		if got.RouterEndpoint != "dial-ep" || got.RouterToken != "dial-tok" {
+			t.Fatal("received corrupted token")
+		}
+	default:
+		t.Fatal("token was not delivered to the active listener")
 	}
 }
 
