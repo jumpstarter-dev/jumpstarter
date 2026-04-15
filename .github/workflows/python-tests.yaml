@@ -87,7 +87,7 @@ jobs:
       - name: Install Renode (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install renode
+          brew install renode/tap/renode
 
       - name: Cache Fedora Cloud images
         id: cache-fedora-cloud-images
