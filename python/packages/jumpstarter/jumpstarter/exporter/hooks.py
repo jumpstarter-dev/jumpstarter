@@ -376,16 +376,24 @@ class HookExecutor:
                         # Drain any remaining data from the PTY buffer.
                         # On macOS, PTY output may still be in the kernel buffer
                         # after the subprocess exits and the stop flag is set.
-                        while True:
-                            try:
-                                chunk = os.read(parent_fd, 4096)
-                                if not chunk:
+                        # Bound the drain to prevent spinning indefinitely if a
+                        # grandchild process holds the PTY slave fd open.
+                        try:
+                            drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+                            drained = 0
+                            while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
+                                try:
+                                    chunk = os.read(parent_fd, 4096)
+                                    if not chunk:
+                                        break
+                                    buffer += chunk
+                                    drained += len(chunk)
+                                except (BlockingIOError, OSError):
                                     break
-                                buffer += chunk
-                            except (BlockingIOError, OSError):
-                                break
 
-                        buffer = _flush_lines(buffer, output_lines)
+                            buffer = _flush_lines(buffer, output_lines)
+                        except Exception:
+                            logger.debug("read_pty_output: error during drain", exc_info=True)
 
                         logger.debug("read_pty_output: exiting, processed %d iterations", read_count)
                         if buffer:

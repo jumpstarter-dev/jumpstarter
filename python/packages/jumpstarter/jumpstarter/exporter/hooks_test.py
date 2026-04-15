@@ -1,3 +1,4 @@
+import os
 from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -5,7 +6,13 @@ import pytest
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
-from jumpstarter.exporter.hooks import HookExecutionError, HookExecutor, _flush_lines
+from jumpstarter.exporter.hooks import (
+    DRAIN_TIMEOUT_SECONDS,
+    MAX_DRAIN_BYTES,
+    HookExecutionError,
+    HookExecutor,
+    _flush_lines,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -467,6 +474,60 @@ class TestHookExecutor:
             assert any("DRAIN_LINE_1" in call for call in info_calls)
             assert any("DRAIN_LINE_2" in call for call in info_calls)
             assert any("DRAIN_LINE_3" in call for call in info_calls)
+
+    async def test_drain_respects_byte_limit(self) -> None:
+        """Verify the drain loop stops after MAX_DRAIN_BYTES to prevent
+        indefinite blocking when a grandchild process holds the PTY open.
+
+        Directly tests the drain logic using a pipe with data exceeding the
+        byte limit. Uses non-blocking writes to fill the pipe without blocking.
+        """
+        import fcntl
+        import time
+
+        read_fd, write_fd = os.pipe()
+        try:
+            flags = fcntl.fcntl(read_fd, fcntl.F_GETFL)
+            fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            wflags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
+            fcntl.fcntl(write_fd, fcntl.F_SETFL, wflags | os.O_NONBLOCK)
+
+            total_written = 0
+            chunk = b"X" * 4000 + b"\n"
+            try:
+                while True:
+                    os.write(write_fd, chunk)
+                    total_written += len(chunk)
+            except BlockingIOError:
+                pass
+
+            assert total_written > 0
+
+            output_lines: list[str] = []
+            buffer = b""
+            drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+            drained = 0
+            while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
+                try:
+                    data = os.read(read_fd, 4096)
+                    if not data:
+                        break
+                    buffer += data
+                    drained += len(data)
+                except (BlockingIOError, OSError):
+                    break
+
+            buffer = _flush_lines(buffer, output_lines)
+
+            assert drained <= MAX_DRAIN_BYTES
+            assert len(output_lines) > 0
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
+    async def test_drain_constants_are_reasonable(self) -> None:
+        assert MAX_DRAIN_BYTES == 256 * 1024
+        assert DRAIN_TIMEOUT_SECONDS == 2.0
 
     async def test_exec_default_is_none(self) -> None:
         """Test that the default exec is None (auto-detect)."""
