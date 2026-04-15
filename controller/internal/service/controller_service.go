@@ -448,7 +448,13 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	if loaded {
 		existing := actual.(*listenQueue)
 		wrapper = &listenQueue{ch: existing.ch}
-		s.listenQueues.CompareAndSwap(leaseName, existing, wrapper)
+		if !s.listenQueues.CompareAndSwap(leaseName, existing, wrapper) {
+			if v, ok := s.listenQueues.Load(leaseName); ok {
+				current := v.(*listenQueue)
+				wrapper = &listenQueue{ch: current.ch}
+				s.listenQueues.CompareAndSwap(leaseName, current, wrapper)
+			}
+		}
 	}
 	defer s.listenQueues.CompareAndDelete(leaseName, wrapper)
 	for {
