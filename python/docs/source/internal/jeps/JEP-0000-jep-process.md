@@ -80,7 +80,7 @@ different purposes and operate at different scopes:
 | **Scope**     | Cross-cutting changes to the project       | Scoped to a single component or driver              |
 | **Process**   | Requires community review and maintainer approval | Included with the implementation PR                |
 | **When**      | Before implementation begins               | Alongside or within an implementation PR            |
-| **Location**  | `docs/internal/jeps/` directory             | `docs/internal/adr/` directory                      |
+| **Location**  | `python/docs/source/internal/jeps/` directory             | `python/docs/source/internal/adr/` directory                      |
 | **Example**   | New lease scheduling strategy              | Choice of telnet vs pyrenode3 for Renode driver     |
 
 **Use a JEP** when the change affects multiple components, changes public APIs or
@@ -153,7 +153,7 @@ reviewers, and surfaces obvious concerns early.
 
 ### 2. Submit a JEP Pull Request
 
-Create a new branch and add your JEP as a markdown file in the `docs/internal/jeps/`
+Create a new branch and add your JEP as a markdown file in the `python/docs/source/internal/jeps/`
 directory, following the [JEP template](JEP-NNNN-template.md). Open a pull
 request against the main branch. The PR-based workflow makes discussion
 easier through inline review comments and suggested changes.
@@ -167,7 +167,7 @@ JEP: Short descriptive title
 The JEP number is an incrementing integer assigned sequentially (e.g.,
 JEP-0010, JEP-0011, JEP-0012). It is not derived from the PR number.
 To determine the next available number, check the existing JEPs in the
-`docs/internal/jeps/` directory and increment from the highest existing number.
+`python/docs/source/internal/jeps/` directory and increment from the highest existing number.
 Apply the `jep` label to the pull request.
 
 Fill in every section of the template. Sections marked `(Optional)` may be
@@ -223,7 +223,7 @@ reused. JEP-0000 through JEP-0009 are reserved for process and meta-JEPs.
 
 ## JEP Index
 
-The file `docs/internal/jeps/README.md` serves as the index of all JEPs.
+The file `python/docs/source/internal/jeps/README.md` serves as the index of all JEPs.
 Alternatively, all JEPs can be found by filtering GitHub pull requests with
 the `jep` label.
 

@@ -17,7 +17,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 1. Read [JEP-0000](JEP-0000-jep-process.md) to understand when a JEP is needed.
 2. Socialize your idea in [Matrix](https://matrix.to/#/#jumpstarter:matrix.org)
    or at the [weekly meeting](https://meet.google.com/gzd-hhbd-hpu).
-3. Create a branch and add your JEP markdown file to the `docs/internal/jeps/` directory
+3. Create a branch and add your JEP markdown file to the `python/docs/source/internal/jeps/` directory
    using the [JEP-NNNN-template.md](JEP-NNNN-template.md) as a starting point.
 4. Open a pull request. The PR serves as the primary venue for discussion,
    allowing inline review comments on the JEP text.
@@ -46,7 +46,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 
 For technical decisions scoped to a single component or driver (e.g., choosing a
 control interface for a new driver), use an Architecture Decision Record instead
-of a JEP. ADRs live in `docs/internal/adr/` and are submitted
+of a JEP. ADRs live in `python/docs/source/internal/adr/` and are submitted
 alongside the implementation PR. See [JEP-0000](JEP-0000-jep-process.md) for
 guidance on when to use a JEP vs an ADR.
 
@@ -100,7 +100,7 @@ with the following structure:
 ```
 
 This matches the ADR convention used elsewhere in the project (see
-`docs/internal/adr/`).
+`python/docs/source/internal/adr/`).
 
 ### File naming
 
@@ -113,3 +113,9 @@ is `JEP-NNNN-template.md`.
 The JEP number is an incrementing integer assigned sequentially; it is not
 derived from the pull request number. JEP-0000 through JEP-0009 are
 reserved for process and meta-JEPs.
+
+```{toctree}
+:hidden:
+
+JEP-0000-jep-process.md
+```

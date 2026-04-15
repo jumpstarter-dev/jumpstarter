@@ -3,7 +3,7 @@
 <!--
   Use this template to create your JEP. Copy it to a new file named
   JEP-NNNN-short-title.md (where NNNN is the next available incrementing
-  integer) and place it in the docs/internal/jeps/ directory. Open a pull
+  integer) and place it in the python/docs/source/internal/jeps/ directory. Open a pull
   request against the main branch.
 
   Guidance:
@@ -111,7 +111,7 @@
 <!--
   Document each significant design decision using the pattern below.
   This follows the Architecture Decision Record (ADR) convention used
-  elsewhere in the project (see docs/internal/adr/).
+  elsewhere in the project (see python/docs/source/internal/adr/).
 
   For each decision, state what was decided, what alternatives were
   considered, and why the chosen approach was preferred. This section
