@@ -498,6 +498,10 @@ func (pt *ProcessTracker) StopAll() {
 	}
 	pt.pids = nil
 
+	// Reset log buffers so stale data from earlier tests does not
+	// accumulate and confuse debugging of subsequent test failures.
+	pt.logs = make(map[string]*logBuffer)
+
 	// Kill orphaned jmp exporter processes
 	_ = exec.Command("pkill", "-9", "-f", "jmp run --exporter").Run()
 }
