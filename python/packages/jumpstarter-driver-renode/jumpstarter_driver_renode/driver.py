@@ -193,6 +193,8 @@ class RenodePower(PowerInterface, Driver):
                 await to_thread.run_sync(self._process.wait, 5)
             except TimeoutExpired:
                 self._process.kill()
+        except ProcessLookupError:
+            pass
         finally:
             self._process = None
 
@@ -213,6 +215,8 @@ class RenodePower(PowerInterface, Driver):
                     self._process.wait(timeout=5)
                 except TimeoutExpired:
                     self._process.kill()
+            except ProcessLookupError:
+                pass
             finally:
                 self._process = None
 
