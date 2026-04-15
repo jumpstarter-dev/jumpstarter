@@ -128,7 +128,12 @@ class GptpClient(DriverClient):
         """
         return self.call("is_synchronized")
 
-    def wait_for_sync(self, timeout: float = 30.0, poll_interval: float = 1.0) -> bool:
+    def wait_for_sync(
+        self,
+        timeout: float = 30.0,
+        poll_interval: float = 1.0,
+        threshold_ns: float | None = None,
+    ) -> bool:
         """Block until PTP synchronization is achieved or timeout expires.
 
         Only catches ``RuntimeError`` (driver not-yet-ready) during polling.
@@ -137,6 +142,9 @@ class GptpClient(DriverClient):
         Args:
             timeout: Maximum time to wait in seconds.
             poll_interval: Polling interval in seconds.
+            threshold_ns: If provided, also require the absolute offset
+                from master to be below this value (in nanoseconds) before
+                returning True.
 
         Returns:
             True if synchronized before timeout, False otherwise.
@@ -145,6 +153,11 @@ class GptpClient(DriverClient):
         while time.monotonic() < deadline:
             try:
                 if self.is_synchronized():
+                    if threshold_ns is not None:
+                        offset = self.get_offset()
+                        if abs(offset.offset_from_master_ns) >= threshold_ns:
+                            time.sleep(poll_interval)
+                            continue
                     return True
             except RuntimeError:
                 pass
@@ -217,6 +230,16 @@ class GptpClient(DriverClient):
                 )
                 if i + 1 >= count:
                     break
+
+        @base.command(name="port-stats")
+        def port_stats():
+            """Show PTP port statistics."""
+            s = self.get_port_stats()
+            click.echo(f"Sync count:        {s.sync_count}")
+            click.echo(f"Follow-up count:   {s.followup_count}")
+            click.echo(f"PDelay req count:  {s.pdelay_req_count}")
+            click.echo(f"PDelay resp count: {s.pdelay_resp_count}")
+            click.echo(f"Announce count:    {s.announce_count}")
 
         @base.command(name="set-priority")
         @click.argument("priority", type=int)

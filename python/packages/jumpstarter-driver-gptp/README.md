@@ -160,7 +160,11 @@ integration is added.
 ### Basic lifecycle
 
 ```python
-with serve(Gptp(interface="eth0")) as gptp:
+from jumpstarter.common.utils import env
+
+with env() as client:
+    gptp = client.gptp
+
     gptp.start()
 
     # Wait for synchronization (up to 30 seconds)
@@ -176,7 +180,11 @@ with serve(Gptp(interface="eth0")) as gptp:
 ### Monitoring sync events
 
 ```python
-with serve(Gptp(interface="eth0")) as gptp:
+from jumpstarter.common.utils import env
+
+with env() as client:
+    gptp = client.gptp
+
     gptp.start()
     for event in gptp.monitor():
         print(f"[{event.event_type}] offset={event.offset_ns:.0f}ns state={event.port_state}")
