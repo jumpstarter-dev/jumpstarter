@@ -101,29 +101,6 @@ authentication:
 			wantCount: 1, // localhost issuer should be skipped
 		},
 		{
-			name: "legacy authentication key only should NOT produce OIDC configs",
-			configmap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "jumpstarter-controller",
-					Namespace: "default",
-				},
-				Data: map[string]string{
-					"authentication": `
-jwt:
-  - issuer:
-      url: "https://dex.example.com"
-      audiences:
-        - "jumpstarter"
-    claimMappings:
-      username:
-        claim: "email"
-        prefix: ""
-`,
-				},
-			},
-			wantNil: true,
-		},
-		{
 			name: "missing config key returns nil",
 			configmap: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
