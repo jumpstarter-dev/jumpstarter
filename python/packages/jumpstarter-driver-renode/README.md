@@ -112,9 +112,6 @@ The `monitor` CLI subcommand is also available inside a `jmp shell` session.
 
 ## Design Decisions
 
-The architectural choices for this driver are documented in
-[ADR-0001: Renode Integration Approach](../../docs/source/contributing/adr/0001-renode-integration.md).
-
 Key decisions:
 
 - **Control interface**: Telnet monitor via `anyio.connect_tcp` (no

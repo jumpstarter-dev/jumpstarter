@@ -98,6 +98,7 @@ Drivers for debugging and programming devices:
 * **[Android Emulator](androidemulator.md)** (`jumpstarter-driver-androidemulator`) -
   Android emulator lifecycle management with ADB tunneling
 * **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
+* **[Renode](renode.md)** (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 * **[Corellium](corellium.md)** (`jumpstarter-driver-corellium`) - Corellium
   virtualization platform
 * **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader
@@ -136,6 +137,7 @@ power.md
 probe-rs.md
 pyserial.md
 qemu.md
+renode.md
 gpiod.md
 ridesx.md
 sdwire.md
