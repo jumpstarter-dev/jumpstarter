@@ -621,3 +621,49 @@ def test_umount_lazy_macos_uses_force():
                     call_args = mock_run.call_args[0][0]
                     assert "-f" in call_args
                     assert "-l" not in call_args
+
+
+def test_extra_args_prefixed_with_dash_o():
+    """Test that extra_args are correctly prefixed with -o in sshfs command"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.stderr = None
+
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.run') as mock_run:
+                with patch('subprocess.Popen', return_value=mock_proc):
+                    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                    mock_proc.wait.side_effect = [None]
+
+                    with patch('os.makedirs'):
+                        with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                            mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount", extra_args=["reconnect", "cache=yes"])
+
+                            test_run_args = mock_run.call_args_list[0][0][0]
+                            # Each extra arg should be preceded by -o
+                            for extra in ["reconnect", "cache=yes"]:
+                                idx = test_run_args.index(extra)
+                                assert test_run_args[idx - 1] == "-o", \
+                                    f"Extra arg '{extra}' not preceded by '-o'"
+
+
+def test_subshell_bad_shell_raises_click_exception():
+    """Test that _run_subshell raises ClickException when shell binary is not found"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/nonexistent/shell"}):
+            with patch('subprocess.run', side_effect=FileNotFoundError("No such file")):
+                with pytest.raises(Exception, match="Shell .* not found"):
+                    client._run_subshell("/tmp/test-mount", "/")
