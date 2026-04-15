@@ -547,6 +547,87 @@ class TestHookExecutor:
             os.close(read_fd)
             os.close(write_fd)
 
+    async def test_drain_completes_immediately_on_empty_buffer(self) -> None:
+        """Verify drain exits quickly when the PTY buffer is empty (EOF)."""
+        import time
+
+        read_fd, write_fd = os.pipe()
+        os.close(write_fd)
+        try:
+            import fcntl
+
+            flags = fcntl.fcntl(read_fd, fcntl.F_GETFL)
+            fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+            output_lines: list[str] = []
+            buffer = b""
+            start = time.monotonic()
+
+            drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+            drained = 0
+            while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
+                try:
+                    chunk = os.read(read_fd, 4096)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                    drained += len(chunk)
+                except (BlockingIOError, OSError):
+                    break
+
+            buffer = _flush_lines(buffer, output_lines)
+            elapsed = time.monotonic() - start
+
+            assert output_lines == []
+            assert drained == 0
+            assert elapsed < 0.5
+        finally:
+            os.close(read_fd)
+
+    async def test_drain_handles_oserror_gracefully(self) -> None:
+        """Verify drain exits gracefully when os.read raises OSError (e.g. EIO)."""
+        import time
+
+        read_fd, write_fd = os.pipe()
+        os.close(write_fd)
+        os.close(read_fd)
+
+        output_lines: list[str] = []
+        buffer = b""
+
+        drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+        drained = 0
+        while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
+            try:
+                chunk = os.read(read_fd, 4096)
+                if not chunk:
+                    break
+                buffer += chunk
+                drained += len(chunk)
+            except (BlockingIOError, OSError):
+                break
+
+        buffer = _flush_lines(buffer, output_lines)
+
+        assert output_lines == []
+        assert drained == 0
+
+    async def test_drain_captures_output_without_trailing_newline(self, lease_scope) -> None:
+        """Verify output without a trailing newline is still captured."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="printf 'NO_NEWLINE_OUTPUT'",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+            assert result is None
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            assert any("NO_NEWLINE_OUTPUT" in call for call in info_calls)
+
     async def test_drain_constants_are_reasonable(self) -> None:
         assert MAX_DRAIN_BYTES == 256 * 1024
         assert DRAIN_TIMEOUT_SECONDS == 2.0
