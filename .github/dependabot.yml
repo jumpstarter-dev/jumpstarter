@@ -23,7 +23,7 @@ updates:
 
   # Devcontainers
   - package-ecosystem: "devcontainers"
-    directory: "/"
+    directory: "/python"
     schedule:
       interval: weekly
 
