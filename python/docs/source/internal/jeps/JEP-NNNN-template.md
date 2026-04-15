@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # JEP-NNNN: Your Short, Descriptive Title
 
 <!--
@@ -17,19 +21,19 @@
     may be omitted if not applicable.
 -->
 
-| Field              | Value                                      |
-|--------------------|--------------------------------------------|
-| **JEP**            | NNNN *(next available incrementing integer)* |
-| **Title**          | *Your short, descriptive title*            |
-| **Author(s)**      | *@github-handle (Full Name \<email\>)*     |
-| **Status**         | Draft                                      |
-| **Type**           | Standards Track \| Informational \| Process |
-| **Created**        | *YYYY-MM-DD*                               |
-| **Updated**        | *YYYY-MM-DD*                               |
-| **Discussion**     | *Link to Matrix thread or GitHub issue*    |
-| **Requires**       | *JEP-NNNN (if depends on another JEP)*    |
-| **Supersedes**     | *JEP-NNNN (if replacing a previous JEP)*  |
-| **Superseded-By**  | *JEP-NNNN (filled in later if applicable)* |
+| Field             | Value                                        |
+| ----------------- | -------------------------------------------- |
+| **JEP**           | NNNN *(next available incrementing integer)* |
+| **Title**         | *Your short, descriptive title*              |
+| **Author(s)**     | *@github-handle (Full Name \<email\>)*       |
+| **Status**        | Draft                                        |
+| **Type**          | Standards Track \| Informational \| Process  |
+| **Created**       | *YYYY-MM-DD*                                 |
+| **Updated**       | *YYYY-MM-DD*                                 |
+| **Discussion**    | *Link to Matrix thread or GitHub issue*      |
+| **Requires**      | *JEP-NNNN (if depends on another JEP)*       |
+| **Supersedes**    | *JEP-NNNN (if replacing a previous JEP)*     |
+| **Superseded-By** | *JEP-NNNN (filled in later if applicable)*   |
 
 ---
 

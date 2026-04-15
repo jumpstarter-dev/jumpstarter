@@ -36,7 +36,7 @@ extensions = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["internal/jeps/JEP-NNNN-template.md"]
+exclude_patterns = []
 
 mermaid_version = "10.9.1"
 

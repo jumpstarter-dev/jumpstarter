@@ -1,15 +1,15 @@
 # JEP-0010: Renode Integration for Microcontroller Targets
 
-| Field              | Value                                        |
-|--------------------|----------------------------------------------|
-| **JEP**            | 0010                                         |
-| **Title**          | Renode Integration for Microcontroller Targets |
-| **Author(s)**      | @vtz (Vinicius Zein)                         |
-| **Status**         | Implemented                                  |
-| **Type**           | Standards Track                              |
-| **Created**        | 2026-04-06                                   |
-| **Updated**        | 2026-04-15                                   |
-| **Discussion**     | [PR #533](https://github.com/jumpstarter-dev/jumpstarter/pull/533) |
+| Field          | Value                                                              |
+| -------------- | ------------------------------------------------------------------ |
+| **JEP**        | 0010                                                               |
+| **Title**      | Renode Integration for Microcontroller Targets                     |
+| **Author(s)**  | @vtz (Vinicius Zein)                                               |
+| **Status**     | Implemented                                                        |
+| **Type**       | Standards Track                                                    |
+| **Created**    | 2026-04-06                                                         |
+| **Updated**    | 2026-04-15                                                         |
+| **Discussion** | [PR #533](https://github.com/jumpstarter-dev/jumpstarter/pull/533) |
 
 ---
 

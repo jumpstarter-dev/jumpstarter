@@ -1,14 +1,14 @@
 # JEP-0000: Jumpstarter Enhancement Proposal Process
 
-| Field            | Value                                              |
-|------------------|----------------------------------------------------|
-| **JEP**          | 0000                                               |
-| **Title**        | Jumpstarter Enhancement Proposal Process            |
-| **Author(s)**    | Jumpstarter Maintainers                             |
-| **Status**       | Active                                              |
-| **Type**         | Process                                             |
-| **Created**      | 2026-04-06                                          |
-| **Discussion**   | [Matrix](https://matrix.to/#/#jumpstarter:matrix.org) |
+| Field          | Value                                                 |
+| -------------- | ----------------------------------------------------- |
+| **JEP**        | 0000                                                  |
+| **Title**      | Jumpstarter Enhancement Proposal Process              |
+| **Author(s)**  | Jumpstarter Maintainers                               |
+| **Status**     | Active                                                |
+| **Type**       | Process                                               |
+| **Created**    | 2026-04-06                                            |
+| **Discussion** | [PR #423](https://github.com/jumpstarter-dev/jumpstarter/pull/423) |
 
 ## Abstract
 
@@ -75,13 +75,13 @@ open a GitHub issue to gauge whether your idea warrants a JEP.
 The project uses both JEPs and Architecture Decision Records (ADRs). They serve
 different purposes and operate at different scopes:
 
-| Aspect        | JEP                                        | ADR                                               |
-|---------------|--------------------------------------------|----------------------------------------------------|
-| **Scope**     | Cross-cutting changes to the project       | Scoped to a single component or driver              |
-| **Process**   | Requires community review and maintainer approval | Included with the implementation PR                |
-| **When**      | Before implementation begins               | Alongside or within an implementation PR            |
-| **Location**  | `python/docs/source/internal/jeps/` directory             | `python/docs/source/internal/adr/` directory                      |
-| **Example**   | New lease scheduling strategy              | Choice of telnet vs pyrenode3 for Renode driver     |
+| Aspect       | JEP                                               | ADR                                             |
+| ------------ | ------------------------------------------------- | ----------------------------------------------- |
+| **Scope**    | Cross-cutting changes to the project              | Scoped to a single component or driver          |
+| **Process**  | Requires community review and maintainer approval | Included with the implementation PR             |
+| **When**     | Before implementation begins                      | Alongside or within an implementation PR        |
+| **Location** | `python/docs/source/internal/jeps/` directory     | `python/docs/source/internal/adr/` directory    |
+| **Example**  | New lease scheduling strategy                     | Choice of telnet vs pyrenode3 for Renode driver |
 
 **Use a JEP** when the change affects multiple components, changes public APIs or
 protocols, or requires community consensus. **Use an ADR** when you are making a
@@ -95,15 +95,15 @@ pattern in the [JEP template](JEP-NNNN-template.md).
 
 ## JEP Types
 
-| Type               | Description                                                                                            |
-|--------------------|--------------------------------------------------------------------------------------------------------|
-| **Standards Track** | Proposes a new feature or implementation change. Results in new or modified code, protocol definitions, or CRDs. |
+| Type                | Description                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Standards Track** | Proposes a new feature or implementation change. Results in new or modified code, protocol definitions, or CRDs.                           |
 | **Informational**   | Provides guidelines, background, or describes an issue without proposing a specific change. Does not require community consensus to adopt. |
-| **Process**         | Proposes a change to the Jumpstarter development process, governance, or workflow (like this JEP).       |
+| **Process**         | Proposes a change to the Jumpstarter development process, governance, or workflow (like this JEP).                                         |
 
 ## JEP Lifecycle
 
-```mermaid
+```{mermaid}
 flowchart TD
     A([Start]) --> B[Draft]
     B -->|PR opened| C[Proposed]
@@ -122,18 +122,18 @@ flowchart TD
 > (when replaced by a newer JEP). These transitions are omitted from
 > the diagram for clarity.
 
-| Status           | Meaning                                                                                  |
-|------------------|------------------------------------------------------------------------------------------|
-| **Draft**         | Author is still writing the JEP. Not yet open for formal review.                         |
-| **Proposed**      | JEP PR is open and under community discussion.                                           |
-| **Accepted**      | Maintainers have approved the design. Implementation may begin.                          |
-| **Implementing**  | Implementation is in progress. The JEP may be updated with implementation learnings.     |
-| **Implemented**   | Reference implementation is complete and merged.                                          |
-| **Final**         | JEP is complete and considered the authoritative record of the feature.                  |
-| **Rejected**      | Maintainers have declined the proposal. The JEP remains as a record of the decision.     |
-| **Deferred**      | Proposal is sound but not a current priority. May be revisited later.                    |
-| **Withdrawn**     | Author has voluntarily withdrawn the proposal.                                            |
-| **Superseded**    | Replaced by a newer JEP. The `Superseded-By` field indicates the replacement.            |
+| Status           | Meaning                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| **Draft**        | Author is still writing the JEP. Not yet open for formal review.                     |
+| **Proposed**     | JEP PR is open and under community discussion.                                       |
+| **Accepted**     | Maintainers have approved the design. Implementation may begin.                      |
+| **Implementing** | Implementation is in progress. The JEP may be updated with implementation learnings. |
+| **Implemented**  | Reference implementation is complete and merged.                                     |
+| **Final**        | JEP is complete and considered the authoritative record of the feature.              |
+| **Rejected**     | Maintainers have declined the proposal. The JEP remains as a record of the decision. |
+| **Deferred**     | Proposal is sound but not a current priority. May be revisited later.                |
+| **Withdrawn**    | Author has voluntarily withdrawn the proposal.                                       |
+| **Superseded**   | Replaced by a newer JEP. The `Superseded-By` field indicates the replacement.        |
 
 A JEP can move to **Withdrawn** from any pre-Final status. A JEP can move to
 **Superseded** from any status.
@@ -208,12 +208,12 @@ Implemented → Final as work progresses.
 
 ## Roles
 
-| Role            | Responsibility                                                                               |
-|-----------------|----------------------------------------------------------------------------------------------|
-| **Author**       | Writes the JEP, responds to feedback, shepherds the proposal through the process.            |
-| **Reviewer**     | Provides technical feedback on the pull request. Any community member can review.             |
-| **Maintainer**   | Makes the final accept/reject decision. Must provide written rationale.                      |
-| **Implementer**  | Writes the code. Often the author, but doesn't have to be.                                   |
+| Role            | Responsibility                                                                    |
+| --------------- | --------------------------------------------------------------------------------- |
+| **Author**      | Writes the JEP, responds to feedback, shepherds the proposal through the process. |
+| **Reviewer**    | Provides technical feedback on the pull request. Any community member can review. |
+| **Maintainer**  | Makes the final accept/reject decision. Must provide written rationale.           |
+| **Implementer** | Writes the code. Often the author, but doesn't have to be.                        |
 
 ## JEP Numbering
 

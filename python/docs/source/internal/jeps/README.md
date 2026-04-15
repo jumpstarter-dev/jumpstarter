@@ -26,21 +26,21 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 
 ### Process JEPs
 
-| JEP  | Title                                     | Status | Author(s)               |
-|------|-------------------------------------------|--------|-------------------------|
-| 0000 | [JEP Process](JEP-0000-jep-process.md)   | Active | Jumpstarter Maintainers |
+| JEP  | Title                                  | Status | Author(s)               |
+| ---- | -------------------------------------- | ------ | ----------------------- |
+| 0000 | [JEP Process](JEP-0000-jep-process.md) | Active | Jumpstarter Maintainers |
 
 ### Standards Track JEPs
 
-| JEP  | Title | Status | Author(s) |
-|------|-------|--------|-----------|
-| *none yet* | | | |
+| JEP  | Title                                                | Status      | Author(s)            |
+| ---- | ---------------------------------------------------- | ----------- | -------------------- |
+| 0010 | [Renode Integration](JEP-0010-renode-integration.md) | Implemented | @vtz (Vinicius Zein) |
 
 ### Informational JEPs
 
-| JEP  | Title | Status | Author(s) |
-|------|-------|--------|-----------|
-| *none yet* | | | |
+| JEP        | Title | Status | Author(s) |
+| ---------- | ----- | ------ | --------- |
+| *none yet* |       |        |           |
 
 ## Related: Architecture Decision Records (ADRs)
 
@@ -52,18 +52,18 @@ guidance on when to use a JEP vs an ADR.
 
 ## Status Key
 
-| Status         | Meaning                                              |
-|----------------|------------------------------------------------------|
-| Draft          | Author is still writing; not yet open for review     |
-| Proposed       | PR is open and under community discussion            |
-| Accepted       | Design approved; implementation may begin            |
-| Implementing   | Implementation in progress                           |
-| Implemented    | Reference implementation merged                      |
-| Final          | Complete and authoritative                           |
-| Rejected       | Declined (record preserved)                          |
-| Deferred       | Sound but not a current priority                     |
-| Withdrawn      | Author voluntarily withdrew                          |
-| Superseded     | Replaced by a newer JEP                             |
+| Status       | Meaning                                          |
+| ------------ | ------------------------------------------------ |
+| Draft        | Author is still writing; not yet open for review |
+| Proposed     | PR is open and under community discussion        |
+| Accepted     | Design approved; implementation may begin        |
+| Implementing | Implementation in progress                       |
+| Implemented  | Reference implementation merged                  |
+| Final        | Complete and authoritative                       |
+| Rejected     | Declined (record preserved)                      |
+| Deferred     | Sound but not a current priority                 |
+| Withdrawn    | Author voluntarily withdrew                      |
+| Superseded   | Replaced by a newer JEP                          |
 
 ## For AI Agents
 
@@ -118,4 +118,5 @@ reserved for process and meta-JEPs.
 :hidden:
 
 JEP-0000-jep-process.md
+JEP-0010-renode-integration.md
 ```
