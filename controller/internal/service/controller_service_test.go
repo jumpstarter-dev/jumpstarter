@@ -416,6 +416,49 @@ func TestListenQueueReconnectPreventsStaleCleanup(t *testing.T) {
 	}
 }
 
+func TestListenQueueConcurrentCompareAndSwapRetries(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-concurrent-cas"
+
+	originalWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	svc.listenQueues.Store(leaseName, originalWrapper)
+
+	// Simulate goroutine A winning the CompareAndSwap
+	winnerWrapper := &listenQueue{ch: originalWrapper.ch}
+	if !svc.listenQueues.CompareAndSwap(leaseName, originalWrapper, winnerWrapper) {
+		t.Fatal("winner CompareAndSwap should succeed")
+	}
+
+	// Simulate goroutine B trying CompareAndSwap with stale originalWrapper reference.
+	// This mirrors the production code path where loaded=true and CAS fails.
+	loserWrapper := &listenQueue{ch: originalWrapper.ch}
+	if svc.listenQueues.CompareAndSwap(leaseName, originalWrapper, loserWrapper) {
+		t.Fatal("loser CompareAndSwap should fail because map was already swapped by winner")
+	}
+
+	// After production retry logic, the loser should re-load and swap successfully.
+	// Load the current value and create a new wrapper from it.
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue entry should still exist after failed CompareAndSwap")
+	}
+	current := v.(*listenQueue)
+	retryWrapper := &listenQueue{ch: current.ch}
+	if !svc.listenQueues.CompareAndSwap(leaseName, current, retryWrapper) {
+		t.Fatal("retry CompareAndSwap should succeed")
+	}
+
+	// Now the winner's deferred CompareAndDelete should be a no-op
+	svc.listenQueues.CompareAndDelete(leaseName, winnerWrapper)
+	got, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue was deleted by winner's stale CompareAndDelete after concurrent retry")
+	}
+	if got != retryWrapper {
+		t.Fatal("queue entry does not match the retried wrapper")
+	}
+}
+
 // contains checks if substr is contained in s
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
