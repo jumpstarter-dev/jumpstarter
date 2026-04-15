@@ -303,11 +303,11 @@ func TestListenQueueCompareAndDeleteOnStreamError(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-stream-error"
 
-	originalQueue := make(chan *pb.ListenResponse, 8)
-	svc.listenQueues.Store(leaseName, originalQueue)
+	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	svc.listenQueues.Store(leaseName, wrapper)
 
 	t.Run("queue is deleted when no reconnect replaced it", func(t *testing.T) {
-		svc.listenQueues.CompareAndDelete(leaseName, originalQueue)
+		svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
 		if _, ok := svc.listenQueues.Load(leaseName); ok {
 			t.Fatal("queue should be deleted when it is still the same instance")
@@ -315,16 +315,16 @@ func TestListenQueueCompareAndDeleteOnStreamError(t *testing.T) {
 	})
 
 	t.Run("queue survives when a reconnecting Listen replaced it", func(t *testing.T) {
-		newQueue := make(chan *pb.ListenResponse, 8)
-		svc.listenQueues.Store(leaseName, newQueue)
+		newWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+		svc.listenQueues.Store(leaseName, newWrapper)
 
-		svc.listenQueues.CompareAndDelete(leaseName, originalQueue)
+		svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
 		got, ok := svc.listenQueues.Load(leaseName)
 		if !ok {
 			t.Fatal("queue was deleted even though a new Listen replaced it")
 		}
-		if got != newQueue {
+		if got != newWrapper {
 			t.Fatal("queue was replaced with something unexpected")
 		}
 	})
@@ -334,29 +334,30 @@ func TestListenQueueCompareAndDeleteOnCleanShutdown(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-shutdown"
 
-	queue := make(chan *pb.ListenResponse, 8)
-	svc.listenQueues.Store(leaseName, queue)
+	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	svc.listenQueues.Store(leaseName, wrapper)
 
-	svc.listenQueues.CompareAndDelete(leaseName, queue)
+	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
 	if _, ok := svc.listenQueues.Load(leaseName); ok {
 		t.Fatal("queue should be removed on clean shutdown")
 	}
 }
 
-func TestListenQueueReconnectInheritsExistingQueue(t *testing.T) {
+func TestListenQueueReconnectInheritsExistingChannel(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-reconnect"
 
-	originalQueue := make(chan *pb.ListenResponse, 8)
-	svc.listenQueues.Store(leaseName, originalQueue)
+	originalWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	svc.listenQueues.Store(leaseName, originalWrapper)
 
-	got, loaded := svc.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	newWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	got, loaded := svc.listenQueues.LoadOrStore(leaseName, newWrapper)
 	if !loaded {
 		t.Fatal("LoadOrStore should have loaded the existing queue")
 	}
-	if got != originalQueue {
-		t.Fatal("reconnecting Listen did not inherit the existing queue")
+	if got.(*listenQueue).ch != originalWrapper.ch {
+		t.Fatal("reconnecting Listen did not inherit the existing channel")
 	}
 }
 
@@ -364,21 +365,54 @@ func TestListenQueueDialTokenSurvivesTransientDisconnect(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-dial-token"
 
-	originalQueue := make(chan *pb.ListenResponse, 8)
-	svc.listenQueues.Store(leaseName, originalQueue)
+	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	svc.listenQueues.Store(leaseName, wrapper)
 
 	token := &pb.ListenResponse{RouterEndpoint: "test-endpoint", RouterToken: "test-token"}
-	originalQueue <- token
+	wrapper.ch <- token
 
-	svc.listenQueues.CompareAndDelete(leaseName, originalQueue)
+	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
 	select {
-	case got := <-originalQueue:
+	case got := <-wrapper.ch:
 		if got.RouterEndpoint != "test-endpoint" || got.RouterToken != "test-token" {
 			t.Fatal("dial token was corrupted")
 		}
 	default:
 		t.Fatal("dial token was lost from the channel")
+	}
+}
+
+func TestListenQueueReconnectPreventsStaleCleanup(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-stale-cleanup"
+
+	originalWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	svc.listenQueues.Store(leaseName, originalWrapper)
+
+	reconnectWrapper := &listenQueue{ch: originalWrapper.ch}
+	svc.listenQueues.CompareAndSwap(leaseName, originalWrapper, reconnectWrapper)
+
+	svc.listenQueues.CompareAndDelete(leaseName, originalWrapper)
+
+	got, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("stale Listen cleanup deleted queue that reconnected Listen is using")
+	}
+	if got != reconnectWrapper {
+		t.Fatal("queue entry does not match the reconnected wrapper")
+	}
+
+	token := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	reconnectWrapper.ch <- token
+
+	select {
+	case msg := <-reconnectWrapper.ch:
+		if msg.RouterEndpoint != "ep" || msg.RouterToken != "tok" {
+			t.Fatal("token was corrupted after stale cleanup attempt")
+		}
+	default:
+		t.Fatal("token was lost after stale cleanup attempt")
 	}
 }
 
