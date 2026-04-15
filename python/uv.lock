@@ -1994,6 +1994,7 @@ dependencies = [
     { name = "jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu" },
+    { name = "jumpstarter-driver-renode" },
     { name = "jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell" },
@@ -2038,6 +2039,7 @@ requires-dist = [
     { name = "jumpstarter-driver-probe-rs", editable = "packages/jumpstarter-driver-probe-rs" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
+    { name = "jumpstarter-driver-renode", editable = "packages/jumpstarter-driver-renode" },
     { name = "jumpstarter-driver-ridesx", editable = "packages/jumpstarter-driver-ridesx" },
     { name = "jumpstarter-driver-sdwire", editable = "packages/jumpstarter-driver-sdwire" },
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
@@ -2274,12 +2276,15 @@ source = { editable = "packages/jumpstarter-driver-ble" }
 dependencies = [
     { name = "anyio" },
     { name = "bleak" },
+    { name = "click" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-network" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-anyio" },
     { name = "pytest-cov" },
 ]
 
@@ -2287,12 +2292,15 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "bleak", specifier = ">=1.1.1" },
+    { name = "click", specifier = ">=8.1.8" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 

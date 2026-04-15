@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import platform
 import shutil
 from pathlib import Path
 from subprocess import TimeoutExpired
@@ -9,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jumpstarter_driver_renode.driver import Renode, RenodeFlasher, RenodePower
+from jumpstarter_driver_renode.driver import (
+    Renode,
+    RenodeFlasher,
+    RenodePower,
+    _detect_load_command,
+)
 from jumpstarter_driver_renode.monitor import RenodeMonitor, RenodeMonitorError
 
 from jumpstarter.common.utils import serve
@@ -115,6 +118,74 @@ class TestRenodeMonitor:
 
         await monitor.disconnect()
         assert monitor._stream is None
+
+    @pytest.mark.anyio
+    async def test_monitor_execute_rejects_newlines(self):
+        """execute() rejects commands containing newline characters."""
+        monitor = RenodeMonitor()
+        monitor._stream = AsyncMock()
+
+        with pytest.raises(ValueError, match="newline"):
+            await monitor.execute("cmd1\ncmd2")
+
+        with pytest.raises(ValueError, match="newline"):
+            await monitor.execute("cmd1\rcmd2")
+
+    @pytest.mark.anyio
+    async def test_monitor_connect_closes_stream_on_retry(self):
+        """connect() closes the previous stream before retrying."""
+        monitor = RenodeMonitor()
+        streams = []
+        call_count = 0
+
+        async def mock_connect_tcp(host, port):
+            nonlocal call_count
+            call_count += 1
+            stream = AsyncMock()
+            streams.append(stream)
+            if call_count < 2:
+                stream.receive = AsyncMock(side_effect=OSError("not ready"))
+            else:
+                stream.receive = AsyncMock(
+                    return_value=b"Renode v1.15\n(monitor) \n"
+                )
+            return stream
+
+        with patch(
+            "jumpstarter_driver_renode.monitor.connect_tcp",
+            side_effect=mock_connect_tcp,
+        ):
+            with patch(
+                "jumpstarter_driver_renode.monitor.sleep", new_callable=AsyncMock
+            ):
+                await monitor.connect("127.0.0.1", 12345)
+
+        streams[0].aclose.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_monitor_error_detection_per_line(self):
+        """Error markers are detected even when not on the first line."""
+        monitor = RenodeMonitor()
+        stream = AsyncMock()
+        stream.receive = AsyncMock(
+            return_value=b"info text\nError executing command\n(monitor) \n"
+        )
+        monitor._stream = stream
+        monitor._buffer = b""
+
+        with pytest.raises(RenodeMonitorError, match="Error executing"):
+            await monitor.execute("bad command")
+
+    def test_monitor_prompt_matches_expected_only(self):
+        """_is_prompt only matches prompts in the expected set."""
+        monitor = RenodeMonitor()
+        assert monitor._is_prompt(b"(monitor)") is True
+        assert monitor._is_prompt(b"(default)") is False
+        assert monitor._is_prompt(b"(enabled)") is False
+
+        monitor.add_expected_prompt("my-machine")
+        assert monitor._is_prompt(b"(my-machine)") is True
+        assert monitor._is_prompt(b"(other)") is False
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +416,7 @@ class TestRenodeFlasher:
 
     @pytest.mark.anyio
     async def test_flash_while_running_sends_load_and_reset(self):
-        """When simulation is running, flash() sends LoadELF + Reset."""
+        """When simulation is running, flash() sends load + Reset."""
         driver = _make_driver()
         power: RenodePower = driver.children["power"]
         power._process = MagicMock()
@@ -353,12 +424,13 @@ class TestRenodeFlasher:
         power._monitor = mock_monitor
 
         flasher: RenodeFlasher = driver.children["flasher"]
+        elf_data = b"\x7fELF" + b"\x00" * 60
 
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
             mock_res.__aiter__ = lambda self: self
             mock_res.__anext__ = AsyncMock(
-                side_effect=[b"\x00", StopAsyncIteration()]
+                side_effect=[elf_data, StopAsyncIteration()]
             )
             mock_resource.return_value.__aenter__ = AsyncMock(
                 return_value=mock_res
@@ -396,6 +468,15 @@ class TestRenodeFlasher:
         assert driver._load_command == "sysbus LoadBinary"
 
     @pytest.mark.anyio
+    async def test_flash_rejects_invalid_load_command(self):
+        """flash() rejects load_command values not in the allowlist."""
+        driver = _make_driver()
+        flasher: RenodeFlasher = driver.children["flasher"]
+
+        with pytest.raises(ValueError, match="unsupported load_command"):
+            await flasher.flash("/some/fw.elf", load_command="logFile @/tmp/evil")
+
+    @pytest.mark.anyio
     async def test_dump_not_implemented(self):
         """dump() raises NotImplementedError."""
         driver = _make_driver()
@@ -403,6 +484,18 @@ class TestRenodeFlasher:
 
         with pytest.raises(NotImplementedError, match="not supported"):
             await flasher.dump("/dev/null")
+
+    def test_detect_load_command_elf(self, tmp_path):
+        """ELF files are detected and use sysbus LoadELF."""
+        elf = tmp_path / "fw.elf"
+        elf.write_bytes(b"\x7fELF" + b"\x00" * 60)
+        assert _detect_load_command(str(elf)) == "sysbus LoadELF"
+
+    def test_detect_load_command_binary(self, tmp_path):
+        """Non-ELF files default to sysbus LoadBinary."""
+        raw = tmp_path / "fw.bin"
+        raw.write_bytes(b"\x00" * 64)
+        assert _detect_load_command(str(raw)) == "sysbus LoadBinary"
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +511,7 @@ class TestRenodeConfig:
         assert driver.machine_name == "machine-0"
         assert driver.monitor_port == 0
         assert driver.extra_commands == []
+        assert driver.allow_raw_monitor is False
         assert driver._firmware_path is None
 
     def test_renode_children_wired(self):
@@ -481,10 +575,6 @@ class TestRenodeConfig:
     shutil.which("renode") is None,
     reason="Renode not installed",
 )
-@pytest.mark.xfail(
-    platform.system() == "Darwin" and os.getenv("GITHUB_ACTIONS") == "true",
-    reason="Renode tests may be flaky on macOS CI",
-)
 def test_driver_renode_e2e(tmp_path):
     """E2E: start Renode, verify power on/off cycle via serve()."""
     with serve(
@@ -525,11 +615,21 @@ class TestRenodeClient:
             assert hasattr(client, "flasher")
             assert hasattr(client, "console")
 
-    def test_client_monitor_cmd_not_running(self):
-        """monitor_cmd raises when Renode is not running."""
+    def test_client_monitor_cmd_disabled_by_default(self):
+        """monitor_cmd raises when allow_raw_monitor is False (default)."""
         from jumpstarter.client.core import DriverError
 
         driver = _make_driver()
+
+        with serve(driver) as client:
+            with pytest.raises(DriverError, match="raw monitor access is disabled"):
+                client.monitor_cmd("help")
+
+    def test_client_monitor_cmd_not_running(self):
+        """monitor_cmd raises when Renode is not running (but monitor enabled)."""
+        from jumpstarter.client.core import DriverError
+
+        driver = _make_driver(allow_raw_monitor=True)
 
         with serve(driver) as client:
             with pytest.raises(DriverError, match="not running"):

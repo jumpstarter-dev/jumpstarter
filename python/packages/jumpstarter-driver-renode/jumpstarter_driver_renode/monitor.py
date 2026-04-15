@@ -7,10 +7,6 @@ from anyio.abc import SocketStream
 
 logger = logging.getLogger(__name__)
 
-MONITOR_PROMPT = b"(monitor)"
-MACHINE_PROMPT_PREFIX = b"("
-MACHINE_PROMPT_SUFFIX = b")"
-
 
 class RenodeMonitorError(Exception):
     """Raised when a Renode monitor command returns an error."""
@@ -26,6 +22,16 @@ class RenodeMonitor:
 
     _stream: SocketStream | None = None
     _buffer: bytes = b""
+    _expected_prompts: set[bytes]
+
+    def __init__(self) -> None:
+        self._stream = None
+        self._buffer = b""
+        self._expected_prompts = {b"monitor"}
+
+    def add_expected_prompt(self, name: str) -> None:
+        """Register a machine name so its prompt is recognised."""
+        self._expected_prompts.add(name.encode())
 
     async def connect(self, host: str, port: int, timeout: float = 10) -> None:
         """Connect to the Renode monitor, retrying until the prompt appears."""
@@ -38,26 +44,39 @@ class RenodeMonitor:
                     logger.info("connected to Renode monitor at %s:%d", host, port)
                     return
                 except OSError:
+                    if self._stream is not None:
+                        try:
+                            await self._stream.aclose()
+                        except Exception:
+                            pass
+                        self._stream = None
                     await sleep(0.5)
 
     _ERROR_MARKERS = ("Could not find", "Error", "Invalid", "Failed", "Unknown")
 
-    async def execute(self, command: str) -> str:
+    async def execute(self, command: str, timeout: float = 30) -> str:
         """Send a command and return the response text (excluding the prompt).
 
         Raises RenodeMonitorError if the response indicates a command failure.
+        Raises ValueError if the command contains newline characters.
         """
         if self._stream is None:
             raise RuntimeError("not connected to Renode monitor")
 
+        if "\n" in command or "\r" in command:
+            raise ValueError("monitor commands must not contain newline characters")
+
         logger.debug("monitor> %s", command)
         await self._stream.send(f"{command}\n".encode())
-        response = await self._read_until_prompt()
+        with fail_after(timeout):
+            response = await self._read_until_prompt()
         logger.debug("monitor< %s", response.strip())
 
         stripped = response.strip()
-        if stripped and any(stripped.startswith(m) for m in self._ERROR_MARKERS):
-            raise RenodeMonitorError(stripped)
+        if stripped:
+            for line in stripped.splitlines():
+                if any(line.startswith(m) for m in self._ERROR_MARKERS):
+                    raise RenodeMonitorError(stripped)
 
         return response
 
@@ -100,6 +119,7 @@ class RenodeMonitor:
         """Find a Renode monitor prompt in the buffer.
 
         Renode prompts look like "(monitor) " or "(machine-name) ".
+        Only matches prompts whose inner text is in _expected_prompts.
         """
         for line_start in self._iter_line_starts():
             line = self._buffer[line_start:]
@@ -124,16 +144,13 @@ class RenodeMonitor:
             yield nl + 1
             pos = nl + 1
 
-    @staticmethod
-    def _is_prompt(line: bytes) -> bool:
-        """Check if a line looks like a Renode prompt."""
+    def _is_prompt(self, line: bytes) -> bool:
+        """Check if a line is a known Renode monitor prompt."""
         stripped = line.strip()
         if not stripped:
             return False
-        if stripped.startswith(MACHINE_PROMPT_PREFIX) and stripped.endswith(
-            MACHINE_PROMPT_SUFFIX
-        ):
+        if stripped.startswith(b"(") and stripped.endswith(b")"):
             inner = stripped[1:-1]
-            if inner and b")" not in inner:
+            if inner in self._expected_prompts:
                 return True
         return False

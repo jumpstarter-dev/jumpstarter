@@ -20,6 +20,26 @@ from jumpstarter.driver import Driver, export
 
 logger = logging.getLogger(__name__)
 
+_ELF_MAGIC = b"\x7fELF"
+
+_ALLOWED_LOAD_COMMANDS = frozenset({
+    "sysbus LoadELF",
+    "sysbus LoadBinary",
+    "sysbus LoadSymbolsFrom",
+})
+
+
+def _detect_load_command(firmware_path: str) -> str:
+    """Choose the appropriate Renode load command based on file contents."""
+    try:
+        with open(firmware_path, "rb") as f:
+            magic = f.read(4)
+    except OSError:
+        return "sysbus LoadELF"
+    if magic == _ELF_MAGIC:
+        return "sysbus LoadELF"
+    return "sysbus LoadBinary"
+
 
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -49,13 +69,22 @@ class RenodeFlasher(FlasherInterface, Driver):
         loading during power-on. If already running, loads the firmware
         and resets the machine.
         """
+        if load_command is not None and load_command not in _ALLOWED_LOAD_COMMANDS:
+            raise ValueError(
+                f"unsupported load_command {load_command!r}, "
+                f"allowed: {sorted(_ALLOWED_LOAD_COMMANDS)}"
+            )
+
         firmware_path = self.parent._tmp_dir.name + "/firmware"
         async with await FileWriteStream.from_path(firmware_path) as stream:
             async with self.resource(source) as res:
                 async for chunk in res:
                     await stream.send(chunk)
 
-        cmd = load_command or "sysbus LoadELF"
+        if load_command is not None:
+            cmd = load_command
+        else:
+            cmd = _detect_load_command(firmware_path)
         self.parent._firmware_path = firmware_path
         self.parent._load_command = cmd
 
@@ -108,9 +137,10 @@ class RenodePower(PowerInterface, Driver):
             await self._monitor.connect("127.0.0.1", port)
 
             machine = self.parent.machine_name
+            self._monitor.add_expected_prompt(machine)
             await self._monitor.execute(f'mach create "{machine}"')
             await self._monitor.execute(
-                f'machine LoadPlatformDescription @"{self.parent.platform}"'
+                f"machine LoadPlatformDescription @{self.parent.platform}"
             )
 
             pty_path = self.parent._pty
@@ -196,6 +226,7 @@ class Renode(Driver):
     machine_name: str = "machine-0"
     monitor_port: int = 0
     extra_commands: list[str] = field(default_factory=list)
+    allow_raw_monitor: bool = False
 
     _tmp_dir: TemporaryDirectory = field(
         init=False, default_factory=TemporaryDirectory
@@ -238,7 +269,15 @@ class Renode(Driver):
 
     @export
     async def monitor_cmd(self, command: str) -> str:
-        """Send an arbitrary command to the Renode monitor."""
+        """Send a command to the Renode monitor.
+
+        Requires ``allow_raw_monitor: true`` in the exporter configuration.
+        """
+        if not self.allow_raw_monitor:
+            raise RuntimeError(
+                "raw monitor access is disabled; "
+                "set allow_raw_monitor: true in exporter config to enable"
+            )
         power: RenodePower = self.children["power"]
         if power._monitor is None:
             raise RuntimeError("Renode is not running")
