@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -90,7 +91,7 @@ class SSHMountClient(CompositeClient):
                     raise ValueError(f"Invalid address format: {address}")
                 self.logger.debug("Using direct TCP connection for sshfs - host: %s, port: %s", host, port)
                 self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                                port_forward=None, foreground=foreground)
+                                foreground=foreground)
             except (DriverMethodNotImplemented, ValueError) as e:
                 self.logger.error(
                     "Direct address connection failed (%s), falling back to port forwarding", e
@@ -102,9 +103,9 @@ class SSHMountClient(CompositeClient):
             with TcpPortforwardAdapter(client=self.ssh.tcp) as (host, port):
                 self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
                 self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                                port_forward=None, foreground=foreground)
+                                foreground=foreground)
 
-    def _run_sshfs(self, host, port, mountpoint, remote_path, extra_args, *, port_forward, foreground):
+    def _run_sshfs(self, host, port, mountpoint, remote_path, extra_args, *, foreground):
         identity_file = self._create_temp_identity_file()
         sshfs_proc = None
 
@@ -221,17 +222,22 @@ class SSHMountClient(CompositeClient):
 
         # Modify the prompt to indicate the active mount
         prompt_prefix = f"[sshfs:{remote_path}] "
-        if "bash" in shell:
-            env["PS1"] = prompt_prefix + env.get("PS1", r"\$ ")
-            subprocess.run(
-                [shell, "--norc", "--noprofile", "-i"],
-                env=env,
+        try:
+            if "bash" in shell:
+                env["PS1"] = prompt_prefix + env.get("PS1", r"\$ ")
+                subprocess.run(
+                    [shell, "--norc", "--noprofile", "-i"],
+                    env=env,
+                )
+            elif "zsh" in shell:
+                env["PS1"] = prompt_prefix + env.get("PS1", "%# ")
+                subprocess.run([shell, "-i"], env=env)
+            else:
+                subprocess.run([shell, "-i"], env=env)
+        except FileNotFoundError:
+            raise click.ClickException(
+                f"Shell '{shell}' not found. Set the SHELL environment variable to a valid shell."
             )
-        elif "zsh" in shell:
-            env["PS1"] = prompt_prefix + env.get("PS1", "%# ")
-            subprocess.run([shell, "-i"], env=env)
-        else:
-            subprocess.run([shell, "-i"], env=env)
 
     def _build_sshfs_args(self, host, port, mountpoint, remote_path, identity_file, extra_args):
         default_username = self.username
@@ -258,7 +264,8 @@ class SSHMountClient(CompositeClient):
             sshfs_args.extend(["-o", opt])
 
         if extra_args:
-            sshfs_args.extend(extra_args)
+            for arg in extra_args:
+                sshfs_args.extend(["-o", arg])
 
         return sshfs_args
 
@@ -337,5 +344,4 @@ class SSHMountClient(CompositeClient):
 
     @staticmethod
     def _find_executable(name):
-        import shutil
         return shutil.which(name)
