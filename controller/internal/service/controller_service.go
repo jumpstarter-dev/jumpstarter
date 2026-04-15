@@ -83,8 +83,13 @@ type ControllerService struct {
 }
 
 type listenQueue struct {
-	ch   chan *pb.ListenResponse
-	done chan struct{}
+	ch        chan *pb.ListenResponse
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func (q *listenQueue) closeDone() {
+	q.closeOnce.Do(func() { close(q.done) })
 }
 
 type wrappedStream struct {
@@ -451,8 +456,9 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	old, loaded := s.listenQueues.Swap(leaseName, wrapper)
 	if loaded {
 		prev := old.(*listenQueue)
-		close(prev.done)
+		prev.closeDone()
 	}
+	defer wrapper.closeDone()
 	defer s.listenQueues.CompareAndDelete(leaseName, wrapper)
 	for {
 		select {
