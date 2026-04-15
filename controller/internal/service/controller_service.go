@@ -754,8 +754,15 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 	}
 	q := v.(*listenQueue)
 	select {
+	case <-q.done:
+		return nil, status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	default:
+	}
+	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case <-q.done:
+		return nil, status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
 	case q.ch <- response:
 	}
 

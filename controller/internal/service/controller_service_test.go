@@ -595,6 +595,40 @@ func TestListenQueueConcurrentReadersAreNonDeterministic(t *testing.T) {
 	}
 }
 
+func TestDialRejectsSupersededQueue(t *testing.T) {
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	close(q.done)
+
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+
+	rejected := false
+	select {
+	case <-q.done:
+		rejected = true
+	default:
+	}
+	if !rejected {
+		select {
+		case <-q.done:
+			rejected = true
+		case q.ch <- response:
+		}
+	}
+
+	if !rejected {
+		t.Fatal("dial must reject send to a queue whose done channel is closed")
+	}
+
+	select {
+	case <-q.ch:
+		t.Fatal("token should not have been buffered in a superseded queue")
+	default:
+	}
+}
+
 func TestListenQueueSupersessionSignaling(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-supersession"
