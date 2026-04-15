@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.filter.outputs.python }}
+      renode_driver: ${{ steps.filter.outputs.renode_driver }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,6 +32,8 @@ jobs:
             python:
               - 'python/**'
               - '.github/workflows/python-tests.yaml'
+            renode_driver:
+              - 'python/packages/jumpstarter-driver-renode/**'
 
   pytest-matrix:
     needs: changes
@@ -84,8 +87,14 @@ jobs:
         run: |
           brew install qemu
 
+      # Homebrew Renode is slow (~5+ minutes per job). Install on macOS only when this run
+      # touches the Renode driver, or on workflow_dispatch (full manual run). Linux still
+      # installs Renode from the .deb in all jobs (fast).
       - name: Install Renode (macOS)
-        if: runner.os == 'macOS'
+        if: >-
+          runner.os == 'macOS'
+          && (needs.changes.outputs.renode_driver == 'true'
+          || github.event_name == 'workflow_dispatch')
         run: |
           brew install renode/tap/renode
 
