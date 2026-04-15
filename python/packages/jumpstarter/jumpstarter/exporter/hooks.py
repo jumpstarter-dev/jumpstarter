@@ -358,8 +358,26 @@ class HookExecutor:
                                 logger.debug("read_pty_output: OSError in loop: %s", e)
                                 break
                     finally:
+                        # Drain any remaining data from the PTY buffer.
+                        # On macOS, PTY output may still be in the kernel buffer
+                        # after the subprocess exits and the stop flag is set.
+                        while True:
+                            try:
+                                chunk = os.read(parent_fd, 4096)
+                                if not chunk:
+                                    break
+                                buffer += chunk
+                            except (BlockingIOError, OSError):
+                                break
+
+                        while b"\n" in buffer:
+                            line, buffer = buffer.split(b"\n", 1)
+                            line_decoded = line.decode(errors="replace").rstrip()
+                            if line_decoded:
+                                output_lines.append(line_decoded)
+                                logger.info("%s", line_decoded)
+
                         logger.debug("read_pty_output: exiting, processed %d iterations", read_count)
-                        # Handle any remaining data without newline
                         if buffer:
                             line_decoded = buffer.decode(errors="replace").rstrip()
                             if line_decoded:

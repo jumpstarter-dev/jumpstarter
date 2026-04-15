@@ -413,6 +413,29 @@ class TestHookExecutor:
 
         assert lease_scope.skip_after_lease_hook is False
 
+    async def test_pty_output_drained_after_process_exits(self, lease_scope) -> None:
+        """Test that PTY output is fully drained even when the subprocess exits quickly.
+
+        On macOS, PTY buffering can delay output delivery after the subprocess
+        exits. The reader must drain remaining PTY data before returning.
+        This test uses a multi-line script to verify all output is captured.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo 'DRAIN_LINE_1'; echo 'DRAIN_LINE_2'; echo 'DRAIN_LINE_3'",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+            assert result is None
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            assert any("DRAIN_LINE_1" in call for call in info_calls)
+            assert any("DRAIN_LINE_2" in call for call in info_calls)
+            assert any("DRAIN_LINE_3" in call for call in info_calls)
+
     async def test_exec_default_is_none(self) -> None:
         """Test that the default exec is None (auto-detect)."""
         hook = HookInstanceConfigV1Alpha1(script="echo hello")
