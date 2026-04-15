@@ -244,9 +244,10 @@ class Gptp(Driver):
         Checks both that the process handle exists and that the process
         has not exited.
         """
-        if self._ptp4l_proc is None:
+        proc = self._ptp4l_proc
+        if proc is None:
             raise RuntimeError("ptp4l not started -- call start() first")
-        if self._ptp4l_proc.returncode is not None:
+        if proc.returncode is not None:
             self._ptp4l_proc = None
             self._synchronized_invalidate()
             raise RuntimeError("ptp4l process has exited unexpectedly")
@@ -384,12 +385,15 @@ class Gptp(Driver):
                 *self.ptp4l_extra_args,
             ]
             self.logger.info("Starting ptp4l: %s", " ".join(cmd))
-            self._ptp4l_proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                start_new_session=True,
-            )
+            try:
+                self._ptp4l_proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            except FileNotFoundError:
+                raise RuntimeError("ptp4l not found — install linuxptp")
 
             self._port_state = "INITIALIZING"
             self._servo_state = "s0"
