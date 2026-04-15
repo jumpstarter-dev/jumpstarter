@@ -82,6 +82,10 @@ type ControllerService struct {
 	listenQueues  sync.Map
 }
 
+type listenQueue struct {
+	ch chan *pb.ListenResponse
+}
+
 type wrappedStream struct {
 	grpc.ServerStream
 }
@@ -439,13 +443,19 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
-	defer s.listenQueues.CompareAndDelete(leaseName, queue)
+	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	actual, loaded := s.listenQueues.LoadOrStore(leaseName, wrapper)
+	if loaded {
+		existing := actual.(*listenQueue)
+		wrapper = &listenQueue{ch: existing.ch}
+		s.listenQueues.CompareAndSwap(leaseName, existing, wrapper)
+	}
+	defer s.listenQueues.CompareAndDelete(leaseName, wrapper)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case msg := <-queue.(chan *pb.ListenResponse):
+		case msg := <-wrapper.ch:
 			if err := stream.Send(msg); err != nil {
 				return err
 			}
@@ -733,11 +743,13 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	dialWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8)}
+	actual, _ := s.listenQueues.LoadOrStore(leaseName, dialWrapper)
+	q := actual.(*listenQueue)
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case queue.(chan *pb.ListenResponse) <- response:
+	case q.ch <- response:
 	}
 
 	logger.Info("Client dial assigned stream", "stream", stream)
