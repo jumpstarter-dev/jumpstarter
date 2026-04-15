@@ -17,6 +17,7 @@ limitations under the License.
 package service
 
 import (
+	"sync"
 	"testing"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
@@ -626,6 +627,30 @@ func TestDialRejectsSupersededQueue(t *testing.T) {
 	case <-q.ch:
 		t.Fatal("token should not have been buffered in a superseded queue")
 	default:
+	}
+}
+
+func TestListenQueueDoneClosedOnNormalExit(t *testing.T) {
+	q := &listenQueue{
+		ch:        make(chan *pb.ListenResponse, 8),
+		done:      make(chan struct{}),
+		closeOnce: sync.Once{},
+	}
+
+	q.closeDone()
+
+	select {
+	case <-q.done:
+	default:
+		t.Fatal("done channel should be closed after closeDone is called")
+	}
+
+	q.closeDone()
+
+	select {
+	case <-q.done:
+	default:
+		t.Fatal("done channel should remain closed after duplicate closeDone call")
 	}
 }
 
