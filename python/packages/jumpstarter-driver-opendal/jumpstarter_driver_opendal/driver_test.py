@@ -355,6 +355,9 @@ def test_clean_filename():
     assert clean_filename("/path/to/image.raw.gz?token=abc") == "image.raw.gz"
     assert clean_filename("/path/to/image.raw.gzip?token=abc") == "image.raw.gzip"
 
+    # Edge case: query params with unencoded slashes (e.g. base64 signatures)
+    assert clean_filename("/images/image.raw.xz?Expires=123&Signature=abc/def/ghi") == "image.raw.xz"
+
 
 def test_operator_for_path_preserves_query_params():
     """Test that operator_for_path preserves query parameters for HTTP URLs"""

@@ -494,9 +494,9 @@ def test_flash_signed_url_preserves_query_params():
 
     captured = {}
 
-    def capture_perform(*args):
-        captured["image_url"] = args[3]
-        captured["should_download_to_httpd"] = args[4]
+    def capture_perform(partition, block_device, path, image_url, should_download_to_httpd, *rest):
+        captured["image_url"] = image_url
+        captured["should_download_to_httpd"] = should_download_to_httpd
 
     client._perform_flash_operation = capture_perform
 
@@ -540,10 +540,10 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
 
     captured = {}
 
-    def capture_perform(*args):
-        captured["path"] = args[2]
-        captured["image_url"] = args[3]
-        captured["should_download_to_httpd"] = args[4]
+    def capture_perform(partition, block_device, path, image_url, should_download_to_httpd, *rest):
+        captured["path"] = path
+        captured["image_url"] = image_url
+        captured["should_download_to_httpd"] = should_download_to_httpd
 
     client._perform_flash_operation = capture_perform
     # Mock the background transfer thread to prevent it from actually running

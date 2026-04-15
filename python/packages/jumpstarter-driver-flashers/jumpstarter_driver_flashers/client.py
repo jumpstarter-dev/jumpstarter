@@ -18,7 +18,13 @@ import click
 import pexpect
 import requests
 from jumpstarter_driver_composite.client import CompositeClient
-from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, clean_filename, operator_for_path
+from jumpstarter_driver_opendal.client import (
+    FlasherClient,
+    OpendalClient,
+    clean_filename,
+    operator_for_path,
+    path_with_query,
+)
 from jumpstarter_driver_opendal.common import PathBuf
 from jumpstarter_driver_pyserial.client import Console
 from opendal import Metadata, Operator
@@ -167,11 +173,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                         "http", root="/", endpoint=f"{parsed.scheme}://{parsed.netloc}", token=bearer_token
                     )
                     operator_scheme = "http"
-                    # Preserve query parameters so that signed URLs
-                    # (e.g. CloudFront with ?Expires=...&Signature=...) work correctly.
-                    path = parsed.path
-                    if parsed.query:
-                        path = f"{path}?{parsed.query}"
+                    path = path_with_query(parsed)
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
             image_url = self.http.get_url() + "/" + self._filename(path)
@@ -970,9 +972,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             original_url: Original URL for HTTP fallback
             headers: HTTP headers for requests
         """
-        self.logger.info(f"Writing image to storage in the background: {src_path}")
+        filename = self._filename(src_path)
+        self.logger.info(f"Writing image to storage in the background: {filename}")
         try:
-            filename = self._filename(src_path)
 
             if src_operator_scheme == "fs":
                 file_hash = self._sha256_file(src_operator, src_path)
@@ -1023,7 +1025,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     ) -> tuple[Metadata | None, str]:
         """Create a metadata json string from a metadata object"""
         metadata = None
-        metadata_dict = {"path": str(src_path)}
+        metadata_dict = {"path": clean_filename(src_path)}
 
         try:
             metadata = src_operator.stat(src_path)
@@ -1641,7 +1643,7 @@ def _get_decompression_command(filename_or_url) -> str:
         filename_or_url (str): Name of the file or URL to check
 
     Returns:
-        str: Decompression command ('zcat', 'xzcat', or 'cat' for uncompressed)
+        str: Decompression command ('zcat |', 'xzcat |', or '' for uncompressed)
     """
     filename = clean_filename(filename_or_url).lower()
     if filename.endswith((".gz", ".gzip")):

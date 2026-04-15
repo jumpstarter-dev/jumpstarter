@@ -47,35 +47,39 @@ class BytesIOStream(ObjectStream[bytes]):
 def clean_filename(path: PathBuf) -> str:
     """Extract a clean filename from a path or URL, stripping query parameters.
 
-    This handles paths returned by operator_for_path() which may contain
+    Handles paths returned by operator_for_path() which may contain
     query parameters for signed URLs (e.g. /path/to/image.raw.xz?Expires=...&Signature=...).
     """
     path_str = str(path)
     if path_str.startswith(("http://", "https://")):
         return urlparse(path_str).path.split("/")[-1]
-    name = Path(path_str).name
-    if "?" in name:
-        name = name.split("?", 1)[0]
-    return name
+    if "?" in path_str:
+        path_str = path_str.split("?", 1)[0]
+    return Path(path_str).name
+
+
+def path_with_query(parsed_url) -> str:
+    """Reconstruct path preserving query parameters for signed URL support."""
+    if parsed_url.query:
+        return f"{parsed_url.path}?{parsed_url.query}"
+    return parsed_url.path
 
 
 def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
-    """Create an operator for the given path
+    """Create an operator for the given path.
+
+    For HTTP URLs, query parameters are preserved in the returned path so that
+    signed URLs (e.g. CloudFront with Expires/Signature/Key-Pair-Id) work correctly.
+
     Return a tuple of:
-        - the path
+        - the path (str for HTTP, Path for filesystem)
         - the operator for the given path
-        - the scheme of the operator.
+        - the scheme of the operator
     """
     if type(path) is str and path.startswith(("http://", "https://")):
         parsed_url = urlparse(path)
         operator = Operator("http", root="/", endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}")
-        # Preserve query parameters in the path so that signed URLs
-        # (e.g. CloudFront URLs with ?Expires=...&Signature=...&Key-Pair-Id=...)
-        # are fetched correctly by the OpenDAL HTTP operator.
-        op_path = parsed_url.path
-        if parsed_url.query:
-            op_path = f"{op_path}?{parsed_url.query}"
-        return op_path, operator, "http"
+        return path_with_query(parsed_url), operator, "http"
     else:
         return Path(path).resolve(), Operator("fs", root="/"), "fs"
 
