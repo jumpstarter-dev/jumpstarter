@@ -508,6 +508,64 @@ def test_flash_signed_url_preserves_query_params():
     assert captured["should_download_to_httpd"] is False
 
 
+def test_flash_bearer_token_signed_url_preserves_query_params():
+    """Test that flash with force_exporter_http=True and bearer token preserves query params.
+
+    When a signed URL is used with a bearer token, the flash() method enters the
+    bearer token code path (lines 162-174 in client.py) which reconstructs the path
+    from parsed.path + '?' + parsed.query. This test verifies query params are preserved
+    and the path passed to the storage thread is correct.
+    """
+    client = MockFlasherClient()
+
+    class DummyService:
+        def __init__(self):
+            self.storage = object()
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def get_url(self):
+            return "http://exporter"
+
+        def get_host(self):
+            return "127.0.0.1"
+
+    client.http = DummyService()
+    client.tftp = DummyService()
+    client.call = lambda *args, **kwargs: None
+
+    captured = {}
+
+    def capture_perform(*args):
+        captured["path"] = args[2]
+        captured["image_url"] = args[3]
+        captured["should_download_to_httpd"] = args[4]
+
+    client._perform_flash_operation = capture_perform
+    # Mock the background transfer thread to prevent it from actually running
+    client._transfer_bg_thread = lambda *args, **kwargs: None
+
+    signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    client.flash(
+        signed_url,
+        force_exporter_http=True,
+        bearer_token="test-token-123",
+        method="fls",
+        fls_version="",
+    )
+
+    # With force_exporter_http=True and bearer_token, should download to httpd
+    assert captured["should_download_to_httpd"] is True
+    # The path should have query params preserved (reconstructed from parsed.path + '?' + parsed.query)
+    assert captured["path"] == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    # The image_url should point to the exporter with the clean filename (no query params)
+    assert captured["image_url"] == "http://exporter/image.raw.xz"
+
+
 def test_resolve_flash_parameters():
     """Test flash parameter resolution for single file, partitions, and error cases"""
     client = MockFlasherClient()
