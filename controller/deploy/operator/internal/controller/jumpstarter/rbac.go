@@ -257,6 +257,9 @@ func (r *JumpstarterReconciler) reconcileRoleBinding(
 			return err
 		}
 		if err := controllerutil.SetControllerReference(jumpstarter, desired, r.Scheme); err != nil {
+			log.Error(err, "Failed to set controller reference after RoleBinding deletion; RoleBinding is absent until next reconciliation",
+				"name", desired.Name,
+				"namespace", desired.Namespace)
 			return err
 		}
 		if err := r.Client.Create(ctx, desired); err != nil {

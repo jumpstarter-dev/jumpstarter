@@ -199,12 +199,21 @@ var _ = Describe("reconcileRoleBinding", func() {
 		err := r.reconcileRoleBinding(ctx, js, desired)
 		Expect(err).NotTo(HaveOccurred())
 
+		// Capture ResourceVersion before the no-op reconciliation
+		before := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "rbac-test-router-rolebinding",
+			Namespace: "default",
+		}, before)
+		Expect(err).NotTo(HaveOccurred())
+		rvBefore := before.ResourceVersion
+
 		// Reconcile again with same desired state -- should be a no-op
 		desired2 := r.createRouterRoleBinding(js)
 		err = r.reconcileRoleBinding(ctx, js, desired2)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Verify it still exists and is unchanged
+		// Verify it still exists, is unchanged, and no unnecessary API write occurred
 		existing := &rbacv1.RoleBinding{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      "rbac-test-router-rolebinding",
@@ -212,6 +221,7 @@ var _ = Describe("reconcileRoleBinding", func() {
 		}, existing)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(existing.RoleRef.Name).To(Equal("rbac-test-router-role"))
+		Expect(existing.ResourceVersion).To(Equal(rvBefore), "ResourceVersion should be unchanged when no update is needed")
 	})
 
 	It("should update Subjects when they change but RoleRef is unchanged", func() {
