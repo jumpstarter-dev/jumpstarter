@@ -75,7 +75,7 @@ dev = [
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
     "ty>=0.0.1a8",
-    "diff-cover>=9.2.0",
+    "diff-cover>=10.2.0",
 ]
 
 [tool.ruff]
