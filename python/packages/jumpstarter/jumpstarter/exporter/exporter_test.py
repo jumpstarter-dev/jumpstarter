@@ -330,7 +330,7 @@ class TestBeforeLeaseHookSafetyTimeout:
     async def test_safety_timeout_uses_hook_config_when_available(self):
         """When a hook executor with before_lease config is present,
         the safety timeout should use the configured hook timeout + 30s
-        margin rather than the default 300s."""
+        margin rather than the default 15s."""
         from unittest.mock import patch
 
         from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1

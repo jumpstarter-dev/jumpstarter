@@ -601,7 +601,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # was never set due to a race (e.g. conn_tg cancelled early).
             # Use the configured hook timeout (+ margin) when available so we
             # never interrupt a legitimately-running beforeLease hook.
-            safety_timeout = 300  # generous default for no-hook / unknown cases
+            safety_timeout = 15  # generous default for no-hook / unknown cases
             if (
                 self.hook_executor
                 and self.hook_executor.config.before_lease
