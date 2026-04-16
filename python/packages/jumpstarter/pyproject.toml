@@ -35,6 +35,9 @@ dev = [
     "jumpstarter-driver-composite",
 ]
 
+[tool.coverage.run]
+source = ["."]
+
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter"]
 
