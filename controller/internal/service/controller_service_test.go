@@ -559,7 +559,6 @@ func TestListenQueueStaleReaderConsumesDialToken(t *testing.T) {
 }
 
 func TestListenQueueStaleReaderAlwaysDetectsSupersession(t *testing.T) {
-	staleWins := 0
 	iterations := 100
 
 	for i := 0; i < iterations; i++ {
@@ -587,13 +586,15 @@ func TestListenQueueStaleReaderAlwaysDetectsSupersession(t *testing.T) {
 
 		select {
 		case <-g1Queue.done:
-		case <-g1Queue.ch:
-			staleWins++
+		default:
+			t.Fatalf("iteration %d: g1 done channel should be closed after supersession", i)
 		}
-	}
 
-	if staleWins > 0 {
-		t.Fatalf("stale reader won %d out of %d iterations, expected 0", staleWins, iterations)
+		select {
+		case <-g1Queue.ch:
+			t.Fatalf("iteration %d: stale reader g1 consumed a token after supersession", i)
+		default:
+		}
 	}
 }
 
@@ -1367,7 +1368,7 @@ func TestListenQueueDialFlowSendsToActiveListener(t *testing.T) {
 	}
 }
 
-func TestLeaseLockCleanedUpWhenListenExits(t *testing.T) {
+func TestLeaseLockPreservedAfterListenExits(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-lock-cleanup"
 
@@ -1381,13 +1382,14 @@ func TestLeaseLockCleanedUpWhenListenExits(t *testing.T) {
 		t.Fatal("lease lock should exist after swapListenQueue")
 	}
 
+	mu := svc.getLeaseLock(leaseName)
+	mu.Lock()
 	wrapper.closeDone()
-	if svc.listenQueues.CompareAndDelete(leaseName, wrapper) {
-		svc.leaseLocks.Delete(leaseName)
-	}
+	mu.Unlock()
+	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
-	if _, ok := svc.leaseLocks.Load(leaseName); ok {
-		t.Fatal("lease lock should be deleted after Listen cleanup with no replacement")
+	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
+		t.Fatal("lease lock must be preserved after Listen cleanup to prevent mutex pointer races")
 	}
 }
 
@@ -1407,10 +1409,11 @@ func TestLeaseLockPreservedWhenNewListenerTakesOver(t *testing.T) {
 	}
 	svc.swapListenQueue(leaseName, g2)
 
+	mu := svc.getLeaseLock(leaseName)
+	mu.Lock()
 	g1.closeDone()
-	if svc.listenQueues.CompareAndDelete(leaseName, g1) {
-		svc.leaseLocks.Delete(leaseName)
-	}
+	mu.Unlock()
+	svc.listenQueues.CompareAndDelete(leaseName, g1)
 
 	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
 		t.Fatal("lease lock should be preserved when a new listener took over")
