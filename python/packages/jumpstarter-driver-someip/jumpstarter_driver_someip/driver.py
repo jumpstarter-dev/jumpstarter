@@ -11,7 +11,7 @@ from opensomeip.message import Message
 from opensomeip.sd import SdConfig, ServiceInstance
 from opensomeip.transport import Endpoint
 from opensomeip.types import MessageId
-from pydantic import ConfigDict, validate_call
+from pydantic import ConfigDict, SkipValidation, validate_call
 from pydantic.dataclasses import dataclass
 
 from .common import (
@@ -74,6 +74,7 @@ class SomeIp(Driver):
 
     _osip_client: OsipClient | None = field(init=False, repr=False, default=None)
     _osip_config: ClientConfig = field(init=False, repr=False)
+    _osip_lock: SkipValidation[threading.Lock] = field(init=False, repr=False, default_factory=threading.Lock)
 
     @classmethod
     def client(cls) -> str:
@@ -100,10 +101,12 @@ class SomeIp(Driver):
         )
 
     def _ensure_client(self) -> OsipClient:
-        """Create and start the OsipClient on first use."""
+        """Create and start the OsipClient on first use (thread-safe)."""
         if self._osip_client is None:
-            self._osip_client = OsipClient(self._osip_config)
-            self._osip_client.start()
+            with self._osip_lock:
+                if self._osip_client is None:
+                    self._osip_client = OsipClient(self._osip_config)
+                    self._osip_client.start()
         return self._osip_client
 
     def close(self):
