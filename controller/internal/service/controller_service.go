@@ -501,8 +501,12 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		done: make(chan struct{}),
 	}
 	s.swapListenQueue(leaseName, wrapper)
-	defer s.listenQueues.CompareAndDelete(leaseName, wrapper)
-	defer wrapper.closeDone()
+	defer func() {
+		wrapper.closeDone()
+		if s.listenQueues.CompareAndDelete(leaseName, wrapper) {
+			s.leaseLocks.Delete(leaseName)
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():

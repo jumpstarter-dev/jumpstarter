@@ -1457,3 +1457,57 @@ func TestListenQueueDialFlowSendsToActiveListener(t *testing.T) {
 	}
 }
 
+func TestLeaseLockCleanedUpWhenListenExits(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-lock-cleanup"
+
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, wrapper)
+
+	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
+		t.Fatal("lease lock should exist after swapListenQueue")
+	}
+
+	wrapper.closeDone()
+	if svc.listenQueues.CompareAndDelete(leaseName, wrapper) {
+		svc.leaseLocks.Delete(leaseName)
+	}
+
+	if _, ok := svc.leaseLocks.Load(leaseName); ok {
+		t.Fatal("lease lock should be deleted after Listen cleanup with no replacement")
+	}
+}
+
+func TestLeaseLockPreservedWhenNewListenerTakesOver(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-lock-preserved"
+
+	g1 := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, g1)
+
+	g2 := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, g2)
+
+	g1.closeDone()
+	if svc.listenQueues.CompareAndDelete(leaseName, g1) {
+		svc.leaseLocks.Delete(leaseName)
+	}
+
+	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
+		t.Fatal("lease lock should be preserved when a new listener took over")
+	}
+
+	if _, ok := svc.listenQueues.Load(leaseName); !ok {
+		t.Fatal("queue should still exist for the new listener")
+	}
+}
+
