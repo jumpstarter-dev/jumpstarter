@@ -391,6 +391,59 @@ class TestHandleLeaseFinally:
         )
 
 
+class TestStopRequestedGuard:
+    async def test_cleanup_does_not_report_available_when_stop_requested_with_skip(self):
+        """When _stop_requested is True and skip_after_lease_hook is True,
+        _cleanup_after_lease must NOT report AVAILABLE. This prevents the
+        controller from assigning new leases to a dying exporter (issue #245)."""
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+        lease_ctx.skip_after_lease_hook = True
+
+        statuses = []
+
+        async def track_status(status, message=""):
+            statuses.append(status)
+
+        exporter = make_exporter(lease_ctx)
+        exporter._stop_requested = True
+        exporter._report_status = AsyncMock(side_effect=track_status)
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        available_statuses = [s for s in statuses if s == ExporterStatus.AVAILABLE]
+        assert len(available_statuses) == 0, (
+            f"AVAILABLE must NOT be reported when _stop_requested is True, "
+            f"got statuses: {statuses}"
+        )
+        assert lease_ctx.after_lease_hook_done.is_set()
+
+    async def test_cleanup_does_not_report_available_when_stop_requested_no_hooks(self):
+        """When _stop_requested is True and no hook executor is configured,
+        _cleanup_after_lease must NOT report AVAILABLE. Even without hooks,
+        the _stop_requested guard prevents AVAILABLE during shutdown."""
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+
+        statuses = []
+
+        async def track_status(status, message=""):
+            statuses.append(status)
+
+        exporter = make_exporter(lease_ctx, hook_executor=None)
+        exporter._stop_requested = True
+        exporter._report_status = AsyncMock(side_effect=track_status)
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        available_statuses = [s for s in statuses if s == ExporterStatus.AVAILABLE]
+        assert len(available_statuses) == 0, (
+            f"AVAILABLE must NOT be reported when _stop_requested is True "
+            f"(no hooks), got statuses: {statuses}"
+        )
+        assert lease_ctx.after_lease_hook_done.is_set()
+
+
 class TestIdempotentLeaseEnd:
     async def test_duplicate_cleanup_is_noop(self):
         """Calling _cleanup_after_lease twice for the same LeaseContext
