@@ -1,8 +1,8 @@
-# JEP-0003: Native gRPC Services for Driver Interfaces
+# JEP-0013: Native gRPC Services for Driver Interfaces
 
 | Field             | Value                                                         |
 | ----------------- | ------------------------------------------------------------- |
-| **JEP**           | 0003                                                          |
+| **JEP**           | 0013                                                          |
 | **Title**         | Native gRPC Services for Driver Interfaces                    |
 | **Author(s)**     | @kirkbrauer (Kirk Brauer)                                     |
 | **Status**        | Draft                                                         |
@@ -10,7 +10,7 @@
 | **Created**       | 2026-04-11                                                    |
 | **Updated**       | 2026-04-11 (Phase 1-3 implementation review)                  |
 | **Discussion**    | [Matrix](https://matrix.to/#/#jumpstarter:matrix.org)         |
-| **Requires**      | JEP-0001 (Protobuf Introspection), JEP-0002 (ExporterClass Mechanism) |
+| **Requires**      | JEP-0011 (Protobuf Introspection), JEP-0012 (ExporterClass Mechanism) |
 | **Supersedes**    | —                                                             |
 | **Superseded-By** | —                                                             |
 
@@ -18,7 +18,7 @@
 
 ## Abstract
 
-This JEP replaces Jumpstarter's underlying driver wire protocol — the generic `ExporterService.DriverCall` / `StreamingDriverCall` dispatch — with native gRPC services generated from the `.proto` interface definitions that JEP-0001 already produces. Each driver interface (power, ADB, serial, flasher, etc.) becomes a real gRPC service on the exporter, with `protoc`-generated code handling serialization on both sides. Critically, **both the client-side and exporter-side programming models remain unchanged**: drivers continue to use `@export` decorated methods, and clients continue to use `DriverClient.call("method")` or typed client classes like `PowerClient`. The native gRPC translation is handled transparently by generated adapter code under the hood. A metadata-based UUID routing mechanism (`x-jumpstarter-driver-uuid`) disambiguates multiple instances of the same interface. `@exportstream` methods now use native gRPC bidi streaming with `StreamData { bytes payload }` messages, while the resource mechanism continues to use `RouterService.Stream`. This JEP eliminates the `Value` serialization layer at the transport level, enables standard gRPC tooling (per-method metrics, `grpcurl`, interceptors), and simplifies JEP-0004's polyglot codegen — new language clients can optionally use native `protoc` stubs directly, but are not required to.
+This JEP replaces Jumpstarter's underlying driver wire protocol — the generic `ExporterService.DriverCall` / `StreamingDriverCall` dispatch — with native gRPC services generated from the `.proto` interface definitions that JEP-0011 already produces. Each driver interface (power, ADB, serial, flasher, etc.) becomes a real gRPC service on the exporter, with `protoc`-generated code handling serialization on both sides. Critically, **both the client-side and exporter-side programming models remain unchanged**: drivers continue to use `@export` decorated methods, and clients continue to use `DriverClient.call("method")` or typed client classes like `PowerClient`. The native gRPC translation is handled transparently by generated adapter code under the hood. A metadata-based UUID routing mechanism (`x-jumpstarter-driver-uuid`) disambiguates multiple instances of the same interface. `@exportstream` methods now use native gRPC bidi streaming with `StreamData { bytes payload }` messages, while the resource mechanism continues to use `RouterService.Stream`. This JEP eliminates the `Value` serialization layer at the transport level, enables standard gRPC tooling (per-method metrics, `grpcurl`, interceptors), and simplifies JEP-0014's polyglot codegen — new language clients can optionally use native `protoc` stubs directly, but are not required to.
 
 ## Motivation
 
@@ -45,11 +45,11 @@ This design served the project well during its Python-only phase — it's flexib
 
 **Poor observability.** All calls appear as `/jumpstarter.v1.ExporterService/DriverCall` in traces and metrics. The actual method name is buried inside the request payload. With native services, each call appears distinctly — `/jumpstarter.interfaces.power.v1.PowerInterface/On` — enabling per-method latency histograms, error rate dashboards, and meaningful alerting.
 
-**Polyglot barrier.** JEP-0004 (Polyglot Typed Device Wrappers) requires every new language to implement: (1) `Value` serialization codec, (2) `DriverCall` dispatch wrapper with string method mapping, (3) streaming call wrapper. These are ~150 lines of error-prone, language-specific code. With native gRPC services, standard `protoc` generates fully functional client stubs in any language — zero Jumpstarter-specific dispatch code needed.
+**Polyglot barrier.** JEP-0014 (Polyglot Typed Device Wrappers) requires every new language to implement: (1) `Value` serialization codec, (2) `DriverCall` dispatch wrapper with string method mapping, (3) streaming call wrapper. These are ~150 lines of error-prone, language-specific code. With native gRPC services, standard `protoc` generates fully functional client stubs in any language — zero Jumpstarter-specific dispatch code needed.
 
 **No standard tooling.** Cannot use `grpcurl` for ad-hoc testing, gRPC reflection for per-service discovery, standard gRPC interceptors for retry/deadline/auth per method, or API gateways that understand gRPC service definitions. All tooling must be custom-built around the generic `DriverCall` envelope.
 
-JEP-0001 already solved the schema problem: every driver interface has a canonical `.proto` file defining a real gRPC service with typed messages. JEP-0002 solved the contract problem: ExporterClasses and DriverInterfaces define typed contracts validated by the controller. The missing piece is making those proto-defined services real — actually serving and calling them as native gRPC RPCs instead of treating them as documentation.
+JEP-0011 already solved the schema problem: every driver interface has a canonical `.proto` file defining a real gRPC service with typed messages. JEP-0012 solved the contract problem: ExporterClasses and DriverInterfaces define typed contracts validated by the controller. The missing piece is making those proto-defined services real — actually serving and calling them as native gRPC RPCs instead of treating them as documentation.
 
 ### User Stories
 
@@ -63,7 +63,7 @@ JEP-0001 already solved the schema problem: every driver interface has a canonic
 
 - **As a** tools developer, **I want to** call `grpcurl -plaintext localhost:50051 jumpstarter.interfaces.power.v1.PowerInterface/On` to test a power driver directly, **so that** I can debug driver behavior without writing a full test harness.
 
-- **As a** polyglot codegen maintainer (JEP-0004), **I want** the native gRPC transport to eliminate the need for per-language `ValueCodec` and `DriverCall` dispatch wrappers, **so that** new language support requires only session management and resource adapters (~80 lines).
+- **As a** polyglot codegen maintainer (JEP-0014), **I want** the native gRPC transport to eliminate the need for per-language `ValueCodec` and `DriverCall` dispatch wrappers, **so that** new language support requires only session management and resource adapters (~80 lines).
 
 ## Proposal
 
@@ -127,7 +127,7 @@ When `native_services` is populated (e.g., `["jumpstarter.interfaces.power.v1.Po
 
 #### Native gRPC Services: New
 
-Each driver interface's `.proto` file (generated by JEP-0001) already defines a gRPC service. For example, `power/v1/power.proto`:
+Each driver interface's `.proto` file (generated by JEP-0011) already defines a gRPC service. For example, `power/v1/power.proto`:
 
 ```protobuf
 service PowerInterface {
@@ -157,7 +157,7 @@ The generated native servicer implements the bidi handler directly: it calls the
 
 ### CLI Interface
 
-The existing `jmp interface implement` command (JEP-0001) is extended to generate server-side servicer adapters:
+The existing `jmp interface implement` command (JEP-0011) is extended to generate server-side servicer adapters:
 
 ```bash
 # Generate client, interface, driver adapter, AND servicer adapter
@@ -513,7 +513,7 @@ This is a standard Kotlin gRPC service implementation — it can be compiled and
 
 #### Generated Typed Clients
 
-For officially-supported client languages, `jmp codegen` (JEP-0004) generates **typed client wrapper classes** that hide the raw `protoc` stubs behind an idiomatic API. Users interact with `PowerClient`, not `PowerInterfaceGrpc.PowerInterfaceBlockingStub`. The generated client handles stub creation, UUID metadata injection, and proto message construction internally.
+For officially-supported client languages, `jmp codegen` (JEP-0014) generates **typed client wrapper classes** that hide the raw `protoc` stubs behind an idiomatic API. Users interact with `PowerClient`, not `PowerInterfaceGrpc.PowerInterfaceBlockingStub`. The generated client handles stub creation, UUID metadata injection, and proto message construction internally.
 
 **Python** — generated typed client wraps the native stub:
 
@@ -762,11 +762,11 @@ Client                         Router                      Exporter
 
 ### Client-Side Logic Audit: Impact on Driver Tiers
 
-JEP-0004 identified four tiers of client-side complexity. Native gRPC services affect each tier differently:
+JEP-0014 identified four tiers of client-side complexity. Native gRPC services affect each tier differently:
 
-**Tier 1 (Pure delegation):** Existing `self.call()` wrappers in `StorageMuxClient`, `NetworkClient`, `CompositeClient` continue to work — the framework transparently routes them through native gRPC. For new polyglot clients (JEP-0004), these can optionally use standard protoc-generated stubs directly.
+**Tier 1 (Pure delegation):** Existing `self.call()` wrappers in `StorageMuxClient`, `NetworkClient`, `CompositeClient` continue to work — the framework transparently routes them through native gRPC. For new polyglot clients (JEP-0014), these can optionally use standard protoc-generated stubs directly.
 
-**Tier 2 (Light orchestration):** `PowerClient.cycle()` still needs to be moved server-side (same recommendation as JEP-0004). `PowerClient.read()` is already a server-streaming RPC in the proto — the native stub handles it directly with typed `PowerReading` messages instead of `Value` deserialization.
+**Tier 2 (Light orchestration):** `PowerClient.cycle()` still needs to be moved server-side (same recommendation as JEP-0014). `PowerClient.read()` is already a server-streaming RPC in the proto — the native stub handles it directly with typed `PowerReading` messages instead of `Value` deserialization.
 
 **Tier 3 (Resource mechanism):** Resource handles become proto-native (see "Resource Handle Migration" below). The resource adapter (~80 lines per language) remains, but `Value`-based handle passing is eliminated.
 
@@ -876,7 +876,7 @@ This JEP is **fully backward compatible** — both in wire protocol and programm
 
 - **Exporter-side (protocol):** Legacy `ExporterService` remains registered and functional alongside native services. Old clients that don't understand `native_services` continue to use `DriverCall` without any change.
 
-- **Proto compatibility:** The `.proto` files from JEP-0001 are unchanged. They already define gRPC services; this JEP implements those services for real instead of using them as description-only. The `DriverInstanceReport.native_services` field (field 7) is a new optional repeated field — additive and backward-compatible at the protobuf level.
+- **Proto compatibility:** The `.proto` files from JEP-0011 are unchanged. They already define gRPC services; this JEP implements those services for real instead of using them as description-only. The `DriverInstanceReport.native_services` field (field 7) is a new optional repeated field — additive and backward-compatible at the protobuf level.
 
 - **Router:** Zero changes. The router is a transport-level byte forwarder; it does not inspect or understand the services flowing through the tunnel.
 
@@ -918,7 +918,7 @@ Using gRPC's dynamic dispatch (`DynamicMessage` in Java, descriptor pools in Pyt
 
 - **Buf Connect** ([connectrpc.com](https://connectrpc.com/)) — Generates typed clients from `.proto` files for multiple languages. Jumpstarter's approach is analogous but for device interfaces rather than web APIs.
 
-- **Kubernetes CRD controllers** — The Kubernetes API server multiplexes CRD-defined APIs on a single server. Each CRD generates typed Go clients via code generation from OpenAPI specs — analogous to how JEP-0001 protos generate typed stubs via `protoc`.
+- **Kubernetes CRD controllers** — The Kubernetes API server multiplexes CRD-defined APIs on a single server. Each CRD generates typed Go clients via code generation from OpenAPI specs — analogous to how JEP-0011 protos generate typed stubs via `protoc`.
 
 - **tonic (Rust gRPC)** — The tonic framework's `Router` supports composing multiple gRPC services on a single server, with per-service interceptors. This is the pattern Jumpstarter would adopt for Rust clients.
 
@@ -940,7 +940,7 @@ Using gRPC's dynamic dispatch (`DynamicMessage` in Java, descriptor pools in Pyt
 
 6. **Interceptor composition:** Should the exporter support registering per-service gRPC interceptors (e.g., rate limiting on flash operations, logging on power operations)? This is a natural extension but adds complexity.
 
-7. **Service versioning:** When multiple proto versions of an interface coexist (e.g., `power.v1` and `power.v2`), should the exporter serve both simultaneously? This interacts with JEP-0002's DriverInterface version tracking.
+7. **Service versioning:** When multiple proto versions of an interface coexist (e.g., `power.v1` and `power.v2`), should the exporter serve both simultaneously? This interacts with JEP-0012's DriverInterface version tracking.
 
 ## Future Possibilities
 
@@ -962,7 +962,7 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 | Phase | Deliverable | Depends On | Status |
 |-------|-------------|------------|--------|
-| 1 | `DriverRegistry` + `ServicerAdapterInfo` registry + servicer adapter for PowerInterface | JEP-0001 ✅ | **done** |
+| 1 | `DriverRegistry` + `ServicerAdapterInfo` registry + servicer adapter for PowerInterface | JEP-0011 ✅ | **done** |
 | 2 | Exporter registers native services alongside `ExporterService`; `native_services` field in `DriverInstanceReport`; Go controller forwards field | Phase 1 | **done** |
 | 3 | Python `AsyncDriverClient` transparently routes through native gRPC when available; `NativeClientAdapterInfo` registry; fallback to `DriverCall` for old exporters | Phase 2 | **done** |
 | 4 | All bundled driver interfaces have generated servicer adapters | Phase 2 | planned |
@@ -987,9 +987,9 @@ Priority order: **Python exporter-side first** (Phase 1-2, enables all clients),
 
 ## References
 
-- [JEP-0001: Protobuf Introspection and Interface Generation](./JEP-0001-protobuf-introspection-interface-generation.md)
-- [JEP-0002: ExporterClass Mechanism](./JEP-0002-deviceclass-mechanism.md)
-- [JEP-0004: Polyglot Typed Device Wrappers](./JEP-0004-polyglot-typed-device-wrappers.md)
+- [JEP-0011: Protobuf Introspection and Interface Generation](./JEP-0011-protobuf-introspection-interface-generation.md)
+- [JEP-0012: ExporterClass Mechanism](./JEP-0012-deviceclass-mechanism.md)
+- [JEP-0014: Polyglot Typed Device Wrappers](./JEP-0014-polyglot-typed-device-wrappers.md)
 - [gRPC Service Multiplexing](https://grpc.io/docs/guides/)
 - [gRPC Metadata](https://grpc.io/docs/guides/metadata/)
 - [gRPC Server Reflection](https://github.com/grpc/grpc/blob/master/doc/server-reflection.md)

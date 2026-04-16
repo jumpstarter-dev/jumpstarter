@@ -7,7 +7,7 @@ servicer adapters to resolve the target driver from gRPC call metadata.
 Also provides the servicer adapter registry: a global mapping from
 DriverInterface classes to their generated gRPC servicer adapters.
 
-See JEP-0003 for design details.
+See JEP-0013 for design details.
 """
 
 from __future__ import annotations
