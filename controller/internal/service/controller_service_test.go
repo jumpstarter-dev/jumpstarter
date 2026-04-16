@@ -1409,16 +1409,45 @@ func TestLeaseLockRefCountConcurrentAcquireRelease(t *testing.T) {
 	var wg sync.WaitGroup
 	goroutines := 100
 
-	var counter int
 	for i := 0; i < goroutines; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			lock := svc.acquireLeaseLock(leaseName)
-			lock.Lock()
-			counter++
-			lock.Unlock()
+			svc.acquireLeaseLock(leaseName)
 			svc.releaseLeaseLock(leaseName)
+		}()
+	}
+
+	wg.Wait()
+
+	if _, ok := svc.leaseLocks.Load(leaseName); ok {
+		t.Fatal("lease lock should be removed after all goroutines release")
+	}
+}
+
+func TestLeaseLockRefCountConcurrentOverlappingListeners(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-refcount-concurrent-overlap"
+	goroutines := 50
+
+	var counter int
+	var wg sync.WaitGroup
+	allAcquired := sync.WaitGroup{}
+	allAcquired.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mu := svc.acquireLeaseLock(leaseName)
+			defer svc.releaseLeaseLock(leaseName)
+
+			allAcquired.Done()
+			allAcquired.Wait()
+
+			mu.Lock()
+			counter++
+			mu.Unlock()
 		}()
 	}
 
