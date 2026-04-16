@@ -1,8 +1,8 @@
-# JEP-0002: ExporterClass Mechanism
+# JEP-0012: ExporterClass Mechanism
 
 | Field             | Value                                                      |
 | ----------------- | ---------------------------------------------------------- |
-| **JEP**           | 0002                                                       |
+| **JEP**           | 0012                                                       |
 | **Title**         | ExporterClass Mechanism                                    |
 | **Author(s)**     | @kirkbrauer (Kirk Brauer)                                  |
 | **Status**        | Draft                                                      |
@@ -10,7 +10,7 @@
 | **Created**       | 2026-04-06                                                 |
 | **Updated**       | 2026-04-08                                                 |
 | **Discussion**    | [Matrix](https://matrix.to/#/#jumpstarter:matrix.org)      |
-| **Requires**      | JEP-0001 (Protobuf Introspection and Interface Generation) |
+| **Requires**      | JEP-0011 (Protobuf Introspection and Interface Generation) |
 | **Supersedes**    | —                                                          |
 | **Superseded-By** | —                                                          |
 
@@ -18,7 +18,7 @@
 
 ## Abstract
 
-This JEP introduces an `ExporterClass` custom resource that defines a typed contract between device providers (exporters) and device consumers (test clients). An ExporterClass specifies required and optional driver interfaces by referencing `DriverInterface` CRDs, enabling the controller to structurally validate exporters at registration time using the `FileDescriptorProto` schemas from JEP-0001, and enabling client-side codegen (JEP-0003) to produce type-safe device wrappers with named accessors for each interface. An accompanying `DriverInterface` CRD links interface names to their canonical proto definitions and driver packages. Together, these resources bridge the gap between label-based infrastructure selection and typed API contracts.
+This JEP introduces an `ExporterClass` custom resource that defines a typed contract between device providers (exporters) and device consumers (test clients). An ExporterClass specifies required and optional driver interfaces by referencing `DriverInterface` CRDs, enabling the controller to structurally validate exporters at registration time using the `FileDescriptorProto` schemas from JEP-0011, and enabling client-side codegen (JEP-0013) to produce type-safe device wrappers with named accessors for each interface. An accompanying `DriverInterface` CRD links interface names to their canonical proto definitions and driver packages. Together, these resources bridge the gap between label-based infrastructure selection and typed API contracts.
 
 ## Motivation
 
@@ -30,7 +30,7 @@ The consequences are concrete:
 
 - **No contract for exporters.** An operator deploying a new exporter for embedded device testing has no way to verify that the exporter's driver configuration satisfies the requirements of the test suites that will lease it. Misconfiguration is discovered when tests fail, not at deployment time.
 
-- **No typed codegen.** Without a formal declaration of which interfaces a device provides, code generation tools (JEP-0003) cannot produce typed device wrappers with non-nullable accessors. Every interface accessor must be `Optional`, defeating the purpose of typed clients.
+- **No typed codegen.** Without a formal declaration of which interfaces a device provides, code generation tools (JEP-0013) cannot produce typed device wrappers with non-nullable accessors. Every interface accessor must be `Optional`, defeating the purpose of typed clients.
 
 - **No fleet-level visibility.** There is no aggregated view of how many exporters satisfy a particular device profile. An operator cannot answer "how many embedded-linux-board devices are available right now?" without scripting custom `GetReport` queries across the fleet.
 
@@ -54,11 +54,11 @@ ExporterClass bridges the gap between infrastructure selection (labels) and API 
 
 This proposal introduces two new Kubernetes CRDs and admin CLI tooling:
 
-1. **`DriverInterface`** — a namespace-scoped CRD that names an interface, references its canonical proto definition (from JEP-0001), and specifies how to identify drivers implementing it in a `DriverInstanceReport`. DriverInterface CRDs for all bundled drivers ship as part of the standard Jumpstarter installation.
+1. **`DriverInterface`** — a namespace-scoped CRD that names an interface, references its canonical proto definition (from JEP-0011), and specifies how to identify drivers implementing it in a `DriverInstanceReport`. DriverInterface CRDs for all bundled drivers ship as part of the standard Jumpstarter installation.
 2. **`ExporterClass`** — a namespace-scoped CRD that declares a named device profile as a set of required and optional `DriverInterface` references, plus label selectors.
 3. **`jmp admin` CLI tooling** — commands for managing `DriverInterface` and `ExporterClass` CRDs, generating DriverInterface YAML for custom drivers, and validating exporter configurations locally.
 
-ExporterClass is a **purely admin-side enforcement mechanism** that requires no changes to the lease protocol or client behavior. Clients continue to request leases using labels exactly as they do today. The controller evaluates exporters against ExporterClasses based on the ExporterClass's label selector: when an exporter's labels match an ExporterClass's selector, the controller validates that the exporter also satisfies the ExporterClass's interface requirements. Exporters that match the labels but fail interface validation are flagged and excluded from lease matching for that label set, ensuring that clients always receive exporters with the correct driver interfaces. Client-side codegen (JEP-0003) can consume ExporterClass definitions to produce typed device wrappers.
+ExporterClass is a **purely admin-side enforcement mechanism** that requires no changes to the lease protocol or client behavior. Clients continue to request leases using labels exactly as they do today. The controller evaluates exporters against ExporterClasses based on the ExporterClass's label selector: when an exporter's labels match an ExporterClass's selector, the controller validates that the exporter also satisfies the ExporterClass's interface requirements. Exporters that match the labels but fail interface validation are flagged and excluded from lease matching for that label set, ensuring that clients always receive exporters with the correct driver interfaces. Client-side codegen (JEP-0013) can consume ExporterClass definitions to produce typed device wrappers.
 
 ### DriverInterface CRD
 
@@ -102,11 +102,11 @@ status:
 
 The DriverInterface CRD name is a fully-qualified identifier derived from the proto package (e.g., `dev-jumpstarter-power-v1` for `jumpstarter.interfaces.power.v1`), ensuring uniqueness within a namespace.
 
-The `proto.package` field contains the proto package name (e.g., `jumpstarter.interfaces.power.v1`) — this is the canonical identifier used for matching. JEP-0001's `build_file_descriptor()` produces `FileDescriptorProto` objects with this same package name. The controller matches a driver in the report tree to a DriverInterface by comparing the driver's `FileDescriptorProto.package` against the DriverInterface's `proto.package`. This eliminates the need for convention-based label matching — the proto package is the canonical identifier.
+The `proto.package` field contains the proto package name (e.g., `jumpstarter.interfaces.power.v1`) — this is the canonical identifier used for matching. JEP-0011's `build_file_descriptor()` produces `FileDescriptorProto` objects with this same package name. The controller matches a driver in the report tree to a DriverInterface by comparing the driver's `FileDescriptorProto.package` against the DriverInterface's `proto.package`. This eliminates the need for convention-based label matching — the proto package is the canonical identifier.
 
 The `descriptor` field contains the canonical `FileDescriptorProto` as base64-encoded bytes, used by the controller for structural validation. This follows the pattern established by Envoy's gRPC-JSON transcoder, which embeds `FileDescriptorSet` bytes inline in Kubernetes configuration.
 
-The `drivers` array lists driver implementations for this interface, one per language. Each entry specifies the language (`lang`), package name, version constraint, package index, and the language-specific class paths. For Python, `driverClass` is the driver implementation and `clientClass` is the client proxy class (e.g., `jumpstarter_driver_power.client:PowerClient`), matching the `jumpstarter.dev/client` label already emitted by drivers in their `DriverInstanceReport`. This enables client-side validation (verifying the correct packages are installed) and provides the import paths for codegen (JEP-0003). Future language support (e.g., Java, Kotlin, Go) adds entries to the same array.
+The `drivers` array lists driver implementations for this interface, one per language. Each entry specifies the language (`lang`), package name, version constraint, package index, and the language-specific class paths. For Python, `driverClass` is the driver implementation and `clientClass` is the client proxy class (e.g., `jumpstarter_driver_power.client:PowerClient`), matching the `jumpstarter.dev/client` label already emitted by drivers in their `DriverInstanceReport`. This enables client-side validation (verifying the correct packages are installed) and provides the import paths for codegen (JEP-0013). Future language support (e.g., Java, Kotlin, Go) adds entries to the same array.
 
 ### ExporterClass CRD
 
@@ -220,8 +220,8 @@ DriverInterface CRDs are treated as **part of the Jumpstarter platform**, versio
   - Helm chart: `deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/`
   - Operator config: `deploy/operator/config/crd/bases/`
   - OLM bundle: included automatically via `operator-sdk generate bundle`
-- The `proto.descriptor` for each DriverInterface is generated at build time by invoking `jmp admin generate driverinterface` (or an equivalent build script) against each bundled driver's Python interface class, producing the serialized `FileDescriptorProto` from JEP-0001's `build_file_descriptor()`
-- A new `make driver-interfaces` Makefile target orchestrates this generation. It first runs `jmp proto export` (per interface) (from JEP-0001) to ensure all `.proto` files for bundled drivers are up-to-date, then discovers all bundled `@driverinterface`-decorated classes via the `jumpstarter.drivers` entry point group, generates a DriverInterface YAML for each (with `descriptor` derived from the freshly-generated proto), and outputs them to the CRD directories. This target is called by `make manifests` so that DriverInterface YAMLs are always in sync with the driver code
+- The `proto.descriptor` for each DriverInterface is generated at build time by invoking `jmp admin generate driverinterface` (or an equivalent build script) against each bundled driver's Python interface class, producing the serialized `FileDescriptorProto` from JEP-0011's `build_file_descriptor()`
+- A new `make driver-interfaces` Makefile target orchestrates this generation. It first runs `jmp proto export` (per interface) (from JEP-0011) to ensure all `.proto` files for bundled drivers are up-to-date, then discovers all bundled `@driverinterface`-decorated classes via the `jumpstarter.drivers` entry point group, generates a DriverInterface YAML for each (with `descriptor` derived from the freshly-generated proto), and outputs them to the CRD directories. This target is called by `make manifests` so that DriverInterface YAMLs are always in sync with the driver code
 - When Jumpstarter is upgraded, DriverInterface CRDs are updated alongside the operator to reflect any interface changes in the new version
 
 **Third-party/custom drivers:**
@@ -290,7 +290,7 @@ Registration is **never rejected** due to ExporterClass non-compliance — the e
 
 After storing the device reports, the controller evaluates the exporter against all ExporterClasses in the namespace:
 
-1. Receive exporter's labels and `DriverInstanceReport` tree (which now includes `file_descriptor_proto` from JEP-0001).
+1. Receive exporter's labels and `DriverInstanceReport` tree (which now includes `file_descriptor_proto` from JEP-0011).
 2. For each `ExporterClass` in the namespace:
    a. Evaluate the label selector against the exporter's labels using standard Kubernetes `labels.Selector` matching. All selector criteria must be satisfied.
    b. For each `required: true` interface entry, resolve the referenced `DriverInterface` and verify a driver in the report tree has a `FileDescriptorProto` whose package name matches the DriverInterface's `proto.package` (e.g., `jumpstarter.interfaces.power.v1`).
@@ -358,9 +358,9 @@ This provides fast feedback during driver development and exporter deployment �
 
 ### Structural Validation with `FileDescriptorProto`
 
-JEP-0001 embeds a `FileDescriptorProto` in each driver's `DriverInstanceReport`. ExporterClass validation uses a two-stage process: **package matching** followed by **structural comparison**.
+JEP-0011 embeds a `FileDescriptorProto` in each driver's `DriverInstanceReport`. ExporterClass validation uses a two-stage process: **package matching** followed by **structural comparison**.
 
-**Stage 1 — Package matching:** The controller identifies which interface a driver implements by parsing its `FileDescriptorProto.package` field. JEP-0001's `build_file_descriptor()` produces packages like `jumpstarter.interfaces.power.v1`. The controller matches this against the DriverInterface's `proto.package`. This is the primary identification mechanism — no convention-based labels are needed.
+**Stage 1 — Package matching:** The controller identifies which interface a driver implements by parsing its `FileDescriptorProto.package` field. JEP-0011's `build_file_descriptor()` produces packages like `jumpstarter.interfaces.power.v1`. The controller matches this against the DriverInterface's `proto.package`. This is the primary identification mechanism — no convention-based labels are needed.
 
 **Stage 2 — Structural comparison:** Once a driver is matched to a DriverInterface by package, the controller compares the two `FileDescriptorProto` descriptors:
 
@@ -368,11 +368,11 @@ JEP-0001 embeds a `FileDescriptorProto` in each driver's `DriverInstanceReport`.
 2. The exporter's driver report contains the driver's `FileDescriptorProto` — the schema that the driver actually implements.
 3. The controller (or `jmp validate exporter`) compares the two descriptors to verify structural compatibility: are all required methods present? Do their parameter types, return types, and streaming semantics match?
 
-For the Experimental phase, structural validation uses **moderate strictness**: method names must exist, input/output message field types must match, and streaming semantics must match. Field number comparison is deferred to the Stable phase, since JEP-0001's builder generates deterministic field numbers that may differ from hand-written protos.
+For the Experimental phase, structural validation uses **moderate strictness**: method names must exist, input/output message field types must match, and streaming semantics must match. Field number comparison is deferred to the Stable phase, since JEP-0011's builder generates deterministic field numbers that may differ from hand-written protos.
 
 This moves validation from convention-based to structure-based — the descriptor proves the driver has `on()`, `off()`, and `read()` with correct signatures. A driver that claims to implement `power-v1` but is missing the `read()` streaming method, or has changed `off()` to require a parameter, is caught at registration time — not when a test fails.
 
-Exporters that don't embed `FileDescriptorProto` (pre-JEP-0001 deployments) cannot be validated against ExporterClasses and are treated as non-compliant for ExporterClass matching purposes. They remain fully functional for label-only leases.
+Exporters that don't embed `FileDescriptorProto` (pre-JEP-0011 deployments) cannot be validated against ExporterClasses and are treated as non-compliant for ExporterClass matching purposes. They remain fully functional for label-only leases.
 
 ### API / Protocol Changes
 
@@ -436,7 +436,7 @@ message InterfaceValidationResult {
 
 The RPC authenticates using the exporter's existing credentials (the same token used for `Register`). The controller resolves which ExporterClasses match the provided labels and validates the driver reports against each one, returning per-interface results.
 
-A `GetExporterClassInfo` RPC is also added, callable by clients to retrieve the ExporterClass and DriverInterface definitions that apply to a leased exporter. This enables clients to discover which interfaces are available, check for missing client packages, and provides the foundation for future codegen (JEP-0003):
+A `GetExporterClassInfo` RPC is also added, callable by clients to retrieve the ExporterClass and DriverInterface definitions that apply to a leased exporter. This enables clients to discover which interfaces are available, check for missing client packages, and provides the foundation for future codegen (JEP-0013):
 
 ```protobuf
 rpc GetExporterClassInfo(GetExporterClassInfoRequest) returns (GetExporterClassInfoResponse);
@@ -467,7 +467,7 @@ message DriverInfo {
 }
 ```
 
-The RPC authenticates using the client's credentials. It returns the ExporterClass compliance status and the full DriverInterface metadata for the exporter, allowing clients to verify they have the correct driver packages installed and to feed the interface definitions into codegen tooling. The detailed design of client-side codegen is deferred to JEP-0003.
+The RPC authenticates using the client's credentials. It returns the ExporterClass compliance status and the full DriverInterface metadata for the exporter, allowing clients to verify they have the correct driver packages installed and to feed the interface definitions into codegen tooling. The detailed design of client-side codegen is deferred to JEP-0013.
 
 #### Modified CLI
 
@@ -536,11 +536,11 @@ ExporterClass uses standard `matchLabels`/`matchExpressions` selectors instead o
 
 #### Structural Validation Strictness: Moderate for Experimental
 
-During the Experimental phase, structural validation compares: method names (all canonical methods must exist in the driver descriptor), input/output message field types (field names and proto types must match), and streaming semantics (server_streaming, client_streaming flags must match). Field number comparison is deferred to the Stable phase, since JEP-0001's `build_file_descriptor()` generates deterministic field numbers that may differ from hand-written proto files.
+During the Experimental phase, structural validation compares: method names (all canonical methods must exist in the driver descriptor), input/output message field types (field names and proto types must match), and streaming semantics (server_streaming, client_streaming flags must match). Field number comparison is deferred to the Stable phase, since JEP-0011's `build_file_descriptor()` generates deterministic field numbers that may differ from hand-written proto files.
 
 #### Canonical Descriptor Storage: Inline in CRD
 
-The `DriverInterface` CRD stores the canonical `FileDescriptorProto` as base64-encoded bytes directly in `proto.descriptor`, alongside the proto package name in `proto.package`. This follows the pattern established by Envoy's gRPC-JSON transcoder, which embeds `FileDescriptorSet` bytes inline in Kubernetes configuration. A future JEP-0004 (Driver Registry) can add registry-based resolution as an alternative source.
+The `DriverInterface` CRD stores the canonical `FileDescriptorProto` as base64-encoded bytes directly in `proto.descriptor`, alongside the proto package name in `proto.package`. This follows the pattern established by Envoy's gRPC-JSON transcoder, which embeds `FileDescriptorSet` bytes inline in Kubernetes configuration. A future JEP-0014 (Driver Registry) can add registry-based resolution as an alternative source.
 
 ### Error Handling and Failure Modes
 
@@ -563,9 +563,9 @@ The structural validation against `FileDescriptorProto` uses the same authentica
 
 ## Feasibility Assessment
 
-### JEP-0001 PoC Readiness
+### JEP-0011 PoC Readiness
 
-The JEP-0001 PoC (commit `b40abc06`) provides a solid foundation for this JEP. The following capabilities are already implemented and ready:
+The JEP-0011 PoC (commit `b40abc06`) provides a solid foundation for this JEP. The following capabilities are already implemented and ready:
 
 | Capability                                                        | Status |
 | ----------------------------------------------------------------- | ------ |
@@ -656,7 +656,7 @@ This JEP is **fully backward compatible.** All changes are additive:
 
 - Exporter registration is unchanged. The controller's additional ExporterClass evaluation is a read-only check that tags exporters with satisfied ExporterClasses. Exporters that predate ExporterClass are simply not tagged — they remain available for label-only leases.
 
-- Exporters that don't embed `FileDescriptorProto` (pre-JEP-0001 deployments) are not affected by ExporterClass enforcement — they cannot be validated and are treated as non-compliant for ExporterClass purposes, but remain fully functional for label-only leases.
+- Exporters that don't embed `FileDescriptorProto` (pre-JEP-0011 deployments) are not affected by ExporterClass enforcement — they cannot be validated and are treated as non-compliant for ExporterClass purposes, but remain fully functional for label-only leases.
 
 - The `jmp admin` subcommands (`get/apply/generate driverinterface`, `get/apply exporterclass`, `jmp validate exporter`) are new. No existing CLI commands are modified.
 
@@ -674,7 +674,7 @@ An alternative considered storing ExporterClass definitions as annotations on a 
 
 ### Defining ExporterClass as a gRPC-only API (no CRD)
 
-An alternative considered defining ExporterClass as a gRPC service on the controller (like the Registry in JEP-0004) rather than a Kubernetes CRD. This was rejected because CRDs provide declarative management via `kubectl apply`, RBAC integration, status subresources, and watch semantics for free — all of which a gRPC API would need to reimplement. ExporterClasses are cluster configuration, not runtime data; CRDs are the natural Kubernetes primitive for this.
+An alternative considered defining ExporterClass as a gRPC service on the controller (like the Registry in JEP-0014) rather than a Kubernetes CRD. This was rejected because CRDs provide declarative management via `kubectl apply`, RBAC integration, status subresources, and watch semantics for free — all of which a gRPC API would need to reimplement. ExporterClasses are cluster configuration, not runtime data; CRDs are the natural Kubernetes primitive for this.
 
 ### Requiring all interfaces to be required (no optional)
 
@@ -700,7 +700,7 @@ The Kubernetes `*Class` convention (StorageClass, IngressClass, RuntimeClass) us
 
 - **Envoy gRPC-JSON transcoder** — Envoy accepts `FileDescriptorSet` as base64-encoded bytes in Kubernetes configuration for gRPC-JSON transcoding. This is a battle-tested pattern that validates the approach of storing serialized `FileDescriptorProto` inline in a CRD (`descriptor` field). No existing Kubernetes CRD stores proto descriptors inline for schema validation purposes — the DriverInterface CRD is novel in this regard, but the individual components (inline descriptor storage, structural comparison, compatibility semantics) all have proven prior art.
 
-- **gRPC Server Reflection** — Already implemented in the JEP-0001 PoC. Drivers expose `FileDescriptorProto` at runtime via the gRPC reflection service, which is the source mechanism for comparison against the DriverInterface's canonical descriptor.
+- **gRPC Server Reflection** — Already implemented in the JEP-0011 PoC. Drivers expose `FileDescriptorProto` at runtime via the gRPC reflection service, which is the source mechanism for comparison against the DriverInterface's canonical descriptor.
 
 ## Unresolved Questions
 
@@ -718,9 +718,9 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 - **CEL-based selectors:** The current design uses standard Kubernetes label selectors. If more expressive power is needed (arbitrary boolean logic, string operations, access to structured device attributes), CEL expressions could be added as an alternative selector mechanism. The `cel-go` library is already available as an indirect dependency in the controller's module graph.
 
-- **Polyglot typed device wrappers (JEP-0003):** The ExporterClass definition provides everything needed to generate typed device classes in any language — `EmbeddedLinuxBoardDevice` with `power: PowerClient`, `serial: SerialClient`, `storage: StorageClient` as non-nullable fields and `network: NetworkClient?` as nullable.
+- **Polyglot typed device wrappers (JEP-0013):** The ExporterClass definition provides everything needed to generate typed device classes in any language — `EmbeddedLinuxBoardDevice` with `power: PowerClient`, `serial: SerialClient`, `storage: StorageClient` as non-nullable fields and `network: NetworkClient?` as nullable.
 
-- **Driver registry integration (JEP-0004):** The registry can catalog which driver packages implement which DriverInterfaces, and which ExporterClasses they satisfy, enabling `jmp registry list exporter-classes` and `jmp registry describe exporter-class embedded-linux-board`. The registry could also serve as an alternative source for `proto.descriptor` resolution, supplementing the inline embedding approach.
+- **Driver registry integration (JEP-0014):** The registry can catalog which driver packages implement which DriverInterfaces, and which ExporterClasses they satisfy, enabling `jmp registry list exporter-classes` and `jmp registry describe exporter-class embedded-linux-board`. The registry could also serve as an alternative source for `proto.descriptor` resolution, supplementing the inline embedding approach.
 
 - **Capacity planning dashboard:** With `status.satisfiedExporterCount` on every ExporterClass, a web dashboard could show real-time fleet capacity per device profile, utilization rates, and availability trends.
 
@@ -732,22 +732,22 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 | Phase | Deliverable                                                                                                        | Depends On        |
 | ----- | ------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| 1     | `DriverInterface` CRD definition + `make driver-interfaces` build target + bundled YAMLs in Helm/OLM               | JEP-0001          |
+| 1     | `DriverInterface` CRD definition + `make driver-interfaces` build target + bundled YAMLs in Helm/OLM               | JEP-0011          |
 | 2     | `ExporterClass` CRD definition + controller validation on registration + lease enforcement                         | Phase 1           |
 | 3     | `jmp admin` CLI tooling (`get/apply/generate driverinterface`, `get/apply exporterclass`, `jmp validate exporter`) | Phase 1           |
-| 4     | Structural validation via `FileDescriptorProto` comparison (moderate strictness)                                   | Phase 2, JEP-0001 |
+| 4     | Structural validation via `FileDescriptorProto` comparison (moderate strictness)                                   | Phase 2, JEP-0011 |
 | 5     | ExporterClass inheritance (`extends`)                                                                              | Phase 2           |
 
-Phases 1–2 are the minimum viable deliverable: named device contracts with controller-enforced lease matching, requiring no client-side changes. Phase 3 provides admin tooling. Phases 4–5 add the structural depth enabled by JEP-0001's proto introspection.
+Phases 1–2 are the minimum viable deliverable: named device contracts with controller-enforced lease matching, requiring no client-side changes. Phase 3 provides admin tooling. Phases 4–5 add the structural depth enabled by JEP-0011's proto introspection.
 
 ## Implementation History
 
 - 2026-04-06: JEP drafted as "DeviceClass Mechanism"
-- 2026-04-08: Renamed to "ExporterClass Mechanism" (`DeviceClass` → `ExporterClass`, `InterfaceClass` → `DriverInterface`). Replaced CEL selectors with standard Kubernetes label selectors. Changed CRD scope from cluster-scoped to namespace-scoped. Added schema distribution and CLI workflow section. Added `descriptor` for inline canonical `FileDescriptorProto` storage. Added feasibility assessment based on JEP-0001 PoC analysis. Added schema registry prior art (Buf BSR, Confluent, Envoy). Resolved all "must resolve before acceptance" design questions. Moved DriverInterface distribution to Jumpstarter installation (Helm/OLM bundling) instead of manual publishing. Moved admin CLI commands under `jmp admin`. Removed `config` section from ExporterClass (driver configuration belongs in ExporterConfig, not in the typing contract).
+- 2026-04-08: Renamed to "ExporterClass Mechanism" (`DeviceClass` → `ExporterClass`, `InterfaceClass` → `DriverInterface`). Replaced CEL selectors with standard Kubernetes label selectors. Changed CRD scope from cluster-scoped to namespace-scoped. Added schema distribution and CLI workflow section. Added `descriptor` for inline canonical `FileDescriptorProto` storage. Added feasibility assessment based on JEP-0011 PoC analysis. Added schema registry prior art (Buf BSR, Confluent, Envoy). Resolved all "must resolve before acceptance" design questions. Moved DriverInterface distribution to Jumpstarter installation (Helm/OLM bundling) instead of manual publishing. Moved admin CLI commands under `jmp admin`. Removed `config` section from ExporterClass (driver configuration belongs in ExporterConfig, not in the typing contract).
 
 ## References
 
-- [JEP-0001: Protobuf Introspection and Interface Generation](./JEP-0001-protobuf-introspection-interface-generation.md)
+- [JEP-0011: Protobuf Introspection and Interface Generation](./JEP-0011-protobuf-introspection-interface-generation.md)
 - [Kubernetes DRA DeviceClass API (`resource.k8s.io/v1`)](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
 - [Kubernetes DRA Setup Guide](https://kubernetes.io/docs/tasks/configure-pod-container/assign-resources/set-up-dra-cluster/)
 - [Kubernetes DRA KEP-4381: Structured Parameters](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/4381-dra-structured-parameters/README.md)

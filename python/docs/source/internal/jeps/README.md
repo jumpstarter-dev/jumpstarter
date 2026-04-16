@@ -36,6 +36,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | ---- | ---------------------------------------------------- | ----------- | -------------------- |
 | 0010 | [Renode Integration](JEP-0010-renode-integration.md) | Implemented | @vtz (Vinicius Zein) |
 | 0011 | [Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md) | Draft | @kirkbrauer (Kirk Brauer) |
+| 0012 | [ExporterClass Mechanism](JEP-0012-deviceclass-mechanism.md) | Draft | @kirkbrauer (Kirk Brauer) |
 
 ### Informational JEPs
 
@@ -121,4 +122,5 @@ reserved for process and meta-JEPs.
 JEP-0000-jep-process.md
 JEP-0010-renode-integration.md
 JEP-0011-protobuf-introspection-interface-generation.md
+JEP-0012-deviceclass-mechanism.md
 ```
