@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/exp/maps"
@@ -93,22 +94,50 @@ func (q *listenQueue) closeDone() {
 	q.closeOnce.Do(func() { close(q.done) })
 }
 
-func (s *ControllerService) getLeaseLock(leaseName string) *sync.Mutex {
-	v, _ := s.leaseLocks.LoadOrStore(leaseName, &sync.Mutex{})
-	return v.(*sync.Mutex)
+type leaseLock struct {
+	mu   sync.Mutex
+	refs int32
+}
+
+func (s *ControllerService) acquireLeaseLock(leaseName string) *sync.Mutex {
+	for {
+		v, loaded := s.leaseLocks.LoadOrStore(leaseName, &leaseLock{refs: 1})
+		ll := v.(*leaseLock)
+		if !loaded {
+			return &ll.mu
+		}
+		newRefs := atomic.AddInt32(&ll.refs, 1)
+		if newRefs <= 1 {
+			atomic.AddInt32(&ll.refs, -1)
+			continue
+		}
+		return &ll.mu
+	}
+}
+
+func (s *ControllerService) releaseLeaseLock(leaseName string) {
+	v, ok := s.leaseLocks.Load(leaseName)
+	if !ok {
+		return
+	}
+	ll := v.(*leaseLock)
+	if atomic.AddInt32(&ll.refs, -1) == 0 {
+		s.leaseLocks.CompareAndDelete(leaseName, ll)
+	}
 }
 
 // swapListenQueue atomically replaces the listen queue for a lease and signals
 // the previous queue to stop. The per-lease lock serializes this with
 // sendToListener so that Dial never sends a token to a superseded queue.
 func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQueue) {
-	mu := s.getLeaseLock(leaseName)
+	mu := s.acquireLeaseLock(leaseName)
 	mu.Lock()
-	defer mu.Unlock()
 	old, loaded := s.listenQueues.Swap(leaseName, newQueue)
 	if loaded {
 		old.(*listenQueue).closeDone()
 	}
+	mu.Unlock()
+	s.releaseLeaseLock(leaseName)
 }
 
 // sendToListener delivers a response to the active listener for a lease. The
@@ -116,7 +145,8 @@ func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQu
 // between the load and the send, eliminating the TOCTOU race between Dial and
 // a reconnecting Listen.
 func (s *ControllerService) sendToListener(_ context.Context, leaseName string, response *pb.ListenResponse) error {
-	mu := s.getLeaseLock(leaseName)
+	mu := s.acquireLeaseLock(leaseName)
+	defer s.releaseLeaseLock(leaseName)
 	mu.Lock()
 	defer mu.Unlock()
 	v, ok := s.listenQueues.Load(leaseName)
@@ -498,13 +528,14 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
+	listenMu := s.acquireLeaseLock(leaseName)
 	s.swapListenQueue(leaseName, wrapper)
 	defer func() {
-		mu := s.getLeaseLock(leaseName)
-		mu.Lock()
+		listenMu.Lock()
 		wrapper.closeDone()
-		mu.Unlock()
+		listenMu.Unlock()
 		s.listenQueues.CompareAndDelete(leaseName, wrapper)
+		s.releaseLeaseLock(leaseName)
 	}()
 	for {
 		select {
