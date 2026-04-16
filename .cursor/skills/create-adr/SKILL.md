@@ -10,7 +10,7 @@ You are helping the user create a new Architecture Decision Record (ADR).
 
 ## Context
 
-ADRs document significant technical decisions scoped to a single component or driver. Unlike JEPs, ADRs are submitted alongside the implementation PR, not as separate proposals. Read `.claude/rules/jep-adr-process.md` for the full process definition.
+ADRs document significant technical decisions scoped to a single component or driver. Unlike JEPs, ADRs are submitted alongside the implementation PR, not as separate proposals. Read `.cursor/rules/jep-adr-process.mdc` for the full process definition.
 
 ADR topic: $ARGUMENTS
 

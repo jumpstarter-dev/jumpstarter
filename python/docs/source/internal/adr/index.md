@@ -8,3 +8,7 @@ For guidance on when to use an ADR vs a JEP, see
 [JEP-0000](../jeps/JEP-0000-jep-process.md).
 
 *No ADRs have been submitted yet.*
+
+```{toctree}
+:hidden:
+```

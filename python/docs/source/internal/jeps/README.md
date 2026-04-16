@@ -52,6 +52,9 @@ guidance on when to use a JEP vs an ADR.
 
 ## Status Key
 
+> **Note:** [JEP-0000](JEP-0000-jep-process.md) is the canonical source for
+> lifecycle states and their definitions.
+
 | Status       | Meaning                                          |
 | ------------ | ------------------------------------------------ |
 | Draft        | Author is still writing; not yet open for review |
@@ -63,56 +66,21 @@ guidance on when to use a JEP vs an ADR.
 | Rejected     | Declined (record preserved)                      |
 | Deferred     | Sound but not a current priority                 |
 | Withdrawn    | Author voluntarily withdrew                      |
+| Active       | Living document, actively maintained (Process JEPs only) |
 | Superseded   | Replaced by a newer JEP                          |
 
 ## For AI Agents
 
-This section provides conventions for AI agents working with JEPs.
+For detailed conventions on creating JEPs and ADRs, see the agent rule files
+in `.cursor/rules/jep-adr-process.mdc` (or `.claude/rules/jep-adr-process.md`).
 
-### Document structure
+Key references:
 
-JEP files are Markdown documents with a metadata table at the top. The metadata
-table uses pipe-delimited rows with bold field names. Required fields:
-`JEP`, `Title`, `Author(s)`, `Status`, `Type`, `Created`.
-
-### Section markers
-
-Sections in the JEP template are marked `*(mandatory)*`, `*(optional)*`, or
-`*(mandatory for Standards Track)*`. When helping an author draft a JEP, ensure
-all mandatory sections are filled in. Optional sections may be omitted entirely.
-
-### Design Decisions format
-
-Each design decision uses a numbered `DD-N` subsection under `## Design Decisions`
-with the following structure:
-
-```text
-### DD-N: Decision title
-
-**Alternatives considered:**
-
-1. **Option A** — Description.
-2. **Option B** — Description.
-
-**Decision:** Chosen option.
-
-**Rationale:** Why this option was chosen.
-```
-
-This matches the ADR convention used elsewhere in the project (see
-`python/docs/source/internal/adr/`).
-
-### File naming
-
-JEP files are named `JEP-NNNN-short-title.md` where `NNNN` is the next
-available incrementing integer (zero-padded to 4 digits). The template file
-is `JEP-NNNN-template.md`.
-
-### JEP numbering
-
-The JEP number is an incrementing integer assigned sequentially; it is not
-derived from the pull request number. JEP-0000 through JEP-0009 are
-reserved for process and meta-JEPs.
+- **Template**: `JEP-NNNN-template.md` in this directory
+- **Canonical process definition**: [JEP-0000](JEP-0000-jep-process.md)
+- **File naming**: `JEP-NNNN-short-title.md` (zero-padded 4-digit number)
+- **JEP numbering**: Incrementing integers, not derived from PR numbers.
+  JEP-0000 through JEP-0009 are reserved for process/meta-JEPs.
 
 ```{toctree}
 :hidden:

@@ -10,7 +10,7 @@ You are helping the user create a new Jumpstarter Enhancement Proposal (JEP).
 
 ## Context
 
-JEPs are design documents for substantial changes to the Jumpstarter project — changes that affect multiple components, alter public APIs or protocols, or require community consensus. Read `.claude/rules/jep-adr-process.md` for the full process definition.
+JEPs are design documents for substantial changes to the Jumpstarter project — changes that affect multiple components, alter public APIs or protocols, or require community consensus. Read `.cursor/rules/jep-adr-process.mdc` for the full process definition.
 
 JEP topic: $ARGUMENTS
 

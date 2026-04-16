@@ -133,6 +133,7 @@ flowchart TD
 | **Rejected**     | Maintainers have declined the proposal. The JEP remains as a record of the decision. |
 | **Deferred**     | Proposal is sound but not a current priority. May be revisited later.                |
 | **Withdrawn**    | Author has voluntarily withdrawn the proposal.                                       |
+| **Active**       | Living document, actively maintained and updated as the process evolves. Used only for Process JEPs. |
 | **Superseded**   | Replaced by a newer JEP. The `Superseded-By` field indicates the replacement.        |
 
 A JEP can move to **Withdrawn** from any pre-Final status. A JEP can move to

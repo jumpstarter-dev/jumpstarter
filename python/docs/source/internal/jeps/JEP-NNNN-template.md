@@ -177,6 +177,21 @@ Reference specific project constraints, prior art, or technical tradeoffs.
   the implementation?
 -->
 
+## Acceptance Criteria *(mandatory for Standards Track)*
+
+<!--
+  Define measurable criteria that must be met for this JEP to be considered
+  successfully implemented. These should be specific, testable conditions —
+  not vague goals. Good acceptance criteria help reviewers evaluate the
+  implementation and help authors know when their work is done.
+
+  Example format:
+  - [ ] Driver passes all unit tests with >90% coverage
+  - [ ] CLI command is documented in the user guide
+  - [ ] gRPC protocol change is backward compatible with N-1 release
+  - [ ] Performance benchmark shows <X ms latency for operation Y
+-->
+
 ## Graduation Criteria *(optional)*
 
 <!--
