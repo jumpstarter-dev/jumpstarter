@@ -1370,3 +1370,41 @@ def test_get_clusters_error(list_clusters_mock: AsyncMock):
     result = runner.invoke(get, ["clusters"])
     assert result.exit_code == 1
     assert "error" in result.output.lower()
+
+
+@patch("jumpstarter_cli_admin.get.list_clusters")
+def test_get_cluster_without_name_lists_all(list_clusters_mock: AsyncMock):
+    from jumpstarter_kubernetes import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
+
+    runner = CliRunner()
+    cluster_list = V1Alpha1ClusterList(
+        items=[
+            V1Alpha1ClusterInfo(
+                name="kind-test",
+                cluster="kind-kind-test",
+                server="https://127.0.0.1:6443",
+                user="kind-kind-test",
+                namespace="default",
+                is_current=True,
+                type="kind",
+                accessible=True,
+                version="1.28.0",
+                jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
+            ),
+        ]
+    )
+    list_clusters_mock.return_value = cluster_list
+    result = runner.invoke(get, ["cluster"])
+    assert result.exit_code == 0
+    assert "kind-test" in result.output
+
+
+@patch("jumpstarter_cli_admin.get.list_clusters")
+def test_get_clusters_command_calls_list_clusters(list_clusters_mock: AsyncMock):
+    from jumpstarter_kubernetes import V1Alpha1ClusterList
+
+    runner = CliRunner()
+    list_clusters_mock.return_value = V1Alpha1ClusterList(items=[])
+    result = runner.invoke(get, ["clusters"])
+    assert result.exit_code == 0
+    list_clusters_mock.assert_called_once()

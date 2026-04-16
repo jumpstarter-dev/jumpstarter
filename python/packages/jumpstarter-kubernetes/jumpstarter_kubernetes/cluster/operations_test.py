@@ -162,3 +162,69 @@ class TestCreateClusterAndInstall:
             await create_cluster_and_install("remote", False, "test-cluster", "", "", "kind", "minikube")
 
         assert "Unsupported cluster_type: remote" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.operations.create_kind_cluster_with_options")
+    @patch("jumpstarter_kubernetes.cluster.operations.configure_endpoints")
+    @patch("jumpstarter_kubernetes.cluster.operations.install_jumpstarter_operator")
+    async def test_create_cluster_and_install_force_recreate_confirmed(
+        self, mock_install, mock_configure, mock_create
+    ):
+        mock_configure.return_value = ("192.168.1.100", "test.domain", "grpc.test:8082", "router.test:8083")
+
+        from jumpstarter_kubernetes.callbacks import SilentCallback
+
+        callback = SilentCallback()
+
+        await create_cluster_and_install(
+            "kind", True, "test-cluster", "", "", "kind", "minikube",
+            version="1.0.0", callback=callback,
+        )
+
+        mock_create.assert_called_once()
+        mock_install.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_cluster_and_install_force_recreate_cancelled(self):
+        from jumpstarter_kubernetes.callbacks import OutputCallback
+        from jumpstarter_kubernetes.exceptions import ClusterOperationError
+
+        class RejectingCallback:
+            def progress(self, message): pass
+            def success(self, message): pass
+            def warning(self, message): pass
+            def error(self, message): pass
+            def confirm(self, prompt): return False
+
+        with pytest.raises(ClusterOperationError, match="User cancelled"):
+            await create_cluster_and_install(
+                "kind", True, "test-cluster", "", "", "kind", "minikube",
+                version="1.0.0", callback=RejectingCallback(),
+            )
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.operations.create_kind_cluster_with_options")
+    @patch("jumpstarter_kubernetes.cluster.operations.configure_endpoints")
+    @patch("jumpstarter_kubernetes.cluster.operations.install_jumpstarter_operator")
+    async def test_create_cluster_and_install_calls_operator_installer(
+        self, mock_install, mock_configure, mock_create
+    ):
+        mock_configure.return_value = ("192.168.1.100", "test.domain", "grpc.test:8082", "router.test:8083")
+
+        await create_cluster_and_install(
+            "kind", False, "test-cluster", "", "", "kind", "minikube",
+            version="1.0.0", operator_installer="/path/to/installer",
+        )
+
+        mock_install.assert_called_once_with(
+            version="1.0.0",
+            namespace="jumpstarter-lab",
+            basedomain="test.domain",
+            grpc_endpoint="grpc.test:8082",
+            router_endpoint="router.test:8083",
+            mode="nodeport",
+            kubeconfig=None,
+            context=None,
+            operator_installer="/path/to/installer",
+            callback=ANY,
+        )
