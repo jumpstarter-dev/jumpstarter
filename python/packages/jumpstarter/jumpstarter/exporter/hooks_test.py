@@ -628,6 +628,104 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("NO_NEWLINE_OUTPUT" in call for call in info_calls)
 
+    async def test_drain_reads_data_remaining_in_pty_buffer(self, lease_scope) -> None:
+        """Verify the drain loop inside read_pty_output reads data left in the
+        PTY kernel buffer after the main read loop exits.
+
+        Patches os.read so that, once the main loop has consumed the initial
+        subprocess output via EOF from the specific PTY fd, a subsequent read
+        returns additional data -- simulating the macOS scenario where the
+        kernel buffers output that arrives after the reader stop flag is set.
+        """
+        import pty
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo MAIN_OUTPUT",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        original_os_read = os.read
+        original_openpty = pty.openpty
+        pty_parent_fd = None
+        eof_seen_on_pty = False
+
+        def tracking_openpty():
+            nonlocal pty_parent_fd
+            parent, child = original_openpty()
+            pty_parent_fd = parent
+            return parent, child
+
+        drain_data_returned = False
+
+        def os_read_with_drain_data(fd, size):
+            nonlocal eof_seen_on_pty, drain_data_returned
+            if fd != pty_parent_fd:
+                return original_os_read(fd, size)
+            if not eof_seen_on_pty:
+                try:
+                    data = original_os_read(fd, size)
+                except (BlockingIOError, OSError):
+                    if not eof_seen_on_pty:
+                        eof_seen_on_pty = True
+                    raise
+                if not data:
+                    eof_seen_on_pty = True
+                    return b""
+                return data
+            if not drain_data_returned:
+                drain_data_returned = True
+                return b"DRAIN_CAPTURED\n"
+            return b""
+
+        with (
+            patch("pty.openpty", side_effect=tracking_openpty),
+            patch("os.read", side_effect=os_read_with_drain_data),
+            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
+        ):
+            result = await executor.execute_before_lease_hook(lease_scope)
+            assert result is None
+            assert pty_parent_fd is not None
+            assert eof_seen_on_pty
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            assert any("DRAIN_CAPTURED" in call for call in info_calls)
+
+    async def test_drain_exception_is_suppressed(self, lease_scope) -> None:
+        """Verify that an unexpected exception raised during the drain is caught
+        by the except-Exception handler and does not propagate to the caller.
+
+        Patches _flush_lines so that the second call (inside the drain) raises
+        a RuntimeError. The hook should still complete successfully because the
+        drain's except-Exception block suppresses it.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo BEFORE_DRAIN_ERROR",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        original_flush = _flush_lines
+        call_count = 0
+
+        def flush_lines_with_drain_error(buffer, output_lines):
+            nonlocal call_count
+            call_count += 1
+            result = original_flush(buffer, output_lines)
+            if call_count > 1:
+                raise RuntimeError("simulated drain error")
+            return result
+
+        with (
+            patch("jumpstarter.exporter.hooks._flush_lines", side_effect=flush_lines_with_drain_error),
+            patch("jumpstarter.exporter.hooks.logger"),
+        ):
+            result = await executor.execute_before_lease_hook(lease_scope)
+            assert result is None
+
     async def test_drain_constants_are_reasonable(self) -> None:
         assert MAX_DRAIN_BYTES == 256 * 1024
         assert DRAIN_TIMEOUT_SECONDS == 2.0
