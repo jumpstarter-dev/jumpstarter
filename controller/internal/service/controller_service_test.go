@@ -1361,59 +1361,137 @@ func TestListenQueueDialFlowSendsToActiveListener(t *testing.T) {
 	}
 }
 
-func TestLeaseLockPreservedAfterListenExits(t *testing.T) {
+func TestLeaseLockRefCountSingleListener(t *testing.T) {
 	svc := &ControllerService{}
-	leaseName := "test-lease-lock-cleanup"
+	leaseName := "test-lease-refcount-single"
 
-	wrapper := &listenQueue{
-		ch:   make(chan *pb.ListenResponse, 8),
-		done: make(chan struct{}),
-	}
-	svc.swapListenQueue(leaseName, wrapper)
+	svc.acquireLeaseLock(leaseName)
 
 	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
-		t.Fatal("lease lock should exist after swapListenQueue")
+		t.Fatal("lease lock should exist after acquire")
 	}
 
-	mu := svc.getLeaseLock(leaseName)
-	mu.Lock()
-	wrapper.closeDone()
-	mu.Unlock()
-	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
+	svc.releaseLeaseLock(leaseName)
+
+	if _, ok := svc.leaseLocks.Load(leaseName); ok {
+		t.Fatal("lease lock should be removed when last reference is released")
+	}
+}
+
+func TestLeaseLockRefCountOverlappingListeners(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-refcount-overlap"
+
+	svc.acquireLeaseLock(leaseName)
+	svc.acquireLeaseLock(leaseName)
 
 	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
-		t.Fatal("lease lock must be preserved after Listen cleanup to prevent mutex pointer races")
+		t.Fatal("lease lock should exist with two references")
 	}
+
+	svc.releaseLeaseLock(leaseName)
+
+	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
+		t.Fatal("lease lock should still exist with one remaining reference")
+	}
+
+	svc.releaseLeaseLock(leaseName)
+
+	if _, ok := svc.leaseLocks.Load(leaseName); ok {
+		t.Fatal("lease lock should be removed when all references are released")
+	}
+}
+
+func TestLeaseLockRefCountConcurrentAcquireRelease(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-refcount-concurrent"
+
+	var wg sync.WaitGroup
+	goroutines := 100
+
+	var counter int
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lock := svc.acquireLeaseLock(leaseName)
+			lock.Lock()
+			counter++
+			lock.Unlock()
+			svc.releaseLeaseLock(leaseName)
+		}()
+	}
+
+	wg.Wait()
+
+	if counter != goroutines {
+		t.Fatalf("expected counter=%d, got %d", goroutines, counter)
+	}
+
+	if _, ok := svc.leaseLocks.Load(leaseName); ok {
+		t.Fatal("lease lock should be removed after all goroutines release")
+	}
+}
+
+func TestLeaseLockRefCountSameInstanceForOverlap(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-refcount-same-instance"
+
+	lock1 := svc.acquireLeaseLock(leaseName)
+	lock2 := svc.acquireLeaseLock(leaseName)
+
+	if lock1 != lock2 {
+		t.Fatal("overlapping acquires must return the same mutex")
+	}
+
+	svc.releaseLeaseLock(leaseName)
+	svc.releaseLeaseLock(leaseName)
 }
 
 func TestLeaseLockPreservedWhenNewListenerTakesOver(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-lock-preserved"
 
+	g1Mu := svc.acquireLeaseLock(leaseName)
 	g1 := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
 	svc.swapListenQueue(leaseName, g1)
 
+	g2Mu := svc.acquireLeaseLock(leaseName)
 	g2 := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
 	svc.swapListenQueue(leaseName, g2)
 
-	mu := svc.getLeaseLock(leaseName)
-	mu.Lock()
+	if g1Mu != g2Mu {
+		t.Fatal("overlapping listeners must share the same mutex")
+	}
+
+	g1Mu.Lock()
 	g1.closeDone()
-	mu.Unlock()
+	g1Mu.Unlock()
 	svc.listenQueues.CompareAndDelete(leaseName, g1)
+	svc.releaseLeaseLock(leaseName)
 
 	if _, ok := svc.leaseLocks.Load(leaseName); !ok {
-		t.Fatal("lease lock should be preserved when a new listener took over")
+		t.Fatal("lease lock should be preserved when a new listener still holds a reference")
 	}
 
 	if _, ok := svc.listenQueues.Load(leaseName); !ok {
 		t.Fatal("queue should still exist for the new listener")
+	}
+
+	g2Mu.Lock()
+	g2.closeDone()
+	g2Mu.Unlock()
+	svc.listenQueues.CompareAndDelete(leaseName, g2)
+	svc.releaseLeaseLock(leaseName)
+
+	if _, ok := svc.leaseLocks.Load(leaseName); ok {
+		t.Fatal("lease lock should be cleaned up when last listener releases")
 	}
 }
 
