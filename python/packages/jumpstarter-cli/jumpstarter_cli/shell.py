@@ -335,6 +335,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             if (
                                 lease.release
                                 and lease.name
+                                and not lease.lease_ended
                                 and not cancel_scope.cancel_called
                                 and not monitor._get_status_unsupported
                             ):
