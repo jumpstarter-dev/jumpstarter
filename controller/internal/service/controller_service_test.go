@@ -322,7 +322,7 @@ func TestListenQueueCompareAndDeleteOnStreamError(t *testing.T) {
 	leaseName := "test-lease-stream-error"
 
 	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-	svc.listenQueues.Store(leaseName, wrapper)
+	svc.swapListenQueue(leaseName, wrapper)
 
 	t.Run("queue is deleted when no reconnect replaced it", func(t *testing.T) {
 		svc.listenQueues.CompareAndDelete(leaseName, wrapper)
@@ -334,7 +334,7 @@ func TestListenQueueCompareAndDeleteOnStreamError(t *testing.T) {
 
 	t.Run("queue survives when a reconnecting Listen replaced it", func(t *testing.T) {
 		newWrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-		svc.listenQueues.Store(leaseName, newWrapper)
+		svc.swapListenQueue(leaseName, newWrapper)
 
 		svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
@@ -353,7 +353,7 @@ func TestListenQueueCompareAndDeleteOnCleanShutdown(t *testing.T) {
 	leaseName := "test-lease-shutdown"
 
 	wrapper := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-	svc.listenQueues.Store(leaseName, wrapper)
+	svc.swapListenQueue(leaseName, wrapper)
 
 	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
@@ -370,17 +370,13 @@ func TestListenQueueReconnectCreatesNewChannel(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, originalWrapper)
+	svc.swapListenQueue(leaseName, originalWrapper)
 
 	newWrapper := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	old, loaded := svc.listenQueues.Swap(leaseName, newWrapper)
-	if !loaded {
-		t.Fatal("Swap should have found the existing entry")
-	}
-	close(old.(*listenQueue).done)
+	svc.swapListenQueue(leaseName, newWrapper)
 
 	v, ok := svc.listenQueues.Load(leaseName)
 	if !ok {
@@ -393,6 +389,12 @@ func TestListenQueueReconnectCreatesNewChannel(t *testing.T) {
 	if current != newWrapper {
 		t.Fatal("queue entry should be the new wrapper")
 	}
+
+	select {
+	case <-originalWrapper.done:
+	default:
+		t.Fatal("original wrapper done channel should be closed after swap")
+	}
 }
 
 func TestListenQueueDialTokenDeliveredToNewListener(t *testing.T) {
@@ -400,20 +402,17 @@ func TestListenQueueDialTokenDeliveredToNewListener(t *testing.T) {
 	leaseName := "test-lease-dial-token"
 
 	g1 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-	svc.listenQueues.Store(leaseName, g1)
+	svc.swapListenQueue(leaseName, g1)
 
 	g2 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-	old, _ := svc.listenQueues.Swap(leaseName, g2)
-	close(old.(*listenQueue).done)
+	svc.swapListenQueue(leaseName, g2)
 
-	// Dial loads the current queue and sends a token.
-	v, ok := svc.listenQueues.Load(leaseName)
-	if !ok {
-		t.Fatal("queue entry should exist")
+	response := &pb.ListenResponse{RouterEndpoint: "test-endpoint", RouterToken: "test-token"}
+	err := svc.sendToListener(context.Background(), leaseName, response)
+	if err != nil {
+		t.Fatalf("sendToListener should succeed for active queue: %v", err)
 	}
-	v.(*listenQueue).ch <- &pb.ListenResponse{RouterEndpoint: "test-endpoint", RouterToken: "test-token"}
 
-	// Token must be on G2's channel, not G1's.
 	select {
 	case got := <-g2.ch:
 		if got.RouterEndpoint != "test-endpoint" || got.RouterToken != "test-token" {
@@ -427,7 +426,6 @@ func TestListenQueueDialTokenDeliveredToNewListener(t *testing.T) {
 	case <-g1.ch:
 		t.Fatal("dial token was delivered to the old listener")
 	default:
-		// expected: G1 has nothing
 	}
 }
 
@@ -439,14 +437,13 @@ func TestListenQueueReconnectPreventsStaleCleanup(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, originalWrapper)
+	svc.swapListenQueue(leaseName, originalWrapper)
 
 	reconnectWrapper := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	old, _ := svc.listenQueues.Swap(leaseName, reconnectWrapper)
-	close(old.(*listenQueue).done)
+	svc.swapListenQueue(leaseName, reconnectWrapper)
 
 	// Original wrapper's deferred CompareAndDelete should be a no-op.
 	svc.listenQueues.CompareAndDelete(leaseName, originalWrapper)
@@ -477,17 +474,13 @@ func TestListenQueueConcurrentSwapSupersedes(t *testing.T) {
 	leaseName := "test-lease-concurrent-swap"
 
 	g1 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-	svc.listenQueues.Store(leaseName, g1)
+	svc.swapListenQueue(leaseName, g1)
 
-	// G2 swaps in, superseding G1.
 	g2 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-	old2, _ := svc.listenQueues.Swap(leaseName, g2)
-	close(old2.(*listenQueue).done)
+	svc.swapListenQueue(leaseName, g2)
 
-	// G3 swaps in, superseding G2.
 	g3 := &listenQueue{ch: make(chan *pb.ListenResponse, 8), done: make(chan struct{})}
-	old3, _ := svc.listenQueues.Swap(leaseName, g3)
-	close(old3.(*listenQueue).done)
+	svc.swapListenQueue(leaseName, g3)
 
 	// G1 and G2 should both have their done channels closed.
 	select {
@@ -525,44 +518,36 @@ func TestListenQueueStaleReaderConsumesDialToken(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-stale-reader"
 
-	// G1 starts listening: creates its own queue and stores it.
 	g1Queue := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, g1Queue)
+	svc.swapListenQueue(leaseName, g1Queue)
 
-	// G2 reconnects: creates a NEW queue with its own channel and swaps it in.
 	g2Queue := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	old, loaded := svc.listenQueues.Swap(leaseName, g2Queue)
-	if !loaded {
-		t.Fatal("Swap should have found the existing G1 entry")
-	}
-	// Signal the old goroutine to stop.
-	oldQueue := old.(*listenQueue)
-	close(oldQueue.done)
+	svc.swapListenQueue(leaseName, g2Queue)
 
-	// Simulate Dial: loads the current queue and sends a token.
-	v, ok := svc.listenQueues.Load(leaseName)
-	if !ok {
-		t.Fatal("queue entry should exist for lease")
-	}
-	currentQueue := v.(*listenQueue)
 	token := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
-	currentQueue.ch <- token
+	err := svc.sendToListener(context.Background(), leaseName, token)
+	if err != nil {
+		t.Fatalf("sendToListener should succeed for active queue: %v", err)
+	}
 
-	// G1 should NOT receive the token (its done channel is closed).
 	select {
 	case <-g1Queue.done:
-		// G1 detected supersession -- correct behavior.
-	case <-g1Queue.ch:
-		t.Fatal("stale reader G1 consumed the dial token")
+	default:
+		t.Fatal("G1 done channel should be closed after swap")
 	}
 
-	// G2 MUST receive the token.
+	select {
+	case <-g1Queue.ch:
+		t.Fatal("stale reader G1 consumed the dial token")
+	default:
+	}
+
 	select {
 	case got := <-g2Queue.ch:
 		if got.RouterEndpoint != "ep" || got.RouterToken != testRouterToken {
@@ -585,24 +570,23 @@ func TestListenQueueStaleReaderAlwaysDetectsSupersession(t *testing.T) {
 			ch:   make(chan *pb.ListenResponse, 8),
 			done: make(chan struct{}),
 		}
-		svc.listenQueues.Store(leaseName, g1Queue)
+		svc.swapListenQueue(leaseName, g1Queue)
 
 		g2Queue := &listenQueue{
 			ch:   make(chan *pb.ListenResponse, 8),
 			done: make(chan struct{}),
 		}
-		old, _ := svc.listenQueues.Swap(leaseName, g2Queue)
-		close(old.(*listenQueue).done)
+		svc.swapListenQueue(leaseName, g2Queue)
 
-		v, _ := svc.listenQueues.Load(leaseName)
-		currentQueue := v.(*listenQueue)
-		currentQueue.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
+		err := svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+			RouterEndpoint: "ep", RouterToken: testRouterToken,
+		})
+		if err != nil {
+			t.Fatalf("iteration %d: sendToListener should succeed: %v", i, err)
+		}
 
-		// G1's done is closed, so it should always detect supersession.
-		// If the token ends up on G1's channel, that is a stale win.
 		select {
 		case <-g1Queue.done:
-			// correct: G1 sees done
 		case <-g1Queue.ch:
 			staleWins++
 		}
@@ -648,7 +632,6 @@ func TestDialRejectsSupersededQueue(t *testing.T) {
 }
 
 func TestDialWithPreSwapReferenceNeverSendsToStaleQueue(t *testing.T) {
-	staleSends := 0
 	iterations := 500
 
 	for i := 0; i < iterations; i++ {
@@ -659,39 +642,35 @@ func TestDialWithPreSwapReferenceNeverSendsToStaleQueue(t *testing.T) {
 			ch:   make(chan *pb.ListenResponse, 8),
 			done: make(chan struct{}),
 		}
-		svc.listenQueues.Store(leaseName, g1)
-
-		v, _ := svc.listenQueues.Load(leaseName)
-		preSwapRef := v.(*listenQueue)
+		svc.swapListenQueue(leaseName, g1)
 
 		g2 := &listenQueue{
 			ch:   make(chan *pb.ListenResponse, 8),
 			done: make(chan struct{}),
 		}
-		old, _ := svc.listenQueues.Swap(leaseName, g2)
-		old.(*listenQueue).closeDone()
+		svc.swapListenQueue(leaseName, g2)
 
 		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
-		sent := false
+		err := svc.sendToListener(context.Background(), leaseName, response)
+		if err != nil {
+			t.Fatalf("iteration %d: sendToListener should succeed for active g2: %v", i, err)
+		}
+
 		select {
-		case <-preSwapRef.done:
+		case <-g1.ch:
+			t.Fatalf("iteration %d: dial sent to stale queue g1", i)
 		default:
-			select {
-			case <-preSwapRef.done:
-			case preSwapRef.ch <- response:
-				sent = true
+		}
+
+		select {
+		case got := <-g2.ch:
+			if got.RouterEndpoint != "ep" || got.RouterToken != testRouterToken {
+				t.Fatalf("iteration %d: token corrupted on g2", i)
 			}
+		default:
+			t.Fatalf("iteration %d: token not delivered to active g2", i)
 		}
-
-		if sent {
-			staleSends++
-			<-preSwapRef.ch
-		}
-	}
-
-	if staleSends > 0 {
-		t.Fatalf("dial sent to stale queue %d out of %d iterations", staleSends, iterations)
 	}
 }
 
@@ -703,7 +682,7 @@ func TestDialSendsTokenViaServiceMethod(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, q)
+	svc.swapListenQueue(leaseName, q)
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
@@ -730,14 +709,13 @@ func TestDialSendToListenerRejectsSupersededQueue(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, g1)
+	svc.swapListenQueue(leaseName, g1)
 
 	g2 := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	old, _ := svc.listenQueues.Swap(leaseName, g2)
-	old.(*listenQueue).closeDone()
+	svc.swapListenQueue(leaseName, g2)
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
@@ -780,8 +758,8 @@ func TestDialSendToListenerRejectsDoneQueue(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
+	svc.swapListenQueue(leaseName, q)
 	q.closeDone()
-	svc.listenQueues.Store(leaseName, q)
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 	err := svc.sendToListener(context.Background(), leaseName, response)
@@ -810,7 +788,7 @@ func TestDialSendToListenerSerializesWithSwap(t *testing.T) {
 			ch:   make(chan *pb.ListenResponse, 8),
 			done: make(chan struct{}),
 		}
-		svc.listenQueues.Store(leaseName, g1)
+		svc.swapListenQueue(leaseName, g1)
 
 		g2 := &listenQueue{
 			ch:   make(chan *pb.ListenResponse, 8),
@@ -866,7 +844,7 @@ func TestDialSendToListenerConcurrentWithSwapNeverLandsOnSuperseded(t *testing.T
 			ch:   make(chan *pb.ListenResponse, 8),
 			done: make(chan struct{}),
 		}
-		svc.listenQueues.Store(leaseName, g1)
+		svc.swapListenQueue(leaseName, g1)
 
 		g2 := &listenQueue{
 			ch:   make(chan *pb.ListenResponse, 8),
@@ -955,17 +933,13 @@ func TestListenQueueSupersessionSignaling(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, g1Queue)
+	svc.swapListenQueue(leaseName, g1Queue)
 
 	g2Queue := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	old, loaded := svc.listenQueues.Swap(leaseName, g2Queue)
-	if !loaded {
-		t.Fatal("Swap should return the old entry")
-	}
-	close(old.(*listenQueue).done)
+	svc.swapListenQueue(leaseName, g2Queue)
 
 	// Verify G1's done channel is closed.
 	select {
@@ -1002,17 +976,14 @@ func TestListenQueueDoneClosedBeforeMapDelete(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, wrapper)
+	svc.swapListenQueue(leaseName, wrapper)
 
-	// Simulate a Dial that loaded the queue reference before Listen exits.
 	v, ok := svc.listenQueues.Load(leaseName)
 	if !ok {
 		t.Fatal("queue entry should exist")
 	}
 	q := v.(*listenQueue)
 
-	// Simulate Listen exit with correct defer order: closeDone first, then CompareAndDelete.
-	// This is the order that prevents the TOCTOU race.
 	q.closeDone()
 	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
@@ -1038,45 +1009,20 @@ func TestListenQueueDoneClosedBeforeMapDeleteWithConcurrentDial(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, wrapper)
+	svc.swapListenQueue(leaseName, wrapper)
 
-	// Simulate a Dial that loads the queue ref and then checks done.
-	// With correct defer order (closeDone before CompareAndDelete),
-	// done is closed before the map entry is removed, so Dial always
-	// sees the closed done channel.
-	v, _ := svc.listenQueues.Load(leaseName)
-	q := v.(*listenQueue)
+	wrapper.closeDone()
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
-
-	// Close done (simulating closeDone() running first in defer chain).
-	q.closeDone()
-
-	// Dial's pre-check: done is already closed, so send is rejected.
-	rejected := false
-	select {
-	case <-q.done:
-		rejected = true
-	default:
-	}
-	if !rejected {
-		select {
-		case <-q.done:
-			rejected = true
-		case q.ch <- response:
-		}
+	err := svc.sendToListener(context.Background(), leaseName, response)
+	if err == nil {
+		t.Fatal("sendToListener should return error when done is closed before map delete")
 	}
 
-	if !rejected {
-		t.Fatal("Dial must reject send when done is closed before map delete")
-	}
-
-	// Now map entry is removed (second defer).
 	svc.listenQueues.CompareAndDelete(leaseName, wrapper)
 
-	// No token should be buffered.
 	select {
-	case <-q.ch:
+	case <-wrapper.ch:
 		t.Fatal("token should not be buffered in a queue whose done was closed first")
 	default:
 	}
@@ -1100,19 +1046,14 @@ func TestListenQueueDialReturnsUnavailableWhenDoneClosed(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
+	svc.swapListenQueue(leaseName, q)
 	q.closeDone()
-	svc.listenQueues.Store(leaseName, q)
 
-	v, ok := svc.listenQueues.Load(leaseName)
-	if !ok {
-		t.Fatal("queue entry should exist")
-	}
-	loaded := v.(*listenQueue)
-
-	select {
-	case <-loaded.done:
-	default:
-		t.Fatal("dial pre-check should detect closed done channel")
+	err := svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep", RouterToken: testRouterToken,
+	})
+	if err == nil {
+		t.Fatal("sendToListener should return error for done queue")
 	}
 }
 
@@ -1276,10 +1217,7 @@ func TestListenQueueListenLoopDeliversTokensAndExitsOnDone(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	old, loaded := svc.listenQueues.Swap(leaseName, wrapper)
-	if loaded {
-		old.(*listenQueue).closeDone()
-	}
+	svc.swapListenQueue(leaseName, wrapper)
 
 	delivered := make(chan *pb.ListenResponse, 8)
 	loopExited := make(chan struct{})
@@ -1316,8 +1254,7 @@ func TestListenQueueListenLoopDeliversTokensAndExitsOnDone(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	prev, _ := svc.listenQueues.Swap(leaseName, superseder)
-	prev.(*listenQueue).closeDone()
+	svc.swapListenQueue(leaseName, superseder)
 
 	select {
 	case <-loopExited:
@@ -1342,7 +1279,7 @@ func TestSendToListenerReturnsWhenContextCancelledAndBufferFull(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, q)
+	svc.swapListenQueue(leaseName, q)
 
 	for i := 0; i < 8; i++ {
 		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
@@ -1376,7 +1313,7 @@ func TestSendToListenerUnblocksWhenContextCancelledDuringBackpressure(t *testing
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, q)
+	svc.swapListenQueue(leaseName, q)
 
 	for i := 0; i < 8; i++ {
 		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
@@ -1412,27 +1349,12 @@ func TestListenQueueDialFlowSendsToActiveListener(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Swap(leaseName, wrapper)
+	svc.swapListenQueue(leaseName, wrapper)
 
-	ctx := context.Background()
 	response := &pb.ListenResponse{RouterEndpoint: "dial-ep", RouterToken: "dial-tok"}
-
-	v, ok := svc.listenQueues.Load(leaseName)
-	if !ok {
-		t.Fatal("queue entry should exist")
-	}
-	q := v.(*listenQueue)
-	select {
-	case <-q.done:
-		t.Fatal("done channel should not be closed for active listener")
-	default:
-	}
-	select {
-	case <-ctx.Done():
-		t.Fatal("context should not be done")
-	case <-q.done:
-		t.Fatal("done channel should not be closed for active listener")
-	case q.ch <- response:
+	err := svc.sendToListener(context.Background(), leaseName, response)
+	if err != nil {
+		t.Fatalf("sendToListener should succeed for active listener: %v", err)
 	}
 
 	select {
