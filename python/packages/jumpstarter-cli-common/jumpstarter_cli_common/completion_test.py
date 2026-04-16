@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import click
 from click.testing import CliRunner
 
@@ -62,3 +64,12 @@ def test_completion_unsupported_shell_exits_with_error():
     runner = CliRunner()
     result = runner.invoke(cli, ["completion", "powershell"])
     assert result.exit_code == 2
+
+
+def test_completion_raises_when_get_completion_class_returns_none():
+    with patch("jumpstarter_cli_common.completion.get_completion_class", return_value=None):
+        cli = _make_test_cli_with_completion()
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "bash"])
+        assert result.exit_code == 1
+        assert "Unsupported shell" in result.output
