@@ -853,8 +853,7 @@ class TestHookExecutorPRRegressions:
 
         # Should have reported LEASE_READY
         assert any(
-            status == ExporterStatus.LEASE_READY and msg == "Ready for commands"
-            for status, msg in status_calls
+            status == ExporterStatus.LEASE_READY and msg == "Ready for commands" for status, msg in status_calls
         ), f"Expected LEASE_READY status, got: {status_calls}"
 
     async def test_skip_after_lease_prevents_after_hook_execution(self, lease_scope) -> None:
@@ -929,15 +928,11 @@ class TestHookExecutorPRRegressions:
 
         # Last status should be OFFLINE (reported before shutdown to prevent new leases)
         last_status, _ = status_calls[-1]
-        assert last_status == ExporterStatus.OFFLINE, (
-            f"Expected last status to be OFFLINE, got {last_status}"
-        )
+        assert last_status == ExporterStatus.OFFLINE, f"Expected last status to be OFFLINE, got {last_status}"
 
         # BEFORE_LEASE_HOOK_FAILED should also be present (reported before OFFLINE)
         failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
-        assert len(failed_statuses) > 0, (
-            f"Expected BEFORE_LEASE_HOOK_FAILED status, got: {status_calls}"
-        )
+        assert len(failed_statuses) > 0, f"Expected BEFORE_LEASE_HOOK_FAILED status, got: {status_calls}"
 
         # AVAILABLE should never have been reported
         available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
@@ -978,9 +973,7 @@ class TestHookExecutorPRRegressions:
 
         # AFTER_LEASE_HOOK_FAILED should be in statuses
         failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK_FAILED]
-        assert len(failed_statuses) > 0, (
-            f"Expected AFTER_LEASE_HOOK_FAILED status, got: {status_calls}"
-        )
+        assert len(failed_statuses) > 0, f"Expected AFTER_LEASE_HOOK_FAILED status, got: {status_calls}"
 
         # AVAILABLE should NOT be in statuses
         available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
@@ -1051,12 +1044,8 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        offline_indices = [
-            i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.OFFLINE
-        ]
-        assert len(offline_indices) > 0, (
-            f"Expected OFFLINE status before shutdown, got: {status_calls}"
-        )
+        offline_indices = [i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.OFFLINE]
+        assert len(offline_indices) > 0, f"Expected OFFLINE status before shutdown, got: {status_calls}"
         assert shutdown_called_at_index is not None, "shutdown was never called"
         assert offline_indices[0] < shutdown_called_at_index, (
             f"OFFLINE (index {offline_indices[0]}) must be reported before "
@@ -1090,12 +1079,8 @@ class TestHookExecutorPRRegressions:
             mock_request_release,
         )
 
-        offline_indices = [
-            i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.OFFLINE
-        ]
-        assert len(offline_indices) > 0, (
-            f"Expected OFFLINE status before shutdown, got: {status_calls}"
-        )
+        offline_indices = [i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.OFFLINE]
+        assert len(offline_indices) > 0, f"Expected OFFLINE status before shutdown, got: {status_calls}"
         assert shutdown_called_at_index is not None, "shutdown was never called"
         assert offline_indices[0] < shutdown_called_at_index, (
             f"OFFLINE (index {offline_indices[0]}) must be reported before "
@@ -1143,9 +1128,7 @@ class TestHookExecutorPRRegressions:
 
         # afterLease hook should run and transition to AVAILABLE
         available_calls = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
-        assert len(available_calls) > 0, (
-            f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
-        )
+        assert len(available_calls) > 0, f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
 
     async def test_hook_socket_message_at_debug_not_info(self, lease_scope) -> None:
         """The 'Using dedicated hook socket' message must be at DEBUG, not INFO.
