@@ -22,9 +22,9 @@ from jumpstarter_driver_mitmproxy.driver import MitmproxyDriver
 def driver(tmp_path):
     """Create a MitmproxyDriver with temp directories."""
     d = MitmproxyDriver(
-        listen={"host": "127.0.0.1", "port": 18080},
-        web={"host": "127.0.0.1", "port": 18081},
-        directories={
+        listen={"host": "127.0.0.1", "port": 18080},  # ty: ignore[invalid-argument-type]
+        web={"host": "127.0.0.1", "port": 18081},  # ty: ignore[invalid-argument-type]
+        directories={  # ty: ignore[invalid-argument-type]
             "data": str(tmp_path / "data"),
             "conf": str(tmp_path / "confdir"),
             "flows": str(tmp_path / "flows"),
@@ -595,7 +595,7 @@ class TestConfigValidation:
 
     def test_defaults_from_data_dir(self):
         d = MitmproxyDriver(
-            directories={"data": "/tmp/myproxy"},
+            directories={"data": "/tmp/myproxy"},  # ty: ignore[invalid-argument-type]
         )
         try:
             assert d.directories.data == "/tmp/myproxy"
@@ -613,7 +613,7 @@ class TestConfigValidation:
 
     def test_partial_directory_override(self):
         d = MitmproxyDriver(
-            directories={
+            directories={  # ty: ignore[invalid-argument-type]
                 "data": "/tmp/myproxy",
                 "conf": "/etc/mitmproxy",
             },
@@ -629,7 +629,7 @@ class TestConfigValidation:
             "GET /api/health": {"status": 200, "body": {"ok": True}},
         }
         d = MitmproxyDriver(
-            directories={
+            directories={  # ty: ignore[invalid-argument-type]
                 "data": str(tmp_path / "data"),
                 "mocks": str(tmp_path / "mocks"),
                 "addons": str(tmp_path / "addons"),
