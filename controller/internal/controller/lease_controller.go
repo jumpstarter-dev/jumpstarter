@@ -86,6 +86,10 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return result, err
 	}
 
+	if err := r.reconcileStatusHookPhase(ctx, &lease); err != nil {
+		return result, err
+	}
+
 	if err := r.reconcileStatusEnded(ctx, &result, &lease); err != nil {
 		return result, err
 	}
@@ -175,6 +179,48 @@ func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 		logger.Info("Updating begin time for lease", "lease", lease.Name, "exporter", lease.GetExporterName(), "client", lease.GetClientName())
 		now := time.Now()
 		lease.Status.BeginTime = &metav1.Time{Time: now}
+	}
+
+	return nil
+}
+
+// nolint:unparam
+func (r *LeaseReconciler) reconcileStatusHookPhase(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	if lease.Status.ExporterRef == nil || lease.Status.Ended {
+		return nil
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: lease.Namespace,
+		Name:      lease.Status.ExporterRef.Name,
+	}, &exporter); err != nil {
+		return fmt.Errorf("reconcileStatusHookPhase: failed to get exporter: %w", err)
+	}
+
+	switch exporter.Status.ExporterStatusValue {
+	case jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook:
+		lease.SetStatusBeforeLeaseHook(true, "BeforeLeaseHook", "The beforeLease hook is executing on the exporter")
+		lease.SetStatusReady(false, "BeforeLeaseHook", "Waiting for beforeLease hook to complete")
+		lease.SetStatusAfterLeaseHook(false, "Inactive", "The afterLease hook is not running")
+	case jumpstarterdevv1alpha1.ExporterStatusLeaseReady:
+		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
+		lease.SetStatusBeforeLeaseHook(false, "Completed", "The beforeLease hook has completed")
+		lease.SetStatusAfterLeaseHook(false, "Inactive", "The afterLease hook is not running")
+	case jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook:
+		lease.SetStatusAfterLeaseHook(true, "AfterLeaseHook", "The afterLease hook is executing on the exporter")
+		lease.SetStatusBeforeLeaseHook(false, "Completed", "The beforeLease hook has completed")
+	case jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed:
+		lease.SetStatusHookFailed("BeforeLeaseHookFailed", "The beforeLease hook failed: %s", exporter.Status.StatusMessage)
+		lease.SetStatusReady(false, "HookFailed", "The beforeLease hook failed")
+		lease.SetStatusBeforeLeaseHook(false, "Failed", "The beforeLease hook failed")
+	case jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHookFailed:
+		lease.SetStatusHookFailed("AfterLeaseHookFailed", "The afterLease hook failed: %s", exporter.Status.StatusMessage)
+		lease.SetStatusAfterLeaseHook(false, "Failed", "The afterLease hook failed")
+	default:
 		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
 	}
 

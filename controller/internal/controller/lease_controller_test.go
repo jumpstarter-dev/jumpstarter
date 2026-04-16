@@ -694,6 +694,185 @@ func deleteLeases(ctx context.Context, leases ...string) {
 	}
 }
 
+var _ = Describe("Lease Hook Phase Propagation", func() {
+	BeforeEach(func() {
+		createExporters(context.Background(), testExporter1DutA, testExporter2DutA, testExporter3DutB)
+		setExporterOnlineConditions(context.Background(), testExporter1DutA.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(context.Background(), testExporter2DutA.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(context.Background(), testExporter3DutB.Name, metav1.ConditionTrue)
+	})
+	AfterEach(func() {
+		ctx := context.Background()
+		deleteExporters(ctx, testExporter1DutA, testExporter2DutA, testExporter3DutB)
+		deleteLeases(ctx, lease1Name, lease2Name, lease3Name)
+	})
+
+	When("the exporter transitions to BeforeLeaseHook after lease assignment", func() {
+		It("should set BeforeLeaseHook condition on the lease and Ready to False", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			exporterName := updatedLease.Status.ExporterRef.Name
+
+			setExporterStatus(ctx, exporterName, jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook, "Running beforeLease hook")
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease = getLease(ctx, lease.Name)
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeBeforeLeaseHook),
+			)).To(BeTrue())
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			)).To(BeFalse())
+		})
+	})
+
+	When("the exporter transitions from BeforeLeaseHook to LeaseReady", func() {
+		It("should set Ready to True and BeforeLeaseHook to False", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			exporterName := updatedLease.Status.ExporterRef.Name
+
+			setExporterStatus(ctx, exporterName, jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook, "Running beforeLease hook")
+			_ = reconcileLease(ctx, lease)
+
+			setExporterStatus(ctx, exporterName, jumpstarterdevv1alpha1.ExporterStatusLeaseReady, "Lease ready")
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease = getLease(ctx, lease.Name)
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			)).To(BeTrue())
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeBeforeLeaseHook),
+			)).To(BeFalse())
+		})
+	})
+
+	When("the exporter transitions to AfterLeaseHook", func() {
+		It("should set AfterLeaseHook condition on the lease", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			exporterName := updatedLease.Status.ExporterRef.Name
+
+			setExporterStatus(ctx, exporterName, jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook, "Running afterLease hook")
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease = getLease(ctx, lease.Name)
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeAfterLeaseHook),
+			)).To(BeTrue())
+		})
+	})
+
+	When("the exporter transitions to BeforeLeaseHookFailed", func() {
+		It("should set HookFailed condition with beforeLease message", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			exporterName := updatedLease.Status.ExporterRef.Name
+
+			setExporterStatus(ctx, exporterName, jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed, "Hook script exited with code 1")
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease = getLease(ctx, lease.Name)
+			condition := meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeHookFailed),
+			)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("BeforeLeaseHookFailed"))
+			Expect(condition.Message).To(ContainSubstring("beforeLease"))
+		})
+	})
+
+	When("the exporter transitions to AfterLeaseHookFailed", func() {
+		It("should set HookFailed condition with afterLease message", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			exporterName := updatedLease.Status.ExporterRef.Name
+
+			setExporterStatus(ctx, exporterName, jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHookFailed, "Cleanup script failed")
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease = getLease(ctx, lease.Name)
+			condition := meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeHookFailed),
+			)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("AfterLeaseHookFailed"))
+			Expect(condition.Message).To(ContainSubstring("afterLease"))
+		})
+	})
+
+	When("the exporter has Available status (backward compatibility)", func() {
+		It("should set Ready to True with no hook conditions", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			)).To(BeTrue())
+			Expect(meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeBeforeLeaseHook),
+			)).To(BeNil())
+			Expect(meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeAfterLeaseHook),
+			)).To(BeNil())
+			Expect(meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeHookFailed),
+			)).To(BeNil())
+		})
+	})
+})
+
+func setExporterStatus(ctx context.Context, name string, status string, message string) {
+	exporter := getExporter(ctx, name)
+	exporter.Status.ExporterStatusValue = status
+	exporter.Status.StatusMessage = message
+	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
+}
+
 var _ = Describe("orderApprovedExporters", func() {
 	When("approved exporters are under a lease", func() {
 		It("should put them last", func() {
